@@ -19,7 +19,10 @@ export interface QueuesHost {
 }
 
 /** What the queue form changes in a queue. */
-export type QueueChanges = Pick<Queue, 'name' | 'max_concurrent' | 'speed_limit' | 'schedule'>;
+export type QueueChanges = Pick<
+  Queue,
+  'name' | 'max_concurrent' | 'speed_limit' | 'schedule' | 'notify'
+>;
 
 /** What saving the queue form came to (`Queues.save`). */
 export type QueueSave =

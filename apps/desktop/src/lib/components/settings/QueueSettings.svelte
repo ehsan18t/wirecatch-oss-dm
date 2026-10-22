@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Queues: every queue in one list, with when it runs, how many of its downloads run at once and its speed limit, so ten queues stay manageable. Edit opens the queue's own dialog; New queue makes one.
+  // Queues: every queue in one list, with when it runs, how many of its downloads run at once, its speed limit and whether it tells you only once it is done, so ten queues stay manageable. Edit opens the queue's own dialog; New queue makes one.
   import Pencil from '~icons/lucide/pencil';
   import Plus from '~icons/lucide/plus';
   import type { Snippet } from 'svelte';
@@ -32,6 +32,7 @@
           queue.paused ? 'Paused' : formatSchedule(queue.schedule),
           `${String(queue.max_concurrent)} at once`,
           queue.speed_limit === null ? 'No speed limit' : `Up to ${formatRate(queue.speed_limit)}`,
+          ...(queue.notify === 'when_done' ? ['Tells you once the queue is done'] : []),
         ]}
         <li class="flex items-center gap-3 py-2 pr-2 pl-3">
           <span class="flex min-w-0 flex-1 flex-col gap-0.5">

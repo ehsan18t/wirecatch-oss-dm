@@ -16,7 +16,7 @@ use wirecatch_desktop_lib::tray::{Shell, TrayAction, perform};
 use wirecatch_engine::units::{KIB, KIB_USIZE, MIB_USIZE};
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus,
-    DownloadSummary, MediaSelection, Question, Queue, Theme,
+    DownloadSummary, FinishNotice, MediaSelection, Question, Queue, QueueNotify, Theme,
 };
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 use wirecatch_protocol::wire::ErrorCode;
@@ -112,12 +112,13 @@ fn change_settings_and_make_a_queue(manager: &Manager) -> TestResult<Queue> {
         AppSettingsPatch {
             theme: Some(Theme::Dark),
             max_concurrent_downloads: Some(7),
-            notify_on_complete: Some(false),
+            finish_notice: Some(FinishNotice::Window),
             ..AppSettingsPatch::default()
         },
     )?;
     let mut night = api::create_queue(manager, "Night")?;
     night.max_concurrent = 1;
+    night.notify = QueueNotify::WhenDone;
     api::update_queue(manager, night.clone())?;
     Ok(night)
 }
@@ -249,13 +250,14 @@ async fn commands_drive_the_core_and_state_survives_a_restart() -> TestResult {
     let settings = api::get_settings(&manager);
     assert_eq!(settings.theme, Theme::Dark);
     assert_eq!(settings.max_concurrent_downloads, 7);
-    assert!(!settings.notify_on_complete);
+    assert_eq!(settings.finish_notice, FinishNotice::Window);
     let queues = api::list_queues(&manager);
     let night_again = queues
         .iter()
         .find(|q| q.name == "Night")
         .ok_or("the queue is missing after restart")?;
     assert_eq!(night_again.max_concurrent, 1);
+    assert_eq!(night_again.notify, QueueNotify::WhenDone);
     let ids: Vec<_> = api::list_downloads(&manager)
         .into_iter()
         .map(|r| r.id)

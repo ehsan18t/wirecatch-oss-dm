@@ -1,7 +1,7 @@
 // The main window's link to the backend: loading it (the sample one only on demand, so it stays
 // out of production), listening to its events and the shell's signals, and letting go of both.
 
-import type { UiEvent } from '@wirecatch/protocol';
+import type { Reveal, UiEvent } from '@wirecatch/protocol';
 import type { Backend, ShellSignal } from '../backend';
 
 export class Connection {
@@ -47,38 +47,59 @@ export class Connection {
   }
 
   /**
-   * Listens to the backend's events and the shell's signals. False, with nothing left listening,
-   * when `current` says this listener is no longer wanted by the time it is set up; signals
-   * arriving once it is no longer wanted are dropped.
+   * Listens to the backend's events, the shell's signals and the downloads a clicked notification
+   * shows. False, with nothing left listening, when `current` says this listener is no longer
+   * wanted by the time it is set up; what arrives once it is no longer wanted is dropped.
    */
   async listen(
     current: () => boolean,
     onEvent: (e: UiEvent) => void,
     onSignal: (signal: ShellSignal) => void,
+    onReveal: (reveal: Reveal) => void = () => undefined,
   ): Promise<boolean> {
     const backend = await this.load();
-    const stopEvents = await backend.subscribe(onEvent, () => {
-      if (current()) onSignal('resync');
-    });
-    const stopSignals = await backend
-      .onShellSignal((signal) => {
-        if (current()) onSignal(signal);
-      })
-      .catch((err: unknown) => {
-        // Nothing would ever close the event listener otherwise.
-        stopEvents();
-        throw err;
-      });
+    const stops: (() => void)[] = [];
     const stop = () => {
-      stopEvents();
-      stopSignals();
+      for (const one of stops) one();
     };
+    try {
+      // One at a time, so a listener that fails to start leaves the ones before it to stop.
+      stops.push(
+        await backend.subscribe(onEvent, () => {
+          if (current()) onSignal('resync');
+        }),
+      );
+      stops.push(
+        await backend.onShellSignal((signal) => {
+          if (current()) onSignal(signal);
+        }),
+      );
+      stops.push(
+        await backend.onReveal((reveal) => {
+          if (current()) onReveal(reveal);
+        }),
+      );
+    } catch (err) {
+      // Nothing would ever close the listeners that did start otherwise.
+      stop();
+      throw err;
+    }
     if (!current()) {
       stop();
       return false;
     }
     this.#stop = stop;
     return true;
+  }
+
+  /** The downloads a notification was about, clicked while this page was still loading: taken once the list is loaded, so they can be found in it. Only a selection is lost if it cannot be taken. */
+  takeReveal(current: () => boolean, onReveal: (reveal: Reveal) => void): void {
+    void this.backend.takeReveal().then(
+      (reveal) => {
+        if (reveal && current()) onReveal(reveal);
+      },
+      () => undefined,
+    );
   }
 
   /** Stops listening. */

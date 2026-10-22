@@ -2,6 +2,7 @@
 import type { Accent } from './Accent';
 import type { CategoryRule } from './CategoryRule';
 import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
+import type { FinishNotice } from './FinishNotice';
 import type { MediaDefaultsPatch } from './MediaDefaultsPatch';
 import type { PortablePath } from './PortablePath';
 import type { Theme } from './Theme';
@@ -51,9 +52,9 @@ export type AppSettingsPatch = {
    */
   close_to_tray?: boolean;
   /**
-   * The new [`AppSettings::notify_on_complete`].
+   * The new [`AppSettings::finish_notice`].
    */
-  notify_on_complete?: boolean;
+  finish_notice?: FinishNotice;
   /**
    * The new [`AppSettings::auto_update_addons`].
    */

@@ -11,10 +11,12 @@ use std::time::{Duration, Instant};
 use tokio::sync::Notify;
 use wirecatch_engine::CancellationToken;
 use wirecatch_engine::numeric::saturating_cast;
-use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, UiEvent, WaitReason};
+use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, QueueReport, UiEvent, WaitReason};
+use wirecatch_protocol::{DownloadId, QueueId};
 
-use super::state::{Entry, Gauge};
+use super::state::{Entry, Gauge, State};
 use super::{Inner, Manager};
+use crate::batches::Outcomes;
 use crate::speed;
 
 /// Time between two `DownloadsChanged` events, and between progress samples.
@@ -86,11 +88,58 @@ impl Manager {
             .into_iter()
             .filter_map(|id| state.entry(id).ok().map(super::state::Entry::summary))
             .collect();
+        for row in &changed {
+            state.batches.observe(row);
+        }
+        let done = state.batches.settle();
+        if let Some(batches) = state.batches.take_unsaved() {
+            self.inner.store.save_batches(batches);
+        }
         if !changed.is_empty() {
             self.emit(UiEvent::DownloadsChanged(changed));
         }
+        for (queue, outcomes) in done {
+            if let Some(report) = queue_report(state, queue, &outcomes) {
+                self.emit(UiEvent::QueueFinished(report));
+            }
+        }
         running
     }
+}
+
+impl Manager {
+    /// Records in the batches the rows that changed since the last tick, which the stopped
+    /// ticker will not see, and saves them: a download that finished just before the app
+    /// closed still counts when its queue is done after the next start.
+    pub(super) fn save_batches_at_shutdown(&self) {
+        let mut state = self.lock();
+        let state = &mut *state;
+        for id in &state.dirty {
+            if let Some(entry) = state.downloads.get(id).filter(|e| !e.removing) {
+                state.batches.observe(&entry.row);
+            }
+        }
+        if let Some(batches) = state.batches.take_unsaved() {
+            self.inner.store.save_batches(batches);
+        }
+    }
+}
+
+/// What queue `queue` did, as the person is told it, with the rows as they are now. `None`
+/// when the queue is gone, or every download in it was removed meanwhile.
+fn queue_report(state: &State, queue: QueueId, outcomes: &Outcomes) -> Option<QueueReport> {
+    let rows = |ids: &[DownloadId]| -> Vec<DownloadSummary> {
+        ids.iter()
+            .filter_map(|id| state.entry(*id).ok().map(Entry::summary))
+            .collect()
+    };
+    let report = QueueReport {
+        queue,
+        name: state.slot(queue).ok()?.queue.name.clone(),
+        completed: rows(&outcomes.completed),
+        failed: rows(&outcomes.failed),
+    };
+    (!report.completed.is_empty() || !report.failed.is_empty()).then_some(report)
 }
 
 /// The engine's part file of a running download that has not been marked yet,

@@ -2,7 +2,14 @@ import type { MockOptions } from './mock';
 import { TauriBackend } from './tauri';
 import type { Backend, DownloadWindowBackend } from './types';
 
-export type { Backend, DownloadWindowBackend, SampleData, ShellSignal, Unsubscribe } from './types';
+export type {
+  Backend,
+  DownloadWindowBackend,
+  FinishedSource,
+  SampleData,
+  ShellSignal,
+  Unsubscribe,
+} from './types';
 export { BackendError } from './types';
 
 /** True inside the Tauri webview. */

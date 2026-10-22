@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager as _, Runtime, WebviewWindowBuilder};
 use wirecatch_engine::units::KIB_USIZE;
 use wirecatch_protocol::app::DownloadSummary;
+use wirecatch_protocol::desktop::{REVEAL_EVENT, Reveal};
 
 /// Label of the one window, as declared in `tauri.conf.json`.
 pub const MAIN_WINDOW: &str = "main";
@@ -126,6 +127,63 @@ impl PendingCaptures {
     /// The page is gone (it reloads, or the window was destroyed): it listens no more.
     pub fn page_gone(&self) {
         self.lock().listening = false;
+    }
+}
+
+/// Downloads a clicked notification asks the main window to select (D52), kept while its page
+/// is not listening (it was closed to the tray, or is loading). The newest request wins: it is
+/// the one the person just clicked.
+#[derive(Default)]
+pub struct PendingSelection(Mutex<Selection>);
+
+#[derive(Default)]
+struct Selection {
+    listening: bool,
+    waiting: Option<Reveal>,
+}
+
+impl PendingSelection {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Selection> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Keeps `reveal` unless the page listens, and says whether it listens.
+    fn request(&self, reveal: &Reveal) -> bool {
+        let mut selection = self.lock();
+        if !selection.listening {
+            selection.waiting = Some(reveal.clone());
+        }
+        selection.listening
+    }
+
+    /// The page has loaded and listens: hands the waiting request over, once.
+    pub fn take(&self) -> Option<Reveal> {
+        let mut selection = self.lock();
+        selection.listening = true;
+        selection.waiting.take()
+    }
+
+    /// The page is gone: it listens no more.
+    pub fn page_gone(&self) {
+        self.lock().listening = false;
+    }
+}
+
+/// Shows the main window, in front and focused, with the downloads `reveal` names selected: the
+/// person clicked a notification about them.
+pub fn reveal_downloads<R: Runtime>(app: &AppHandle<R>, reveal: &Reveal) {
+    let listening = app
+        .try_state::<PendingSelection>()
+        .is_some_and(|pending| pending.request(reveal));
+    // Showing wakes a page asleep in the tray first, so the selection reaches it awake.
+    show_main_window(app);
+    if listening && !reveal.ids.is_empty() {
+        warn_if_failed(
+            "select the downloads a notification was about",
+            app.emit_to(MAIN_WINDOW, REVEAL_EVENT, reveal),
+        );
     }
 }
 

@@ -13,6 +13,7 @@ import type {
   DownloadId,
   DownloadSummary,
   ErrorCode,
+  FinishedList,
   ImportPreview,
   MediaChoice,
   MediaSelection,
@@ -21,6 +22,7 @@ import type {
   QuestionId,
   Queue,
   QueueId,
+  Reveal,
   StartupNotice,
   SystemAppearance,
   SuffixListInfo,
@@ -49,6 +51,8 @@ export interface SampleData {
   now: () => number;
   /** The download windows, which the sample page shows inside itself. */
   windows: WindowRegistry;
+  /** What the sample's download complete window lists (D52). */
+  finished: FinishedSource;
 }
 
 export interface Backend {
@@ -130,6 +134,10 @@ export interface Backend {
    * events.
    */
   takeCaptured(): Promise<DownloadSummary[]>;
+  /** The downloads a notification the person clicked was about, while this page was still loading (D52); handed over once, and later ones arrive through `onReveal`. */
+  takeReveal(): Promise<Reveal | null>;
+  /** Downloads to select because the person clicked a notification about them (D52). */
+  onReveal(listener: (reveal: Reveal) => void): Promise<Unsubscribe>;
 
   /** What the person should know about how the app started this time (a damaged list set aside, a data folder other accounts may read); empty on a normal start. The main window shows each (CORE-1). */
   startupNotices(): Promise<StartupNotice[]>;
@@ -190,8 +198,16 @@ export interface Backend {
   pickOpenFile(): Promise<string | null>;
 }
 
-/** The backend as a download window's own webview sees it: it can also size and close itself. */
-export interface DownloadWindowBackend extends Backend {
+/** What the download complete window lists (D52): the shell's own list, or the sample page's. */
+export interface FinishedSource {
+  /** What the window lists now; only that window may ask the shell. */
+  finishedList(): Promise<FinishedList>;
+  /** Changes to what the window lists. */
+  onFinished(listener: (list: FinishedList) => void): Promise<Unsubscribe>;
+}
+
+/** The backend as a download window's own webview sees it: it can also size and close itself, and the download complete window reads its list. */
+export interface DownloadWindowBackend extends Backend, FinishedSource {
   /** Closes the download window this page runs in. */
   closeDownloadWindow(): Promise<void>;
   /** Makes the download window this page runs in as tall as its content (logical pixels). */

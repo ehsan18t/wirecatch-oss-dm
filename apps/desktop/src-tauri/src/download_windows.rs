@@ -218,7 +218,7 @@ impl Registry {
             .unwrap_or(self.windows.len())
     }
 
-    fn window_showing(&self, shows: Shows) -> Option<&OpenWindow> {
+    pub(crate) fn window_showing(&self, shows: Shows) -> Option<&OpenWindow> {
         self.windows.iter().find(|w| w.shows == shows)
     }
 
@@ -414,17 +414,25 @@ pub const NOT_ITS_SETTING: &str =
     "This window changes only its own settings. Use Settings in the main window for the others.";
 
 /// Whether the window `label` may act on `target`: the main window on anything, a download
-/// window only on the question or download it shows now (D43).
+/// window only on the question or download it shows now (D43), and the download complete
+/// window on the downloads it lists (D52).
 pub fn may_act_on<R: Runtime>(app: &AppHandle<R>, label: &str, target: Shows) -> bool {
     !is_download_window(label)
         || app
             .try_state::<DownloadWindows>()
             .is_some_and(|windows| windows.with(|r| r.shows(label)) == Some(target))
+        || matches!(target, Shows::Download(id) if crate::finished_window::lists(app, label, id))
+}
+
+/// Whether a progress window shows download `id` now.
+pub fn shows_download<R: Runtime>(app: &AppHandle<R>, id: DownloadId) -> bool {
+    app.try_state::<DownloadWindows>()
+        .is_some_and(|windows| windows.with(|r| r.window_showing(Shows::Download(id)).is_some()))
 }
 
 /// Whether a download window may make the settings change `patch`: only the two settings it
 /// shows, whether browser downloads start without asking and whether progress windows open
-/// (D43).
+/// (D43). The download complete window has its own (`finished_window::may_change`).
 #[must_use]
 pub fn may_change(patch: &AppSettingsPatch) -> bool {
     let its_own = AppSettingsPatch {

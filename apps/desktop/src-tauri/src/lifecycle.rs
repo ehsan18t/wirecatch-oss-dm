@@ -292,13 +292,17 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
             ..
         } => {
             crate::frame::forget(app, &label);
-            if label == MAIN_WINDOW
-                && let Some(captured) = app.try_state::<crate::window::PendingCaptures>()
-            {
-                captured.page_gone();
+            if label == MAIN_WINDOW {
+                if let Some(captured) = app.try_state::<crate::window::PendingCaptures>() {
+                    captured.page_gone();
+                }
+                if let Some(selection) = app.try_state::<crate::window::PendingSelection>() {
+                    selection.page_gone();
+                }
             }
             if is_download_window(&label) {
                 download_windows::window_gone(app, &label);
+                crate::finished_window::gone(app, &label);
             } else if closing_quits_now(app, &label) {
                 quit(app);
             }

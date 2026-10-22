@@ -7,8 +7,8 @@ use std::path::Path;
 use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
-    AppSettings, Category, ImportSummary, ImportedFolder, PROFILE_FORMAT_VERSION, PortablePath,
-    Queue, SettingsProfile,
+    AppSettings, Category, FinishNotice, ImportSummary, ImportedFolder, PROFILE_FORMAT_VERSION,
+    PortablePath, Queue, SettingsProfile,
 };
 
 use crate::error::{CoreError, Result};
@@ -57,7 +57,7 @@ pub(crate) struct Parsed {
 /// Reads a profile file. The version is checked before anything else, so a file
 /// from a newer Wirecatch gets a clear message instead of a parse error.
 pub(crate) fn parse(bytes: &[u8]) -> Result<Parsed> {
-    let value: serde_json::Value =
+    let mut value: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|e| CoreError::InvalidProfile(e.to_string()))?;
     let version = value
         .get("format_version")
@@ -73,12 +73,44 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Parsed> {
         return Err(CoreError::InvalidProfile("its format version is 0".into()));
     }
     let sets_suffix_list_updates = value.pointer("/settings/update_suffix_list").is_some();
+    upgrade_finish_notice(&mut value);
     let profile =
         serde_json::from_value(value).map_err(|e| CoreError::InvalidProfile(e.to_string()))?;
     Ok(Parsed {
         profile,
         sets_suffix_list_updates,
     })
+}
+
+/// A profile written before D52 says whether finished downloads notify with a switch,
+/// `notify_on_complete`, whose off meant no notice at all; the database's migration reads it
+/// the same way.
+fn upgrade_finish_notice(value: &mut serde_json::Value) {
+    const OLD_SWITCH: &str = "notify_on_complete";
+    const NOTICE: &str = "finish_notice";
+    let Some(settings) = value
+        .get_mut("settings")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    let Some(on) = settings
+        .remove(OLD_SWITCH)
+        .and_then(|switch| switch.as_bool())
+    else {
+        return;
+    };
+    if settings.contains_key(NOTICE) {
+        return;
+    }
+    let notice = if on {
+        FinishNotice::Notification
+    } else {
+        FinishNotice::Nothing
+    };
+    if let Ok(notice) = serde_json::to_value(notice) {
+        settings.insert(NOTICE.into(), notice);
+    }
 }
 
 /// Settings and queues after applying an imported profile, and what changed.
@@ -315,7 +347,7 @@ fn category_folder_name(category: Category) -> &'static str {
 mod tests {
     use super::*;
     use crate::settings::{default_queue, default_settings};
-    use wirecatch_protocol::app::MediaDefaults;
+    use wirecatch_protocol::app::{MediaDefaults, QueueNotify};
 
     fn folders() -> KnownFolders {
         KnownFolders::under_home(std::env::temp_dir().join("wc-profile-home"))
@@ -331,6 +363,7 @@ mod tests {
             is_default: false,
             paused: false,
             running_outside_schedule: false,
+            notify: QueueNotify::EachDownload,
         }
     }
 
@@ -399,6 +432,26 @@ mod tests {
         let read = parse(&serde_json::to_vec(&old).unwrap()).unwrap().profile;
         assert_eq!(read.format_version, 1);
         assert_eq!(read.settings.media, MediaDefaults::default());
+    }
+
+    #[test]
+    fn a_profile_from_before_finish_notices_keeps_its_notification_switch() {
+        let profile = export(&default_settings(), &[default_queue()], &folders(), 42);
+        for (on, told) in [
+            (true, FinishNotice::Notification),
+            (false, FinishNotice::Nothing),
+        ] {
+            let mut old = serde_json::to_value(&profile).unwrap();
+            let settings = old["settings"].as_object_mut().unwrap();
+            settings.remove("finish_notice");
+            settings.insert("notify_on_complete".into(), on.into());
+            for queue in old["queues"].as_array_mut().unwrap() {
+                queue.as_object_mut().unwrap().remove("notify");
+            }
+            let read = parse(&serde_json::to_vec(&old).unwrap()).unwrap().profile;
+            assert_eq!(read.settings.finish_notice, told, "switch {on}");
+            assert_eq!(read.queues[0].notify, QueueNotify::EachDownload);
+        }
     }
 
     #[test]

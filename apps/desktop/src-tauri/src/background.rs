@@ -1,27 +1,32 @@
 //! Work that runs for as long as the app does: forwarding core events to the webview, and
 //! keeping the tray tooltip, notifications and start-with-system in step with the core.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, EventTarget, Manager as _, Runtime};
 use tauri_plugin_autostart::ManagerExt as _;
-use tauri_plugin_notification::NotificationExt as _;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::time::Instant;
 use wirecatch_core::Manager;
-use wirecatch_protocol::app::{AppSettingsPatch, UiEvent};
+use wirecatch_protocol::QueueId;
+use wirecatch_protocol::app::{
+    AppSettingsPatch, DownloadSummary, FinishNotice, Queue, QueueNotify, QueueReport, UiEvent,
+};
 
-use crate::activity::{Activity, Finished, notification_text};
+use crate::activity::{Activity, Ended};
 use crate::autostart::{self, Action};
 use crate::questions::{Attention, attention};
 use crate::window::MAIN_WINDOW;
-use crate::{RESYNC_EVENT, UI_EVENT, download_windows, sleep, tray};
+use crate::{
+    RESYNC_EVENT, UI_EVENT, download_windows, finished_window, sleep, system_notices, tray,
+};
 
 /// The tooltip changes at most this often.
 pub const TOOLTIP_EVERY: Duration = Duration::from_secs(1);
 
-/// Downloads finishing within this long of the first one share one notification.
+/// Downloads finishing (or failing) within this long of the first one share one notice.
 pub const NOTIFY_BATCH: Duration = Duration::from_secs(3);
 
 /// Sends every core event to every open window (the main window and the download windows) on
@@ -98,19 +103,129 @@ async fn at(deadline: Option<Instant>) {
     }
 }
 
-/// Keeps the tray tooltip, completion notifications and start-with-system up to date.
+/// What to tell the person about downloads that ended (D52).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Tell {
+    /// Downloads that finished close together, in queues that tell each download.
+    Finished(Vec<DownloadSummary>),
+    /// Downloads that failed close together, whatever their queue: a failure is told at once.
+    Failed(Vec<DownloadSummary>),
+    /// A queue that tells once it is done is done.
+    Queue(QueueReport),
+}
+
+/// Decides when to tell what: each queue's choice, and downloads that end close together
+/// sharing one notice. Holds no clock of its own, so tests give it the time.
+#[derive(Debug, Default)]
+pub struct Teller {
+    modes: HashMap<QueueId, QueueNotify>,
+    finished: Vec<DownloadSummary>,
+    finished_due: Option<Instant>,
+    failed: Vec<DownloadSummary>,
+    failed_due: Option<Instant>,
+}
+
+impl Teller {
+    /// Follows the queues' choices.
+    pub fn queues(&mut self, queues: &[Queue]) {
+        self.modes = queues.iter().map(|q| (q.id, q.notify)).collect();
+    }
+
+    fn tells_each(&self, queue: QueueId) -> bool {
+        self.modes.get(&queue).copied().unwrap_or_default() == QueueNotify::EachDownload
+    }
+
+    /// Takes in downloads that ended `now`.
+    pub fn ended(&mut self, ended: Ended, now: Instant) {
+        let Ended { completed, failed } = ended;
+        let told: Vec<DownloadSummary> = completed
+            .into_iter()
+            .filter(|r| self.tells_each(r.queue))
+            .collect();
+        if !told.is_empty() {
+            self.finished.extend(told);
+            self.finished_due.get_or_insert(now + NOTIFY_BATCH);
+        }
+        if !failed.is_empty() {
+            self.failed.extend(failed);
+            self.failed_due.get_or_insert(now + NOTIFY_BATCH);
+        }
+    }
+
+    /// A queue is done: told now when it tells once it is done.
+    #[must_use]
+    pub fn queue_finished(&self, report: &QueueReport) -> Option<Tell> {
+        (!self.tells_each(report.queue)).then(|| Tell::Queue(report.clone()))
+    }
+
+    /// When the next notice is due, if any waits.
+    #[must_use]
+    pub fn due(&self) -> Option<Instant> {
+        match (self.finished_due, self.failed_due) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// The notices due by `now`.
+    pub fn take_due(&mut self, now: Instant) -> Vec<Tell> {
+        let mut tells = Vec::new();
+        if self.finished_due.is_some_and(|due| due <= now) {
+            self.finished_due = None;
+            tells.push(Tell::Finished(std::mem::take(&mut self.finished)));
+        }
+        if self.failed_due.is_some_and(|due| due <= now) {
+            self.failed_due = None;
+            tells.push(Tell::Failed(std::mem::take(&mut self.failed)));
+        }
+        tells
+    }
+}
+
+/// Tells the person, the way `how` says (D52).
+pub fn tell<R: Runtime>(app: &AppHandle<R>, how: FinishNotice, tell: &Tell) {
+    match how {
+        FinishNotice::Nothing => {}
+        FinishNotice::Notification => {
+            let notice = match tell {
+                Tell::Finished(rows) => crate::notices::finished(&rows.iter().collect::<Vec<_>>()),
+                Tell::Failed(rows) => crate::notices::failed(&rows.iter().collect::<Vec<_>>()),
+                Tell::Queue(report) => crate::notices::queue_done(report),
+            };
+            if let Some(notice) = notice {
+                system_notices::show(app, notice);
+            }
+        }
+        FinishNotice::Window => match tell {
+            Tell::Finished(rows) | Tell::Failed(rows) => finished_window::add(app, None, rows),
+            Tell::Queue(report) => {
+                let rows: Vec<DownloadSummary> = report
+                    .completed
+                    .iter()
+                    .chain(&report.failed)
+                    .cloned()
+                    .collect();
+                let header = finished_window::queue_header(report.queue, &report.name, &rows);
+                finished_window::add(app, Some(header), &rows);
+            }
+        },
+    }
+}
+
+/// Keeps the tray tooltip, the notices of finished and failed downloads, and start-with-system
+/// up to date.
 pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
     let mut events = manager.subscribe();
     let mut activity = Activity::default();
     activity.load(&manager.list_downloads());
     let mut settings = manager.get_settings();
+    let mut teller = Teller::default();
+    teller.queues(&manager.list_queues());
     sync_autostart(&app, &manager, settings.start_with_system, false);
 
     let mut shown = String::new();
     let mut last_tooltip: Option<Instant> = None;
     let mut tooltip_stale = true;
-    let mut finished: Vec<Finished> = Vec::new();
-    let mut notify_at: Option<Instant> = None;
 
     loop {
         let tooltip_at =
@@ -118,22 +233,29 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
         tokio::select! {
             event = events.recv() => match event {
                 Ok(event) => {
-                    let done = activity.apply(&event);
-                    if !done.is_empty() {
-                        finished.extend(done);
-                        notify_at.get_or_insert_with(|| Instant::now() + NOTIFY_BATCH);
-                    }
-                    if let UiEvent::SettingsChanged(new) = event {
-                        if new.start_with_system != settings.start_with_system {
-                            sync_autostart(&app, &manager, new.start_with_system, new.start_with_system);
+                    finished_window::follow(&app, &event);
+                    teller.ended(activity.apply(&event), Instant::now());
+                    match event {
+                        UiEvent::SettingsChanged(new) => {
+                            if new.start_with_system != settings.start_with_system {
+                                sync_autostart(&app, &manager, new.start_with_system, new.start_with_system);
+                            }
+                            settings = new;
                         }
-                        settings = new;
+                        UiEvent::QueuesChanged(queues) => teller.queues(&queues),
+                        UiEvent::QueueFinished(report) => {
+                            if let Some(now) = teller.queue_finished(&report) {
+                                tell(&app, settings.finish_notice, &now);
+                            }
+                        }
+                        _ => {}
                     }
                     tooltip_stale = true;
                 }
                 Err(RecvError::Lagged(_)) => {
                     activity.load(&manager.list_downloads());
                     settings = manager.get_settings();
+                    teller.queues(&manager.list_queues());
                     tooltip_stale = true;
                 }
                 Err(RecvError::Closed) => return,
@@ -147,49 +269,18 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
                 last_tooltip = Some(Instant::now());
                 tooltip_stale = false;
             }
-            () = at(notify_at) => {
-                if settings.notify_on_complete {
-                    notify(&app, &finished);
+            () = at(teller.due()) => {
+                for due in teller.take_due(Instant::now()) {
+                    tell(&app, settings.finish_notice, &due);
                 }
-                finished.clear();
-                notify_at = None;
             }
         }
     }
 }
 
-/// One notification for downloads that finished close together.
-pub fn notify<R: Runtime>(app: &AppHandle<R>, finished: &[Finished]) {
-    let Some((title, body)) = notification_text(finished) else {
-        return;
-    };
-    show_notification(app, title, body);
-}
-
-/// Notifications shown, recorded when this is managed (tests do; the app does not).
-#[derive(Default)]
-pub struct ShownNotifications(pub std::sync::Mutex<Vec<(String, String)>>);
-
-/// Shows a system notification. Does nothing more than log when the notification plugin is
-/// missing.
+/// Shows a system notification with words only; a click shows the main window.
 pub fn show_notification<R: Runtime>(app: &AppHandle<R>, title: String, body: String) {
-    if let Some(shown) = app.try_state::<ShownNotifications>() {
-        shown
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push((title.clone(), body.clone()));
-    }
-    if app
-        .try_state::<tauri_plugin_notification::Notification<R>>()
-        .is_none()
-    {
-        tracing::info!("notification (no notification support): {title}: {body}");
-        return;
-    }
-    if let Err(e) = app.notification().builder().title(title).body(body).show() {
-        tracing::warn!("could not show a notification: {e}");
-    }
+    system_notices::show(app, system_notices::plain(title, body));
 }
 
 /// What changes the start-at-sign-in entry: the system's own (the autostart plugin), or a stand-in.

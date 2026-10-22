@@ -18,6 +18,7 @@ import type { DownloadId } from './DownloadId';
 import type { DownloadSummary } from './DownloadSummary';
 import type { EarlierDownloadArgs } from './EarlierDownloadArgs';
 import type { ExportSettingsArgs } from './ExportSettingsArgs';
+import type { FinishedList } from './FinishedList';
 import type { FitDownloadWindowArgs } from './FitDownloadWindowArgs';
 import type { GetDownloadArgs } from './GetDownloadArgs';
 import type { GetQuestionArgs } from './GetQuestionArgs';
@@ -43,6 +44,7 @@ import type { ReorderArgs } from './ReorderArgs';
 import type { ReportUnreadableEventArgs } from './ReportUnreadableEventArgs';
 import type { ResumeArgs } from './ResumeArgs';
 import type { RetryArgs } from './RetryArgs';
+import type { Reveal } from './Reveal';
 import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
 import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
@@ -311,6 +313,16 @@ export type CommandMap = {
    * Browser downloads that started without a window of their own while the main window's page was not listening yet (it was opening or loading), for their notes; handed over once. From then on they arrive as `Captured` events (D36.7).
    */
   take_captured: Command<null, Array<DownloadSummary>>;
+  /**
+   * What the download complete window shows; later changes arrive on `FINISHED_EVENT`. Only
+   * that window may call it.
+   */
+  finished_list: Command<null, FinishedList>;
+  /**
+   * Downloads a notification the person clicked was about, while the main window's page was
+   * not listening yet; handed over once. From then on they arrive on `REVEAL_EVENT`.
+   */
+  take_reveal: Command<null, Reveal | null>;
   /**
    * Logs that a window could not read an event the app sent it, and reloads everything instead; sent once per kind of event, so a mismatch between the two sides is found in the log rather than in a window showing wrong numbers.
    */

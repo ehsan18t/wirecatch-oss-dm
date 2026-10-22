@@ -7,12 +7,16 @@ import { listen } from '@tauri-apps/api/event';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import {
   COMMAND_OUTPUTS,
+  FINISHED_EVENT,
   isErrorCode,
+  isFinishedList,
+  isReveal,
   isSystemAppearance,
   isUiEvent,
   isWindowFrame,
   LINKS_EVENT,
   RESYNC_EVENT,
+  REVEAL_EVENT,
   SYSTEM_APPEARANCE_EVENT,
   UI_EVENT,
   WINDOW_FRAME_EVENT,
@@ -23,10 +27,12 @@ import {
   type CaptureConfirmation,
   type CommandMap,
   type DownloadId,
+  type FinishedList,
   type MediaSelection,
   type QuestionId,
   type Queue,
   type QueueId,
+  type Reveal,
   type SystemAppearance,
   type UiEvent,
   type WindowAction,
@@ -335,6 +341,18 @@ export class TauriBackend implements DownloadWindowBackend {
 
   takeCaptured() {
     return this.#call('take_captured');
+  }
+  takeReveal() {
+    return this.#call('take_reveal');
+  }
+  onReveal(listener: (reveal: Reveal) => void) {
+    return this.#listenChecked(REVEAL_EVENT, isReveal, listener);
+  }
+  finishedList() {
+    return this.#call('finished_list');
+  }
+  onFinished(listener: (list: FinishedList) => void) {
+    return this.#listenChecked(FINISHED_EVENT, isFinishedList, listener);
   }
   startupNotices() {
     return this.#call('startup_notices');

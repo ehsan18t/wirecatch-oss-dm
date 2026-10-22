@@ -38,6 +38,10 @@ import type { Event } from './Event';
 import type { ExportSettingsArgs } from './ExportSettingsArgs';
 import type { ExtensionSettings } from './ExtensionSettings';
 import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
+import type { FinishNotice } from './FinishNotice';
+import type { FinishedGroup } from './FinishedGroup';
+import type { FinishedList } from './FinishedList';
+import type { FinishedQueue } from './FinishedQueue';
 import type { FitDownloadWindowArgs } from './FitDownloadWindowArgs';
 import type { FixAction } from './FixAction';
 import type { GetDownloadArgs } from './GetDownloadArgs';
@@ -84,6 +88,8 @@ import type { Question } from './Question';
 import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
 import type { QueueId } from './QueueId';
+import type { QueueNotify } from './QueueNotify';
+import type { QueueReport } from './QueueReport';
 import type { QueueSummary } from './QueueSummary';
 import type { RefreshLinkArgs } from './RefreshLinkArgs';
 import type { RejectCaptureArgs } from './RejectCaptureArgs';
@@ -94,6 +100,7 @@ import type { Reply } from './Reply';
 import type { ReportUnreadableEventArgs } from './ReportUnreadableEventArgs';
 import type { ResumeArgs } from './ResumeArgs';
 import type { RetryArgs } from './RetryArgs';
+import type { Reveal } from './Reveal';
 import type { Schedule } from './Schedule';
 import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
 import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
@@ -247,7 +254,7 @@ export function isAppSettings(value: unknown): value is AppSettings {
     isAccent(value1['accent']) &&
     typeof value1['start_with_system'] === 'boolean' &&
     typeof value1['close_to_tray'] === 'boolean' &&
-    typeof value1['notify_on_complete'] === 'boolean' &&
+    isFinishNotice(value1['finish_notice']) &&
     typeof value1['auto_update_addons'] === 'boolean' &&
     typeof value1['show_progress_windows'] === 'boolean' &&
     isMediaDefaults(value1['media']) &&
@@ -274,8 +281,7 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
     (value1['start_with_system'] === undefined ||
       typeof value1['start_with_system'] === 'boolean') &&
     (value1['close_to_tray'] === undefined || typeof value1['close_to_tray'] === 'boolean') &&
-    (value1['notify_on_complete'] === undefined ||
-      typeof value1['notify_on_complete'] === 'boolean') &&
+    (value1['finish_notice'] === undefined || isFinishNotice(value1['finish_notice'])) &&
     (value1['auto_update_addons'] === undefined ||
       typeof value1['auto_update_addons'] === 'boolean') &&
     (value1['show_progress_windows'] === undefined ||
@@ -565,6 +571,36 @@ export function isExtensionSettingsPatch(value: unknown): value is ExtensionSett
     (value1['video_sites'] === undefined ||
       isArrayOf(value1['video_sites'], (value2: unknown) => typeof value2 === 'string') ||
       value1['video_sites'] === null))(value);
+}
+
+/** Whether `value` has the shape of a {@link FinishNotice}; fields it does not name are not checked. */
+export function isFinishNotice(value: unknown): value is FinishNotice {
+  return value === 'notification' || value === 'window' || value === 'nothing';
+}
+
+/** Whether `value` has the shape of a {@link FinishedGroup}; fields it does not name are not checked. */
+export function isFinishedGroup(value: unknown): value is FinishedGroup {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['key'] === 'number' &&
+    (isFinishedQueue(value1['queue']) || value1['queue'] === null) &&
+    isArrayOf(value1['downloads'], isDownloadSummary))(value);
+}
+
+/** Whether `value` has the shape of a {@link FinishedList}; fields it does not name are not checked. */
+export function isFinishedList(value: unknown): value is FinishedList {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && isArrayOf(value1['groups'], isFinishedGroup))(value);
+}
+
+/** Whether `value` has the shape of a {@link FinishedQueue}; fields it does not name are not checked. */
+export function isFinishedQueue(value: unknown): value is FinishedQueue {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isQueueId(value1['id']) &&
+    typeof value1['name'] === 'string' &&
+    typeof value1['completed'] === 'number' &&
+    typeof value1['failed'] === 'number')(value);
 }
 
 /** Whether `value` has the shape of a {@link FitDownloadWindowArgs}; fields it does not name are not checked. */
@@ -1001,12 +1037,28 @@ export function isQueue(value: unknown): value is Queue {
     (isSchedule(value1['schedule']) || value1['schedule'] === null) &&
     typeof value1['is_default'] === 'boolean' &&
     typeof value1['paused'] === 'boolean' &&
-    typeof value1['running_outside_schedule'] === 'boolean')(value);
+    typeof value1['running_outside_schedule'] === 'boolean' &&
+    isQueueNotify(value1['notify']))(value);
 }
 
 /** Whether `value` has the shape of a {@link QueueId}; fields it does not name are not checked. */
 export function isQueueId(value: unknown): value is QueueId {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** Whether `value` has the shape of a {@link QueueNotify}; fields it does not name are not checked. */
+export function isQueueNotify(value: unknown): value is QueueNotify {
+  return value === 'each_download' || value === 'when_done';
+}
+
+/** Whether `value` has the shape of a {@link QueueReport}; fields it does not name are not checked. */
+export function isQueueReport(value: unknown): value is QueueReport {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isQueueId(value1['queue']) &&
+    typeof value1['name'] === 'string' &&
+    isArrayOf(value1['completed'], isDownloadSummary) &&
+    isArrayOf(value1['failed'], isDownloadSummary))(value);
 }
 
 /** Whether `value` has the shape of a {@link QueueSummary}; fields it does not name are not checked. */
@@ -1089,6 +1141,14 @@ export function isResumeArgs(value: unknown): value is ResumeArgs {
 /** Whether `value` has the shape of a {@link RetryArgs}; fields it does not name are not checked. */
 export function isRetryArgs(value: unknown): value is RetryArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isDownloadId(value1['id']))(value);
+}
+
+/** Whether `value` has the shape of a {@link Reveal}; fields it does not name are not checked. */
+export function isReveal(value: unknown): value is Reveal {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (isQueueId(value1['queue']) || value1['queue'] === null) &&
+    isArrayOf(value1['ids'], isDownloadId))(value);
 }
 
 /** Whether `value` has the shape of a {@link Schedule}; fields it does not name are not checked. */
@@ -1250,7 +1310,13 @@ export function isUiEvent(value: unknown): value is UiEvent {
       ((value2: unknown): boolean => isRecord(value2) && isQuestionId(value2['id']))(
         value1['data'],
       ))(value) ||
-    ((value1: unknown): boolean => isRecord(value1) && value1['type'] === 'window_requested')(value)
+    ((value1: unknown): boolean => isRecord(value1) && value1['type'] === 'window_requested')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['type'] === 'queue_finished' && isQueueReport(value1['data']))(
+      value,
+    )
   );
 }
 
@@ -1465,6 +1531,10 @@ export const COMMAND_OUTPUTS: {
     value === null,
   take_captured: (value: unknown): value is CommandMap['take_captured']['output'] =>
     isArrayOf(value, isDownloadSummary),
+  finished_list: (value: unknown): value is CommandMap['finished_list']['output'] =>
+    isFinishedList(value),
+  take_reveal: (value: unknown): value is CommandMap['take_reveal']['output'] =>
+    isReveal(value) || value === null,
   report_unreadable_event: (
     value: unknown,
   ): value is CommandMap['report_unreadable_event']['output'] => value === null,

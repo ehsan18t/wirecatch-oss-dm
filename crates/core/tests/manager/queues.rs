@@ -5,11 +5,12 @@ use std::time::Duration;
 use chrono::TimeDelta;
 use wirecatch_core::DEFAULT_QUEUE_ID;
 use wirecatch_protocol::app::{
-    AddRequest, DownloadStatus, Queue, Schedule, TimeOfDay, UiEvent, WaitReason,
+    AddRequest, DownloadStatus, Queue, QueueReport, Schedule, TimeOfDay, UiEvent, WaitReason,
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::common::{Harness, SilentServer, TestResult, fast_server, is_running, monday, tune};
+use crate::media_support::next_event;
 use wirecatch_engine::units::KIB;
 
 /// Downloads from a silent server never stop on their own; give up on them quickly.
@@ -250,5 +251,71 @@ async fn deleting_a_queue_moves_its_waiting_confirmations_to_the_default() -> Te
     let row = h.manager.list_downloads().remove(0);
     assert_eq!(row.queue, DEFAULT_QUEUE_ID);
     h.wait_status(row.id, DownloadStatus::Completed).await;
+    Ok(())
+}
+
+fn ids_of(rows: &[wirecatch_protocol::app::DownloadSummary]) -> Vec<DownloadId> {
+    let mut ids: Vec<_> = rows.iter().map(|r| r.id).collect();
+    ids.sort();
+    ids
+}
+
+async fn queue_finished(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> QueueReport {
+    next_event(ui, "the queue to finish", |event| match event {
+        UiEvent::QueueFinished(report) => Some(report.clone()),
+        _ => None,
+    })
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queue_reports_once_when_nothing_in_it_runs_or_waits() -> TestResult {
+    let server = fast_server(8 * KIB).await?;
+    let h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    // Held until both are in, so the first cannot finish the run alone.
+    h.manager.set_queue_paused(DEFAULT_QUEUE_ID, true)?;
+    let by_hand = h.add_with(&server.url("by-hand.bin"), paused).await?.id;
+    let first = h.add(&server.url("first.bin")).await?.id;
+    let second = h.add(&server.url("second.bin")).await?.id;
+    h.manager.set_queue_paused(DEFAULT_QUEUE_ID, false)?;
+
+    let report = queue_finished(&mut ui).await;
+    assert_eq!(report.queue, DEFAULT_QUEUE_ID);
+    assert_eq!(report.name, queue(&h, DEFAULT_QUEUE_ID)?.name);
+    let mut expected = vec![first, second];
+    expected.sort();
+    assert_eq!(
+        ids_of(&report.completed),
+        expected,
+        "the paused one is not in it"
+    );
+    assert_eq!(report.failed, Vec::new());
+    assert!(
+        report
+            .completed
+            .iter()
+            .all(|r| r.status == DownloadStatus::Completed)
+    );
+    assert_eq!(h.row(by_hand).status, DownloadStatus::Paused);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queue_counts_what_finished_before_a_restart() -> TestResult {
+    let server = fast_server(8 * KIB).await?;
+    let silent = SilentServer::start().await;
+    let mut h = Harness::with_stop_timeout(SHORT).await?;
+    let stuck = h.add(&silent.url("stuck.bin")).await?.id;
+    let done = h.add(&server.url("done.bin")).await?.id;
+    h.wait_status(done, DownloadStatus::Completed).await;
+
+    h.restart().await?;
+    let mut ui = h.manager.subscribe();
+    // Removing the one left makes the queue done, so it tells what it did before the restart.
+    h.manager.remove(&[stuck], false).await?;
+    let report = queue_finished(&mut ui).await;
+    assert_eq!(ids_of(&report.completed), vec![done]);
+    assert_eq!(report.failed, Vec::new());
     Ok(())
 }

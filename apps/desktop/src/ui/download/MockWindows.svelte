@@ -3,10 +3,18 @@
   import type { DownloadId } from '@wirecatch/protocol';
   import type { OpenWindow, WindowRegistry } from '$lib/sample-windows';
   import type { OpenDownloadWindow } from '$lib/window/download-window.svelte';
+  import type { OpenFinishedWindow } from '$lib/window/finished-window.svelte';
   import MockWindow from './MockWindow.svelte';
 
-  let { registry, openWindow }: { registry: WindowRegistry; openWindow: OpenDownloadWindow } =
-    $props();
+  let {
+    registry,
+    openWindow,
+    openFinished,
+  }: {
+    registry: WindowRegistry;
+    openWindow: OpenDownloadWindow;
+    openFinished: OpenFinishedWindow;
+  } = $props();
 
   let windows = $state<readonly OpenWindow[]>([]);
   let front = $state<string | null>(null);
@@ -22,6 +30,7 @@
 {#each windows as window (window.label)}
   <MockWindow
     {openWindow}
+    {openFinished}
     {window}
     front={front === window.label}
     onfocus={() => registry.focus(window.label)}

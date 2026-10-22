@@ -96,11 +96,12 @@ const DEFS = [
     keywords: 'tray background minimize quit exit',
   },
   {
-    id: 'notify_on_complete',
+    id: 'finish_notice',
     section: 'general',
-    label: 'Notify me when a download finishes',
-    help: 'Shows a system notification for each finished file.',
-    keywords: 'notification alert done complete sound',
+    label: 'When a download finishes',
+    help: 'How Wirecatch tells you a download finished. You hear about a failed download the same way, right away.',
+    keywords:
+      'notification notify alert done complete finished failed popup dialog window toast message tell',
   },
   {
     id: 'default_folder',
@@ -343,8 +344,9 @@ const DEFS = [
     id: 'queues',
     section: 'queues',
     label: 'Your queues',
-    help: 'Edit a queue to change its name, hours and limits.',
-    keywords: 'queue queues schedule overnight limit at once concurrent',
+    help: 'Edit a queue to change its name, hours, limits and when it tells you its downloads finished.',
+    keywords:
+      'queue queues schedule overnight limit at once concurrent notify notification all done finished batch',
   },
 ] as const satisfies readonly SettingText[];
 

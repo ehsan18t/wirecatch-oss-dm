@@ -8,6 +8,7 @@
 //! [`serve_connection`] speaks the local protocol (D14) over any byte stream.
 
 mod addons;
+mod batches;
 mod clock;
 mod discard;
 mod error;

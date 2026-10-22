@@ -130,6 +130,31 @@ describe('the settings screen', () => {
   });
 });
 
+describe('how finished downloads are told', () => {
+  it('is picked from a list, and names when the default queue tells, with a way to change it', async () => {
+    const { app } = await openSettings('general');
+    const pick = screen.getByRole('combobox', { name: 'When a download finishes' });
+    expect(pick).toHaveTextContent('Show a notification');
+    expect(screen.getByText('Main tells you each time a download finishes.')).toBeVisible();
+    await fireEvent.click(pick);
+    await settle();
+    await fireEvent.click(screen.getByRole('option', { name: /Open a window/ }));
+    await settle();
+    expect(app.settings?.finish_notice).toBe('window');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Change when Main tells you' }));
+    await settle();
+    expect(app.dialog).toEqual({ kind: 'queue', id: app.queues.defaultQueue?.id });
+  });
+
+  it('leaves out when the queue tells while nothing is told', async () => {
+    const { app } = await openSettings('general');
+    await app.updateSettings((d) => void (d.finish_notice = 'nothing'));
+    await settle();
+    expect(screen.queryByText(/tells you each time/)).toBeNull();
+  });
+});
+
 describe('a setting opened from elsewhere', () => {
   const highlighted = () =>
     document.getElementById(settingAnchor('default_folder'))?.classList.contains('flash');

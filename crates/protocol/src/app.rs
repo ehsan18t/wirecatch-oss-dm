@@ -194,6 +194,26 @@ pub struct Queue {
     /// Set by "start now": the queue runs outside its schedule until it is empty
     /// or paused, then the schedule applies again.
     pub running_outside_schedule: bool,
+    /// When the person is told its downloads finished (D52).
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "QueueNotify")]
+    pub notify: QueueNotify,
+}
+
+/// A queue that is done: nothing in it downloads or waits to start (D52). It covers the
+/// downloads that finished or failed since the queue last started working, including those
+/// before a restart; downloads the person paused, cancelled or removed are not in it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct QueueReport {
+    /// The queue.
+    pub queue: QueueId,
+    /// Its name when it finished.
+    pub name: String,
+    /// What finished, in the order it finished.
+    pub completed: Vec<DownloadSummary>,
+    /// What failed, in the order it failed.
+    pub failed: Vec<DownloadSummary>,
 }
 
 /// Media details shown on a download row.
@@ -841,6 +861,34 @@ pub enum Accent {
     System,
 }
 
+/// How the person is told that downloads finished or failed (D52). Each queue decides when: for
+/// each download, or once the queue is done ([`QueueNotify`]). A failure is told at once either
+/// way.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum FinishNotice {
+    /// A system notification with buttons to open the file or show it in its folder.
+    #[default]
+    Notification,
+    /// The download complete window, which collects what finished until the person closes it.
+    Window,
+    /// Nothing: the download list shows how each download ended.
+    Nothing,
+}
+
+/// When a queue tells the person its downloads finished (D52). How is [`FinishNotice`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum QueueNotify {
+    /// Each time one of its downloads finishes.
+    #[default]
+    EachDownload,
+    /// Once, when nothing in the queue downloads or waits to start ([`QueueReport`]).
+    WhenDone,
+}
+
 /// A setting a newer Wirecatch may have saved with a value this build does not know (a theme
 /// or accent added later, say): it reads as the setting's default, so the rest of the settings
 /// still read. A missing field takes the default through `#[serde(default)]`.
@@ -900,8 +948,8 @@ pub struct AppSettingsPatch {
     pub start_with_system: Option<bool>,
     /// The new [`AppSettings::close_to_tray`].
     pub close_to_tray: Option<bool>,
-    /// The new [`AppSettings::notify_on_complete`].
-    pub notify_on_complete: Option<bool>,
+    /// The new [`AppSettings::finish_notice`].
+    pub finish_notice: Option<FinishNotice>,
     /// The new [`AppSettings::auto_update_addons`].
     pub auto_update_addons: Option<bool>,
     /// The new [`AppSettings::show_progress_windows`].
@@ -1035,6 +1083,10 @@ crate::exported::exported_consts! {
     pub const DOWNLOAD_WINDOW_MAX_HEIGHT: u32 = 680;
     /// Every [`Theme`], in the order settings offer them.
     pub const THEMES: &[Theme] = &[Theme::System, Theme::Light, Theme::Dark];
+    /// The fixes that trying the download again can carry out, so a notification and the
+    /// download complete window offer Try again for them (D52). The others need the person's
+    /// answer first: a fresh link, another folder, or keeping the original.
+    pub const RETRY_FIXES: &[FixAction] = &[FixAction::Retry, FixAction::FreeDiskSpace];
     /// Every [`Accent`], in the order settings offer them. The design system in `packages/ui`
     /// reads this list and defines a palette for each of these but `system`; its tests fail on
     /// an accent without one.
@@ -1086,8 +1138,10 @@ pub struct AppSettings {
     pub start_with_system: bool,
     /// Closing the window keeps downloads running in the tray.
     pub close_to_tray: bool,
-    /// Show a system notification when a download completes.
-    pub notify_on_complete: bool,
+    /// How the person is told that downloads finished or failed (D52).
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "FinishNotice")]
+    pub finish_notice: FinishNotice,
     /// Keep installed add-ons up to date without asking.
     #[serde(default = "default_true")]
     pub auto_update_addons: bool,
@@ -1128,7 +1182,7 @@ impl AppSettings {
             accent,
             start_with_system,
             close_to_tray,
-            notify_on_complete,
+            finish_notice,
             auto_update_addons,
             show_progress_windows,
             media,
@@ -1146,7 +1200,7 @@ impl AppSettings {
             accent: new_accent,
             start_with_system: new_start_with_system,
             close_to_tray: new_close_to_tray,
-            notify_on_complete: new_notify_on_complete,
+            finish_notice: new_finish_notice,
             auto_update_addons: new_auto_update_addons,
             show_progress_windows: new_show_progress_windows,
             media: media_patch,
@@ -1165,7 +1219,7 @@ impl AppSettings {
         set(accent, new_accent);
         set(start_with_system, new_start_with_system);
         set(close_to_tray, new_close_to_tray);
-        set(notify_on_complete, new_notify_on_complete);
+        set(finish_notice, new_finish_notice);
         set(auto_update_addons, new_auto_update_addons);
         set(show_progress_windows, new_show_progress_windows);
         if let Some(media_patch) = media_patch {
@@ -1369,6 +1423,9 @@ pub enum UiEvent {
     },
     /// A client asked to see Wirecatch (the extension's "Open Wirecatch"): the desktop shows its main window.
     WindowRequested,
+    /// A queue is done; the desktop tells the person when the queue is set to
+    /// [`QueueNotify::WhenDone`] (D52).
+    QueueFinished(QueueReport),
 }
 
 /// What importing a settings profile changed.
@@ -1577,7 +1634,7 @@ mod tests {
             "accent": "green",
             "start_with_system": false,
             "close_to_tray": true,
-            "notify_on_complete": true,
+            "finish_notice": "window",
         })
     }
 

@@ -126,3 +126,12 @@ export function simulateCapture(state: MockState, index: number): void {
   state.changed([row]);
   state.emit({ type: 'captured', data: structuredClone(row) });
 }
+
+/** Sample data only: the `index`th sample download, asking first whatever the setting says. */
+export function simulateConfirmation(state: MockState, index: number): void {
+  const extension = state.settings.extension;
+  const ask = extension.ask_before_download;
+  extension.ask_before_download = true;
+  simulateCapture(state, index);
+  extension.ask_before_download = ask;
+}

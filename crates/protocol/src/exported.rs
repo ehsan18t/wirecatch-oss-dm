@@ -139,6 +139,17 @@ impl Exported for &[crate::app::Theme] {
 }
 
 #[cfg(test)]
+impl Exported for &[crate::app::FixAction] {
+    fn written(&self) -> Written {
+        Written {
+            value: serde_json::to_string(self).unwrap(),
+            annotation: Some("readonly FixAction[]"),
+            imports: &["FixAction"],
+        }
+    }
+}
+
+#[cfg(test)]
 impl Exported for crate::QueueId {
     fn written(&self) -> Written {
         branded(self.0, "QueueId", &["QueueId"])

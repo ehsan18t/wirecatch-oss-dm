@@ -63,6 +63,7 @@ const DOWNLOAD_WINDOW: &[(&str, ActsOn)] = &[
     ("install_addon", ActsOn::Neither),
     ("cancel_addon_operation", ActsOn::Neither),
     ("close_download_window", ActsOn::Neither),
+    ("finished_list", ActsOn::Neither),
     ("fit_download_window", ActsOn::Neither),
     ("report_unreadable_event", ActsOn::Neither),
     ("system_appearance", ActsOn::Neither),
@@ -80,6 +81,7 @@ const DOWNLOAD_WINDOW_ONLY: &[&str] = &[
     "dismiss_media_choice",
     "close_download_window",
     "fit_download_window",
+    "finished_list",
 ];
 
 fn download_window_may(command: &str) -> bool {

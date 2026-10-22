@@ -16,12 +16,13 @@
 </script>
 
 <script lang="ts">
-  // A queue's name, how many of its downloads run at once, its speed limit and its hours: each limit is a switch that opens its own fields, and the days are a pattern first (every day, weekdays, weekends) with single days only when asked for.
+  // A queue's name, how many of its downloads run at once, its speed limit, its hours and when it tells you its downloads finished: each limit is a switch that opens its own fields, and the days are a pattern first (every day, weekdays, weekends) with single days only when asked for.
   import {
     MAX_CONCURRENT_DOWNLOADS,
     NEW_QUEUE_MAX_CONCURRENT,
     type Queue,
     type QueueId,
+    type QueueNotify,
     type TimeOfDay,
     type Weekday,
   } from '@wirecatch/protocol';
@@ -39,6 +40,7 @@
     ToggleChip,
     type FieldControl,
   } from '@wirecatch/ui';
+  import { QUEUE_NOTIFY_OPTIONS } from '$lib/finish-notices';
   import { dayPattern, daysInPhrase, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
   import { DAYS_PER_WEEK, WEEKDAYS, WEEKEND, WORKDAYS } from '$lib/time';
   import { queueConcurrentProblem, SPEED_FIELD } from '$lib/limits';
@@ -71,6 +73,16 @@
   let days = $state<Weekday[]>(original?.schedule?.days ?? []);
   // Picking single days is its own choice, kept while the days picked happen to make a pattern.
   let pickingDays = $state(dayPattern(original?.schedule?.days ?? []) === 'custom');
+  let notify = $state<QueueNotify>(original?.notify ?? 'each_download');
+
+  /** What the queue's choice of when to tell does, given how Settings says to tell. */
+  const notifyHelp = $derived.by(() => {
+    if (app.settings?.finish_notice === 'nothing')
+      return 'Settings, General, says to tell you nothing, so this applies once you change that.';
+    return notify === 'each_download'
+      ? 'Downloads that finish a few seconds apart are grouped together.'
+      : 'Tells you once, when nothing in it downloads or waits to start. You still hear about a failed download right away.';
+  });
   let error = $state('');
   // Opened to delete the queue (from the palette), it starts at that question.
   let confirmDelete = $state((() => deleting)());
@@ -166,6 +178,7 @@
       max_concurrent: Math.round(maxConcurrent),
       speed_limit: limit.limit,
       schedule: schedule.schedule,
+      notify,
     };
   }
 
@@ -327,6 +340,26 @@
           {/if}
         </div>
       {/if}
+    </section>
+
+    <section
+      class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-layer p-3"
+      aria-labelledby="{formId}-notify"
+      aria-describedby="{formId}-notify-help"
+    >
+      <div class="flex min-w-0 flex-1 basis-56 flex-col gap-0.5">
+        <span id="{formId}-notify" class="text-ui font-medium text-ink"
+          >Tell me when downloads finish</span
+        >
+        <span id="{formId}-notify-help" class="text-small text-ink-muted">{notifyHelp}</span>
+      </div>
+      <SegmentedControl
+        label="Tell me when downloads finish"
+        size="sm"
+        value={notify}
+        options={QUEUE_NOTIFY_OPTIONS}
+        onchange={(next: QueueNotify) => (notify = next)}
+      />
     </section>
 
     {#if error}

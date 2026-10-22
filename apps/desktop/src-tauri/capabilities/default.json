@@ -61,6 +61,7 @@
     "allow-startup-notices",
     "allow-show-set-aside-list",
     "allow-take-captured",
+    "allow-take-reveal",
     "allow-report-unreadable-event"
   ]
 }

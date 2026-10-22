@@ -2,6 +2,7 @@
 import type { Accent } from './Accent';
 import type { CategoryRule } from './CategoryRule';
 import type { ExtensionSettings } from './ExtensionSettings';
+import type { FinishNotice } from './FinishNotice';
 import type { MediaDefaults } from './MediaDefaults';
 import type { PortablePath } from './PortablePath';
 import type { Theme } from './Theme';
@@ -51,9 +52,9 @@ export type AppSettings = {
    */
   close_to_tray: boolean;
   /**
-   * Show a system notification when a download completes.
+   * How the person is told that downloads finished or failed (D52).
    */
-  notify_on_complete: boolean;
+  finish_notice: FinishNotice;
   /**
    * Keep installed add-ons up to date without asking.
    */

@@ -8,6 +8,7 @@ import type { MediaChoice } from './MediaChoice';
 import type { PendingCapture } from './PendingCapture';
 import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
+import type { QueueReport } from './QueueReport';
 import type { SuffixListInfo } from './SuffixListInfo';
 import type { UserError } from './UserError';
 
@@ -68,4 +69,5 @@ export type UiEvent =
         id: QuestionId;
       };
     }
-  | { type: 'window_requested' };
+  | { type: 'window_requested' }
+  | { type: 'queue_finished'; data: QueueReport };

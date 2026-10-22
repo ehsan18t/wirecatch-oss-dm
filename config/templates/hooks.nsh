@@ -52,5 +52,7 @@
     ; Written by tauri-plugin-autostart under the product name, for the account running the uninstaller.
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "{{channels.release.name}}"
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "{{channels.release.name}}"
+    ; Written by the app on each start so its notifications show its name and icon (D52), for the account running the uninstaller.
+    DeleteRegKey HKCU "Software\Classes\AppUserModelId\{{channels.release.identifier}}"
   ${EndIf}
 !macroend

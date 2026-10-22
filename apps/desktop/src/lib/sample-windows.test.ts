@@ -45,7 +45,7 @@ describe('WindowRegistry', () => {
     for (let id = 1; id <= 6; id++) r.ask(questionId(id));
     r.closed(questionId(6));
     r.gone('download-q1');
-    expect(r.windows.some((w) => w.shows.id === 6)).toBe(false);
+    expect(r.windows.some((w) => w.shows.kind === 'question' && w.shows.id === 6)).toBe(false);
   });
 
   it('opens one progress window per download, beyond the limit', () => {

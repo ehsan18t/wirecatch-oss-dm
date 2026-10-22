@@ -28,6 +28,7 @@ export function createQueue(state: MockState, name: string): Queue {
     is_default: false,
     paused: false,
     running_outside_schedule: false,
+    notify: 'each_download',
   };
   state.queues.push(q);
   state.queuesChanged();

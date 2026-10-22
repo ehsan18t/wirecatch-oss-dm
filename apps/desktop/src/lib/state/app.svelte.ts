@@ -17,7 +17,7 @@ import { SvelteSet } from 'svelte/reactivity';
 import type { Backend, SampleData } from '../backend';
 import { extractUrls } from '../format';
 import { SETTINGS, type SectionId, type SettingId } from '../settings-schema';
-import { DownloadWindowState, type OpenDownloadWindow } from '../window/download-window.svelte';
+import { sampleWindows } from '../window/sample-factories';
 import { AddDraft } from './add-draft.svelte';
 import { Addons } from './addons.svelte';
 import { Appearance } from './appearance.svelte';
@@ -30,6 +30,7 @@ import { DownloadStore } from './downloads.svelte';
 import { mainWindowEvents } from './app-events';
 import { dispatch, HeldEvents } from './events';
 import { Questions } from './questions.svelte';
+import { revealDownloads } from './reveal';
 import { Queues } from './queues.svelte';
 import { errorMessage, Runner } from './runner';
 import type { Dialog, Screen } from './screens';
@@ -170,11 +171,11 @@ export class AppState {
   }
 
   /**
-   * The state of one of the sample page's download windows (D23). The page shows them inside
-   * itself, so it needs them made over the backend that only this state holds.
+   * The states of the sample page's download windows and its download complete window (D23,
+   * D52). The page shows them inside itself, so it needs them made over the backend that only
+   * this state holds.
    */
-  readonly openSampleWindow: OpenDownloadWindow = (target, host) =>
-    new DownloadWindowState({ ...host, backend: () => this.#backend }, target);
+  readonly sampleWindows = sampleWindows(() => this.#backend);
 
   /** The sample backend's extras (its palette actions and download windows); null on the engine. */
   get sample(): SampleData | null {
@@ -233,6 +234,7 @@ export class AppState {
       return;
     }
     events.release();
+    this.#connection.takeReveal(current, (reveal) => revealDownloads(this, reveal));
     this.ready = true;
     this.clock.start();
     // None is needed for the list, so none holds it up.
@@ -251,11 +253,16 @@ export class AppState {
       const backend = await this.#connection.load();
       this.sampleData = backend.kind === 'mock';
       this.clock.follow(backend.sampleData?.now);
-      return await this.#connection.listen(current, onEvent, (signal) => {
-        // Events were missed: load everything again rather than show a stale list.
-        if (signal === 'resync') void this.init();
-        else void this.#takeLaunchLinks();
-      });
+      return await this.#connection.listen(
+        current,
+        onEvent,
+        (signal) => {
+          // Events were missed: load everything again rather than show a stale list.
+          if (signal === 'resync') void this.init();
+          else void this.#takeLaunchLinks();
+        },
+        (reveal) => revealDownloads(this, reveal),
+      );
     } catch (err) {
       if (current()) {
         this.loadError = errorMessage(err);

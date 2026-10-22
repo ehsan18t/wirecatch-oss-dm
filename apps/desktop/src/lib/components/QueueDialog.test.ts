@@ -96,6 +96,16 @@ describe('the queue dialog', () => {
     expect(dialog.getByRole('radio', { name: 'MB/s' })).toBeChecked();
   });
 
+  it('tells once the queue is done when asked, and says failures still come right away', async () => {
+    const { app, dialog } = await openQueueDialog('Main');
+    expect(dialog.getByRole('radio', { name: 'Each download' })).toBeChecked();
+    await fireEvent.click(dialog.getByRole('radio', { name: 'When the queue is done' }));
+    await settle();
+    expect(dialog.getByText(/You still hear about a failed download right away\.$/)).toBeVisible();
+    await save();
+    expect(app.queues.list.find((q) => q.name === 'Main')?.notify).toBe('when_done');
+  });
+
   it('asks before deleting, saying where the downloads go', async () => {
     const { app, dialog } = await openQueueDialog('Overnight');
     await fireEvent.click(dialog.getByRole('button', { name: 'Delete queue' }));

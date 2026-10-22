@@ -1,10 +1,11 @@
 <script lang="ts">
-  // General: the theme and accent, and how Wirecatch starts, closes and tells about finished files.
+  // General: the theme and accent, and how Wirecatch starts, closes and tells about finished files. When it tells is each queue's choice, so the default queue's is named under the dropdown, with a way to change it.
   import Check from '~icons/lucide/check';
-  import { ACCENTS, type Accent, type Theme } from '@wirecatch/protocol';
+  import { ACCENTS, type Accent, type FinishNotice, type Theme } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
-  import { cn, Icon, SegmentedControl, tooltip } from '@wirecatch/ui';
+  import { Button, cn, Icon, SegmentedControl, Select, tooltip } from '@wirecatch/ui';
   import { findElement } from '$lib/dom';
+  import { FINISH_NOTICE_OPTIONS, queueNotifyLine } from '$lib/finish-notices';
   import { getApp } from '$lib/state/app.svelte';
   import type { SettingIn } from '$lib/settings-schema';
   import type { Row, SectionProps } from './row';
@@ -59,8 +60,10 @@
     accent,
     start_with_system: startWithSystem,
     close_to_tray: closeToTray,
-    notify_on_complete: notifyOnComplete,
+    finish_notice: finishNotice,
   };
+
+  const defaultQueue = $derived(app.queues.defaultQueue);
 </script>
 
 <SettingRows {items} {settings} {flash} {controls} />
@@ -123,11 +126,27 @@
   />
 {/snippet}
 
-{#snippet notifyOnComplete({ def, s, control }: Row)}
-  <SettingToggle
-    {control}
-    label={def.label}
-    checked={s.notify_on_complete}
-    onchange={(v: boolean) => save((d) => void (d.notify_on_complete = v))}
-  />
+{#snippet finishNotice({ s, control }: Row)}
+  <div class="flex flex-col items-end gap-1.5">
+    <Select
+      {...control}
+      class="w-56"
+      value={s.finish_notice}
+      options={FINISH_NOTICE_OPTIONS}
+      onchange={(notice: FinishNotice) => save((d) => void (d.finish_notice = notice))}
+    />
+    {#if defaultQueue && s.finish_notice !== 'nothing'}
+      <p
+        class="flex flex-wrap items-baseline justify-end gap-x-1.5 text-right text-small text-ink-muted"
+      >
+        <span>{queueNotifyLine(defaultQueue.name, defaultQueue.notify)}</span>
+        <Button
+          variant="link"
+          size="sm"
+          aria-label="Change when {defaultQueue.name} tells you"
+          onclick={() => app.openDialog({ kind: 'queue', id: defaultQueue.id })}>Change</Button
+        >
+      </p>
+    {/if}
+  </div>
 {/snippet}

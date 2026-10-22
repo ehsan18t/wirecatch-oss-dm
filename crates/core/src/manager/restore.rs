@@ -12,6 +12,7 @@ use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::state::{Counters, Entry, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
+use crate::batches::Batches;
 use crate::naming::Claimed;
 use crate::public_suffix::SuffixList;
 use crate::settings::{self, DEFAULT_QUEUE_ID};
@@ -102,6 +103,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         suffix_check: SuffixCheck::default(),
         handovers: Handovers::default(),
         dirty: BTreeSet::default(),
+        batches: Batches::default(),
         last_checked: around.now,
         ids,
         closed: false,
@@ -109,6 +111,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
     for entry in downloads {
         state.insert_entry(entry);
     }
+    state.batches = Batches::restore(state.downloads.values().map(|e| &e.row), snapshot.batches);
     Restored {
         state,
         changed,
@@ -343,6 +346,7 @@ mod tests {
                 stored(2, 1, DownloadStatus::Downloading),
                 stored(3, 9, DownloadStatus::Paused),
             ],
+            batches: Vec::new(),
             recoveries: Vec::new(),
             not_private: None,
         };

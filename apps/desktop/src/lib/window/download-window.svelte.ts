@@ -266,6 +266,7 @@ export class DownloadWindowState {
     settings_imported: ignore,
     storage_failed: ignore,
     window_requested: ignore,
+    queue_finished: ignore,
   };
 
   /** Keeps what concerns this window from one core event. */

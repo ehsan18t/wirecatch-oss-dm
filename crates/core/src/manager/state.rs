@@ -19,6 +19,7 @@ use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::media::MediaPending;
 use super::suffix_list::SuffixCheck;
+use crate::batches::Batches;
 use crate::error::{CoreError, Result};
 use crate::local_network::ChosenBy;
 use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
@@ -53,6 +54,8 @@ pub(super) struct State {
     pub handovers: Handovers,
     /// Rows changed since the last `DownloadsChanged` event.
     pub dirty: BTreeSet<DownloadId>,
+    /// What each queue at work has finished or failed so far (D52).
+    pub batches: Batches,
     /// When schedules were last evaluated, so a start time crossed since then is seen.
     pub last_checked: NaiveDateTime,
     pub ids: Counters,
@@ -347,6 +350,7 @@ impl State {
         }
         self.running.remove(&id);
         self.dirty.remove(&id);
+        self.batches.forget(id);
         Some(entry)
     }
 

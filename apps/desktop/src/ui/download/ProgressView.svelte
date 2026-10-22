@@ -1,5 +1,5 @@
 <script lang="ts">
-  // One download's progress, in its own window (D23): name, status and why it waits, progress, speed, time left, connections, any error with its fix, and Pause or Resume, Cancel and Hide. Once finished: Open and Show in folder, and the window closes by itself after a few seconds unless the pointer is over it or it has the keyboard focus.
+  // One download's progress, in its own window (D23): name, status and why it waits, progress, speed, time left, connections, any error with its fix, and Pause or Resume, Cancel and Hide. Once finished: Open and Show in folder, and the window closes by itself after a few seconds unless the pointer is over it or it has the keyboard focus, or finished downloads are told in a window (D52): then this one stays, as that window would.
   import FolderOpen from '~icons/lucide/folder-open';
   import type { DownloadSummary, FixAction } from '@wirecatch/protocol';
   import { formatBytes, formatSpeed } from '@wirecatch/units';
@@ -73,8 +73,10 @@
   function updateFocus() {
     focused = document.hasFocus() && !!root && root.contains(document.activeElement);
   }
+  /** Told in a window, a finished download stays in this one, which takes that window's place. */
+  const staysOpen = $derived(win.settings?.finish_notice === 'window');
   $effect(() => {
-    if (!finished || hovered || focused || opening || asking !== null) return;
+    if (!finished || staysOpen || hovered || focused || opening || asking !== null) return;
     const timer = setTimeout(() => win.close(), CLOSE_AFTER_MS);
     return () => clearTimeout(timer);
   });
@@ -268,7 +270,7 @@
         </form>
       {/if}
 
-      {#if finished && !hovered && !focused && !opening && asking === null}
+      {#if finished && !staysOpen && !hovered && !focused && !opening && asking === null}
         <p class="text-small text-ink-muted">This window closes by itself in a few seconds.</p>
       {/if}
     </div>

@@ -47,6 +47,7 @@ describe('event handler tables', () => {
       addon_required: vi.fn(),
       confirmation_closed: vi.fn(),
       window_requested: vi.fn(),
+      queue_finished: vi.fn(),
     };
     dispatch(handlers, STORAGE);
     dispatch(handlers, FORWARD);

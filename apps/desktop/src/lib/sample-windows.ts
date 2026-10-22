@@ -6,8 +6,11 @@
 
 import { MAX_QUESTION_WINDOWS, type DownloadId, type QuestionId } from '@wirecatch/protocol';
 
-/** What a download window shows. */
-export type Shows = { kind: 'question'; id: QuestionId } | { kind: 'download'; id: DownloadId };
+/** What a download window shows: a question, a download, or what finished (the download complete window, D52). */
+export type Shows =
+  | { kind: 'question'; id: QuestionId }
+  | { kind: 'download'; id: DownloadId }
+  | { kind: 'finished' };
 
 export interface OpenWindow {
   /** Stable for the window's life, like a Tauri label. */
@@ -17,11 +20,12 @@ export interface OpenWindow {
   slot: number;
 }
 
-function labelFor(shows: Shows): string {
+function labelFor(shows: Exclude<Shows, { kind: 'finished' }>): string {
   return shows.kind === 'question' ? `download-q${shows.id}` : `download-d${shows.id}`;
 }
 
 function same(a: Shows, b: Shows): boolean {
+  if (a.kind === 'finished' || b.kind === 'finished') return a.kind === b.kind;
   return a.kind === b.kind && a.id === b.id;
 }
 
@@ -141,6 +145,13 @@ export class WindowRegistry {
       this.#windows.push({ label, shows, slot: this.#freeSlot() });
       this.front = label;
     }
+    this.#changed();
+  }
+
+  /** Opens the download complete window as `label`, or leaves it where it is: it opens without taking the front, as the shell's does. */
+  showFinished(label: string): void {
+    if (this.#find({ kind: 'finished' })) return;
+    this.#windows.push({ label, shows: { kind: 'finished' }, slot: this.#freeSlot() });
     this.#changed();
   }
 

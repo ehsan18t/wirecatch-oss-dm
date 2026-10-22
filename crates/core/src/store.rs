@@ -19,6 +19,7 @@ use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::{DownloadId, QueueId};
 
+use crate::batches::StoredBatch;
 use crate::error::{CoreError, Result};
 use crate::local_network::ChosenBy;
 use crate::media::StoredMedia;
@@ -90,10 +91,23 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE downloads ADD COLUMN chosen_by TEXT NOT NULL DEFAULT 'website';
 ",
+    // D52: when each queue tells the person its downloads finished, and how they are told,
+    // which replaces the notification switch: on became a notification, off nothing.
+    r"
+    ALTER TABLE queues ADD COLUMN notify TEXT NOT NULL DEFAULT 'each_download';
+    UPDATE settings
+    SET value = json_set(
+        json_remove(value, '$.notify_on_complete'),
+        '$.finish_notice',
+        CASE json_extract(value, '$.notify_on_complete') WHEN 0 THEN 'nothing' ELSE 'notification' END
+    )
+    WHERE key = 'app' AND json_valid(value) AND json_type(value, '$.notify_on_complete') IS NOT NULL;
+",
 ];
 
 const SETTINGS_KEY: &str = "app";
 const LAST_IDS_KEY: &str = "last_ids";
+const BATCHES_KEY: &str = "queue_batches";
 
 /// The highest download and queue ids ever handed out. Kept so an id is never
 /// reused, even after the newest download or queue was deleted.
@@ -162,6 +176,8 @@ pub(crate) struct Snapshot {
     pub last_ids: LastIds,
     pub queues: Vec<Queue>,
     pub downloads: Vec<StoredDownload>,
+    /// What each queue at work had finished or failed so far (D52).
+    pub batches: Vec<StoredBatch>,
     /// What had to be repaired to open the list, for the person to be told.
     pub recoveries: Vec<Recovery>,
     /// Why the data folder could not be made private to the current user, when it could
@@ -219,6 +235,7 @@ enum Op {
     SaveQueues(Vec<Queue>),
     SaveSettings(Box<AppSettings>),
     SaveLastIds(LastIds),
+    SaveBatches(Vec<StoredBatch>),
     /// Answers once every write sent before it is on disk; only tests wait
     /// for that.
     #[cfg(test)]
@@ -241,6 +258,7 @@ impl std::fmt::Debug for Op {
             Op::SaveQueues(_) => "SaveQueues",
             Op::SaveSettings(_) => "SaveSettings",
             Op::SaveLastIds(_) => "SaveLastIds",
+            Op::SaveBatches(_) => "SaveBatches",
             #[cfg(test)]
             Op::Flush(_) => "Flush",
             Op::Close(_) => "Close",
@@ -363,6 +381,11 @@ impl Store {
     /// Records the highest ids handed out.
     pub fn save_last_ids(&self, ids: LastIds) {
         self.send(Op::SaveLastIds(ids));
+    }
+
+    /// Replaces the saved batches of the queues at work.
+    pub fn save_batches(&self, batches: Vec<StoredBatch>) {
+        self.send(Op::SaveBatches(batches));
     }
 
     /// Waits until every write sent so far is on disk.
@@ -556,6 +579,7 @@ enum Target {
     Queues,
     Settings,
     LastIds,
+    Batches,
     Nothing,
 }
 
@@ -566,6 +590,7 @@ fn target_of(op: &Op) -> Target {
         Op::SaveQueues(_) => Target::Queues,
         Op::SaveSettings(_) => Target::Settings,
         Op::SaveLastIds(_) => Target::LastIds,
+        Op::SaveBatches(_) => Target::Batches,
         #[cfg(test)]
         Op::Flush(_) => Target::Nothing,
         Op::Close(_) => Target::Nothing,
@@ -664,6 +689,7 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
             Op::SaveQueues(queues) => save_queues(&tx, queues)?,
             Op::SaveSettings(settings) => write_value(&tx, SETTINGS_KEY, &**settings)?,
             Op::SaveLastIds(ids) => write_value(&tx, LAST_IDS_KEY, ids)?,
+            Op::SaveBatches(batches) => write_value(&tx, BATCHES_KEY, batches)?,
             #[cfg(test)]
             Op::Flush(_) => {}
             Op::Close(_) => {}
@@ -925,7 +951,7 @@ fn write_value<T: Serialize>(tx: &Transaction<'_>, key: &str, value: &T) -> rusq
 fn load_queues(conn: &Connection) -> Result<(Vec<Queue>, usize)> {
     let mut stmt = conn.prepare(
         "SELECT id, name, max_concurrent, speed_limit, schedule, is_default, paused,
-                running_outside_schedule
+                running_outside_schedule, notify
          FROM queues ORDER BY position",
     )?;
     let mut queues = Vec::new();
@@ -947,6 +973,7 @@ fn load_queues(conn: &Connection) -> Result<(Vec<Queue>, usize)> {
 fn load(conn: &Connection) -> Result<Snapshot> {
     let settings = read_value(conn, SETTINGS_KEY, "settings")?;
     let last_ids = read_value(conn, LAST_IDS_KEY, "id counters")?.unwrap_or_default();
+    let batches = read_value(conn, BATCHES_KEY, "queue batches")?.unwrap_or_default();
 
     let (queues, queues_reset) = load_queues(conn)?;
     let mut downloads_reset = 0;
@@ -1005,6 +1032,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
         last_ids,
         queues,
         downloads,
+        batches,
         recoveries: [
             (newly_unreadable > 0).then_some(Recovery::UnreadableKept(newly_unreadable)),
             (downloads_reset + queues_reset > 0).then_some(Recovery::ValuesReset {
@@ -1049,8 +1077,8 @@ fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
     tx.execute("DELETE FROM queues", [])?;
     let mut stmt = tx.prepare_cached(
         "INSERT INTO queues (id, position, name, max_concurrent, speed_limit, schedule, is_default,
-                             paused, running_outside_schedule)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                             paused, running_outside_schedule, notify)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
     )?;
     for (position, q) in (0i64..).zip(queues) {
         stmt.execute(params![
@@ -1063,6 +1091,7 @@ fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
             q.is_default,
             q.paused,
             q.running_outside_schedule,
+            enum_text(&q.notify),
         ])?;
     }
     Ok(())
@@ -1090,6 +1119,7 @@ fn read_queue(row: &Row<'_>) -> rusqlite::Result<(Queue, bool)> {
         is_default: row.get(5)?,
         paused: row.get(6)?,
         running_outside_schedule: row.get(7)?,
+        notify: from_text(&row.get::<_, String>(8)?).unwrap_or_default(),
     };
     Ok((queue, limit_damaged))
 }
@@ -1297,7 +1327,8 @@ mod tests {
 
     use super::*;
     use wirecatch_protocol::app::{
-        Accent, Category, DownloadStatus, FixAction, Schedule, Theme, TimeOfDay, UserError,
+        Accent, Category, DownloadStatus, FinishNotice, FixAction, QueueNotify, Schedule, Theme,
+        TimeOfDay, UserError,
     };
 
     fn download(id: i64) -> StoredDownload {
@@ -1668,6 +1699,7 @@ mod tests {
             is_default: false,
             paused: false,
             running_outside_schedule: false,
+            notify: QueueNotify::WhenDone,
         };
         let settings = crate::settings::default_settings();
         store.save_queues(vec![queue.clone()]);
@@ -2033,6 +2065,7 @@ mod tests {
             is_default: false,
             paused: false,
             running_outside_schedule: false,
+            notify: QueueNotify::EachDownload,
         };
         let mut finished = download(3);
         finished.summary.status = DownloadStatus::Completed;
@@ -2282,7 +2315,7 @@ mod tests {
             .unwrap();
         let mut settings = crate::settings::default_settings();
         settings.extension.ask_before_download = ask;
-        settings.notify_on_complete = false;
+        settings.finish_notice = FinishNotice::Window;
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?1, ?2)",
             params![SETTINGS_KEY, to_json(&settings)],
@@ -2298,7 +2331,11 @@ mod tests {
         let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         let settings = snapshot.settings.expect("the settings survive");
         assert!(settings.extension.ask_before_download, "switched on");
-        assert!(!settings.notify_on_complete, "nothing else changes");
+        assert_eq!(
+            settings.finish_notice,
+            FinishNotice::Window,
+            "nothing else changes"
+        );
         assert!(
             settings.show_progress_windows,
             "a new setting takes its default"
@@ -2327,7 +2364,7 @@ mod tests {
 
     fn stored_defaults() -> serde_json::Value {
         let mut settings = crate::settings::default_settings();
-        settings.notify_on_complete = false;
+        settings.finish_notice = FinishNotice::Window;
         serde_json::to_value(settings).unwrap()
     }
 
@@ -2345,7 +2382,11 @@ mod tests {
             (settings.theme, settings.accent),
             (Theme::System, Accent::Cyan)
         );
-        assert!(!settings.notify_on_complete, "nothing else changes");
+        assert_eq!(
+            settings.finish_notice,
+            FinishNotice::Window,
+            "nothing else changes"
+        );
     }
 
     #[test]
@@ -2361,7 +2402,11 @@ mod tests {
             (settings.theme, settings.accent),
             (Theme::System, Accent::Cyan)
         );
-        assert!(!settings.notify_on_complete, "nothing else changes");
+        assert_eq!(
+            settings.finish_notice,
+            FinishNotice::Window,
+            "nothing else changes"
+        );
     }
 
     #[tokio::test]
@@ -2376,6 +2421,76 @@ mod tests {
         drop(store);
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.settings, Some(settings));
+    }
+
+    /// A database just before D52, with the notification switch stored as `notify`.
+    fn database_before_finish_notices(dir: &Path, notify: bool) {
+        let before = MIGRATIONS.len() - 1;
+        database_with_settings(dir, before, true);
+        let conn = Connection::open(dir.join(DATABASE_FILE)).unwrap();
+        let mut stored = stored_defaults();
+        let fields = stored.as_object_mut().unwrap();
+        fields.remove("finish_notice");
+        fields.insert("notify_on_complete".into(), notify.into());
+        conn.execute(
+            "UPDATE settings SET value = ?2 WHERE key = ?1",
+            params![SETTINGS_KEY, stored.to_string()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO queues (id, position, name, max_concurrent, is_default, paused,
+                                 running_outside_schedule)
+             VALUES (1, 0, 'Main', 3, 1, 0, 0)",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn the_notification_switch_becomes_how_finished_downloads_are_told() {
+        for (notify, told) in [
+            (true, FinishNotice::Notification),
+            (false, FinishNotice::Nothing),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            database_before_finish_notices(dir.path(), notify);
+            let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+            let settings = snapshot.settings.expect("the settings survive");
+            assert_eq!(settings.finish_notice, told, "switch {notify}");
+            assert_eq!(snapshot.queues[0].notify, QueueNotify::EachDownload);
+            let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+            let stored: String = conn
+                .query_row(
+                    "SELECT value FROM settings WHERE key = ?1",
+                    [SETTINGS_KEY],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(!stored.contains("notify_on_complete"), "{stored}");
+        }
+    }
+
+    #[tokio::test]
+    async fn when_a_queue_tells_and_its_batch_are_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(snapshot.batches, Vec::new());
+        let mut queue = crate::settings::default_queue();
+        queue.notify = QueueNotify::WhenDone;
+        store.save_queues(vec![queue.clone()]);
+        let batches = vec![StoredBatch {
+            queue: queue.id,
+            outcomes: crate::batches::Outcomes {
+                completed: vec![DownloadId(3), DownloadId(1)],
+                failed: vec![DownloadId(2)],
+            },
+        }];
+        store.save_batches(batches.clone());
+        store.flush().await;
+        drop(store);
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(snapshot.queues, vec![queue]);
+        assert_eq!(snapshot.batches, batches);
     }
 
     #[test]

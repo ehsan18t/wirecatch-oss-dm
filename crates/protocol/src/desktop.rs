@@ -33,12 +33,25 @@ crate::exported::exported_consts! {
     /// The Tauri event, sent to every window, that carries the [`SystemAppearance`] after the
     /// system changed it.
     pub const SYSTEM_APPEARANCE_EVENT: &str = "wirecatch://system-appearance";
+    /// The Tauri event, sent to the main window, that carries a [`Reveal`]: the person clicked a
+    /// notification about these downloads (D52).
+    pub const REVEAL_EVENT: &str = "wirecatch://reveal";
+    /// The Tauri event, sent to the download complete window, that carries its [`FinishedList`]
+    /// after it changed (D52).
+    pub const FINISHED_EVENT: &str = "wirecatch://finished";
+    /// The most downloads one [`FinishedGroup`] lists; a queue's summary counts the rest.
+    pub const MAX_FINISHED_LISTED: usize = 100;
+    /// The most groups the download complete window keeps; the oldest go first.
+    pub const MAX_FINISHED_GROUPS: usize = 20;
     /// The page a download window shows, relative to the app's address.
     pub const DOWNLOAD_WINDOW_PAGE: &str = "download.html";
     /// The query parameter of [`DOWNLOAD_WINDOW_PAGE`] naming the question a window asks.
     pub const QUESTION_PARAMETER: &str = "question";
     /// The query parameter of [`DOWNLOAD_WINDOW_PAGE`] naming the download a window shows.
     pub const DOWNLOAD_PARAMETER: &str = "download";
+    /// The query parameter of [`DOWNLOAD_WINDOW_PAGE`] that makes it the download complete
+    /// window (D52).
+    pub const FINISHED_PARAMETER: &str = "finished";
     /// File types that open directly, without asking first: common video, audio, image, document
     /// and archive types that do not run code when opened. Every other type, and a file with no
     /// extension, could run code (programs, installers, scripts, shortcuts, disk images, Office
@@ -111,6 +124,54 @@ pub struct SystemAppearance {
     /// The system's accent colour as `#rrggbb`, when it has one (Windows); `null` elsewhere,
     /// where the system accent falls back to Wirecatch's cyan.
     pub accent: Option<String>,
+}
+
+/// Downloads the main window selects and scrolls to, because the person clicked a notification
+/// about them (D52).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Reveal {
+    /// The queue they finished in, for a queue's summary: the list shows that queue. `None`
+    /// shows every download.
+    pub queue: Option<QueueId>,
+    /// The downloads, the one to scroll to first.
+    pub ids: Vec<DownloadId>,
+}
+
+/// What the download complete window shows: what finished or failed since it opened, the
+/// newest group first (D52).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FinishedList {
+    /// The groups, newest first.
+    pub groups: Vec<FinishedGroup>,
+}
+
+/// Downloads that finished or failed one by one, or a queue's summary once it was done.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FinishedGroup {
+    /// Identifies the group while the window is open, for keyed lists.
+    pub key: u32,
+    /// The queue whose summary this is; `None` for downloads told one by one.
+    pub queue: Option<FinishedQueue>,
+    /// The downloads as they were when they ended, newest first, at most
+    /// [`MAX_FINISHED_LISTED`]; the window follows their later changes from the core's events.
+    pub downloads: Vec<DownloadSummary>,
+}
+
+/// The queue a [`FinishedGroup`] sums up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FinishedQueue {
+    /// The queue.
+    pub id: QueueId,
+    /// Its name when it finished.
+    pub name: String,
+    /// How many of its downloads finished, listed or not.
+    pub completed: u32,
+    /// How many failed, listed or not.
+    pub failed: u32,
 }
 
 /// A command's name, as the interface invokes it.
@@ -452,6 +513,12 @@ commands! {
     show_set_aside_list -> ();
     /// Browser downloads that started without a window of their own while the main window's page was not listening yet (it was opening or loading), for their notes; handed over once. From then on they arrive as `Captured` events (D36.7).
     take_captured -> Vec<DownloadSummary>;
+    /// What the download complete window shows; later changes arrive on `FINISHED_EVENT`. Only
+    /// that window may call it.
+    finished_list -> FinishedList;
+    /// Downloads a notification the person clicked was about, while the main window's page was
+    /// not listening yet; handed over once. From then on they arrive on `REVEAL_EVENT`.
+    take_reveal -> Option<Reveal>;
     /// Logs that a window could not read an event the app sent it, and reloads everything instead; sent once per kind of event, so a mismatch between the two sides is found in the log rather than in a window showing wrong numbers.
     report_unreadable_event: ReportUnreadableEventArgs {
         /// The event's `type`, or `None` when it has none a window can read.

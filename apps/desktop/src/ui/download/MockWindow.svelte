@@ -1,5 +1,5 @@
 <script lang="ts">
-  // One of the sample app's download windows, floating in the page at its place in the cascade, as wide as a real one and as tall as its content, up to the most a real one takes and within the page.
+  // One of the sample app's download windows, floating in the page at its place in the cascade, as wide as a real one and as tall as its content, up to the most a real one takes and within the page. The download complete window (D52) sits at the page's bottom right instead, as the real one sits at the screen's.
   import { PRODUCT_NAME } from '@wirecatch/product';
   import {
     DOWNLOAD_WINDOW_CASCADE_STEP,
@@ -12,8 +12,10 @@
   import { cn } from '@wirecatch/ui';
   import type { OpenWindow } from '$lib/sample-windows';
   import type { OpenDownloadWindow } from '$lib/window/download-window.svelte';
+  import { FinishedWindowState, type OpenFinishedWindow } from '$lib/window/finished-window.svelte';
   import { setFitWindow } from '$lib/window/fit';
   import DownloadWindow from './DownloadWindow.svelte';
+  import FinishedWindow from './FinishedWindow.svelte';
 
   /** Where the first sample window sits, down and right of the page's top left corner, in CSS pixels. */
   const CASCADE_ORIGIN = 48;
@@ -24,6 +26,7 @@
 
   interface Props {
     openWindow: OpenDownloadWindow;
+    openFinished: OpenFinishedWindow;
     window: OpenWindow;
     front: boolean;
     onfocus: () => void;
@@ -31,17 +34,27 @@
     onbecame: (id: DownloadId) => void;
   }
 
-  let { openWindow, window: open, front, onfocus, onclose, onbecame }: Props = $props();
+  let {
+    openWindow,
+    openFinished,
+    window: open,
+    front,
+    onfocus,
+    onclose,
+    onbecame,
+  }: Props = $props();
 
   const offset = $derived(CASCADE_ORIGIN + open.slot * DOWNLOAD_WINDOW_CASCADE_STEP);
   // Made once for the window's life; what it shows comes from the registry only at the start.
   const win = (() => {
     const shows = open.shows;
+    if (shows.kind === 'finished') return openFinished({ close: () => onclose() });
     return openWindow(shows.kind === 'question' ? { question: shows.id } : { download: shows.id }, {
       close: () => onclose(),
       becameDownload: (id) => onbecame(id),
     });
   })();
+  const corner = (() => open.shows.kind === 'finished')();
 
   let pageWidth = $state(0);
   let pageHeight = $state(0);
@@ -49,9 +62,12 @@
   let wanted = $state<number | null>(null);
   setFitWindow((height) => (wanted = height));
 
-  const width = $derived(Math.min(DOWNLOAD_WINDOW_WIDTH, pageWidth - offset - EDGE - FRAME));
+  const width = $derived(
+    Math.min(DOWNLOAD_WINDOW_WIDTH, pageWidth - (corner ? EDGE : offset) - EDGE - FRAME),
+  );
   const height = $derived.by(() => {
-    const room = Math.min(pageHeight - offset - EDGE - FRAME, DOWNLOAD_WINDOW_MAX_HEIGHT);
+    const top = corner ? EDGE : offset;
+    const room = Math.min(pageHeight - top - EDGE - FRAME, DOWNLOAD_WINDOW_MAX_HEIGHT);
     return Math.min(room, Math.max(DOWNLOAD_WINDOW_MIN_HEIGHT, wanted ?? room));
   });
 
@@ -72,12 +88,18 @@
     'fixed box-content flex flex-col overflow-hidden rounded-lg border border-line-strong bg-base shadow-dialog',
     front ? 'z-window-front' : 'z-window',
   )}
-  style:left="{offset}px"
-  style:top="{offset}px"
+  style:left={corner ? undefined : `${String(offset)}px`}
+  style:top={corner ? undefined : `${String(offset)}px`}
+  style:right={corner ? `${String(EDGE)}px` : undefined}
+  style:bottom={corner ? `${String(EDGE)}px` : undefined}
   style:width="{width}px"
   style:height="{height}px"
   onpointerdown={onfocus}
   onfocusin={onfocus}
 >
-  <DownloadWindow {win} />
+  {#if win instanceof FinishedWindowState}
+    <FinishedWindow {win} />
+  {:else}
+    <DownloadWindow {win} />
+  {/if}
 </section>

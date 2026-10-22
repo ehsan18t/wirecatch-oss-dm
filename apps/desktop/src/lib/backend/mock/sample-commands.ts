@@ -1,6 +1,7 @@
 // The palette actions of the sample data: each pretends the browser or another window did something.
 
 import type { SampleData } from '../types';
+import type { MockFinished } from './finished';
 
 /** What the mock can pretend happened. */
 export interface Scenarios {
@@ -12,7 +13,7 @@ export interface Scenarios {
   simulateSlowReading(): void;
 }
 
-export function sampleCommands(mock: Scenarios): SampleData['commands'] {
+export function sampleCommands(mock: Scenarios, finished: MockFinished): SampleData['commands'] {
   return [
     {
       id: 'mock.capture',
@@ -49,6 +50,18 @@ export function sampleCommands(mock: Scenarios): SampleData['commands'] {
       title: 'Pretend the browser sent a video page that takes a while to read',
       keywords: 'simulate reading analysing page media',
       run: () => mock.simulateSlowReading(),
+    },
+    {
+      id: 'mock.finished',
+      title: 'Pretend a download finished, told in the download complete window',
+      keywords: 'simulate finished complete window done notify',
+      run: () => finished.sampleOne(),
+    },
+    {
+      id: 'mock.queue-finished',
+      title: 'Pretend a queue is done, told in the download complete window',
+      keywords: 'simulate queue finished complete window done summary notify',
+      run: () => finished.sampleQueueRun(),
     },
   ];
 }

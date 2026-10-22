@@ -1,4 +1,5 @@
-//! What the tray needs to know about downloads: how many run, how fast, and which just finished.
+//! What the tray and the notices need to know about downloads: how many run, how fast, and
+//! which just finished or failed.
 //! Kept up to date from the core's events, so nothing is polled.
 
 use std::collections::HashMap;
@@ -19,13 +20,13 @@ pub struct Activity {
     rows: HashMap<DownloadId, Row>,
 }
 
-/// A download that just finished.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Finished {
-    /// The download.
-    pub id: DownloadId,
-    /// Its file name, for the notification.
-    pub file_name: String,
+/// Downloads that just finished or failed, as their rows were then.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Ended {
+    /// Those that finished.
+    pub completed: Vec<DownloadSummary>,
+    /// Those that failed.
+    pub failed: Vec<DownloadSummary>,
 }
 
 fn is_active(status: DownloadStatus) -> bool {
@@ -53,9 +54,10 @@ impl Activity {
             .collect();
     }
 
-    /// Applies one core event and returns the downloads it finished.
-    pub fn apply(&mut self, event: &UiEvent) -> Vec<Finished> {
-        let mut finished = Vec::new();
+    /// Applies one core event and returns the downloads it finished or failed. A row seen for
+    /// the first time already ended (a tiny file) counts too.
+    pub fn apply(&mut self, event: &UiEvent) -> Ended {
+        let mut ended = Ended::default();
         match event {
             UiEvent::DownloadsChanged(rows) => {
                 for r in rows {
@@ -66,12 +68,13 @@ impl Activity {
                             speed: r.speed,
                         },
                     );
-                    let was_done = before.is_some_and(|b| b.status == DownloadStatus::Completed);
-                    if r.status == DownloadStatus::Completed && !was_done {
-                        finished.push(Finished {
-                            id: r.id,
-                            file_name: r.file_name.clone(),
-                        });
+                    if before.is_some_and(|b| b.status == r.status) {
+                        continue;
+                    }
+                    match r.status {
+                        DownloadStatus::Completed => ended.completed.push(r.clone()),
+                        DownloadStatus::Failed => ended.failed.push(r.clone()),
+                        _ => {}
                     }
                 }
             }
@@ -82,7 +85,7 @@ impl Activity {
             }
             _ => {}
         }
-        finished
+        ended
     }
 
     /// Downloads moving bytes (or being joined) right now.
@@ -172,23 +175,6 @@ pub fn tooltip(active: usize, speed: u64) -> String {
     }
 }
 
-/// Title and body of the notification for downloads that finished close together.
-#[must_use]
-pub fn notification_text(finished: &[Finished]) -> Option<(String, String)> {
-    match finished {
-        [] => None,
-        [one] => Some(("Download finished".to_owned(), one.file_name.clone())),
-        [first, second] => Some((
-            "2 downloads finished".to_owned(),
-            format!("{} and {}", first.file_name, second.file_name),
-        )),
-        [first, rest @ ..] => Some((
-            format!("{} downloads finished", finished.len()),
-            format!("{} and {} more", first.file_name, rest.len()),
-        )),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,11 +232,14 @@ mod tests {
             row(1, DownloadStatus::Downloading, 10),
             row(2, DownloadStatus::Completed, 0),
         ]);
-        let done = a.apply(&UiEvent::DownloadsChanged(vec![
+        let ended = a.apply(&UiEvent::DownloadsChanged(vec![
             row(1, DownloadStatus::Completed, 0),
             row(2, DownloadStatus::Completed, 0),
         ]));
-        assert_eq!(done.iter().map(|f| f.id.0).collect::<Vec<_>>(), [1]);
+        assert_eq!(
+            ended.completed.iter().map(|r| r.id.0).collect::<Vec<_>>(),
+            [1]
+        );
         // The same row again is not news.
         assert_eq!(
             a.apply(&UiEvent::DownloadsChanged(vec![row(
@@ -258,15 +247,38 @@ mod tests {
                 DownloadStatus::Completed,
                 0
             )])),
-            []
+            Ended::default()
         );
         // A row seen for the first time already finished (a tiny file) is news.
-        let done = a.apply(&UiEvent::DownloadsChanged(vec![row(
+        let ended = a.apply(&UiEvent::DownloadsChanged(vec![row(
             9,
             DownloadStatus::Completed,
             0,
         )]));
-        assert_eq!(done.len(), 1);
+        assert_eq!(ended.completed.len(), 1);
+    }
+
+    #[test]
+    fn reports_each_failure_once_and_again_after_a_retry() {
+        let mut a = Activity::default();
+        a.load(&[row(1, DownloadStatus::Downloading, 10)]);
+        let failed = |a: &mut Activity| {
+            a.apply(&UiEvent::DownloadsChanged(vec![row(
+                1,
+                DownloadStatus::Failed,
+                0,
+            )]))
+            .failed
+            .len()
+        };
+        assert_eq!(failed(&mut a), 1);
+        assert_eq!(failed(&mut a), 0, "the same failure again is not news");
+        a.apply(&UiEvent::DownloadsChanged(vec![row(
+            1,
+            DownloadStatus::Queued,
+            0,
+        )]));
+        assert_eq!(failed(&mut a), 1);
     }
 
     #[test]
@@ -302,26 +314,5 @@ mod tests {
         }
         // Beyond what a JavaScript number holds exactly, so not a shared case.
         assert_eq!(format_bytes(u64::MAX), "16777216 TB");
-    }
-
-    #[test]
-    fn several_finished_downloads_make_one_notification() {
-        let f = |n: i64| Finished {
-            id: DownloadId(n),
-            file_name: format!("f{n}.zip"),
-        };
-        assert_eq!(notification_text(&[]), None);
-        assert_eq!(
-            notification_text(&[f(1)]),
-            Some(("Download finished".into(), "f1.zip".into()))
-        );
-        assert_eq!(
-            notification_text(&[f(1), f(2)]),
-            Some(("2 downloads finished".into(), "f1.zip and f2.zip".into()))
-        );
-        assert_eq!(
-            notification_text(&[f(1), f(2), f(3), f(4)]),
-            Some(("4 downloads finished".into(), "f1.zip and 3 more".into()))
-        );
     }
 }

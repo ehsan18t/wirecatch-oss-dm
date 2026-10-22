@@ -103,7 +103,7 @@ export function defaultSettings(): AppSettings {
     accent: 'cyan',
     start_with_system: true,
     close_to_tray: true,
-    notify_on_complete: true,
+    finish_notice: 'notification',
     auto_update_addons: true,
     show_progress_windows: true,
     media: {
@@ -140,6 +140,7 @@ const DEFAULT_QUEUES: readonly Queue[] = [
     is_default: true,
     paused: false,
     running_outside_schedule: false,
+    notify: 'each_download',
   },
   {
     id: OVERNIGHT_QUEUE_ID,
@@ -150,6 +151,7 @@ const DEFAULT_QUEUES: readonly Queue[] = [
     is_default: false,
     paused: false,
     running_outside_schedule: false,
+    notify: 'when_done',
   },
   {
     id: WORK_QUEUE_ID,
@@ -160,6 +162,7 @@ const DEFAULT_QUEUES: readonly Queue[] = [
     is_default: false,
     paused: false,
     running_outside_schedule: false,
+    notify: 'each_download',
   },
 ];
 

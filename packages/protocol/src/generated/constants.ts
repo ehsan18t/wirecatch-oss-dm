@@ -5,6 +5,7 @@ import type { Call } from './Call';
 import type { ErrorCode } from './ErrorCode';
 import type { Event } from './Event';
 import type { ExtensionSettings } from './ExtensionSettings';
+import type { FixAction } from './FixAction';
 import type { OutputFormat } from './OutputFormat';
 import type { QueueId } from './QueueId';
 import type { Theme } from './Theme';
@@ -126,6 +127,13 @@ export const DOWNLOAD_WINDOW_MAX_HEIGHT = 680;
 export const THEMES: readonly Theme[] = ['system', 'light', 'dark'];
 
 /**
+ * The fixes that trying the download again can carry out, so a notification and the
+ * download complete window offer Try again for them (D52). The others need the person's
+ * answer first: a fresh link, another folder, or keeping the original.
+ */
+export const RETRY_FIXES: readonly FixAction[] = ['retry', 'free_disk_space'];
+
+/**
  * Every [`Accent`], in the order settings offer them. The design system in `packages/ui`
  * reads this list and defines a palette for each of these but `system`; its tests fail on
  * an accent without one.
@@ -172,6 +180,28 @@ export const WINDOW_FRAME_EVENT = 'wirecatch://window-frame';
 export const SYSTEM_APPEARANCE_EVENT = 'wirecatch://system-appearance';
 
 /**
+ * The Tauri event, sent to the main window, that carries a [`Reveal`]: the person clicked a
+ * notification about these downloads (D52).
+ */
+export const REVEAL_EVENT = 'wirecatch://reveal';
+
+/**
+ * The Tauri event, sent to the download complete window, that carries its [`FinishedList`]
+ * after it changed (D52).
+ */
+export const FINISHED_EVENT = 'wirecatch://finished';
+
+/**
+ * The most downloads one [`FinishedGroup`] lists; a queue's summary counts the rest.
+ */
+export const MAX_FINISHED_LISTED = 100;
+
+/**
+ * The most groups the download complete window keeps; the oldest go first.
+ */
+export const MAX_FINISHED_GROUPS = 20;
+
+/**
  * The page a download window shows, relative to the app's address.
  */
 export const DOWNLOAD_WINDOW_PAGE = 'download.html';
@@ -185,6 +215,12 @@ export const QUESTION_PARAMETER = 'question';
  * The query parameter of [`DOWNLOAD_WINDOW_PAGE`] naming the download a window shows.
  */
 export const DOWNLOAD_PARAMETER = 'download';
+
+/**
+ * The query parameter of [`DOWNLOAD_WINDOW_PAGE`] that makes it the download complete
+ * window (D52).
+ */
+export const FINISHED_PARAMETER = 'finished';
 
 /**
  * File types that open directly, without asking first: common video, audio, image, document

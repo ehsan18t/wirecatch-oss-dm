@@ -1,7 +1,7 @@
 //! Creating, editing and deleting queues.
 
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{NEW_QUEUE_MAX_CONCURRENT, Queue, UiEvent};
+use wirecatch_protocol::app::{NEW_QUEUE_MAX_CONCURRENT, Queue, QueueNotify, UiEvent};
 use wirecatch_protocol::wire::{Event, QueueSummary};
 
 use super::Manager;
@@ -40,6 +40,7 @@ impl Manager {
             is_default: false,
             paused: false,
             running_outside_schedule: false,
+            notify: QueueNotify::EachDownload,
         })?;
         ensure_name_free(&state, &queue.name, None)?;
         let queue = Queue {
@@ -123,6 +124,7 @@ impl Manager {
             return Err(CoreError::DefaultQueue);
         }
         state.queues.retain(|s| s.queue.id != id);
+        state.batches.forget_queue(id);
         let fallback = state.default_queue();
         let moved: Vec<_> = state
             .downloads

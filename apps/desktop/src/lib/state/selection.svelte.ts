@@ -92,6 +92,16 @@ export class Selection {
     for (const id of this.#host.visible()) this.ids.add(id);
   }
 
+  /** Selects exactly `ids`, the first as the keyboard row: downloads shown from outside the list, such as a notification's. */
+  select(ids: readonly DownloadId[]): void {
+    this.ids.clear();
+    for (const id of ids) this.ids.add(id);
+    const first = ids[0] ?? null;
+    this.#anchor = first;
+    this.active = first;
+    this.picked = ids.length > 1;
+  }
+
   clear(): void {
     this.picked = false;
     this.ids.clear();

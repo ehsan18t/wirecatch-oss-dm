@@ -1,6 +1,6 @@
 //! The desktop shell on Tauri's mock runtime: the tray's Quit, quitting before the download
-//! list opened, forwarding core events (and what happens with no window), start-at-sign-in and
-//! completion notifications.
+//! list opened, forwarding core events (and what happens with no window), start-at-sign-in, and
+//! how finished and failed downloads are told (D52).
 
 mod common;
 
@@ -13,18 +13,23 @@ use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
 use tauri::utils::config::WindowConfig;
 use tauri::{App, Listener as _, Manager as _};
 use tokio::sync::broadcast;
-use wirecatch_desktop_lib::activity::Finished;
+use wirecatch_desktop_lib::activity::Ended;
 use wirecatch_desktop_lib::api;
 use wirecatch_desktop_lib::autostart::{Action, EntryState};
 use wirecatch_desktop_lib::background::{
-    Launcher, ShownNotifications, apply_autostart, forward, notify,
+    Launcher, NOTIFY_BATCH, Tell, Teller, apply_autostart, forward, tell,
 };
-use wirecatch_desktop_lib::download_windows::DownloadWindows;
+use wirecatch_desktop_lib::download_windows::{DownloadWindows, Shows, may_act_on};
+use wirecatch_desktop_lib::finished_window::{self, FinishedWindow};
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::Lifecycle;
+use wirecatch_desktop_lib::system_notices::ShownNotices;
 use wirecatch_desktop_lib::window::MAIN_WINDOW;
 use wirecatch_desktop_lib::{RESYNC_EVENT, UI_EVENT, tray};
-use wirecatch_protocol::app::{Category, PendingCapture, UiEvent, UserError};
+use wirecatch_protocol::app::{
+    Category, DownloadStatus, DownloadSummary, FinishNotice, PendingCapture, Queue, QueueNotify,
+    QueueReport, UiEvent, UserError,
+};
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use wirecatch_test_support::{PATIENCE, TestResult};
 
@@ -39,7 +44,8 @@ fn app_with(core: Option<Core>) -> TestResult<App<MockRuntime>> {
     let mut builder = mock_builder()
         .manage(Lifecycle::default())
         .manage(DownloadWindows::default())
-        .manage(ShownNotifications::default());
+        .manage(FinishedWindow::default())
+        .manage(ShownNotices::default());
     if let Some(core) = core {
         builder = builder.manage(core);
     }
@@ -141,17 +147,12 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResul
         }))
         .unwrap();
     wait_until("the notification", || {
-        !handle
-            .state::<ShownNotifications>()
-            .0
-            .lock()
-            .unwrap()
-            .is_empty()
+        !handle.state::<ShownNotices>().0.lock().unwrap().is_empty()
     });
     assert!(handle.get_webview_window(MAIN_WINDOW).is_none());
-    let (title, body) = handle.state::<ShownNotifications>().0.lock().unwrap()[0].clone();
-    assert!(title.contains("could not save"));
-    assert_eq!(body, "The disk is full.");
+    let notice = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
+    assert!(notice.title.contains("could not save"));
+    assert_eq!(notice.body, "The disk is full.");
 
     // A question opens its own download window (D23), not the main window.
     sender
@@ -178,10 +179,7 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResul
         .send(UiEvent::ConfirmationClosed { id: QuestionId(1) })
         .unwrap();
     wait_until("the events to be handled", || closed.load(Ordering::SeqCst));
-    assert_eq!(
-        handle.state::<ShownNotifications>().0.lock().unwrap().len(),
-        1
-    );
+    assert_eq!(handle.state::<ShownNotices>().0.lock().unwrap().len(), 1);
     assert_eq!(handle.state::<DownloadWindows>().snapshot().len(), 1);
     task.abort();
     Ok(())
@@ -313,30 +311,185 @@ fn start_at_sign_in_follows_the_setting_and_choices_made_elsewhere() -> TestResu
     })
 }
 
+fn ended_row(id: i64, queue: i64, status: DownloadStatus) -> DownloadSummary {
+    DownloadSummary {
+        id: DownloadId(id),
+        url: format!("https://example.com/file-{id}.zip"),
+        file_name: format!("file-{id}.zip"),
+        path: format!("C:/Downloads/file-{id}.zip"),
+        queue: QueueId(queue),
+        category: Category::Archive,
+        status,
+        total: Some(100),
+        done: 100,
+        speed: 0,
+        connections: 0,
+        eta_secs: None,
+        error: None,
+        waiting: None,
+        media: None,
+        added_at: 0,
+        completed_at: None,
+        processing: None,
+    }
+}
+
+fn queue_telling(id: i64, notify: QueueNotify) -> Queue {
+    Queue {
+        id: QueueId(id),
+        name: format!("Queue {id}"),
+        max_concurrent: 1,
+        speed_limit: None,
+        schedule: None,
+        is_default: id == 1,
+        paused: false,
+        running_outside_schedule: false,
+        notify,
+    }
+}
+
+fn titles(handle: &tauri::AppHandle<MockRuntime>) -> Vec<String> {
+    handle
+        .state::<ShownNotices>()
+        .0
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .map(|n| n.title.clone())
+        .collect()
+}
+
 #[test]
 fn downloads_finishing_together_share_one_notification() -> TestResult {
     let app = app_with(None)?;
     let handle = app.handle().clone();
-    let finished: Vec<Finished> = (1..=3)
-        .map(|n| Finished {
-            id: DownloadId(n),
-            file_name: format!("file-{n}.zip"),
-        })
-        .collect();
-    notify(&handle, &finished);
-    notify(&handle, &[]);
-    let shown = handle
-        .state::<ShownNotifications>()
-        .0
-        .lock()
-        .unwrap()
-        .clone();
-    assert_eq!(
-        shown,
-        [(
-            "3 downloads finished".to_string(),
-            "file-1.zip and 2 more".to_string()
-        )]
+    let mut teller = Teller::default();
+    teller.queues(&[queue_telling(1, QueueNotify::EachDownload)]);
+    let start = tokio::time::Instant::now();
+    teller.ended(
+        Ended {
+            completed: (1..=3)
+                .map(|n| ended_row(n, 1, DownloadStatus::Completed))
+                .collect(),
+            failed: Vec::new(),
+        },
+        start,
     );
+    assert_eq!(teller.due(), Some(start + NOTIFY_BATCH));
+    assert!(teller.take_due(start).is_empty(), "not due yet");
+    for due in teller.take_due(start + NOTIFY_BATCH) {
+        tell(&handle, FinishNotice::Notification, &due);
+    }
+    assert_eq!(titles(&handle), ["3 downloads finished"]);
+    assert_eq!(teller.due(), None);
+    Ok(())
+}
+
+#[test]
+fn a_queue_that_tells_once_done_waits_for_its_report_but_failures_are_told_at_once() -> TestResult {
+    let app = app_with(None)?;
+    let handle = app.handle().clone();
+    let mut teller = Teller::default();
+    teller.queues(&[queue_telling(2, QueueNotify::WhenDone)]);
+    let start = tokio::time::Instant::now();
+    teller.ended(
+        Ended {
+            completed: vec![ended_row(1, 2, DownloadStatus::Completed)],
+            failed: vec![ended_row(2, 2, DownloadStatus::Failed)],
+        },
+        start,
+    );
+    let due = teller.take_due(start + NOTIFY_BATCH);
+    assert!(
+        matches!(due.as_slice(), [Tell::Failed(rows)] if rows.len() == 1),
+        "{due:?}"
+    );
+    for due in &due {
+        tell(&handle, FinishNotice::Notification, due);
+    }
+    let report = QueueReport {
+        queue: QueueId(2),
+        name: "Night".into(),
+        completed: vec![
+            ended_row(1, 2, DownloadStatus::Completed),
+            ended_row(3, 2, DownloadStatus::Completed),
+        ],
+        failed: vec![ended_row(2, 2, DownloadStatus::Failed)],
+    };
+    let told = teller
+        .queue_finished(&report)
+        .ok_or("the queue's report was not told")?;
+    tell(&handle, FinishNotice::Notification, &told);
+    assert_eq!(
+        titles(&handle),
+        [
+            "Download failed",
+            "Night: 2 downloads finished and 1 failed"
+        ]
+    );
+
+    // A queue telling each download says nothing more once it is done.
+    teller.queues(&[queue_telling(2, QueueNotify::EachDownload)]);
+    assert_eq!(teller.queue_finished(&report), None);
+    Ok(())
+}
+
+#[test]
+fn the_complete_window_lists_what_ended_and_acts_only_on_that() -> TestResult {
+    let app = app_with(None)?;
+    let handle = app.handle().clone();
+    tell(
+        &handle,
+        FinishNotice::Nothing,
+        &Tell::Finished(vec![ended_row(9, 1, DownloadStatus::Completed)]),
+    );
+    assert_eq!(titles(&handle), Vec::<String>::new());
+    assert!(
+        handle.state::<FinishedWindow>().list().groups.is_empty(),
+        "nothing means nothing"
+    );
+
+    tell(
+        &handle,
+        FinishNotice::Window,
+        &Tell::Finished(vec![
+            ended_row(1, 1, DownloadStatus::Completed),
+            ended_row(2, 1, DownloadStatus::Completed),
+        ]),
+    );
+    wait_until("the download complete window to open", || {
+        handle.get_webview_window(finished_window::LABEL).is_some()
+    });
+    assert!(
+        titles(&handle).is_empty(),
+        "the window instead of a notification"
+    );
+    let listed: Vec<_> = handle.state::<FinishedWindow>().list().groups[0]
+        .downloads
+        .iter()
+        .map(|d| d.id.0)
+        .collect();
+    assert_eq!(listed, [2, 1]);
+    assert!(may_act_on(
+        &handle,
+        finished_window::LABEL,
+        Shows::Download(DownloadId(1))
+    ));
+    assert!(!may_act_on(
+        &handle,
+        finished_window::LABEL,
+        Shows::Download(DownloadId(9))
+    ));
+    assert!(
+        !may_act_on(&handle, "download-d1", Shows::Download(DownloadId(1))),
+        "another download window"
+    );
+
+    finished_window::gone(&handle, finished_window::LABEL);
+    assert!(!may_act_on(
+        &handle,
+        finished_window::LABEL,
+        Shows::Download(DownloadId(1))
+    ));
     Ok(())
 }

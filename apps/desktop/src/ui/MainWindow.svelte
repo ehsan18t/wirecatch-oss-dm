@@ -84,7 +84,11 @@
 {#if (import.meta.env.DEV || import.meta.env.MODE === 'mock') && app.sample}
   {@const sample = app.sample}
   {#await import('./download/MockWindows.svelte') then { default: MockWindows }}
-    <MockWindows registry={sample.windows} openWindow={app.openSampleWindow} />
+    <MockWindows
+      registry={sample.windows}
+      openWindow={app.sampleWindows.openWindow}
+      openFinished={app.sampleWindows.openFinished}
+    />
   {/await}
 {/if}
 <CommandPalette />

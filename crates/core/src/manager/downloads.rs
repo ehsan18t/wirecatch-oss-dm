@@ -284,6 +284,8 @@ impl Manager {
             }
             self.inner.store.delete_downloads(removed.clone());
             self.emit(UiEvent::DownloadsRemoved(removed));
+            // Their queue may be done now; the ticker says so.
+            self.inner.rows_changed.notify_one();
             self.reconcile(&mut state);
         }
         self.blocking(move || {

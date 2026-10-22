@@ -3,7 +3,6 @@
 //! finds the manager and calls the matching function in [`crate::api`].
 
 use tauri::{AppHandle, Manager as _, Runtime, State, WebviewWindow};
-use tauri_plugin_dialog::{DialogExt as _, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt as _;
 use wirecatch_core::LinkFrom;
 use wirecatch_protocol::desktop::commands as contract;
@@ -18,8 +17,9 @@ use wirecatch_protocol::desktop::{
     ShowProgressWindowArgs, StartQueueNowArgs, SystemAppearance, UpdateAddonArgs, UpdateQueueArgs,
 };
 
-use crate::api::{self, CommandResult, ProgramWarning, Reveal, ToOpen, WarningsShown};
+use crate::api::{self, CommandResult};
 use crate::download_windows::{self, Shows};
+use crate::files;
 use crate::host::Core;
 use crate::window::LaunchLinks;
 
@@ -236,7 +236,10 @@ pub async fn change_settings<R: Runtime>(
     args: contract::change_settings::Args,
 ) -> CommandResult<contract::change_settings::Output> {
     let ChangeSettingsArgs { patch } = args;
-    if download_windows::is_download_window(window.label()) && !download_windows::may_change(&patch)
+    let label = window.label();
+    if download_windows::is_download_window(label)
+        && !download_windows::may_change(&patch)
+        && !crate::finished_window::may_change(label, &patch)
     {
         return Err(api::refused(download_windows::NOT_ITS_SETTING));
     }
@@ -306,83 +309,28 @@ pub async fn reject_capture<R: Runtime>(
 pub async fn open_file<R: Runtime>(
     window: WebviewWindow<R>,
     core: CoreState<'_>,
-    warnings: State<'_, WarningsShown>,
     args: contract::open_file::Args,
 ) -> CommandResult<contract::open_file::Output> {
     let OpenFileArgs { id } = args;
     its_own(&window, Shows::Download(id))?;
-    let Some(_showing) = warnings.show(id) else {
-        return Ok(());
-    };
-    let path = match api::file_to_open(core.manager().await?, id)? {
-        ToOpen::File(path) => path,
-        ToOpen::Program { path, warning } => {
-            if !agrees_to_open(&window, warning).await {
-                return Ok(());
-            }
-            path
-        }
-    };
-    window
-        .opener()
-        .open_path(path.to_string_lossy(), None::<&str>)
-        .map_err(|e| {
-            api::failed(format!(
-                "Could not open {} ({e}). Try opening it from its folder.",
-                path.display()
-            ))
-        })
-}
-
-/// Shows `warning` in the system's own dialog over `window`, and says whether the person chose
-/// Open. The dialog belongs to the shell, so a script in the page cannot answer it.
-async fn agrees_to_open<R: Runtime>(window: &WebviewWindow<R>, warning: ProgramWarning) -> bool {
-    let (answer, answered) = tokio::sync::oneshot::channel();
-    window
-        .dialog()
-        .message(warning.message)
-        .title(warning.title)
-        .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "Open".to_owned(),
-            "Cancel".to_owned(),
-        ))
-        .parent(window)
-        .show(move |open| {
-            if answer.send(open).is_err() {
-                tracing::debug!("the warning was answered after its command stopped waiting");
-            }
-        });
-    answered.await.unwrap_or(false)
+    files::open_download(
+        window.app_handle(),
+        core.manager().await?,
+        id,
+        Some(&window),
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn open_folder<R: Runtime>(
     window: WebviewWindow<R>,
-    app: AppHandle<R>,
     core: CoreState<'_>,
     args: contract::open_folder::Args,
 ) -> CommandResult<contract::open_folder::Output> {
     let OpenFolderArgs { id } = args;
     its_own(&window, Shows::Download(id))?;
-    let opener = app.opener();
-    match api::item_to_reveal(core.manager().await?, id)? {
-        Reveal::File(path) => opener.reveal_item_in_dir(&path).map_err(|e| {
-            api::failed(format!(
-                "Could not show {} in its folder ({e}). Open the folder yourself: {}",
-                path.display(),
-                path.parent().unwrap_or(&path).display()
-            ))
-        }),
-        Reveal::Folder(folder) => opener
-            .open_path(folder.to_string_lossy(), None::<&str>)
-            .map_err(|e| {
-                api::failed(format!(
-                    "Could not open the folder {} ({e}). Open it yourself.",
-                    folder.display()
-                ))
-            }),
-    }
+    files::show_in_folder(window.app_handle(), core.manager().await?, id)
 }
 
 #[tauri::command]
@@ -526,7 +474,11 @@ pub async fn fit_download_window<R: Runtime>(
             "Only a download window fits itself to its content.",
         ));
     }
-    download_windows::fit_to_content(&window, height);
+    if window.label() == crate::finished_window::LABEL {
+        crate::finished_window::fit(&window, height);
+    } else {
+        download_windows::fit_to_content(&window, height);
+    }
     Ok(())
 }
 
@@ -685,6 +637,26 @@ pub async fn take_captured(
     Ok(captured.take())
 }
 
+#[tauri::command]
+pub async fn take_reveal(
+    selection: State<'_, crate::window::PendingSelection>,
+) -> CommandResult<contract::take_reveal::Output> {
+    Ok(selection.take())
+}
+
+#[tauri::command]
+pub async fn finished_list<R: Runtime>(
+    window: WebviewWindow<R>,
+    finished: State<'_, crate::finished_window::FinishedWindow>,
+) -> CommandResult<contract::finished_list::Output> {
+    if window.label() != crate::finished_window::LABEL {
+        return Err(api::refused(
+            "Only the download complete window lists what finished.",
+        ));
+    }
+    Ok(finished.list())
+}
+
 /// Registers the commands named, for the app's invoke handler, and lists their names in
 /// [`REGISTERED`] for the test that holds them to the contract.
 macro_rules! handler {
@@ -760,6 +732,8 @@ handler![
     startup_notices,
     show_set_aside_list,
     take_captured,
+    take_reveal,
+    finished_list,
     report_unreadable_event,
 ];
 

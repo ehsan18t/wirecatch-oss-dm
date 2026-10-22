@@ -1,9 +1,10 @@
-import { questionId, queueId } from '@wirecatch/protocol';
+import { downloadId, questionId, queueId } from '@wirecatch/protocol';
 import { PRODUCT_NAME } from '@wirecatch/product';
 import { describe, expect, it, vi } from 'vitest';
 import { appState, mockBackend } from '$lib/testing/setup';
 import { BackendError } from '../backend';
 import { buildCommands, fuzzyScore, searchCommands } from '../commands';
+import { revealDownloads } from './reveal';
 import { QUEUE_ORDER } from './view';
 
 async function make() {
@@ -43,7 +44,13 @@ describe('AppState', () => {
 
   it('saves a new queue by making it first, and on a retry updates the one it made', async () => {
     const { app, backend } = await make();
-    const changes = { name: 'Night', max_concurrent: 2, speed_limit: null, schedule: null };
+    const changes = {
+      name: 'Night',
+      max_concurrent: 2,
+      speed_limit: null,
+      schedule: null,
+      notify: 'each_download' as const,
+    };
     const refuse = vi
       .spyOn(backend, 'updateQueue')
       .mockRejectedValueOnce(new BackendError('Not now.'));
@@ -89,6 +96,35 @@ describe('AppState', () => {
     await app.init();
     expect(app.loadError).toBe('No shell.');
     expect(stopEvents).toHaveBeenCalledOnce();
+  });
+
+  it('shows the downloads a clicked notification was about, selected, in their queue', async () => {
+    const { app } = await make();
+    const queue = app.queues.list.find((q) => app.downloads.idsInQueue(q.id).length > 1);
+    if (!queue) throw new Error('The sample has no queue with two downloads.');
+    const ids = app.downloads.idsInQueue(queue.id).slice(0, 2);
+    const unknown = downloadId(999_999);
+    revealDownloads(app, { queue: queue.id, ids: [unknown, ...ids] });
+    expect(app.view).toEqual({ kind: 'queue', id: queue.id });
+    expect(app.selection.list).toEqual(ids);
+    expect(app.selection.active).toBe(ids[0]);
+
+    revealDownloads(app, { queue: null, ids: [ids[1]!] });
+    expect(app.view).toEqual({ kind: 'all' });
+    expect(app.selection.list).toEqual([ids[1]]);
+    // Downloads that are all gone change nothing.
+    revealDownloads(app, { queue: null, ids: [unknown] });
+    expect(app.selection.list).toEqual([ids[1]]);
+  });
+
+  it('selects the downloads of a notification clicked while the page was loading, once the list is in', async () => {
+    const backend = mockBackend();
+    const [first] = await backend.listDownloads();
+    if (!first) throw new Error('The sample has no downloads.');
+    vi.spyOn(backend, 'takeReveal').mockResolvedValue({ queue: null, ids: [first.id] });
+    const app = appState(backend);
+    await app.init();
+    await vi.waitFor(() => expect(app.selection.list).toEqual([first.id]));
   });
 
   it('selects ranges in display order', async () => {

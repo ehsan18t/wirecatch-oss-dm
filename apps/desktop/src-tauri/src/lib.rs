@@ -53,13 +53,17 @@ pub mod bridge;
 mod commands;
 pub mod download_windows;
 pub mod elevation;
+mod files;
+pub mod finished_window;
 pub mod frame;
 pub mod host;
 pub mod lifecycle;
 #[cfg(windows)]
 mod maximize_overlay;
+pub mod notices;
 pub mod questions;
 pub mod sleep;
+pub mod system_notices;
 pub mod tray;
 pub mod updates;
 pub mod window;
@@ -121,6 +125,8 @@ pub fn run() {
         .manage(LaunchLinks::default())
         .manage(window::PendingCaptures::default())
         .manage(window::PendingReveal::default())
+        .manage(window::PendingSelection::default())
+        .manage(finished_window::FinishedWindow::default())
         .manage(Lifecycle::default())
         .manage(sleep::MainAsleep::default())
         .manage(download_windows::DownloadWindows::default())
@@ -137,10 +143,13 @@ pub fn run() {
             if let Some(window) = webview.app_handle().get_webview_window(webview.label()) {
                 frame::page_loading(&window);
             }
-            if webview.label() == window::MAIN_WINDOW
-                && let Some(captured) = webview.try_state::<window::PendingCaptures>()
-            {
-                captured.page_gone();
+            if webview.label() == window::MAIN_WINDOW {
+                if let Some(captured) = webview.try_state::<window::PendingCaptures>() {
+                    captured.page_gone();
+                }
+                if let Some(selection) = webview.try_state::<window::PendingSelection>() {
+                    selection.page_gone();
+                }
             }
         })
         .setup(move |app| setup(app, &launch))
@@ -171,7 +180,6 @@ fn with_plugins(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .args([BACKGROUND_FLAG])
@@ -182,6 +190,11 @@ fn with_plugins(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
 
 fn setup(app: &mut tauri::App, launch: &Launch) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle().clone();
+    app.manage(system_notices::SystemNotices::new(
+        &handle,
+        host::CHANNEL.name(),
+        &app.config().identifier,
+    ));
 
     // Claim the browser endpoint before opening the database: if another Wirecatch already
     // serves this user, a second manager on the same download list must not start.

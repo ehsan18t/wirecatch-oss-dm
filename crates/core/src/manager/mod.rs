@@ -419,6 +419,7 @@ impl Manager {
         for exited in exits {
             exited.cancelled().await;
         }
+        self.save_batches_at_shutdown();
         self.inner.store.close(DATABASE_CLOSE_TIMEOUT).await;
     }
 

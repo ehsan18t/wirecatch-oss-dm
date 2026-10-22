@@ -14,6 +14,7 @@ import type {
   QuestionId,
   Queue,
   QueueId,
+  Reveal,
   SettingsProfile,
   StartupNotice,
   SystemAppearance,
@@ -26,6 +27,7 @@ import { WindowRegistry } from '../../sample-windows';
 import type { Backend, SampleData, ShellSignal, Unsubscribe } from '../types';
 import * as addons from './addons';
 import * as captures from './captures';
+import { MockFinished } from './finished';
 import * as suffixList from './suffix-list';
 import { DOWNLOADS, HOME, startupNoticesFor } from './data';
 import * as downloads from './downloads';
@@ -63,11 +65,7 @@ export class MockBackend implements Backend {
    * data, so the page shows them inside itself (`MockWindows.svelte`), with the desktop's rules.
    */
   readonly windows = new WindowRegistry();
-  readonly sampleData: SampleData = {
-    windows: this.windows,
-    commands: sampleCommands(this),
-    now: () => this.#state.now(),
-  };
+  readonly sampleData: SampleData;
 
   /** Set by tests and sample data: what the next update check finds. */
   nextUpdateCheck: addons.UpdateCheck = 'up-to-date';
@@ -82,6 +80,8 @@ export class MockBackend implements Backend {
   answerProgramWarning: (warning: string) => boolean = (warning) => window.confirm(warning);
 
   readonly #state: MockState;
+  /** The download complete window's list (D52). */
+  readonly #finished: MockFinished;
   readonly #latencyMs: number;
   readonly #startupNotices: StartupNotice[];
   #timer: ReturnType<typeof setInterval> | undefined;
@@ -99,6 +99,13 @@ export class MockBackend implements Backend {
     this.#startupNotices = startupNoticesFor(options);
     this.#lastTick = now();
     if (!options.empty) populate(this.#state, options.count ?? SEEDS.length, options.active ?? 0);
+    this.#finished = new MockFinished(this.#state);
+    this.sampleData = {
+      windows: this.windows,
+      commands: sampleCommands(this, this.#finished),
+      now: () => this.#state.now(),
+      finished: this.#finished,
+    };
     // Work out what runs and why the rest waits before anyone asks.
     this.tick(0);
     this.#startTimers(options);
@@ -339,11 +346,7 @@ export class MockBackend implements Backend {
 
   /** Sample data only: a capture that asks first, whatever the setting says. */
   simulateConfirmation(): void {
-    const extension = this.#state.settings.extension;
-    const ask = extension.ask_before_download;
-    extension.ask_before_download = true;
-    this.simulateCapture();
-    extension.ask_before_download = ask;
+    captures.simulateConfirmation(this.#state, this.#captureIndex++);
   }
 
   // ---- Media and add-ons ----
@@ -447,6 +450,14 @@ export class MockBackend implements Backend {
   takeCaptured() {
     // The sample page is listening from its start: every capture reaches it as an event.
     return this.#call((): DownloadSummary[] => []);
+  }
+
+  takeReveal() {
+    // A browser tab gets no system notifications to click.
+    return this.#call((): Reveal | null => null);
+  }
+  onReveal(_listener: (reveal: Reveal) => void) {
+    return this.#call((): Unsubscribe => () => undefined);
   }
 
   onShellSignal(_listener: (signal: ShellSignal) => void) {
