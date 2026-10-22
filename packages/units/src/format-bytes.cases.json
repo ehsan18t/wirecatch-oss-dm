@@ -8,8 +8,16 @@
     "shown": "512 B"
   },
   {
+    "bytes": 999,
+    "shown": "999 B"
+  },
+  {
+    "bytes": 1000,
+    "shown": "0.98 KB"
+  },
+  {
     "bytes": 1023,
-    "shown": "1023 B"
+    "shown": "1.00 KB"
   },
   {
     "bytes": 1024,
@@ -28,8 +36,20 @@
     "shown": "100 KB"
   },
   {
+    "bytes": 1022976,
+    "shown": "999 KB"
+  },
+  {
+    "bytes": 1024000,
+    "shown": "0.98 MB"
+  },
+  {
+    "bytes": 1045504,
+    "shown": "1.00 MB"
+  },
+  {
     "bytes": 1047552,
-    "shown": "1023 KB"
+    "shown": "1.00 MB"
   },
   {
     "bytes": 1048575,

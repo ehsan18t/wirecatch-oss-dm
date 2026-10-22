@@ -36,11 +36,14 @@ function toTenths(value: number): number {
   return roundTo(value, 1);
 }
 
-/** `bytes` in the largest unit that keeps it at 1 or more, with that unit's index in `SHOWN_UNITS`. */
-function scaled(bytes: number): { value: number; unit: number } {
+/** A figure reads in the next unit from this many of its own on, so it never has four digits: 1021 KB reads as 1.00 MB. A unit is still 1024 of the one below. */
+const NEXT_UNIT_FROM = 1000;
+
+/** `bytes` in the largest unit that keeps it at 1 or more, with that unit's index in `SHOWN_UNITS`, or, with `from`, the unit a figure reads in once it reaches that many. */
+function scaled(bytes: number, from = KB): { value: number; unit: number } {
   let value = bytes;
   let unit = 0;
-  while (value >= KB && unit < SHOWN_UNITS.length - 1) {
+  while (value >= from && unit < SHOWN_UNITS.length - 1) {
     value /= KB;
     unit += 1;
   }
@@ -57,10 +60,10 @@ function placesFor(value: number, unit: number): number {
   return unit === 0 ? 0 : decimals(value);
 }
 
-/** A size for people to read, such as `512 B`, `4.70 GB` or `820 MB`: three significant digits at most. */
+/** A size for people to read, such as `512 B`, `4.70 GB`, `820 MB` or `0.98 MB`: three significant digits at most, never four digits. */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
-  let { value, unit } = scaled(bytes);
+  let { value, unit } = scaled(bytes, NEXT_UNIT_FROM);
   let places = placesFor(value, unit);
   let shown = roundTo(value, places);
   // Rounding can reach the next step (99.998 KB shows as 100), which needs fewer decimals.
@@ -68,8 +71,8 @@ export function formatBytes(bytes: number): string {
     places = placesFor(shown, unit);
     shown = roundTo(value, places);
   }
-  // Or reach a whole next unit (1023.9 KB shows as 1024), which carries into it.
-  if (shown >= KB && unit < SHOWN_UNITS.length - 1) {
+  // Or reach four digits (999.7 KB shows as 1000), which carries into the next unit.
+  if (shown >= NEXT_UNIT_FROM && unit < SHOWN_UNITS.length - 1) {
     value /= KB;
     unit += 1;
     places = placesFor(value, unit);

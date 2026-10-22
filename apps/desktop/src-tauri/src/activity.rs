@@ -110,16 +110,19 @@ impl Activity {
 
 /// Bytes as a person reads them, matching the interface: `512 B`, `1.50 KB`, `12.4 MB`.
 ///
-/// Three significant digits: two decimals below 10, one below 100, none above. The unit and the
-/// decimals are chosen for the value as shown, after rounding: 10239 B is `10.0 KB`, not
-/// `10.00 KB`, and 1048575 B is `1.00 MB`, not `1024 KB`.
+/// Three significant digits: two decimals below 10, one below 100, none above, and never four
+/// digits: a unit is 1024 of the one below, but a figure reads in the next unit from 1000 of its
+/// own, so 1021 KB is `1.00 MB`. The unit and the decimals are chosen for the value as shown,
+/// after rounding: 10239 B is `10.0 KB`, not `10.00 KB`, and 999.7 KB is `0.98 MB`, not
+/// `1000 KB`.
 #[must_use]
 pub fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
     const STEP: f64 = 1024.0;
+    const NEXT_UNIT_FROM: f64 = 1000.0;
     let mut value = approx_f64(bytes);
     let mut unit = 0;
-    while value >= STEP && unit < UNITS.len() - 1 {
+    while value >= NEXT_UNIT_FROM && unit < UNITS.len() - 1 {
         value /= STEP;
         unit += 1;
     }
@@ -127,8 +130,8 @@ pub fn format_bytes(bytes: u64) -> String {
         return format!("{bytes} B");
     }
     let (mut shown, mut digits) = rounded(value);
-    // Rounding up can reach the next unit: 1023.996 KB shows as 1.00 MB.
-    if shown >= STEP && unit < UNITS.len() - 1 {
+    // Rounding up can reach four digits: 999.7 KB shows as 0.98 MB.
+    if shown >= NEXT_UNIT_FROM && unit < UNITS.len() - 1 {
         unit += 1;
         (shown, digits) = rounded(value / STEP);
     }
