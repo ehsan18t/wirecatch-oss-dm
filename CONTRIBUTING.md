@@ -71,7 +71,7 @@ cargo run --release -p wirecatch-engine --example bench_local
 
 ## Quality gates
 
-Run the gate before sending a change. It runs every check CI runs, from one script (`scripts/gate.mjs`). The tests need cargo-nextest and the supply-chain checks cargo-deny and cargo-machete; `node scripts/gate.mjs --install-tools` installs the versions CI uses.
+Run the gate before sending a change. It runs every check CI runs, from one script (`scripts/gate.mjs`). The supply-chain checks need cargo-deny and cargo-machete; `node scripts/gate.mjs --install-tools` installs the versions CI uses.
 
 ```bash
 pnpm gate

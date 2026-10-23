@@ -42,7 +42,7 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 pnpm gate
 ```
 
-That runs every check CI runs (`node scripts/gate.mjs --list` shows them; `pnpm gate rust` or `pnpm gate js` runs a group). The tests and the supply-chain checks need three cargo tools: `node scripts/gate.mjs --install-tools`. Run it yourself before reporting a change done, and report its real output, failures included. The definition of done is D18 in `docs/DECISIONS.md`.
+That runs every check CI runs (`node scripts/gate.mjs --list` shows them; `pnpm gate rust` or `pnpm gate js` runs a group). The supply-chain checks need two cargo tools: `node scripts/gate.mjs --install-tools`. Run it yourself before reporting a change done, and report its real output, failures included. The definition of done is D18 in `docs/DECISIONS.md`.
 
 - Install once with `pnpm install`; it also turns on the commit-msg hook.
 - Lint and format from the root only (`pnpm lint`, `pnpm format`); packages have no lint or format scripts, and list ESLint or Prettier only when their own code imports it (D42).

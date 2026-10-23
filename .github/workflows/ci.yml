@@ -100,18 +100,7 @@ jobs:
           echo "WIRECATCH_TEST_FFMPEG=$ffmpeg" >> "$GITHUB_ENV"
           echo "WIRECATCH_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
 
-      # cargo-nextest, which runs the tests, at the version in scripts/gate/rust.mjs, as a prebuilt release binary whose checksum the action verifies (D33). The other tools come with it, unused here.
-      - name: Read the gate tool versions
-        id: tools
-        shell: bash
-        run: echo "specs=$(node scripts/gate.mjs --tool-specs)" >> "$GITHUB_OUTPUT"
-
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: ${{ steps.tools.outputs.specs }}
-          fallback: none
-
-      # Every test runs even after one fails, so one failure cannot hide what the others would show.
+      # Every test binary runs even after one fails, so one failure cannot hide what the others would show.
       - name: Gate (Rust)
         run: node scripts/gate.mjs rust --no-fail-fast
 
