@@ -36,6 +36,7 @@ docker run --rm -i \
       export PATH=/usr/local/cargo/bin:\$PATH CARGO_HOME=/target/cargo-home CARGO_TARGET_DIR=/target RUSTUP_HOME=/usr/local/rustup
       export WIRECATCH_TEST_FFMPEG=\$(command -v ffmpeg) WIRECATCH_REQUIRE_FFMPEG=1
       cd /work
+      node scripts/gate.mjs --install-tools
       node scripts/gate.mjs --no-desktop --no-fail-fast rust
     "
   '

@@ -3,7 +3,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { ROOT } from './process.mjs';
-import { DESKTOP_CRATE, TEST_FEATURES, testArguments, TOOLS, toolSpecs } from './rust.mjs';
+import {
+  DESKTOP_CRATE,
+  doctestArguments,
+  TEST_FEATURES,
+  testArguments,
+  TOOLS,
+  toolSpecs,
+} from './rust.mjs';
 
 const WORKFLOWS = join(ROOT, '.github', 'workflows');
 /** The one `tool:` input a workflow may give an installer: the output of `node scripts/gate.mjs --tool-specs`. */
@@ -34,16 +41,32 @@ test('the workflows install the cargo tools only from the gate tool specs', () =
   }
 });
 
-test('the tests run in one cargo invocation that includes the desktop crate', () => {
+test('the tests run in one nextest invocation that includes the desktop crate', () => {
   const args = testArguments({ desktop: true, failFast: true });
-  assert.deepEqual(args, ['test', '--workspace', '--locked', ...TEST_FEATURES]);
+  assert.deepEqual(args, ['nextest', 'run', '--workspace', '--locked', ...TEST_FEATURES]);
+});
+
+test('the doctests run for the same crates with the same features', () => {
+  for (const desktop of [true, false]) {
+    const tests = testArguments({ desktop, failFast: true });
+    const docs = doctestArguments({ desktop, failFast: true });
+    assert.deepEqual(docs.slice(0, 2), ['test', '--doc']);
+    assert.deepEqual(docs.slice(2), tests.slice(2));
+  }
 });
 
 test('without the desktop crate the tests leave it out', () => {
-  const args = testArguments({ desktop: false, failFast: true });
-  assert.deepEqual(args.slice(0, 4), ['test', '--workspace', '--exclude', DESKTOP_CRATE]);
+  for (const args of [testArguments, doctestArguments]) {
+    assert.deepEqual(args({ desktop: false, failFast: true }).slice(2, 5), [
+      '--workspace',
+      '--exclude',
+      DESKTOP_CRATE,
+    ]);
+  }
 });
 
-test('--no-fail-fast reaches cargo', () => {
-  assert.ok(testArguments({ desktop: true, failFast: false }).includes('--no-fail-fast'));
+test('--no-fail-fast reaches both runs', () => {
+  for (const args of [testArguments, doctestArguments]) {
+    assert.ok(args({ desktop: true, failFast: false }).includes('--no-fail-fast'));
+  }
 });

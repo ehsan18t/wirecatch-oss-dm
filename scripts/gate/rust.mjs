@@ -11,6 +11,7 @@ export const TEST_FEATURES = ['--features', 'wirecatch-bridge/test-overrides'];
 export const TOOLS = {
   'cargo-deny': '0.19.0',
   'cargo-machete': '0.9.2',
+  'cargo-nextest': '0.9.148',
 };
 
 export const DESKTOP_CRATE = 'wirecatch-desktop';
@@ -102,10 +103,11 @@ function clippy() {
     cargo('clippy', '-p', DESKTOP_CRATE, '--all-targets', '--locked', ...DENY_WARNINGS);
 }
 
-/** The arguments of the one `cargo test` run: every crate, the desktop crate included, in one feature resolution, so the dependencies are built once. */
+/** The arguments of the one test run: every crate, the desktop crate included, in one feature resolution, so the dependencies are built once. cargo-nextest runs each test in a process of its own and every test binary at once; `.config/nextest.toml` names the tests that must not overlap. */
 export function testArguments({ desktop, failFast }) {
   return [
-    'test',
+    'nextest',
+    'run',
     '--workspace',
     ...desktopExclusion({ desktop }),
     '--locked',
@@ -114,9 +116,63 @@ export function testArguments({ desktop, failFast }) {
   ];
 }
 
+/** cargo-nextest does not run doctests, so cargo runs them after it, with the same crates and features. */
+export function doctestArguments({ desktop, failFast }) {
+  return [
+    'test',
+    '--doc',
+    '--workspace',
+    ...desktopExclusion({ desktop }),
+    '--locked',
+    ...(failFast ? [] : ['--no-fail-fast']),
+    ...TEST_FEATURES,
+  ];
+}
+
+/** Read by the tests that start the bridge (`BRIDGE_VARIABLE` in crates/test-support/src/bridge.rs). */
+const BRIDGE_VARIABLE = 'WIRECATCH_TEST_BRIDGE';
+
+/** The bridge the workspace test build makes, with `test-overrides` (TEST_FEATURES), and the bridge's own tests run. Every other test that starts the bridge takes this one: building their own would relink this file while other test processes run it. */
+function workspaceBridge() {
+  const metadata = cargoMetadata();
+  const bin = metadata.packages
+    .find((pkg) => pkg.name === BRIDGE_CRATE)
+    ?.targets.find((target) => target.kind.includes('bin'));
+  if (!bin) throw new GateError(`${BRIDGE_CRATE} has no executable target.`);
+  const file = process.platform === 'win32' ? `${bin.name}.exe` : bin.name;
+  return join(metadata.target_directory, 'debug', file);
+}
+
+/** Runs each cargo command; with `--no-fail-fast`, also the ones after a failure, so one failure cannot hide what the others would show. */
+function cargoEach(commands, { env } = {}) {
+  const failures = [];
+  for (const args of commands) {
+    try {
+      run('cargo', args, { env });
+    } catch (error) {
+      if (options.failFast || !(error instanceof GateError)) throw error;
+      failures.push(error.message);
+    }
+  }
+  if (failures.length > 0) throw new GateError(failures.join('\n'));
+}
+
 function test() {
+  requireCargoTool('cargo-nextest');
   if (options.desktop) ensureDesktopFrontend();
-  cargo(...testArguments(options));
+  cargoEach([testArguments(options), doctestArguments(options)], {
+    env: { [BRIDGE_VARIABLE]: workspaceBridge() },
+  });
+}
+
+/** The engine with its off-by-default http3 feature, which no other check compiles into a test. */
+function testHttp3() {
+  requireCargoTool('cargo-nextest');
+  const engine = ['-p', ENGINE_CRATE, '--locked', '--features', 'http3'];
+  cargoEach([
+    ['nextest', 'run', ...engine],
+    ['test', '--doc', ...engine],
+  ]);
 }
 
 /** The published engine still builds with the oldest Rust its manifest promises. */
@@ -173,8 +229,7 @@ export const RUST_CHECKS = {
       ...DENY_WARNINGS,
     ),
   test,
-  // The engine with its off-by-default http3 feature, which no other check compiles into a test.
-  'test-http3': () => cargo('test', '-p', ENGINE_CRATE, '--locked', '--features', 'http3'),
+  'test-http3': testHttp3,
   // With every feature, as docs.rs builds them (`package.metadata.docs.rs` in the engine's Cargo.toml).
   'engine-docs': () =>
     run('cargo', ['doc', '-p', ENGINE_CRATE, '--no-deps', '--locked', '--all-features'], {

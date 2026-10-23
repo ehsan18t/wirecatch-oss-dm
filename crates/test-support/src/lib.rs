@@ -40,6 +40,8 @@
     reason = "test support: a panic here is the failing test's report, as clippy.toml already allows inside tests, and the whole crate is only ever used by tests"
 )]
 
+#[cfg(feature = "bridge")]
+pub mod bridge;
 #[cfg(feature = "servers")]
 pub mod files;
 #[cfg(feature = "servers")]

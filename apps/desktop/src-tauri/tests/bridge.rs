@@ -8,63 +8,22 @@
 
 mod common;
 
-use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use common::Sandbox;
 use tokio::process::Command;
-use wirecatch_desktop_lib::bridge::{self, BRIDGE_FILE_NAME};
+use wirecatch_desktop_lib::bridge;
 use wirecatch_ipc::{Endpoint, Listener};
 use wirecatch_product::{CHROMIUM_EXTENSION_ORIGIN, LOG_FOLDER_VARIABLE};
 use wirecatch_protocol::frame;
 use wirecatch_protocol::wire::{BrowserInfo, Call, ClientKind, Hello, Message, Outcome, Reply};
 use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
+use wirecatch_test_support::bridge::{ENDPOINT_VAR, LAUNCH_VAR, bridge_exe};
 use wirecatch_test_support::{PATIENCE, TestResult, private_dir};
-
-/// The bridge's test-only overrides (`crates/bridge/src/app.rs`).
-const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
-const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
-
-/// The bridge executable of this workspace, built with its test-only overrides (as the
-/// workspace's own test command builds it). It lands in the same target folder as this test.
-fn bridge_exe() -> TestResult<PathBuf> {
-    let test_exe = std::env::current_exe()?;
-    // <target>/debug/deps/<test>.exe -> <target>/debug
-    let profile_dir = test_exe
-        .parent()
-        .and_then(Path::parent)
-        .ok_or("the test executable is not in a target folder")?;
-    let target_dir = profile_dir
-        .parent()
-        .ok_or("the profile folder has no parent")?;
-    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let status = std::process::Command::new(cargo)
-        .args([
-            "build",
-            "--quiet",
-            "-p",
-            "wirecatch-bridge",
-            "--features",
-            "wirecatch-bridge/test-overrides",
-            "--target-dir",
-        ])
-        .arg(target_dir)
-        .current_dir(&manifest)
-        .status()?;
-    if !status.success() {
-        return Err("building the bridge failed".into());
-    }
-    let exe = profile_dir.join(BRIDGE_FILE_NAME);
-    if !exe.is_file() {
-        return Err(format!("no bridge at {}", exe.display()).into());
-    }
-    Ok(exe)
-}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_bridge_started_like_a_browser_does_gets_a_hello_reply() -> TestResult {
-    let exe = bridge_exe()?;
+    let exe = bridge_exe();
     // A private endpoint nobody else uses, in a folder only this user can enter.
     let dir = private_dir("desktop-bridge")?;
     let endpoint = Endpoint::from_raw(dir.endpoint_name());
@@ -73,7 +32,7 @@ async fn a_bridge_started_like_a_browser_does_gets_a_hello_reply() -> TestResult
     let manager = sandbox.open().await?;
     let server = tokio::spawn(bridge::serve(listener, manager.clone()));
 
-    let mut child = Command::new(&exe)
+    let mut child = Command::new(exe)
         .arg(CHROMIUM_EXTENSION_ORIGIN)
         .env(ENDPOINT_VAR, endpoint.as_os_str())
         // Whatever happens, the bridge must not start a real app.

@@ -1,0 +1,9 @@
+# How cargo-nextest runs the gate's tests (`test` and `test-http3` in scripts/gate/rust.mjs): each test in a process of its own, as many at once as the machine has cores. Nothing is retried: a test that fails is a fault to find (docs/ENGINEERING.md section 7).
+
+[test-groups]
+# The protocol crate's TypeScript exports write the files of the types they share; ts-rs keeps two exports of one file apart only inside one process.
+ts-exports = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(wirecatch-protocol) & test(/export_bindings_/)'
+test-group = 'ts-exports'

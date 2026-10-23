@@ -86,7 +86,7 @@ tempfile.workspace = true
 # The mock runtime, to test the tray, quitting and event forwarding without a real window.
 tauri = { version = "2.12.3", features = ["tray-icon", "test"] }
 tokio = { workspace = true, features = ["sync", "time", "macros", "rt-multi-thread", "io-util", "process"] }
-wirecatch-test-support = { path = "../../../crates/test-support", features = ["servers"] }
+wirecatch-test-support = { path = "../../../crates/test-support", features = ["bridge", "servers"] }
 
 [lints]
 workspace = true

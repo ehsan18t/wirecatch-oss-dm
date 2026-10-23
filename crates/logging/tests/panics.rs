@@ -1,5 +1,6 @@
 //! A panic, in a real process with its logging set up as a binary sets it up. The test runs itself as that process (it has no test harness), so the code under test is always the code just built.
 
+use std::io::Write as _;
 use std::path::Path;
 use std::process::{Command, ExitCode};
 
@@ -11,6 +12,16 @@ const CHILD_VARIABLE: &str = "WIRECATCH_PANICS_TEST_CHILD";
 fn main() -> ExitCode {
     if std::env::var_os(CHILD_VARIABLE).is_some() {
         panic_with_a_secret();
+    }
+    // cargo-nextest first asks every test binary for its tests, in the standard harness's form, and then runs each by name.
+    if std::env::args().any(|arg| arg == "--list") {
+        if std::env::args().any(|arg| arg == "--ignored") {
+            return ExitCode::SUCCESS;
+        }
+        return match writeln!(std::io::stdout(), "panics: test") {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(_) => ExitCode::FAILURE,
+        };
     }
     // No filter, then filters that leave the panic's own target out: the report reaches both sinks whatever the filter.
     for filter in [

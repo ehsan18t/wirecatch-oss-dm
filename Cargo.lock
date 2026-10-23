@@ -7639,6 +7639,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "wirecatch-product",
 ]
 
 [[package]]
