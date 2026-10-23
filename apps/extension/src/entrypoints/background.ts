@@ -61,6 +61,7 @@ function registerContextMenu(hub: Hub): void {
 function registerMedia(hub: Hub, media: MediaCenter, watcher: MediaWatcher): void {
   registerMediaListeners(
     {
+      onSendHeaders: browser.webRequest.onSendHeaders,
       onResponseStarted: browser.webRequest.onResponseStarted,
       onTabRemoved: browser.tabs.onRemoved,
       onTabUpdated: browser.tabs.onUpdated,

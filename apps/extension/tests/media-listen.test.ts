@@ -5,17 +5,18 @@
 import { describe, expect, it } from 'vitest';
 import { MatchPattern } from 'wxt/utils/match-patterns';
 import { MediaCenter, type ContentSender, type MediaSendResult } from '../src/lib/media/center';
-import type { ObservedResponse } from '../src/lib/media/detect';
+import type { ObservedRequest, ObservedResponse } from '../src/lib/media/detect';
 import {
   FILE_REQUESTS,
   MANIFEST_REQUESTS,
+  MEDIA_ELEMENT_REQUESTS,
   registerMediaListeners,
   type MediaEventApi,
   type RequestFilter,
 } from '../src/lib/media/listen';
 import { MEDIA_CHECK, MEDIA_COMMAND } from '../src/lib/media/messages';
 import { MediaRegistry } from '../src/lib/media/registry';
-import { MediaWatcher } from '../src/lib/media/watch';
+import { MAX_UNANSWERED_REQUESTS, MediaWatcher } from '../src/lib/media/watch';
 import { POPUP_PORT_NAME, acceptsPopupPort } from '../src/lib/messages';
 import { flush } from './fakes';
 
@@ -26,6 +27,11 @@ type MessageListener = (
 ) => boolean | undefined;
 
 function fakeApi(firefox = false) {
+  const requests: {
+    listener: (d: ObservedRequest) => void;
+    filter: RequestFilter;
+    extra: string[];
+  }[] = [];
   const responses: {
     listener: (d: ObservedResponse) => void;
     filter: RequestFilter;
@@ -39,6 +45,9 @@ function fakeApi(firefox = false) {
   const messages: MessageListener[] = [];
   const commands: ((command: string, tab?: { id?: number }) => void)[] = [];
   const api: MediaEventApi = {
+    onSendHeaders: {
+      addListener: (listener, filter, extra) => void requests.push({ listener, filter, extra }),
+    },
     onResponseStarted: {
       addListener: (listener, filter, extra) => void responses.push({ listener, filter, extra }),
     },
@@ -52,7 +61,7 @@ function fakeApi(firefox = false) {
     extensionId: 'wirecatch-id',
     firefox,
   };
-  return { api, responses, removed, updated, messages, commands };
+  return { api, requests, responses, removed, updated, messages, commands };
 }
 
 function setup(firefox = false) {
@@ -146,13 +155,24 @@ describe('registerMediaListeners', () => {
   });
 
   it('never asks to block or change requests', () => {
-    const { responses } = setup();
-    for (const r of responses) expect(r.extra).not.toContain('blocking');
+    const { requests, responses } = setup();
+    for (const r of [...requests, ...responses]) expect(r.extra).not.toContain('blocking');
+  });
+
+  it('reads the headers of media and manifest requests, never page loads, with the Cookie header in Chromium too', () => {
+    expect(MEDIA_ELEMENT_REQUESTS.types).toEqual(['media', 'object']);
+    for (const firefox of [false, true]) {
+      const { requests } = setup(firefox);
+      expect(requests.map((r) => r.filter)).toEqual([MEDIA_ELEMENT_REQUESTS, MANIFEST_REQUESTS]);
+      const extra = firefox ? ['requestHeaders'] : ['requestHeaders', 'extraHeaders'];
+      for (const r of requests) expect(r.extra).toEqual(extra);
+    }
   });
 
   it('feeds every observed response to the watcher', async () => {
     const { responses, registry } = setup();
     responses[1]?.listener({
+      requestId: '1',
       url: 'https://cdn.example.com/v/master.m3u8',
       tabId: 3,
       type: 'xmlhttprequest',
@@ -161,6 +181,77 @@ describe('registerMediaListeners', () => {
     });
     await flush();
     expect(registry.items(3)).toHaveLength(1);
+  });
+});
+
+describe('the Cookie header sent with media', () => {
+  const manifest = (url: string, requestId: string): ObservedResponse => ({
+    requestId,
+    url,
+    tabId: 3,
+    type: 'xmlhttprequest',
+    statusCode: 200,
+    responseHeaders: [{ name: 'content-type', value: 'application/dash+xml' }],
+  });
+  const request = (requestId: string, cookie?: string, tabId = 3): ObservedRequest => ({
+    requestId,
+    tabId,
+    requestHeaders: [
+      { name: 'Accept', value: '*/*' },
+      ...(cookie === undefined ? [] : [{ name: 'Cookie', value: cookie }]),
+    ],
+  });
+  /** Sends requests with ids `from` up to `to`, each with a cookie of its own. */
+  const fill = (send: (r: ObservedRequest) => void, from: number, to: number): void => {
+    for (let id = from; id <= to; id += 1) send(request(String(id), `n=${String(id)}`));
+  };
+
+  it('is kept with the media its request loaded, and none sent is kept as none', async () => {
+    const { requests, responses, registry } = setup();
+    requests[1]?.listener(request('7', 'sid=2; prefs=dark'));
+    requests[1]?.listener(request('8'));
+    responses[1]?.listener(manifest('https://cdn.example.com/a/manifest.mpd', '7'));
+    responses[1]?.listener(manifest('https://cdn.example.com/b/manifest.mpd', '8'));
+    // A response whose request was not seen says nothing about its cookies.
+    responses[1]?.listener(manifest('https://cdn.example.com/c/manifest.mpd', 'never-seen'));
+    await flush();
+    expect(registry.items(3).map((i) => i.sentCookies)).toEqual([
+      'sid=2; prefs=dark',
+      null,
+      undefined,
+    ]);
+  });
+
+  it('is never held for requests outside a tab', async () => {
+    const { requests, responses, registry } = setup();
+    requests[1]?.listener(request('9', 'worker=1', -1));
+    responses[1]?.listener(manifest('https://cdn.example.com/a/manifest.mpd', '9'));
+    await flush();
+    expect(registry.items(3).map((i) => i.sentCookies)).toEqual([undefined]);
+  });
+
+  it(`is forgotten for requests no answer came for, beyond the newest ${String(MAX_UNANSWERED_REQUESTS)}`, async () => {
+    const { requests, responses, registry } = setup();
+    const send = (r: ObservedRequest) => requests[1]?.listener(r);
+    fill(send, 0, MAX_UNANSWERED_REQUESTS);
+    const last = String(MAX_UNANSWERED_REQUESTS);
+    responses[1]?.listener(manifest('https://cdn.example.com/a/manifest.mpd', '0'));
+    responses[1]?.listener(manifest('https://cdn.example.com/b/manifest.mpd', last));
+    await flush();
+    expect(registry.items(3).map((i) => i.sentCookies)).toEqual([undefined, `n=${last}`]);
+  });
+
+  it('is the last hop’s after a redirect, which counts as the newest request', async () => {
+    const { requests, responses, registry } = setup();
+    const send = (r: ObservedRequest) => requests[1]?.listener(r);
+    send(request('r', 'hop=1'));
+    fill(send, 1, MAX_UNANSWERED_REQUESTS - 1);
+    // The redirect sends the same request again, to the new address.
+    send(request('r', 'hop=2'));
+    fill(send, MAX_UNANSWERED_REQUESTS, MAX_UNANSWERED_REQUESTS);
+    responses[1]?.listener(manifest('https://cdn.example.com/a/manifest.mpd', 'r'));
+    await flush();
+    expect(registry.items(3).map((i) => i.sentCookies)).toEqual(['hop=2']);
   });
 });
 

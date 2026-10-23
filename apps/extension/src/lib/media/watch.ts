@@ -1,6 +1,19 @@
 import { fallback } from '../diag/log';
-import { classifyResponse, isNavigation, requestedBy, type ObservedResponse } from './detect';
+import {
+  classifyResponse,
+  isNavigation,
+  requestedBy,
+  sentCookies,
+  type ObservedRequest,
+  type ObservedResponse,
+} from './detect';
 import { pageKey, type MediaRegistry } from './registry';
+
+/**
+ * Most requests whose `Cookie` header is held while their answer is awaited. A request that
+ * fails gets no answer, so the oldest are dropped; far more than a page has loading at once.
+ */
+export const MAX_UNANSWERED_REQUESTS = 256;
 
 export interface WatchDeps {
   /** True when the tab is in a private window. Rejects or resolves true when that cannot be told. */
@@ -46,14 +59,29 @@ export class MediaWatcher {
   readonly #urls = new Map<number, string>();
   /** True once `deps.ready` settled; checked first so later responses do not wait a turn. */
   #restored = false;
+  /** The `Cookie` header of each request whose answer has not come yet, oldest first. */
+  readonly #sent = new Map<string, string | null>();
 
   constructor(registry: MediaRegistry, deps: WatchDeps) {
     this.#registry = registry;
     this.#deps = deps;
   }
 
+  /** A request is about to go out (`webRequest.onSendHeaders`): holds its `Cookie` header for its answer. */
+  onRequest(request: ObservedRequest): void {
+    if (request.tabId < 0) return;
+    // Sent again after a redirect: the last hop's header is the one its answer came to.
+    this.#sent.delete(request.requestId);
+    this.#sent.set(request.requestId, sentCookies(request));
+    for (const id of this.#sent.keys()) {
+      if (this.#sent.size <= MAX_UNANSWERED_REQUESTS) break;
+      this.#sent.delete(id);
+    }
+  }
+
   async onResponse(response: ObservedResponse): Promise<void> {
     const { tabId } = response;
+    const cookies = this.#takeSent(response.requestId);
     if (tabId < 0) return;
     await this.#whenReady();
     if (isNavigation(response)) {
@@ -62,15 +90,30 @@ export class MediaWatcher {
       this.#urls.set(tabId, page);
     }
     const detection = classifyResponse(response);
-    if (detection === null) return;
+    if (detection === null || (await this.#fromPrivateWindow(response))) return;
+    this.#registry.add(
+      tabId,
+      cookies === undefined ? detection : { ...detection, sentCookies: cookies },
+      response.frameId ?? 0,
+      requestedBy(response),
+    );
+  }
+
+  /** The `Cookie` header held for a request (`onRequest`), released as its answer comes; undefined when it was not seen. */
+  #takeSent(requestId: string): string | null | undefined {
+    const cookies = this.#sent.get(requestId);
+    this.#sent.delete(requestId);
+    return cookies;
+  }
+
+  /** True when the response is from a private window, or its tab moved to a new page while that was being asked. */
+  async #fromPrivateWindow(response: ObservedResponse): Promise<boolean> {
     // Firefox says on each request; Chromium does not, so the tab is asked once.
-    if (response.incognito === true) return;
-    if (response.incognito === undefined) {
-      const generation = this.#generation.get(tabId) ?? 0;
-      if (await this.#isPrivate(tabId)) return;
-      if ((this.#generation.get(tabId) ?? 0) !== generation) return;
-    }
-    this.#registry.add(tabId, detection, response.frameId ?? 0, requestedBy(response));
+    if (response.incognito !== undefined) return response.incognito;
+    const { tabId } = response;
+    const generation = this.#generation.get(tabId) ?? 0;
+    if (await this.#isPrivate(tabId)) return true;
+    return (this.#generation.get(tabId) ?? 0) !== generation;
   }
 
   /**

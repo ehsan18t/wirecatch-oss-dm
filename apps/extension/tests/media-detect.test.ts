@@ -24,6 +24,7 @@ function response(
   const { contentType, headers = {}, ...rest } = overrides;
   const all = contentType === undefined ? headers : { 'Content-Type': contentType, ...headers };
   return {
+    requestId: 'r1',
     url: 'https://cdn.example.com/video/master.m3u8',
     tabId: 4,
     type: 'xmlhttprequest',
@@ -474,6 +475,35 @@ describe('MediaRegistry', () => {
     // Another tab has its own list.
     expect(registry.add(2, file('https://e.com/a.mp4?t=1'))).toBe(true);
     expect(registry.items(2)).toHaveLength(1);
+  });
+
+  it('keeps the Cookie header last sent for each item, across a restart', () => {
+    const registry = new MediaRegistry();
+    registry.add(1, { ...file('https://e.com/a.mp4?t=1'), sentCookies: 'sid=1' });
+    // Requested again: the newer header counts.
+    expect(registry.add(1, { ...file('https://e.com/a.mp4?t=1'), sentCookies: 'sid=2' })).toBe(
+      true,
+    );
+    // A request that was not seen changes nothing.
+    expect(registry.add(1, file('https://e.com/a.mp4?t=1'))).toBe(false);
+    registry.add(1, { ...file('https://e.com/b.mp4'), sentCookies: null });
+    const copy = new MediaRegistry();
+    copy.restore(JSON.parse(JSON.stringify(registry.save())));
+    expect(copy.items(1).map((i) => i.sentCookies)).toEqual(['sid=2', null]);
+  });
+
+  it('keeps the Cookie header of an HLS stream’s latest playlist request', () => {
+    let clock = 0;
+    const registry = new MediaRegistry({ now: () => clock });
+    registry.add(1, { ...hls('https://cdn.e.com/v/master.m3u8'), sentCookies: 'token=1' });
+    clock = 800;
+    registry.add(1, { ...hls('https://cdn.e.com/v/720p.m3u8'), sentCookies: 'token=2' });
+    clock = 1_600;
+    // A playlist request that was not seen changes nothing.
+    registry.add(1, hls('https://cdn.e.com/v/480p.m3u8'));
+    expect(registry.items(1).map((i) => [i.url, i.sentCookies])).toEqual([
+      ['https://cdn.e.com/v/master.m3u8', 'token=2'],
+    ]);
   });
 
   it('lists only the first playlist of an HLS stream, wherever its variants live', () => {

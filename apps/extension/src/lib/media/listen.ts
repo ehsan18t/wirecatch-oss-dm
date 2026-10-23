@@ -6,7 +6,7 @@
 import { fallback, log } from '../diag/log';
 import { SITE_ORIGINS } from '../site-access';
 import type { ContentSender, MediaCenter, MediaSendResult } from './center';
-import type { ObservedResponse } from './detect';
+import type { ObservedRequest, ObservedResponse } from './detect';
 import { MEDIA_COMMAND } from './messages';
 import type { MediaWatcher } from './watch';
 
@@ -24,6 +24,13 @@ interface Event<L> {
 
 /** The parts of the extension APIs this module uses. */
 export interface MediaEventApi {
+  onSendHeaders: {
+    addListener(
+      listener: (details: ObservedRequest) => void,
+      filter: RequestFilter,
+      extra: ('requestHeaders' | 'extraHeaders')[],
+    ): void;
+  };
   onResponseStarted: {
     addListener(
       listener: (details: ObservedResponse) => void,
@@ -49,7 +56,10 @@ export interface MediaEventApi {
   onCommand: Event<(command: string, tab?: { id?: number }) => void>;
   /** This extension's id (`runtime.id`). */
   extensionId: string;
-  /** Firefox lets `tabs.onUpdated` be limited to address changes; Chromium refuses the argument. */
+  /**
+   * Firefox lets `tabs.onUpdated` be limited to address changes, where Chromium refuses the
+   * argument; and it shows the `Cookie` header without `extraHeaders`, which it refuses.
+   */
   firefox: boolean;
 }
 
@@ -76,6 +86,18 @@ export const MANIFEST_REQUESTS: RequestFilter = {
   types: ['xmlhttprequest', 'other'],
 };
 
+/**
+ * Requests a media element or a plugin makes, whose `Cookie` header is read along with
+ * the manifest addresses of `MANIFEST_REQUESTS`. Page and frame loads are left out: the
+ * cookies of a navigation are read exactly, and reading request headers (`extraHeaders`
+ * in Chromium) for every page load of every site would cost the browser for nothing. A
+ * media file opened as a page or frame therefore goes with the cookies read when sent.
+ */
+export const MEDIA_ELEMENT_REQUESTS: RequestFilter = {
+  urls: SITE_ORIGINS,
+  types: ['media', 'object'],
+};
+
 export function registerMediaListeners(
   api: MediaEventApi,
   handlers: {
@@ -100,6 +122,14 @@ export function registerMediaListeners(
       .catch(fallback('media', 'Could not look at a response for media', undefined, 'error'));
   };
   // Observe only: no `blocking` option, so requests are never held up or changed.
+  // The `Cookie` header a request goes out with is the only sure answer to which cookies the
+  // browser sends to another site, so the media's own request is read for it (D59).
+  const requestExtra: ('requestHeaders' | 'extraHeaders')[] = api.firefox
+    ? ['requestHeaders']
+    : ['requestHeaders', 'extraHeaders'];
+  const onRequest = (details: ObservedRequest): void => watcher.onRequest(details);
+  api.onSendHeaders.addListener(onRequest, MEDIA_ELEMENT_REQUESTS, requestExtra);
+  api.onSendHeaders.addListener(onRequest, MANIFEST_REQUESTS, requestExtra);
   api.onResponseStarted.addListener(onResponse, FILE_REQUESTS, ['responseHeaders']);
   api.onResponseStarted.addListener(onResponse, MANIFEST_REQUESTS, ['responseHeaders']);
 

@@ -23,7 +23,12 @@ import {
   MEDIA_DOWNLOAD,
   mediaButtonOn,
 } from '../src/lib/media/messages';
-import { MediaRegistry, type MediaItem, type SavedMedia } from '../src/lib/media/registry';
+import {
+  MediaRegistry,
+  type MediaItem,
+  type SavedMedia,
+  type Sighting,
+} from '../src/lib/media/registry';
 import { MediaWatcher } from '../src/lib/media/watch';
 import { asPopupRequest } from '../src/lib/messages';
 import { NativeClient } from '../src/lib/native/client';
@@ -463,6 +468,29 @@ describe('media button messages', () => {
     expect(lastAdd(app)).not.toHaveProperty('frame_url');
   });
 
+  it('sends media from another site the Cookie header its own request carried, when it was seen', async () => {
+    const { app, center, registry, tabs, cookieCalls } = await setup();
+    const download = async (sighting: Sighting): Promise<NewDownload> => {
+      registry.clearTab(1);
+      registry.add(1, sighting);
+      await center.handleContentMessage(
+        { type: MEDIA_DOWNLOAD, src: null, audio: false, title: null },
+        fromTab(1, tabs),
+      );
+      return lastAdd(app);
+    };
+    const elsewhere = { ...HLS, url: 'https://cdn.video.test/v/master.m3u8' };
+    expect((await download({ ...elsewhere, sentCookies: 'sid=2; prefs=dark' })).cookies).toBe(
+      'sid=2; prefs=dark',
+    );
+    // The browser sent none: neither does Wirecatch.
+    expect((await download({ ...elsewhere, sentCookies: null })).cookies).toBeNull();
+    expect(cookieCalls).toEqual([]);
+    // From the page's own site, the cookies are read when sent, so they are the freshest.
+    expect((await download({ ...HLS, sentCookies: 'sid=old' })).cookies).toBe('session=1');
+    expect(cookieCalls).toEqual([[HLS.url, null]]);
+  });
+
   it('sends the page itself on a well-known video site, for the media add-on', async () => {
     const { app, center, tabs } = await setup();
     const answer = await center.handleContentMessage(
@@ -853,6 +881,7 @@ describe('popup media list', () => {
     ];
     for (const [name, size] of sounds) {
       await watcher.onResponse({
+        requestId: name,
         url: `https://www.youtube.com/s/search/audio/${name}`,
         tabId: 4,
         type: 'media',
@@ -1016,6 +1045,7 @@ describe('background restart', () => {
     });
     // Tab 1 moves on to page B while the saved lists (page A) are still loading.
     const navigation = watcher.onResponse({
+      requestId: '1',
       url: 'https://b.example.com/',
       tabId: 1,
       type: 'main_frame',
@@ -1023,6 +1053,7 @@ describe('background restart', () => {
       responseHeaders: [{ name: 'content-type', value: 'text/html' }],
     });
     const pageB = watcher.onResponse({
+      requestId: '2',
       url: 'https://b.example.com/s/master.m3u8',
       tabId: 1,
       type: 'xmlhttprequest',

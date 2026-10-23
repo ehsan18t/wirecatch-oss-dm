@@ -20,7 +20,11 @@ import {
   type QueueSummary,
   type WithdrawOutcome,
 } from '@wirecatch/protocol';
+import { vi } from 'vitest';
+import { browser } from 'wxt/browser';
+import { fakeBrowser } from 'wxt/testing/fake-browser';
 import type { DownloadItemLike } from '../src/lib/capture/candidate';
+import type { CookieQuery, StoredCookie } from '../src/lib/cookies';
 import type { DownloadState } from '../src/lib/capture/handover';
 import type {
   BrowserDownloads,
@@ -47,6 +51,15 @@ export const QUEUES: QueueSummary[] = [
   { id: queueId(1), name: 'Main', is_default: true },
   { id: queueId(2), name: 'Night', is_default: false },
 ];
+
+/** Resets the fake browser and has `cookies.getAll` answer with `answer`; a throw rejects the query. */
+export function stubGetAll(answer: (query: CookieQuery) => StoredCookie[]): void {
+  fakeBrowser.reset();
+  vi.spyOn(browser.cookies, 'getAll').mockImplementation(
+    // The fake's typings take the callback form; the extension uses the promise form.
+    (query) => new Promise((resolve) => resolve(answer(query as CookieQuery))) as never,
+  );
+}
 
 /** Lets pending promise callbacks run (they are queued as microtasks). */
 export async function flush(): Promise<void> {

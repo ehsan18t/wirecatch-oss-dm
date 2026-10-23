@@ -34,7 +34,15 @@ export interface MediaItem extends Detection {
   requestedBy: string | null;
   /** When it, or for HLS a playlist of the same stream, was last requested. */
   lastActive: number;
+  /**
+   * The `Cookie` header the browser sent when it last requested it; null when it sent
+   * none. Missing when that request was not seen.
+   */
+  sentCookies?: string | null;
 }
+
+/** What `MediaRegistry.add` records: media found in a response, and the cookies its request carried when they were seen. */
+export type Sighting = Detection & Pick<MediaItem, 'sentCookies'>;
 
 /**
  * What `save` produces and `restore` reads back (kept in `storage.session`): each tab's items, and the page they belong to when it is known.
@@ -104,6 +112,7 @@ const isSavedItem = fields<SavedItem>({
   frameId: optional(isNumber),
   requestedBy: optional(nullable(isKeptUrl)),
   lastActive: optional(isNumber),
+  sentCookies: optional(nullable(isString)),
 });
 
 /** A saved list as `save` writes it; the tabs are read one by one, so one damaged tab does not lose the others. */
@@ -114,14 +123,21 @@ const isSavedTab = tuple(isNumber, arrayOf(isUnknown), isUnknown);
 
 /**
  * True when an HLS playlist from this frame belongs to a stream already listed (see
- * `MediaRegistry`): it is not listed again, but it keeps the stream's window open.
+ * `MediaRegistry`): it is not listed again, but it keeps the stream's window open, and
+ * the cookies its request carried are the stream's newest.
  */
-function extendsStream(list: readonly MediaItem[], frameId: number, now: number): boolean {
+function extendsStream(
+  list: readonly MediaItem[],
+  playlist: Sighting,
+  frameId: number,
+  now: number,
+): boolean {
   const stream = list.find(
     (i) => i.kind === 'hls' && i.frameId === frameId && now - i.lastActive <= HLS_STREAM_WINDOW_MS,
   );
   if (stream === undefined) return false;
   stream.lastActive = now;
+  if (playlist.sentCookies !== undefined) stream.sentCookies = playlist.sentCookies;
   return true;
 }
 
@@ -182,19 +198,14 @@ export class MediaRegistry {
    * Records a detection from a frame of the tab, requested by the document at
    * `requestedBy` (see `MediaItem.requestedBy`); returns true when the tab's list changed.
    */
-  add(
-    tabId: number,
-    detection: Detection,
-    frameId = 0,
-    requestedBy: string | null = null,
-  ): boolean {
+  add(tabId: number, detection: Sighting, frameId = 0, requestedBy: string | null = null): boolean {
     if (detection.url.length > MAX_MEDIA_URL_LENGTH) return false;
     const now = this.#now();
     const list = this.#tabs.get(tabId) ?? [];
     const key = itemKey(detection.kind, detection.url);
     const index = list.findIndex((i) => i.key === key);
     if (index >= 0) return this.#seenAgain(tabId, index, detection, now);
-    if (detection.kind === 'hls' && extendsStream(list, frameId, now)) return false;
+    if (detection.kind === 'hls' && extendsStream(list, detection, frameId, now)) return false;
     const kept =
       list.length >= MAX_ITEMS_PER_TAB ? list.slice(list.length - MAX_ITEMS_PER_TAB + 1) : list;
     const document =
@@ -206,8 +217,8 @@ export class MediaRegistry {
     return true;
   }
 
-  /** The same file seen again: keeps the newest address (its query may carry a fresher token). */
-  #seenAgain(tabId: number, index: number, detection: Detection, now: number): boolean {
+  /** The same file seen again: keeps the newest address (its query may carry a fresher token) and cookies. */
+  #seenAgain(tabId: number, index: number, detection: Sighting, now: number): boolean {
     const list = this.items(tabId);
     const old = list[index];
     if (old === undefined) return false;
@@ -217,8 +228,14 @@ export class MediaRegistry {
       url: detection.url,
       mime: detection.mime ?? old.mime,
       size: detection.size ?? old.size,
+      ...(detection.sentCookies === undefined ? {} : { sentCookies: detection.sentCookies }),
     };
-    if (merged.url === old.url && merged.mime === old.mime && merged.size === old.size) {
+    if (
+      merged.url === old.url &&
+      merged.mime === old.mime &&
+      merged.size === old.size &&
+      merged.sentCookies === old.sentCookies
+    ) {
       return false;
     }
     const next = [...list];

@@ -10,8 +10,25 @@ import { MAX_MEDIA_URL_LENGTH } from './messages';
 /** How detected media is delivered (the page kind is never detected from traffic). */
 export type DetectedKind = 'hls' | 'dash' | 'direct';
 
+/** One request as `webRequest.onSendHeaders` reports it, in both Chromium and Firefox. */
+export interface ObservedRequest {
+  /** The same for the request and its response, and across its redirects. */
+  requestId: string;
+  tabId: number;
+  /** In Chromium the `Cookie` header is among them only when asked for with `extraHeaders`. */
+  requestHeaders?: { name: string; value?: string }[];
+}
+
+/** The `Cookie` header a request was sent with, or null when it was sent without one. */
+export function sentCookies(request: ObservedRequest): string | null {
+  const cookie = request.requestHeaders?.find((h) => h.name.toLowerCase() === 'cookie');
+  return cookie?.value ?? null;
+}
+
 /** One response as `webRequest.onResponseStarted` reports it, in both Chromium and Firefox. */
 export interface ObservedResponse {
+  /** The request's id (`ObservedRequest.requestId`). */
+  requestId: string;
   url: string;
   /** -1 when the request does not belong to a tab (service workers, the browser itself, other extensions). */
   tabId: number;

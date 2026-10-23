@@ -16,6 +16,8 @@ export interface MediaTarget {
   site: string | null;
   /** The document that chose its address (`MediaItem.requestedBy`); the page itself for `page`. */
   requestedBy: string | null;
+  /** The `Cookie` header its request went out with (`MediaItem.sentCookies`); missing for `page`. */
+  sentCookies?: string | null;
 }
 
 /** Where the button was clicked, as far as the content script can tell. */
@@ -44,6 +46,7 @@ function fromItem(item: MediaItem): MediaTarget {
     audio: item.audio,
     site: null,
     requestedBy: item.requestedBy,
+    ...(item.sentCookies === undefined ? {} : { sentCookies: item.sentCookies }),
   };
 }
 

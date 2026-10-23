@@ -1,7 +1,5 @@
 /** Errors the extension handles with a fallback still reach the diagnostics, redacted. */
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { browser } from 'wxt/browser';
-import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { afterEach, describe, expect, it } from 'vitest';
 import { cookieHeaderFor } from '../src/lib/browser/adapters';
 import { diagnostics, type DiagEntry } from '../src/lib/diag/log';
 import { Hub } from '../src/lib/hub/hub';
@@ -11,7 +9,7 @@ import { MediaCenter } from '../src/lib/media/center';
 import { MediaRegistry } from '../src/lib/media/registry';
 import { NativeClient } from '../src/lib/native/client';
 import { parseUrl } from '../src/lib/url';
-import { DEFAULT_SETTINGS, FakeApp, FakeDownloads, QUEUES, flush } from './fakes';
+import { DEFAULT_SETTINGS, FakeApp, FakeDownloads, QUEUES, flush, stubGetAll } from './fakes';
 
 /** The entries made while `run` runs. */
 async function logged(run: () => Promise<void>): Promise<DiagEntry[]> {
@@ -110,21 +108,48 @@ describe('routed errors', () => {
 describe('cookieHeaderFor', () => {
   const NAVIGATION = { initiator: null, navigation: true };
 
+  const SID = { name: 'sid', value: '1', domain: 'a.example', path: '/' };
+
   it('logs nothing when a later way of reading the cookies works', async () => {
-    fakeBrowser.reset();
-    vi.spyOn(browser.cookies, 'getAll')
-      .mockRejectedValueOnce(new Error('first-party isolation'))
-      // The fake's typings take the callback form; no cookies is what the test needs.
-      .mockResolvedValue([] as never);
+    stubGetAll((query) => {
+      if (query.firstPartyDomain === undefined) throw new Error('first-party isolation');
+      return [];
+    });
     const entries = await logged(async () => {
       expect(await cookieHeaderFor('https://a.example/f', null, NAVIGATION)).toBeNull();
     });
     expect(entries).toEqual([]);
   });
 
+  // Chromium 116 to 118, which the extension supports, know no partitions.
+  it('still sends the unpartitioned cookies, and warns of nothing, when the browser cannot read partitions', async () => {
+    stubGetAll((query) => {
+      if (query.partitionKey !== undefined) throw new Error('unknown partitionKey');
+      return [SID];
+    });
+    const entries = await logged(async () => {
+      expect(await cookieHeaderFor('https://a.example/f', null, NAVIGATION)).toBe('sid=1');
+    });
+    expect(entries).toEqual([]);
+  });
+
+  it('warns when only the unpartitioned cookies cannot be read', async () => {
+    stubGetAll((query) => {
+      if (query.partitionKey === undefined) throw new Error('store gone');
+      return [{ ...SID, partitionKey: { topLevelSite: 'https://a.example' } }];
+    });
+    const entries = await logged(async () => {
+      expect(await cookieHeaderFor('https://a.example/f', null, NAVIGATION)).toBe('sid=1');
+    });
+    expect(entries).toEqual([
+      expect.objectContaining({ level: 'warn', scope: 'capture', detail: 'Error: store gone' }),
+    ]);
+  });
+
   it('logs once when the browser rejects every way, and sends no cookies', async () => {
-    fakeBrowser.reset();
-    vi.spyOn(browser.cookies, 'getAll').mockRejectedValue(new Error('no cookies here'));
+    stubGetAll(() => {
+      throw new Error('no cookies here');
+    });
     const entries = await logged(async () => {
       expect(await cookieHeaderFor('https://a.example/f', null, NAVIGATION)).toBeNull();
     });

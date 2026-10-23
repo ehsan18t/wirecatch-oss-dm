@@ -13,6 +13,7 @@ import {
   type JudgingSettings,
 } from '../capture/handover';
 import { shouldCapture } from '../capture/should-capture';
+import { isCrossSite, type CookieContext } from '../cookies';
 import { fallback, log } from '../diag/log';
 import { fileNameFromUrl } from '../file-types';
 import type { MediaRequest, MediaSendResult } from '../media/center';
@@ -276,6 +277,12 @@ export class Hub {
         return { ok: false, message: MEDIA_UNREACHABLE };
       }
     }
+    // Media is loaded by the page itself (a top-level navigation only for the page address).
+    const context: CookieContext = {
+      initiator: request.referrer,
+      topLevel: request.pageUrl,
+      navigation: target.kind === 'page',
+    };
     const result = await this.#app.submit(this.#newHandoverId(), {
       url: target.url,
       referrer: refererFor(target.url, request.referrer),
@@ -285,12 +292,13 @@ export class Hub {
       suggested_name: null,
       mime: target.mime,
       size_hint: target.size,
-      // Media is loaded by the page itself (a top-level navigation only for the page address).
-      cookies: await this.#deps.cookieHeader(target.url, request.cookieStoreId, {
-        initiator: request.referrer,
-        topLevel: request.pageUrl,
-        navigation: target.kind === 'page',
-      }),
+      // Media from another site goes with the cookies its own request carried, when it was
+      // seen: no cookie read can tell whether the browser sends its unpartitioned cookies to
+      // another site (D59). Otherwise they are read now, so they are the freshest.
+      cookies:
+        target.sentCookies !== undefined && isCrossSite(target.url, context)
+          ? target.sentCookies
+          : await this.#deps.cookieHeader(target.url, request.cookieStoreId, context),
       source: 'media_button',
       media: { kind: target.kind, title: request.title },
     });

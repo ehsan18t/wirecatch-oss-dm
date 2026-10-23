@@ -5,7 +5,15 @@
 import type { BrowserInfo } from '@wirecatch/protocol';
 import { browser } from 'wxt/browser';
 import { detectBrowser, type Brand } from '../browser-info';
-import { cookieHeader, cookieQueries, cookiesToSend, type CookieContext } from '../cookies';
+import {
+  cookieHeader,
+  cookieReads,
+  cookiesToSend,
+  mergeCookies,
+  type CookieContext,
+  type CookieQuery,
+  type StoredCookie,
+} from '../cookies';
 import { fallback, log } from '../diag/log';
 import type {
   Badge,
@@ -70,19 +78,46 @@ export async function cookieHeaderFor(
   storeId: string | null,
   context: CookieContext,
 ): Promise<string | null> {
+  const queries = cookieReads(url, storeId, context);
+  const reads = await Promise.all(queries.map(firstAccepted));
+  const failures = reads.flatMap((read, i) =>
+    'rejected' in read
+      ? [
+          {
+            error: read.rejected,
+            partitionOnly: queries[i]?.every((q) => q.partitionKey !== undefined),
+          },
+        ]
+      : [],
+  );
+  if (failures.length === reads.length) {
+    // Without cookies the app still tries; downloads that need a login then report it in the app.
+    log.warn('capture', 'Could not read the cookies; sending none', failures.at(-1)?.error);
+  } else {
+    for (const { error, partitionOnly } of failures) {
+      // Chromium before 119 knows no partitions, so a failed partitioned read is expected there.
+      if (partitionOnly) log.debug('capture', 'Could not read the partitioned cookies', error);
+      else log.warn('capture', 'Could not read some of the cookies', error);
+    }
+  }
+  const cookies = reads.flatMap((read) => ('cookies' in read ? [read.cookies] : []));
+  return cookieHeader(cookiesToSend(mergeCookies(cookies), url, context));
+}
+
+/** The cookies of the first query this browser accepts, or why it rejected the last. */
+async function firstAccepted(
+  queries: CookieQuery[],
+): Promise<{ cookies: StoredCookie[] } | { rejected: unknown }> {
   let rejected: unknown = null;
-  for (const query of cookieQueries(url, storeId, context)) {
+  for (const query of queries) {
     try {
-      const cookies = await browser.cookies.getAll(query);
-      return cookieHeader(cookiesToSend(cookies, url, context));
+      return { cookies: await browser.cookies.getAll(query) };
     } catch (error) {
       // This browser rejects the query (first-party isolation, or no partitioned cookies): try the next.
       rejected = error;
     }
   }
-  // Without cookies the app still tries; downloads that need a login then report it in the app.
-  if (rejected !== null) log.warn('capture', 'Could not read the cookies; sending none', rejected);
-  return null;
+  return { rejected };
 }
 
 export async function hasSiteAccess(url: string): Promise<boolean> {

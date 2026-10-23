@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  cookieQueries,
+  cookieReads,
   cookiesToSend,
   isCrossSite,
+  mergeCookies,
   registrableDomain,
   siteOf,
   type CookieContext,
   type CookieLike,
+  type StoredCookie,
 } from '../src/lib/cookies';
 
 const JAR: CookieLike[] = [
@@ -119,6 +121,18 @@ describe('cookiesToSend', () => {
     ]);
   });
 
+  it('never sends a top-level navigation the cookies partitioned for a frame with a cross-site ancestor', () => {
+    const partitioned = (name: string, hasCrossSiteAncestor?: boolean): CookieLike => ({
+      name,
+      value: name,
+      sameSite: 'no_restriction',
+      partitionKey: { topLevelSite: 'https://example.com', hasCrossSiteAncestor },
+    });
+    const jar = [partitioned('top', false), partitioned('framed', true), partitioned('older')];
+    const context: CookieContext = { initiator: 'https://example.com/', navigation: true };
+    expect(names(cookiesToSend(jar, url, context))).toEqual(['top', 'older']);
+  });
+
   it('keeps cookies whose SameSite state the browser does not report', () => {
     const cookies = [{ name: 'old', value: '1' }];
     expect(
@@ -127,52 +141,107 @@ describe('cookiesToSend', () => {
   });
 });
 
-describe('cookieQueries', () => {
-  it('reads unpartitioned cookies for a top-level navigation, with a first-party isolation fallback', () => {
+describe('cookieReads', () => {
+  // Cloudflare's partitioned cf_clearance is read this way: without it the site answers 403.
+  it('reads the cookies partitioned under the download site for a top-level navigation, then the unpartitioned ones', () => {
+    const url = 'https://files.example.com/a.zip';
+    const base = { url, storeId: 'firefox-container-1' };
     expect(
-      cookieQueries('https://files.example.com/a.zip', 'firefox-container-1', {
+      cookieReads(url, 'firefox-container-1', {
         initiator: 'https://other.test/',
         navigation: true,
       }),
     ).toEqual([
-      { url: 'https://files.example.com/a.zip', storeId: 'firefox-container-1' },
-      {
-        url: 'https://files.example.com/a.zip',
-        storeId: 'firefox-container-1',
-        firstPartyDomain: 'example.com',
-      },
+      [
+        { ...base, partitionKey: { topLevelSite: 'https://example.com' } },
+        {
+          ...base,
+          partitionKey: { topLevelSite: 'https://example.com' },
+          firstPartyDomain: 'example.com',
+        },
+      ],
+      [base, { ...base, firstPartyDomain: 'example.com' }],
     ]);
   });
 
-  it('reads the cookies partitioned under the tab site for media from another site', () => {
+  it('reads only the cookies partitioned under the tab site for media from another site, unless the browser knows no partitions', () => {
     const url = 'https://media.cdn.test/v.mp4';
     expect(
-      cookieQueries(url, null, {
+      cookieReads(url, null, {
         initiator: 'https://www.example.co.uk/watch',
         topLevel: 'https://www.example.co.uk/watch',
         navigation: false,
       }),
     ).toEqual([
-      { url, partitionKey: { topLevelSite: 'https://example.co.uk' } },
-      {
-        url,
-        partitionKey: { topLevelSite: 'https://example.co.uk' },
-        firstPartyDomain: 'example.co.uk',
-      },
-      { url },
-      { url, firstPartyDomain: 'example.co.uk' },
+      [
+        { url, partitionKey: { topLevelSite: 'https://example.co.uk' } },
+        {
+          url,
+          partitionKey: { topLevelSite: 'https://example.co.uk' },
+          firstPartyDomain: 'example.co.uk',
+        },
+        { url },
+        { url, firstPartyDomain: 'example.co.uk' },
+      ],
     ]);
   });
 
-  it('reads unpartitioned cookies for media from the same site', () => {
+  it('reads the cookies partitioned under the tab site for media from the same site', () => {
     const url = 'https://media.example.com/v.mp4';
     expect(
-      cookieQueries(url, null, {
+      cookieReads(url, null, {
         initiator: 'https://www.example.com/watch',
         topLevel: 'https://www.example.com/watch',
         navigation: false,
       }),
-    ).toEqual([{ url }, { url, firstPartyDomain: 'example.com' }]);
+    ).toEqual([
+      [
+        { url, partitionKey: { topLevelSite: 'https://example.com' } },
+        {
+          url,
+          partitionKey: { topLevelSite: 'https://example.com' },
+          firstPartyDomain: 'example.com',
+        },
+      ],
+      [{ url }, { url, firstPartyDomain: 'example.com' }],
+    ]);
+  });
+
+  it('reads only unpartitioned cookies for media whose tab is unknown', () => {
+    const url = 'https://media.example.com/v.mp4';
+    expect(cookieReads(url, null, { initiator: null, topLevel: null, navigation: false })).toEqual([
+      [{ url }, { url, firstPartyDomain: 'example.com' }],
+    ]);
+  });
+});
+
+describe('mergeCookies', () => {
+  const cookie = (name: string, path: string, topLevelSite?: string): StoredCookie => ({
+    name,
+    value: name,
+    domain: '.example.com',
+    path,
+    ...(topLevelSite === undefined ? {} : { partitionKey: { topLevelSite } }),
+  });
+
+  it('keeps each cookie once when two reads return it', () => {
+    const sid = cookie('sid', '/');
+    const clearance = cookie('cf_clearance', '/', 'https://example.com');
+    expect(mergeCookies([[sid, clearance], [sid]])).toEqual([sid, clearance]);
+  });
+
+  it('keeps a partitioned and an unpartitioned cookie of one name, as the browser sends both', () => {
+    const plain = cookie('id', '/');
+    const partitioned = cookie('id', '/', 'https://example.com');
+    const merged = mergeCookies([[partitioned], [plain]]);
+    expect(merged).toHaveLength(2);
+    expect(merged).toEqual(expect.arrayContaining([partitioned, plain]));
+  });
+
+  it('puts cookies with longer paths first', () => {
+    const root = cookie('a', '/');
+    const deep = cookie('b', '/files/');
+    expect(names(mergeCookies([[root], [deep]]))).toEqual(['b', 'a']);
   });
 });
 
@@ -233,7 +302,7 @@ describe('sites on the Public Suffix List', () => {
       navigation: false,
     };
     expect(names(cookiesToSend(JAR, url, context))).toEqual(['none']);
-    expect(cookieQueries(url, null, context)[0]).toEqual({
+    expect(cookieReads(url, null, context)[0]?.[0]).toEqual({
       url,
       partitionKey: { topLevelSite: 'https://attacker.myshopify.com' },
     });
