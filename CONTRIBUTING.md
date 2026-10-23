@@ -8,7 +8,7 @@ Read [docs/DECISIONS.md](docs/DECISIONS.md) (why things are the way they are) an
 
 ## Getting started
 
-Requirements: rustup (it installs the Rust release named in `rust-toolchain.toml`), Node 22 or newer, pnpm 10. On Linux, the Tauri system packages (WebKitGTK and friends, see `.github/workflows/ci.yml`).
+Requirements: rustup (`rust-toolchain.toml` names the latest stable Rust; `rustup update` keeps it current), Node 22 or newer, pnpm 10. On Linux, the Tauri system packages (WebKitGTK and friends, see `.github/workflows/ci.yml`).
 
 ```bash
 pnpm install

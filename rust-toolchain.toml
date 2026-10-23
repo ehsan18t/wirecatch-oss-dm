@@ -1,6 +1,6 @@
-# The Rust release every developer, script and CI job uses. Raise it on purpose, together with any fixes the new lints need.
+# The Rust release every developer, script and CI job uses: always the latest stable (D56). CI installs it on every run; locally, `rustup update` brings it up to date.
 [toolchain]
-channel = "1.99.0"
+channel = "stable"
 components = ["rustfmt", "clippy"]
 # The Linux standard library, so the gate can lint for Linux from Windows and macOS (clippy-linux). It is only the library; no C toolchain comes with it.
 targets = ["x86_64-unknown-linux-gnu"]

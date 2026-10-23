@@ -461,6 +461,14 @@ Decided with the maintainer on 2026-10-23, when the WebKitGTK packages alone, wi
 2. A run that misses must still never wait long, so a cache alone was not enough. Each official mirror in the script's list gets a parallel probe of 10 seconds on the first 10 MB of a large file every mirror carries. The mirrors are then tried fastest first, each with 120 seconds for its package lists and 120 for the packages, and a file that sends no data for 15 seconds counts as a failure. A mirror that runs out of time gives way to the next, and what it downloaded is kept. apt reads only the source list the script writes, so another repository on the runner cannot hold it up.
 3. The wait is bounded: 10 seconds of probing, then at most four minutes for each mirror that fails before one delivers, and a mirror that is slow from the start is tried last. Any mirror is safe to use, because apt checks every file against Ubuntu's signed archive index.
 
+### D56. Every build uses the latest stable Rust
+
+Decided by the maintainer on 2026-10-23. `rust-toolchain.toml` names the `stable` channel instead of a fixed release, for local builds, release builds and CI alike.
+
+1. CI installs the newest stable on every run (`rustup toolchain install` reads the file), and a developer brings theirs up to date with `rustup update`. The Docker script (`scripts/linux-test.sh`) starts from `rust:bookworm` and installs the same.
+2. A new stable release can bring lints that fail `clippy` with no change of ours; the first run after a release shows them, and they are fixed in the next commit, as any other gate failure. The engine's promise to older compilers is unchanged: the `msrv` check builds it with the `rust-version` its manifest states.
+3. A new release changes the Rust cache keys (the toolchain is part of rust-cache's environment hash), so the first run after one builds from an empty cache.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
