@@ -45,16 +45,14 @@ jobs:
           time sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
           df -h /
 
-      # The desktop crate (Tauri 2) links against WebKitGTK and friends on Linux; Windows runners already have WebView2. The streams crate's join tests need a real ffmpeg; they skip without one, so Linux CI is where the real stream-copy join is proven.
+      # The desktop crate (Tauri 2) links against WebKitGTK and friends on Linux; Windows runners already have WebView2.
       - name: Install system packages
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential file libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
-            libayatana-appindicator3-dev librsvg2-dev ffmpeg
-          echo "WIRECATCH_TEST_FFMPEG=$(command -v ffmpeg)" >> "$GITHUB_ENV"
-          echo "WIRECATCH_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
+            libayatana-appindicator3-dev librsvg2-dev
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -71,6 +69,34 @@ jobs:
           cache-on-failure: true
           cache-bin: false
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The streams and media tests need a real ffmpeg; they skip without one, so Linux CI is where real joins and conversions are proven. It is the build the media add-on installs, from the add-on's pinned address and checked against its pinned SHA-256 (`crates/core/src/addons/manifest.rs`, printed by the ffmpeg_release example), and the cache keeps it until that file changes.
+      - name: Restore ffmpeg
+        id: ffmpeg
+        if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ hashFiles('crates/core/src/addons/manifest.rs') }}
+
+      - name: Download ffmpeg
+        if: runner.os == 'Linux' && steps.ffmpeg.outputs.cache-hit != 'true'
+        run: |
+          release=$(cargo run --quiet --locked -p wirecatch-core --example ffmpeg_release)
+          read -r url sha256 program <<< "$release"
+          curl --fail --location --retry 3 --silent --show-error --output "$RUNNER_TEMP/ffmpeg.tar.xz" "$url"
+          echo "$sha256  $RUNNER_TEMP/ffmpeg.tar.xz" | sha256sum --check --strict
+          mkdir -p ~/ffmpeg
+          tar -xJf "$RUNNER_TEMP/ffmpeg.tar.xz" -C ~/ffmpeg
+          echo "$program" > ~/ffmpeg/program
+
+      - name: Use ffmpeg
+        if: runner.os == 'Linux'
+        run: |
+          ffmpeg="$HOME/ffmpeg/$(cat ~/ffmpeg/program)"
+          "$ffmpeg" -hide_banner -version | head -n 1
+          echo "WIRECATCH_TEST_FFMPEG=$ffmpeg" >> "$GITHUB_ENV"
+          echo "WIRECATCH_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
 
       # cargo-nextest, which runs the tests, at the version in scripts/gate/rust.mjs, as a prebuilt release binary whose checksum the action verifies (D33). The other tools come with it, unused here.
       - name: Read the gate tool versions

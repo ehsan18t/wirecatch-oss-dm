@@ -445,6 +445,14 @@ Decided with the maintainer on 2026-10-23, when a CI run took 10 to 16 minutes a
 3. Tests that must not overlap across processes are named in `.config/nextest.toml`: the protocol crate's TypeScript exports, which share files that ts-rs guards only within one process. Names a test makes for folders, pipes and files carry the process id, so they stay apart. Tests that start the bridge take the one the workspace test build made, with its test-only overrides (`crates/test-support/src/bridge.rs`, which the gate points at it): each e2e process building its own, as it did when one binary ran at a time, would relink the executable other processes are running. With `--no-fail-fast`, the doctests run even after a test fails. Nothing is retried. A test binary without the standard harness answers nextest's listing itself (`crates/logging/tests/panics.rs`).
 4. cargo-nextest is in `TOOLS` in `scripts/gate/rust.mjs` with cargo-deny and cargo-machete, and the Rust jobs install it the way D33.4 installs those: a prebuilt release binary through `taiki-e/install-action`. `node scripts/gate.mjs --install-tools` builds it for a developer machine, and `pnpm gate` says so when it is missing.
 
+### D54. Linux CI tests with the media add-on's own ffmpeg
+
+Decided with the maintainer on 2026-10-23, when installing ffmpeg's hundred or so packages from Ubuntu's mirror took 49 minutes of one run (106 MB at 36 kB/s) and minutes of several others.
+
+1. The Linux Rust job no longer installs ffmpeg with apt. It downloads the build the media add-on installs (`BtbN`'s LGPL shared build), from the add-on's pinned address, and checks it against the add-on's pinned SHA-256: `cargo run -p wirecatch-core --example ffmpeg_release` prints both from `crates/core/src/addons/manifest.rs`, so CI holds no second copy. The tests that need a real ffmpeg (`WIRECATCH_TEST_FFMPEG`, required in CI) now run the ffmpeg people get from the app, not Ubuntu's.
+2. `actions/cache` keeps the unpacked build until `manifest.rs` changes, so a run downloads nothing and builds no example unless the pin may have moved. The download comes from GitHub's own release storage, not the Ubuntu mirror.
+3. The WebKitGTK packages the desktop crate links against still come from apt; caching them was set aside, since without ffmpeg's codec libraries they are a small part of what stalled.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
