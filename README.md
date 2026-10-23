@@ -56,7 +56,7 @@ Need torrents? Wirecatch doesn't do them. Free Download Manager and Motrix do.
 - Takes over your browser's downloads automatically, with your cookies, so downloads behind a login work.
 - Right-click any link, image, video or audio and choose **Download with Wirecatch**.
 - A download button over videos on the page.
-- Installers and other programs stay with the browser by default, so its own safety checks still apply.
+- Catches every kind of file, installers included, or only the file types you list in Settings. Files the browser warns are dangerous stay with the browser, and Windows still checks a downloaded program before it runs.
 - One set of settings for every browser and the app.
 
 ### A window for each download

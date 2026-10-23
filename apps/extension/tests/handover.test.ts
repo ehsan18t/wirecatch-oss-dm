@@ -182,16 +182,16 @@ describe('handover', () => {
     expect(s.app.calls('add_download')).toHaveLength(0);
   });
 
-  it('leaves programs in the browser untouched, so its own checks run', async () => {
+  it('takes programs over like any other file (D60)', async () => {
     s = await setup();
     const item = downloadItem({
       id: 8,
+      url: 'https://downloads.example.net/project/tool/setup.exe',
       filename: '/home/me/Downloads/setup.exe',
-      mime: 'application/octet-stream',
+      mime: 'application/x-msdownload',
     });
-    expect(await s.hub.onDownload(item)).toBeNull();
-    expect(s.downloads.log).toEqual([]);
-    expect(s.app.calls('add_download')).toHaveLength(0);
+    expect(await s.hub.onDownload(item)).toMatchObject({ kind: 'handed_over' });
+    expect(s.app.calls('add_download')).toHaveLength(1);
   });
 
   it('reads cookies as for a navigation started by the page the download came from', async () => {
@@ -1605,16 +1605,18 @@ describe('context menu', () => {
     );
   });
 
-  it('lets the browser download programs, so its own checks run', async () => {
+  it('sends a program the person chose to Wirecatch like any other link (D60)', async () => {
     s = await setup();
     const result = await s.hub.onMenuClick(
       { linkUrl: 'https://example.com/get/Setup.EXE' },
       undefined,
     );
-    expect(result).toBe('browser');
-    expect(s.app.calls('add_download')).toHaveLength(0);
-    expect(s.downloads.log).toEqual(['start:https://example.com/get/Setup.EXE']);
-    expect(latestNotice(s.hub)?.message).toContain('is a program');
+    expect(result).toBe('handed_over');
+    expect(s.downloads.log).toEqual([]);
+    const call = s.app.calls('add_download').at(-1);
+    expect(call?.method === 'add_download' && call.params.url).toBe(
+      'https://example.com/get/Setup.EXE',
+    );
   });
 
   it('lets the browser download it when site access was revoked', async () => {

@@ -108,10 +108,12 @@ describe('planMenuClick', () => {
     expect(plan.kind === 'browser' && plan.message).toContain('only take web links');
   });
 
-  it('lets the browser download and check programs', () => {
-    const plan = planMenuClick({ linkUrl: 'https://example.com/setup.exe' }, undefined);
-    expect(plan).toMatchObject({ kind: 'browser' });
-    expect(plan.kind === 'browser' && plan.message).toContain('setup.exe is a program');
+  it('offers a program to Wirecatch like any other web link (D60)', () => {
+    expect(planMenuClick({ linkUrl: 'https://example.com/setup.exe' }, undefined)).toEqual({
+      kind: 'wirecatch',
+      url: 'https://example.com/setup.exe',
+      name: 'setup.exe',
+    });
   });
 
   it('offers a web link to Wirecatch, by its file name, the link before the source', () => {

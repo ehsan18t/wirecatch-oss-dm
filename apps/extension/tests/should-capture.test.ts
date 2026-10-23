@@ -308,39 +308,29 @@ describe('shouldCapture', () => {
       'archive.zip.exe',
       'evil.exe.',
       'evil.exe. . ',
-    ])('keeps the program %s in the browser by default', (fileName) => {
-      expect(shouldCapture(candidate({ fileName }), settings())).toEqual({
+    ])('captures the program %s like any other file (D60)', (fileName) => {
+      expect(shouldCapture(candidate({ fileName }), settings())).toEqual({ capture: true });
+    });
+
+    it('captures every download when the file type list is empty, files without a type too', () => {
+      for (const item of [
+        candidate({ fileName: 'download', mime: 'application/x-msdownload' }),
+        candidate({ fileName: null, url: 'https://example.com/get?id=7', mime: null }),
+      ]) {
+        expect(shouldCapture(item, settings())).toEqual({ capture: true });
+      }
+    });
+
+    it('lets a program follow the file type list like any other file', () => {
+      const item = candidate({ fileName: 'setup.exe' });
+      expect(shouldCapture(item, settings({ capture_extensions: ['exe'] }))).toEqual({
+        capture: true,
+      });
+      expect(shouldCapture(item, settings({ capture_extensions: ['zip'] }))).toEqual({
         capture: false,
-        reason: 'program',
+        reason: 'file_type',
       });
     });
-
-    it('keeps a program even when the file type list names it', () => {
-      const s = settings({ capture_extensions: ['exe'] });
-      expect(shouldCapture(candidate({ fileName: 'setup.exe' }), s)).toEqual({
-        capture: false,
-        reason: 'program',
-      });
-    });
-
-    it('spots a program by the name in the address when the browser has none', () => {
-      const item = candidate({ fileName: null, url: 'https://example.com/get/setup.exe?v=2' });
-      expect(shouldCapture(item, settings())).toEqual({ capture: false, reason: 'program' });
-    });
-
-    it('spots a program by its media type when the name says nothing', () => {
-      const item = candidate({ fileName: 'download', mime: 'application/x-msdownload' });
-      expect(shouldCapture(item, settings())).toEqual({ capture: false, reason: 'program' });
-    });
-
-    it.each(['setup.exe.zip', 'notes.txt', 'movie.mp4', 'exe', 'program.exe.pdf', 'disk.iso'])(
-      'captures %s, which is not a program',
-      (fileName) => {
-        expect(shouldCapture(candidate({ fileName, mime: null }), settings())).toEqual({
-          capture: true,
-        });
-      },
-    );
   });
 
   it('checks rules in order: capture off wins over everything else', () => {

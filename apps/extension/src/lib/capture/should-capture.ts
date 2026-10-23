@@ -1,5 +1,5 @@
 import type { ExtensionSettings } from '@wirecatch/protocol';
-import { fileNameFromUrl, isProgramFile, matchesFileTypes } from '../file-types';
+import { fileNameFromUrl, matchesFileTypes } from '../file-types';
 import { matchingSite } from '../sites';
 
 /**
@@ -43,7 +43,6 @@ export type SkipReason =
   | 'internal_page'
   | 'unsupported_url'
   | 'ignored_site'
-  | 'program'
   | 'file_type'
   | 'too_small';
 
@@ -96,11 +95,10 @@ function isInternal(url: string | null): boolean {
  * 4. `blob:` and `data:` addresses only exist inside the browser: keep.
  * 5. Downloads from the browser's own pages, or with any other non-web address: keep.
  * 6. The download address or the page it came from is an ignored site (or a subdomain of one): keep.
- * 7. Programs, installers and scripts (`isProgramFile`): keep, so the browser's own checks
- *    (Safe Browsing, SmartScreen, download warnings) run on them. This holds even when the
- *    file type list names them.
- * 8. A file type list is set and the file does not match it (or its type is unknown): keep.
- * 9. The size is known and below the minimum: keep. An unknown size is captured.
+ * 7. A file type list is set and the file does not match it (or its type is unknown): keep.
+ *    Programs and installers follow the list like any other file (D60); an empty list
+ *    takes every file.
+ * 8. The size is known and below the minimum: keep. An unknown size is captured.
  */
 export function shouldCapture(
   item: CaptureCandidate,
@@ -133,7 +131,6 @@ const KEEP_RULES: readonly KeepRule[] = [
     reason: 'ignored_site',
     keeps: (item, settings) => onIgnoredSite(item, settings.ignored_sites),
   },
-  { reason: 'program', keeps: (item) => isProgramFile(fileNameOf(item), item.mime) },
   {
     reason: 'file_type',
     keeps: (item, settings) => !matchesFileTypes(fileNameOf(item), settings.capture_extensions),
