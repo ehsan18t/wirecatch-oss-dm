@@ -45,14 +45,22 @@ jobs:
           time sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
           df -h /
 
-      # The desktop crate (Tauri 2) links against WebKitGTK and friends on Linux; Windows runners already have WebView2.
+      # The system packages the desktop crate links against (scripts/ci/linux-packages.txt): from the cache when this runner image installed them before, otherwise from the fastest Ubuntu mirror, with a deadline on every mirror (D55).
+      - name: Read the runner image
+        id: image
+        if: runner.os == 'Linux'
+        run: echo "id=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+
+      - name: Restore system packages
+        if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-packages
+          key: apt-${{ steps.image.outputs.id }}-${{ hashFiles('scripts/ci/linux-packages.*') }}
+
       - name: Install system packages
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential file libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
-            libayatana-appindicator3-dev librsvg2-dev
+        run: bash scripts/ci/linux-packages.sh scripts/ci/linux-packages.txt ~/apt-packages
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:

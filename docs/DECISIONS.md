@@ -451,7 +451,15 @@ Decided with the maintainer on 2026-10-23, when installing ffmpeg's hundred or s
 
 1. The Linux Rust job no longer installs ffmpeg with apt. It downloads the build the media add-on installs (`BtbN`'s LGPL shared build), from the add-on's pinned address, and checks it against the add-on's pinned SHA-256: `cargo run -p wirecatch-core --example ffmpeg_release` prints both from `crates/core/src/addons/manifest.rs`, so CI holds no second copy. The tests that need a real ffmpeg (`WIRECATCH_TEST_FFMPEG`, required in CI) now run the ffmpeg people get from the app, not Ubuntu's.
 2. `actions/cache` keeps the unpacked build until `manifest.rs` changes, so a run downloads nothing and builds no example unless the pin may have moved. The download comes from GitHub's own release storage, not the Ubuntu mirror.
-3. The WebKitGTK packages the desktop crate links against still come from apt; caching them was set aside, since without ffmpeg's codec libraries they are a small part of what stalled.
+3. The WebKitGTK packages the desktop crate links against still come from apt, from the cache or the fastest mirror (D55).
+
+### D55. Linux CI never waits long on an Ubuntu mirror
+
+Decided with the maintainer on 2026-10-23, when the WebKitGTK packages alone, without ffmpeg (D54), took 20 minutes to install from Ubuntu's Azure mirror. It replaces D54.3. Every GitHub-hosted Linux runner without a fee pulls from that same mirror, so another runner would not help; larger and self-hosted runners cost what the project does not spend (no budget before the first release).
+
+1. The packages are listed in `scripts/ci/linux-packages.txt` and installed by `scripts/ci/linux-packages.sh`. `actions/cache` keeps their .deb files per runner image (`ImageOS` and `ImageVersion`) and list, so a run on an image that installed them before installs them with dpkg and downloads nothing.
+2. A run that misses must still never wait long, so a cache alone was not enough. Each official mirror in the script's list gets a parallel probe of 10 seconds on the first 10 MB of a large file every mirror carries. The mirrors are then tried fastest first, each with 120 seconds for its package lists and 120 for the packages, and a file that sends no data for 15 seconds counts as a failure. A mirror that runs out of time gives way to the next, and what it downloaded is kept. apt reads only the source list the script writes, so another repository on the runner cannot hold it up.
+3. The wait is bounded: 10 seconds of probing, then at most four minutes for each mirror that fails before one delivers, and a mirror that is slow from the start is tried last. Any mirror is safe to use, because apt checks every file against Ubuntu's signed archive index.
 
 ## Assumptions (not yet confirmed)
 
