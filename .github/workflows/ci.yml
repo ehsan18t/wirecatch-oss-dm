@@ -25,10 +25,11 @@ env:
   # Free disk below which a Rust job warns: the dependency tree grows, and a link that runs out of disk fails with a bus error rather than a clear message.
   DISK_WARNING_GIB: "4"
 
+# Every job has a time limit well above its slowest healthy run, so a stall fails in minutes instead of holding a run for an hour (D57). Rust's leaves room for a build from an empty cache, which every new stable Rust release brings.
 jobs:
   rust:
     name: Rust (${{ matrix.os }})
-    timeout-minutes: 60
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -36,14 +37,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # The Ubuntu image comes with toolchains this job never uses (Android, .NET, Haskell, CodeQL); without removing them the Rust build does not fit on the runner's disk.
-      - name: Free runner disk
-        if: runner.os == 'Linux'
-        run: |
-          df -h /
-          time sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
 
       # The system packages the desktop crate links against (scripts/ci/linux-packages.txt): from the cache when this runner image installed them before, otherwise from the fastest Ubuntu mirror, with a deadline on every mirror (D55).
       - name: Read the runner image
@@ -60,6 +53,7 @@ jobs:
 
       - name: Install system packages
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: bash scripts/ci/linux-packages.sh scripts/ci/linux-packages.txt ~/apt-packages
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -138,7 +132,7 @@ jobs:
 
   supply-chain:
     name: Supply chain
-    timeout-minutes: 20
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -176,7 +170,7 @@ jobs:
 
   js:
     name: JavaScript (${{ matrix.os }})
-    timeout-minutes: 30
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -244,7 +238,7 @@ jobs:
   # The checks in a real browser, alongside the JavaScript job: they take minutes and need no Rust. They run on both systems because each lays text out in its own fonts.
   browser:
     name: Browser (${{ matrix.os }})
-    timeout-minutes: 30
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
