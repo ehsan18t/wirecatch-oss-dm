@@ -3,8 +3,11 @@
 
 use wirecatch_protocol::app::DownloadStatus;
 
-use crate::common::{Harness, TestResult, fast_server, is_running, throttled_server};
+use crate::common::{
+    Harness, TestResult, fast_server, is_running, partial_files, throttled_server,
+};
 use wirecatch_engine::units::KIB;
+use wirecatch_test_support::resume::{asked_again, kept_ranges};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_file_that_finished_before_the_restart_is_not_downloaded_again() -> TestResult {
@@ -93,7 +96,13 @@ async fn downloads_survive_a_restart_and_running_ones_continue() -> TestResult {
         .await;
     assert!(is_running(&before));
 
-    h.restart().await?;
+    h.shutdown().await;
+    let [_, state] = partial_files(&before.path);
+    let kept = kept_ranges(&state, 512 * KIB)?;
+    let asked_before = slow.stats.seen().len();
+    // The probe after the restart asks from byte 0, which was kept: the server holds that answer's body, so it sends nothing however long the engine takes to break it off, and an engine that read it on would stall and fail.
+    slow.configure(|c| c.hold_bodies_from = Some(0));
+    h.reopen().await?;
 
     // Everything is back, with progress no lower than before.
     let ids: Vec<_> = h.manager.list_downloads().iter().map(|r| r.id).collect();
@@ -115,10 +124,20 @@ async fn downloads_survive_a_restart_and_running_ones_continue() -> TestResult {
     // The interrupted download finishes without being asked, continuing where it was.
     let done = h.wait_status(running.id, DownloadStatus::Completed).await;
     assert_eq!(std::fs::read(&done.path).unwrap(), slow.data);
+    let after = slow.stats.seen().split_off(asked_before);
+    let (probe, fills) = after
+        .split_first()
+        .ok_or("the restarted download sent no request")?;
+    assert_eq!(
+        probe.range().map(|(start, _)| start),
+        Some(0),
+        "it did not probe first"
+    );
+    assert_eq!(probe.sent(), 0, "the held probe sent part of the file");
+    let again = asked_again(fills, &kept, 512 * KIB);
     assert!(
-        slow.bytes_sent() < (512 + 256) * KIB,
-        "sent {} bytes, so the download started over",
-        slow.bytes_sent()
+        again.is_empty(),
+        "it asked again for {again:?}, of kept bytes {kept:?}, so the download started over"
     );
     // Nothing that was paused started by itself.
     assert_eq!(h.row(paused.id).status, DownloadStatus::Paused);

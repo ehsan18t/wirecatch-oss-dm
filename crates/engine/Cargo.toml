@@ -72,7 +72,7 @@ libc.workspace = true
 [dev-dependencies]
 # The shared test servers. A path dependency without a version, so publishing
 # leaves it out (it is never published).
-wirecatch-test-support = { path = "../test-support", features = ["servers", "logs"] }
+wirecatch-test-support = { path = "../test-support", features = ["servers", "logs", "resume"] }
 tokio = { workspace = true, features = ["test-util", "io-util"] }
 bytes.workspace = true
 proptest = { version = "1.6.0", default-features = false, features = ["std"] }

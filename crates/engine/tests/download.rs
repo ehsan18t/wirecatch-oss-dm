@@ -11,6 +11,7 @@ use wirecatch_engine::{
     Progress, RemoteFile, download,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
+use wirecatch_test_support::resume::{asked_again, kept_ranges};
 use wirecatch_test_support::{PATIENCE, TestResult, files_in, private_dir, test_data};
 
 mod common;
@@ -156,45 +157,12 @@ async fn resumes_after_pause_without_downloading_again() {
         "the second run did not probe first"
     );
     assert_eq!(probe.sent(), 0, "the held probe sent part of the file");
-    for fill in fills {
-        let (start, end) = fill.range().expect("a request without a range");
-        let end = end.unwrap_or(len as u64);
-        let again: Vec<_> = kept
-            .iter()
-            .filter(|&&(kept_start, kept_end)| start < kept_end && kept_start < end)
-            .collect();
-        assert!(
-            again.is_empty(),
-            "the second run asked for {start}..{end}, which overlaps kept bytes {again:?}"
-        );
-    }
+    let again = asked_again(fills, &kept, len as u64);
+    assert!(
+        again.is_empty(),
+        "the second run asked again for {again:?}, of kept bytes {kept:?}"
+    );
     dir.remove().unwrap();
-}
-
-/// The ranges `[start, end)` of a file of `len` bytes a resume file says are on disk: everything but its `remaining`.
-fn kept_ranges(state: &std::path::Path, len: u64) -> TestResult<Vec<(u64, u64)>> {
-    let state: serde_json::Value = serde_json::from_slice(&std::fs::read(state)?)?;
-    let remaining = state["remaining"]
-        .as_array()
-        .ok_or("the resume file lists no remaining ranges")?;
-    let mut kept = Vec::new();
-    let mut from = 0;
-    for range in remaining {
-        let bound = |key: &str| {
-            range[key]
-                .as_u64()
-                .ok_or("a remaining range without its bounds")
-        };
-        let (start, end) = (bound("start")?, bound("end")?);
-        if from < start {
-            kept.push((from, start));
-        }
-        from = end;
-    }
-    if from < len {
-        kept.push((from, len));
-    }
-    Ok(kept)
 }
 
 /// A resume file is data from outside the process: a hand edit, a torn write
@@ -1080,13 +1048,23 @@ async fn an_exact_path_that_refuses_to_replace_keeps_the_data_for_later() {
 
     // Once the name is free, running the request again finishes from the data already there.
     std::fs::remove_file(&path).unwrap();
-    let sent_before = server.stats.bytes_sent.load(Ordering::SeqCst);
+    // Every byte is on disk, so the run's one request is its probe from byte 0: the server holds that answer's body, so it sends nothing however long the engine takes to break it off, and an engine that read it on would stall and fail.
+    let asked_before = server.seen_at("t.bin").len();
+    server.configure(|c| c.hold_bodies_from = Some(0));
     let outcome = run(refusing()).await.unwrap();
     let Outcome::Completed { resumed_from, .. } = outcome else {
         panic!("not completed: {outcome:?}")
     };
     assert_eq!(resumed_from, server.data.len() as u64);
     assert_eq!(std::fs::read(&path).unwrap(), server.data);
-    assert!(server.stats.bytes_sent.load(Ordering::SeqCst) - sent_before < MIB);
+    let asked: Vec<_> = server.seen_at("t.bin")[asked_before..]
+        .iter()
+        .map(|seen| (seen.range(), seen.sent()))
+        .collect();
+    assert_eq!(
+        asked,
+        [(Some((0, None)), 0)],
+        "the run asked again for data already there"
+    );
     dir.remove().unwrap();
 }

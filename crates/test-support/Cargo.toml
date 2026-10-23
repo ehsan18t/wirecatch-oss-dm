@@ -25,7 +25,7 @@ tokio = { workspace = true, features = ["io-util"], optional = true }
 tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring", "tls12"], optional = true }
 url = { workspace = true, optional = true }
 
-# Reading the redaction samples, only with the `redaction` feature; serde_json also reads cargo's build messages with `bridge`.
+# Reading the redaction samples, only with the `redaction` feature; serde_json also reads cargo's build messages with `bridge` and resume files with `resume`.
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
@@ -60,6 +60,8 @@ servers = [
 ]
 # The bridge built with its `test-overrides` feature, for tests that start it.
 bridge = ["dep:serde_json", "dep:wirecatch-product"]
+# Comparing what a resumed download asks for with what its resume file says is on disk.
+resume = ["servers", "dep:serde_json"]
 # Capturing logs as structured events.
 logs = ["dep:tracing", "dep:tracing-subscriber"]
 # The samples both redactions are tested against (`data/redaction.json`).

@@ -51,16 +51,9 @@ async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {
     assert_eq!(done.path, row.path, "the file moved");
     assert_eq!(done.url, server.url("new/file.bin").as_str());
     assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
-    // Only the missing part came again.
+    // Only the missing part came again: no answer that sent anything started before it. A total of bytes sent would also count what buffers took in from a range a split cut short, which grows with the machine's load.
     let asked = server.stats.seen().split_off(asked_before);
     let answers: Vec<_> = asked.iter().map(|s| (s.range(), s.sent())).collect();
-    let sent: u64 = asked.iter().map(Seen::sent).sum();
-    assert_eq!(
-        sent,
-        len - paused.done,
-        "{answers:?}, {} were here",
-        paused.done
-    );
     assert!(
         asked
             .iter()
@@ -90,12 +83,25 @@ async fn cancel_discards_progress_and_retry_starts_over() -> TestResult {
     .await;
 
     server.configure(|c| c.per_connection_bps = None);
-    let sent_before = server.bytes_sent();
+    let asked_before = server.stats.seen().len();
     h.manager.retry(row.id).unwrap();
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
-    // Retry started over: the whole file came again.
-    assert_eq!(server.bytes_sent() - sent_before, server.data.len() as u64);
+    // Retry started over: its own answers brought the whole file again, from byte 0. Only the retry's, since the cancelled run's last chunk can still leave the server after it stopped.
+    let retried = server.stats.seen().split_off(asked_before);
+    let answers: Vec<_> = retried.iter().map(|s| (s.range(), s.sent())).collect();
+    assert_eq!(
+        retried
+            .first()
+            .and_then(Seen::range)
+            .map(|(start, _)| start),
+        Some(0),
+        "{answers:?}"
+    );
+    assert!(
+        retried.iter().map(Seen::sent).sum::<u64>() >= server.data.len() as u64,
+        "the retry did not fetch the whole file: {answers:?}"
+    );
     let finished = h.manager.cancel(row.id).unwrap_err();
     assert!(matches!(finished, CoreError::WrongState(_)), "{finished}");
     // A client tells a finished download from a request it got wrong by the code.

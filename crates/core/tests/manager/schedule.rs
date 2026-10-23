@@ -55,13 +55,18 @@ async fn a_window_starts_and_stops_its_queue() -> TestResult {
     h.clock.set(monday(3, 0)?);
     let stopped = h.wait_status(row.id, DownloadStatus::Queued).await;
     assert!(stopped.done > 0, "progress was lost when the window closed");
-    let sent = server.bytes_sent();
+    // Requests, not bytes: the stopped connection's last chunk can still leave the server just after the row turns queued.
+    let asked = server.stats.seen().len();
 
     // Tuesday is not a scheduled day, so it stays queued.
     h.clock.set(monday(2, 30)? + TimeDelta::days(1));
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     assert_eq!(h.row(row.id).status, DownloadStatus::Queued);
-    assert_eq!(server.bytes_sent(), sent);
+    assert_eq!(
+        server.stats.seen().len(),
+        asked,
+        "it asked the server for more outside its window"
+    );
 
     // The next Monday's window picks it up again.
     h.clock.set(monday(2, 30)? + TimeDelta::days(7));

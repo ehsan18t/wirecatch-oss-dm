@@ -15,7 +15,8 @@ use wirecatch_engine::{
 };
 use wirecatch_test_support::http::{Config, TestServer};
 use wirecatch_test_support::logs::Logs;
-use wirecatch_test_support::{private_dir, test_data};
+use wirecatch_test_support::resume::{asked_again, kept_ranges};
+use wirecatch_test_support::{PATIENCE, private_dir, test_data};
 
 mod common;
 use common::run;
@@ -89,9 +90,6 @@ async fn no_request_asks_for_more_than_the_limit_while_connections_split() {
         server.stats.max_concurrent.load(Ordering::SeqCst) > 1,
         "expected parallel connections"
     );
-    // Every byte arrived once, give or take ranges cut short by a split.
-    let sent = server.stats.bytes_sent.load(Ordering::SeqCst);
-    assert!(sent < server.data.len() as u64 + MIB, "sent {sent}");
     dir.remove().unwrap();
 }
 
@@ -179,35 +177,43 @@ async fn a_paused_download_resumes_with_limited_requests() {
         progress.clone(),
         cancel.clone(),
     ));
+    let deadline = Instant::now() + PATIENCE;
     while progress.done() < MIB {
+        assert!(Instant::now() < deadline, "the download never started");
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     cancel.cancel();
     let paused = task.await.unwrap().expect("pausing should not fail");
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
-    assert!(dir.join("video.mp4.wcstate").exists());
-
-    let sent_before = server.stats.bytes_sent.load(Ordering::SeqCst);
+    let kept = kept_ranges(&dir.join("video.mp4.wcstate"), len as u64).unwrap();
     let seen_before = server.stats.seen().len();
-    server.configure(|c| c.per_connection_bps = Some(4 * MIB));
+
+    // The second run's probe asks from byte 0, which the first run kept: the server holds that answer's body, so it sends nothing however long the engine takes to break it off, and an engine that read it on would stall and fail.
+    server.configure(|c| {
+        c.per_connection_bps = Some(4 * MIB);
+        c.hold_bodies_from = Some(0);
+    });
     let (path, resumed_from) =
         completed(run(request(&server, &dir, 4, Some(limit))).await.unwrap());
 
     assert!(resumed_from >= MIB, "kept only {resumed_from} bytes");
     assert_eq!(std::fs::read(&path).unwrap(), server.data);
     assert_all_within(&server, limit);
-    // The second run fetched what was missing, not the whole file again.
-    let sent = server.stats.bytes_sent.load(Ordering::SeqCst) - sent_before;
-    let needed = len as u64 - resumed_from;
-    assert!(
-        sent < needed + (len / 4) as u64,
-        "second run fetched {sent} bytes to fill {needed}"
+    // What the second run asked for, not what the server pushed into socket buffers before a connection was broken off, which grows with the machine's load.
+    let second_run = server.stats.seen().split_off(seen_before);
+    let (probe, fills) = second_run
+        .split_first()
+        .expect("the second run sent no request");
+    assert_eq!(
+        probe.range(),
+        Some((0, Some(limit))),
+        "the second run did not probe first"
     );
-    // It went on from where the first run stopped, not from the start.
+    assert_eq!(probe.sent(), 0, "the held probe sent part of the file");
+    let again = asked_again(fills, &kept, len as u64);
     assert!(
-        server.stats.seen()[seen_before..]
-            .iter()
-            .any(|s| s.range().is_some_and(|(start, _)| start > 0)),
+        again.is_empty(),
+        "the second run asked again for {again:?}, of kept bytes {kept:?}"
     );
     dir.remove().unwrap();
 }

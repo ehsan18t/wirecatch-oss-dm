@@ -147,7 +147,17 @@ impl Harness {
 
     /// Shuts the manager down and opens a new one on the same data, like an app restart.
     pub async fn restart(&mut self) -> TestResult {
+        self.shutdown().await;
+        self.reopen().await
+    }
+
+    /// The first half of a [`restart`](Self::restart), so a test can look at the files the manager left before [`reopen`](Self::reopen).
+    pub async fn shutdown(&self) {
         self.manager.shutdown().await;
+    }
+
+    /// Opens a new manager on the same data after [`shutdown`](Self::shutdown).
+    pub async fn reopen(&mut self) -> TestResult {
         self.manager = open(
             &self.root,
             &self.folders,

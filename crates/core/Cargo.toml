@@ -59,7 +59,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "test-util"] }
 # Logging for the headless example.
 wirecatch-logging = { workspace = true, features = ["setup"] }
-wirecatch-test-support = { path = "../test-support", features = ["servers"] }
+wirecatch-test-support = { path = "../test-support", features = ["servers", "resume"] }
 
 [lints]
 workspace = true

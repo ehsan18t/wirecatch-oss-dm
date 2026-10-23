@@ -54,6 +54,8 @@ pub mod http3;
 pub mod logs;
 #[cfg(feature = "redaction")]
 pub mod redaction;
+#[cfg(feature = "resume")]
+pub mod resume;
 #[cfg(feature = "servers")]
 pub mod silent;
 #[cfg(feature = "servers")]
