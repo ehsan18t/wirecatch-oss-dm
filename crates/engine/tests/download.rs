@@ -127,11 +127,14 @@ async fn resumes_after_pause_without_downloading_again() {
         .unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
     assert!(dir.join("r.bin.wcpart").exists() && dir.join("r.bin.wcstate").exists());
+    let kept = kept_ranges(&dir.join("r.bin.wcstate"), len as u64).unwrap();
+    let first_run = server.seen_at("r.bin").len();
 
-    // Keep the server throttled: unthrottled, localhost fills megabytes of socket
-    // buffers before a connection is dropped, which would hide real waste.
-    let sent_before = server.stats.bytes_sent.load(Ordering::SeqCst);
-    server.configure(|c| c.per_connection_bps = Some(4 * MIB));
+    // The second run's probe asks from byte 0, which the first run kept: the server holds that answer's body, so it sends nothing however long the engine takes to break it off, and an engine that read it on would stall and fail.
+    server.configure(|c| {
+        c.per_connection_bps = Some(4 * MIB);
+        c.hold_bodies_from = Some(0);
+    });
     let outcome = run(request(&server, "r.bin", &dir, 4)).await.unwrap();
 
     let Outcome::Completed {
@@ -142,13 +145,56 @@ async fn resumes_after_pause_without_downloading_again() {
     };
     assert!(resumed_from >= MIB, "kept only {resumed_from} bytes");
     assert_eq!(std::fs::read(path).unwrap(), server.data);
-    let sent = server.stats.bytes_sent.load(Ordering::SeqCst) - sent_before;
-    let needed = len as u64 - resumed_from;
-    assert!(
-        sent < needed + (len / 8) as u64,
-        "second run fetched {sent} bytes to fill {needed}"
+    // What the second run asked for, not what the server pushed into socket buffers before a connection was broken off, which grows with the machine's load.
+    let second_run = server.seen_at("r.bin").split_off(first_run);
+    let (probe, fills) = second_run
+        .split_first()
+        .expect("the second run sent no request");
+    assert_eq!(
+        probe.range(),
+        Some((0, None)),
+        "the second run did not probe first"
     );
+    assert_eq!(probe.sent(), 0, "the held probe sent part of the file");
+    for fill in fills {
+        let (start, end) = fill.range().expect("a request without a range");
+        let end = end.unwrap_or(len as u64);
+        let again: Vec<_> = kept
+            .iter()
+            .filter(|&&(kept_start, kept_end)| start < kept_end && kept_start < end)
+            .collect();
+        assert!(
+            again.is_empty(),
+            "the second run asked for {start}..{end}, which overlaps kept bytes {again:?}"
+        );
+    }
     dir.remove().unwrap();
+}
+
+/// The ranges `[start, end)` of a file of `len` bytes a resume file says are on disk: everything but its `remaining`.
+fn kept_ranges(state: &std::path::Path, len: u64) -> TestResult<Vec<(u64, u64)>> {
+    let state: serde_json::Value = serde_json::from_slice(&std::fs::read(state)?)?;
+    let remaining = state["remaining"]
+        .as_array()
+        .ok_or("the resume file lists no remaining ranges")?;
+    let mut kept = Vec::new();
+    let mut from = 0;
+    for range in remaining {
+        let bound = |key: &str| {
+            range[key]
+                .as_u64()
+                .ok_or("a remaining range without its bounds")
+        };
+        let (start, end) = (bound("start")?, bound("end")?);
+        if from < start {
+            kept.push((from, start));
+        }
+        from = end;
+    }
+    if from < len {
+        kept.push((from, len));
+    }
+    Ok(kept)
 }
 
 /// A resume file is data from outside the process: a hand edit, a torn write
