@@ -39,17 +39,22 @@ export function asAnnounce(raw: unknown): AnnounceMessage | null {
   return { type: MEDIA_ANNOUNCE, ok: raw.ok, message: raw.message.slice(0, MAX_TITLE_LENGTH) };
 }
 
-/**
- * `storage.local` key holding only the "Show download button on videos" setting, as
- * a boolean. Content scripts read this key alone, never the settings cache with the
- * list of ignored sites.
- */
-export const MEDIA_BUTTON_KEY = 'wirecatch.mediaButton.v1';
+/** Asked by the media button as its page loads: whether "Show download button on videos" is on. Answered with a `ButtonSetting`. */
+export const MEDIA_BUTTON_QUERY = 'wirecatch:media-button-query';
 
-/** Reads the stored setting: on unless it is explicitly off (the app's default is on). */
-export function mediaButtonOn(stored: unknown): boolean {
-  return stored !== false;
+/** Sent by the background to every open page when "Show download button on videos" changes, and the answer to `MEDIA_BUTTON_QUERY`. A content script learns this setting alone, never the others (D61). */
+export const MEDIA_BUTTON_SETTING = 'wirecatch:media-button-setting';
+
+export interface ButtonSetting {
+  type: typeof MEDIA_BUTTON_SETTING;
+  on: boolean;
 }
+
+export const isButtonSetting = fields<ButtonSetting>({
+  type: literal(MEDIA_BUTTON_SETTING),
+  on: isBoolean,
+});
+
 /**
  * Longest media address handled (8 KB), whether a page sends it or it is seen on the
  * network. Real media addresses are far shorter; longer ones are not worth handing
@@ -85,7 +90,12 @@ export type ContentRequest =
   /** Is there anything to download for this element? Asked before the button is shown. */
   | ({ type: typeof MEDIA_CHECK } & ElementInfo & FrameInfo)
   /** The button was clicked. */
-  | ({ type: typeof MEDIA_DOWNLOAD; title: string | null } & ElementInfo & FrameInfo);
+  | ({ type: typeof MEDIA_DOWNLOAD; title: string | null } & ElementInfo & FrameInfo)
+  /** Is the button on at all? */
+  | { type: typeof MEDIA_BUTTON_QUERY };
+
+/** A request about one media element: a check or a click. */
+export type ElementRequest = Exclude<ContentRequest, { type: typeof MEDIA_BUTTON_QUERY }>;
 
 export interface CheckAnswer {
   show: boolean;
@@ -118,6 +128,8 @@ const isCheck = object({ type: literal(MEDIA_CHECK), ...elementFields });
 
 const isDownload = object({ type: literal(MEDIA_DOWNLOAD), title: isTitle, ...elementFields });
 
+const isButtonQuery = object({ type: literal(MEDIA_BUTTON_QUERY) });
+
 /**
  * Checks the shape of a message from a content script; null for anything else. A missing `location` reads as null (the background then uses the browser's record of the frame's address).
  */
@@ -129,6 +141,7 @@ export function asContentRequest(raw: unknown): ContentRequest | null {
     const { title, src, audio } = raw;
     return { type: MEDIA_DOWNLOAD, title, src, audio, location: raw.location ?? null };
   }
+  if (isButtonQuery(raw)) return { type: MEDIA_BUTTON_QUERY };
   return null;
 }
 

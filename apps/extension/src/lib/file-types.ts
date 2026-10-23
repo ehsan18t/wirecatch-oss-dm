@@ -1,24 +1,6 @@
-/** Helpers for the "file types to capture" setting (lower case, no dot, empty list means all). */
+/** File names, and the "file types to capture" setting (lower case, no dot, empty list means all). */
 import { normalizeFileType } from '@wirecatch/protocol';
 import { parseUrl } from './url';
-
-/**
- * Splits what a person typed into a clean list of file types.
- * `".ZIP, exe  mp4,zip"` becomes `["zip", "exe", "mp4"]`.
- */
-export function parseFileTypes(input: string): string[] {
-  const seen = new Set<string>();
-  for (const raw of input.split(/[\s,;]+/)) {
-    const type = normalizeFileType(raw);
-    if (type !== null) seen.add(type);
-  }
-  return [...seen];
-}
-
-/** Shows a list of file types the way a person would type it. */
-export function formatFileTypes(types: readonly string[]): string {
-  return types.join(', ');
-}
 
 /** The last path segment of a URL, decoded, or null if there is none. */
 export function fileNameFromUrl(url: string): string | null {

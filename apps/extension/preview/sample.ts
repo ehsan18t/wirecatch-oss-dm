@@ -1,8 +1,10 @@
 // A scripted background script for the preview page: the pages' real model, fed the snapshot and
 // media list of one sample state, answering every command the way the background would.
 import {
+  applyBrowserControlsPatch,
   applyExtensionSettingsPatch,
   queueId,
+  type BrowserControls,
   type ExtensionSettings,
   type QueueSummary,
 } from '@wirecatch/protocol';
@@ -24,9 +26,10 @@ export const SAMPLE_STATES = [
   'many',
   'closed',
   'missing',
-  'cached',
+  'no-access',
   'connecting',
   'long',
+  'old-app',
 ] as const;
 export type SampleState = (typeof SAMPLE_STATES)[number];
 
@@ -45,6 +48,32 @@ const SETTINGS: ExtensionSettings = {
   capture_extensions: ['zip', 'exe', 'iso', 'mp4'],
   min_capture_size: 2 * MB,
   default_queue: queueId(1),
+};
+
+const CONTROLS: BrowserControls = {
+  global_speed_limit: null,
+  max_concurrent_downloads: 3,
+  media: {
+    video: {
+      format: 'mp4',
+      audio_kbps: null,
+      subtitle_languages: ['en'],
+      auto_subtitles: true,
+      subtitle_files: false,
+      chapters: true,
+    },
+    audio: {
+      format: 'mp3',
+      audio_kbps: 192,
+      subtitle_languages: [],
+      auto_subtitles: true,
+      subtitle_files: false,
+      chapters: false,
+    },
+    ask_each_time: true,
+    quality: { height: 1080 },
+    fallback: 'lower',
+  },
 };
 
 const QUEUES: QueueSummary[] = [
@@ -142,12 +171,12 @@ const LONG_SITES = [
   'release-assets.downloads.mirror-network.example-university.edu',
 ];
 
+/** A speed limit with a decimal, as the "long" state shows it. */
+const LONG_SPEED_LIMIT = 1.5 * MB;
+
 /** The address of the page the "long" popup is opened over. */
 export const LONG_PAGE_URL =
   'https://release-assets.downloads.mirror-network.example-university.edu/x';
-
-/** When the cached copy of the "cached" state was saved. */
-const CACHED_AT = Date.parse('2026-10-12T18:30:00Z');
 
 const NOTICES: Notice[] = [
   {
@@ -166,7 +195,6 @@ function status(state: SampleState): ConnectionStatus {
     case 'closed':
       return { state: 'unavailable', problem: { kind: 'app_closed', detail: null }, retryAt: null };
     case 'missing':
-    case 'cached':
       return {
         state: 'unavailable',
         problem: { kind: 'host_missing', detail: 'Specified native messaging host not found.' },
@@ -178,32 +206,58 @@ function status(state: SampleState): ConnectionStatus {
     case 'capture-off':
     case 'long':
     case 'many':
+    case 'no-access':
+    case 'old-app':
       return { state: 'connected', appVersion: '0.1.0' };
   }
 }
 
+/** The app is connected, so the popup has its settings. */
+function connected(state: SampleState): boolean {
+  return status(state).state === 'connected';
+}
+
 function snapshot(state: SampleState): Snapshot {
-  const known = state !== 'missing' && state !== 'connecting';
+  if (!connected(state)) {
+    return { status: status(state), settings: null, controls: null, queues: [], notices: [] };
+  }
   return {
     status: status(state),
-    settings: known
-      ? {
-          ...SETTINGS,
-          capture_enabled: state !== 'capture-off',
-          ...(state === 'long' ? { ignored_sites: LONG_SITES, default_queue: queueId(2) } : {}),
-        }
-      : null,
-    settingsFromCache: state === 'cached',
-    cachedAt: state === 'cached' ? CACHED_AT : null,
+    settings: {
+      ...SETTINGS,
+      capture_enabled: state !== 'capture-off',
+      ...(state === 'long' ? { ignored_sites: LONG_SITES, default_queue: queueId(2) } : {}),
+    },
+    controls:
+      state === 'old-app'
+        ? null
+        : state === 'long'
+          ? { ...CONTROLS, global_speed_limit: LONG_SPEED_LIMIT }
+          : CONTROLS,
     queues: state === 'long' ? LONG_QUEUES : QUEUES,
     notices: state === 'many' || state === 'long' ? NOTICES : [],
   };
 }
 
 function media(state: SampleState, tabId: number): MediaView {
-  if (state === 'missing' || state === 'connecting') return { tabId, page: 'web', entries: [] };
+  if (!connected(state)) return { tabId, page: 'web', entries: [] };
   if (state === 'long') return { tabId, page: 'web', entries: LONG_MEDIA };
   return { tabId, page: 'web', entries: state === 'many' ? [...MEDIA, ...MANY] : MEDIA };
+}
+
+/** What the popup shows once the sample app carried out `command`: `shown` itself when nothing changed. */
+function changed(shown: Snapshot, command: PopupCommand): Snapshot {
+  const { settings, controls } = shown;
+  if (command.type === 'update_settings' && settings !== null) {
+    return { ...shown, settings: applyExtensionSettingsPatch(settings, command.patch) };
+  }
+  if (command.type === 'update_controls' && controls !== null) {
+    return { ...shown, controls: applyBrowserControlsPatch(controls, command.patch) };
+  }
+  if (command.type === 'dismiss_notice') {
+    return { ...shown, notices: shown.notices.filter((n) => n.id !== command.id) };
+  }
+  return shown;
 }
 
 /** A model for the pages, as the background would feed it in `state`. */
@@ -217,33 +271,17 @@ export function sampleModel(state: SampleState): PopupModel {
   let current = snapshot(state);
 
   function answer(id: number, command: PopupCommand): void {
-    switch (command.type) {
-      case 'update_settings':
-        if (current.settings !== null) {
-          current = {
-            ...current,
-            settings: applyExtensionSettingsPatch(current.settings, command.patch),
-          };
-          send({ type: 'snapshot', snapshot: current });
-        }
-        break;
-      case 'dismiss_notice':
-        current = { ...current, notices: current.notices.filter((n) => n.id !== command.id) };
-        send({ type: 'snapshot', snapshot: current });
-        break;
-      case 'watch_media':
-        send({ type: 'media', view: media(state, command.tabId) });
-        break;
-      case 'download_media':
-        setTimeout(() => {
-          send({ type: 'result', id, ok: true, message: 'Sent to Wirecatch.' });
-        }, SEND_DELAY_MS);
-        return;
-      case 'open_app':
-      case 'pause_all':
-      case 'resume_all':
-      case 'reconnect':
-        break;
+    if (command.type === 'download_media') {
+      setTimeout(() => {
+        send({ type: 'result', id, ok: true, message: 'Sent to Wirecatch.' });
+      }, SEND_DELAY_MS);
+      return;
+    }
+    if (command.type === 'watch_media') send({ type: 'media', view: media(state, command.tabId) });
+    const next = changed(current, command);
+    if (next !== current) {
+      current = next;
+      send({ type: 'snapshot', snapshot: current });
     }
     send({ type: 'result', id, ok: true });
   }

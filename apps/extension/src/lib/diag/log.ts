@@ -24,7 +24,6 @@ export const SCOPES = {
   media: true,
   native: true,
   notices: true,
-  options: true,
   page: true,
   popup: true,
   settings: true,

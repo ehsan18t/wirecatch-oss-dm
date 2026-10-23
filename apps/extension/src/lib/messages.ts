@@ -3,10 +3,14 @@
  * everything that reaches the app uses `@wirecatch/protocol`).
  */
 import {
+  isBrowserControls,
+  isBrowserControlsPatch,
   isExtensionSettings,
   isExtensionSettingsPatch,
   isMediaKind,
   isQueueSummary,
+  type BrowserControls,
+  type BrowserControlsPatch,
   type ExtensionSettings,
   type ExtensionSettingsPatch,
   type QueueSummary,
@@ -28,7 +32,7 @@ import {
   variants,
 } from './validate';
 
-/** Name of the `runtime.connect` port the extension's pages (popup and options) open to the background script. */
+/** Name of the `runtime.connect` port the extension's popup opens to the background script. */
 export const POPUP_PORT_NAME = 'wirecatch-popup';
 
 /** What `runtime.onConnect` says about a port. */
@@ -84,12 +88,10 @@ export const isNotice = fields<Notice>({
 /** Everything the popup shows, pushed whenever any part of it changes. */
 export interface Snapshot {
   status: ConnectionStatus;
-  /** The app's settings, or the last cached copy when the app cannot be reached; null before the first connection. */
+  /** The connected app's settings; null while it is not connected (D61). */
   settings: ExtensionSettings | null;
-  /** True when `settings` is the cached copy, shown read-only. */
-  settingsFromCache: boolean;
-  /** When the cached copy was saved (milliseconds since the epoch). */
-  cachedAt: number | null;
+  /** The app's own settings the popup shows too; null while it is not connected, or for an app from before them. */
+  controls: BrowserControls | null;
   queues: QueueSummary[];
   /** Newest first. */
   notices: Notice[];
@@ -97,6 +99,9 @@ export interface Snapshot {
 
 export type PopupCommand =
   | { type: 'update_settings'; patch: ExtensionSettingsPatch }
+  | { type: 'update_controls'; patch: BrowserControlsPatch }
+  /** Start Wirecatch if it is closed, and show its browser settings. */
+  | { type: 'open_settings' }
   | { type: 'pause_all' }
   | { type: 'resume_all' }
   | { type: 'reconnect' }
@@ -125,8 +130,7 @@ export type BackgroundMessage =
 const isSnapshot = fields<Snapshot>({
   status: isConnectionStatus,
   settings: nullable(isExtensionSettings),
-  settingsFromCache: isBoolean,
-  cachedAt: nullable(isNumber),
+  controls: nullable(isBrowserControls),
   queues: arrayOf(isQueueSummary),
   notices: arrayOf(isNotice),
 });
@@ -186,6 +190,11 @@ const isCommand = variants<PopupCommand>({
     type: literal('update_settings'),
     patch: isExtensionSettingsPatch,
   }),
+  update_controls: fields<Command<'update_controls'>>({
+    type: literal('update_controls'),
+    patch: isBrowserControlsPatch,
+  }),
+  open_settings: fields<Command<'open_settings'>>({ type: literal('open_settings') }),
   pause_all: fields<Command<'pause_all'>>({ type: literal('pause_all') }),
   resume_all: fields<Command<'resume_all'>>({ type: literal('resume_all') }),
   reconnect: fields<Command<'reconnect'>>({ type: literal('reconnect') }),

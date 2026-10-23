@@ -2,16 +2,47 @@ import type {
   AddedDownload,
   Call,
   ExtensionSettings,
-  ExtensionSettingsPatch,
   NewDownload,
   Reply,
   WithdrawOutcome,
 } from '@wirecatch/protocol';
 import { submit, type SubmitResult } from '../capture/handover';
 import { log } from '../diag/log';
-import type { NativeClient } from '../native/client';
+import type { PopupCommand } from '../messages';
+import { RequestError, type NativeClient } from '../native/client';
 import type { HubTiming } from './deps';
 import type { KnownSettings } from './settings';
+
+/** The popup's commands that the app carries out. */
+export type AppCommand = Extract<
+  PopupCommand,
+  {
+    type:
+      | 'open_app'
+      | 'open_settings'
+      | 'pause_all'
+      | 'resume_all'
+      | 'update_settings'
+      | 'update_controls';
+  }
+>;
+
+/** The popup's commands the background carries out itself; the app carries out the rest (`AppCalls.run`). */
+export type LocalCommand = Extract<
+  PopupCommand,
+  { type: 'watch_media' | 'download_media' | 'reconnect' | 'dismiss_notice' }
+>;
+const LOCAL_COMMANDS: ReadonlySet<PopupCommand['type']> = new Set<LocalCommand['type']>([
+  'watch_media',
+  'download_media',
+  'reconnect',
+  'dismiss_notice',
+]);
+export const isLocalCommand = (command: PopupCommand): command is LocalCommand =>
+  LOCAL_COMMANDS.has(command.type);
+
+/** The popup's two kinds of settings change. */
+type SettingsUpdate = Extract<AppCommand, { type: 'update_settings' | 'update_controls' }>;
 
 /** The fields of a `NewDownload` that differ between the context menu and media; `submit` fills in the rest. */
 export type DownloadFields = Omit<
@@ -101,16 +132,20 @@ export class AppCalls {
     return reply.data;
   }
 
-  /** Reads the settings and queues again after connecting. */
+  /** Reads the settings and queues again after connecting; the browser controls too, from an app that has them (D61). */
   async refresh(): Promise<void> {
     try {
       const timeout = this.#timing.requestTimeoutMs;
-      const [settings, queues] = await Promise.all([
+      const [settings, queues, controls] = await Promise.all([
         this.#client.request({ method: 'get_extension_settings' }, timeout),
         this.#client.request({ method: 'list_queues' }, timeout),
+        this.#client.supports('get_browser_controls')
+          ? this.#client.request({ method: 'get_browser_controls' }, timeout)
+          : null,
       ]);
       this.#settings.refreshed(
         settings.type === 'extension_settings' ? settings.data : null,
+        controls?.type === 'browser_controls' ? controls.data : null,
         queues.type === 'queues' ? queues.data : null,
       );
     } catch (error) {
@@ -127,9 +162,50 @@ export class AppCalls {
     );
   }
 
-  async updateSettings(patch: ExtensionSettingsPatch): Promise<void> {
-    const reply = await this.call({ method: 'update_extension_settings', params: patch });
-    if (reply.type === 'extension_settings') this.#settings.adopt(reply.data);
+  /** Shows the app's browser settings (D61), starting the app first like `showWindow`; an app from before them shows its window. */
+  async showBrowserSettings(): Promise<void> {
+    try {
+      await this.#client.request(
+        { method: 'show_browser_settings' },
+        this.#mayConnect(this.#timing.requestTimeoutMs),
+      );
+    } catch (error) {
+      const tooOld =
+        error instanceof RequestError && error.protocolError?.code === 'unsupported_call';
+      if (!tooOld) throw error;
+      await this.showWindow();
+    }
+  }
+
+  /** Carries out a popup command that the app does. */
+  async run(command: AppCommand): Promise<void> {
+    switch (command.type) {
+      case 'open_app':
+        await this.showWindow();
+        return;
+      case 'open_settings':
+        await this.showBrowserSettings();
+        return;
+      case 'pause_all':
+      case 'resume_all':
+        await this.call({ method: command.type });
+        return;
+      case 'update_settings':
+      case 'update_controls':
+        await this.#update(command);
+        return;
+    }
+  }
+
+  /** A settings change from the popup: the extension's own settings, or the app's it shows (D61). */
+  async #update(change: SettingsUpdate): Promise<void> {
+    if (change.type === 'update_settings') {
+      const reply = await this.call({ method: 'update_extension_settings', params: change.patch });
+      if (reply.type === 'extension_settings') this.#settings.adopt(reply.data);
+    } else {
+      const reply = await this.call({ method: 'update_browser_controls', params: change.patch });
+      if (reply.type === 'browser_controls') this.#settings.adoptControls(reply.data);
+    }
   }
 
   /** A popup call: only to a connected app, since none of them is worth starting a closed one for. */

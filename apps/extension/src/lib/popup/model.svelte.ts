@@ -1,5 +1,8 @@
 import {
+  applyBrowserControlsPatch,
   applyExtensionSettingsPatch,
+  type BrowserControls,
+  type BrowserControlsPatch,
   type ExtensionSettings,
   type ExtensionSettingsPatch,
 } from '@wirecatch/protocol';
@@ -36,9 +39,8 @@ const RESTARTED: Result = {
 };
 
 /**
- * The view of the background state the extension's own pages share: the popup and the options
- * page. Setting changes show at once (an optimistic overlay) and settle when the app confirms
- * them; a refusal rolls them back.
+ * The popup's view of the background state. Setting changes show at once (an optimistic
+ * overlay) and settle when the app confirms them; a refusal rolls them back.
  */
 export class PopupModel {
   snapshot = $state<Snapshot | null>(null);
@@ -48,19 +50,25 @@ export class PopupModel {
   /** Per item key: the outcome of its Download button. */
   mediaStatus = $state<Record<string, MediaStatus>>({});
   #pending = $state<{ id: number; patch: ExtensionSettingsPatch }[]>([]);
+  #pendingControls = $state<{ id: number; patch: BrowserControlsPatch }[]>([]);
 
-  /** The settings to show: the app's (or cached) values with changes still on their way applied on top. */
+  /** The settings to show: the app's values with changes still on their way applied on top. */
   settings = $derived.by((): ExtensionSettings | null => {
     const base = this.snapshot?.settings ?? null;
     if (base === null) return null;
     return this.#pending.reduce((acc, p) => applyExtensionSettingsPatch(acc, p.patch), base);
   });
 
+  /** The app's own settings the popup shows, with changes still on their way applied on top; null for an app from before them. */
+  controls = $derived.by((): BrowserControls | null => {
+    const base = this.snapshot?.controls ?? null;
+    if (base === null) return null;
+    return this.#pendingControls.reduce((acc, p) => applyBrowserControlsPatch(acc, p.patch), base);
+  });
+
   connected = $derived(this.snapshot?.status.state === 'connected');
-  /** Settings can be changed only while connected and showing the app's own values. */
-  editable = $derived(
-    this.connected && this.snapshot?.settingsFromCache === false && this.snapshot.settings !== null,
-  );
+  /** Settings can be changed only while the app is connected and has sent them (D61). */
+  editable = $derived(this.connected && (this.snapshot?.settings ?? null) !== null);
 
   readonly #channel: Channel<PopupRequest, unknown>;
   readonly #requests = new Requests<Result>();
@@ -102,11 +110,29 @@ export class PopupModel {
     this.#pending = [...this.#pending, { id, patch }];
     const result = await this.#send({ type: 'update_settings', patch });
     this.#pending = this.#pending.filter((p) => p.id !== id);
-    if (!result.ok) {
-      this.feedback = { tone: 'error', text: `That change was not saved. ${result.message}` };
-      return false;
-    }
-    return true;
+    return this.#settled(result);
+  }
+
+  /** Sends a change of the app's own settings the popup shows. Resolves with true once the app accepted it. */
+  async updateControls(patch: BrowserControlsPatch): Promise<boolean> {
+    const id = this.#requests.nextId;
+    this.#pendingControls = [...this.#pendingControls, { id, patch }];
+    const result = await this.#send({ type: 'update_controls', patch });
+    this.#pendingControls = this.#pendingControls.filter((p) => p.id !== id);
+    return this.#settled(result);
+  }
+
+  #settled(result: Result): boolean {
+    if (result.ok) return true;
+    this.feedback = { tone: 'error', text: `That change was not saved. ${result.message}` };
+    return false;
+  }
+
+  /** Starts Wirecatch if it is closed and shows its browser settings. */
+  async openSettings(): Promise<boolean> {
+    const result = await this.#send({ type: 'open_settings' });
+    if (!result.ok) this.feedback = { tone: 'error', text: result.message };
+    return result.ok;
   }
 
   async pauseAll(): Promise<void> {

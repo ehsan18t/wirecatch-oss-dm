@@ -3,8 +3,9 @@ import type { DownloadId } from './DownloadId';
 import type { QueueId } from './QueueId';
 
 /**
- * Downloads the main window selects and scrolls to, because the person clicked a notification
- * about them (D52).
+ * What the main window shows when it comes to the front for someone: downloads it selects and
+ * scrolls to, because the person clicked a notification about them (D52), or the browser
+ * settings, for the extension's settings button (D61).
  */
 export type Reveal = {
   /**
@@ -16,4 +17,8 @@ export type Reveal = {
    * The downloads, the one to scroll to first.
    */
   ids: Array<DownloadId>;
+  /**
+   * Show the browser settings instead of downloads.
+   */
+  browser_settings?: boolean;
 };

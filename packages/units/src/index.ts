@@ -121,6 +121,15 @@ export function splitSize(bytes: number): { value: number; unit: SizeUnit } {
   return { value: roundTo(bytes / KB, TWO_DECIMALS), unit: 'KB' };
 }
 
+/** Where a speed limit field starts and how far each step goes, in each unit it is typed in: the app's queue dialog and total limit, and the extension's popup. */
+export const SPEED_FIELD = {
+  KB: { min: 1, step: 50 },
+  MB: { min: 0.1, step: 0.5 },
+} as const;
+
+/** The total speed limit a person starts from when turning it on, in the app or the popup: a suggestion, not a default of the app. */
+export const FIRST_TOTAL_SPEED_LIMIT = 5 * MB;
+
 /** `bytes` in `unit` to one decimal, as a field in that unit shows it. */
 export function inUnit(bytes: number, unit: SizeUnit): number {
   return toTenths(bytes / unitBytes(unit));

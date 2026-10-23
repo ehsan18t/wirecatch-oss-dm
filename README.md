@@ -57,7 +57,7 @@ Need torrents? Wirecatch doesn't do them. Free Download Manager and Motrix do.
 - Right-click any link, image, video or audio and choose **Download with Wirecatch**.
 - A download button over videos on the page.
 - Catches every kind of file, installers included, or only the file types you list in Settings. Files the browser warns are dangerous stay with the browser, and Windows still checks a downloaded program before it runs.
-- One set of settings for every browser and the app.
+- One set of settings for every browser and the app, all kept in the app, so a settings export carries them to another computer. The browser's toolbar popup changes the ones you need while browsing: capture on or off, asking before files and videos, the queue, a speed limit and how videos download.
 
 ### A window for each download
 

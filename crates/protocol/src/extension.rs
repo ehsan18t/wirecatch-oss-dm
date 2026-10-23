@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ts_rs::TS;
 
+use crate::app::{AppSettings, AppSettingsPatch, MediaDefaults, MediaDefaultsPatch, Update};
 use crate::secret::{Address, OptionalAddress, Secret};
 use crate::secrets::HIDDEN;
 use crate::{DEFAULT_QUEUE_ID, DownloadId, QueueId};
@@ -246,8 +247,8 @@ pub enum WithdrawOutcome {
     AlreadyStarted,
 }
 
-/// The subset of settings the extension popup shows. The app stores them; the
-/// extension only edits them remotely and caches the last copy for display.
+/// The settings that are the extension's own. The app stores them; the extension only edits
+/// them remotely and keeps a copy for the browser session (D61).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ExtensionSettings {
@@ -373,6 +374,80 @@ impl ExtensionSettings {
         }
         if let Some(v) = video_sites {
             self.video_sites = normalize_sites(v);
+        }
+    }
+}
+
+/// The app's own settings the extension's popup also shows (D61), beside [`ExtensionSettings`]: the app stores them with the rest of [`AppSettings`], and the popup changes them with [`BrowserControlsPatch`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct BrowserControls {
+    /// [`AppSettings::global_speed_limit`]: bytes per second for everything together; `None` is unlimited.
+    #[ts(type = "number | null")]
+    pub global_speed_limit: Option<u64>,
+    /// [`AppSettings::max_concurrent_downloads`].
+    pub max_concurrent_downloads: u32,
+    /// [`AppSettings::media`]: whether a video asks each time, and what it is downloaded as.
+    pub media: MediaDefaults,
+}
+
+/// A change to some of [`BrowserControls`]: only the fields that are present change, as in [`AppSettingsPatch`], which the app turns it into.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export, optional_fields)]
+pub struct BrowserControlsPatch {
+    /// The new limit in bytes per second; `null` removes it.
+    #[serde(default, skip_serializing_if = "Update::is_keep")]
+    // f64: TypeScript sees a `number`, like every other u64 in the protocol.
+    #[ts(optional, as = "Option<Option<f64>>")]
+    pub global_speed_limit: Update<Option<u64>>,
+    /// The new [`BrowserControls::max_concurrent_downloads`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_concurrent_downloads: Option<u32>,
+    /// Changes to [`BrowserControls::media`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media: Option<MediaDefaultsPatch>,
+}
+
+impl BrowserControls {
+    /// Applies a patch the way [`AppSettings::apply`] applies the same fields; the popup shows a change with a TypeScript port of it before the app confirms the change.
+    pub fn apply(&mut self, patch: BrowserControlsPatch) {
+        let BrowserControlsPatch {
+            global_speed_limit,
+            max_concurrent_downloads,
+            media,
+        } = patch;
+        if let Update::Set(limit) = global_speed_limit {
+            self.global_speed_limit = limit;
+        }
+        if let Some(n) = max_concurrent_downloads {
+            self.max_concurrent_downloads = n;
+        }
+        if let Some(media) = media {
+            self.media.apply(media);
+        }
+    }
+}
+
+impl From<BrowserControlsPatch> for AppSettingsPatch {
+    fn from(patch: BrowserControlsPatch) -> Self {
+        Self {
+            global_speed_limit: patch.global_speed_limit,
+            max_concurrent_downloads: patch.max_concurrent_downloads,
+            media: patch.media,
+            ..Self::default()
+        }
+    }
+}
+
+impl AppSettings {
+    /// The part of these settings the extension's popup shows besides [`AppSettings::extension`].
+    #[must_use]
+    pub fn browser_controls(&self) -> BrowserControls {
+        BrowserControls {
+            global_speed_limit: self.global_speed_limit,
+            max_concurrent_downloads: self.max_concurrent_downloads,
+            media: self.media.clone(),
         }
     }
 }
@@ -588,6 +663,63 @@ pub(crate) fn site_cases() -> Vec<(&'static str, Option<&'static str>)> {
         ("exa\u{85}mple.com", None),
         ("example.com\u{3000}", Some("example.com")),
         ("exa\u{A0}mple.com", None),
+    ]
+}
+
+/// Browser controls and the patches applied to them; `pnpm protocol:generate` writes each with
+/// what [`BrowserControls::apply`] makes of it, for the TypeScript port to be tested against.
+#[cfg(test)]
+pub(crate) fn browser_controls_cases() -> Vec<(BrowserControls, BrowserControlsPatch)> {
+    use crate::app::{OutputDefaultsPatch, OutputFormat, QualityFallback, VideoQuality};
+    let before = BrowserControls {
+        global_speed_limit: Some(2_000_000),
+        max_concurrent_downloads: 3,
+        media: MediaDefaults::default(),
+    };
+    vec![
+        (before.clone(), BrowserControlsPatch::default()),
+        (
+            before.clone(),
+            BrowserControlsPatch {
+                global_speed_limit: Update::Set(None),
+                max_concurrent_downloads: Some(1),
+                media: Some(MediaDefaultsPatch {
+                    ask_each_time: Some(false),
+                    quality: Some(VideoQuality::Height(720)),
+                    fallback: Some(QualityFallback::Higher),
+                    video: Some(OutputDefaultsPatch {
+                        format: Some(OutputFormat::Mkv),
+                        subtitle_languages: Some(vec!["en".into(), "pt-br".into()]),
+                        auto_subtitles: Some(false),
+                        subtitle_files: Some(true),
+                        chapters: Some(false),
+                        ..OutputDefaultsPatch::default()
+                    }),
+                    audio: Some(OutputDefaultsPatch {
+                        format: Some(OutputFormat::Mp3),
+                        audio_kbps: Update::Set(Some(320)),
+                        ..OutputDefaultsPatch::default()
+                    }),
+                }),
+            },
+        ),
+        (
+            BrowserControls {
+                global_speed_limit: None,
+                ..before
+            },
+            BrowserControlsPatch {
+                global_speed_limit: Update::Set(Some(512 * 1024)),
+                media: Some(MediaDefaultsPatch {
+                    audio: Some(OutputDefaultsPatch {
+                        audio_kbps: Update::Set(None),
+                        ..OutputDefaultsPatch::default()
+                    }),
+                    ..MediaDefaultsPatch::default()
+                }),
+                ..BrowserControlsPatch::default()
+            },
+        ),
     ]
 }
 

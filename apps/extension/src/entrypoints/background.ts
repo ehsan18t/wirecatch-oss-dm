@@ -11,10 +11,12 @@ import {
   liveTabs,
   mediaStore,
   noticeStore,
+  publishButtonSetting,
+  retireLocalSettings,
+  settingsCache,
   tabInfo,
   toolbarBadge,
 } from '@/lib/browser/adapters';
-import { storageCache } from '@/lib/cache';
 import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
 import { installDiagnostics } from '@/lib/diag/install';
 import { fallback, log } from '@/lib/diag/log';
@@ -22,7 +24,7 @@ import type { MenuTab } from '@/lib/hub/deps';
 import { Hub } from '@/lib/hub/hub';
 import { MediaCenter, type MediaSendResult } from '@/lib/media/center';
 import { registerMediaListeners } from '@/lib/media/listen';
-import { MEDIA_ANNOUNCE, MEDIA_BUTTON_KEY, type AnnounceMessage } from '@/lib/media/messages';
+import { MEDIA_ANNOUNCE, type AnnounceMessage } from '@/lib/media/messages';
 import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
 import { acceptsPopupPort } from '@/lib/messages';
@@ -102,6 +104,7 @@ export default defineBackground(() => {
     store: mediaStore(),
     ignoredSites: () => hub.knownSettings()?.ignored_sites ?? [],
     videoSites: () => hub.knownSettings()?.video_sites ?? [],
+    mediaButtonOn: () => hub.mediaButtonOn(),
     liveTabs,
   });
   // Started before any listener can fire, so every response waits for the restored lists.
@@ -113,11 +116,9 @@ export default defineBackground(() => {
 
   const hub: Hub = new Hub({
     media,
-    mediaButtonSetting: {
-      save: (on) => browser.storage.local.set({ [MEDIA_BUTTON_KEY]: on }),
-    },
+    mediaButtonSetting: { publish: publishButtonSetting },
     client,
-    cache: storageCache(browser.storage.local),
+    cache: settingsCache(),
     downloads: browserDownloads(),
     cookieHeader: cookieHeaderFor,
     hasSiteAccess,
@@ -133,11 +134,11 @@ export default defineBackground(() => {
   registerContextMenu(hub);
   registerMedia(hub, media, watcher);
   browser.runtime.onConnect.addListener((port) => {
-    // Only the extension's own pages (the popup and the options page), never a content script
-    // that knows the port name.
+    // Only the extension's own popup, never a content script that knows the port name.
     if (!acceptsPopupPort(port, browser.runtime.id, browser.runtime.getURL('/'))) return;
     hub.addPopup(port);
   });
 
+  browser.runtime.onInstalled.addListener(retireLocalSettings);
   void hub.start();
 });

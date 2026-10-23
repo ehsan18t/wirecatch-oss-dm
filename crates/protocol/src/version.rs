@@ -134,6 +134,9 @@ impl CallMethod {
         CallMethod::PauseAll,
         CallMethod::ResumeAll,
         CallMethod::ShowWindow,
+        CallMethod::GetBrowserControls,
+        CallMethod::UpdateBrowserControls,
+        CallMethod::ShowBrowserSettings,
     ];
 
     /// The protocol version that added the call, or `None` for a method this build does not
@@ -151,6 +154,9 @@ impl CallMethod {
             | CallMethod::PauseAll
             | CallMethod::ResumeAll
             | CallMethod::ShowWindow => Some(1),
+            CallMethod::GetBrowserControls
+            | CallMethod::UpdateBrowserControls
+            | CallMethod::ShowBrowserSettings => Some(2),
             CallMethod::Unknown => None,
         }
     }
@@ -167,6 +173,7 @@ impl EventKind {
     pub const KNOWN: &[EventKind] = &[
         EventKind::ExtensionSettingsChanged,
         EventKind::QueuesChanged,
+        EventKind::BrowserControlsChanged,
     ];
 
     /// The protocol version that added the event. The app sends it only on connections that
@@ -175,6 +182,7 @@ impl EventKind {
     pub fn since(self) -> u32 {
         match self {
             EventKind::ExtensionSettingsChanged | EventKind::QueuesChanged => 1,
+            EventKind::BrowserControlsChanged => 2,
         }
     }
 }

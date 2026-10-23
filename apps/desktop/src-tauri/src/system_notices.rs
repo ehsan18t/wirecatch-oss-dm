@@ -49,6 +49,7 @@ pub fn plain(title: String, body: String) -> Notice {
         click: Act::Show(wirecatch_protocol::desktop::Reveal {
             queue: None,
             ids: Vec::new(),
+            browser_settings: false,
         }),
     }
 }
@@ -102,7 +103,7 @@ pub fn act<R: Runtime>(app: &AppHandle<R>, act: Act) {
 
 async fn carry_out<R: Runtime>(app: &AppHandle<R>, act: Act) -> Result<(), String> {
     if let Act::Show(reveal) = act {
-        crate::window::reveal_downloads(app, &reveal);
+        crate::window::reveal(app, &reveal);
         return Ok(());
     }
     let core = app

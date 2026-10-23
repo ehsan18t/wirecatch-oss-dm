@@ -1,10 +1,13 @@
 import type { MediaKind } from '@wirecatch/protocol';
 import { chooseTarget, describeTarget, popupTargets, type MediaTarget } from './choose';
 import {
+  MEDIA_BUTTON_QUERY,
+  MEDIA_BUTTON_SETTING,
   MEDIA_CHECK,
   asContentRequest,
+  type ButtonSetting,
   type CheckAnswer,
-  type ContentRequest,
+  type ElementRequest,
   type DownloadAnswer,
 } from './messages';
 import { fallback } from '../diag/log';
@@ -93,6 +96,8 @@ export interface MediaCenterDeps {
   ignoredSites?(): readonly string[];
   /** Sites with video pages the person added to the ones the apps know (D51). */
   videoSites?(): readonly string[];
+  /** "Show download button on videos", for a button asking as its page loads; on when missing. */
+  mediaButtonOn?(): Promise<boolean>;
   /**
    * The tabs open now with the address each shows (null when it cannot be read), so saved lists of closed tabs, or of a page a tab has since left, are not restored.
    */
@@ -203,9 +208,13 @@ export class MediaCenter {
   handleContentMessage(
     raw: unknown,
     sender: ContentSender,
-  ): Promise<CheckAnswer | DownloadAnswer> | null {
+  ): Promise<CheckAnswer | DownloadAnswer | ButtonSetting> | null {
     const request = asContentRequest(raw);
     if (request === null) return null;
+    if (request.type === MEDIA_BUTTON_QUERY) {
+      const asking = this.#deps.mediaButtonOn?.() ?? Promise.resolve(true);
+      return asking.then((on): ButtonSetting => ({ type: MEDIA_BUTTON_SETTING, on }));
+    }
     return this.#ready.then((): Promise<CheckAnswer | DownloadAnswer> =>
       request.type === MEDIA_CHECK ? this.#check(request, sender) : this.#download(request, sender),
     );
@@ -213,7 +222,7 @@ export class MediaCenter {
 
   /** What the button sends for an element in the frame that now shows `frameUrl` (`currentFrameUrl`). */
   #targetFor(
-    request: ContentRequest,
+    request: ElementRequest,
     sender: ContentSender,
     frameUrl: string | null,
   ): MediaTarget | null {
@@ -240,14 +249,14 @@ export class MediaCenter {
     );
   }
 
-  #check(request: ContentRequest, sender: ContentSender): Promise<CheckAnswer> {
+  #check(request: ElementRequest, sender: ContentSender): Promise<CheckAnswer> {
     if (sender.tab?.incognito === true || this.#ignored(sender))
       return Promise.resolve({ show: false });
     const frameUrl = currentFrameUrl(sender, request.location);
     return Promise.resolve({ show: this.#targetFor(request, sender, frameUrl) !== null });
   }
 
-  async #download(request: ContentRequest, sender: ContentSender): Promise<DownloadAnswer> {
+  async #download(request: ElementRequest, sender: ContentSender): Promise<DownloadAnswer> {
     const tab = sender.tab;
     if (tab?.incognito === true) return { ok: false, message: PRIVATE_WINDOW };
     if (this.#ignored(sender)) return { ok: false, message: IGNORED_SITE };

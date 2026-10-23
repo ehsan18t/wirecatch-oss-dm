@@ -1,5 +1,5 @@
 /**
- * What the tests of the extension's own pages (the popup and the options page) share: a page's
+ * What the tests of the extension's own page (the popup) share: a page's
  * model wired to the real background hub and native client, which talk to a fake app through a
  * fake native port, and the checks every page gets.
  */

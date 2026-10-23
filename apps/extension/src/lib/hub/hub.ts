@@ -22,7 +22,7 @@ import type { NativeClient } from '../native/client';
 import type { ConnectionStatus } from '../native/status';
 import { REQUEST_TIMEOUT_MS, START_WAIT_MS, WITHDRAW_TIMEOUT_MS } from '../native/timing';
 import { refererFor } from '../referrer';
-import { AppCalls } from './app';
+import { AppCalls, isLocalCommand } from './app';
 import type { HubDeps, HubTiming, InFlightEntry, MenuClick, MenuResult, MenuTab } from './deps';
 import { planMenuClick } from './menu';
 import { NoticeBoard } from './notice-board';
@@ -85,7 +85,7 @@ export class Hub {
     this.#deps = deps;
     this.#now = deps.now ?? Date.now;
     const timing = hubTiming(deps.timing);
-    this.#settings = new KnownSettings(deps, this.#now, () => this.#publish());
+    this.#settings = new KnownSettings(deps, () => this.#publish());
     this.#app = new AppCalls(deps.client, timing, this.#settings, deps.userAgent);
     this.#notices = new NoticeBoard({
       now: this.#now,
@@ -103,13 +103,13 @@ export class Hub {
     return this.#deps.client;
   }
 
-  /** Resolves once the display cache is loaded, so downloads are never judged without it. */
+  /** Resolves once the session copy of the settings is loaded, so downloads are never judged without it. */
   get ready(): Promise<void> {
     return this.#ready;
   }
 
   /**
-   * Loads the display cache, connects to the app if it was running when last seen, and resumes downloads a previous run left paused.
+   * Loads the session copy of the settings, connects to the app if it was running when last seen, and resumes downloads a previous run left paused.
    *
    * The background wakes for every web response and tab change. While the app is closed, connecting each time would start a bridge process only to learn that again, so it waits until something needs the app: a request (which starts it) or the popup (which shows whether it runs).
    */
@@ -121,7 +121,7 @@ export class Hub {
     const [cached, leftPaused] = await Promise.all([
       this.#deps.cache
         .load()
-        .catch(fallback('settings', 'Could not read the saved settings', null)),
+        .catch(fallback('settings', 'Could not read the session copy of the settings', null)),
       this.#deps.inFlight
         ?.load()
         .catch(
@@ -145,7 +145,7 @@ export class Hub {
     };
   }
 
-  /** Connects an open popup: it gets a snapshot once the cache is loaded, and after every change. */
+  /** Connects an open popup: it gets a snapshot once the session copy is loaded, and after every change. */
   addPopup(channel: PopupChannel): void {
     this.#popups.add(channel);
     // The popup shows whether the app runs; this finds out if waking did not.
@@ -332,8 +332,8 @@ export class Hub {
 
   /**
    * The settings to judge a paused download by: the app's, connecting first if
-   * needed; when the app cannot be reached in time, the cached copy (marked as
-   * such, so a cached "capture off" still keeps the download in the browser).
+   * needed; when the app cannot be reached in time, the session copy (marked as
+   * such, so a "capture off" in it still keeps the download in the browser).
    */
   async #judgingSettings(): Promise<JudgingSettings | null> {
     const { live } = this.#settings;
@@ -344,7 +344,7 @@ export class Hub {
       const settings = await this.#app.fetchSettings();
       if (settings !== null) return { settings, fromApp: true };
     } catch (error) {
-      log.warn('settings', 'Could not reach the app for its settings; judging by the cache', error);
+      log.warn('settings', 'Could not reach the app; judging by the session copy', error);
     }
     // Read after the wait: settings that came in meanwhile are the newest copy.
     const { cached } = this.#settings;
@@ -389,6 +389,10 @@ export class Hub {
 
   /** Runs a popup command; resolves with a sentence to show when there is one. */
   async #runCommand(command: PopupCommand): Promise<string | undefined> {
+    if (!isLocalCommand(command)) {
+      await this.#app.run(command);
+      return undefined;
+    }
     switch (command.type) {
       case 'watch_media':
         return undefined;
@@ -402,20 +406,8 @@ export class Hub {
       case 'reconnect':
         this.#client.reconnectNow();
         return;
-      case 'open_app':
-        await this.#app.showWindow();
-        return;
       case 'dismiss_notice':
         this.#notices.dismiss(command.id);
-        return;
-      case 'pause_all':
-        await this.#app.call({ method: 'pause_all' });
-        return;
-      case 'resume_all':
-        await this.#app.call({ method: 'resume_all' });
-        return;
-      case 'update_settings':
-        await this.#app.updateSettings(command.patch);
         return;
     }
   }
@@ -439,6 +431,9 @@ export class Hub {
       case 'queues_changed':
         this.#settings.adoptQueues(event.data);
         return;
+      case 'browser_controls_changed':
+        this.#settings.adoptControls(event.data);
+        return;
     }
   }
 
@@ -457,9 +452,15 @@ export class Hub {
     this.#notices.confirmedLate(call.params.handover_id, name, outcome !== null);
   }
 
-  /** The app's settings, or the cached copy when the app is not connected; null before either is known. */
+  /** The app's settings, or the session copy when the app is not connected; null before either is known. */
   knownSettings(): ExtensionSettings | null {
     return this.#settings.known();
+  }
+
+  /** "Show download button on videos", for a media button asking as its page loads: once the session copy is in, since the question may be what woke the background, and pages are told only later changes. */
+  async mediaButtonOn(): Promise<boolean> {
+    await this.#ready;
+    return this.#settings.mediaButtonOn();
   }
 
   /** The browser reports a download running or finished, so a notice asking to resume it is done. */

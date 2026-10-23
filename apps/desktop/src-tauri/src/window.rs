@@ -130,9 +130,10 @@ impl PendingCaptures {
     }
 }
 
-/// Downloads a clicked notification asks the main window to select (D52), kept while its page
-/// is not listening (it was closed to the tray, or is loading). The newest request wins: it is
-/// the one the person just clicked.
+/// Downloads a clicked notification asks the main window to select (D52), or the browser
+/// settings the extension asks for (D61), kept while its page is not listening (it was closed to
+/// the tray, or is loading because the request started the app). The newest request wins: it is
+/// the one the person just made.
 #[derive(Default)]
 pub struct PendingSelection(Mutex<Selection>);
 
@@ -171,17 +172,17 @@ impl PendingSelection {
     }
 }
 
-/// Shows the main window, in front and focused, with the downloads `reveal` names selected: the
-/// person clicked a notification about them.
-pub fn reveal_downloads<R: Runtime>(app: &AppHandle<R>, reveal: &Reveal) {
+/// Shows the main window, in front and focused, on what `reveal` names: the downloads a
+/// notification the person clicked was about, or the browser settings.
+pub fn reveal<R: Runtime>(app: &AppHandle<R>, reveal: &Reveal) {
     let listening = app
         .try_state::<PendingSelection>()
         .is_some_and(|pending| pending.request(reveal));
     // Showing wakes a page asleep in the tray first, so the selection reaches it awake.
     show_main_window(app);
-    if listening && !reveal.ids.is_empty() {
+    if listening && (!reveal.ids.is_empty() || reveal.browser_settings) {
         warn_if_failed(
-            "select the downloads a notification was about",
+            "show what the main window was asked for",
             app.emit_to(MAIN_WINDOW, REVEAL_EVENT, reveal),
         );
     }

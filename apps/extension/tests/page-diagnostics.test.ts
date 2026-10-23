@@ -1,4 +1,4 @@
-/** Each of the extension's own pages records its diagnostics from the moment it loads (W5, D40). */
+/** The extension's own page records its diagnostics from the moment it loads (W5, D40). */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { log, type DiagEntry } from '../src/lib/diag/log';
@@ -7,7 +7,6 @@ import { DIAG_KEY_PREFIX } from '../src/lib/diag/persist';
 // The pages' connection and first state are not what this is about: the page never gets past
 // waiting for its first state, so nothing is mounted, and its component is not even compiled.
 vi.mock('@/ui/popup/Popup.svelte', () => ({ default: {} }));
-vi.mock('@/ui/options/Options.svelte', () => ({ default: {} }));
 vi.mock('@/lib/popup/page', () => ({
   activeTab: () => Promise.resolve({ id: null, url: null }),
   connectPage: () => ({ watchMedia: () => undefined }),
@@ -19,7 +18,6 @@ vi.mock('@/lib/popup/page', () => ({
 
 const PAGES = {
   popup: () => import('../src/entrypoints/popup/main'),
-  options: () => import('../src/entrypoints/options/main'),
 } as const;
 
 async function kept(page: keyof typeof PAGES): Promise<DiagEntry[]> {
@@ -28,7 +26,7 @@ async function kept(page: keyof typeof PAGES): Promise<DiagEntry[]> {
   return Array.isArray(entries) ? (entries as DiagEntry[]) : [];
 }
 
-// Each page installs its diagnostics as it loads; loading both here keeps the module loading out of
+// The page installs its diagnostics as it loads; loading it here keeps the module loading out of
 // the tests' own time.
 beforeAll(async () => {
   await Promise.all(Object.values(PAGES).map((load) => load()));

@@ -12,6 +12,8 @@ import type { AddonRequestItem } from './AddonRequestItem';
 import type { AddonState } from './AddonState';
 import type { AppSettings } from './AppSettings';
 import type { AppSettingsPatch } from './AppSettingsPatch';
+import type { BrowserControls } from './BrowserControls';
+import type { BrowserControlsPatch } from './BrowserControlsPatch';
 import type { BrowserInfo } from './BrowserInfo';
 import type { ButtonArea } from './ButtonArea';
 import type { Call } from './Call';
@@ -293,6 +295,27 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
       typeof value1['update_suffix_list'] === 'boolean'))(value);
 }
 
+/** Whether `value` has the shape of a {@link BrowserControls}; fields it does not name are not checked. */
+export function isBrowserControls(value: unknown): value is BrowserControls {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (typeof value1['global_speed_limit'] === 'number' || value1['global_speed_limit'] === null) &&
+    typeof value1['max_concurrent_downloads'] === 'number' &&
+    isMediaDefaults(value1['media']))(value);
+}
+
+/** Whether `value` has the shape of a {@link BrowserControlsPatch}; fields it does not name are not checked. */
+export function isBrowserControlsPatch(value: unknown): value is BrowserControlsPatch {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (value1['global_speed_limit'] === undefined ||
+      typeof value1['global_speed_limit'] === 'number' ||
+      value1['global_speed_limit'] === null) &&
+    (value1['max_concurrent_downloads'] === undefined ||
+      typeof value1['max_concurrent_downloads'] === 'number') &&
+    (value1['media'] === undefined || isMediaDefaultsPatch(value1['media'])))(value);
+}
+
 /** Whether `value` has the shape of a {@link BrowserInfo}; fields it does not name are not checked. */
 export function isBrowserInfo(value: unknown): value is BrowserInfo {
   return ((value1: unknown): boolean =>
@@ -333,7 +356,16 @@ export function isCall(value: unknown): value is Call {
     ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'list_queues')(value) ||
     ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'pause_all')(value) ||
     ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'resume_all')(value) ||
-    ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'show_window')(value)
+    ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'show_window')(value) ||
+    ((value1: unknown): boolean => isRecord(value1) && value1['method'] === 'get_browser_controls')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['method'] === 'update_browser_controls' &&
+      isBrowserControlsPatch(value1['params']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['method'] === 'show_browser_settings')(value)
   );
 }
 
@@ -511,7 +543,11 @@ export function isEvent(value: unknown): value is Event {
     ((value1: unknown): boolean =>
       isRecord(value1) &&
       value1['type'] === 'queues_changed' &&
-      isArrayOf(value1['data'], isQueueSummary))(value)
+      isArrayOf(value1['data'], isQueueSummary))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['type'] === 'browser_controls_changed' &&
+      isBrowserControls(value1['data']))(value)
   );
 }
 
@@ -1120,6 +1156,10 @@ export function isReply(value: unknown): value is Reply {
       value1['type'] === 'extension_settings' &&
       isExtensionSettings(value1['data']))(value) ||
     ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['type'] === 'browser_controls' &&
+      isBrowserControls(value1['data']))(value) ||
+    ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'queues' && isArrayOf(value1['data'], isQueueSummary))(
       value,
     ) ||
@@ -1148,7 +1188,10 @@ export function isReveal(value: unknown): value is Reveal {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     (isQueueId(value1['queue']) || value1['queue'] === null) &&
-    isArrayOf(value1['ids'], isDownloadId))(value);
+    isArrayOf(value1['ids'], isDownloadId) &&
+    (value1['browser_settings'] === undefined || typeof value1['browser_settings'] === 'boolean'))(
+    value,
+  );
 }
 
 /** Whether `value` has the shape of a {@link Schedule}; fields it does not name are not checked. */
@@ -1313,6 +1356,8 @@ export function isUiEvent(value: unknown): value is UiEvent {
     ((value1: unknown): boolean => isRecord(value1) && value1['type'] === 'window_requested')(
       value,
     ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['type'] === 'browser_settings_requested')(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'queue_finished' && isQueueReport(value1['data']))(
       value,

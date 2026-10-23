@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyBrowserControlsPatch,
   applyExtensionSettingsPatch,
   normalizeFileType,
   normalizeSite,
 } from './extension-settings';
 import fixtures from './generated/fixtures.json';
-import { isExtensionSettings, isExtensionSettingsPatch } from './generated/validators';
+import {
+  isBrowserControls,
+  isBrowserControlsPatch,
+  isExtensionSettings,
+  isExtensionSettingsPatch,
+} from './generated/validators';
 
 describe('normalizeSite', () => {
   it('keeps every site the way the app keeps it', () => {
@@ -25,6 +31,20 @@ describe('normalizeFileType', () => {
     expect(fixtures.normalize_file_type.length).toBeGreaterThan(0);
     for (const { typed, type } of fixtures.normalize_file_type) {
       expect(normalizeFileType(typed), typed).toBe(type);
+    }
+  });
+});
+
+describe('applyBrowserControlsPatch', () => {
+  it('applies every patch the way the app applies it', () => {
+    expect(fixtures.apply_browser_controls.length).toBeGreaterThan(0);
+    for (const { before, patch, after } of fixtures.apply_browser_controls) {
+      if (!isBrowserControls(before) || !isBrowserControlsPatch(patch)) {
+        throw new Error(
+          `A fixture is not controls and a patch: ${JSON.stringify({ before, patch })}`,
+        );
+      }
+      expect(applyBrowserControlsPatch(before, patch), JSON.stringify(patch)).toEqual(after);
     }
   });
 });

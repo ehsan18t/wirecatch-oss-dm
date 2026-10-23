@@ -28,6 +28,9 @@ pub enum Attention {
     Closed(QuestionId),
     /// A client asked to see Wirecatch: the main window comes to the front.
     ShowMain,
+    /// A client asked for the browser settings (D61): the main window comes to the front on
+    /// them, and a page still loading takes them later ([`crate::window::PendingSelection`]).
+    ShowBrowserSettings,
     /// A browser download started without a window of its own (`ask_before_download` off,
     /// D36.7): the main window comes to the front with its note, leaving the focus in the
     /// browser; a page still loading takes the note later ([`crate::window::PendingCaptures`]).
@@ -55,6 +58,7 @@ pub fn attention(event: &UiEvent) -> Attention {
         UiEvent::MediaChoiceRequested(choice) => Attention::Ask(choice.id),
         UiEvent::ConfirmationClosed { id } => Attention::Closed(*id),
         UiEvent::WindowRequested => Attention::ShowMain,
+        UiEvent::BrowserSettingsRequested => Attention::ShowBrowserSettings,
         UiEvent::Captured(row) => Attention::ShowCaptured(Box::new(row.clone())),
         UiEvent::SettingsChanged(settings) => Attention::Theme(settings.theme),
         UiEvent::StorageFailed(error) => Attention::Notify {
@@ -200,6 +204,10 @@ mod tests {
             Attention::None
         );
         assert_eq!(attention(&UiEvent::WindowRequested), Attention::ShowMain);
+        assert_eq!(
+            attention(&UiEvent::BrowserSettingsRequested),
+            Attention::ShowBrowserSettings
+        );
     }
 
     /// D36.7: a browser download started without asking (`ask_before_download` off) opens no

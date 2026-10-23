@@ -2,8 +2,8 @@
 import type { QueueId } from './QueueId';
 
 /**
- * The subset of settings the extension popup shows. The app stores them; the
- * extension only edits them remotely and caches the last copy for display.
+ * The settings that are the extension's own. The app stores them; the extension only edits
+ * them remotely and keeps a copy for the browser session (D61).
  */
 export type ExtensionSettings = {
   /**

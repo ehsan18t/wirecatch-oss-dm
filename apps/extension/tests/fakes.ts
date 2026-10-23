@@ -3,12 +3,15 @@
  * flows run end to end in tests without a browser, a bridge or an app.
  */
 import {
+  applyBrowserControlsPatch,
   applyExtensionSettingsPatch,
   downloadId,
   MIN_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
   queueId,
   type AddAction,
+  type BrowserControls,
+  type BrowserControlsPatch,
   type Call,
   type Event,
   type ExtensionSettings,
@@ -17,6 +20,7 @@ import {
   type Message,
   type Outcome,
   type ProtocolError,
+  type Reply,
   type QueueSummary,
   type WithdrawOutcome,
 } from '@wirecatch/protocol';
@@ -45,6 +49,33 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   capture_extensions: [],
   min_capture_size: 0,
   default_queue: queueId(1),
+};
+
+/** The app's own settings the popup shows, as a fresh install has them. */
+export const CONTROLS: BrowserControls = {
+  global_speed_limit: null,
+  max_concurrent_downloads: 3,
+  media: {
+    video: {
+      format: 'original',
+      audio_kbps: null,
+      subtitle_languages: [],
+      auto_subtitles: true,
+      subtitle_files: false,
+      chapters: false,
+    },
+    audio: {
+      format: 'original',
+      audio_kbps: null,
+      subtitle_languages: [],
+      auto_subtitles: true,
+      subtitle_files: false,
+      chapters: false,
+    },
+    ask_each_time: true,
+    quality: 'best',
+    fallback: 'lower',
+  },
 };
 
 export const QUEUES: QueueSummary[] = [
@@ -126,6 +157,7 @@ function mayStartApp(hello: Partial<Pick<Hello, 'start_app'>>): boolean {
 /** The bridge plus the app, answering the protocol like the real ones would. */
 export class FakeApp implements NativeTransport {
   settings: ExtensionSettings = { ...DEFAULT_SETTINGS };
+  controls: BrowserControls = structuredClone(CONTROLS);
   queues: QueueSummary[] = QUEUES;
   /** The protocol versions the app speaks. */
   versions = { oldest: MIN_PROTOCOL_VERSION, newest: PROTOCOL_VERSION };
@@ -192,6 +224,12 @@ export class FakeApp implements NativeTransport {
     this.broadcast({ type: 'extension_settings_changed', data: this.settings });
   }
 
+  /** The app changes its own settings the popup shows, as in its settings window. */
+  changeControls(patch: BrowserControlsPatch): void {
+    this.controls = applyBrowserControlsPatch(this.controls, patch);
+    this.broadcast({ type: 'browser_controls_changed', data: this.controls });
+  }
+
   broadcast(event: Event): void {
     for (const port of this.ports) if (!port.closed) port.deliver({ kind: 'event', event });
   }
@@ -211,31 +249,31 @@ export class FakeApp implements NativeTransport {
       reply({ status: 'err', value: { code: 'unsupported_call', message: 'Not in this app.' } });
       return;
     }
-    switch (call.method) {
-      case 'hello':
-        this.greet(call.params, reply);
-        return;
-      case 'get_extension_settings':
-        reply({ status: 'ok', value: { type: 'extension_settings', data: this.settings } });
-        return;
-      case 'update_extension_settings':
-        this.updateSettings(call.params, reply);
-        return;
-      case 'list_queues':
-        reply({ status: 'ok', value: { type: 'queues', data: this.queues } });
-        return;
-      case 'pause_all':
-      case 'resume_all':
-      case 'show_window':
-        reply({ status: 'ok', value: { type: 'done' } });
-        return;
-      case 'withdraw_download':
-        this.withdraw(call.params.handover_id, reply);
-        return;
-      case 'add_download':
-        this.add(port, { id, call }, reply);
-        return;
+    const answered = this.plainReply(call.method);
+    if (answered !== null) {
+      reply({ status: 'ok', value: answered });
+      return;
     }
+    if (call.method === 'hello') this.greet(call.params, reply);
+    else if (call.method === 'update_extension_settings') this.updateSettings(call.params, reply);
+    else if (call.method === 'update_browser_controls') this.updateControls(call.params, reply);
+    else if (call.method === 'withdraw_download') this.withdraw(call.params.handover_id, reply);
+    else if (call.method === 'add_download') this.add(port, { id, call }, reply);
+  }
+
+  /** The answer to a call that only reads, or only asks for something to be shown; null for any other call. */
+  private plainReply(method: Call['method']): Reply | null {
+    const done: Reply = { type: 'done' };
+    const replies: Partial<Record<Call['method'], Reply>> = {
+      get_extension_settings: { type: 'extension_settings', data: this.settings },
+      get_browser_controls: { type: 'browser_controls', data: this.controls },
+      list_queues: { type: 'queues', data: this.queues },
+      pause_all: done,
+      resume_all: done,
+      show_window: done,
+      show_browser_settings: done,
+    };
+    return replies[method] ?? null;
   }
 
   /** Answers `hello`, after `startDelayMs` when it starts the app. */
@@ -286,6 +324,16 @@ export class FakeApp implements NativeTransport {
     this.settings = applyExtensionSettingsPatch(this.settings, patch);
     reply({ status: 'ok', value: { type: 'extension_settings', data: this.settings } });
     this.broadcast({ type: 'extension_settings_changed', data: this.settings });
+  }
+
+  private updateControls(patch: BrowserControlsPatch, reply: (outcome: Outcome) => void): void {
+    if (this.updateError !== null) {
+      reply({ status: 'err', value: this.updateError });
+      return;
+    }
+    this.controls = applyBrowserControlsPatch(this.controls, patch);
+    reply({ status: 'ok', value: { type: 'browser_controls', data: this.controls } });
+    this.broadcast({ type: 'browser_controls_changed', data: this.controls });
   }
 
   private withdraw(handoverId: string, reply: (outcome: Outcome) => void): void {

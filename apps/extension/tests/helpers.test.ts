@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { NATIVE_HOST_NAME } from '@wirecatch/product';
-import { isOutcome, queueId, type ErrorCode } from '@wirecatch/protocol';
+import { isOutcome, type ErrorCode } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { detectBrowser } from '../src/lib/browser-info';
@@ -10,9 +10,9 @@ import {
   noticeStore,
   toolbarBadge,
 } from '../src/lib/browser/adapters';
-import { asCachedSettings, CACHE_KEY, storageCache } from '../src/lib/cache';
+import { asCachedSettings, CACHE_KEY, memoryArea, storageCache } from '../src/lib/cache';
 import { cookieHeader } from '../src/lib/cookies';
-import { baseName, fileNameFromUrl, formatFileTypes, parseFileTypes } from '../src/lib/file-types';
+import { baseName, fileNameFromUrl } from '../src/lib/file-types';
 import { asPopupRequest, isNotice, type Notice } from '../src/lib/messages';
 import {
   classifyDisconnect,
@@ -52,12 +52,6 @@ describe('sites', () => {
 });
 
 describe('file types', () => {
-  it('parses a typed list', () => {
-    expect(parseFileTypes('.ZIP, exe  mp4,zip;*.iso')).toEqual(['zip', 'exe', 'mp4', 'iso']);
-    expect(parseFileTypes('  ')).toEqual([]);
-    expect(formatFileTypes(['zip', 'exe'])).toBe('zip, exe');
-  });
-
   it('reads names from addresses and paths', () => {
     expect(fileNameFromUrl('https://x.org/a/b/My%20File.zip?x=1')).toBe('My File.zip');
     expect(fileNameFromUrl('https://x.org/a/%E0%A4%A')).toBe('%E0%A4%A');
@@ -277,7 +271,7 @@ describe('cookies', () => {
   });
 });
 
-describe('settings cache', () => {
+describe('session copy of the settings', () => {
   it('reads back what it saved and rejects anything else', async () => {
     const store: Record<string, unknown> = {};
     const cache = storageCache({
@@ -288,28 +282,25 @@ describe('settings cache', () => {
       },
     });
     expect(await cache.load()).toBeNull();
-    const value = {
-      settings: DEFAULT_SETTINGS,
-      queues: [{ id: queueId(1), name: 'Main', is_default: true }],
-      savedAt: 5,
-      appClosed: true,
-    };
+    const value = { settings: DEFAULT_SETTINGS, appClosed: true };
     await cache.save(value);
     expect(store[CACHE_KEY]).toEqual(value);
     expect(await cache.load()).toEqual(value);
-    // Written before the field existed: the app counts as running, so waking connects once to find out.
-    const older = { settings: value.settings, queues: value.queues, savedAt: value.savedAt };
-    expect(asCachedSettings(older)?.appClosed).toBe(false);
-    expect(asCachedSettings({ settings: { capture_enabled: 'yes' }, savedAt: 1 })).toBeNull();
+    expect(asCachedSettings({ settings: { capture_enabled: 'yes' } })).toBeNull();
     expect(asCachedSettings('nope')).toBeNull();
-    expect(
-      asCachedSettings({ settings: DEFAULT_SETTINGS, savedAt: 1, queues: [{ id: 'x' }] }),
-    ).toEqual({
+    // Written without `appClosed`: the app counts as running, so waking connects once to find out.
+    expect(asCachedSettings({ settings: DEFAULT_SETTINGS })).toEqual({
       settings: DEFAULT_SETTINGS,
-      queues: [],
-      savedAt: 1,
       appClosed: false,
     });
+  });
+
+  it('keeps nothing beyond the background where the browser has no session storage', async () => {
+    const cache = storageCache(memoryArea());
+    expect(await cache.load()).toBeNull();
+    const value = { settings: DEFAULT_SETTINGS, appClosed: false };
+    await cache.save(value);
+    expect(await cache.load()).toEqual(value);
   });
 });
 

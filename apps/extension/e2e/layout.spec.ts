@@ -89,7 +89,9 @@ function layoutProblems(page: Page, selector: string): Promise<string[]> {
         const scrolls = style.overflowX === 'auto' || style.overflowX === 'scroll';
         if (scrolls && el.scrollWidth > el.clientWidth + 1)
           found.push(`${name(el)} scrolls sideways`);
-        if (ownWords(el) >= 3 && rect.width < narrowest) {
+        // Text is squeezed when a narrow box makes it wrap or cuts it; one line that fits whole is not.
+        const wholeLine = style.whiteSpace === 'nowrap' && el.scrollWidth <= el.clientWidth + 1;
+        if (ownWords(el) >= 3 && rect.width < narrowest && !wholeLine) {
           found.push(`${name(el)} is squeezed to ${String(Math.round(rect.width))}px`);
         }
         return found;
@@ -176,10 +178,22 @@ async function untippedLabels(page: Page, labels: string[]): Promise<string[]> {
 for (const font of FONTS) {
   test.describe(`in ${font.name}`, () => {
     test.describe('the popup with long text', () => {
-      for (const state of ['long', 'many', 'cached', 'closed', 'capture-off']) {
+      for (const state of ['long', 'many', 'no-access', 'closed', 'capture-off', 'old-app']) {
         test(`keeps everything inside the popup (${state})`, async ({ page }) => {
           await page.setViewportSize({ width: 480, height: 720 });
-          await open(page, `page=popup&state=${state}&pseudo`, font);
+          await open(page, `state=${state}&pseudo`, font);
+          expect(await layoutProblems(page, '.popup-frame > div')).toEqual([]);
+          expect(await crampedItems(page)).toEqual([]);
+        });
+      }
+
+      // The Downloads and Video and audio sections, unfolded (D61).
+      for (const state of ['long', 'connected', 'old-app']) {
+        test(`keeps everything inside the popup with its sections open (${state})`, async ({
+          page,
+        }) => {
+          await page.setViewportSize({ width: 480, height: 720 });
+          await open(page, `state=${state}&open&pseudo`, font);
           expect(await layoutProblems(page, '.popup-frame > div')).toEqual([]);
           expect(await crampedItems(page)).toEqual([]);
         });
@@ -187,7 +201,7 @@ for (const font of FONTS) {
 
       test('keeps translated button labels whole and inside the popup', async ({ page }) => {
         await page.setViewportSize({ width: 480, height: 720 });
-        await open(page, 'page=popup&state=long', font);
+        await open(page, 'state=long', font);
         const placed = await relabel(page, GERMAN_LABELS);
         expect(placed).toHaveLength(3);
         expect(await layoutProblems(page, '.popup-frame > div')).toEqual([]);
@@ -196,7 +210,7 @@ for (const font of FONTS) {
 
       test('offers a button label wider than the popup in a tooltip', async ({ page }) => {
         await page.setViewportSize({ width: 480, height: 720 });
-        await open(page, 'page=popup&state=long', font);
+        await open(page, 'state=long', font);
         const overlong = Object.fromEntries(
           Object.entries(GERMAN_LABELS).map(([english, german]) => [
             english,
@@ -210,11 +224,11 @@ for (const font of FONTS) {
         expect(await untippedLabels(page, cut)).toEqual([]);
       });
 
-      test('shows the capture switch without scrolling when the app is missing', async ({
+      test('shows the capture switch without scrolling under the website access notice', async ({
         page,
       }) => {
         await page.setViewportSize({ width: 480, height: 720 });
-        await open(page, 'page=popup&state=cached', font);
+        await open(page, 'state=no-access', font);
         const main = page.locator('main');
         const capture = page.getByRole('switch', { name: 'Capture downloads' });
         const [mainBox, captureBox] = await Promise.all([
@@ -225,23 +239,6 @@ for (const font of FONTS) {
           (mainBox?.y ?? 0) + (mainBox?.height ?? 0),
         );
       });
-    });
-
-    test.describe('the options page with long text', () => {
-      for (const width of [360, 1280]) {
-        for (const state of ['long', 'cached', 'missing']) {
-          test(`keeps everything inside the page at ${String(width)}px (${state})`, async ({
-            page,
-          }) => {
-            await page.setViewportSize({ width, height: 900 });
-            await open(page, `page=options&state=${state}&pseudo`, font);
-            expect(await layoutProblems(page, 'body')).toEqual([]);
-            expect(
-              await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
-            ).toBe(true);
-          });
-        }
-      }
     });
   });
 }

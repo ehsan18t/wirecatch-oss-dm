@@ -967,15 +967,21 @@ pub struct AppSettingsPatch {
 #[serde(deny_unknown_fields)]
 #[ts(export, optional_fields)]
 pub struct MediaDefaultsPatch {
+    // A field left as it is is left out when written, as the TypeScript type has it.
     /// Changes to [`MediaDefaults::video`].
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub video: Option<OutputDefaultsPatch>,
     /// Changes to [`MediaDefaults::audio`].
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub audio: Option<OutputDefaultsPatch>,
     /// The new [`MediaDefaults::ask_each_time`].
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ask_each_time: Option<bool>,
     /// The new [`MediaDefaults::quality`].
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub quality: Option<VideoQuality>,
     /// The new [`MediaDefaults::fallback`].
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub fallback: Option<QualityFallback>,
 }
 
@@ -984,19 +990,25 @@ pub struct MediaDefaultsPatch {
 #[serde(deny_unknown_fields)]
 #[ts(export, optional_fields)]
 pub struct OutputDefaultsPatch {
+    // A field left as it is is left out when written, as the TypeScript type has it.
     /// The new [`OutputDefaults::format`].
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub format: Option<OutputFormat>,
     /// The new quality in kbps; `null` goes back to the format's usual quality.
     #[serde(default, skip_serializing_if = "Update::is_keep")]
     #[ts(optional, as = "Option<Option<u32>>")]
     pub audio_kbps: Update<Option<u32>>,
     /// The new [`OutputDefaults::subtitle_languages`], replacing the list.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub subtitle_languages: Option<Vec<String>>,
     /// The new [`OutputDefaults::auto_subtitles`].
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_subtitles: Option<bool>,
     /// The new [`OutputDefaults::subtitle_files`].
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub subtitle_files: Option<bool>,
     /// The new [`OutputDefaults::chapters`].
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub chapters: Option<bool>,
 }
 
@@ -1423,6 +1435,8 @@ pub enum UiEvent {
     },
     /// A client asked to see Wirecatch (the extension's "Open Wirecatch"): the desktop shows its main window.
     WindowRequested,
+    /// A client asked for the browser settings (the popup's settings button, D61): the desktop shows its main window on them.
+    BrowserSettingsRequested,
     /// A queue is done; the desktop tells the person when the queue is set to
     /// [`QueueNotify::WhenDone`] (D52).
     QueueFinished(QueueReport),
@@ -1640,6 +1654,22 @@ mod tests {
 
     fn read_settings(value: serde_json::Value) -> AppSettings {
         serde_json::from_value(value).unwrap()
+    }
+
+    /// The popup shows a change with a port of `BrowserControls::apply` before the app confirms
+    /// it, while the app saves it with `AppSettings::apply`: both give the same settings (D61).
+    #[test]
+    fn browser_controls_apply_as_the_app_settings_do() {
+        for (before, patch) in crate::extension::browser_controls_cases() {
+            let mut settings = read_settings(stored_settings());
+            settings.global_speed_limit = before.global_speed_limit;
+            settings.max_concurrent_downloads = before.max_concurrent_downloads;
+            settings.media = before.media.clone();
+            settings.apply(patch.clone().into());
+            let mut controls = before;
+            controls.apply(patch);
+            assert_eq!(settings.browser_controls(), controls);
+        }
     }
 
     #[test]

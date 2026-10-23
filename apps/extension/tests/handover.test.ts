@@ -635,8 +635,6 @@ describe('handover', () => {
         configure: (app, cache) => {
           cache.value = {
             settings: { ...DEFAULT_SETTINGS, capture_enabled: false },
-            queues: [],
-            savedAt: 1,
             appClosed: false,
           };
           app.hostMissing = 'Specified native messaging host not found.';
@@ -649,7 +647,10 @@ describe('handover', () => {
     it('resumes a download the cached settings would capture', async () => {
       s = await setup({
         configure: (app, cache) => {
-          cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: false };
+          cache.value = {
+            settings: DEFAULT_SETTINGS,
+            appClosed: false,
+          };
           app.hostMissing = 'Specified native messaging host not found.';
         },
       });
@@ -707,7 +708,7 @@ describe('handover', () => {
     s = await setup({
       configure: (fake, cache) => {
         fake.running = false;
-        cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: true };
+        cache.value = { settings: DEFAULT_SETTINGS, appClosed: true };
       },
     });
     expect(s.app.ports).toHaveLength(0);
@@ -724,7 +725,7 @@ describe('handover', () => {
       configure: (fake, cache) => {
         fake.running = false;
         fake.startDelayMs = 1_000;
-        cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: true };
+        cache.value = { settings: DEFAULT_SETTINGS, appClosed: true };
       },
     });
     const download = s.hub.onDownload(downloadItem());
@@ -745,7 +746,7 @@ describe('handover', () => {
     s = await setup({
       configure: (fake, cache) => {
         fake.running = false;
-        cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: true };
+        cache.value = { settings: DEFAULT_SETTINGS, appClosed: true };
       },
     });
     const [, background] = channelPair<PopupRequest, BackgroundMessage>();
@@ -765,7 +766,7 @@ describe('handover', () => {
 
   it('remembers that the app is closed, and forgets it once the app runs', async () => {
     const cache = new MemoryCache();
-    cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: false };
+    cache.value = { settings: DEFAULT_SETTINGS, appClosed: false };
     const { app, client } = await setup({
       cache,
       configure: (fake) => {
@@ -802,8 +803,6 @@ describe('handover', () => {
     expect(s.downloads.log).toEqual([]);
     release({
       settings: { ...DEFAULT_SETTINGS, capture_enabled: false },
-      queues: [],
-      savedAt: 1,
       appClosed: false,
     });
     expect(await pending).toBeNull();
@@ -983,7 +982,10 @@ describe('handover', () => {
   it('rechecks the app settings after pausing and resumes if they now say no', async () => {
     s = await setup({
       configure: (app, cache) => {
-        cache.value = { settings: { ...app.settings }, queues: [], savedAt: 1, appClosed: false };
+        cache.value = {
+          settings: { ...app.settings },
+          appClosed: false,
+        };
         app.settings = { ...app.settings, capture_enabled: false };
         app.hostMissing = 'Specified native messaging host not found.';
       },
@@ -1398,7 +1400,7 @@ describe('downloads left paused by a restarted background', () => {
           app.running = false;
           app.startDelayMs = 9_500;
           app.withdrawBehavior = 'already_started';
-          cache.value = { settings: DEFAULT_SETTINGS, queues: [], savedAt: 1, appClosed: true };
+          cache.value = { settings: DEFAULT_SETTINGS, appClosed: true };
         },
       });
       await vi.advanceTimersByTimeAsync(20_000);

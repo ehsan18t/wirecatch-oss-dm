@@ -32,7 +32,7 @@ export interface DownloadControl {
   state(id: number): Promise<DownloadState | null>;
 }
 
-/** Settings to judge a download by, and whether they came from the app just now or from the display cache. */
+/** Settings to judge a download by, and whether they came from the app just now or from the session copy (D61). */
 export interface JudgingSettings {
   settings: ExtensionSettings;
   fromApp: boolean;

@@ -19,6 +19,6 @@
   <h1 class="font-display text-subtitle font-semibold text-ink">{PRODUCT_NAME}</h1>
   <div class="ml-auto flex items-center gap-1.5">
     <ConnectionBadge {status} />
-    <IconButton icon={Settings} label="Settings" size="sm" onclick={onsettings} />
+    <IconButton icon={Settings} label="Open Wirecatch settings" size="sm" onclick={onsettings} />
   </div>
 </header>

@@ -534,7 +534,7 @@ mod tests {
     /// [`FIXTURES`] and read by the tests of `packages/protocol`, so both languages agree.
     #[test]
     fn write_typescript_fixtures() {
-        use crate::extension::{apply_cases, file_type_cases, site_cases};
+        use crate::extension::{apply_cases, browser_controls_cases, file_type_cases, site_cases};
         let sites: Vec<Value> = site_cases()
             .into_iter()
             .map(|(typed, site)| serde_json::json!({ "typed": typed, "site": site }))
@@ -544,6 +544,14 @@ mod tests {
             .map(|(typed, kind)| serde_json::json!({ "typed": typed, "type": kind }))
             .collect();
         let applied: Vec<Value> = apply_cases()
+            .into_iter()
+            .map(|(before, patch)| {
+                let mut after = before.clone();
+                after.apply(patch.clone());
+                serde_json::json!({ "before": before, "patch": patch, "after": after })
+            })
+            .collect();
+        let controls: Vec<Value> = browser_controls_cases()
             .into_iter()
             .map(|(before, patch)| {
                 let mut after = before.clone();
@@ -568,6 +576,7 @@ mod tests {
             "normalize_site": sites,
             "normalize_file_type": file_types,
             "apply_extension_settings": applied,
+            "apply_browser_controls": controls,
             "media_start": starts,
         });
         let dir = export_dir();

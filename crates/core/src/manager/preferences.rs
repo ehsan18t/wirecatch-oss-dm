@@ -5,7 +5,9 @@ use std::path::Path;
 
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AddonId, AppSettings, AppSettingsPatch, ImportPreview, UiEvent};
-use wirecatch_protocol::extension::{ExtensionSettings, ExtensionSettingsPatch};
+use wirecatch_protocol::extension::{
+    BrowserControls, BrowserControlsPatch, ExtensionSettings, ExtensionSettingsPatch,
+};
 use wirecatch_protocol::wire::Event;
 
 use super::Manager;
@@ -73,6 +75,22 @@ impl Manager {
     #[must_use]
     pub fn extension_settings(&self) -> ExtensionSettings {
         self.lock().settings.extension.clone()
+    }
+
+    /// The app settings the extension's popup shows besides its own (D61).
+    #[must_use]
+    pub fn browser_controls(&self) -> BrowserControls {
+        self.lock().settings.browser_controls()
+    }
+
+    /// Changes some of [`browser_controls`](Self::browser_controls), as asked by a socket client, checked like any other change, and returns them as they are now.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`update_settings`](Self::update_settings).
+    pub fn update_browser_controls(&self, patch: BrowserControlsPatch) -> Result<BrowserControls> {
+        self.change_settings(patch.into())?;
+        Ok(self.browser_controls())
     }
 
     /// Changes some of the extension's settings, as asked by a socket client. Sites to add or remove are matched the way the list stores them ([`normalize_site`](wirecatch_protocol::extension::normalize_site)); the lists are checked before the manager's lock is taken, so a client sending a huge one holds nobody up.
@@ -249,6 +267,10 @@ impl Manager {
         self.inner.store.save_settings(new.clone());
         if old.extension != new.extension {
             self.emit_wire(Event::ExtensionSettingsChanged(new.extension.clone()));
+        }
+        let controls = new.browser_controls();
+        if old.browser_controls() != controls {
+            self.emit_wire(Event::BrowserControlsChanged(controls));
         }
         self.emit(UiEvent::SettingsChanged(new.clone()));
         self.reconcile(state);

@@ -11,7 +11,6 @@ import {
   conversionNote,
   formatChoiceLabel,
   kbpsFor,
-  nearestKbps,
   outputSelection,
   proposedChoice,
   qualityNotes,
@@ -179,7 +178,6 @@ describe('the Save as part of a quality window (D24)', () => {
     expect(kbpsFor(m4a, 'm4a', 250)).toBe(256);
     expect(kbpsFor(mp3, 'mp3', null)).toBe(192);
     expect(kbpsFor(fit('flac'), 'flac', 320)).toBeNull();
-    expect(nearestKbps([96, 128, 160, 192], 140)).toBe(128);
   });
 
   it('marks each row as converting or copying for the chosen format', () => {

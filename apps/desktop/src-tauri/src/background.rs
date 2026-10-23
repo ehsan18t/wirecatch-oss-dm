@@ -50,6 +50,10 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
                     Attention::Ask(id) => download_windows::ask(&app, id),
                     Attention::Closed(id) => download_windows::question_closed(&app, id),
                     Attention::ShowMain => crate::window::show_main_window(&app),
+                    Attention::ShowBrowserSettings => crate::window::reveal(
+                        &app,
+                        &wirecatch_protocol::desktop::Reveal::browser_settings(),
+                    ),
                     Attention::ShowCaptured(row) => {
                         if let Some(captured) = app.try_state::<crate::window::PendingCaptures>() {
                             captured.started(&row);

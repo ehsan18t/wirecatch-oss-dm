@@ -1,13 +1,14 @@
 <script lang="ts">
-  // The toolbar popup: the connection at a glance, capture on or off for every site and for this one, whether a window asks before each download, the media on this page, and the Pause all and Resume all buttons. Every other setting is on the options page, one click away (D5, D36).
+  // The toolbar popup: the connection at a glance, capture on or off for every site and for this one, whether a window asks before each download and each video, the media on this page, the settings someone may change while browsing folded under Downloads and Video and audio, and the Pause all and Resume all buttons. The settings are the app's, shown only while it is connected; the rest are in the app, behind the settings button (D61).
   import { PRODUCT_NAME } from '@wirecatch/product';
-  import { Callout } from '@wirecatch/ui';
   import type { PopupModel } from '../../lib/popup/model.svelte';
   import AccessNotice from '../common/AccessNotice.svelte';
   import ConnectionNotice from '../common/ConnectionNotice.svelte';
-  import { cachedNote, waitingNote } from '../connection';
+  import { waitingNote } from '../connection';
   import CaptureCard from './CaptureCard.svelte';
+  import DownloadsSection from './DownloadsSection.svelte';
   import MediaList from './MediaList.svelte';
+  import MediaSection from './MediaSection.svelte';
   import Notices from './Notices.svelte';
   import PopupFooter from './PopupFooter.svelte';
   import PopupHeader from './PopupHeader.svelte';
@@ -22,8 +23,10 @@
     requestSiteAccess?: () => Promise<boolean>;
     /** The keyboard shortcut that downloads a page's media; null when none is set. */
     mediaShortcut?: string | null;
-    /** Opens the options page. */
-    openSettings?: () => void;
+    /** Opens the browser's page of extension shortcuts; null where no page can open it (Firefox). */
+    openShortcuts?: (() => void) | null;
+    /** Closes the popup, once the app's settings are opening. */
+    close?: () => void;
   }
 
   let {
@@ -32,8 +35,13 @@
     siteAccess = true,
     requestSiteAccess,
     mediaShortcut = null,
-    openSettings = () => undefined,
+    openShortcuts = null,
+    close = () => undefined,
   }: Props = $props();
+
+  async function openSettings(): Promise<void> {
+    if (await model.openSettings()) close();
+  }
 
   let accessGranted = $state<boolean | null>(null);
   const hasSiteAccess = $derived(accessGranted ?? siteAccess);
@@ -47,14 +55,13 @@
   const snapshot = $derived(model.snapshot);
   const status = $derived(snapshot?.status ?? { state: 'connecting' as const });
   const problem = $derived(status.state === 'unavailable' ? status.problem : null);
-  const cached = $derived(cachedNote(snapshot));
 </script>
 
 <svelte:head><title>{PRODUCT_NAME}</title></svelte:head>
 
 <!-- Browsers stop a popup at 600px: only the middle scrolls, so the state and the Pause all and Resume all buttons stay in view. -->
 <div class="flex max-h-popup w-popup flex-col">
-  <PopupHeader {status} onsettings={openSettings} />
+  <PopupHeader {status} onsettings={() => void openSettings()} />
 
   <main
     aria-busy={snapshot === null}
@@ -65,7 +72,6 @@
     {#if problem !== null}
       <ConnectionNotice
         {problem}
-        note={cached}
         onopen={() => void model.openApp()}
         onretry={() => {
           model.reconnect();
@@ -82,25 +88,33 @@
       }}
       fallback={() => mainArea}
     />
-    {#if cached !== null && problem === null}
-      <Callout tone="neutral">{cached}</Callout>
-    {/if}
 
     {#if model.settings === null}
-      <!-- With nothing to show (never connected, no cache), say so instead of showing made-up values. -->
+      <!-- The settings are the app's: while it is not connected, say so instead of showing values it may have changed. -->
       <p class="px-1 text-ui text-ink-muted">{waitingNote(status)}</p>
     {:else}
-      <CaptureCard {model} settings={model.settings} {currentUrl} />
+      <CaptureCard {model} settings={model.settings} controls={model.controls} {currentUrl} />
     {/if}
 
     <MediaList
       view={model.media}
       statuses={model.mediaStatus}
-      buttonOn={model.settings?.show_media_button ?? null}
       shortcut={mediaShortcut}
+      {openShortcuts}
+      buttonOn={model.editable ? (model.settings?.show_media_button ?? null) : null}
+      ontogglebutton={(on: boolean) => void model.update({ show_media_button: on })}
       ondownload={(key: string) => void model.downloadMedia(key)}
-      onsettings={openSettings}
     />
+
+    {#if model.settings !== null}
+      <DownloadsSection
+        {model}
+        settings={model.settings}
+        controls={model.controls}
+        queues={snapshot?.queues ?? []}
+      />
+      <MediaSection {model} settings={model.settings} controls={model.controls} />
+    {/if}
   </main>
 
   <PopupFooter

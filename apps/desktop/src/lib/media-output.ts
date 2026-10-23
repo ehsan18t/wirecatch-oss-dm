@@ -6,7 +6,9 @@
 import {
   AUDIO_DEFAULT_KBPS,
   AUDIO_KBPS_CHOICES,
+  FORMAT_LABEL,
   LOSSLESS_OUTPUT_FORMATS,
+  nearestKbps,
   type MediaChoice,
   type MediaOption,
   type MediaSelection,
@@ -16,19 +18,6 @@ import {
   type OutputFormat,
 } from '@wirecatch/protocol';
 import { bytesAtBitRate } from '@wirecatch/units';
-
-/** Each format's name for a person. */
-export const FORMAT_LABEL: Record<OutputFormat, string> = {
-  original: 'Original',
-  mp4: 'MP4',
-  mkv: 'MKV',
-  webm: 'WebM',
-  mp3: 'MP3',
-  m4a: 'M4A',
-  opus: 'Opus',
-  flac: 'FLAC',
-  wav: 'WAV',
-};
 
 /** Each format's name by its extension, Original aside. */
 const NAME_BY_EXTENSION: ReadonlyMap<string, string> = new Map(
@@ -51,15 +40,6 @@ export function formatChoiceLabel(fit: OutputFit): string {
   const ext = fit.ext.toLowerCase();
   const named = ext === 'webm' ? 'WebM' : ext === 'opus' ? 'Opus' : ext.toUpperCase();
   return `Original (${named})`;
-}
-
-/** The offered quality nearest to `wanted` (the lower one on a tie). */
-export function nearestKbps(choices: readonly number[], wanted: number): number {
-  let best = choices[0] ?? wanted;
-  for (const c of choices) {
-    if (Math.abs(c - wanted) < Math.abs(best - wanted)) best = c;
-  }
-  return best;
 }
 
 /**

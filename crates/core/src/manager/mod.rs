@@ -397,6 +397,11 @@ impl Manager {
         self.emit(UiEvent::WindowRequested);
     }
 
+    /// Asks the desktop to show its main window on the browser settings ([`UiEvent::BrowserSettingsRequested`]), for the popup's settings button (D61).
+    pub fn request_browser_settings(&self) {
+        self.emit(UiEvent::BrowserSettingsRequested);
+    }
+
     /// Stops every download so it can continue on the next start, saves everything,
     /// closes the database and stops the background work. Once it returns, the data
     /// folder can be deleted or moved (the database file is closed). Later operations

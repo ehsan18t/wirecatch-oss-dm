@@ -221,6 +221,14 @@ async fn handle(manager: &Manager, version: u32, call: Call) -> Outcome {
             manager.request_window();
             Ok(Reply::Done)
         }
+        Call::GetBrowserControls => Ok(Reply::BrowserControls(manager.browser_controls())),
+        Call::UpdateBrowserControls(patch) => manager
+            .update_browser_controls(patch)
+            .map(Reply::BrowserControls),
+        Call::ShowBrowserSettings => {
+            manager.request_browser_settings();
+            Ok(Reply::Done)
+        }
     };
     match result {
         Ok(reply) => Outcome::Ok(reply),
@@ -299,10 +307,11 @@ fn unsupported_call(id: u64, method: CallMethod) -> Message {
     error(id, ErrorCode::UnsupportedCall, message.into())
 }
 
-fn snapshot(manager: &Manager) -> [Event; 2] {
+fn snapshot(manager: &Manager) -> [Event; 3] {
     [
         Event::ExtensionSettingsChanged(manager.extension_settings()),
         Event::QueuesChanged(manager.queue_summaries()),
+        Event::BrowserControlsChanged(manager.browser_controls()),
     ]
 }
 

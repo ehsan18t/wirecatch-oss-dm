@@ -1,16 +1,19 @@
 /** What the hub is given: the connection, browser APIs and stores, and the shapes it hands back. */
-import type { ExtensionSettings, QueueSummary } from '@wirecatch/protocol';
+import type { ExtensionSettings } from '@wirecatch/protocol';
 import type { DownloadControl } from '../capture/handover';
 import type { CookieContext } from '../cookies';
 import type { MediaSendResult, MediaView } from '../media/center';
 import type { Notice } from '../messages';
 import type { NativeClient } from '../native/client';
 
-/** The display cache kept in browser storage (D5: the app is the only real store). */
+/**
+ * The copy of the app's settings the extension keeps for the browser session (D61): read from
+ * the app when it connects, kept in `storage.session` so a background the browser stopped still
+ * knows it, and gone when the browser closes. The app is the only store of settings (D5).
+ */
 export interface CachedSettings {
+  /** What a download is judged by while the app is still connecting. */
   settings: ExtensionSettings;
-  queues: QueueSummary[];
-  savedAt: number;
   /** The app was closed when last seen, so waking does not start a bridge only to find that out again. */
   appClosed: boolean;
 }
@@ -71,8 +74,8 @@ export interface HubDeps {
   now?: () => number;
   /** How long to wait for the app; each value missing here is taken from `DEFAULT_TIMING`. */
   timing?: Partial<HubTiming>;
-  /** Publishes the "Show download button on videos" setting where content scripts read it (`MEDIA_BUTTON_KEY`). */
-  mediaButtonSetting?: { save(on: boolean): Promise<void> };
+  /** Tells the media buttons on open pages that "Show download button on videos" changed (`MEDIA_BUTTON_SETTING`). */
+  mediaButtonSetting?: { publish(on: boolean): Promise<void> };
   /** The media lists the popup shows (`MediaCenter`); without it the popup's media commands fail. */
   media?: MediaCommands;
 }

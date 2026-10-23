@@ -70,4 +70,5 @@ export type UiEvent =
       };
     }
   | { type: 'window_requested' }
+  | { type: 'browser_settings_requested' }
   | { type: 'queue_finished'; data: QueueReport };

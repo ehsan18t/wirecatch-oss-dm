@@ -127,6 +127,19 @@ describe('AppState', () => {
     await vi.waitFor(() => expect(app.selection.list).toEqual([first.id]));
   });
 
+  it('opens the browser settings the extension asked for, even while the page was loading (D61)', async () => {
+    const backend = mockBackend();
+    vi.spyOn(backend, 'takeReveal').mockResolvedValue({
+      queue: null,
+      ids: [],
+      browser_settings: true,
+    });
+    const app = appState(backend);
+    await app.init();
+    await vi.waitFor(() => expect(app.screen).toBe('settings'));
+    expect(app.settingsSection).toBe('browser');
+  });
+
   it('selects ranges in display order', async () => {
     const { app } = await make();
     const [a, b, c] = app.visible;

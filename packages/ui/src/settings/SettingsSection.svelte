@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A group of settings under a heading, on one raised card with a hairline between its rows. The app's settings page and the extension's options page both build on it, so a setting looks the same wherever it is changed.
+  // A group of settings under a heading, on one raised card with a hairline between its rows. The app's settings page builds on it.
   import type { Snippet } from 'svelte';
   import { cn } from '../lib/cn';
 

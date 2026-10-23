@@ -72,6 +72,9 @@ export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
     },
     // The desktop shell brings the window to the front; nothing changes in it.
     window_requested: ignore,
+    // The shell brings the window up and hands the browser settings over as a reveal, which a
+    // page still loading takes too (D61).
+    browser_settings_requested: ignore,
     // The shell tells the person (D52); the list already shows how each download ended.
     queue_finished: ignore,
   };

@@ -12,10 +12,12 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use wirecatch_core::{LinkFrom, Manager, serve_connection};
-use wirecatch_protocol::app::{CaptureConfirmation, DownloadStatus, UiEvent};
+use wirecatch_protocol::app::{
+    CaptureConfirmation, DownloadStatus, MediaDefaultsPatch, UiEvent, Update,
+};
 use wirecatch_protocol::extension::{
-    AddAction, CaptureSource, ExtensionSettingsPatch, Header, NewDownload, WithdrawOutcome,
-    WithdrawRequest,
+    AddAction, BrowserControlsPatch, CaptureSource, ExtensionSettingsPatch, Header, NewDownload,
+    WithdrawOutcome, WithdrawRequest,
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
 use wirecatch_protocol::wire::{
@@ -466,7 +468,9 @@ async fn settings_changes_reach_every_client() -> TestResult {
             match client.next_event().await? {
                 Event::ExtensionSettingsChanged(s) if !s.capture_enabled => break,
                 Event::ExtensionSettingsChanged(_) => {}
-                other @ Event::QueuesChanged(_) => panic!("unexpected event {other:?}"),
+                other @ (Event::QueuesChanged(_) | Event::BrowserControlsChanged(_)) => {
+                    panic!("unexpected event {other:?}")
+                }
             }
         }
     }
@@ -553,6 +557,122 @@ async fn a_client_can_ask_for_the_window() -> TestResult {
     let mut client = Client::connected(&h.manager).await?;
     assert_eq!(client.call(Call::ShowWindow).await?.unwrap(), Reply::Done);
     while !matches!(ui.recv().await.unwrap(), UiEvent::WindowRequested) {}
+    assert_eq!(
+        client.call(Call::ShowBrowserSettings).await?.unwrap(),
+        Reply::Done
+    );
+    while !matches!(ui.recv().await.unwrap(), UiEvent::BrowserSettingsRequested) {}
+    Ok(())
+}
+
+/// The app settings the popup shows (D61) are the app's: a change from one browser is stored
+/// and reaches the other browser and the UI, and a change in the app reaches every browser.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn browser_controls_changes_reach_every_client() -> TestResult {
+    let h = Harness::new().await?;
+    let mut chrome = Client::connected(&h.manager).await?;
+    let mut firefox = Client::connected(&h.manager).await?;
+    assert_eq!(
+        chrome.call(Call::GetBrowserControls).await?.unwrap(),
+        Reply::BrowserControls(h.manager.get_settings().browser_controls())
+    );
+
+    let patch = BrowserControlsPatch {
+        global_speed_limit: Update::Set(Some(512 * 1024)),
+        max_concurrent_downloads: Some(2),
+        media: Some(MediaDefaultsPatch {
+            ask_each_time: Some(false),
+            ..Default::default()
+        }),
+    };
+    let reply = chrome
+        .call(Call::UpdateBrowserControls(patch))
+        .await?
+        .unwrap();
+    let Reply::BrowserControls(saved) = reply else {
+        panic!("unexpected reply {reply:?}");
+    };
+    assert_eq!(saved.global_speed_limit, Some(512 * 1024));
+    assert_eq!(saved.max_concurrent_downloads, 2);
+    assert!(!saved.media.ask_each_time);
+    assert_eq!(h.manager.get_settings().browser_controls(), saved);
+    assert_eq!(
+        firefox.next_event().await?,
+        Event::BrowserControlsChanged(saved.clone())
+    );
+
+    tune(&h.manager, |s| s.global_speed_limit = None)?;
+    // The browser that made the first change is told of it too, before this one.
+    for client in [&mut chrome, &mut firefox] {
+        loop {
+            match client.next_event().await? {
+                Event::BrowserControlsChanged(c) if c.global_speed_limit.is_none() => {
+                    assert_eq!(c.max_concurrent_downloads, 2);
+                    break;
+                }
+                Event::BrowserControlsChanged(c) => assert_eq!(c, saved),
+                other => panic!("unexpected event {other:?}"),
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A change to a setting the popup does not show sends no `browser_controls_changed`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn other_settings_send_no_browser_controls_event() -> TestResult {
+    let h = Harness::new().await?;
+    let mut client = Client::connected(&h.manager).await?;
+    tune(&h.manager, |s| s.close_to_tray = !s.close_to_tray)?;
+    tune(&h.manager, |s| s.max_concurrent_downloads = 2)?;
+    assert!(matches!(
+        client.next_event().await?,
+        Event::BrowserControlsChanged(c) if c.max_concurrent_downloads == 2
+    ));
+    Ok(())
+}
+
+/// A value the app's own settings refuse is refused from the popup too, and nothing changes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn browser_controls_out_of_range_are_refused() -> TestResult {
+    let h = Harness::new().await?;
+    let before = h.manager.get_settings();
+    let mut client = Client::connected(&h.manager).await?;
+    let patch = BrowserControlsPatch {
+        max_concurrent_downloads: Some(0),
+        ..Default::default()
+    };
+    let error = client
+        .call(Call::UpdateBrowserControls(patch))
+        .await?
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::InvalidRequest);
+    assert_eq!(h.manager.get_settings(), before);
+    Ok(())
+}
+
+/// A client on version 1 has neither the new calls nor the new event (D32.3).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_version_1_client_never_sees_the_browser_controls() -> TestResult {
+    let h = Harness::new().await?;
+    let mut client = Client::connect(&h.manager);
+    let reply = client.call(hello(1, Some(1))).await?;
+    assert!(
+        matches!(reply, Ok(Reply::Hello(ref r)) if r.protocol_version == 1),
+        "{reply:?}"
+    );
+    for call in [Call::GetBrowserControls, Call::ShowBrowserSettings] {
+        assert_eq!(
+            client.call(call).await?.unwrap_err().code,
+            ErrorCode::InvalidRequest
+        );
+    }
+    tune(&h.manager, |s| s.global_speed_limit = Some(1024))?;
+    tune(&h.manager, |s| s.extension.capture_enabled = false)?;
+    assert!(matches!(
+        client.next_event().await?,
+        Event::ExtensionSettingsChanged(s) if !s.capture_enabled
+    ));
     Ok(())
 }
 

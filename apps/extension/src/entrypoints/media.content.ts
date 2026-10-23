@@ -9,12 +9,12 @@ import { log } from '@/lib/diag/log';
 import { MediaButton } from '@/lib/media/button';
 import { SITE_ORIGINS } from '@/lib/site-access';
 import {
-  MEDIA_BUTTON_KEY,
   asAnnounce,
+  MEDIA_BUTTON_QUERY,
   MEDIA_CHECK,
   MEDIA_DOWNLOAD,
   frameLocation,
-  mediaButtonOn,
+  isButtonSetting,
   isCheckAnswer,
   isDownloadAnswer,
   type ContentRequest,
@@ -56,23 +56,21 @@ export default defineContentScript({
     });
     // A reloaded or updated extension starts a fresh copy of this script: remove the old button.
     ctx.onInvalidated(() => button.destroy());
-    browser.storage.local.get(MEDIA_BUTTON_KEY).then(
-      (items) => button.setEnabled(mediaButtonOn(items[MEDIA_BUTTON_KEY])),
+    // The app keeps the setting (D61); the background says whether it is on, and on unless it can say.
+    ask({ type: MEDIA_BUTTON_QUERY }).then(
+      (answer) => button.setEnabled(!isButtonSetting(answer) || answer.on),
       (error: unknown) => {
-        log.warn('page', 'Could not read the media button setting; showing the button', error);
+        log.warn('page', 'Could not ask for the media button setting; showing the button', error);
         button.setEnabled(true);
       },
     );
-    // Turning the setting on or off (in the popup or the app) takes effect at once.
-    const onChanged = (changes: Record<string, { newValue?: unknown }>, area: string): void => {
-      const change = changes[MEDIA_BUTTON_KEY];
-      if (area === 'local' && change !== undefined)
-        button.setEnabled(mediaButtonOn(change.newValue));
-    };
-    browser.storage.onChanged.addListener(onChanged);
-    ctx.onInvalidated(() => browser.storage.onChanged.removeListener(onChanged));
-    // The answer to the keyboard shortcut, from the background (pages cannot send these).
+    // From the background (pages cannot send these): the setting turned on or off, in the popup
+    // or the app, which takes effect at once; and the answer to the keyboard shortcut.
     const onMessage = (raw: unknown): undefined => {
+      if (isButtonSetting(raw)) {
+        button.setEnabled(raw.on);
+        return undefined;
+      }
       const announce = asAnnounce(raw);
       if (announce !== null) button.announce(announce.message, !announce.ok);
       return undefined;

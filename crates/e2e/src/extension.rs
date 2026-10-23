@@ -18,8 +18,8 @@ use wirecatch_product::{
     CHROMIUM_EXTENSION_ORIGIN, FIREFOX_EXTENSION_ID, LOG_FOLDER_VARIABLE, NATIVE_HOST_NAME,
 };
 use wirecatch_protocol::extension::{
-    AddedDownload, ExtensionSettings, ExtensionSettingsPatch, NewDownload, WithdrawOutcome,
-    WithdrawRequest,
+    AddedDownload, BrowserControls, BrowserControlsPatch, ExtensionSettings,
+    ExtensionSettingsPatch, NewDownload, WithdrawOutcome, WithdrawRequest,
 };
 use wirecatch_protocol::frame;
 use wirecatch_protocol::wire::{
@@ -347,6 +347,25 @@ impl FakeExtension {
         match self.ok(Call::UpdateExtensionSettings(patch)).await {
             Reply::ExtensionSettings(settings) => settings,
             other => panic!("update_extension_settings got {other:?}"),
+        }
+    }
+
+    /// `get_browser_controls`.
+    pub async fn get_browser_controls(&mut self) -> BrowserControls {
+        match self.ok(Call::GetBrowserControls).await {
+            Reply::BrowserControls(controls) => controls,
+            other => panic!("get_browser_controls got {other:?}"),
+        }
+    }
+
+    /// `update_browser_controls`.
+    pub async fn update_browser_controls(
+        &mut self,
+        patch: BrowserControlsPatch,
+    ) -> BrowserControls {
+        match self.ok(Call::UpdateBrowserControls(patch)).await {
+            Reply::BrowserControls(controls) => controls,
+            other => panic!("update_browser_controls got {other:?}"),
         }
     }
 

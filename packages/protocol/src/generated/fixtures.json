@@ -1,4 +1,195 @@
 {
+  "apply_browser_controls": [
+    {
+      "after": {
+        "global_speed_limit": 2000000,
+        "max_concurrent_downloads": 3,
+        "media": {
+          "ask_each_time": true,
+          "audio": {
+            "audio_kbps": null,
+            "auto_subtitles": true,
+            "chapters": false,
+            "format": "original",
+            "subtitle_files": false,
+            "subtitle_languages": []
+          },
+          "fallback": "lower",
+          "quality": "best",
+          "video": {
+            "audio_kbps": null,
+            "auto_subtitles": true,
+            "chapters": false,
+            "format": "original",
+            "subtitle_files": false,
+            "subtitle_languages": []
+          }
+        }
+      },
+      "before": {
+        "global_speed_limit": 2000000,
+        "max_concurrent_downloads": 3,
+        "media": {
+          "ask_each_time": true,
+          "audio": {
+            "audio_kbps": null,
+            "auto_subtitles": true,
+            "chapters": false,
+            "format": "original",
+            "subtitle_files": false,
+            "subtitle_languages": []
+          },
+          "fallback": "lower",
+          "quality": "best",
+          "video": {
+            "audio_kbps": null,
+            "auto_subtitles": true,
+            "chapters": false,
+            "format": "original",
+            "subtitle_files": false,
+            "subtitle_languages": []
+          }
+        }
+      },
+      "patch": {}
+    },
+    {
+      "after": {
+        "global_speed_limit": null,
+        "max_concurrent_downloads": 1,
+        "media": {
+          "ask_each_time": false,
+          "audio": {
+            "audio_kbps": 320,
+            "auto_subtitles": true,
+            "chapters": false,
+            "format": "mp3",
+            "subtitle_files": false,
+            "subtitle_languages": []
+          },
+          "fallback": "higher",
+          "quality": {
+            "height": 720
+          },
+          "video": {
+            "audio_kbps": null,
+            "auto_subtitles": false,
+            "chapters": false,
+            "format": "mkv",
+            "subtitle_files": true,
+            "subtitle_languages": ["en", "pt-br"]
+          }
+        }
+      },
+      "before": {
+        "global_speed_limit": 2000000,
+        "max_concurrent_downloads": 3,
+        "media": {
+          "ask_each_time": true,
+          "audio": {
+            "audio_kbps": null,
+            "auto_subtitles": true,
+            "chapters": false,
+            "format": "original",
+            "subtitle_files": false,
+            "subtitle_languages": []
+          },
+          "fallback": "lower",
+          "quality": "best",
+          "video": {
+            "audio_kbps": null,
+            "auto_subtitles": true,
+            "chapters": false,
+            "format": "original",
+            "subtitle_files": false,
+            "subtitle_languages": []
+          }
+        }
+      },
+      "patch": {
+        "global_speed_limit": null,
+        "max_concurrent_downloads": 1,
+        "media": {
+          "ask_each_time": false,
+          "audio": {
+            "audio_kbps": 320,
+            "format": "mp3"
+          },
+          "fallback": "higher",
+          "quality": {
+            "height": 720
+          },
+          "video": {
+            "auto_subtitles": false,
+            "chapters": false,
+            "format": "mkv",
+            "subtitle_files": true,
+            "subtitle_languages": ["en", "pt-br"]
+          }
+        }
+      }
+    },
+    {
+      "after": {
+        "global_speed_limit": 524288,
+        "max_concurrent_downloads": 3,
+        "media": {
+          "ask_each_time": true,
+          "audio": {
+            "audio_kbps": null,
+            "auto_subtitles": true,
+            "chapters": false,
+            "format": "original",
+            "subtitle_files": false,
+            "subtitle_languages": []
+          },
+          "fallback": "lower",
+          "quality": "best",
+          "video": {
+            "audio_kbps": null,
+            "auto_subtitles": true,
+            "chapters": false,
+            "format": "original",
+            "subtitle_files": false,
+            "subtitle_languages": []
+          }
+        }
+      },
+      "before": {
+        "global_speed_limit": null,
+        "max_concurrent_downloads": 3,
+        "media": {
+          "ask_each_time": true,
+          "audio": {
+            "audio_kbps": null,
+            "auto_subtitles": true,
+            "chapters": false,
+            "format": "original",
+            "subtitle_files": false,
+            "subtitle_languages": []
+          },
+          "fallback": "lower",
+          "quality": "best",
+          "video": {
+            "audio_kbps": null,
+            "auto_subtitles": true,
+            "chapters": false,
+            "format": "original",
+            "subtitle_files": false,
+            "subtitle_languages": []
+          }
+        }
+      },
+      "patch": {
+        "global_speed_limit": 524288,
+        "media": {
+          "audio": {
+            "audio_kbps": null
+          }
+        }
+      }
+    }
+  ],
   "apply_extension_settings": [
     {
       "after": {

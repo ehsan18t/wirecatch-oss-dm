@@ -23,6 +23,30 @@ The private key that belongs to `chromium_public_key` is kept by the maintainer 
 
 Other Chromium stores, such as Microsoft Edge Add-ons, give their own ids, which Wirecatch does not trust. Edge users install the extension from the Chrome Web Store.
 
+### What the listing asks for
+
+The developer dashboard's Privacy tab asks for a single purpose, a reason for each permission, and the data the extension handles. These are the answers; the permissions themselves are in `wxt.config.ts`, and nothing here may promise more than the code does (D61).
+
+**Single purpose.** Hands the downloads, links and videos a person picks in the browser to the Wirecatch download manager on the same computer, which downloads them.
+
+**Permissions.**
+
+| Permission                                  | Why                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `downloads`                                 | To see a download as the browser starts it, pause it while Wirecatch is asked to take it, and remove the browser's copy once Wirecatch has it, or let it go on in the browser when Wirecatch cannot take it.                                                                                                                                                                                                 |
+| `nativeMessaging`                           | To talk to the Wirecatch app on the same computer, which stores the settings and does the downloading. Nothing is sent anywhere else.                                                                                                                                                                                                                                                                        |
+| `cookies`                                   | A download behind a sign-in needs the cookies the browser would send with it, so Wirecatch downloads with the same access. They are read only for the download being handed over and go only to the Wirecatch app.                                                                                                                                                                                           |
+| `webRequest`                                | To notice video and audio a page plays (streams and files) so the popup and the button over videos can offer them, and to read the `Cookie` header the browser sent with that media, so Wirecatch sends what the browser sent. Requests are only observed, never blocked or changed.                                                                                                                         |
+| `contextMenus`                              | For "Download with Wirecatch" when right-clicking a link, image, video or audio.                                                                                                                                                                                                                                                                                                                             |
+| `storage`                                   | To keep, for the current browser session only, what lets a background the browser stopped pick up where it was: the settings the Wirecatch app sent, the downloads being handed over, each tab's media list with the `Cookie` header sent for each item, messages for the popup, and the extension's error log (secrets left out). The browser clears it when it closes, and content scripts cannot read it. |
+| Host access to all `http` and `https` sites | Downloads and videos come from any site: the cookies and requests above are read for whichever site a download or video comes from, and the button over videos runs on any page.                                                                                                                                                                                                                             |
+
+**Remote code.** None: every script ships in the package.
+
+**Data use.** Declare _Authentication information_ (the cookies of a download's or a video's site) and _Web history_ (the addresses of downloads, of the pages they come from, and of media on a page). Both go only to the Wirecatch app on the same computer, to download what the person asked for, and are kept in the browser's session storage until it closes. Certify that the data is not sold, not used or transferred for purposes unrelated to the single purpose, and not used to determine creditworthiness or for lending. Nothing is collected from private windows.
+
+**Privacy policy.** Give the public address of `PRIVACY.md` at the root of the repository (on the website once it exists, or in the GitHub repository until then).
+
 ## Firefox
 
 Firefox builds use the add-on id `extension@wirecatch.app` (`firefox_id`) from `browser_specific_settings.gecko` and never carry a `key`. Every bridge lists that id in `allowed_extensions`. `pnpm build:firefox` builds `.output/firefox-mv3`; `pnpm zip` also makes the Firefox package and its sources zip.

@@ -126,8 +126,9 @@ pub struct SystemAppearance {
     pub accent: Option<String>,
 }
 
-/// Downloads the main window selects and scrolls to, because the person clicked a notification
-/// about them (D52).
+/// What the main window shows when it comes to the front for someone: downloads it selects and
+/// scrolls to, because the person clicked a notification about them (D52), or the browser
+/// settings, for the extension's settings button (D61).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Reveal {
@@ -136,6 +137,22 @@ pub struct Reveal {
     pub queue: Option<QueueId>,
     /// The downloads, the one to scroll to first.
     pub ids: Vec<DownloadId>,
+    /// Show the browser settings instead of downloads.
+    #[serde(default)]
+    #[ts(optional, as = "Option<bool>")]
+    pub browser_settings: bool,
+}
+
+impl Reveal {
+    /// The browser settings, for the extension's settings button (D61).
+    #[must_use]
+    pub fn browser_settings() -> Self {
+        Self {
+            queue: None,
+            ids: Vec::new(),
+            browser_settings: true,
+        }
+    }
 }
 
 /// What the download complete window shows: what finished or failed since it opened, the

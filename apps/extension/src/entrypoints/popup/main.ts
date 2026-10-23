@@ -13,6 +13,15 @@ import {
 } from '@/lib/popup/page';
 import Popup from '@/ui/popup/Popup.svelte';
 
+/** Chromium's page for extension shortcuts. Firefox has none a page can open: its shortcuts are under the add-ons manager's menu. */
+const CHROMIUM_SHORTCUTS = 'chrome://extensions/shortcuts';
+
+function openShortcuts(): void {
+  void browser.tabs
+    .create({ url: CHROMIUM_SHORTCUTS })
+    .catch(fallback('popup', 'Could not open the shortcuts page', undefined));
+}
+
 async function start(): Promise<void> {
   const model = connectPage();
   const tab = await activeTab();
@@ -31,19 +40,13 @@ async function start(): Promise<void> {
       siteAccess,
       requestSiteAccess,
       mediaShortcut: shortcut,
-      openSettings,
+      openShortcuts: import.meta.env.FIREFOX ? null : openShortcuts,
+      // The app's settings open in its window; the popup closes, as it would when the person clicks away.
+      close: () => {
+        window.close();
+      },
     },
   });
-}
-
-/** Opens the options page in a tab; the popup closes, as it would when the person clicks away. */
-function openSettings(): void {
-  void browser.runtime
-    .openOptionsPage()
-    .catch(fallback('popup', 'Could not open the settings page', undefined))
-    .then(() => {
-      window.close();
-    });
 }
 
 installDiagnostics('popup', window);

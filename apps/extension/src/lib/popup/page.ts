@@ -1,4 +1,4 @@
-// What the extension's own pages, the popup and the options page, do as they open: connect to the
+// What the extension's own page, the popup, does as it opens: connect to the
 // background script, and read what the browser knows that the background does not.
 import { browser } from 'wxt/browser';
 import { fallback, log } from '../diag/log';

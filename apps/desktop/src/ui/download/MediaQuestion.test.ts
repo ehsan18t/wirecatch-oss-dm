@@ -225,6 +225,8 @@ describe('the quality window by keyboard', () => {
     expect(quality()).toHaveTextContent(/^1080p/);
     expect(choose).not.toHaveBeenCalled();
     // Enter on the quality opens its list rather than downloading; Enter in a text field downloads.
+    // The file name is folded under "Save to" until it is opened.
+    await user.click(screen.getByRole('button', { name: /^Save to/ }));
     screen.getByRole('textbox', { name: 'File name' }).focus();
     await user.keyboard('{Enter}');
     await settle();

@@ -11,8 +11,8 @@ use ts_rs::TS;
 
 use crate::QueueId;
 use crate::extension::{
-    AddedDownload, ExtensionSettings, ExtensionSettingsPatch, NewDownload, WithdrawOutcome,
-    WithdrawRequest,
+    AddedDownload, BrowserControls, BrowserControlsPatch, ExtensionSettings,
+    ExtensionSettingsPatch, NewDownload, WithdrawOutcome, WithdrawRequest,
 };
 use crate::version::{VersionError, VersionRange};
 
@@ -28,10 +28,6 @@ crate::exported::exported_consts! {
 }
 
 /// One frame on a local connection.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "messages are decoded, handled and dropped one at a time, so the size gap between variants costs nothing worth an extra allocation per request"
-)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export)]
@@ -131,6 +127,16 @@ pub enum Call {
     ResumeAll,
     /// Brings the app's main window to the front, starting the app first like any call (the extension's "Open Wirecatch").
     ShowWindow,
+    /// Asks for the app settings the popup shows besides the extension's own (D61); answered
+    /// with [`Reply::BrowserControls`].
+    GetBrowserControls,
+    /// Changes some of the app settings the popup shows besides the extension's own; answered
+    /// with the new [`Reply::BrowserControls`], and every client also gets
+    /// [`Event::BrowserControlsChanged`].
+    UpdateBrowserControls(BrowserControlsPatch),
+    /// Brings the app's main window to the front on its browser settings, starting the app first
+    /// like any call (the popup's settings button, D61); answered with [`Reply::Done`].
+    ShowBrowserSettings,
 }
 
 impl Call {
@@ -147,6 +153,9 @@ impl Call {
             Call::PauseAll => CallMethod::PauseAll,
             Call::ResumeAll => CallMethod::ResumeAll,
             Call::ShowWindow => CallMethod::ShowWindow,
+            Call::GetBrowserControls => CallMethod::GetBrowserControls,
+            Call::UpdateBrowserControls(_) => CallMethod::UpdateBrowserControls,
+            Call::ShowBrowserSettings => CallMethod::ShowBrowserSettings,
         }
     }
 }
@@ -175,6 +184,12 @@ pub enum CallMethod {
     ResumeAll,
     /// [`Call::ShowWindow`].
     ShowWindow,
+    /// [`Call::GetBrowserControls`].
+    GetBrowserControls,
+    /// [`Call::UpdateBrowserControls`].
+    UpdateBrowserControls,
+    /// [`Call::ShowBrowserSettings`].
+    ShowBrowserSettings,
     /// A method this build does not have, from a newer client.
     #[serde(other)]
     Unknown,
@@ -272,6 +287,9 @@ pub enum Reply {
     /// Answers [`Call::GetExtensionSettings`] and [`Call::UpdateExtensionSettings`] with the
     /// settings as they are now.
     ExtensionSettings(ExtensionSettings),
+    /// Answers [`Call::GetBrowserControls`] and [`Call::UpdateBrowserControls`] with the
+    /// settings as they are now.
+    BrowserControls(BrowserControls),
     /// Answers [`Call::ListQueues`], in sidebar order.
     Queues(Vec<QueueSummary>),
     /// For calls with nothing to return.
@@ -288,6 +306,8 @@ pub enum Event {
     /// Sent to every connected client whenever the queues change: the whole list, in sidebar
     /// order.
     QueuesChanged(Vec<QueueSummary>),
+    /// Sent to every connected client whenever these settings change, from any side (D61).
+    BrowserControlsChanged(BrowserControls),
 }
 
 impl Event {
@@ -297,6 +317,7 @@ impl Event {
         match self {
             Event::ExtensionSettingsChanged(_) => EventKind::ExtensionSettingsChanged,
             Event::QueuesChanged(_) => EventKind::QueuesChanged,
+            Event::BrowserControlsChanged(_) => EventKind::BrowserControlsChanged,
         }
     }
 }
@@ -310,6 +331,8 @@ pub enum EventKind {
     ExtensionSettingsChanged,
     /// [`Event::QueuesChanged`].
     QueuesChanged,
+    /// [`Event::BrowserControlsChanged`].
+    BrowserControlsChanged,
 }
 
 /// The first call on a connection.
@@ -535,6 +558,11 @@ mod tests {
             CallMethod::PauseAll => Call::PauseAll,
             CallMethod::ResumeAll => Call::ResumeAll,
             CallMethod::ShowWindow => Call::ShowWindow,
+            CallMethod::GetBrowserControls => Call::GetBrowserControls,
+            CallMethod::UpdateBrowserControls => {
+                Call::UpdateBrowserControls(crate::extension::BrowserControlsPatch::default())
+            }
+            CallMethod::ShowBrowserSettings => Call::ShowBrowserSettings,
             CallMethod::Unknown => return None,
         })
     }
@@ -546,6 +574,11 @@ mod tests {
                 Event::ExtensionSettingsChanged(ExtensionSettings::default())
             }
             EventKind::QueuesChanged => Event::QueuesChanged(Vec::new()),
+            EventKind::BrowserControlsChanged => Event::BrowserControlsChanged(BrowserControls {
+                global_speed_limit: None,
+                max_concurrent_downloads: 3,
+                media: crate::app::MediaDefaults::default(),
+            }),
         }
     }
 

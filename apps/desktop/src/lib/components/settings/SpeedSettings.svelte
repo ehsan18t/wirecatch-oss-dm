@@ -1,19 +1,15 @@
 <script lang="ts">
   // Speed and limits: a limit on all downloads together, how many run at once across the queues, and how many connections each opens, in the ranges the core accepts.
   import { MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
-  import { inUnit, MB, toBytes } from '@wirecatch/units';
+  import { FIRST_TOTAL_SPEED_LIMIT, inUnit, SPEED_FIELD, toBytes } from '@wirecatch/units';
   import type { Snippet } from 'svelte';
   import { NumberInput } from '@wirecatch/ui';
-  import { SPEED_FIELD } from '$lib/limits';
   import type { SettingIn } from '$lib/settings-schema';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
   import SettingToggle from './SettingToggle.svelte';
 
   let { items, settings, flash, save }: SectionProps = $props();
-
-  /** The total speed limit a person starts from when turning it on; a suggestion, not a default of the core. */
-  const FIRST_SPEED_LIMIT = 5 * MB;
 
   const controls: Record<SettingIn<'speed'>, Snippet<[Row]>> = {
     global_speed_limit: speedLimit,
@@ -44,7 +40,7 @@
     label={def.label}
     checked={s.global_speed_limit !== null}
     onchange={(v: boolean) =>
-      save((d) => void (d.global_speed_limit = v ? FIRST_SPEED_LIMIT : null))}
+      save((d) => void (d.global_speed_limit = v ? FIRST_TOTAL_SPEED_LIMIT : null))}
   />
 {/snippet}
 

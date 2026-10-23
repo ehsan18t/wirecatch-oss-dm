@@ -3,7 +3,12 @@
   import DownloadIcon from '~icons/lucide/download';
   import Info from '~icons/lucide/info';
   import { PRODUCT_NAME } from '@wirecatch/product';
-  import type { MediaChoice, MediaOption, QueueId } from '@wirecatch/protocol';
+  import {
+    FORMAT_LABEL,
+    type MediaChoice,
+    type MediaOption,
+    type QueueId,
+  } from '@wirecatch/protocol';
   import { formatBytes } from '@wirecatch/units';
   import {
     Badge,
@@ -20,7 +25,6 @@
   import { earlierNote, hostOf } from '$lib/format';
   import {
     fitFor,
-    FORMAT_LABEL,
     kbpsFor,
     outputSelection,
     proposedChoice,

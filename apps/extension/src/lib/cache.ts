@@ -1,34 +1,29 @@
-import { isExtensionSettings, isQueueSummary } from '@wirecatch/protocol';
+import { isExtensionSettings } from '@wirecatch/protocol';
 import type { CachedSettings, SettingsCache } from './hub/deps';
-import { isNumber, isUnknown, itemsOf, object } from './validate';
+import { isUnknown, object } from './validate';
 
-/** Key of the display cache in `storage.local`. */
-export const CACHE_KEY = 'wirecatch.cache.v1';
+/** Key of the copy of the app's settings kept for the browser session, in `storage.session` (D61). */
+export const CACHE_KEY = 'wirecatch.session.v1';
 
-/** The part of `storage.local` the cache uses. */
+/** What earlier versions kept in `storage.local`: removed when the extension is installed or updated, so nothing of the app's settings outlives the browser session (D61). */
+export const RETIRED_LOCAL_KEYS: readonly string[] = [
+  'wirecatch.cache.v1',
+  'wirecatch.mediaButton.v1',
+];
+
+/** The part of a storage area the copy uses. */
 export interface StorageArea {
   get(key: string): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
 }
 
-/** `queues` and `appClosed` are read leniently: caches written before they existed lack them. */
-const isEntry = object({
-  settings: isExtensionSettings,
-  savedAt: isNumber,
-  queues: isUnknown,
-  appClosed: isUnknown,
-});
+/** `appClosed` is read leniently: one that does not read counts as false, so waking connects once to find out. */
+const isEntry = object({ settings: isExtensionSettings, appClosed: isUnknown });
 
-/** Reads a cache entry back, or null if it is missing or written by an incompatible version. */
+/** Reads a copy back, or null if it is missing or written in another shape. */
 export function asCachedSettings(value: unknown): CachedSettings | null {
   if (!isEntry(value)) return null;
-  // Missing in caches written before it existed: then the app counts as running, which connects once to find out.
-  return {
-    settings: value.settings,
-    queues: itemsOf(value.queues, isQueueSummary),
-    savedAt: value.savedAt,
-    appClosed: value.appClosed === true,
-  };
+  return { settings: value.settings, appClosed: value.appClosed === true };
 }
 
 export function storageCache(area: StorageArea): SettingsCache {
@@ -39,6 +34,20 @@ export function storageCache(area: StorageArea): SettingsCache {
     },
     async save(value) {
       await area.set({ [CACHE_KEY]: value });
+    },
+  };
+}
+
+/** A storage area that lives as long as the background script, for a browser without `storage.session`. */
+export function memoryArea(): StorageArea {
+  const items = new Map<string, unknown>();
+  return {
+    get(key) {
+      return Promise.resolve(items.has(key) ? { [key]: items.get(key) } : {});
+    },
+    set(values) {
+      for (const [key, value] of Object.entries(values)) items.set(key, value);
+      return Promise.resolve();
     },
   };
 }

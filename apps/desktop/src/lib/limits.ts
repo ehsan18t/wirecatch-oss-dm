@@ -2,12 +2,6 @@
 
 import { MAX_CONCURRENT_DOWNLOADS } from '@wirecatch/protocol';
 
-/** Where a speed limit field starts and how far each step goes, in each unit it is typed in: the queue dialog's and the total limit's. */
-export const SPEED_FIELD = {
-  KB: { min: 1, step: 50 },
-  MB: { min: 0.1, step: 0.5 },
-} as const;
-
 /** Why `typed` cannot be a queue's downloads at the same time, or `null` when it can. */
 export function queueConcurrentProblem(typed: number): string | null {
   const max = Math.round(typed);

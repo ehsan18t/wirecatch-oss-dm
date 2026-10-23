@@ -5,6 +5,7 @@
 import type { NewDownload } from '@wirecatch/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CookieContext } from '../src/lib/cookies';
+import type { CachedSettings } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
 import { MEDIA_UNREACHABLE } from '../src/lib/hub/notices';
 import {
@@ -19,9 +20,10 @@ import type { Detection } from '../src/lib/media/detect';
 import {
   MAX_MEDIA_URL_LENGTH,
   MAX_TITLE_LENGTH,
+  MEDIA_BUTTON_QUERY,
+  MEDIA_BUTTON_SETTING,
   MEDIA_CHECK,
   MEDIA_DOWNLOAD,
-  mediaButtonOn,
 } from '../src/lib/media/messages';
 import {
   MediaRegistry,
@@ -32,7 +34,7 @@ import {
 import { MediaWatcher } from '../src/lib/media/watch';
 import { asPopupRequest } from '../src/lib/messages';
 import { NativeClient } from '../src/lib/native/client';
-import { FakeApp, FakeDownloads, MemoryCache, flush } from './fakes';
+import { DEFAULT_SETTINGS, FakeApp, FakeDownloads, MemoryCache, flush } from './fakes';
 
 const HLS: Detection = {
   kind: 'hls',
@@ -213,9 +215,13 @@ async function setup(
     siteAccess?: boolean;
     saved?: unknown;
     connect?: boolean;
+    /** The session copy a previous run of the background kept. */
+    cache?: CachedSettings;
   } = {},
 ): Promise<Harness> {
   const app = new FakeApp();
+  const cache = new MemoryCache();
+  if (options.cache) cache.value = options.cache;
   options.configure?.(app);
   const client = new NativeClient({
     transport: app,
@@ -285,10 +291,11 @@ async function setup(
     saveDelayMs: 5,
     ignoredSites: () => hub.knownSettings()?.ignored_sites ?? [],
     videoSites: () => hub.knownSettings()?.video_sites ?? [],
+    mediaButtonOn: () => hub.mediaButtonOn(),
   });
   const hub: Hub = new Hub({
     client,
-    cache: new MemoryCache(),
+    cache,
     downloads: new FakeDownloads(),
     cookieHeader: (url, store, context) => {
       cookieCalls.push([url, store]);
@@ -300,7 +307,7 @@ async function setup(
     newHandoverId: () => `h${app.requests.length}`,
     media: center,
     mediaButtonSetting: {
-      save: (on) => {
+      publish: (on) => {
         buttonSaves.push(on);
         return Promise.resolve();
       },
@@ -956,21 +963,44 @@ describe('popup media list', () => {
 });
 
 describe('the media button setting and ignored sites', () => {
-  it('publishes only the button setting, as a boolean, when it is known and when it changes', async () => {
+  it('tells the open pages only the button setting, and only when it changes', async () => {
     const { app, buttonSaves } = await setup();
-    expect(buttonSaves).toEqual([true]);
+    // The buttons ask as their pages load, so the setting the app starts with is not told.
+    expect(buttonSaves).toEqual([]);
     app.changeSettings({ ignored_sites: ['a.example.com'] });
     await flush();
-    expect(buttonSaves).toEqual([true]);
+    expect(buttonSaves).toEqual([]);
     app.changeSettings({ show_media_button: false });
     await flush();
-    expect(buttonSaves).toEqual([true, false]);
+    expect(buttonSaves).toEqual([false]);
   });
 
-  it('reads a missing or malformed value as on, and only false as off', () => {
-    expect(mediaButtonOn(undefined)).toBe(true);
-    expect(mediaButtonOn(true)).toBe(true);
-    expect(mediaButtonOn(false)).toBe(false);
+  // The question is what wakes a sleeping background: answered before the session copy is in, it
+  // said "on", and the app's "off" then changed nothing the pages were told.
+  it('answers a button that wakes the background only once the session copy is in', async () => {
+    const h = await setup({
+      connect: false,
+      cache: {
+        settings: { ...DEFAULT_SETTINGS, show_media_button: false },
+        appClosed: true,
+      },
+    });
+    const answer = h.center.handleContentMessage({ type: MEDIA_BUTTON_QUERY }, fromTab(1, h.tabs));
+    void h.hub.start();
+    expect(await answer).toEqual({ type: MEDIA_BUTTON_SETTING, on: false });
+  });
+
+  it('answers a button asking as its page loads with the setting alone, on until the app says otherwise', async () => {
+    const ask = ({ center, tabs }: Harness) =>
+      center.handleContentMessage({ type: MEDIA_BUTTON_QUERY }, fromTab(1, tabs));
+    const unreachable = await setup({
+      configure: (a) => (a.hostMissing = 'Specified native messaging host not found.'),
+    });
+    expect(await ask(unreachable)).toEqual({ type: MEDIA_BUTTON_SETTING, on: true });
+    const off = await setup({
+      configure: (a) => (a.settings = { ...a.settings, show_media_button: false }),
+    });
+    expect(await ask(off)).toEqual({ type: MEDIA_BUTTON_SETTING, on: false });
   });
 
   it('hides the button on ignored sites, for the page or the frame, and refuses to send from there', async () => {

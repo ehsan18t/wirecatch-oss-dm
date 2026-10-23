@@ -111,23 +111,22 @@ async function axeViolations(container: HTMLElement): Promise<string[]> {
 }
 
 describe('Media on this page', () => {
-  it('explains the empty list, the media button and where to turn it on or off', async () => {
-    const { app, model } = await openPopup(1);
+  it('explains the empty list and the media button, and turns the button on or off in the app', async () => {
+    const { app } = await openPopup(1);
     const region = section();
     expect(within(region).getByText(/No video or audio found on this page yet/)).toBeTruthy();
     expect(
       within(region).getByText(/A Download button also appears over videos on web pages/),
     ).toBeTruthy();
-    expect(within(region).getByRole('button', { name: 'Turn it off in settings' })).toBeTruthy();
 
-    await model.update({ show_media_button: false });
+    await userEvent.setup().click(within(region).getByRole('button', { name: 'Turn it off' }));
     await waitFor(() =>
       expect(
         within(section()).getByText(/The Download button over videos on web pages is off/),
       ).toBeTruthy(),
     );
-    expect(within(section()).getByRole('button', { name: 'Turn it on in settings' })).toBeTruthy();
     expect(app.settings.show_media_button).toBe(false);
+    expect(within(section()).getByRole('button', { name: 'Turn it on' })).toBeTruthy();
   });
 
   it('names the keyboard shortcut and the list as ways to download without the button', async () => {

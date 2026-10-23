@@ -457,10 +457,10 @@ describe('Disclosure', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.textContent).toContain('English · chapters');
     const region = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
-    expect(region?.classList.contains('hidden')).toBe(true);
+    expect(region?.hidden).toBe(true);
     await userEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(region?.classList.contains('hidden')).toBe(false);
+    expect(region?.hidden).toBe(false);
     // Open, the summary gives way to the choices themselves.
     expect(toggle.textContent).not.toContain('English · chapters');
   });

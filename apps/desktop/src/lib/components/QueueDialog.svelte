@@ -26,7 +26,7 @@
     type TimeOfDay,
     type Weekday,
   } from '@wirecatch/protocol';
-  import { MB, splitKbOrMb, toBytes } from '@wirecatch/units';
+  import { MB, SPEED_FIELD, splitKbOrMb, toBytes } from '@wirecatch/units';
   import {
     Button,
     Callout,
@@ -43,7 +43,7 @@
   import { QUEUE_NOTIFY_OPTIONS } from '$lib/finish-notices';
   import { dayPattern, daysInPhrase, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
   import { DAYS_PER_WEEK, WEEKDAYS, WEEKEND, WORKDAYS } from '$lib/time';
-  import { queueConcurrentProblem, SPEED_FIELD } from '$lib/limits';
+  import { queueConcurrentProblem } from '$lib/limits';
   import { getApp } from '$lib/state/app.svelte';
   import type { QueueChanges } from '$lib/state/queues.svelte';
   import TimeInput from './TimeInput.svelte';

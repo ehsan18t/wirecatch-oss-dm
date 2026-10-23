@@ -42,7 +42,8 @@
       <span class="min-w-0 truncate text-ink-muted">{summary}</span>
     {/if}
   </button>
-  <div {id} class={cn('flex-col gap-3 pt-2 pb-1', open ? 'flex' : 'hidden')}>
+  <!-- `hidden` rather than a class: folded content is out of the page and the accessibility tree wherever styles are missing too. -->
+  <div {id} hidden={!open} class="flex flex-col gap-3 pt-2 pb-1">
     {@render children()}
   </div>
 </div>

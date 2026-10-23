@@ -447,12 +447,15 @@ export const KEY_MIN_REST = 16;
  */
 export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
   add_download: 1,
+  get_browser_controls: 2,
   get_extension_settings: 1,
   hello: 1,
   list_queues: 1,
   pause_all: 1,
   resume_all: 1,
+  show_browser_settings: 2,
   show_window: 1,
+  update_browser_controls: 2,
   update_extension_settings: 1,
   withdraw_download: 1,
 };
@@ -461,6 +464,7 @@ export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
  * The protocol version that added each event (D32): the app sends an event only on a connection whose version has it.
  */
 export const EVENT_SINCE: Readonly<Record<Event['type'], number>> = {
+  browser_controls_changed: 2,
   extension_settings_changed: 1,
   queues_changed: 1,
 };

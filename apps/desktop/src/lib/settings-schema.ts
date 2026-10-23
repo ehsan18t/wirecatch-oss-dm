@@ -1,7 +1,13 @@
 // Every setting, in plain words, with a one-line explanation. The settings screen, its search
 // and the command palette all read this one list.
 
-import { DEFAULT_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
+import { DEFAULT_CONNECTIONS_PER_DOWNLOAD, SETTING_WORDS } from '@wirecatch/protocol';
+
+/** The name and help of a setting the extension's popup shows too, in the words both share (D61). */
+function words(id: keyof typeof SETTING_WORDS): { label: string; help: string } {
+  const { label, help } = SETTING_WORDS[id];
+  return { label, help };
+}
 
 export type SectionId =
   | 'general'
@@ -141,8 +147,7 @@ const DEFS = [
   {
     id: 'show_media_button',
     section: 'browser',
-    label: 'Show a download button on videos',
-    help: 'Adds a small button over video and audio on web pages.',
+    ...words('show_media_button'),
     keywords: 'media video audio overlay button stream',
   },
   {
@@ -169,8 +174,7 @@ const DEFS = [
   {
     id: 'default_queue',
     section: 'browser',
-    label: 'Queue for browser downloads',
-    help: 'Downloads caught from the browser join this queue.',
+    ...words('default_queue'),
     keywords: 'queue default capture',
   },
   {
@@ -184,56 +188,49 @@ const DEFS = [
   {
     id: 'media_quality',
     section: 'media',
-    label: 'Resolution',
-    help: 'What the quality window starts on, and what downloads without asking. Picking another in the window changes it. Audio only uses the Audio only choices below.',
+    ...words('media_quality'),
     keywords: 'resolution quality 4k 2160p 1440p 1080p 720p 480p height best audio only preferred',
     group: 'Videos',
   },
   {
     id: 'media_fallback',
     section: 'media',
-    label: 'If a video doesn’t offer that resolution',
-    help: 'Next lower takes the lowest when none is lower, and Next higher the best when none is higher. Ask me opens the quality window.',
+    ...words('media_fallback'),
     keywords: 'fallback missing unavailable lower higher closest ask resolution',
     group: 'Videos',
   },
   {
     id: 'media',
     section: 'media',
-    label: 'Save videos as',
-    help: 'Original keeps the site’s format. The others convert only when they must.',
+    ...words('media'),
     keywords: 'format container convert mp4 mkv webm save as video h264 vp9 av1',
     group: 'Videos',
   },
   {
     id: 'media_subtitles',
     section: 'media',
-    label: 'Subtitle languages for videos',
-    help: 'For each language, its creator’s subtitles, or its auto-generated ones if allowed below. A language a video lacks is skipped.',
+    ...words('media_subtitles'),
     keywords: 'subtitles captions cc languages srt',
     group: 'Videos',
   },
   {
     id: 'media_auto_subtitles',
     section: 'media',
-    label: 'Use auto-generated subtitles for videos',
-    help: 'For a language with no subtitles written by people.',
+    ...words('media_auto_subtitles'),
     keywords: 'subtitles captions automatic auto-generated speech recognition',
     group: 'Videos',
   },
   {
     id: 'media_subtitle_files',
     section: 'media',
-    label: 'Save subtitles as separate files',
-    help: 'Puts subtitles next to a video as .srt files instead of inside it.',
+    ...words('media_subtitle_files'),
     keywords: 'subtitles srt sidecar files embed',
     group: 'Videos',
   },
   {
     id: 'media_chapters',
     section: 'media',
-    label: 'Add chapters to videos',
-    help: 'Adds a video’s chapters to MP4, MKV and WebM files, so players can jump between them.',
+    ...words('media_chapters'),
     keywords: 'chapters markers sections',
     group: 'Videos',
   },
@@ -248,8 +245,7 @@ const DEFS = [
   {
     id: 'media_audio',
     section: 'media',
-    label: 'Save audio as',
-    help: 'Title, artist and cover picture go into MP3, M4A and FLAC files.',
+    ...words('media_audio'),
     keywords: 'audio music mp3 m4a aac opus flac wav bitrate kbps quality format',
     group: 'Audio only',
   },
@@ -294,8 +290,7 @@ const DEFS = [
   {
     id: 'global_speed_limit',
     section: 'speed',
-    label: 'Limit total speed',
-    help: 'Keeps browsing and calls smooth while downloads run.',
+    ...words('global_speed_limit'),
     keywords: 'bandwidth throttle cap limit rate',
   },
   {
@@ -315,8 +310,7 @@ const DEFS = [
   {
     id: 'max_concurrent_downloads',
     section: 'speed',
-    label: 'Downloads at the same time',
-    help: 'Across all queues. A queue can run fewer, set in the queue.',
+    ...words('max_concurrent_downloads'),
     keywords: 'concurrent simultaneous parallel limit',
   },
   {

@@ -1,17 +1,22 @@
 <script lang="ts">
   // Media: whether a video asks for a quality or downloads at once with the saved choices (D50), the resolution and what to do when a video lacks it, and what the quality window starts with, separately for videos and for audio only.
   import {
-    AUDIO_KBPS_CHOICES,
     AUDIO_OUTPUT_FORMATS,
+    FALLBACK_CHOICES,
     VIDEO_OUTPUT_FORMATS,
+    formatChoices,
+    kbpsChoices,
+    kbpsForFormat,
+    languageChoices,
+    normalizeSite,
+    qualityChoices,
+    qualityValue,
+    videoQuality,
     type OutputFormat,
     type QualityFallback,
-    type VideoQuality,
-    normalizeSite,
+    type QualityValue,
   } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
-  import { languageOptions } from '$lib/languages';
-  import { FORMAT_LABEL, nearestKbps } from '$lib/media-output';
   import {
     MultiSelect,
     SegmentedControl,
@@ -40,17 +45,11 @@
     return AUDIO_ONLY.has(id) ? 'audio' : 'video';
   }
 
-  function formatName(f: OutputFormat): string {
-    return f === 'original' ? 'Original' : FORMAT_LABEL[f];
-  }
-
   /** A new audio format keeps the bit rate nearest the one chosen, if the format has a choice. */
   function setAudioFormat(format: OutputFormat) {
     save((d) => {
       d.media.audio.format = format;
-      const list = AUDIO_KBPS_CHOICES[format];
-      const kbps = d.media.audio.audio_kbps;
-      d.media.audio.audio_kbps = list && kbps !== null ? nearestKbps(list, kbps) : null;
+      d.media.audio.audio_kbps = kbpsForFormat(format, d.media.audio.audio_kbps);
     });
   }
 
@@ -62,52 +61,8 @@
     { value: 'saved', label: 'Use my choices' },
   ];
 
-  const FALLBACKS: SelectOption<QualityFallback>[] = [
-    { value: 'lower', label: 'Next lower' },
-    { value: 'higher', label: 'Next higher' },
-    { value: 'ask', label: 'Ask me' },
-  ];
-
-  /** The resolutions offered, tallest first, between Best available and Audio only. */
-  const HEIGHTS = [2160, 1440, 1080, 720, 480, 360];
-
-  /** A resolution as the menu holds it: a height, or a word. */
-  type QualityValue = number | 'best' | 'audio_only';
-
-  function qualityValue(q: VideoQuality): QualityValue {
-    return typeof q === 'string' ? q : q.height;
-  }
-
-  function videoQuality(v: QualityValue): VideoQuality {
-    return typeof v === 'number' ? { height: v } : v;
-  }
-
-  /** Best available, the usual heights and the saved one if it is another (a pick from the window), Audio only. */
-  function qualityOptions(saved: VideoQuality): SelectOption<QualityValue>[] {
-    const heights = [...HEIGHTS];
-    if (typeof saved !== 'string' && !heights.includes(saved.height)) {
-      heights.push(saved.height);
-      heights.sort((a, b) => b - a);
-    }
-    return [
-      { value: 'best', label: 'Best available' },
-      ...heights.map((h) => ({ value: h, label: `${String(h)}p` })),
-      { value: 'audio_only', label: 'Audio only' },
-    ];
-  }
-
-  const formats = (list: readonly OutputFormat[]): SelectOption<OutputFormat>[] =>
-    list.map((f) => ({ value: f, label: formatName(f) }));
-  const VIDEO_FORMATS = formats(VIDEO_OUTPUT_FORMATS);
-  const AUDIO_FORMATS = formats(AUDIO_OUTPUT_FORMATS);
-
-  /** The bit rates a format offers, after the format's usual one (no number). */
-  function kbpsOptions(list: readonly number[]): SelectOption<number | 'usual'>[] {
-    return [
-      { value: 'usual', label: 'Usual quality' },
-      ...list.map((k) => ({ value: k, label: `${String(k)} kbps` })),
-    ];
-  }
+  const VIDEO_FORMATS = formatChoices(VIDEO_OUTPUT_FORMATS);
+  const AUDIO_FORMATS = formatChoices(AUDIO_OUTPUT_FORMATS);
 
   const controls: Record<SettingIn<'media'>, Snippet<[Row]>> = {
     media_ask: asking,
@@ -154,7 +109,7 @@
     {...control}
     class="w-44"
     value={qualityValue(s.media.quality)}
-    options={qualityOptions(s.media.quality)}
+    options={qualityChoices(s.media.quality)}
     onchange={(v: QualityValue) => save((d) => void (d.media.quality = videoQuality(v)))}
   />
 {/snippet}
@@ -162,7 +117,7 @@
 {#snippet fallback({ def, s }: Row)}
   <SegmentedControl
     value={s.media.fallback}
-    options={FALLBACKS}
+    options={FALLBACK_CHOICES}
     label={def.label}
     disabled={typeof s.media.quality === 'string'}
     size="sm"
@@ -182,7 +137,7 @@
 
 {#snippet audioFormat({ s, control }: Row)}
   {@const audio = s.media.audio}
-  {@const kbpsList = AUDIO_KBPS_CHOICES[audio.format]}
+  {@const kbps = kbpsChoices(audio.format)}
   <Select
     {...control}
     class="w-36"
@@ -190,12 +145,12 @@
     options={AUDIO_FORMATS}
     onchange={setAudioFormat}
   />
-  {#if kbpsList}
+  {#if kbps.length > 0}
     <Select
       label="Audio quality"
       class="w-36"
       value={audio.audio_kbps ?? 'usual'}
-      options={kbpsOptions(kbpsList)}
+      options={kbps}
       onchange={(kbps: number | 'usual') =>
         save((d) => void (d.media.audio.audio_kbps = kbps === 'usual' ? null : kbps))}
     />
@@ -210,7 +165,7 @@
     label={def.label}
     searchPlaceholder="Search languages"
     values={s.media[kind].subtitle_languages}
-    options={languageOptions(s.media[kind].subtitle_languages)}
+    options={languageChoices(s.media[kind].subtitle_languages)}
     onchange={(langs: string[]) => save((d) => void (d.media[kind].subtitle_languages = langs))}
   />
 {/snippet}

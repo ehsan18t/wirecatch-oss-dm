@@ -53,6 +53,7 @@ fn show(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Act {
     Act::Show(Reveal {
         queue,
         ids: rows.iter().map(|r| r.id).collect(),
+        browser_settings: false,
     })
 }
 
@@ -261,6 +262,7 @@ mod tests {
         Act::Show(Reveal {
             queue,
             ids: ids.iter().copied().map(DownloadId).collect(),
+            browser_settings: false,
         })
     }
 

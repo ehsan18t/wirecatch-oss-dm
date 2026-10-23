@@ -56,7 +56,7 @@ function followPrivateWindows(
 }
 
 /**
- * Decides whether a page (the popup or the options page) is part of a private session from the
+ * Decides whether a page (the popup) is part of a private session from the
  * window it is in. Its process does not tell: in Chromium's default "spanning" mode a popup opened
  * from an incognito window runs in the regular profile, where `extension.inIncognitoContext` is
  * false. Until the window answers, and when it cannot, the page is taken as private.

@@ -52,14 +52,13 @@ describe('routed errors', () => {
     );
   });
 
-  it('logs a settings cache that cannot be written', async () => {
+  it('logs a session copy of the settings that cannot be written', async () => {
     const settings = new KnownSettings(
       { cache: { load: () => Promise.resolve(null), save: failing('quota') } },
-      () => 1,
       () => undefined,
     );
     const entries = await logged(async () => {
-      settings.refreshed(DEFAULT_SETTINGS, QUEUES);
+      settings.refreshed(DEFAULT_SETTINGS, null, QUEUES);
       await Promise.resolve();
     });
     expect(entries).toEqual([

@@ -12,7 +12,6 @@ const LINT_EXCEPTIONS = [
     file: 'apps/desktop/src/lib/backend/mock/rng.ts',
     lints: ['wirecatch/no-magic-numbers'],
   },
-  { id: 'E2', file: 'crates/protocol/src/wire.rs', lints: ['clippy::large_enum_variant'] },
   { id: 'E3', file: 'crates/engine/src/transport.rs', lints: ['clippy::large_enum_variant'] },
   { id: 'E4', file: 'crates/protocol/src/app.rs', lints: ['clippy::struct_excessive_bools'] },
   {

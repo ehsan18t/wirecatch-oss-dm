@@ -3,9 +3,8 @@
 
 import { fireEvent, screen } from '@testing-library/svelte';
 import { MAX_CONCURRENT_DOWNLOADS } from '@wirecatch/protocol';
-import { KB, MB } from '@wirecatch/units';
+import { KB, MB, SPEED_FIELD } from '@wirecatch/units';
 import { describe, expect, it, vi } from 'vitest';
-import { SPEED_FIELD } from '$lib/limits';
 import { settingAnchor, type SectionId } from '$lib/settings-schema';
 import { renderApp, settle } from '$lib/testing/setup';
 import { FLASH_MS } from './Settings.svelte';

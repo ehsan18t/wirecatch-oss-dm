@@ -5,6 +5,7 @@
 import type { BrowserInfo } from '@wirecatch/protocol';
 import { browser } from 'wxt/browser';
 import { detectBrowser, type Brand } from '../browser-info';
+import { memoryArea, RETIRED_LOCAL_KEYS, storageCache } from '../cache';
 import {
   cookieHeader,
   cookieReads,
@@ -21,8 +22,10 @@ import type {
   InFlightEntry,
   InFlightStore,
   NoticeStore,
+  SettingsCache,
 } from '../hub/deps';
 import type { MediaStore, TabInfo } from '../media/center';
+import { MEDIA_BUTTON_SETTING, type ButtonSetting } from '../media/messages';
 import { isNotice } from '../messages';
 import type { HelloIdentity } from '../native/client';
 import { originPattern } from '../site-access';
@@ -149,6 +152,34 @@ export function browserDownloads(): BrowserDownloads {
 /** `storage.session`, which survives a restarted background script but not a browser restart; missing in old browsers. */
 export function sessionArea(): typeof browser.storage.session | undefined {
   return (browser.storage as Partial<typeof browser.storage>).session;
+}
+
+/** The copy of the app's settings for this browser session (D61), in `storage.session`, or in memory where the browser has none. */
+export function settingsCache(): SettingsCache {
+  return storageCache(sessionArea() ?? memoryArea());
+}
+
+/** Removes what earlier versions kept in `storage.local`, so nothing of the app's settings outlives the browser session (D61). */
+export function retireLocalSettings(): void {
+  browser.storage.local
+    .remove([...RETIRED_LOCAL_KEYS])
+    .catch(
+      fallback('settings', 'Could not remove the settings an earlier version kept', undefined),
+    );
+}
+
+/** Tells the media button on every open page that "Show download button on videos" changed. */
+export async function publishButtonSetting(on: boolean): Promise<void> {
+  const message: ButtonSetting = { type: MEDIA_BUTTON_SETTING, on };
+  const tabs = await browser.tabs.query({});
+  await Promise.all(
+    tabs.map(async ({ id }) => {
+      if (id === undefined) return;
+      await browser.tabs.sendMessage(id, message).catch(() => {
+        // Expected: pages without the button (browser pages, other extensions) cannot take it.
+      });
+    }),
+  );
 }
 
 const isInFlightEntry = fields<InFlightEntry>({ id: isNumber, handoverId: isString });

@@ -1,12 +1,14 @@
-// What the main window does when the person clicks a notification about downloads (D52): it
-// shows them selected, the first in view, in their queue for a queue's summary.
+// What the main window does when it comes to the front for someone: for a notification about
+// downloads the person clicked (D52), it shows them selected, the first in view, in their queue
+// for a queue's summary; for the extension's settings button (D61), the browser settings.
 
 import type { DownloadId, DownloadSummary, Queue, QueueId, Reveal } from '@wirecatch/protocol';
 import type { SvelteSet } from 'svelte/reactivity';
+import type { SectionId } from '../settings-schema';
 import type { Selection } from './selection.svelte';
 import { groupOf, isGrouped, type StatusGroup, type View } from './view';
 
-/** What showing downloads needs from the main window. */
+/** What showing downloads or the browser settings needs from the main window. */
 export interface RevealTarget {
   readonly downloads: { get(id: DownloadId): DownloadSummary | undefined };
   readonly queues: { byId(id: QueueId): Queue | undefined };
@@ -14,10 +16,15 @@ export interface RevealTarget {
   readonly folded: SvelteSet<StatusGroup>;
   readonly selection: Selection;
   show(view: View): void;
+  openSettingsSection(section: SectionId): void;
 }
 
-/** Shows the downloads `reveal` names that are still in the list; none left changes nothing. */
+/** Shows the browser settings, or the downloads `reveal` names that are still in the list; none left changes nothing. */
 export function revealDownloads(app: RevealTarget, reveal: Reveal): void {
+  if (reveal.browser_settings === true) {
+    app.openSettingsSection('browser');
+    return;
+  }
   const rows = reveal.ids.flatMap((id) => app.downloads.get(id) ?? []);
   if (rows.length === 0) return;
   const queue = reveal.queue === null ? undefined : app.queues.byId(reveal.queue);

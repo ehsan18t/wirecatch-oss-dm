@@ -14,9 +14,12 @@ use wirecatch_e2e::extension::{
 };
 use wirecatch_e2e::server::{serve, serve_held};
 use wirecatch_protocol::PROTOCOL_VERSION;
-use wirecatch_protocol::app::{AddRequest, CaptureConfirmation, DownloadStatus};
+use wirecatch_protocol::app::{
+    AddRequest, AppSettings, CaptureConfirmation, DownloadStatus, MediaDefaultsPatch, Update,
+    VideoQuality,
+};
 use wirecatch_protocol::extension::{
-    AddAction, AddedDownload, ExtensionSettingsPatch, WithdrawOutcome,
+    AddAction, AddedDownload, BrowserControlsPatch, ExtensionSettingsPatch, WithdrawOutcome,
 };
 use wirecatch_protocol::wire::{Call, ErrorCode, Event, Outcome};
 use wirecatch_test_support::test_data;
@@ -283,6 +286,68 @@ fn extension_settings_sync_both_ways() {
             })
             .await;
             assert_eq!(ext.get_extension_settings().await, from_app);
+        }
+
+        assert!(firefox.close().await.success());
+        assert!(chrome.close().await.success());
+        app.quit().await;
+    });
+}
+
+/// The app settings the popup shows (D61) are the app's: a change from one browser is
+/// stored at once and reaches the other browser, and each one changed in the app
+/// reaches both browsers.
+#[test]
+fn browser_controls_sync_both_ways() {
+    run(|sandbox| async move {
+        let (app, mut chrome) = connected(&sandbox).await;
+        let mut firefox = FakeExtension::firefox(&sandbox.endpoint);
+        firefox.hello().await;
+        assert_eq!(
+            chrome.get_browser_controls().await,
+            app.manager.browser_controls()
+        );
+
+        let changed = chrome
+            .update_browser_controls(BrowserControlsPatch {
+                global_speed_limit: Update::Set(Some(1024 * 1024)),
+                max_concurrent_downloads: Some(2),
+                media: Some(MediaDefaultsPatch {
+                    ask_each_time: Some(false),
+                    ..MediaDefaultsPatch::default()
+                }),
+            })
+            .await;
+        assert_eq!(app.manager.browser_controls(), changed);
+        firefox
+            .event("browser_controls_changed from Chrome", |e| match e {
+                Event::BrowserControlsChanged(c) if *c == changed => Some(()),
+                _ => None,
+            })
+            .await;
+
+        // Every control the popup shows, changed in the app.
+        let edits: [fn(&mut AppSettings); 5] = [
+            |s| s.global_speed_limit = None,
+            |s| s.max_concurrent_downloads = 4,
+            |s| s.media.ask_each_time = true,
+            |s| s.media.quality = VideoQuality::Height(720),
+            |s| s.media.video.chapters = !s.media.video.chapters,
+        ];
+        for edit in edits {
+            let mut settings = app.manager.get_settings();
+            edit(&mut settings);
+            app.manager
+                .update_settings(settings)
+                .expect("the app saved the change");
+            let from_app = app.manager.browser_controls();
+            for ext in [&mut chrome, &mut firefox] {
+                ext.event("browser_controls_changed from the app", |e| match e {
+                    Event::BrowserControlsChanged(c) if *c == from_app => Some(()),
+                    _ => None,
+                })
+                .await;
+            }
         }
 
         assert!(firefox.close().await.success());
