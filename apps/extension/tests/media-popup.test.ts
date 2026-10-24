@@ -51,7 +51,6 @@ async function openPopup(
   tabId: number,
   options: {
     configure?: (app: FakeApp, registry: MediaRegistry) => void;
-    shortcut?: string | null;
   } = {},
 ): Promise<Opened> {
   const app = new FakeApp();
@@ -93,7 +92,6 @@ async function openPopup(
     props: {
       model,
       currentUrl: TABS.get(tabId)?.url ?? null,
-      mediaShortcut: options.shortcut ?? null,
     },
   });
   const result = { app, client, registry, model, container };
@@ -111,42 +109,10 @@ async function axeViolations(container: HTMLElement): Promise<string[]> {
 }
 
 describe('Media on this page', () => {
-  it('explains the empty list and the media button, and turns the button on or off in the app', async () => {
-    const { app } = await openPopup(1);
-    const region = section();
-    expect(within(region).getByText(/No video or audio found on this page yet/)).toBeTruthy();
-    expect(
-      within(region).getByText(/A Download button also appears over videos on web pages/),
-    ).toBeTruthy();
-
-    await userEvent.setup().click(within(region).getByRole('button', { name: 'Turn it off' }));
-    await waitFor(() =>
-      expect(
-        within(section()).getByText(/The Download button over videos on web pages is off/),
-      ).toBeTruthy(),
-    );
-    expect(app.settings.show_media_button).toBe(false);
-    expect(within(section()).getByRole('button', { name: 'Turn it on' })).toBeTruthy();
-  });
-
-  it('names the keyboard shortcut and the list as ways to download without the button', async () => {
-    const { registry } = await openPopup(1, { shortcut: 'Alt+Shift+D' });
-    const hint = (): string =>
-      within(section())
-        .getByText(/^On a page, press/)
-        .textContent.replaceAll(/\s+/g, ' ')
-        .trim();
-    // An empty list has no Download buttons to point at.
-    expect(hint()).toMatch(
-      /^On a page, press Alt ?\+ ?Shift ?\+ ?D to send its video or audio to Wirecatch\.$/,
-    );
-    expect(
-      [
-        ...within(section())
-          .getByText(/^On a page, press/)
-          .querySelectorAll('kbd kbd'),
-      ].map((key) => key.textContent),
-    ).toEqual(['Alt', 'Shift', 'D']);
+  it('shows no section until the page has media, then lists it', async () => {
+    const { registry, model } = await openPopup(1);
+    await waitFor(() => expect(model.media).not.toBeNull());
+    expect(screen.queryByRole('region', { name: 'Media on this page' })).toBeNull();
     registry.add(1, {
       kind: 'hls',
       url: 'https://cdn.example.com/v/master.m3u8',
@@ -154,16 +120,9 @@ describe('Media on this page', () => {
       size: null,
       audio: false,
     });
-    await waitFor(() =>
-      expect(hint()).toMatch(
-        /^On a page, press Alt ?\+ ?Shift ?\+ ?D to send its video or audio to Wirecatch, or use the Download buttons in this list\.$/,
-      ),
-    );
-    cleanup();
-    await openPopup(1, { shortcut: null });
     expect(
-      within(section()).getByText(
-        "To send a page's video or audio with a key press, set a shortcut in your browser's extension shortcuts.",
+      await within(await screen.findByRole('region', { name: 'Media on this page' })).findByText(
+        'Video stream (HLS)',
       ),
     ).toBeTruthy();
   });
@@ -187,8 +146,6 @@ describe('Media on this page', () => {
     await waitFor(() => expect(within(section()).getAllByRole('listitem')).toHaveLength(2));
     const region = section();
     expect(within(region).getByText('Video stream (HLS)')).toBeTruthy();
-    // With items to send, the list's own buttons do the job: the media button is taught only while it is empty.
-    expect(within(region).queryByText(/Download button also appears/)).toBeNull();
     expect(within(region).getByText('song.mp3, 3.50 MB')).toBeTruthy();
     expect(
       within(region).getByRole('button', { name: 'Download Video stream (HLS): cdn.example.com' }),
@@ -272,21 +229,16 @@ describe('Media on this page', () => {
     expect(app.calls('add_download')).toEqual([]);
   });
 
-  it('offers the page on a well-known video site, and explains private windows', async () => {
+  it('offers the page on a well-known video site, and shows nothing in a private window', async () => {
     await openPopup(4);
     expect(await within(section()).findByText('This YouTube page')).toBeTruthy();
     cleanup();
-    await openPopup(2);
-    expect(
-      await within(section()).findByText('Wirecatch does not take media from private windows.'),
-    ).toBeTruthy();
+    const { model } = await openPopup(2);
+    await waitFor(() => expect(model.media?.page).toBe('private'));
+    expect(screen.queryByRole('region', { name: 'Media on this page' })).toBeNull();
   });
 
-  it('has no accessibility problems with an empty list or a full one', async () => {
-    const empty = await openPopup(1);
-    await waitFor(() => expect(empty.model.media).not.toBeNull());
-    expect(await axeViolations(empty.container)).toEqual([]);
-    cleanup();
+  it('has no accessibility problems with a list of media', async () => {
     const full = await openPopup(4, {
       configure: (_, registry) =>
         registry.add(4, {

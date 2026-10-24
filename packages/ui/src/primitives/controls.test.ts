@@ -451,8 +451,9 @@ describe('Kbd', () => {
 });
 
 describe('Disclosure', () => {
-  it('folds its choices into a line that says what they are set to, and opens on a click', async () => {
-    render(DisclosureHost);
+  /** Opens the host's disclosure with a click, after checking it starts folded; answers its toggle. */
+  async function unfold(variant: 'inline' | 'card'): Promise<HTMLElement> {
+    render(DisclosureHost, { variant });
     const toggle = screen.getByRole('button', { name: /^Subtitles/ });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.textContent).toContain('English · chapters');
@@ -461,8 +462,19 @@ describe('Disclosure', () => {
     await userEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(region?.hidden).toBe(false);
+    return toggle;
+  }
+
+  it('folds its choices into a line that says what they are set to, and opens on a click', async () => {
+    const toggle = await unfold('inline');
     // Open, the summary gives way to the choices themselves.
     expect(toggle.textContent).not.toContain('English · chapters');
+  });
+
+  it('as a card, keeps its summary while open, in a heading', async () => {
+    const toggle = await unfold('card');
+    // The header row keeps its height, so it does not jump under the pointer.
+    expect(toggle.closest('h2')?.textContent).toContain('English · chapters');
   });
 });
 

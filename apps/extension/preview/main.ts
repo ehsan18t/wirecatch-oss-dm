@@ -1,7 +1,7 @@
 // The preview page: the popup on sample data, in a normal browser tab, for reviewing the design.
 // The address picks what shows:
-// `?state=connected|capture-off|many|closed|missing|no-access|connecting|long|old-app&scheme=light|dark&accent=<name>`,
-// `&open` to unfold the Downloads and Video and audio sections, `&pseudo` to lengthen every word as
+// `?state=connected|no-media|capture-off|many|closed|missing|no-access|connecting|long|old-app&scheme=light|dark&accent=<name>`,
+// `&open` to unfold the Downloads and Video and audio sections, `&blank` for a browser page with no site, `&pseudo` to lengthen every word as
 // a translation may (preview/pseudo.ts), and `&font=dejavu` to set it in DejaVu Sans, as Linux
 // shows it (style.css).
 import './style.css';
@@ -33,7 +33,11 @@ mount(Popup, {
   target: frame,
   props: {
     model,
-    currentUrl: state === 'long' ? LONG_PAGE_URL : 'https://www.example.com/downloads',
+    currentUrl: params.has('blank')
+      ? 'chrome://newtab/'
+      : state === 'long'
+        ? LONG_PAGE_URL
+        : 'https://www.example.com/downloads',
     mediaShortcut: 'Alt+Shift+D',
     openShortcuts: noop,
     siteAccess: state !== 'no-access',

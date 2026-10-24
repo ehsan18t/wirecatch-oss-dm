@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The toolbar popup: the connection at a glance, capture on or off for every site and for this one, whether a window asks before each download and each video, the media on this page, the settings someone may change while browsing folded under Downloads and Video and audio, and the Pause all and Resume all buttons. The settings are the app's, shown only while it is connected; the rest are in the app, behind the settings button (D61).
+  // The toolbar popup: the connection at a glance, capture on or off for every site and for this one, whether a window asks before each download and each video, the media on this page when it has any, the settings someone may change while browsing folded under Downloads and Video and audio, and the Pause all and Resume all buttons. The settings are the app's, shown only while it is connected; the rest are in the app, behind the settings button (D61).
   import { PRODUCT_NAME } from '@wirecatch/product';
   import type { PopupModel } from '../../lib/popup/model.svelte';
   import AccessNotice from '../common/AccessNotice.svelte';
@@ -99,10 +99,6 @@
     <MediaList
       view={model.media}
       statuses={model.mediaStatus}
-      shortcut={mediaShortcut}
-      {openShortcuts}
-      buttonOn={model.editable ? (model.settings?.show_media_button ?? null) : null}
-      ontogglebutton={(on: boolean) => void model.update({ show_media_button: on })}
       ondownload={(key: string) => void model.downloadMedia(key)}
     />
 
@@ -113,7 +109,13 @@
         controls={model.controls}
         queues={snapshot?.queues ?? []}
       />
-      <MediaSection {model} settings={model.settings} controls={model.controls} />
+      <MediaSection
+        {model}
+        settings={model.settings}
+        controls={model.controls}
+        shortcut={mediaShortcut}
+        {openShortcuts}
+      />
     {/if}
   </main>
 

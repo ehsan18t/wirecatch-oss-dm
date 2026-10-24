@@ -1,10 +1,12 @@
 <script lang="ts">
   // A setting that is on or off, in a SettingsSection: the switch at the row's end with its name and description before it, as Windows 11's settings show one. The switch is named by its label, so the row needs no label of its own.
+  import type { Snippet } from 'svelte';
   import Switch from '../primitives/Switch.svelte';
 
   interface Props {
     label: string;
-    description?: string | undefined;
+    /** A snippet where part of it is marked, such as the site a switch is about. */
+    description?: string | Snippet | undefined;
     checked: boolean;
     disabled?: boolean;
     /** Waiting for the change to land. */

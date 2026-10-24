@@ -30,6 +30,16 @@ export const SETTINGS = {
   speedLimit: shared('global_speed_limit'),
   concurrent: shared('max_concurrent_downloads'),
   mediaButton: shared('show_media_button'),
+  shortcut: {
+    label: 'Keyboard shortcut',
+    description: "Sends a page's video or audio to Wirecatch.",
+  },
+  /** Firefox has no shortcuts page the popup can open, so the row says where it is. */
+  shortcutFirefox: {
+    label: 'Keyboard shortcut',
+    description:
+      "Sends a page's video or audio to Wirecatch. Set it in the add-ons manager, under Manage Extension Shortcuts.",
+  },
   quality: shared('media_quality'),
   fallback: shared('media_fallback'),
   videoFormat: shared('media'),

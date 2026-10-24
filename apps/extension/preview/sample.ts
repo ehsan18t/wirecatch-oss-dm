@@ -22,6 +22,7 @@ import { PopupModel } from '../src/lib/popup/model.svelte';
 
 export const SAMPLE_STATES = [
   'connected',
+  'no-media',
   'capture-off',
   'many',
   'closed',
@@ -203,6 +204,7 @@ function status(state: SampleState): ConnectionStatus {
     case 'connecting':
       return { state: 'connecting' };
     case 'connected':
+    case 'no-media':
     case 'capture-off':
     case 'long':
     case 'many':
@@ -240,7 +242,7 @@ function snapshot(state: SampleState): Snapshot {
 }
 
 function media(state: SampleState, tabId: number): MediaView {
-  if (!connected(state)) return { tabId, page: 'web', entries: [] };
+  if (!connected(state) || state === 'no-media') return { tabId, page: 'web', entries: [] };
   if (state === 'long') return { tabId, page: 'web', entries: LONG_MEDIA };
   return { tabId, page: 'web', entries: state === 'many' ? [...MEDIA, ...MANY] : MEDIA };
 }

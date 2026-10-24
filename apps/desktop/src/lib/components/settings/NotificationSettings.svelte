@@ -35,7 +35,7 @@
   const defaultQueue = $derived(app.queues.defaultQueue);
 </script>
 
-<SettingRows {items} {settings} {flash} {controls} />
+<SettingRows {items} {settings} {flash} {controls} stacked={['finish_notice']} />
 
 {#snippet startNotice({ s, control }: Row)}
   <Select
@@ -59,7 +59,7 @@
 {/snippet}
 
 {#snippet finishNotice({ s, control }: Row)}
-  <div class="flex flex-col items-end gap-1.5">
+  <div class="flex flex-col items-start gap-1.5">
     <Select
       {...control}
       class="w-56"
@@ -68,9 +68,7 @@
       onchange={(notice: FinishNotice) => save((d) => void (d.finish_notice = notice))}
     />
     {#if defaultQueue && s.finish_notice !== 'nothing'}
-      <p
-        class="flex flex-wrap items-baseline justify-end gap-x-1.5 text-right text-small text-ink-muted"
-      >
+      <p class="flex flex-wrap items-baseline gap-x-1.5 text-small text-ink-muted">
         <span>{queueNotifyLine(defaultQueue.name, defaultQueue.notify)}</span>
         <Button
           variant="link"
