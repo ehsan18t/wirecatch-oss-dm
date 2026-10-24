@@ -254,17 +254,29 @@ describe('the notes frame', () => {
     });
   }
 
-  it('is one fresh frame in a closed shadow root the page cannot reach, until it is taken away', () => {
+  it('keeps the page’s elements the same whether a note shows or not, the frame changing only in a closed shadow root', async () => {
     const notes = frame();
-    const before = document.documentElement.childElementCount;
-    expect(notes.mount()).toBe('token-1');
-    expect(notes.mount()).toBe('token-2');
-    expect(document.documentElement.childElementCount).toBe(before + 1);
     const host = document.documentElement.lastElementChild;
     expect(host?.shadowRoot).toBeNull();
-    expect(document.querySelector('iframe')).toBeNull();
+    const seen: MutationRecord[] = [];
+    const observer = new MutationObserver((records) => seen.push(...records));
+    observer.observe(document, { subtree: true, childList: true, attributes: true });
+    expect(notes.mount()).toBe('token-1');
+    expect(notes.mount()).toBe('token-2');
     notes.unmount();
-    expect(document.documentElement.childElementCount).toBe(before);
+    await flush();
+    observer.disconnect();
+    expect(seen).toEqual([]);
+    expect(document.querySelector('iframe')).toBeNull();
+    notes.destroy();
+    expect(host?.isConnected).toBe(false);
+  });
+
+  it('takes no notes once the website took its host away, rather than show it one came', () => {
+    const notes = frame();
+    document.documentElement.lastElementChild?.remove();
+    expect(notes.mount()).toBeNull();
+    notes.destroy();
   });
 
   it('hands its notes page alone a channel for sizes, at the extension’s origin', async () => {
@@ -299,7 +311,7 @@ describe('the notes frame', () => {
     await resized;
     expect([iframe.style.width, iframe.style.height]).toEqual(['353px', '181px']);
     sizes.close();
-    notes.unmount();
+    notes.destroy();
   });
 });
 

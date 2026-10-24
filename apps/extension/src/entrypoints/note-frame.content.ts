@@ -31,14 +31,23 @@ export default defineContentScript({
       _sender: unknown,
       sendResponse: (answer: MountAnswer) => void,
     ): undefined => {
-      if (isMount(raw)) sendResponse({ token: frame.mount() });
-      else if (isUnmount(raw)) frame.unmount();
+      if (isMount(raw)) {
+        // No answer when the page cannot take notes: the background gives it none.
+        const token = frame.mount();
+        if (token !== null) sendResponse({ token });
+      } else if (isUnmount(raw)) {
+        frame.unmount();
+      }
       return undefined;
     };
     browser.runtime.onMessage.addListener(onMessage);
+    // Going in or out of full screen moves the host where it shows; it says nothing about notes.
+    const onFullscreen = () => frame.place();
+    document.addEventListener('fullscreenchange', onFullscreen);
     ctx.onInvalidated(() => {
       browser.runtime.onMessage.removeListener(onMessage);
-      frame.unmount();
+      document.removeEventListener('fullscreenchange', onFullscreen);
+      frame.destroy();
     });
   },
 });
