@@ -9,7 +9,6 @@ import type { Queues } from './queues.svelte';
 import type { Selection } from './selection.svelte';
 import type { SuffixList } from './suffix-list.svelte';
 import type { SettingsTransfer } from './settings-transfer.svelte';
-import type { Toasts } from './toasts.svelte';
 import type { View } from './view';
 
 /** What the core's events change in the main window. */
@@ -22,7 +21,6 @@ export interface MainWindowEventsHost {
   readonly queues: Pick<Queues, 'list'>;
   view: View;
   settings: AppSettings | null;
-  readonly toasts: Pick<Toasts, 'captured'>;
   readonly questions: Pick<
     Questions,
     'confirmationRequested' | 'mediaChoiceRequested' | 'analysing' | 'addonRequired' | 'closed'
@@ -52,10 +50,8 @@ export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
     settings_changed: (e) => {
       app.settings = e.data;
     },
-    captured: (e) => {
-      app.downloads.apply([e.data]);
-      app.toasts.captured(e.data);
-    },
+    // The shell tells the person in a brief notification (D63); the list shows the download.
+    captured: (e) => app.downloads.apply([e.data]),
     confirmation_requested: (e) => app.questions.confirmationRequested(e.data),
     media_choice_requested: (e) => app.questions.mediaChoiceRequested(e.data),
     media_analysing: (e) => app.questions.analysing(e.data.id),

@@ -123,8 +123,6 @@ pub fn run() {
 
     let app = with_plugins(tauri::Builder::default())
         .manage(LaunchLinks::default())
-        .manage(window::PendingCaptures::default())
-        .manage(window::PendingReveal::default())
         .manage(window::PendingSelection::default())
         .manage(finished_window::FinishedWindow::default())
         .manage(Lifecycle::default())
@@ -139,17 +137,14 @@ pub fn run() {
                 return;
             }
             // A new page (a reload, or recovering from a crash) reports its own button and
-            // takes the downloads it missed.
+            // takes the selection it missed.
             if let Some(window) = webview.app_handle().get_webview_window(webview.label()) {
                 frame::page_loading(&window);
             }
-            if webview.label() == window::MAIN_WINDOW {
-                if let Some(captured) = webview.try_state::<window::PendingCaptures>() {
-                    captured.page_gone();
-                }
-                if let Some(selection) = webview.try_state::<window::PendingSelection>() {
-                    selection.page_gone();
-                }
+            if webview.label() == window::MAIN_WINDOW
+                && let Some(selection) = webview.try_state::<window::PendingSelection>()
+            {
+                selection.page_gone();
             }
         })
         .setup(move |app| setup(app, &launch))

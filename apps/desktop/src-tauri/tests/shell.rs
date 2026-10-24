@@ -23,6 +23,7 @@ use wirecatch_desktop_lib::download_windows::{DownloadWindows, Shows, may_act_on
 use wirecatch_desktop_lib::finished_window::{self, FinishedWindow};
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::Lifecycle;
+use wirecatch_desktop_lib::notices::Lasts;
 use wirecatch_desktop_lib::system_notices::ShownNotices;
 use wirecatch_desktop_lib::window::MAIN_WINDOW;
 use wirecatch_desktop_lib::{RESYNC_EVENT, UI_EVENT, tray};
@@ -181,6 +182,30 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResul
     wait_until("the events to be handled", || closed.load(Ordering::SeqCst));
     assert_eq!(handle.state::<ShownNotices>().0.lock().unwrap().len(), 1);
     assert_eq!(handle.state::<DownloadWindows>().snapshot().len(), 1);
+    task.abort();
+    Ok(())
+}
+
+/// D63: a browser download that started without a window of its own is told in a brief
+/// notification and brings no window up, whether the main window is closed or open.
+#[test]
+fn a_download_started_without_asking_is_told_briefly_and_opens_no_window() -> TestResult {
+    let app = app_with(None)?;
+    let handle = app.handle().clone();
+    let (sender, receiver) = broadcast::channel(16);
+    let task = tauri::async_runtime::spawn(forward(handle.clone(), receiver));
+    let started = ended_row(7, 1, DownloadStatus::Downloading);
+
+    sender.send(UiEvent::Captured(started.clone())).unwrap();
+    wait_until("the notification", || titles(&handle).len() == 1);
+    assert!(handle.get_webview_window(MAIN_WINDOW).is_none());
+    let notice = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
+    assert_eq!(notice, wirecatch_desktop_lib::notices::started(&started));
+    assert_eq!(notice.lasts, Lasts::Brief);
+
+    wirecatch_desktop_lib::window::show_main_window(&handle);
+    sender.send(UiEvent::Captured(started)).unwrap();
+    wait_until("the second notification", || titles(&handle).len() == 2);
     task.abort();
     Ok(())
 }

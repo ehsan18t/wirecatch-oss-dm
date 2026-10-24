@@ -1,12 +1,14 @@
 //! Shows [`Notice`]s as the system's own notifications, with their buttons, and does what the
 //! person clicks (D52). Windows shows them as toasts under the app's own identity, registered
 //! here for the current user so a debug build is named and shown too; Linux sends them to the
-//! desktop's notification service, with actions where it offers them.
+//! desktop's notification service, with actions where it offers them. A brief notice expires on
+//! Windows, which takes it out of the notification centre, and is transient on Linux, which keeps
+//! it out of the desktop's history (D63).
 
 use std::sync::{Mutex, PoisonError};
 
 use crate::host::Core;
-use crate::notices::{Act, Notice};
+use crate::notices::{Act, Lasts, Notice};
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Manager as _, Runtime};
 
@@ -51,6 +53,7 @@ pub fn plain(title: String, body: String) -> Notice {
             ids: Vec::new(),
             browser_settings: false,
         }),
+        lasts: Lasts::Kept,
     }
 }
 
@@ -151,17 +154,18 @@ mod platform {
 
     use std::collections::VecDeque;
     use std::sync::{Mutex, PoisonError};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use tauri::{AppHandle, Manager as _, Runtime};
     use windows::Data::Xml::Dom::XmlDocument;
-    use windows::Foundation::TypedEventHandler;
+    use windows::Foundation::{DateTime, IReference, PropertyValue, TypedEventHandler};
     use windows::UI::Notifications::{
         ToastActivatedEventArgs, ToastNotification, ToastNotificationManager,
     };
     use windows_core::{HSTRING, IInspectable, Interface as _};
 
     use super::{button_argument, chosen, clicked_button, escape_text};
-    use crate::notices::Notice;
+    use crate::notices::{BRIEF, Lasts, Notice};
 
     /// Escapes text for the toast's XML, quotes included, so it is safe inside an attribute too.
     fn escape(text: &str) -> String {
@@ -171,7 +175,8 @@ mod platform {
     }
 
     /// Toasts kept alive so their click handlers still run when the person clicks them in the
-    /// notification centre. The oldest go first.
+    /// notification centre, this many of each [`Lasts`]: brief ones apart, so a run of them never
+    /// drops a kept one. The oldest go first.
     const KEPT_TOASTS: usize = 32;
 
     /// Where the current user's app identities are registered, so toasts show the app's name
@@ -185,6 +190,7 @@ mod platform {
     pub struct Notifier {
         identifier: HSTRING,
         kept: Mutex<VecDeque<ToastNotification>>,
+        brief: Mutex<VecDeque<ToastNotification>>,
     }
 
     impl Notifier {
@@ -195,13 +201,18 @@ mod platform {
             Self {
                 identifier: HSTRING::from(identifier),
                 kept: Mutex::default(),
+                brief: Mutex::default(),
             }
         }
 
         pub fn show<R: Runtime>(&self, app: &AppHandle<R>, notice: Notice) {
+            let held = match notice.lasts {
+                Lasts::Kept => &self.kept,
+                Lasts::Brief => &self.brief,
+            };
             match self.toast(app, notice) {
                 Ok(toast) => {
-                    let mut kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
+                    let mut kept = held.lock().unwrap_or_else(PoisonError::into_inner);
                     if kept.len() >= KEPT_TOASTS {
                         kept.pop_front();
                     }
@@ -219,6 +230,12 @@ mod platform {
             let xml = XmlDocument::new()?;
             xml.LoadXml(&HSTRING::from(toast_xml(&notice)))?;
             let toast = ToastNotification::CreateToastNotification(&xml)?;
+            if notice.lasts == Lasts::Brief {
+                let expires = PropertyValue::CreateDateTime(DateTime {
+                    UniversalTime: ticks(SystemTime::now() + BRIEF),
+                })?;
+                toast.SetExpirationTime(&expires.cast::<IReference<DateTime>>()?)?;
+            }
             let app = app.clone();
             toast.Activated(&TypedEventHandler::<ToastNotification, IInspectable>::new(
                 move |_, args| {
@@ -237,6 +254,15 @@ mod platform {
             ToastNotificationManager::CreateToastNotifierWithId(&self.identifier)?.Show(&toast)?;
             Ok(toast)
         }
+    }
+
+    /// Windows' time for `at`: 100-nanosecond ticks since 1601.
+    fn ticks(at: SystemTime) -> i64 {
+        /// The ticks from 1601 to 1970.
+        const BEFORE_1970: i64 = 116_444_736_000_000_000;
+        let since_1970 = at.duration_since(UNIX_EPOCH).unwrap_or_default();
+        i64::try_from(since_1970.as_nanos() / 100)
+            .map_or(i64::MAX, |ticks| BEFORE_1970.saturating_add(ticks))
     }
 
     fn toast_xml(notice: &Notice) -> String {
@@ -296,6 +322,7 @@ mod platform {
                     act: Act::Open(DownloadId(1)),
                 }],
                 click: Act::Open(DownloadId(1)),
+                lasts: crate::notices::Lasts::Kept,
             };
             let xml = toast_xml(&notice);
             assert!(
@@ -304,6 +331,13 @@ mod platform {
             );
             assert_eq!(xml.matches("<action ").count(), 1);
             assert!(xml.contains(r#"arguments="0""#));
+        }
+
+        #[test]
+        fn windows_time_counts_ticks_from_1601() {
+            assert_eq!(ticks(UNIX_EPOCH), 116_444_736_000_000_000);
+            let later = UNIX_EPOCH + std::time::Duration::from_secs(1);
+            assert_eq!(ticks(later) - ticks(UNIX_EPOCH), 10_000_000);
         }
     }
 }
@@ -318,7 +352,7 @@ mod platform {
     use tauri::{AppHandle, Manager as _, Runtime};
 
     use super::{button_argument, chosen, clicked_button, escape_text};
-    use crate::notices::Notice;
+    use crate::notices::{BRIEF, Lasts, Notice};
 
     /// The action a notification service sends for a click on the notification itself.
     const CLICK: &str = "default";
@@ -368,6 +402,11 @@ mod platform {
             .appname(name)
             .summary(&notice.title)
             .body(&escape_text(&notice.body));
+        if notice.lasts == Lasts::Brief {
+            notification
+                .timeout(BRIEF)
+                .hint(notify_rust::Hint::Transient(true));
+        }
         if waits {
             notification.action(CLICK, "");
             for (at, button) in notice.buttons.iter().enumerate() {
@@ -439,6 +478,7 @@ mod tests {
                 },
             ],
             click: Act::Retry(DownloadId(1)),
+            lasts: Lasts::Kept,
         };
         let pick = |argument: &str| chosen(&notice, clicked_button(argument));
         assert_eq!(

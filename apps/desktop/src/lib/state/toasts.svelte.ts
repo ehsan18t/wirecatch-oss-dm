@@ -1,29 +1,13 @@
-// The short notes of the main window: what an action did, what failed, each download the browser handed over, and how the app started. The design system's toaster shows them (it times them, pauses while they are read, and tells screen readers); this says what each note is about.
+// The short notes of the main window: what an action did, what failed, and how the app started. The design system's toaster shows them (it times them, pauses while they are read, and tells screen readers); this says what each note is about.
 
-import type { DownloadId, DownloadSummary, StartupNotice } from '@wirecatch/protocol';
+import type { StartupNotice } from '@wirecatch/protocol';
 import { Toaster } from '@wirecatch/ui';
 import { SvelteMap } from 'svelte/reactivity';
-import { folderOf } from '../format';
-
-/** A browser download's note: for a video first the quality the saved choices took (D50), then where it goes. */
-function capturedNote(row: DownloadSummary): string {
-  const where = `Downloading to ${folderOf(row.path)}`;
-  if (!row.media) return where;
-  const missing = row.media.instead_of ? ` (${row.media.instead_of} wasn’t offered)` : '';
-  return `${row.media.quality}${missing}. ${where}`;
-}
 
 export interface Toast {
   id: string;
-  kind: 'info' | 'error' | 'capture' | 'notice';
+  kind: 'info' | 'error' | 'notice';
   message: string;
-  downloadId?: DownloadId;
-}
-
-/** What a note needs from the window it is shown in. */
-export interface ToastsHost {
-  /** Shows one download's details: a browser download's note offers it. */
-  reveal: (id: DownloadId) => void;
 }
 
 export class Toasts {
@@ -31,11 +15,6 @@ export class Toasts {
   readonly toaster = new Toaster();
   /** What each note on screen is about; a note the toaster has let go of is forgotten when the next one comes. */
   readonly #kinds = new SvelteMap<string, Omit<Toast, 'id'>>();
-  readonly #host: ToastsHost;
-
-  constructor(host: ToastsHost) {
-    this.#host = host;
-  }
 
   /** The notes on screen, oldest first. */
   get items(): Toast[] {
@@ -58,19 +37,6 @@ export class Toasts {
 
   fail(text: string): void {
     this.#record(this.toaster.danger(text), { kind: 'error', message: text });
-  }
-
-  /**
-   * A download the browser handed over, by its file name; once per download, since a page that was still loading may get it both from the shell and as an event. Its folder can be changed, and the file opened, from the details it offers.
-   */
-  captured(row: DownloadSummary): void {
-    if (this.items.some((t) => t.kind === 'capture' && t.downloadId === row.id)) return;
-    const message = capturedNote(row);
-    const id = this.toaster.info(message, {
-      title: row.file_name,
-      action: { label: 'Show details', run: () => this.#host.reveal(row.id) },
-    });
-    this.#record(id, { kind: 'capture', message, downloadId: row.id });
   }
 
   /** How the app started, when the person must know (a damaged list set aside): it stays until dismissed, since the system notification may long be gone. A list set aside is offered in its folder, as the path in the message cannot be clicked. */

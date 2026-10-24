@@ -631,13 +631,6 @@ pub async fn show_set_aside_list<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn take_captured(
-    captured: State<'_, crate::window::PendingCaptures>,
-) -> CommandResult<contract::take_captured::Output> {
-    Ok(captured.take())
-}
-
-#[tauri::command]
 pub async fn take_reveal(
     selection: State<'_, crate::window::PendingSelection>,
 ) -> CommandResult<contract::take_reveal::Output> {
@@ -731,7 +724,6 @@ handler![
     system_appearance,
     startup_notices,
     show_set_aside_list,
-    take_captured,
     take_reveal,
     finished_list,
     report_unreadable_event,

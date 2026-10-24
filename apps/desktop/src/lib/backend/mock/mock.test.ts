@@ -176,7 +176,7 @@ describe('MockBackend', () => {
     );
   });
 
-  it('asks first in its own window by default, or captures with a toast', async () => {
+  it('asks first in its own window by default, or captures without one', async () => {
     const { mock, events } = make({ empty: true });
     const s = await mock.getSettings();
     expect(s.extension.ask_before_download).toBe(true);

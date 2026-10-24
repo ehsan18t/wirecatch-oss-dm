@@ -39,15 +39,6 @@ for (const theme of ['light', 'dark'] as const) {
       await page.screenshot({ path: `${dir}/${theme}-05-settings-search.png` });
     });
 
-    test('capture toast', async ({ page }) => {
-      await open(page, 'capture=0', { theme });
-      await page.keyboard.press('Control+Shift+P');
-      await page.keyboard.type('pretend the browser sent a download');
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(1500);
-      await page.screenshot({ path: `${dir}/${theme}-06-capture-toast.png` });
-    });
-
     test('ask before download confirmation', async ({ page }) => {
       await open(page, 'capture=0', { theme });
       await page.keyboard.press('Control+Shift+P');

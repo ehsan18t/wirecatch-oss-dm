@@ -128,12 +128,6 @@ export interface Backend {
 
   /** Links passed on the command line that the interface has not shown yet, handed over once. */
   takeLaunchLinks(): Promise<string[]>;
-  /**
-   * Browser downloads that started without a window of their own while this page was still
-   * loading, for their notes (D36.7); handed over once, and later ones arrive as `captured`
-   * events.
-   */
-  takeCaptured(): Promise<DownloadSummary[]>;
   /** The downloads a notification the person clicked was about, while this page was still loading (D52); handed over once, and later ones arrive through `onReveal`. */
   takeReveal(): Promise<Reveal | null>;
   /** Downloads to select because the person clicked a notification about them (D52). */

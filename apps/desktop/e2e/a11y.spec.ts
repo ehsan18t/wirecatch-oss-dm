@@ -56,21 +56,6 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.type('asks first');
     await page.keyboard.press('Enter');
     await audit(page, 'confirmation');
-    await page.getByRole('button', { name: 'Download now', exact: true }).click();
-    // The window now shows progress; Escape closes it and the main window has the keys again.
-    await page.keyboard.press('Escape');
-    await page.keyboard.press('Control+Shift+P');
-    // Files then start at once, with the toast.
-    await page.keyboard.type('start browser downloads without asking');
-    await page.keyboard.press('Enter');
-    await page.keyboard.press('Control+Shift+P');
-    await page.keyboard.type('pretend the browser sent a download');
-    await page.keyboard.press('Enter');
-    await page
-      .getByRole('region', { name: 'Notifications' })
-      .getByText(/^Downloading/)
-      .waitFor();
-    await audit(page, 'capture toast');
   });
 
   test(`media and add-on windows work with the keyboard, ${theme} theme`, async ({ page }) => {

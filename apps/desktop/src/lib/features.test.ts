@@ -209,21 +209,6 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     ).toBeInTheDocument();
   });
 
-  it('browser capture without a window: a toast, whose Show details offers the folder, 2 clicks', async () => {
-    const { app, backend, click } = await setup();
-    await app.setAskBeforeDownload(false);
-    backend.simulateCapture();
-    await settle();
-    const toasts = screen.getByRole('region', { name: 'Notifications' });
-    expect(within(toasts).getByText(/^Downloading to/)).toBeInTheDocument();
-    await click(within(toasts).getByRole('button', { name: 'Show details' }));
-    const name = app.selection.rows[0]?.file_name ?? '';
-    const panel = within(details(name));
-    expect(panel.getByRole('button', { name: 'Show in folder' })).toBeInTheDocument();
-    await click(panel.getByRole('button', { name: 'Change' }));
-    expect(within(toasts).getByText(/^Saving to/)).toBeInTheDocument();
-  });
-
   it('a browser file opens its own window, which then shows its progress, 1 click', async () => {
     const { app, backend, click } = await setup();
     backend.simulateConfirmation();
@@ -240,7 +225,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(window.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
   });
 
-  it('turning the windows off from one: the next file starts with a toast and no window, 1 click', async () => {
+  it('turning the windows off from one: the next file starts with no window, 1 click', async () => {
     const { app, backend, click } = await setup();
     backend.simulateConfirmation();
     const window = within(await downloadWindow());
@@ -252,11 +237,12 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     await click(window.getByRole('button', { name: 'Download now' }));
     await click(window.getByRole('button', { name: 'Hide' }));
     expect(screen.queryByRole('region', { name: /^Wirecatch download window/ })).toBeNull();
+    const before = app.downloads.size;
     backend.simulateCapture();
     await settle();
     expect(screen.queryByRole('region', { name: /^Wirecatch download window/ })).toBeNull();
-    const toasts = screen.getByRole('region', { name: 'Notifications' });
-    expect(within(toasts).getByText(/^Downloading to/)).toBeInTheDocument();
+    // The shell tells the person in a brief notification (D63).
+    expect(app.downloads.size).toBe(before + 1);
   });
 
   it('a progress window for any download: its details, then More, Open in its own window, 3 clicks', async () => {

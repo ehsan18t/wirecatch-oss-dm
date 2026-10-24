@@ -190,13 +190,12 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
 describe('7. Try again does not double the listeners', () => {
   it('init twice still handles each event once', async () => {
     const { app, backend } = await setup();
-    // A file that starts at once, so it shows its toast.
-    await app.setAskBeforeDownload(false);
     await app.init();
     await settle();
+    const asked = vi.spyOn(app.questions, 'confirmationRequested');
     backend.simulateCapture();
     await settle();
-    expect(app.toasts.items.filter((t) => t.kind === 'capture')).toHaveLength(1);
+    expect(asked).toHaveBeenCalledTimes(1);
   });
 
   it('dispose before the backend is ready leaves nothing listening', async () => {

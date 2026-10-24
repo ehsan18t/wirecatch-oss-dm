@@ -528,8 +528,6 @@ commands! {
     startup_notices -> Vec<StartupNotice>;
     /// Shows the download list set aside at this start (`StartupNotice::set_aside`) selected in its folder. The shell knows the path; the page sends none, so no page can open a path of its choosing.
     show_set_aside_list -> ();
-    /// Browser downloads that started without a window of their own while the main window's page was not listening yet (it was opening or loading), for their notes; handed over once. From then on they arrive as `Captured` events (D36.7).
-    take_captured -> Vec<DownloadSummary>;
     /// What the download complete window shows; later changes arrive on `FINISHED_EVENT`. Only
     /// that window may call it.
     finished_list -> FinishedList;

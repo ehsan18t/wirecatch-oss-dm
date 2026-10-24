@@ -310,10 +310,6 @@ export type CommandMap = {
    */
   show_set_aside_list: Command<null, null>;
   /**
-   * Browser downloads that started without a window of their own while the main window's page was not listening yet (it was opening or loading), for their notes; handed over once. From then on they arrive as `Captured` events (D36.7).
-   */
-  take_captured: Command<null, Array<DownloadSummary>>;
-  /**
    * What the download complete window shows; later changes arrive on `FINISHED_EVENT`. Only
    * that window may call it.
    */

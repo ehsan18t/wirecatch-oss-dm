@@ -339,9 +339,6 @@ export class TauriBackend implements DownloadWindowBackend {
     });
   }
 
-  takeCaptured() {
-    return this.#call('take_captured');
-  }
   takeReveal() {
     return this.#call('take_reveal');
   }

@@ -1,6 +1,6 @@
-//! What the person is told when downloads finish or fail (D52): the words and buttons of each
-//! notification. Shown by [`crate::system_notices`]; when to tell is decided in
-//! [`crate::background`].
+//! What the person is told when downloads finish or fail (D52), or start without a window of their
+//! own (D63): the words and buttons of each notification. Shown by [`crate::system_notices`];
+//! when to tell is decided in [`crate::background`].
 
 use std::path::Path;
 
@@ -30,6 +30,19 @@ pub struct Button {
     pub act: Act,
 }
 
+/// How long a notification stays.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lasts {
+    /// Until the person dismisses it, and in the system's list of notifications.
+    Kept,
+    /// A few seconds ([`BRIEF`]), and never in the system's list: news the person needs no
+    /// record of.
+    Brief,
+}
+
+/// How long a [`Lasts::Brief`] notification shows.
+pub const BRIEF: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// One system notification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notice {
@@ -42,6 +55,8 @@ pub struct Notice {
     /// What a click on the notification itself does: never opens a file, since people click a
     /// notification to dismiss it, and the file may be a program.
     pub click: Act,
+    /// How long it stays.
+    pub lasts: Lasts,
 }
 
 const OPEN: &str = "Open";
@@ -94,6 +109,29 @@ fn retry_helps(row: &DownloadSummary) -> bool {
         .is_none_or(|fix| RETRY_FIXES.contains(&fix))
 }
 
+/// For a browser download that started without a window of its own (D63): brief, since the person
+/// is still browsing. A video says the quality the saved choices took (D50).
+#[must_use]
+pub fn started(row: &DownloadSummary) -> Notice {
+    let body = match &row.media {
+        None => row.file_name.clone(),
+        Some(media) => match &media.instead_of {
+            None => format!("{}, {}", row.file_name, media.quality),
+            Some(wanted) => format!(
+                "{}, {} ({wanted} wasn’t offered)",
+                row.file_name, media.quality
+            ),
+        },
+    };
+    Notice {
+        title: "Download started".to_owned(),
+        body,
+        buttons: Vec::new(),
+        click: show(None, &[row]),
+        lasts: Lasts::Brief,
+    }
+}
+
 /// For downloads that finished close together. `None` for none.
 #[must_use]
 pub fn finished(rows: &[&DownloadSummary]) -> Option<Notice> {
@@ -117,12 +155,14 @@ fn finished_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Noti
                 },
             ],
             click: show(queue, rows),
+            lasts: Lasts::Kept,
         },
         [first, ..] => Notice {
             title: format!("{} finished", downloads(rows.len())),
             body: names(rows),
             buttons: vec![folder_or_app(rows, first.id, queue)],
             click: show(queue, rows),
+            lasts: Lasts::Kept,
         },
     };
     Some(notice)
@@ -166,6 +206,7 @@ fn failed_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Notice
                 .into_iter()
                 .collect(),
             click: show(queue, rows),
+            lasts: Lasts::Kept,
         },
         _ => Notice {
             title: format!("{} failed", downloads(rows.len())),
@@ -175,6 +216,7 @@ fn failed_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Notice
                 act: show(queue, rows),
             }],
             click: show(queue, rows),
+            lasts: Lasts::Kept,
         },
     };
     Some(notice)
@@ -209,6 +251,7 @@ pub fn queue_done(report: &QueueReport) -> Option<Notice> {
                 body: names(&all),
                 buttons: vec![button],
                 click: show(queue, &all),
+                lasts: Lasts::Kept,
             })
         }
     }
@@ -217,7 +260,8 @@ pub fn queue_done(report: &QueueReport) -> Option<Notice> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wirecatch_protocol::app::{Category, DownloadStatus, FixAction, UserError};
+    use wirecatch_protocol::app::{Category, DownloadStatus, FixAction, MediaSummary, UserError};
+    use wirecatch_protocol::extension::MediaKind;
 
     fn row(id: i64, folder: &str, status: DownloadStatus) -> DownloadSummary {
         DownloadSummary {
@@ -268,6 +312,28 @@ mod tests {
 
     fn labels(notice: &Notice) -> Vec<&str> {
         notice.buttons.iter().map(|b| b.label).collect()
+    }
+
+    #[test]
+    fn a_started_download_is_told_briefly_with_the_quality_a_video_took() {
+        let mut started = row(1, "videos", DownloadStatus::Downloading);
+        let notice = super::started(&started);
+        assert_eq!(notice.title, "Download started");
+        assert_eq!(notice.body, "file-1.zip");
+        assert_eq!(notice.buttons, []);
+        assert_eq!(notice.click, reveal(None, &[1]));
+        assert_eq!(notice.lasts, Lasts::Brief);
+        started.media = Some(MediaSummary {
+            quality: "720p".into(),
+            source: MediaKind::Page,
+            video_key: None,
+            instead_of: Some("1080p".into()),
+        });
+        assert_eq!(
+            super::started(&started).body,
+            "file-1.zip, 720p (1080p wasn’t offered)"
+        );
+        assert_eq!(finished(&[&done(2)]).unwrap().lasts, Lasts::Kept);
     }
 
     #[test]

@@ -18,7 +18,7 @@ export function sampleCommands(mock: Scenarios, finished: MockFinished): SampleD
     {
       id: 'mock.capture',
       title: 'Pretend the browser sent a download',
-      keywords: 'simulate capture toast',
+      keywords: 'simulate capture',
       run: () => mock.simulateCapture(),
     },
     {

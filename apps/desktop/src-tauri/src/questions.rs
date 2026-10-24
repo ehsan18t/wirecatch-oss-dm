@@ -31,10 +31,10 @@ pub enum Attention {
     /// A client asked for the browser settings (D61): the main window comes to the front on
     /// them, and a page still loading takes them later ([`crate::window::PendingSelection`]).
     ShowBrowserSettings,
-    /// A browser download started without a window of its own (`ask_before_download` off,
-    /// D36.7): the main window comes to the front with its note, leaving the focus in the
-    /// browser; a page still loading takes the note later ([`crate::window::PendingCaptures`]).
-    ShowCaptured(Box<DownloadSummary>),
+    /// A browser download started without a window of its own (`ask_before_download` off, or a
+    /// video downloaded with the saved choices): a brief notification, and no window comes up,
+    /// since the person is still browsing (D63).
+    Started(Box<DownloadSummary>),
     /// The settings changed: every window takes on their theme (see [`crate::appearance`]).
     Theme(Theme),
     /// Something went wrong that the person must know about: a system notification when no
@@ -59,7 +59,7 @@ pub fn attention(event: &UiEvent) -> Attention {
         UiEvent::ConfirmationClosed { id } => Attention::Closed(*id),
         UiEvent::WindowRequested => Attention::ShowMain,
         UiEvent::BrowserSettingsRequested => Attention::ShowBrowserSettings,
-        UiEvent::Captured(row) => Attention::ShowCaptured(Box::new(row.clone())),
+        UiEvent::Captured(row) => Attention::Started(Box::new(row.clone())),
         UiEvent::SettingsChanged(settings) => Attention::Theme(settings.theme),
         UiEvent::StorageFailed(error) => Attention::Notify {
             title: format!(
@@ -210,10 +210,9 @@ mod tests {
         );
     }
 
-    /// D36.7: a browser download started without asking (`ask_before_download` off) opens no
-    /// window of its own; the main window comes forward with its note instead.
+    /// D63: a browser download started without asking opens no window; it is told instead.
     #[test]
-    fn a_download_started_without_asking_brings_the_main_window_forward() {
+    fn a_download_started_without_asking_is_told() {
         let started = DownloadSummary {
             id: DownloadId(9),
             url: "https://example.com/a.zip".into(),
@@ -236,7 +235,7 @@ mod tests {
         };
         assert_eq!(
             attention(&UiEvent::Captured(started.clone())),
-            Attention::ShowCaptured(Box::new(started))
+            Attention::Started(Box::new(started))
         );
     }
 

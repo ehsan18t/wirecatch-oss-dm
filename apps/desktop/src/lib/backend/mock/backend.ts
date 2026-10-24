@@ -9,7 +9,6 @@ import type {
   ButtonArea,
   CaptureConfirmation,
   DownloadId,
-  DownloadSummary,
   MediaSelection,
   QuestionId,
   Queue,
@@ -445,11 +444,6 @@ export class MockBackend implements Backend {
   showSetAsideList() {
     // The sample app has no folder to show; the call answers as the shell's would.
     return this.#call(() => undefined);
-  }
-
-  takeCaptured() {
-    // The sample page is listening from its start: every capture reaches it as an event.
-    return this.#call((): DownloadSummary[] => []);
   }
 
   takeReveal() {

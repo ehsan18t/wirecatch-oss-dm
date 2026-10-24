@@ -29,18 +29,6 @@ describe('the main window', () => {
     expect(app.toasts.items.some((t) => t.kind === 'notice')).toBe(false);
   });
 
-  it('shows a browser download it was handed in its details, from the toast', async () => {
-    const { app, backend } = await renderApp();
-    await app.setAskBeforeDownload(false);
-    backend.simulateCapture();
-    await settle();
-    await userEvent.click(within(toasts()).getByRole('button', { name: 'Show details' }));
-    await settle();
-    const row = app.selection.rows[0];
-    expect(row).toBeDefined();
-    expect(screen.getByRole('dialog', { name: row?.file_name })).toBeInTheDocument();
-  });
-
   it('frames the content on a layer of its own, beside the navigation', async () => {
     await renderApp();
     const main = screen.getByRole('main', { name: 'Downloads' });

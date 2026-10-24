@@ -5,13 +5,7 @@
 // settings and the core's events.
 
 import { PRODUCT_NAME } from '@wirecatch/product';
-import type {
-  AppSettings,
-  DownloadId,
-  DownloadSummary,
-  QueueId,
-  UiEvent,
-} from '@wirecatch/protocol';
+import type { AppSettings, DownloadId, QueueId, UiEvent } from '@wirecatch/protocol';
 import { createContext, untrack } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import type { Backend, SampleData } from '../backend';
@@ -70,7 +64,7 @@ export function getApp(): AppState {
 export class AppState {
   readonly #connection: Connection;
   readonly downloads = new DownloadStore();
-  readonly toasts = new Toasts({ reveal: (id) => this.openDetails(id) });
+  readonly toasts = new Toasts();
   /** The time schedule labels follow. */
   readonly clock = new Clock();
   readonly #runner = new Runner((text) => this.toasts.fail(text));
@@ -239,7 +233,6 @@ export class AppState {
     this.clock.start();
     // None is needed for the list, so none holds it up.
     void this.#followSystem(current);
-    void this.#takeCaptured();
     void this.#takeStartupNotices();
     void this.addons.load();
     void this.suffixList.load();
@@ -299,18 +292,6 @@ export class AppState {
     const stop = await this.appearance.connect(this.#backend);
     if (current()) this.#stopAppearance = stop;
     else stop();
-  }
-
-  /** Notes for the browser downloads that started while this page was still loading (D36.7). */
-  async #takeCaptured(): Promise<void> {
-    let rows: DownloadSummary[];
-    try {
-      rows = await this.#backend.takeCaptured();
-    } catch {
-      // Only the notes are lost: the downloads are in the list.
-      return;
-    }
-    for (const row of rows) this.toasts.captured(row);
   }
 
   /** How the app started, when the person must know: the system notification may be long gone, or off (CORE-1). */

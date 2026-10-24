@@ -73,8 +73,9 @@ describe('AppState', () => {
     expect(app.queues.list.length).toBe(3);
     expect(app.downloads.size).toBe(app.counts.all);
     await app.setAskBeforeDownload(false);
+    const before = app.downloads.size;
     backend.simulateCapture();
-    expect(app.toasts.items.at(-1)?.kind).toBe('capture');
+    expect(app.downloads.size).toBe(before + 1);
   });
 
   it('shows a readable error when the backend is not there', async () => {
@@ -329,35 +330,13 @@ describe('commands', () => {
   });
 });
 
-describe('browser downloads that started while the main window was loading (D36.7)', () => {
-  it('get their notes once the page has loaded, once each', async () => {
-    const backend = mockBackend();
-    const [row] = await backend.listDownloads();
-    if (!row) throw new Error('the sample list has downloads');
-    vi.spyOn(backend, 'takeCaptured').mockResolvedValue([row]);
-    const app = appState(backend);
-    await app.init();
-    await vi.waitFor(() => expect(app.toasts.items).toHaveLength(1));
-    // The same download's event reached the page while it was taking them.
-    app.handle({ type: 'captured', data: row });
-    expect(app.toasts.items.filter((t) => t.downloadId === row.id)).toHaveLength(1);
-  });
-
-  it('say the quality a video took without asking, and the one it stands in for (D50)', async () => {
-    const backend = mockBackend();
-    const [row] = await backend.listDownloads();
-    if (!row) throw new Error('the sample list has downloads');
-    const app = appState(backend);
-    await app.init();
-    const media = {
-      quality: '720p',
-      source: 'page',
-      video_key: null,
-      instead_of: '1080p',
-    } as const;
-    app.handle({ type: 'captured', data: { ...row, path: 'C:/Videos/clip.mp4', media } });
-    expect(app.toasts.items.at(-1)?.message).toBe(
-      '720p (1080p wasn’t offered). Downloading to C:/Videos',
-    );
+describe('a browser download that started without asking (D63)', () => {
+  it('joins the list, and the shell, not the page, tells the person', async () => {
+    const { app, backend } = await make();
+    await app.setAskBeforeDownload(false);
+    const before = app.downloads.size;
+    backend.simulateCapture();
+    expect(app.downloads.size).toBe(before + 1);
+    expect(app.toasts.items).toEqual([]);
   });
 });
