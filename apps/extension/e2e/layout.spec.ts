@@ -115,12 +115,10 @@ function crampedItems(page: Page): Promise<string[]> {
   }, ITEM_TEXT_SHARE);
 }
 
-/** The footer's and the capture card's button labels as German makes them, two to three times the English. */
+/** The footer's button labels as German makes them, two to three times the English. */
 const GERMAN_LABELS: Record<string, string> = {
   'Pause all': 'Alle Downloads anhalten',
   'Resume all': 'Alle Downloads fortsetzen',
-  'Ignore this site': 'Diese Website ignorieren',
-  'Stop ignoring': 'Diese Website nicht mehr ignorieren',
 };
 
 /** Puts the labels of `labels` in place of the English text of those buttons, as a translation would. */
@@ -203,7 +201,7 @@ for (const font of FONTS) {
         await page.setViewportSize({ width: 480, height: 720 });
         await open(page, 'state=long', font);
         const placed = await relabel(page, GERMAN_LABELS);
-        expect(placed).toHaveLength(3);
+        expect(placed).toHaveLength(2);
         expect(await layoutProblems(page, '.popup-frame > div')).toEqual([]);
         expect(await cutLabels(page, placed)).toEqual([]);
       });
@@ -220,7 +218,7 @@ for (const font of FONTS) {
         const placed = await relabel(page, overlong);
         expect(await layoutProblems(page, '.popup-frame > div')).toEqual([]);
         const cut = await cutLabels(page, placed);
-        expect(cut).toHaveLength(3);
+        expect(cut).toHaveLength(2);
         expect(await untippedLabels(page, cut)).toEqual([]);
       });
 

@@ -62,6 +62,7 @@ async function unfold(label: 'Downloads' | 'Video and audio'): Promise<void> {
 }
 
 const captureSwitch = (): HTMLElement => screen.getByRole('switch', { name: 'Capture downloads' });
+const siteSwitch = (): HTMLElement => screen.getByRole('switch', { name: 'Ignore this site' });
 
 afterEach(() => {
   cleanup();
@@ -78,19 +79,21 @@ describe('popup', () => {
       description: 'Send downloads from this browser to Wirecatch.',
     });
     expect(capture.getAttribute('aria-checked')).toBe('true');
-    expect(screen.getByText('example.com')).toBeTruthy();
+    const site = siteSwitch();
+    expect(site.getAttribute('aria-checked')).toBe('false');
     expect(
-      screen.getByRole('button', {
+      screen.getByRole('switch', {
         name: 'Ignore this site',
-        description: 'Downloads from example.com go to Wirecatch.',
+        description: 'Downloads from example.com stay in the browser.',
       }),
-    ).toBeTruthy();
+    ).toBe(site);
     expect(isUnavailable(screen.getByRole('button', { name: 'Pause all' }))).toBe(false);
     // D4: whether a window asks first, for files and for videos, shows at once; the rest is folded (D61).
     expect(screen.getAllByRole('switch').map((s) => s.id)).toEqual([
       'capture-enabled',
       'ask-before',
       'ask-each-video',
+      'ignore-site',
     ]);
     expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.queryByRole('textbox')).toBeNull();
@@ -137,7 +140,7 @@ describe('popup', () => {
       },
     });
     expect(captureSwitch().getAttribute('aria-checked')).toBe('false');
-    expect(isUnavailable(screen.getByRole('button', { name: 'Ignore this site' }))).toBe(false);
+    expect(isUnavailable(siteSwitch())).toBe(false);
   });
 
   it('updates in place when the setting changes in the app', async () => {
@@ -145,7 +148,7 @@ describe('popup', () => {
     const capture = captureSwitch();
     app.changeSettings({ capture_enabled: false, ignored_sites: ['example.com'] });
     await waitFor(() => expect(capture.getAttribute('aria-checked')).toBe('false'));
-    expect(screen.getByRole('button', { name: 'Stop ignoring' })).toBeTruthy();
+    expect(siteSwitch().getAttribute('aria-checked')).toBe('true');
     // Same element: the popup was updated in place, not reopened.
     expect(captureSwitch()).toBe(capture);
   });
@@ -153,11 +156,10 @@ describe('popup', () => {
   it('ignores the current site in one click, and can undo it', async () => {
     const { app } = await openPopup({ currentUrl: 'https://www.example.com/downloads' });
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: 'Ignore this site' }));
+    await user.click(siteSwitch());
     await waitFor(() => expect(app.settings.ignored_sites).toEqual(['example.com']));
-    const undo = await screen.findByRole('button', { name: 'Stop ignoring' });
-    expect(screen.getByText('Downloads from example.com stay in the browser.')).toBeTruthy();
-    await user.click(undo);
+    await waitFor(() => expect(siteSwitch().getAttribute('aria-checked')).toBe('true'));
+    await user.click(siteSwitch());
     await waitFor(() => expect(app.settings.ignored_sites).toEqual([]));
     // One site added and removed, never the whole list.
     expect(app.calls('update_extension_settings')).toEqual([
@@ -176,7 +178,7 @@ describe('popup', () => {
     const { app } = await openPopup({ currentUrl: 'https://www.example.com/downloads' });
     // Another browser adds a site; this popup has not heard about it yet.
     app.settings = { ...app.settings, ignored_sites: ['other.example'] };
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Ignore this site' }));
+    await userEvent.setup().click(siteSwitch());
     await waitFor(() =>
       expect(app.settings.ignored_sites).toEqual(['other.example', 'example.com']),
     );
@@ -184,8 +186,28 @@ describe('popup', () => {
 
   it('cannot ignore a browser page', async () => {
     await openPopup({ currentUrl: 'chrome://newtab/' });
-    expect(isUnavailable(screen.getByRole('button', { name: 'Ignore this site' }))).toBe(true);
-    expect(screen.getByText('Open a web page to ignore its site.')).toBeTruthy();
+    const site = screen.getByRole('switch', {
+      name: 'Ignore this site',
+      description: 'Open a web page to ignore its site.',
+    });
+    expect(isUnavailable(site)).toBe(true);
+    expect(site.getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('names the entry that ignores a page under it in the description, and turning it off removes that entry', async () => {
+    const { app } = await openPopup({
+      currentUrl: 'https://video.example.com/watch',
+      configure: (fake) => {
+        fake.settings = { ...fake.settings, ignored_sites: ['example.com'] };
+      },
+    });
+    const site = screen.getByRole('switch', {
+      name: 'Ignore this site',
+      description: 'Downloads from example.com stay in the browser.',
+    });
+    expect(site.getAttribute('aria-checked')).toBe('true');
+    await userEvent.setup().click(site);
+    await waitFor(() => expect(app.settings.ignored_sites).toEqual([]));
   });
 
   it("opens the app's browser settings from the header, and closes once they open (D61)", async () => {
@@ -570,7 +592,7 @@ describe('popup accessibility', () => {
       'switch:Capture downloads',
       'switch:Show a window before each download',
       'switch:Ask about each video',
-      'button:Ignore this site',
+      'switch:Ignore this site',
       'button:Downloads No speed limit · 3 at once · Main',
       'button:Video and audio Best available · Original',
       'button:Pause all',

@@ -52,7 +52,7 @@
         onclick={() => (open = !open)}
       >
         <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span class="text-ui font-semibold text-ink">{label}</span>
+          <span class="text-body font-semibold text-ink">{label}</span>
           {#if summary}
             <span class="truncate text-small font-normal text-ink-muted">{summary}</span>
           {/if}

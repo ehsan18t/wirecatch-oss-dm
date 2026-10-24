@@ -22,7 +22,7 @@
 {#if entries.length > 0}
   <Card as="section" padding="none" aria-labelledby={titleId}>
     <div class="flex items-center gap-2 px-4 py-3">
-      <h2 id={titleId} class="flex-1 text-ui font-semibold text-ink">Media on this page</h2>
+      <h2 id={titleId} class="flex-1 text-body font-semibold text-ink">Media on this page</h2>
       <Badge size="sm" tone="accent">{entries.length}</Badge>
     </div>
     <ul class="divide-y divide-line border-t border-line">
