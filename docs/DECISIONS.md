@@ -574,6 +574,15 @@ Decided with the maintainer on 2026-10-24, who found the note in the browser the
 3. A video or stream from the browser that is read for its qualities without a window (D50) is told as soon as it is handed over, by its title ("Keynote, reading the video"), instead of seconds later once it was read and its download began: the core sends `UiEvent::MediaCaptured`, and the shell tells nothing more when its download starts. A file is still told once the server has answered the app, which is near instant and is when Wirecatch really has it; told any earlier, a file the server refuses would go back to the browser just after its note. A setting for when the note comes was rejected: only a video would show the difference.
 4. A video added in the app's own Add dialog is told nothing, since the person is in the app: only a capture from the browser sends `MediaCaptured`. The note no longer names the quality the saved choices took; the download's details do (D50).
 
+### D69. A connection the server refuses steps back as soon as another connection is receiving
+
+Decided on 2026-10-24, after `extra_connections_told_to_wait_step_back_at_once` failed on Windows CI on a change that touched only `deny.toml` (W6, flaky tests). It writes down the engine's rule for servers that limit connections, which no decision recorded, and changes when it applies.
+
+1. A connection the server turns away twice in a row, or once with a long wait (`Retry-After`, or a delay past the normal backoff), hands its segment back to the connections that are working rather than asking again (`retry::REFUSALS_BEFORE_STEPPING_BACK`): the server allows no more connections than are open, and those finish the file.
+2. It steps back only while another connection is receiving data and some other segment's owner still has bytes to fetch, decided under the segment table's lock, so a segment is never left without a connection that will come back for it. When no other connection is receiving, it keeps its segment and waits as the server asked.
+3. That wait ends early: the moment another connection starts receiving, the refused one checks again and steps back (`worker::wait_or_step_back`). Before, it checked only when it handled the refusal. Just then the connections the server serves may all be waiting for their headers, the first one not yet started on the first response, and the wait can be minutes, so the segment sat idle while they could fetch it and the download waited for it at the end.
+4. Rejected: counting a connection that has asked and is waiting for its answer as working. It would step back on a guess: when the other is refused as well, one connection is left to wait out the delay and then fetch both segments.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
