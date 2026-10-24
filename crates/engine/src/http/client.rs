@@ -140,7 +140,7 @@ impl Clients {
         };
         builder
             // A clone shares the session cache: it lives behind an `Arc` in the config.
-            .use_preconfigured_tls(self.tls.clone())
+            .tls_backend_preconfigured(self.tls.clone())
             .user_agent(self.user_agent.as_str())
             .default_headers(headers)
             // Redirects are followed by `send`, which decides per hop which
@@ -152,8 +152,8 @@ impl Clients {
     }
 }
 
-/// The same TLS setup reqwest builds by default (TLS 1.2 and 1.3, the process's
-/// crypto provider or else ring, HTTP/2 offered through ALPN), built once.
+/// The engine's TLS setup, built once: TLS 1.2 and 1.3, the process's crypto
+/// provider or else ring, the given root certificates, HTTP/2 offered through ALPN.
 fn tls_config(roots: rustls::RootCertStore) -> Result<rustls::ClientConfig> {
     let installed = rustls::crypto::CryptoProvider::get_default()
         .cloned()

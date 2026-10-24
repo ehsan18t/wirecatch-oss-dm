@@ -106,13 +106,12 @@ fn write_mark(file: &std::fs::File, host_url: &str, referrer: Option<&str>) -> s
         FILE_NON_DIRECTORY_FILE, FILE_OVERWRITE_IF, FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
     };
     use windows_sys::Win32::Foundation::{
-        GENERIC_WRITE, HANDLE, RtlNtStatusToDosError, UNICODE_STRING,
+        GENERIC_WRITE, HANDLE, OBJ_CASE_INSENSITIVE, RtlNtStatusToDosError, UNICODE_STRING,
     };
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_ATTRIBUTE_NORMAL, FILE_SHARE_DELETE, FILE_SHARE_READ, SYNCHRONIZE,
     };
     use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
-    use windows_sys::Win32::System::Kernel::OBJ_CASE_INSENSITIVE;
 
     let mut units: Vec<u16> = ":Zone.Identifier".encode_utf16().collect();
     let name_len = u16::try_from(units.len() * 2).map_err(std::io::Error::other)?;
@@ -126,7 +125,7 @@ fn write_mark(file: &std::fs::File, host_url: &str, referrer: Option<&str>) -> s
         RootDirectory: file.as_raw_handle(),
         ObjectName: &raw const name,
         // As `CreateFile` asks, so a stream is found whatever its case.
-        Attributes: OBJ_CASE_INSENSITIVE.cast_unsigned(),
+        Attributes: OBJ_CASE_INSENSITIVE,
         SecurityDescriptor: null(),
         SecurityQualityOfService: null(),
     };

@@ -1,6 +1,6 @@
 import { afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/svelte';
-import './jsdom';
+import { stubMatchMedia } from './jsdom';
 
 // jsdom.ts adds the browser features jsdom leaves out; this adds what only this package's tests need.
 
@@ -11,22 +11,7 @@ export function setReducedMotion(on: boolean): void {
   media.reducedMotion = on;
 }
 
-if (typeof window.matchMedia !== 'function') {
-  Object.assign(window, {
-    matchMedia: (query: string) => ({
-      get matches() {
-        return query.includes('prefers-reduced-motion') ? media.reducedMotion : false;
-      },
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: () => false,
-    }),
-  });
-}
+stubMatchMedia((query) => query.includes('prefers-reduced-motion') && media.reducedMotion);
 
 afterEach(() => {
   cleanup();

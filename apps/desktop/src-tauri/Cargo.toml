@@ -19,20 +19,23 @@ name = "wirecatch-app"
 path = "src/main.rs"
 
 [build-dependencies]
-tauri-build = { version = "2.7.2", features = [] }
+tauri-build = { version = "2.7.4", features = [] }
 # The contract's command names, each of which needs a permission a window is granted (D43).
 wirecatch-protocol.workspace = true
 
 [dependencies]
-tauri = { version = "2.12.3", features = ["tray-icon"] }
-tauri-plugin-autostart = "2.5.1"
-tauri-plugin-dialog = "2.8.2"
-tauri-plugin-opener = "2.7.1"
-tauri-plugin-single-instance = "2.4.5"
+tauri = { version = "2.12.5", features = ["tray-icon"] }
+# Held at 2.6: from 2.7 its auto-launch 0.6 writes the entry for every user when the app runs as
+# administrator, which start at sign-in must never do (D25.3), and neither `read_state` nor the
+# uninstaller would see it.
+tauri-plugin-autostart = "~2.6.0"
+tauri-plugin-dialog = "2.8.3"
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-single-instance = "2.5.4"
 # Compiled in but only switched on when `plugins.updater` is configured (D19).
 # Without `zip`: that feature only unpacks the legacy v1 update archives, and
 # `createUpdaterArtifacts: true` publishes the installers themselves.
-tauri-plugin-updater = { version = "2.12.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
+tauri-plugin-updater = { version = "2.14.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
 wirecatch-core.workspace = true
 # Its checked conversions between whole numbers and floating point (`numeric`).
 wirecatch-engine.workspace = true
@@ -79,12 +82,12 @@ libc = { workspace = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 # The desktop's notification service, with the buttons of a notification (D52); the version
 # Tauri's notification plugin used before.
-notify-rust = "4.17.0"
+notify-rust = "4.18.2"
 
 [dev-dependencies]
 tempfile.workspace = true
 # The mock runtime, to test the tray, quitting and event forwarding without a real window.
-tauri = { version = "2.12.3", features = ["tray-icon", "test"] }
+tauri = { version = "2.12.5", features = ["tray-icon", "test"] }
 tokio = { workspace = true, features = ["sync", "time", "macros", "rt-multi-thread", "io-util", "process"] }
 wirecatch-test-support = { path = "../../../crates/test-support", features = ["bridge", "servers"] }
 

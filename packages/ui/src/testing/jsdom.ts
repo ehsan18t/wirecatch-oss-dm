@@ -40,3 +40,24 @@ if (typeof Element !== 'undefined' && !('getAnimations' in Element.prototype)) {
 if (typeof Element !== 'undefined' && !('scrollIntoView' in Element.prototype)) {
   Object.assign(Element.prototype, { scrollIntoView: vi.fn() });
 }
+
+/**
+ * Gives the window the `matchMedia` jsdom leaves out, answering each query with `matches(query)`,
+ * asked whenever a component reads it. The test environment copies jsdom's window keys onto the
+ * global, `matchMedia` among them with no value, so the check is for a function.
+ */
+export function stubMatchMedia(matches: (query: string) => boolean): void {
+  if (typeof window === 'undefined' || typeof window.matchMedia === 'function') return;
+  Object.assign(window, {
+    matchMedia: (query: string) => ({
+      get matches() {
+        return matches(query);
+      },
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: () => false,
+    }),
+  });
+}

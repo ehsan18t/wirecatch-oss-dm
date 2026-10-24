@@ -18,7 +18,7 @@ wirecatch-streams.workspace = true
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 dirs = "7.0.0"
 # Reading the media add-on's archives: .xz (pure Rust) inside .tar, and .zip.
-lzma-rust2 = { version = "0.16.5", default-features = false, features = ["std", "xz", "optimization"] }
+lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", "xz", "optimization"] }
 # Checking yt-dlp's OpenPGP signature on its checksum list (D21.1), verification
 # only: no compression (signatures are detached), no extra algorithms.
 pgp = { version = "0.21.0", default-features = false }
@@ -45,14 +45,13 @@ windows-sys = { workspace = true, features = [
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_Storage_FileSystem",
-    "Win32_System_Kernel",
     "Win32_System_Threading",
 ] }
 
 [dev-dependencies]
 anyhow.workspace = true
 # Writing .tar.xz archives for the add-on tests.
-lzma-rust2 = { version = "0.16.5", default-features = false, features = ["std", "xz", "encoder"] }
+lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", "xz", "encoder"] }
 # Making throwaway signing keys for the signature tests (the version pgp uses).
 rand = "0.8.6"
 tempfile.workspace = true

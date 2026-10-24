@@ -234,7 +234,7 @@ Parts of W5 carried into later workstreams:
 Parts of W0 findings carried into later workstreams:
 
 - XC-23: every workspace package is linted and format-checked (`packages/eslint-config` lints itself, its rules without type information; `packages/protocol` lints its scripts and index and type-checks the generated types), and the `js-policy` check keeps it so. `scripts/` is linted and format-checked by the root `lint` script with the same configuration, now that the gate is split into modules in `scripts/gate/` that fit the size limits. Done.
-- XC-25: `windows-sys` 0.59 and 0.61 both compile until the Win32 code moves to maintained wrappers (W10).
+- XC-25: `windows-sys` 0.59 and 0.61 both compiled. Done: every first-party crate is on 0.61, the version Tauri uses, and 0.59 is gone; Tauri's own dependencies (rfd, muda, tray-icon, dirs-sys and others) still bring 0.60, which only their updates can remove.
 - XC-29: installers and the extension do not yet ship a third-party notices file (W6, with the release workflow of XC-20).
 - XC-30: `authors`, `repository` and `homepage` come from `config/product.toml`, and the `product` check requires every crate to inherit them. Done (W2).
 - XC-32: `SECURITY.md` is generated from `config/product.toml` with its security contact address, a placeholder until it is decided. Done (W2).

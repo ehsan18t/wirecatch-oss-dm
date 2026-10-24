@@ -285,9 +285,7 @@ mod windows {
     }
 
     pub fn set_sparse(file: &File, sparse: bool) -> io::Result<()> {
-        let input = FILE_SET_SPARSE_BUFFER {
-            SetSparse: u8::from(sparse),
-        };
+        let input = FILE_SET_SPARSE_BUFFER { SetSparse: sparse };
         let input_len =
             u32::try_from(size_of::<FILE_SET_SPARSE_BUFFER>()).map_err(io::Error::other)?;
         let mut returned = 0u32;
