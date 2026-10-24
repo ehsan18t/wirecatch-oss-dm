@@ -651,12 +651,35 @@ impl ExtensionSettingsPatch {
     }
 }
 
+/// Sites with an `xn--` label, which counts only when its Punycode decodes to the name it
+/// stands for: browsers and newer runtimes keep any such label as it is, the app does not (D68).
+#[cfg(test)]
+const PUNYCODE_SITE_CASES: &[(&str, Option<&str>)] = &[
+    ("xn--mnchen-3ya.de", Some("xn--mnchen-3ya.de")),
+    ("xn--Mnchen-3ya.de", Some("xn--mnchen-3ya.de")),
+    ("XN--LS8H", Some("xn--ls8h")),
+    ("xn--55qx5d", Some("xn--55qx5d")),
+    ("xn--bcher-kvaa", Some("xn--bcher-kvaa")),
+    ("xn--", None),
+    ("xn--a", None),
+    ("xn--abc", None),
+    ("xn--ab-", None),
+    ("xn--abc-", None),
+    ("xn--ab--", None),
+    ("xn--0", None),
+    ("xn--9-yka", None),
+    ("xn--a-ecp.ru", None),
+    ("xn--xn--zz", None),
+    ("a.xn--zz.b", None),
+    ("xn--zz", None),
+];
+
 /// What a person may type as a site to ignore, and the host each one stands for; `pnpm
 /// protocol:generate` writes them for the TypeScript port of [`normalize_site`] to be tested
 /// against.
 #[cfg(test)]
 pub(crate) fn site_cases() -> Vec<(&'static str, Option<&'static str>)> {
-    vec![
+    let mut cases = vec![
         ("example.com", Some("example.com")),
         ("  Example.COM  ", Some("example.com")),
         ("https://Example.com/page?q=1#top", Some("example.com")),
@@ -683,7 +706,6 @@ pub(crate) fn site_cases() -> Vec<(&'static str, Option<&'static str>)> {
         ("0x7f.1", Some("127.0.0.1")),
         ("１２７.０.０.１", Some("127.0.0.1")),
         ("a<b.com", None),
-        ("xn--zz", None),
         (r"example.com\path", Some("example.com")),
         (r"x@a.com\@b.com", Some("a.com")),
         ("example.com/", Some("example.com")),
@@ -721,7 +743,9 @@ pub(crate) fn site_cases() -> Vec<(&'static str, Option<&'static str>)> {
         ("exa\u{85}mple.com", None),
         ("example.com\u{3000}", Some("example.com")),
         ("exa\u{A0}mple.com", None),
-    ]
+    ];
+    cases.extend_from_slice(PUNYCODE_SITE_CASES);
+    cases
 }
 
 /// Browser controls and the patches applied to them; `pnpm protocol:generate` writes each with
