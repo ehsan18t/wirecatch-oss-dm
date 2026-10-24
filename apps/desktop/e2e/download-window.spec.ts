@@ -55,7 +55,9 @@ async function qualityQuestion(page: Page) {
 
 for (const theme of ['light', 'dark'] as const) {
   test(`the download window passes axe in each of its views, ${theme} theme`, async ({ page }) => {
-    await open(page, 'capture=0', { theme });
+    // Downloads hold still: a progress line that wraps while axe reads the page would show a body
+    // that scrolls before the window has made it a tab stop.
+    await open(page, 'capture=0&tick=0', { theme });
     const file = await fileQuestion(page);
     await audit(page, 'file question');
     await file.getByRole('combobox', { name: 'Queue' }).click();
