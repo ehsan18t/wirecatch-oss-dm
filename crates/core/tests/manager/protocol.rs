@@ -1383,33 +1383,34 @@ async fn a_slow_capture_does_not_hold_up_other_requests() -> TestResult {
 /// an error at once, and the connection keeps working.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn requests_beyond_the_limit_are_refused() -> TestResult {
-    let silent = SilentServer::start().await;
-    // The first capture must still be waiting when it is withdrawn below, however slow the
-    // machine: it waits longer than the test does.
+    // The server holds its answer, so no request finishes and frees its place before the
+    // last one arrives; the capture outlasts the test, however slow the machine.
+    let server = capture_server(1024, |_| {}).await;
+    server.hold();
     let h = Harness::with_capture_timeout(2 * PATIENCE).await?;
     let mut client = Client::connected(&h.manager).await?;
-    // The first add waits for the silent server; every repeat of it waits for the
-    // first one's outcome.
-    let slow = capture(silent.url("slow.pdf").to_string());
+    // The first add to run waits for the server; every repeat of it gets that one's
+    // outcome, whether it runs before the server answers or after.
+    let held = capture(server.url("held.pdf").to_string());
     let mut ids = Vec::new();
     for _ in 0..=wirecatch_core::MAX_REQUESTS_IN_FLIGHT {
-        ids.push(client.request(Call::AddDownload(slow.clone())).await?);
+        ids.push(client.request(Call::AddDownload(held.clone())).await?);
     }
     let last = ids.pop().unwrap();
     let err = client.response(last).await?.unwrap_err();
     assert_eq!(err.code, ErrorCode::LimitReached);
     assert!(err.message.contains("at once"), "{}", err.message);
-    // Withdrawing ends the waiting requests; the connection works afterwards.
-    crate::common::wait_until("the capture to connect", || {
-        (silent.accepted() > 0).then_some(())
-    })
-    .await;
-    let outcome = h.manager.withdraw_capture(&slow.handover_id).unwrap();
-    assert_eq!(outcome, WithdrawOutcome::Withdrawn);
+    // The server's answer ends the waiting requests; the connection works afterwards.
+    server.release();
+    let mut replies = Vec::new();
     for id in ids {
-        let err = client.response(id).await?.unwrap_err();
-        assert_eq!(err.code, ErrorCode::NotStarted, "{}", err.message);
+        replies.push(client.response(id).await?.map_err(|e| e.message)?);
     }
+    let Reply::DownloadAdded(added) = &replies[0] else {
+        return Err(format!("{:?}", replies[0]).into());
+    };
+    assert_eq!(added.action, AddAction::Started);
+    assert!(replies.iter().all(|r| r == &replies[0]), "{replies:?}");
     assert!(client.call(Call::ListQueues).await?.is_ok());
     Ok(())
 }
