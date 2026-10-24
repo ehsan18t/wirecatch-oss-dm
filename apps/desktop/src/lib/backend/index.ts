@@ -31,7 +31,8 @@ function clockFrom(at: string | null): (() => number) | undefined {
  * Reads mock options from the address bar, so reviewers and tests can set up a scenario:
  * `?count=10000&active=60`, `?empty`, `?capture=0`, `?seed=3`, `?at=12:00`, `?latency=300`,
  * `?damaged` (started after setting a damaged download list aside), `?not-private` (started with a
- * data folder it could not make private).
+ * data folder it could not make private), `?tick=0` (downloads hold still, for a check that must see
+ * one state).
  */
 export function mockOptionsFromUrl(search: string): MockOptions {
   const params = new URLSearchParams(search);
@@ -49,6 +50,7 @@ export function mockOptionsFromUrl(search: string): MockOptions {
     damagedList: params.has('damaged'),
     dataFolderNotPrivate: params.has('not-private'),
     autoCapture: params.get('capture') !== '0',
+    autoTick: params.get('tick') !== '0',
   };
 }
 
