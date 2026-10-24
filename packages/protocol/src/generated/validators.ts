@@ -15,6 +15,7 @@ import type { AppSettingsPatch } from './AppSettingsPatch';
 import type { BrowserControls } from './BrowserControls';
 import type { BrowserControlsPatch } from './BrowserControlsPatch';
 import type { BrowserInfo } from './BrowserInfo';
+import type { BrowserNote } from './BrowserNote';
 import type { ButtonArea } from './ButtonArea';
 import type { Call } from './Call';
 import type { CancelAddonOperationArgs } from './CancelAddonOperationArgs';
@@ -40,6 +41,7 @@ import type { Event } from './Event';
 import type { ExportSettingsArgs } from './ExportSettingsArgs';
 import type { ExtensionSettings } from './ExtensionSettings';
 import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
+import type { FinishNoteTime } from './FinishNoteTime';
 import type { FinishNotice } from './FinishNotice';
 import type { FinishedGroup } from './FinishedGroup';
 import type { FinishedList } from './FinishedList';
@@ -71,6 +73,10 @@ import type { MediaSummary } from './MediaSummary';
 import type { Message } from './Message';
 import type { MoveToQueueArgs } from './MoveToQueueArgs';
 import type { NewDownload } from './NewDownload';
+import type { NoteId } from './NoteId';
+import type { NoteKind } from './NoteKind';
+import type { NotePressed } from './NotePressed';
+import type { NoteShown } from './NoteShown';
 import type { OpenFileArgs } from './OpenFileArgs';
 import type { OpenFolderArgs } from './OpenFolderArgs';
 import type { Outcome } from './Outcome';
@@ -109,6 +115,8 @@ import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
 import type { SettingsProfile } from './SettingsProfile';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
+import type { StartNoteTime } from './StartNoteTime';
+import type { StartNotice } from './StartNotice';
 import type { StartQueueNowArgs } from './StartQueueNowArgs';
 import type { StartupNotice } from './StartupNotice';
 import type { StreamAction } from './StreamAction';
@@ -257,6 +265,10 @@ export function isAppSettings(value: unknown): value is AppSettings {
     typeof value1['start_with_system'] === 'boolean' &&
     typeof value1['close_to_tray'] === 'boolean' &&
     isFinishNotice(value1['finish_notice']) &&
+    isFinishNoteTime(value1['finish_note_time']) &&
+    isStartNotice(value1['start_notice']) &&
+    isStartNoteTime(value1['start_note_time']) &&
+    typeof value1['notify_during_do_not_disturb'] === 'boolean' &&
     typeof value1['auto_update_addons'] === 'boolean' &&
     typeof value1['show_progress_windows'] === 'boolean' &&
     isMediaDefaults(value1['media']) &&
@@ -284,6 +296,11 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
       typeof value1['start_with_system'] === 'boolean') &&
     (value1['close_to_tray'] === undefined || typeof value1['close_to_tray'] === 'boolean') &&
     (value1['finish_notice'] === undefined || isFinishNotice(value1['finish_notice'])) &&
+    (value1['finish_note_time'] === undefined || isFinishNoteTime(value1['finish_note_time'])) &&
+    (value1['start_notice'] === undefined || isStartNotice(value1['start_notice'])) &&
+    (value1['start_note_time'] === undefined || isStartNoteTime(value1['start_note_time'])) &&
+    (value1['notify_during_do_not_disturb'] === undefined ||
+      typeof value1['notify_during_do_not_disturb'] === 'boolean') &&
     (value1['auto_update_addons'] === undefined ||
       typeof value1['auto_update_addons'] === 'boolean') &&
     (value1['show_progress_windows'] === undefined ||
@@ -322,6 +339,18 @@ export function isBrowserInfo(value: unknown): value is BrowserInfo {
     isRecord(value1) &&
     typeof value1['name'] === 'string' &&
     (typeof value1['version'] === 'string' || value1['version'] === null))(value);
+}
+
+/** Whether `value` has the shape of a {@link BrowserNote}; fields it does not name are not checked. */
+export function isBrowserNote(value: unknown): value is BrowserNote {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isNoteId(value1['id']) &&
+    isNoteKind(value1['kind']) &&
+    typeof value1['title'] === 'string' &&
+    typeof value1['body'] === 'string' &&
+    isArrayOf(value1['buttons'], (value2: unknown) => typeof value2 === 'string') &&
+    (typeof value1['stays_ms'] === 'number' || value1['stays_ms'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link ButtonArea}; fields it does not name are not checked. */
@@ -365,7 +394,15 @@ export function isCall(value: unknown): value is Call {
       value1['method'] === 'update_browser_controls' &&
       isBrowserControlsPatch(value1['params']))(value) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) && value1['method'] === 'show_browser_settings')(value)
+      isRecord(value1) && value1['method'] === 'show_browser_settings')(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['method'] === 'note_shown' && isNoteShown(value1['params']))(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['method'] === 'note_pressed' && isNotePressed(value1['params']))(
+      value,
+    )
   );
 }
 
@@ -547,7 +584,11 @@ export function isEvent(value: unknown): value is Event {
     ((value1: unknown): boolean =>
       isRecord(value1) &&
       value1['type'] === 'browser_controls_changed' &&
-      isBrowserControls(value1['data']))(value)
+      isBrowserControls(value1['data']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['type'] === 'note_requested' && isBrowserNote(value1['data']))(
+      value,
+    )
   );
 }
 
@@ -609,9 +650,21 @@ export function isExtensionSettingsPatch(value: unknown): value is ExtensionSett
       value1['video_sites'] === null))(value);
 }
 
+/** Whether `value` has the shape of a {@link FinishNoteTime}; fields it does not name are not checked. */
+export function isFinishNoteTime(value: unknown): value is FinishNoteTime {
+  return (
+    value === 'five_seconds' ||
+    value === 'eight_seconds' ||
+    value === 'fifteen_seconds' ||
+    value === 'until_closed'
+  );
+}
+
 /** Whether `value` has the shape of a {@link FinishNotice}; fields it does not name are not checked. */
 export function isFinishNotice(value: unknown): value is FinishNotice {
-  return value === 'notification' || value === 'window' || value === 'nothing';
+  return (
+    value === 'notification' || value === 'browser' || value === 'window' || value === 'nothing'
+  );
 }
 
 /** Whether `value` has the shape of a {@link FinishedGroup}; fields it does not name are not checked. */
@@ -903,6 +956,27 @@ export function isNewDownload(value: unknown): value is NewDownload {
     isCaptureSource(value1['source']) &&
     (isQueueId(value1['queue']) || value1['queue'] === null) &&
     (value1['media'] === undefined || isMediaHint(value1['media'])))(value);
+}
+
+/** Whether `value` has the shape of a {@link NoteId}; fields it does not name are not checked. */
+export function isNoteId(value: unknown): value is NoteId {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+/** Whether `value` has the shape of a {@link NoteKind}; fields it does not name are not checked. */
+export function isNoteKind(value: unknown): value is NoteKind {
+  return value === 'started' || value === 'finished' || value === 'failed';
+}
+
+/** Whether `value` has the shape of a {@link NotePressed}; fields it does not name are not checked. */
+export function isNotePressed(value: unknown): value is NotePressed {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && isNoteId(value1['id']) && typeof value1['button'] === 'number')(value);
+}
+
+/** Whether `value` has the shape of a {@link NoteShown}; fields it does not name are not checked. */
+export function isNoteShown(value: unknown): value is NoteShown {
+  return ((value1: unknown): boolean => isRecord(value1) && isNoteId(value1['id']))(value);
 }
 
 /** Whether `value` has the shape of a {@link OpenFileArgs}; fields it does not name are not checked. */
@@ -1238,6 +1312,21 @@ export function isShowProgressWindowArgs(value: unknown): value is ShowProgressW
   return ((value1: unknown): boolean => isRecord(value1) && isDownloadId(value1['id']))(value);
 }
 
+/** Whether `value` has the shape of a {@link StartNoteTime}; fields it does not name are not checked. */
+export function isStartNoteTime(value: unknown): value is StartNoteTime {
+  return (
+    value === 'three_seconds' ||
+    value === 'five_seconds' ||
+    value === 'eight_seconds' ||
+    value === 'ten_seconds'
+  );
+}
+
+/** Whether `value` has the shape of a {@link StartNotice}; fields it does not name are not checked. */
+export function isStartNotice(value: unknown): value is StartNotice {
+  return value === 'browser' || value === 'nothing';
+}
+
 /** Whether `value` has the shape of a {@link StartQueueNowArgs}; fields it does not name are not checked. */
 export function isStartQueueNowArgs(value: unknown): value is StartQueueNowArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isQueueId(value1['id']))(value);
@@ -1326,6 +1415,13 @@ export function isUiEvent(value: unknown): value is UiEvent {
       isMediaChoice(value1['data']))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) &&
+      value1['type'] === 'media_captured' &&
+      ((value2: unknown): boolean =>
+        isRecord(value2) && isQuestionId(value2['id']) && typeof value2['title'] === 'string')(
+        value1['data'],
+      ))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
       value1['type'] === 'media_analysing' &&
       ((value2: unknown): boolean =>
         isRecord(value2) && isQuestionId(value2['id']) && typeof value2['url'] === 'string')(
@@ -1358,6 +1454,12 @@ export function isUiEvent(value: unknown): value is UiEvent {
     ) ||
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'browser_settings_requested')(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['type'] === 'note_shown' && isNoteId(value1['data']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['type'] === 'note_pressed' && isNotePressed(value1['data']))(
+      value,
+    ) ||
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'queue_finished' && isQueueReport(value1['data']))(
       value,

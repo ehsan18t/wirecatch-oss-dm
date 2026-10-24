@@ -1,16 +1,27 @@
-// How and when the person is told that downloads finished or failed (D52), in the words Settings,
-// the queue dialog and the download complete window share.
+// How and when the person is told that downloads started, finished or failed (D52, D65), in the
+// words Settings, the queue dialog and the download complete window share.
 
 import {
+  FINISH_NOTE_TIMES,
   RETRY_FIXES,
+  START_NOTE_TIMES,
   type DownloadSummary,
   type FinishNotice,
+  type FinishNoteTime,
   type QueueNotify,
+  type StartNotice,
+  type StartNoteTime,
 } from '@wirecatch/protocol';
 import type { SelectOption } from '@wirecatch/ui';
 
 /** How finished and failed downloads are told, for the setting's dropdown. */
 export const FINISH_NOTICE_OPTIONS: readonly SelectOption<FinishNotice>[] = [
+  {
+    value: 'browser',
+    label: 'Show a note in the browser',
+    description:
+      'In the tab you are looking at, with the same buttons. A notification when the browser is not in front.',
+  },
   {
     value: 'notification',
     label: 'Show a notification',
@@ -27,6 +38,28 @@ export const FINISH_NOTICE_OPTIONS: readonly SelectOption<FinishNotice>[] = [
     description: 'Not even for failures. The download list shows how each download ended.',
   },
 ];
+
+/** How a download that started without a window is told, for the setting's dropdown. */
+export const START_NOTICE_OPTIONS: readonly SelectOption<StartNotice>[] = [
+  {
+    value: 'browser',
+    label: 'Show a note in the browser',
+    description: 'In the tab you are looking at. A notification when the browser is not in front.',
+  },
+  { value: 'nothing', label: 'Do nothing', description: 'The download list shows it.' },
+];
+
+/** How long a note about a download that started stays, from the protocol's seconds (`START_NOTE_TIMES`). */
+export const START_NOTE_TIME_OPTIONS: readonly SelectOption<StartNoteTime>[] = START_NOTE_TIMES.map(
+  ([value, seconds]) => ({ value, label: `${String(seconds)} seconds` }),
+);
+
+/** How long a note about finished downloads stays, from the protocol's seconds (`FINISH_NOTE_TIMES`). */
+export const FINISH_NOTE_TIME_OPTIONS: readonly SelectOption<FinishNoteTime>[] =
+  FINISH_NOTE_TIMES.map(([value, seconds]) => ({
+    value,
+    label: seconds === null ? 'Until I close it' : `${String(seconds)} seconds`,
+  }));
 
 /** When a queue tells you, for the queue dialog. */
 export const QUEUE_NOTIFY_OPTIONS: readonly SelectOption<QueueNotify>[] = [

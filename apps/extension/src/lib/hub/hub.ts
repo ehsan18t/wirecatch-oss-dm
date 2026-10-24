@@ -3,6 +3,7 @@ import {
   type Call,
   type Event,
   type ExtensionSettings,
+  type NoteId,
   type Outcome,
 } from '@wirecatch/protocol';
 import { candidateFromItem, type DownloadItemLike } from '../capture/candidate';
@@ -434,7 +435,20 @@ export class Hub {
       case 'browser_controls_changed':
         this.#settings.adoptControls(event.data);
         return;
+      case 'note_requested':
+        void this.#deps.notes?.show(event.data);
+        return;
     }
+  }
+
+  /** Tells the app a note showed in the tab the person is looking at (D65). */
+  noteShown(id: NoteId): Promise<void> {
+    return this.#app.noteShown(id);
+  }
+
+  /** Tells the app the person pressed one of a note's buttons (D65). */
+  notePressed(id: NoteId, button: number): Promise<void> {
+    return this.#app.notePressed(id, button);
   }
 
   /**

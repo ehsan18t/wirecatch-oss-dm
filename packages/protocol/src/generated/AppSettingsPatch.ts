@@ -2,9 +2,12 @@
 import type { Accent } from './Accent';
 import type { CategoryRule } from './CategoryRule';
 import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
+import type { FinishNoteTime } from './FinishNoteTime';
 import type { FinishNotice } from './FinishNotice';
 import type { MediaDefaultsPatch } from './MediaDefaultsPatch';
 import type { PortablePath } from './PortablePath';
+import type { StartNoteTime } from './StartNoteTime';
+import type { StartNotice } from './StartNotice';
 import type { Theme } from './Theme';
 
 /**
@@ -55,6 +58,22 @@ export type AppSettingsPatch = {
    * The new [`AppSettings::finish_notice`].
    */
   finish_notice?: FinishNotice;
+  /**
+   * The new [`AppSettings::finish_note_time`].
+   */
+  finish_note_time?: FinishNoteTime;
+  /**
+   * The new [`AppSettings::start_notice`].
+   */
+  start_notice?: StartNotice;
+  /**
+   * The new [`AppSettings::start_note_time`].
+   */
+  start_note_time?: StartNoteTime;
+  /**
+   * The new [`AppSettings::notify_during_do_not_disturb`].
+   */
+  notify_during_do_not_disturb?: boolean;
   /**
    * The new [`AppSettings::auto_update_addons`].
    */

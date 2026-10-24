@@ -103,7 +103,11 @@ export function defaultSettings(): AppSettings {
     accent: 'cyan',
     start_with_system: true,
     close_to_tray: true,
-    finish_notice: 'notification',
+    finish_notice: 'browser',
+    finish_note_time: 'eight_seconds',
+    start_notice: 'browser',
+    start_note_time: 'three_seconds',
+    notify_during_do_not_disturb: true,
     auto_update_addons: true,
     show_progress_windows: true,
     media: {

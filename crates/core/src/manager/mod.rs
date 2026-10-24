@@ -38,6 +38,7 @@ use tracing::warn;
 use wirecatch_engine::{CancellationToken, RateLimiter, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{StartupNotice, UiEvent};
+use wirecatch_protocol::extension::{BrowserNote, NoteId, NotePressed};
 use wirecatch_protocol::wire::Event;
 
 use crate::addons::manifest::MediaAddonSources;
@@ -395,6 +396,25 @@ impl Manager {
     /// Asks the desktop to show its main window ([`UiEvent::WindowRequested`]), for a client such as the extension's "Open Wirecatch".
     pub fn request_window(&self) {
         self.emit(UiEvent::WindowRequested);
+    }
+
+    /// Asks every connected browser to show `note` (D65) and says how many may answer: the
+    /// connections listening for the app's events. None means no browser can show it.
+    #[must_use = "no browser listening means the note must be told another way"]
+    pub fn request_note(&self, note: BrowserNote) -> usize {
+        let listening = self.inner.wire_events.receiver_count();
+        self.emit_wire(Event::NoteRequested(note));
+        listening
+    }
+
+    /// A browser showed the note `id` ([`UiEvent::NoteShown`]).
+    pub fn note_shown(&self, id: NoteId) {
+        self.emit(UiEvent::NoteShown(id));
+    }
+
+    /// The person pressed one of a browser note's buttons ([`UiEvent::NotePressed`]).
+    pub fn note_pressed(&self, pressed: NotePressed) {
+        self.emit(UiEvent::NotePressed(pressed));
     }
 
     /// Asks the desktop to show its main window on the browser settings ([`UiEvent::BrowserSettingsRequested`]), for the popup's settings button (D61).

@@ -55,7 +55,9 @@ async function qualityQuestion(page: Page) {
 
 for (const theme of ['light', 'dark'] as const) {
   test(`the download window passes axe in each of its views, ${theme} theme`, async ({ page }) => {
-    await open(page, 'capture=0', { theme });
+    // Downloads hold still: a progress line that wraps while axe reads the page would show a body
+    // that scrolls before the window has made it a tab stop.
+    await open(page, 'capture=0&tick=0', { theme });
     const file = await fileQuestion(page);
     await audit(page, 'file question');
     await file.getByRole('combobox', { name: 'Queue' }).click();
@@ -81,6 +83,13 @@ for (const theme of ['light', 'dark'] as const) {
     await reading.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(reading).toBeHidden();
 
+    // Before the add-on: "answered somewhere else" closes the oldest open question, and an add-on
+    // question closed while it installs may still be open, depending on how fast the install goes.
+    await fileQuestion(page);
+    await pretend(page, 'answered somewhere else');
+    await windowWith(page, 'Nothing to do here');
+    await audit(page, 'answered somewhere else');
+
     await pretend(page, 'needs the media add-on');
     const addon = await windowWith(page, /Install the media add-on/);
     await audit(page, 'add-on offer');
@@ -90,11 +99,6 @@ for (const theme of ['light', 'dark'] as const) {
     // The install may finish meanwhile and the window move on, so it goes by its title bar's Close.
     await addon.getByRole('button', { name: 'Close', exact: true }).first().click();
     await expect(addon).toBeHidden();
-
-    await fileQuestion(page);
-    await pretend(page, 'answered somewhere else');
-    await windowWith(page, 'Nothing to do here');
-    await audit(page, 'answered somewhere else');
   });
 }
 

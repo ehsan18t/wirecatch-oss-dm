@@ -3,7 +3,8 @@
 //! here for the current user so a debug build is named and shown too; Linux sends them to the
 //! desktop's notification service, with actions where it offers them. A brief notice expires on
 //! Windows, which takes it out of the notification centre, and is transient on Linux, which keeps
-//! it out of the desktop's history (D63).
+//! it out of the desktop's history (D63). On Windows an important notice asks to show during Do
+//! Not Disturb while the person allows it (D64).
 
 use std::sync::{Mutex, PoisonError};
 
@@ -14,7 +15,16 @@ use tauri::{AppHandle, Manager as _, Runtime};
 
 /// The notifications shown, recorded instead when this is managed (tests do; the app does not).
 #[derive(Default)]
-pub struct ShownNotices(pub Mutex<Vec<Notice>>);
+pub struct ShownNotices(pub Mutex<Vec<Shown>>);
+
+/// A notification as it was shown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shown {
+    /// What it said and did.
+    pub notice: Notice,
+    /// Whether it asked to show during the system's Do Not Disturb (D64).
+    pub through_do_not_disturb: bool,
+}
 
 /// The system's notifications, managed by the app: tests run without them.
 pub struct SystemNotices {
@@ -41,7 +51,8 @@ impl SystemNotices {
     }
 }
 
-/// A notification with words only; a click shows the main window.
+/// A notification with words only about something the person must know; a click shows the main
+/// window.
 #[must_use]
 pub fn plain(title: String, body: String) -> Notice {
     Notice {
@@ -54,17 +65,36 @@ pub fn plain(title: String, body: String) -> Notice {
             browser_settings: false,
         }),
         lasts: Lasts::Kept,
+        important: true,
     }
+}
+
+/// Whether `notice` asks to show during the system's Do Not Disturb (D64): an important one does
+/// while the person allows it, which the settings say once the download list is open and their
+/// default says before.
+fn through_do_not_disturb<R: Runtime>(app: &AppHandle<R>, notice: &Notice) -> bool {
+    notice.important
+        && app
+            .try_state::<Core>()
+            .and_then(|core| {
+                core.get()
+                    .map(|m| m.get_settings().notify_during_do_not_disturb)
+            })
+            .unwrap_or(true)
 }
 
 /// Shows `notice`. Does nothing more than log when the app has no notifications (tests).
 pub fn show<R: Runtime>(app: &AppHandle<R>, notice: Notice) {
+    let through = through_do_not_disturb(app, &notice);
     if let Some(shown) = app.try_state::<ShownNotices>() {
         shown
             .0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(notice);
+            .push(Shown {
+                notice,
+                through_do_not_disturb: through,
+            });
         return;
     }
     let Some(system) = app.try_state::<SystemNotices>() else {
@@ -75,11 +105,11 @@ pub fn show<R: Runtime>(app: &AppHandle<R>, notice: Notice) {
         );
         return;
     };
-    system.platform.show(app, notice);
+    system.platform.show(app, notice, through);
 }
 
 /// Picks what a click did: a button by its place, or the notification itself.
-fn chosen(notice: &Notice, button: Option<usize>) -> Option<Act> {
+pub(crate) fn chosen(notice: &Notice, button: Option<usize>) -> Option<Act> {
     match button {
         None => Some(notice.click.clone()),
         Some(at) => notice.buttons.get(at).map(|b| b.act.clone()),
@@ -165,7 +195,7 @@ mod platform {
     use windows_core::{HSTRING, IInspectable, Interface as _};
 
     use super::{button_argument, chosen, clicked_button, escape_text};
-    use crate::notices::{BRIEF, Lasts, Notice};
+    use crate::notices::{Lasts, Notice};
 
     /// Escapes text for the toast's XML, quotes included, so it is safe inside an attribute too.
     fn escape(text: &str) -> String {
@@ -183,12 +213,18 @@ mod platform {
     /// and icon without a Start menu shortcut.
     const IDENTITIES_KEY: &str = r"Software\Classes\AppUserModelId";
 
+    /// The first Windows build that shows an important toast during Do Not Disturb. Before it, a
+    /// toast is never marked important.
+    const IMPORTANT_TOASTS_FROM: u32 = 19041;
+
     /// The icon file written for the identity: the system reads it from disk.
     const ICON_FILE: &str = "notification-icon.png";
     const ICON: &[u8] = include_bytes!("../icons/128x128.png");
 
     pub struct Notifier {
         identifier: HSTRING,
+        /// Whether this Windows shows important toasts.
+        important_toasts: bool,
         kept: Mutex<VecDeque<ToastNotification>>,
         brief: Mutex<VecDeque<ToastNotification>>,
     }
@@ -200,17 +236,18 @@ mod platform {
             }
             Self {
                 identifier: HSTRING::from(identifier),
+                important_toasts: build().is_some_and(|b| b >= IMPORTANT_TOASTS_FROM),
                 kept: Mutex::default(),
                 brief: Mutex::default(),
             }
         }
 
-        pub fn show<R: Runtime>(&self, app: &AppHandle<R>, notice: Notice) {
+        pub fn show<R: Runtime>(&self, app: &AppHandle<R>, notice: Notice, through: bool) {
             let held = match notice.lasts {
                 Lasts::Kept => &self.kept,
-                Lasts::Brief => &self.brief,
+                Lasts::Brief(_) => &self.brief,
             };
-            match self.toast(app, notice) {
+            match self.toast(app, notice, through && self.important_toasts) {
                 Ok(toast) => {
                     let mut kept = held.lock().unwrap_or_else(PoisonError::into_inner);
                     if kept.len() >= KEPT_TOASTS {
@@ -226,13 +263,14 @@ mod platform {
             &self,
             app: &AppHandle<R>,
             notice: Notice,
+            important: bool,
         ) -> windows_core::Result<ToastNotification> {
             let xml = XmlDocument::new()?;
-            xml.LoadXml(&HSTRING::from(toast_xml(&notice)))?;
+            xml.LoadXml(&HSTRING::from(toast_xml(&notice, important)))?;
             let toast = ToastNotification::CreateToastNotification(&xml)?;
-            if notice.lasts == Lasts::Brief {
+            if let Lasts::Brief(stays) = notice.lasts {
                 let expires = PropertyValue::CreateDateTime(DateTime {
-                    UniversalTime: ticks(SystemTime::now() + BRIEF),
+                    UniversalTime: ticks(SystemTime::now() + stays),
                 })?;
                 toast.SetExpirationTime(&expires.cast::<IReference<DateTime>>()?)?;
             }
@@ -265,7 +303,19 @@ mod platform {
             .map_or(i64::MAX, |ticks| BEFORE_1970.saturating_add(ticks))
     }
 
-    fn toast_xml(notice: &Notice) -> String {
+    /// The build of the running Windows, from the registry.
+    fn build() -> Option<u32> {
+        let key = winreg::RegKey::predef(winreg::enums::HKEY_LOCAL_MACHINE)
+            .open_subkey(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+            .ok()?;
+        key.get_value::<String, _>("CurrentBuildNumber")
+            .ok()?
+            .parse()
+            .ok()
+    }
+
+    /// The toast's XML; an `important` one shows during Do Not Disturb (the `urgent` scenario).
+    fn toast_xml(notice: &Notice, important: bool) -> String {
         let mut actions = String::new();
         for (at, button) in notice.buttons.iter().enumerate() {
             actions.push_str(r#"<action content=""#);
@@ -274,8 +324,13 @@ mod platform {
             actions.push_str(&button_argument(at));
             actions.push_str(r#"" activationType="foreground"/>"#);
         }
+        let scenario = if important {
+            r#" scenario="urgent""#
+        } else {
+            ""
+        };
         format!(
-            r#"<toast><visual><binding template="ToastGeneric"><text>{}</text><text>{}</text></binding></visual><actions>{actions}</actions></toast>"#,
+            r#"<toast{scenario}><visual><binding template="ToastGeneric"><text>{}</text><text>{}</text></binding></visual><actions>{actions}</actions></toast>"#,
             escape(&notice.title),
             escape(&notice.body)
         )
@@ -323,14 +378,22 @@ mod platform {
                 }],
                 click: Act::Open(DownloadId(1)),
                 lasts: crate::notices::Lasts::Kept,
+                important: true,
             };
-            let xml = toast_xml(&notice);
+            let xml = toast_xml(&notice, false);
+            assert!(!xml.contains("scenario"), "{xml}");
+            assert!(toast_xml(&notice, true).starts_with(r#"<toast scenario="urgent">"#));
             assert!(
                 xml.contains("a&lt;/text&gt;&lt;action content=&apos;x&apos;/&gt;&amp;.zip"),
                 "{xml}"
             );
             assert_eq!(xml.matches("<action ").count(), 1);
             assert!(xml.contains(r#"arguments="0""#));
+        }
+
+        #[test]
+        fn the_running_windows_says_its_build() {
+            assert!(build().is_some_and(|b| b > 0));
         }
 
         #[test]
@@ -352,7 +415,7 @@ mod platform {
     use tauri::{AppHandle, Manager as _, Runtime};
 
     use super::{button_argument, chosen, clicked_button, escape_text};
-    use crate::notices::{BRIEF, Lasts, Notice};
+    use crate::notices::{Lasts, Notice};
 
     /// The action a notification service sends for a click on the notification itself.
     const CLICK: &str = "default";
@@ -375,7 +438,10 @@ mod platform {
             }
         }
 
-        pub fn show<R: Runtime>(&self, app: &AppHandle<R>, notice: Notice) {
+        /// Shows `notice`. Nothing is marked to show during Do Not Disturb (D64.3): the desktops
+        /// that let a critical notification through also keep it on screen until it is clicked,
+        /// which every finished download would then do.
+        pub fn show<R: Runtime>(&self, app: &AppHandle<R>, notice: Notice, _through: bool) {
             let waits = self.waiting.fetch_add(1, Ordering::SeqCst) < MAX_WAITING;
             if !waits {
                 self.waiting.fetch_sub(1, Ordering::SeqCst);
@@ -402,9 +468,9 @@ mod platform {
             .appname(name)
             .summary(&notice.title)
             .body(&escape_text(&notice.body));
-        if notice.lasts == Lasts::Brief {
+        if let Lasts::Brief(stays) = notice.lasts {
             notification
-                .timeout(BRIEF)
+                .timeout(stays)
                 .hint(notify_rust::Hint::Transient(true));
         }
         if waits {
@@ -450,7 +516,7 @@ mod platform {
             Self
         }
 
-        pub fn show<R: Runtime>(&self, _app: &AppHandle<R>, notice: Notice) {
+        pub fn show<R: Runtime>(&self, _app: &AppHandle<R>, notice: Notice, _through: bool) {
             tracing::info!("notification: {}: {}", notice.title, notice.body);
         }
     }
@@ -479,6 +545,7 @@ mod tests {
             ],
             click: Act::Retry(DownloadId(1)),
             lasts: Lasts::Kept,
+            important: true,
         };
         let pick = |argument: &str| chosen(&notice, clicked_button(argument));
         assert_eq!(

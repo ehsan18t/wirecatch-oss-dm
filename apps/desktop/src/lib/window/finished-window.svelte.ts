@@ -153,6 +153,11 @@ export class FinishedWindowState {
     browser_settings_requested: ignore,
     // What the shell adds arrives on its own event.
     queue_finished: ignore,
+    // Between the shell and the browsers (D65).
+    note_shown: ignore,
+    note_pressed: ignore,
+    // The shell tells it in a note (D67); its download arrives in the list when it starts.
+    media_captured: ignore,
   };
 
   handle(event: UiEvent): void {

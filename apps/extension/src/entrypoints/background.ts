@@ -30,6 +30,9 @@ import { MediaWatcher } from '@/lib/media/watch';
 import { acceptsPopupPort } from '@/lib/messages';
 import { NativeClient } from '@/lib/native/client';
 import { browserTransport } from '@/lib/native/port';
+import { NoteCenter } from '@/lib/notes/center';
+import { focusedWebTab } from '@/lib/notes/focus';
+import { NOTE_MOUNT, NOTE_UNMOUNT, NOTES_PORT, isMountAnswer } from '@/lib/notes/messages';
 
 const MENU_ID = 'wirecatch-download';
 
@@ -114,6 +117,28 @@ export default defineBackground(() => {
     ready: restored,
   });
 
+  const notes = new NoteCenter({
+    focusedTab: () =>
+      focusedWebTab({
+        lastFocusedWindow: () => browser.windows.getLastFocused(),
+        activeTab: async (windowId) => (await browser.tabs.query({ active: true, windowId }))[0],
+      }),
+    mount: async (tabId) => {
+      const answer: unknown = await browser.tabs.sendMessage(
+        tabId,
+        { type: NOTE_MOUNT },
+        { frameId: 0 },
+      );
+      return isMountAnswer(answer) ? answer.token : null;
+    },
+    unmount: async (tabId) => {
+      await browser.tabs.sendMessage(tabId, { type: NOTE_UNMOUNT }, { frameId: 0 });
+    },
+    shown: (id) => hub.noteShown(id),
+    pressed: (id, button) => hub.notePressed(id, button),
+    now: () => Date.now(),
+  });
+
   const hub: Hub = new Hub({
     media,
     mediaButtonSetting: { publish: publishButtonSetting },
@@ -126,6 +151,7 @@ export default defineBackground(() => {
     inFlight: inFlightStore(),
     notice: noticeStore(),
     badge: toolbarBadge(),
+    notes,
   });
 
   // Every listener is registered synchronously so a sleeping background wakes up for it.
@@ -134,10 +160,16 @@ export default defineBackground(() => {
   registerContextMenu(hub);
   registerMedia(hub, media, watcher);
   browser.runtime.onConnect.addListener((port) => {
+    // The notes page proves itself with its frame's token; nothing else reaches the notes.
+    if (port.name === NOTES_PORT) {
+      notes.connect(port);
+      return;
+    }
     // Only the extension's own popup, never a content script that knows the port name.
     if (!acceptsPopupPort(port, browser.runtime.id, browser.runtime.getURL('/'))) return;
     hub.addPopup(port);
   });
+  browser.tabs.onRemoved.addListener((tabId) => notes.tabRemoved(tabId));
 
   browser.runtime.onInstalled.addListener(retireLocalSettings);
   void hub.start();

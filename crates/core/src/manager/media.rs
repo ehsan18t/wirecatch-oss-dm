@@ -229,8 +229,18 @@ impl Manager {
         }
         check_room(&state)?;
         let source = MediaSource::of(capture, url, kind, chosen_by);
+        let title = capture
+            .media
+            .as_ref()
+            .and_then(|m| m.title.clone())
+            .unwrap_or_else(|| wirecatch_logging::redact::url_for_display(source.url.as_str()));
         let held = Held::capture(capture.handover_id.clone());
         let id = self.hold_media(&mut state, source, queue, held);
+        // Read without a window: the person hears it was added now, not seconds later when its
+        // download starts (D67).
+        if state.media.get(&id).is_some_and(|m| m.quiet) {
+            self.emit(UiEvent::MediaCaptured { id, title });
+        }
         state.handovers.insert(
             &capture.handover_id,
             Handover {

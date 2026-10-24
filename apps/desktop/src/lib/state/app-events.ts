@@ -73,5 +73,10 @@ export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
     browser_settings_requested: ignore,
     // The shell tells the person (D52); the list already shows how each download ended.
     queue_finished: ignore,
+    // Between the shell and the browsers (D65).
+    note_shown: ignore,
+    note_pressed: ignore,
+    // The shell tells it in a note (D67); its download arrives in the list when it starts.
+    media_captured: ignore,
   };
 }

@@ -468,7 +468,9 @@ async fn settings_changes_reach_every_client() -> TestResult {
             match client.next_event().await? {
                 Event::ExtensionSettingsChanged(s) if !s.capture_enabled => break,
                 Event::ExtensionSettingsChanged(_) => {}
-                other @ (Event::QueuesChanged(_) | Event::BrowserControlsChanged(_)) => {
+                other @ (Event::QueuesChanged(_)
+                | Event::BrowserControlsChanged(_)
+                | Event::NoteRequested(_)) => {
                     panic!("unexpected event {other:?}")
                 }
             }
@@ -562,6 +564,47 @@ async fn a_client_can_ask_for_the_window() -> TestResult {
         Reply::Done
     );
     while !matches!(ui.recv().await.unwrap(), UiEvent::BrowserSettingsRequested) {}
+    Ok(())
+}
+
+/// D65: the app asks every browser to show a note, and hears which showed it and what was pressed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_note_reaches_the_browsers_and_their_answers_reach_the_app() -> TestResult {
+    use wirecatch_protocol::extension::{BrowserNote, NoteId, NoteKind, NotePressed, NoteShown};
+
+    let h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    let mut client = Client::connected(&h.manager).await?;
+    let note = BrowserNote {
+        id: NoteId(4),
+        kind: NoteKind::Finished,
+        title: "Download finished".into(),
+        body: "a.zip".into(),
+        buttons: vec!["Show in folder".into()],
+        stays_ms: Some(8000),
+    };
+    assert!(
+        h.manager.request_note(note.clone()) > 0,
+        "the client listens"
+    );
+    loop {
+        if let Event::NoteRequested(asked) = client.next_event().await? {
+            assert_eq!(asked, note);
+            break;
+        }
+    }
+    let shown = client
+        .call(Call::NoteShown(NoteShown { id: NoteId(4) }))
+        .await?;
+    assert_eq!(shown.unwrap(), Reply::Done);
+    while !matches!(ui.recv().await.unwrap(), UiEvent::NoteShown(NoteId(4))) {}
+    let pressed = NotePressed {
+        id: NoteId(4),
+        button: 0,
+    };
+    let reply = client.call(Call::NotePressed(pressed.clone())).await?;
+    assert_eq!(reply.unwrap(), Reply::Done);
+    while !matches!(ui.recv().await.unwrap(), UiEvent::NotePressed(p) if p == pressed) {}
     Ok(())
 }
 

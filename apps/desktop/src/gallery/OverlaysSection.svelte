@@ -95,7 +95,9 @@
       >
       <Button
         onclick={() =>
-          toaster.info('Added to the queue', { action: { label: 'Show', run: () => undefined } })}
+          toaster.info('Added to the queue', {
+            actions: [{ label: 'Show', run: () => undefined }],
+          })}
       >
         With an action
       </Button>

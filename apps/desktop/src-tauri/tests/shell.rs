@@ -17,8 +17,9 @@ use wirecatch_desktop_lib::activity::Ended;
 use wirecatch_desktop_lib::api;
 use wirecatch_desktop_lib::autostart::{Action, EntryState};
 use wirecatch_desktop_lib::background::{
-    Launcher, NOTIFY_BATCH, Tell, Teller, apply_autostart, forward, tell,
+    Launcher, NOTIFY_BATCH, Tell, Teller, apply_autostart, forward, show_notification, tell,
 };
+use wirecatch_desktop_lib::browser_notes::{self, BrowserNotes};
 use wirecatch_desktop_lib::download_windows::{DownloadWindows, Shows, may_act_on};
 use wirecatch_desktop_lib::finished_window::{self, FinishedWindow};
 use wirecatch_desktop_lib::host::Core;
@@ -46,7 +47,8 @@ fn app_with(core: Option<Core>) -> TestResult<App<MockRuntime>> {
         .manage(Lifecycle::default())
         .manage(DownloadWindows::default())
         .manage(FinishedWindow::default())
-        .manage(ShownNotices::default());
+        .manage(ShownNotices::default())
+        .manage(BrowserNotes::default());
     if let Some(core) = core {
         builder = builder.manage(core);
     }
@@ -151,7 +153,10 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResul
         !handle.state::<ShownNotices>().0.lock().unwrap().is_empty()
     });
     assert!(handle.get_webview_window(MAIN_WINDOW).is_none());
-    let notice = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
+    let shown = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
+    // D64: what the person must know shows during Do Not Disturb by default.
+    assert!(shown.through_do_not_disturb);
+    let notice = shown.notice;
     assert!(notice.title.contains("could not save"));
     assert_eq!(notice.body, "The disk is full.");
 
@@ -190,7 +195,9 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResul
 /// notification and brings no window up, whether the main window is closed or open.
 #[test]
 fn a_download_started_without_asking_is_told_briefly_and_opens_no_window() -> TestResult {
-    let app = app_with(None)?;
+    let sandbox = Sandbox::new()?;
+    let app = app_with(Some(Core::new(sandbox.config()?)))?;
+    tauri::async_runtime::block_on(app.state::<Core>().manager())?;
     let handle = app.handle().clone();
     let (sender, receiver) = broadcast::channel(16);
     let task = tauri::async_runtime::spawn(forward(handle.clone(), receiver));
@@ -199,14 +206,163 @@ fn a_download_started_without_asking_is_told_briefly_and_opens_no_window() -> Te
     sender.send(UiEvent::Captured(started.clone())).unwrap();
     wait_until("the notification", || titles(&handle).len() == 1);
     assert!(handle.get_webview_window(MAIN_WINDOW).is_none());
-    let notice = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
-    assert_eq!(notice, wirecatch_desktop_lib::notices::started(&started));
-    assert_eq!(notice.lasts, Lasts::Brief);
+    let shown = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
+    assert!(
+        !shown.through_do_not_disturb,
+        "news waits out Do Not Disturb"
+    );
+    let notice = shown.notice;
+    assert_eq!(notice.lasts, Lasts::Brief(Duration::from_secs(3)));
 
     wirecatch_desktop_lib::window::show_main_window(&handle);
     sender.send(UiEvent::Captured(started)).unwrap();
     wait_until("the second notification", || titles(&handle).len() == 2);
     task.abort();
+    Ok(())
+}
+
+/// The next note the app asked the browsers for.
+fn note_requested(
+    events: &mut broadcast::Receiver<wirecatch_protocol::wire::Event>,
+) -> TestResult<wirecatch_protocol::extension::BrowserNote> {
+    tauri::async_runtime::block_on(async {
+        tokio::time::timeout(PATIENCE, async {
+            loop {
+                if let wirecatch_protocol::wire::Event::NoteRequested(note) = events.recv().await? {
+                    return TestResult::Ok(note);
+                }
+            }
+        })
+        .await?
+    })
+}
+
+/// D65: with no browser to ask, a note is the system notification at once; a browser that shows
+/// it keeps the notification away, one that does not answer gets it after the wait, and pressing
+/// a note's button does what the notification's would.
+#[test]
+fn a_note_goes_to_the_browser_that_shows_it_or_to_a_notification() -> TestResult {
+    let sandbox = Sandbox::new()?;
+    let app = app_with(Some(Core::new(sandbox.config()?)))?;
+    let handle = app.handle().clone();
+    let manager = tauri::async_runtime::block_on(handle.state::<Core>().manager())?.clone();
+    let in_browser = told_by(FinishNotice::Browser);
+    let finished = |id| Tell::Finished(vec![ended_row(id, 1, DownloadStatus::Completed)]);
+
+    tell(&handle, &in_browser, &finished(1));
+    assert_eq!(titles(&handle), ["Download finished"], "no browser listens");
+
+    let mut browser = manager.subscribe_events();
+    tell(&handle, &in_browser, &finished(2));
+    let shown = note_requested(&mut browser)?;
+    assert_eq!(
+        shown.kind,
+        wirecatch_protocol::extension::NoteKind::Finished
+    );
+    assert_eq!(shown.buttons, ["Show in folder"], "no Open in a page");
+    assert_eq!(shown.stays_ms, Some(8000));
+    browser_notes::shown(&handle, shown.id);
+    // Asked after the one shown, so its notification can only come after the other's would.
+    tell(
+        &handle,
+        &in_browser,
+        &Tell::Failed(vec![ended_row(3, 1, DownloadStatus::Failed)]),
+    );
+    let unanswered = note_requested(&mut browser)?;
+    assert_eq!(
+        unanswered.stays_ms, None,
+        "a failure stays until it is closed"
+    );
+    wait_until("the notification for the note no browser showed", || {
+        titles(&handle).len() == 2
+    });
+    assert_eq!(titles(&handle), ["Download finished", "Download failed"]);
+
+    // Try again on the note no browser answered in time, for a download the list does not have:
+    // its buttons still work for a browser that showed it late, and what it did is told.
+    browser_notes::pressed(
+        &handle,
+        &wirecatch_protocol::extension::NotePressed {
+            id: unanswered.id,
+            button: 0,
+        },
+    );
+    wait_until("the notification that it could not try again", || {
+        titles(&handle).len() == 3
+    });
+    assert_eq!(titles(&handle)[2], "Wirecatch could not do that");
+    Ok(())
+}
+
+/// D67: a video read without a window is told as added when the browser hands it over, by its
+/// title, and not again when its download starts.
+#[test]
+fn a_video_is_told_as_added_once_when_handed_over() -> TestResult {
+    let sandbox = Sandbox::new()?;
+    let app = app_with(Some(Core::new(sandbox.config()?)))?;
+    tauri::async_runtime::block_on(app.state::<Core>().manager())?;
+    let handle = app.handle().clone();
+    let (sender, receiver) = broadcast::channel(16);
+    let task = tauri::async_runtime::spawn(forward(handle.clone(), receiver));
+
+    sender
+        .send(UiEvent::MediaCaptured {
+            id: QuestionId(3),
+            title: "Keynote".into(),
+        })
+        .unwrap();
+    let mut video = ended_row(8, 1, DownloadStatus::Downloading);
+    video.media = Some(wirecatch_protocol::app::MediaSummary {
+        quality: "720p".into(),
+        source: wirecatch_protocol::extension::MediaKind::Page,
+        video_key: None,
+        instead_of: None,
+    });
+    sender.send(UiEvent::Captured(video)).unwrap();
+    // A file after it: its note shows only once the events before it were handled.
+    sender
+        .send(UiEvent::Captured(ended_row(
+            9,
+            1,
+            DownloadStatus::Downloading,
+        )))
+        .unwrap();
+    wait_until("the file's note", || titles(&handle).len() == 2);
+    let bodies: Vec<String> = handle
+        .state::<ShownNotices>()
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|s| s.notice.body.clone())
+        .collect();
+    assert_eq!(bodies, ["Keynote, reading the video", "file-9.zip"]);
+    assert_eq!(titles(&handle), ["Download added", "Download added"]);
+    task.abort();
+    Ok(())
+}
+
+/// D64: what the person must know asks to show during Do Not Disturb until they turn that off.
+#[test]
+fn important_notices_follow_the_do_not_disturb_switch() -> TestResult {
+    let sandbox = Sandbox::new()?;
+    let app = app_with(Some(Core::new(sandbox.config()?)))?;
+    let handle = app.handle().clone();
+    let manager = tauri::async_runtime::block_on(handle.state::<Core>().manager())?.clone();
+    show_notification(&handle, "Before".into(), String::new());
+    let mut settings = manager.get_settings();
+    settings.notify_during_do_not_disturb = false;
+    manager.update_settings(settings)?;
+    show_notification(&handle, "After".into(), String::new());
+    let through: Vec<bool> = handle
+        .state::<ShownNotices>()
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|s| s.through_do_not_disturb)
+        .collect();
+    assert_eq!(through, [true, false]);
     Ok(())
 }
 
@@ -373,6 +529,13 @@ fn queue_telling(id: i64, notify: QueueNotify) -> Queue {
     }
 }
 
+/// The settings that tell finished downloads `how`.
+fn told_by(how: FinishNotice) -> wirecatch_protocol::app::AppSettings {
+    let mut settings = wirecatch_core::default_settings();
+    settings.finish_notice = how;
+    settings
+}
+
 fn titles(handle: &tauri::AppHandle<MockRuntime>) -> Vec<String> {
     handle
         .state::<ShownNotices>()
@@ -380,7 +543,7 @@ fn titles(handle: &tauri::AppHandle<MockRuntime>) -> Vec<String> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
-        .map(|n| n.title.clone())
+        .map(|n| n.notice.title.clone())
         .collect()
 }
 
@@ -403,7 +566,7 @@ fn downloads_finishing_together_share_one_notification() -> TestResult {
     assert_eq!(teller.due(), Some(start + NOTIFY_BATCH));
     assert!(teller.take_due(start).is_empty(), "not due yet");
     for due in teller.take_due(start + NOTIFY_BATCH) {
-        tell(&handle, FinishNotice::Notification, &due);
+        tell(&handle, &told_by(FinishNotice::Notification), &due);
     }
     assert_eq!(titles(&handle), ["3 downloads finished"]);
     assert_eq!(teller.due(), None);
@@ -430,7 +593,7 @@ fn a_queue_that_tells_once_done_waits_for_its_report_but_failures_are_told_at_on
         "{due:?}"
     );
     for due in &due {
-        tell(&handle, FinishNotice::Notification, due);
+        tell(&handle, &told_by(FinishNotice::Notification), due);
     }
     let report = QueueReport {
         queue: QueueId(2),
@@ -444,7 +607,7 @@ fn a_queue_that_tells_once_done_waits_for_its_report_but_failures_are_told_at_on
     let told = teller
         .queue_finished(&report)
         .ok_or("the queue's report was not told")?;
-    tell(&handle, FinishNotice::Notification, &told);
+    tell(&handle, &told_by(FinishNotice::Notification), &told);
     assert_eq!(
         titles(&handle),
         [
@@ -465,7 +628,7 @@ fn the_complete_window_lists_what_ended_and_acts_only_on_that() -> TestResult {
     let handle = app.handle().clone();
     tell(
         &handle,
-        FinishNotice::Nothing,
+        &told_by(FinishNotice::Nothing),
         &Tell::Finished(vec![ended_row(9, 1, DownloadStatus::Completed)]),
     );
     assert_eq!(titles(&handle), Vec::<String>::new());
@@ -476,7 +639,7 @@ fn the_complete_window_lists_what_ended_and_acts_only_on_that() -> TestResult {
 
     tell(
         &handle,
-        FinishNotice::Window,
+        &told_by(FinishNotice::Window),
         &Tell::Finished(vec![
             ended_row(1, 1, DownloadStatus::Completed),
             ended_row(2, 1, DownloadStatus::Completed),

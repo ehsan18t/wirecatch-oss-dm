@@ -63,9 +63,18 @@ describe('Toaster', () => {
     toaster.dispose();
   });
 
+  it('makes room by pushing out a toast that goes by itself before one that waits for the person', () => {
+    const toaster = new Toaster();
+    const stays = toaster.danger('The download failed', { duration: 0 });
+    for (let i = 0; i < MAX_TOASTS; i++) toaster.info(`news ${String(i)}`);
+    expect(toaster.list).toHaveLength(MAX_TOASTS);
+    expect(toaster.list[0]?.id).toBe(stays);
+    toaster.dispose();
+  });
+
   it('gives a toast with an action longer', () => {
     const toaster = new Toaster();
-    toaster.info('Download added', { action: { label: 'Show', run: vi.fn() } });
+    toaster.info('Download added', { actions: [{ label: 'Show', run: vi.fn() }] });
     expect(toaster.list[0]?.duration).toBe(TOAST_DURATION.action);
     toaster.dispose();
   });
@@ -93,11 +102,32 @@ describe('ToastRegion', () => {
     const toaster = new Toaster();
     const run = vi.fn();
     render(ToastRegion, { toaster });
-    toaster.info('Download added', { action: { label: 'Show', run } });
+    toaster.info('Download added', { actions: [{ label: 'Show', run }] });
     flushSync();
     await userEvent.click(screen.getByRole('button', { name: 'Show' }));
     expect(run).toHaveBeenCalledOnce();
     expect(toaster.list).toEqual([]);
+    toaster.dispose();
+  });
+
+  it('offers each of a toast’s actions, and clears several toasts at once', async () => {
+    const toaster = new Toaster();
+    const open = vi.fn();
+    render(ToastRegion, { toaster });
+    toaster.success('report.pdf', {
+      actions: [
+        { label: 'Open', run: open },
+        { label: 'Show in folder', run: vi.fn() },
+      ],
+    });
+    flushSync();
+    expect(screen.queryByRole('button', { name: 'Clear all' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Show in folder' })).toBeTruthy();
+    toaster.info('Another');
+    flushSync();
+    await userEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+    expect(toaster.list).toEqual([]);
+    expect(open).not.toHaveBeenCalled();
     toaster.dispose();
   });
 });

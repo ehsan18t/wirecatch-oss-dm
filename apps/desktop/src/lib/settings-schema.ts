@@ -11,6 +11,7 @@ function words(id: keyof typeof SETTING_WORDS): { label: string; help: string } 
 
 export type SectionId =
   | 'general'
+  | 'notifications'
   | 'files'
   | 'browser'
   | 'media'
@@ -22,6 +23,11 @@ export type SectionId =
 
 export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[] = [
   { id: 'general', title: 'General', blurb: 'How Wirecatch looks and starts.' },
+  {
+    id: 'notifications',
+    title: 'Notifications',
+    blurb: 'How Wirecatch tells you a download started, finished or failed.',
+  },
   { id: 'files', title: 'Saving files', blurb: 'Where finished files go.' },
   {
     id: 'browser',
@@ -102,12 +108,41 @@ const DEFS = [
     keywords: 'tray background minimize quit exit',
   },
   {
+    id: 'start_notice',
+    section: 'notifications',
+    label: 'When a download starts',
+    help: 'For downloads from the browser that start without a window. A note shows in the tab you are looking at, or a notification when the browser is not in front.',
+    keywords: 'started start begin note browser tab toast notification notify tell',
+  },
+  {
+    id: 'start_note_time',
+    section: 'notifications',
+    label: 'Show the start note for',
+    help: 'How long the note about a download that started shows before it goes by itself, and the notification when the browser is not in front. Only when a download start is shown in the browser.',
+    keywords: 'seconds duration time long short note browser started',
+  },
+  {
     id: 'finish_notice',
-    section: 'general',
+    section: 'notifications',
     label: 'When a download finishes',
     help: 'How Wirecatch tells you a download finished. You hear about a failed download the same way, right away.',
     keywords:
-      'notification notify alert done complete finished failed popup dialog window toast message tell',
+      'notification notify alert done complete finished failed popup dialog window toast message tell browser note',
+  },
+  {
+    id: 'finish_note_time',
+    section: 'notifications',
+    label: 'Show the finish note for',
+    help: 'How long the note in the browser about finished downloads shows before it goes by itself. A note about a failure stays until you close it. Only when a finish is shown in the browser.',
+    keywords: 'seconds duration time long note browser finished until closed',
+  },
+  {
+    id: 'notify_during_do_not_disturb',
+    section: 'notifications',
+    label: 'Show notifications during Do Not Disturb',
+    help: 'Notifications about finished and failed downloads, and about problems, still show while Windows is set to Do Not Disturb. Windows can still hold them back in its own settings for Wirecatch.',
+    keywords:
+      'do not disturb dnd focus assist quiet hours silent mute priority important notification',
   },
   {
     id: 'default_folder',

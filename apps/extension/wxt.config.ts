@@ -52,6 +52,9 @@ export default defineConfig({
       // to read the address of the current tab for "Ignore this site", for webRequest to
       // see media responses, and for the media button's content script.
       host_permissions: SITE_ORIGINS,
+      // The notes page, which the notes page script frames in a web page to show the app's notes
+      // (D65); it shows a note only to the frame that proves it holds that frame's token.
+      web_accessible_resources: [{ resources: ['notes.html'], matches: SITE_ORIGINS }],
       action: { default_title: PRODUCT_NAME },
       // A keyboard way to download a page's media; people can change or remove it in the
       // browser's extension shortcuts page.

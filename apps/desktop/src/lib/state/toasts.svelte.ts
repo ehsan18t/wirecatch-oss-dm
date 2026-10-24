@@ -44,7 +44,7 @@ export class Toasts {
     const id = this.toaster.warning(notice.message, {
       title: notice.title,
       duration: 0,
-      action: notice.set_aside ? { label: 'Show in folder', run: showSetAside } : undefined,
+      actions: notice.set_aside ? [{ label: 'Show in folder', run: showSetAside }] : [],
     });
     this.#record(id, { kind: 'notice', message: notice.message });
   }

@@ -50,6 +50,7 @@ pub mod appimage;
 pub mod autostart;
 pub mod background;
 pub mod bridge;
+pub mod browser_notes;
 mod commands;
 pub mod download_windows;
 pub mod elevation;
@@ -124,6 +125,7 @@ pub fn run() {
     let app = with_plugins(tauri::Builder::default())
         .manage(LaunchLinks::default())
         .manage(window::PendingSelection::default())
+        .manage(browser_notes::BrowserNotes::default())
         .manage(finished_window::FinishedWindow::default())
         .manage(Lifecycle::default())
         .manage(sleep::MainAsleep::default())

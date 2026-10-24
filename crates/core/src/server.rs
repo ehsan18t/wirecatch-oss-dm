@@ -229,6 +229,14 @@ async fn handle(manager: &Manager, version: u32, call: Call) -> Outcome {
             manager.request_browser_settings();
             Ok(Reply::Done)
         }
+        Call::NoteShown(shown) => {
+            manager.note_shown(shown.id);
+            Ok(Reply::Done)
+        }
+        Call::NotePressed(pressed) => {
+            manager.note_pressed(pressed);
+            Ok(Reply::Done)
+        }
     };
     match result {
         Ok(reply) => Outcome::Ok(reply),

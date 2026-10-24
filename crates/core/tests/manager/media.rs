@@ -199,6 +199,13 @@ async fn a_video_downloads_with_the_saved_choices_without_asking() -> TestResult
     let reply = h.manager.add_capture(capture).await.unwrap();
     assert_eq!(reply.action, AddAction::AwaitingConfirmation);
     assert_eq!(h.manager.media_being_read(), []);
+    // D67: told as added at once, by its title, before it is read.
+    let told = next_event(&mut ui, "the video told as added", |e| match e {
+        UiEvent::MediaCaptured { title, .. } => Some(title.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(told, "Clip");
 
     let row = caught_without_asking(&mut ui).await;
     let media = row.media.clone().unwrap();
