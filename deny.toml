@@ -16,6 +16,8 @@ unmaintained = "workspace"
 ignore = [
   # rsa "Marvin" timing side channel. It concerns operations with an RSA private key (decryption and signing). Wirecatch only verifies yt-dlp's release signature with its public key (the pgp crate pulls in rsa for that), so no private key ever exists in the process. Revisit if rsa ships a fix or if Wirecatch ever handles private keys.
   { id = "RUSTSEC-2023-0071", reason = "Wirecatch never holds an RSA private key; only signature verification is used" },
+  # crypto-bigint 0.5 timing variability in operations meant to be constant-time, which can leak secret values. pgp 0.21, the latest, pulls it in through its elliptic-curve keys, and the fix (0.7.6) needs a pgp that moves to it. As above, Wirecatch only verifies a public signature: no secret value goes through these operations. Revisit when pgp moves to crypto-bigint 0.7.
+  { id = "RUSTSEC-2026-0387", reason = "Wirecatch never holds a secret key; only signature verification with public keys is used" },
 ]
 
 [licenses]
