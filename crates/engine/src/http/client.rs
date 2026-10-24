@@ -10,7 +10,7 @@ use tracing::{debug, warn};
 use crate::error::{Error, Result};
 use crate::net_guard::FilteringResolver;
 use crate::options::DownloadOptions;
-use crate::proxy;
+use crate::proxy::Proxies;
 
 /// Builds the HTTP clients of one download.
 ///
@@ -28,19 +28,11 @@ pub(crate) struct Clients {
     /// Resolves names for every client [`build`](Self::build) makes, when set
     /// (to keep a download away from the local network).
     resolver: Option<Arc<FilteringResolver>>,
-    /// Where proxy settings come from.
-    proxies: Proxies,
-}
-
-/// Where the proxy settings of [`Clients`] come from.
-#[derive(Debug, Clone, Copy)]
-enum Proxies {
-    /// The process's environment, as for any download.
-    System,
-    /// A test's own environment: tests must not depend on the machine they
-    /// run on. The HTTP clients then use no proxy at all.
-    #[cfg(test)]
-    Given(fn(&str) -> Option<std::ffi::OsString>),
+    /// The proxy settings, read once, that the HTTP clients and the engine's
+    /// own decisions both follow.
+    proxies: Arc<Proxies>,
+    /// Whether the HTTP clients go through [`proxies`](Self::proxies) too.
+    apply_proxies: bool,
 }
 
 /// The process-wide TLS configuration: the system's root certificates are read
@@ -48,9 +40,13 @@ enum Proxies {
 static SHARED_TLS: OnceLock<rustls::ClientConfig> = OnceLock::new();
 
 impl Clients {
-    /// Uses the operating system's root certificates, read once per process.
-    /// The first call reads the certificate store, so it must not run on an
-    /// async thread; see [`Clients::shared_ready`].
+    /// Uses the operating system's root certificates, read once per process,
+    /// and the proxy settings in effect now. The first call reads the
+    /// certificate store, so it must not run on an async thread; see
+    /// [`Clients::shared_ready`]. The proxy settings come from the environment
+    /// and, on Windows, the current user's registry hive, which is in memory,
+    /// so reading them waits on nothing (the HTTP client read the same values
+    /// for every client it built).
     pub fn new(opts: &DownloadOptions) -> Result<Self> {
         let tls = if let Some(tls) = SHARED_TLS.get() {
             tls
@@ -58,7 +54,7 @@ impl Clients {
             let config = tls_config(native_roots())?;
             SHARED_TLS.get_or_init(|| config)
         };
-        Ok(Self::with_config(opts, tls.clone()))
+        Ok(Self::with_config(opts, tls.clone(), Proxies::current()))
     }
 
     /// Whether [`Clients::new`] would return without touching the disk.
@@ -73,41 +69,44 @@ impl Clients {
     }
 
     /// Uses the given root certificates and a session cache of its own, and
-    /// no proxy whatever the environment says, so a test behaves the same on
+    /// no proxy whatever the machine sets, so a test behaves the same on
     /// every machine.
     #[cfg(test)]
     pub fn with_roots(opts: &DownloadOptions, roots: rustls::RootCertStore) -> Self {
-        Self {
-            proxies: Proxies::Given(proxy::nothing),
-            ..Self::with_config(opts, tls_config(roots).unwrap())
-        }
+        Self::with_config(opts, tls_config(roots).unwrap(), Proxies::default())
     }
 
     /// The same clients, deciding as if the environment were what `env`
-    /// reads (their HTTP clients still use no proxy).
+    /// reads; their HTTP clients use no proxy, since a test's proxies do not
+    /// exist.
     #[cfg(all(test, feature = "http3"))]
     pub fn with_environment(mut self, env: fn(&str) -> Option<std::ffi::OsString>) -> Self {
-        self.proxies = Proxies::Given(env);
+        self.proxies = Arc::new(Proxies::read(&env, || None));
+        self.apply_proxies = false;
         self
     }
 
-    /// Reads the environment variables that set proxies, as these clients see
-    /// them.
-    pub fn environment(&self) -> proxy::Env<'_> {
-        match &self.proxies {
-            Proxies::System => &proxy::system,
-            #[cfg(test)]
-            Proxies::Given(env) => env,
-        }
+    /// The same clients, following `proxies` in their HTTP clients too.
+    #[cfg(test)]
+    pub fn with_proxies(mut self, proxies: Proxies) -> Self {
+        self.proxies = Arc::new(proxies);
+        self.apply_proxies = true;
+        self
     }
 
-    fn with_config(opts: &DownloadOptions, tls: rustls::ClientConfig) -> Self {
+    /// The proxy settings these clients follow.
+    pub fn proxies(&self) -> &Proxies {
+        &self.proxies
+    }
+
+    fn with_config(opts: &DownloadOptions, tls: rustls::ClientConfig, proxies: Proxies) -> Self {
         Self {
             tls,
             user_agent: opts.user_agent.clone(),
             connect_timeout: opts.connect_timeout,
             resolver: None,
-            proxies: Proxies::System,
+            proxies: Arc::new(proxies),
+            apply_proxies: true,
         }
     }
 
@@ -130,13 +129,13 @@ impl Clients {
         let mut headers = HeaderMap::new();
         // Compressed transfer encodings break byte offsets.
         headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
-        let builder = Client::builder();
-        // The HTTP client reads the process's environment itself; without one,
-        // it must not either.
-        let builder = match self.proxies {
-            Proxies::System => builder,
-            #[cfg(test)]
-            Proxies::Given(_) => builder.no_proxy(),
+        // Given a proxy, the HTTP client reads no setting of its own, so it
+        // cannot differ from the engine's decisions, whatever reqwest
+        // features another crate in the build turns on.
+        let builder = if self.apply_proxies {
+            Client::builder().proxy(self.proxies.client())
+        } else {
+            Client::builder().no_proxy()
         };
         builder
             // A clone shares the session cache: it lives behind an `Arc` in the config.

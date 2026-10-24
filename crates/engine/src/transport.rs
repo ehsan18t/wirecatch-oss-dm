@@ -16,7 +16,7 @@ use crate::http::{self, Clients, Failure, Session, Validators};
 use crate::http3;
 use crate::net_guard::Guard;
 use crate::options::DownloadOptions;
-use crate::proxy::{self, Scheme};
+use crate::proxy::Scheme;
 use crate::request::RequestContext;
 
 use crate::retry::{Attempts, Next, Refusals};
@@ -217,9 +217,9 @@ pub(crate) async fn open(
             // Going around a proxy the user set would be a surprise, and
             // possibly a leak: refuse instead, until FTP proxies are supported.
             let host = url.host_str().unwrap_or_default();
-            if let Some(variable) = proxy::configured(Scheme::Ftp, host, clients.environment()) {
+            if let Some(proxy) = clients.proxies().proxy_for(Scheme::Ftp, host) {
                 return Err(Error::FtpProxyUnsupported {
-                    variable: variable.to_string(),
+                    setting: proxy.setting.clone(),
                 });
             }
             let target = ftp::Target::new(url, opts, clients.tls())?;
@@ -263,7 +263,7 @@ async fn open_http(
             probe.response.remote_addr(),
             clients.tls(),
             opts,
-            clients.environment(),
+            clients.proxies(),
         )
     } else {
         None

@@ -47,7 +47,8 @@ fn http3_is_not_used_through_a_proxy() {
     let mut headers = HeaderMap::new();
     headers.insert("alt-svc", HeaderValue::from_static(r#"h3=":443""#));
     let advertised = |env: crate::proxy::Env<'_>| {
-        Origin::advertised(&url, &headers, None, clients.tls(), &opts, env).is_some()
+        let proxies = crate::proxy::Proxies::read(env, || None);
+        Origin::advertised(&url, &headers, None, clients.tls(), &opts, &proxies).is_some()
     };
 
     assert!(advertised(&|_| None), "no proxy: HTTP/3 is used");

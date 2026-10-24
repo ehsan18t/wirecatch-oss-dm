@@ -346,3 +346,32 @@ mod tls {
         assert_eq!(kinds, vec![HandshakeKind::Full; 3]);
     }
 }
+
+/// A proxy from the system's setting reaches the HTTP client itself, not only
+/// the engine's decisions: the request for a host that does not exist arrives
+/// at the proxy, which answers it.
+#[tokio::test]
+async fn the_client_goes_through_the_system_proxy() {
+    use crate::proxy::{Proxies, SystemProxy};
+    use wirecatch_test_support::http::{Config, TestServer};
+
+    let proxy = TestServer::start(b"through the proxy".to_vec(), Config::default()).await;
+    let address = proxy.url("/").authority().to_string();
+    let proxies = Proxies::read(&|_| None, || {
+        Some(SystemProxy {
+            servers: address,
+            exceptions: String::new(),
+        })
+    });
+    let opts = DownloadOptions::default();
+    let clients = Clients::with_roots(&opts, rustls::RootCertStore::empty()).with_proxies(proxies);
+    let answer = clients
+        .build()
+        .unwrap()
+        .get("http://files.invalid/file.bin")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(answer.bytes().await.unwrap().as_ref(), b"through the proxy");
+    assert_eq!(proxy.seen_at("file.bin").len(), 1);
+}

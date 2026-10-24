@@ -286,7 +286,7 @@ pub(crate) async fn download_with(
                 &request.url,
                 request.options.private_network,
                 request.options.stall_timeout,
-                clients.environment(),
+                clients.proxies(),
             )
             .await
         }

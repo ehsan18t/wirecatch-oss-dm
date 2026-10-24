@@ -5,7 +5,9 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Progress, download};
+use wirecatch_engine::{
+    CancellationToken, DownloadRequest, Error, Progress, ProxySetting, download,
+};
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer};
 use wirecatch_test_support::private_dir;
 
@@ -20,7 +22,9 @@ async fn ftp_is_refused_while_a_proxy_is_set() {
     let url = server.url("ftp", "", "file.bin");
 
     // SAFETY: as below. The machine running the test may exclude local hosts
-    // from its proxy; this test decides that itself.
+    // from its proxy variables; this test decides that itself. A proxy turned
+    // on in the Windows settings still applies while no variable is set (see
+    // docs/AUDIT.md, W6).
     unsafe {
         std::env::remove_var("NO_PROXY");
         std::env::remove_var("no_proxy");
@@ -40,7 +44,8 @@ async fn ftp_is_refused_while_a_proxy_is_set() {
         unsafe { std::env::remove_var(variable) };
 
         let Error::FtpProxyUnsupported {
-            variable: named, ..
+            setting: ProxySetting::Variable(named),
+            ..
         } = &error
         else {
             panic!("{variable}: expected FtpProxyUnsupported, got {error:?}");

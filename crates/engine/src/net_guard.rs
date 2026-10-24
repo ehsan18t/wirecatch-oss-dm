@@ -16,7 +16,7 @@ use tracing::debug;
 use url::{Host, Url};
 
 use crate::error::{Chain, Error, Result};
-use crate::proxy;
+use crate::proxy::Proxies;
 
 /// The future a [`Guard`] returns.
 pub(crate) type GuardCheck =
@@ -64,9 +64,10 @@ const LOOKUP_PORT: u16 = 0;
 ///
 /// # With a proxy
 ///
-/// When a proxy is set in the environment (`HTTP_PROXY`, `HTTPS_PROXY` or
-/// `ALL_PROXY`, in upper or lower case), requests go through it, and the
-/// proxy, not this computer, looks up each name and connects. The guard then
+/// When a proxy is set (`HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` in the
+/// environment, in upper or lower case, or the system's proxy setting),
+/// requests go through it, and the proxy, not this computer, looks up each
+/// name and connects. The guard then
 /// still refuses, before every request and redirect hop, a target written as a
 /// local address and a target whose name resolves only to local addresses on
 /// this computer. It cannot see how the proxy resolves a name, so a name that
@@ -294,13 +295,13 @@ pub(crate) struct PrivateGuard {
 }
 
 /// The protection `rule` asks for, for requests that start at `url`; `None`
-/// when local addresses are allowed. `env` reads the proxy settings of the
+/// when local addresses are allowed. `proxies` are the proxy settings of the
 /// clients the requests go through.
 pub(crate) async fn private_guard(
     url: &Url,
     rule: PrivateNetwork,
     timeout: Duration,
-    env: proxy::Env<'_>,
+    proxies: &Proxies,
 ) -> Option<PrivateGuard> {
     if rule == PrivateNetwork::Allow {
         return None;
@@ -310,12 +311,12 @@ pub(crate) async fn private_guard(
     if rule == PrivateNetwork::Auto && all_private(&host_addresses(url, timeout).await) {
         return None;
     }
-    Some(guard_from(url, timeout, env))
+    Some(guard_from(url, timeout, proxies))
 }
 
-/// The protection for requests starting at `url`, through clients whose proxy
-/// settings `env` reads.
-pub(crate) fn guard_from(url: &Url, timeout: Duration, env: proxy::Env<'_>) -> PrivateGuard {
+/// The protection for requests starting at `url`, through clients with the
+/// proxy settings `proxies`.
+pub(crate) fn guard_from(url: &Url, timeout: Duration, proxies: &Proxies) -> PrivateGuard {
     let check = Arc::new(NetworkGuard::new(url, timeout));
     PrivateGuard {
         guard: Guard(Arc::new(move |target: &Url| {
@@ -323,7 +324,7 @@ pub(crate) fn guard_from(url: &Url, timeout: Duration, env: proxy::Env<'_>) -> P
             Box::pin(async move { check.check(&target).await })
         })),
         resolver: Arc::new(FilteringResolver {
-            proxies: proxy::host_names(env),
+            proxies: proxies.host_names(),
         }),
     }
 }
@@ -393,7 +394,7 @@ impl NetworkGuard {
 /// connection itself can then never reach one, even if a name's address
 /// changes between the check and the connection.
 pub(crate) struct FilteringResolver {
-    /// The proxies the user set (see [`proxy::host_names`]), resolved without the
+    /// The proxies the user set (see [`Proxies::host_names`]), resolved without the
     /// filter: the connection to a proxy is the user's choice, and a request
     /// that names one as its target is still checked by the [`NetworkGuard`].
     proxies: Vec<String>,
@@ -697,7 +698,7 @@ mod tests {
         );
         accepted.store(0, Ordering::SeqCst);
 
-        let guard = guard_from(&url, Duration::from_secs(5), clients().environment());
+        let guard = guard_from(&url, Duration::from_secs(5), clients().proxies());
         let result = run(Some(guard)).await;
         assert!(result.is_err(), "the download went through");
         assert_eq!(

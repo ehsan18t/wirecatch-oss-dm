@@ -92,9 +92,10 @@ pub struct DownloadOptions {
     /// the other connections use HTTP/3, each over a QUIC connection of its
     /// own. Any QUIC failure (blocked UDP, a failed handshake, a broken
     /// stream) quietly switches the download back to HTTP/2 or HTTP/1.1 and
-    /// it carries on from where it was. Not used when a proxy is set in the
-    /// environment (`HTTPS_PROXY` or `ALL_PROXY`) and `NO_PROXY` does not name
-    /// the server, since QUIC would go around the proxy.
+    /// it carries on from where it was. Not used when a proxy is set for
+    /// `https` (`HTTPS_PROXY` or `ALL_PROXY` in the environment, or the
+    /// system's proxy setting) and its exceptions do not name the server,
+    /// since QUIC would go around the proxy.
     ///
     /// Off by default because on fast links several TCP connections are
     /// already as fast, and QUIC costs more processor time per byte.

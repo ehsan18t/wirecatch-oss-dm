@@ -3,7 +3,7 @@
 use std::io;
 use std::path::Path;
 
-use wirecatch_engine::Error as EngineError;
+use wirecatch_engine::{Error as EngineError, ProxySetting};
 use wirecatch_protocol::app::{FixAction, StartupNotice, UserError};
 
 use crate::local_network::ChosenBy;
@@ -100,7 +100,7 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
             ..
         } => ftp_login_refused(host, *code, message, *anonymous),
         EngineError::FtpTlsUnavailable { host, .. } => ftp_tls_unavailable(host),
-        EngineError::FtpProxyUnsupported { variable, .. } => ftp_proxy_unsupported(variable),
+        EngineError::FtpProxyUnsupported { setting, .. } => ftp_proxy_unsupported(setting),
         EngineError::InvalidOption(option) => invalid_option(option),
         // A kind of error added to the engine after this was written.
         other => fix(
@@ -251,14 +251,17 @@ fn ftp_tls_unavailable(host: &str) -> UserError {
     )
 }
 
-/// An FTP link while the proxy setting `variable` asks for a proxy.
-fn ftp_proxy_unsupported(variable: &str) -> UserError {
-    fix(
-        format!(
-            "FTP downloads cannot go through a proxy yet, and the {variable} setting on this computer asks for one. Remove {variable} from the environment to download this link directly, then try again."
+/// An FTP link while `setting` asks for a proxy.
+fn ftp_proxy_unsupported(setting: &ProxySetting) -> UserError {
+    let message = match setting {
+        ProxySetting::Variable(name) => format!(
+            "FTP downloads cannot go through a proxy yet, and the {name} setting on this computer asks for one. Remove {name} from the environment to download this link directly, then try again."
         ),
-        FixAction::Retry,
-    )
+        ProxySetting::System => "FTP downloads cannot go through a proxy yet, and the proxy in this computer's network settings covers this link. Turn that proxy off, or add this server to its exceptions, to download this link directly, then try again.".to_string(),
+        // A kind of setting added to the engine after this was written.
+        _ => "FTP downloads cannot go through a proxy yet, and a proxy set on this computer covers this link. Turn it off to download this link directly, then try again.".to_string(),
+    };
+    fix(message, FixAction::Retry)
 }
 
 /// A download option out of range. Settings are checked when they change and
@@ -475,6 +478,23 @@ mod tests {
         let other = ftp_reply(502, "Command not implemented");
         assert_eq!(other.fix, Some(FixAction::Retry));
         for e in [missing, denied, busy, other] {
+            assert!(e.message.ends_with('.') && !e.message.contains('\u{2014}'));
+        }
+    }
+
+    #[test]
+    fn an_ftp_link_behind_a_proxy_says_which_setting_to_change() {
+        let variable = ftp_proxy_unsupported(&ProxySetting::Variable("ALL_PROXY".into()));
+        assert!(
+            variable
+                .message
+                .contains("Remove ALL_PROXY from the environment")
+        );
+        let system = ftp_proxy_unsupported(&ProxySetting::System);
+        assert!(system.message.contains("network settings"));
+        assert!(system.message.contains("exceptions"));
+        for e in [variable, system] {
+            assert_eq!(e.fix, Some(FixAction::Retry));
             assert!(e.message.ends_with('.') && !e.message.contains('\u{2014}'));
         }
     }

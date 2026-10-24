@@ -66,6 +66,8 @@ all-features = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
+# The system's proxy setting (src/proxy.rs); the version the HTTP client's own reader uses.
+windows-registry = "0.6.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true

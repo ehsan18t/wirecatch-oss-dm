@@ -189,7 +189,7 @@ impl Fetcher {
             &url,
             private_network,
             options.stall_timeout,
-            clients.environment(),
+            clients.proxies(),
         )
         .await;
         let blocking_private = protection.is_some();

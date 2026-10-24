@@ -8,6 +8,7 @@ use std::time::Duration;
 use reqwest::StatusCode;
 
 use crate::ftp::reply;
+use crate::proxy::ProxySetting;
 
 /// Errors a download can end with.
 ///
@@ -213,17 +214,18 @@ pub enum Error {
         host: String,
     },
 
-    /// A proxy is set in the environment (for example `ALL_PROXY` or
-    /// `FTP_PROXY`) and `NO_PROXY` does not name the server, but FTP downloads
-    /// cannot go through a proxy yet, and
+    /// A proxy is set for FTP (in the environment, for example `ALL_PROXY` or
+    /// `FTP_PROXY`, or in the system's proxy setting) and its exceptions do not
+    /// name the server, but FTP downloads cannot go through a proxy yet, and
     /// going around it without asking could expose what it is there to hide.
     #[error(
-        "FTP downloads cannot go through a proxy yet, and the {variable} environment variable sets one. To download this link directly instead, remove {variable} from the environment"
+        "FTP downloads cannot go through a proxy yet, and {setting} asks for one. To download this link directly instead, {}",
+        setting.remedy()
     )]
     #[non_exhaustive]
     FtpProxyUnsupported {
-        /// The environment variable that sets the proxy.
-        variable: String,
+        /// Where the proxy is set.
+        setting: ProxySetting,
     },
 
     /// Something inside the engine failed that should not, such as a task that

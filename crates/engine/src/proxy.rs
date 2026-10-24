@@ -1,36 +1,76 @@
-//! Which proxy the environment sets, read the way the HTTP client reads it.
+//! Which proxy a request goes through, read once per download and asked by the
+//! HTTP client for every request and by the engine's own decisions, so they
+//! always agree.
 //!
-//! The HTTP client takes its proxy from the environment, and some of the
-//! engine's own decisions depend on whether a request goes through one:
-//! HTTP/3 is not used then (QUIC would go around the proxy), FTP is refused (it
-//! cannot go through one yet), and the resolver that keeps downloads off the
-//! local network trusts the proxies' own names. They all read the environment
-//! here, so they agree with each other and with the client.
+//! Some of the engine's decisions depend on whether a request goes through a
+//! proxy: HTTP/3 is not used then (QUIC would go around the proxy), FTP is
+//! refused (it cannot go through one yet), and the resolver that keeps
+//! downloads off the local network trusts the proxies' own names. The HTTP
+//! client never reads a proxy setting itself: it is handed [`Proxies::client`],
+//! which asks the same settings.
 //!
-//! As in the client, a scheme's own variable (`HTTPS_PROXY` or `https_proxy`
-//! for `https`) comes first and `ALL_PROXY` (or `all_proxy`) second, and a host
-//! that `NO_PROXY` (or `no_proxy`) names is reached directly. `NO_PROXY` is
-//! matched by the client's own matcher (from `hyper-util`): a list of names and addresses
-//! separated by commas, where a name also covers its subdomains (`example.com`
-//! and `.example.com` both cover `files.example.com`), an address or a network
-//! (`10.0.0.0/8`) covers the addresses in it, and `*` covers every name.
+//! The environment comes first. A scheme's own variable (`HTTPS_PROXY` or
+//! `https_proxy` for `https`) counts, then `ALL_PROXY` (or `all_proxy`), and a
+//! host that `NO_PROXY` (or `no_proxy`) names is reached directly. `NO_PROXY`
+//! is matched by `hyper-util`'s matcher, the one reqwest uses: a list of names
+//! and addresses separated by commas, where a name also covers its subdomains
+//! (`example.com` and `.example.com` both cover `files.example.com`), an
+//! address or a network (`10.0.0.0/8`) covers the addresses in it, and `*`
+//! covers every name. In a CGI program (`REQUEST_METHOD` is set) no proxy is
+//! read at all, as in the HTTP client, since a request's `Proxy:` header
+//! arrives there as `HTTP_PROXY`.
+//!
+//! When no proxy variable is set, the system's proxy setting counts while it is
+//! turned on: on Windows, the manual proxy in the network settings, for every
+//! protocol or per protocol, with its exceptions (unless `NO_PROXY` is set).
+//! Other systems have no setting the engine reads.
+
+use std::ffi::OsString;
+use std::fmt;
+use std::sync::Arc;
 
 use hyper_util::client::proxy::matcher::Matcher;
-use std::ffi::OsString;
 use url::{Host, Url};
 
 /// Reads an environment variable; tests pass their own.
 pub(crate) type Env<'a> = &'a (dyn Fn(&str) -> Option<OsString> + Sync);
 
 /// Reads the process's environment.
-pub(crate) fn system(name: &str) -> Option<OsString> {
+pub(crate) fn process_env(name: &str) -> Option<OsString> {
     std::env::var_os(name)
 }
 
-/// An environment with no variables set.
-#[cfg(test)]
-pub(crate) fn nothing(_: &str) -> Option<OsString> {
-    None
+/// Where the proxy a request would go through is set.
+///
+/// New variants may be added in minor releases, so a `match` needs a `_` arm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ProxySetting {
+    /// An environment variable, named as it was read (`ALL_PROXY`,
+    /// `ftp_proxy`, ...).
+    Variable(String),
+    /// The system's proxy setting (on Windows, the manual proxy in the network
+    /// settings).
+    System,
+}
+
+impl ProxySetting {
+    /// How to stop a request from using this setting's proxy.
+    pub(crate) fn remedy(&self) -> String {
+        match self {
+            Self::Variable(name) => format!("remove {name} from the environment"),
+            Self::System => "turn the proxy off in the system's network settings, or add this server to its exceptions".to_string(),
+        }
+    }
+}
+
+impl fmt::Display for ProxySetting {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Variable(name) => write!(f, "the {name} environment variable"),
+            Self::System => f.write_str("the system's proxy setting"),
+        }
+    }
 }
 
 /// What a request is sent with, as far as proxies go.
@@ -42,46 +82,219 @@ pub(crate) enum Scheme {
 }
 
 impl Scheme {
-    /// The variables that set a proxy for this scheme, in the order they are
-    /// read: in each pair, the first that is set counts.
-    fn variables(self) -> [[&'static str; 2]; 2] {
-        let own = match self {
-            Scheme::Http => ["HTTP_PROXY", "http_proxy"],
-            Scheme::Https => ["HTTPS_PROXY", "https_proxy"],
-            Scheme::Ftp => ["FTP_PROXY", "ftp_proxy"],
+    fn of(url: &Url) -> Option<Self> {
+        match url.scheme() {
+            "http" => Some(Self::Http),
+            "https" => Some(Self::Https),
+            "ftp" | "ftps" | "ftpes" => Some(Self::Ftp),
+            _ => None,
+        }
+    }
+}
+
+/// One proxy: the value as it was set, and where.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct Proxy {
+    value: String,
+    pub(crate) setting: ProxySetting,
+}
+
+/// Shows the proxy without the user name and password its value may carry.
+impl fmt::Debug for Proxy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let shown = match self.value.rsplit_once('@') {
+            Some((_, host)) => format!("***@{host}"),
+            None => self.value.clone(),
         };
-        [own, ["ALL_PROXY", "all_proxy"]]
+        f.debug_struct("Proxy")
+            .field("value", &shown)
+            .field("setting", &self.setting)
+            .finish()
     }
 }
 
-/// The variable whose proxy a request with `scheme` to `host` goes through, or
-/// `None` when it goes directly.
-pub(crate) fn configured(scheme: Scheme, host: &str, env: Env<'_>) -> Option<&'static str> {
-    let (variable, proxy) = scheme.variables().into_iter().find_map(|pair| {
-        let (name, value) = first_set(&pair, env)?;
-        (!value.trim().is_empty()).then_some((name, value))
-    })?;
-    let no_proxy = first_set(&["NO_PROXY", "no_proxy"], env).map(|(_, value)| value);
-    match no_proxy {
-        Some(list) if excluded(&proxy, &list, host) => None,
-        _ => Some(variable),
+impl Proxy {
+    /// The proxy as the HTTP client takes it, or `None` when the client
+    /// cannot read it. Like the client, a value without a scheme is an http
+    /// proxy.
+    fn url(&self) -> Option<Url> {
+        let readable = Matcher::builder()
+            .all(self.value.clone())
+            .build()
+            .intercept(&::http::Uri::from_static("http://destination.invalid/"))
+            .is_some();
+        if !readable {
+            return None;
+        }
+        if self.value.contains("://") {
+            Url::parse(&self.value).ok()
+        } else {
+            Url::parse(&format!("http://{}", self.value)).ok()
+        }
     }
 }
 
-/// The host names of every proxy the HTTP client may use (for `http` and
-/// `https`). The client connects to these itself, so their names reach the
-/// name resolver; a proxy given as an IP address needs no entry.
-pub(crate) fn host_names(env: Env<'_>) -> Vec<String> {
-    let mut hosts: Vec<String> = Vec::new();
-    for scheme in [Scheme::Http, Scheme::Https] {
-        for name in scheme.variables().into_iter().flatten() {
-            let Some(value) = env(name) else { continue };
-            let value = value.to_string_lossy();
+/// The system's proxy setting while it is turned on, as the system stores it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct SystemProxy {
+    /// The proxy for every protocol (`proxy:8080`), or one per protocol
+    /// (`http=proxy:80;https=proxy:443;ftp=ftp-proxy:21`), where a `socks`
+    /// entry serves every protocol without its own.
+    pub servers: String,
+    /// The hosts reached directly, separated by semicolons: names (`*.corp`
+    /// covers its subdomains), addresses, IPv4 wildcards (`10.*`) and
+    /// `<local>`, every name without a dot.
+    pub exceptions: String,
+}
+
+/// Reads the system's proxy setting; `None` while it is turned off.
+#[cfg(windows)]
+pub(crate) fn system_proxy() -> Option<SystemProxy> {
+    let settings = windows_registry::CURRENT_USER
+        .open(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings")
+        .ok()?;
+    if settings.get_u32("ProxyEnable").unwrap_or(0) == 0 {
+        return None;
+    }
+    Some(SystemProxy {
+        servers: settings.get_string("ProxyServer").unwrap_or_default(),
+        exceptions: settings.get_string("ProxyOverride").unwrap_or_default(),
+    })
+}
+
+/// Reads the system's proxy setting: none outside Windows.
+#[cfg(not(windows))]
+pub(crate) fn system_proxy() -> Option<SystemProxy> {
+    None
+}
+
+/// The proxy settings a download's requests follow.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Proxies {
+    http: Option<Proxy>,
+    https: Option<Proxy>,
+    ftp: Option<Proxy>,
+    all: Option<Proxy>,
+    /// The hosts reached directly, in `NO_PROXY` form.
+    no: String,
+    /// Names without a dot are reached directly (the system's `<local>`).
+    plain_names_direct: bool,
+}
+
+impl Proxies {
+    /// The settings in effect now: the process's environment, or else the
+    /// system's setting.
+    pub(crate) fn current() -> Self {
+        Self::read(&process_env, system_proxy)
+    }
+
+    /// The settings `env` gives, or else those `system` reads.
+    pub(crate) fn read(env: Env<'_>, system: impl FnOnce() -> Option<SystemProxy>) -> Self {
+        if env("REQUEST_METHOD").is_some() {
+            return Self::default();
+        }
+        let variable = |pair: [&'static str; 2]| {
+            let (name, value) = first_set(&pair, env)?;
+            (!value.trim().is_empty()).then(|| Proxy {
+                value,
+                setting: ProxySetting::Variable(name.to_string()),
+            })
+        };
+        let mut proxies = Self {
+            http: variable(["HTTP_PROXY", "http_proxy"]),
+            https: variable(["HTTPS_PROXY", "https_proxy"]),
+            ftp: variable(["FTP_PROXY", "ftp_proxy"]),
+            all: variable(["ALL_PROXY", "all_proxy"]),
+            no: first_set(&["NO_PROXY", "no_proxy"], env)
+                .map(|(_, value)| value)
+                .unwrap_or_default(),
+            plain_names_direct: false,
+        };
+        let none_set = [&proxies.http, &proxies.https, &proxies.ftp, &proxies.all]
+            .iter()
+            .all(|proxy| proxy.is_none());
+        if none_set && let Some(system) = system() {
+            proxies.adopt(&system);
+        }
+        proxies
+    }
+
+    /// Takes the system's setting.
+    fn adopt(&mut self, system: &SystemProxy) {
+        let proxy = |value: &str| {
             let value = value.trim();
-            if value.is_empty() {
-                continue;
+            (!value.is_empty()).then(|| Proxy {
+                value: value.to_string(),
+                setting: ProxySetting::System,
+            })
+        };
+        if system.servers.contains('=') {
+            for entry in system.servers.split(';') {
+                let Some((protocol, server)) = entry.split_once('=') else {
+                    continue;
+                };
+                match protocol.trim().to_ascii_lowercase().as_str() {
+                    "http" => self.http = proxy(server),
+                    "https" => self.https = proxy(server),
+                    "ftp" => self.ftp = proxy(server),
+                    // As the system uses it: for every protocol without its
+                    // own entry. The HTTP client cannot go through SOCKS, so
+                    // those requests fail rather than go around it.
+                    "socks" => self.all = proxy(&format!("socks4://{}", server.trim())),
+                    _ => {}
+                }
             }
-            // Like the HTTP client, a value without a scheme is an http proxy.
+        } else {
+            self.all = proxy(&system.servers);
+        }
+        if self.no.trim().is_empty() {
+            (self.no, self.plain_names_direct) = exceptions(&system.exceptions);
+        }
+    }
+
+    /// The proxy a request with `scheme` to `host` goes through, or `None`
+    /// when it goes directly: the first the HTTP client can read of the
+    /// scheme's own and the one for every protocol, as the client did when it
+    /// read the settings itself. When it can read neither, the one that is set
+    /// still counts, the careful answer for a decision that would otherwise go
+    /// around a proxy the user set; the client itself then goes directly.
+    pub(crate) fn proxy_for(&self, scheme: Scheme, host: &str) -> Option<&Proxy> {
+        let own = match scheme {
+            Scheme::Http => &self.http,
+            Scheme::Https => &self.https,
+            Scheme::Ftp => &self.ftp,
+        };
+        let set = [own, &self.all].into_iter().flatten();
+        let proxy = set
+            .clone()
+            .find(|proxy| proxy.url().is_some())
+            .or_else(|| set.clone().next())?;
+        if self.plain_names_direct && !host.contains('.') && !host.contains(':') {
+            return None;
+        }
+        (!excluded(&proxy.value, &self.no, host)).then_some(proxy)
+    }
+
+    /// The proxy the HTTP client sends a request for `url` through.
+    fn client_target(&self, url: &Url) -> Option<Url> {
+        let scheme = Scheme::of(url).filter(|scheme| *scheme != Scheme::Ftp)?;
+        self.proxy_for(scheme, url.host_str()?)?.url()
+    }
+
+    /// These settings as the HTTP client's only proxy, so it reads none of
+    /// its own.
+    pub(crate) fn client(self: &Arc<Self>) -> reqwest::Proxy {
+        let proxies = self.clone();
+        reqwest::Proxy::custom(move |url| proxies.client_target(url))
+    }
+
+    /// The host names of every proxy the HTTP client may use (for `http` and
+    /// `https`). The client connects to these itself, so their names reach the
+    /// name resolver; a proxy given as an IP address needs no entry.
+    pub(crate) fn host_names(&self) -> Vec<String> {
+        let mut hosts: Vec<String> = Vec::new();
+        for proxy in [&self.http, &self.https, &self.all].into_iter().flatten() {
+            let value = proxy.value.trim();
             let parsed = if value.contains("://") {
                 Url::parse(value)
             } else {
@@ -94,15 +307,52 @@ pub(crate) fn host_names(env: Env<'_>) -> Vec<String> {
                 hosts.push(host.to_string());
             }
         }
+        hosts
     }
-    hosts
 }
 
-/// The first of `names` that is set, with its value.
+/// The first of `names` that is set to text, with its value. A value that is
+/// not Unicode counts as not set, as in the HTTP client.
 fn first_set(names: &[&'static str], env: Env<'_>) -> Option<(&'static str, String)> {
     names
         .iter()
-        .find_map(|&name| env(name).map(|value| (name, value.to_string_lossy().into_owned())))
+        .find_map(|&name| env(name)?.into_string().ok().map(|value| (name, value)))
+}
+
+/// The system's exceptions in `NO_PROXY` form, and whether they hold
+/// `<local>`. `*.corp.example` becomes `corp.example`, which covers its
+/// subdomains (and the name itself), an IPv4 wildcard becomes the network it
+/// covers, and `*` (or `*.*`) covers every name, as in `NO_PROXY`; any other
+/// pattern stays as it is and matches nothing, so its hosts keep the proxy.
+fn exceptions(list: &str) -> (String, bool) {
+    let mut local = false;
+    let mut entries = Vec::new();
+    for entry in list.split(';').map(str::trim).filter(|e| !e.is_empty()) {
+        if entry.eq_ignore_ascii_case("<local>") {
+            local = true;
+        } else if let Some(network) = ipv4_wildcard(entry) {
+            entries.push(network);
+        } else {
+            entries.push(entry.strip_prefix("*.").unwrap_or(entry).to_string());
+        }
+    }
+    (entries.join(","), local)
+}
+
+/// `10.*` or `192.168.*.*` as the network it covers (`10.0.0.0/8`,
+/// `192.168.0.0/16`), or `None` for anything else.
+fn ipv4_wildcard(entry: &str) -> Option<String> {
+    let parts: Vec<&str> = entry.split('.').collect();
+    let first_wild = parts.iter().position(|part| *part == "*")?;
+    if first_wild == 0 || parts.len() > 4 || parts[first_wild..].iter().any(|part| *part != "*") {
+        return None;
+    }
+    let mut octets = [0u8; 4];
+    for (octet, part) in octets.iter_mut().zip(&parts[..first_wild]) {
+        *octet = part.parse().ok()?;
+    }
+    let [a, b, c, d] = octets;
+    Some(format!("{a}.{b}.{c}.{d}/{}", first_wild * 8))
 }
 
 /// Whether a request to `host` would bypass the proxy `proxy` because of the
@@ -129,135 +379,4 @@ fn excluded(proxy: &str, no_proxy: &str, host: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// An environment holding only `values`.
-    fn env(values: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<OsString> {
-        move |name: &str| {
-            values
-                .iter()
-                .find(|(n, _)| *n == name)
-                .map(|(_, v)| OsString::from(v))
-        }
-    }
-
-    #[test]
-    fn each_scheme_reads_its_own_variable_then_all_proxy() {
-        let set = env(&[
-            ("https_proxy", "http://proxy:8080"),
-            ("ALL_PROXY", "socks5://all:1080"),
-        ]);
-        assert_eq!(
-            configured(Scheme::Https, "h.example", &set),
-            Some("https_proxy")
-        );
-        assert_eq!(
-            configured(Scheme::Ftp, "h.example", &set),
-            Some("ALL_PROXY")
-        );
-        assert_eq!(
-            configured(Scheme::Http, "h.example", &set),
-            Some("ALL_PROXY")
-        );
-        // The first of a pair that is set counts, even when empty.
-        let empty = env(&[("HTTPS_PROXY", ""), ("https_proxy", "http://proxy:8080")]);
-        assert_eq!(configured(Scheme::Https, "h.example", &empty), None);
-        assert_eq!(configured(Scheme::Ftp, "h.example", &env(&[])), None);
-    }
-
-    #[test]
-    fn no_proxy_names_hosts_reached_directly() {
-        let set = env(&[
-            ("ALL_PROXY", "http://proxy:8080"),
-            (
-                "NO_PROXY",
-                "localhost, .internal.example,corp.example,10.0.0.0/8,::1,192.168.1.7,fd00::/8",
-            ),
-            ("no_proxy", "*"),
-        ]);
-        for direct in [
-            "localhost",
-            "LOCALHOST",
-            "internal.example",
-            "a.internal.example",
-            "corp.example",
-            "files.corp.example",
-            "10.1.2.3",
-            "[::1]",
-            "192.168.1.7",
-            "[fd12::1]",
-        ] {
-            assert_eq!(configured(Scheme::Ftp, direct, &set), None, "{direct}");
-        }
-        for proxied in [
-            "notcorp.example",
-            "example",
-            "11.0.0.1",
-            "192.168.1.8",
-            "[::2]",
-            "[fe80::1]",
-            "localhost.evil.example",
-        ] {
-            assert_eq!(
-                configured(Scheme::Ftp, proxied, &set),
-                Some("ALL_PROXY"),
-                "{proxied}"
-            );
-        }
-        // `*` covers every name but no address, as in the HTTP client.
-        let star = env(&[("HTTPS_PROXY", "http://proxy:8080"), ("no_proxy", "*")]);
-        assert_eq!(configured(Scheme::Https, "anything.example", &star), None);
-        assert_eq!(
-            configured(Scheme::Https, "8.8.8.8", &star),
-            Some("HTTPS_PROXY")
-        );
-        // An address entry never covers a name that ends like it.
-        let address = env(&[("HTTPS_PROXY", "http://p:1"), ("NO_PROXY", "1.2.3.4")]);
-        assert_eq!(
-            configured(Scheme::Https, "x.1.2.3.4", &address),
-            Some("HTTPS_PROXY")
-        );
-    }
-
-    /// A proxy value the client cannot read still counts as a proxy the user
-    /// set: an unrelated `NO_PROXY` must not make FTP or QUIC go around it.
-    #[test]
-    fn an_unreadable_proxy_is_not_excused_by_no_proxy() {
-        for proxy in ["not a url at all", "http://[bad"] {
-            let set = move |name: &str| match name {
-                "ALL_PROXY" => Some(OsString::from(proxy)),
-                "NO_PROXY" => Some(OsString::from("other.example")),
-                _ => None,
-            };
-            assert_eq!(
-                configured(Scheme::Ftp, "h.example", &set),
-                Some("ALL_PROXY"),
-                "{proxy}"
-            );
-            assert_eq!(
-                configured(Scheme::Https, "h.example", &set),
-                Some("ALL_PROXY"),
-                "{proxy}"
-            );
-        }
-    }
-
-    #[test]
-    fn proxy_host_names_come_from_the_environment() {
-        let hosts = host_names(&env(&[
-            ("HTTPS_PROXY", "http://user:secret@Proxy.Corp.example:8080"),
-            ("http_proxy", "proxy.corp.example:3128"),
-            ("ALL_PROXY", "socks5://socks.lan:1080"),
-            ("all_proxy", "http://10.0.0.5:8080"),
-            ("HTTP_PROXY", "  "),
-            ("https_proxy", "http://[::1]:8080"),
-            ("FTP_PROXY", "http://ftp-only.lan:21"),
-        ]));
-        assert_eq!(hosts, ["proxy.corp.example", "socks.lan"]);
-        assert_eq!(
-            host_names(&env(&[("NO_PROXY", "localhost")])),
-            [] as [String; 0]
-        );
-    }
-}
+mod tests;

@@ -25,7 +25,7 @@ use url::Url;
 use crate::error::{Chain, Error, Result};
 use crate::http::{self, Failure, RequestRange, Session};
 use crate::options::DownloadOptions;
-use crate::proxy::{self, Scheme};
+use crate::proxy::{Proxies, Scheme};
 use crate::request::RequestContext;
 
 /// Longest wait for a QUIC handshake. A network that blocks UDP shows up as a
@@ -68,22 +68,22 @@ impl Origin {
     /// belong to that host.
     ///
     /// `peer` is the address the first request reached. Nothing is used when
-    /// a proxy is set for the host in the environment `env` reads: QUIC would
-    /// go around it.
+    /// `proxies` send the host's requests through a proxy: QUIC would go
+    /// around it.
     pub fn advertised(
         url: &Url,
         headers: &HeaderMap,
         peer: Option<SocketAddr>,
         tls: &rustls::ClientConfig,
         opts: &DownloadOptions,
-        env: proxy::Env<'_>,
+        proxies: &Proxies,
     ) -> Option<Arc<Self>> {
         if url.scheme() != "https" {
             return None;
         }
         let host = url.host_str()?;
-        if let Some(variable) = proxy::configured(Scheme::Https, host, env) {
-            debug!(variable, "a proxy is set, so HTTP/3 is not used");
+        if let Some(proxy) = proxies.proxy_for(Scheme::Https, host) {
+            debug!(setting = %proxy.setting, "a proxy is set, so HTTP/3 is not used");
             return None;
         }
         let port = headers

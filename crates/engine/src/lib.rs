@@ -193,8 +193,10 @@
 //! UTF-8 (`OPTS UTF8 ON` is sent after logging in).
 //!
 //! FTP does not go through proxies yet. While `ALL_PROXY` or `FTP_PROXY` is
-//! set, an FTP link ends with [`Error::FtpProxyUnsupported`] instead of quietly
-//! going around the proxy, unless `NO_PROXY` names its host.
+//! set, or with no proxy variable set the system's proxy setting covers FTP,
+//! an FTP link ends with [`Error::FtpProxyUnsupported`] instead of quietly
+//! going around the proxy, unless `NO_PROXY` (or the system setting's
+//! exceptions) names its host.
 //!
 //! Each connection logs in once and then downloads range after range: it
 //! asks for a passive data connection, sends `REST` with the offset and
@@ -256,5 +258,6 @@ pub use limiter::RateLimiter;
 pub use net_guard::{AddressKind, PrivateNetwork};
 pub use options::{DownloadOptions, MAX_BUFFER_SIZE, MAX_CONNECTIONS};
 pub use progress::Progress;
+pub use proxy::ProxySetting;
 pub use storage::{PART_EXT, STATE_EXT};
 pub use tokio_util::sync::CancellationToken;
