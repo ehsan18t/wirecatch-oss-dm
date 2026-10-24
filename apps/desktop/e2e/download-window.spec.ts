@@ -81,6 +81,13 @@ for (const theme of ['light', 'dark'] as const) {
     await reading.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(reading).toBeHidden();
 
+    // Before the add-on: "answered somewhere else" closes the oldest open question, and an add-on
+    // question closed while it installs may still be open, depending on how fast the install goes.
+    await fileQuestion(page);
+    await pretend(page, 'answered somewhere else');
+    await windowWith(page, 'Nothing to do here');
+    await audit(page, 'answered somewhere else');
+
     await pretend(page, 'needs the media add-on');
     const addon = await windowWith(page, /Install the media add-on/);
     await audit(page, 'add-on offer');
@@ -90,11 +97,6 @@ for (const theme of ['light', 'dark'] as const) {
     // The install may finish meanwhile and the window move on, so it goes by its title bar's Close.
     await addon.getByRole('button', { name: 'Close', exact: true }).first().click();
     await expect(addon).toBeHidden();
-
-    await fileQuestion(page);
-    await pretend(page, 'answered somewhere else');
-    await windowWith(page, 'Nothing to do here');
-    await audit(page, 'answered somewhere else');
   });
 }
 
