@@ -29,6 +29,19 @@ export type UiEvent =
   | { type: 'settings_imported'; data: ImportSummary }
   | { type: 'media_choice_requested'; data: MediaChoice }
   | {
+      type: 'media_captured';
+      data: {
+        /**
+         * The id the read has, as a question it may yet ask.
+         */
+        id: QuestionId;
+        /**
+         * Its title, or its address with any password removed.
+         */
+        title: string;
+      };
+    }
+  | {
       type: 'media_analysing';
       data: {
         /**

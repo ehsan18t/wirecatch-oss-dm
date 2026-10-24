@@ -36,6 +36,9 @@ pub enum Attention {
     /// video downloaded with the saved choices): told briefly as the settings say, and no window
     /// comes up, since the person is still browsing (D63, D65).
     Started(Box<DownloadSummary>),
+    /// A video from the browser is read for its qualities without a window: told as added at
+    /// once, by its title (D67).
+    VideoAdded(String),
     /// A browser showed the note with this id (D65).
     NoteShown(NoteId),
     /// The person pressed one of a browser note's buttons (D65).
@@ -65,6 +68,7 @@ pub fn attention(event: &UiEvent) -> Attention {
         UiEvent::WindowRequested => Attention::ShowMain,
         UiEvent::BrowserSettingsRequested => Attention::ShowBrowserSettings,
         UiEvent::Captured(row) => Attention::Started(Box::new(row.clone())),
+        UiEvent::MediaCaptured { title, .. } => Attention::VideoAdded(title.clone()),
         UiEvent::NoteShown(id) => Attention::NoteShown(*id),
         UiEvent::NotePressed(pressed) => Attention::NotePressed(pressed.clone()),
         UiEvent::SettingsChanged(settings) => Attention::Theme(settings.theme),

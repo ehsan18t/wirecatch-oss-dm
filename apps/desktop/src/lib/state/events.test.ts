@@ -51,6 +51,7 @@ describe('event handler tables', () => {
       queue_finished: vi.fn(),
       note_shown: vi.fn(),
       note_pressed: vi.fn(),
+      media_captured: vi.fn(),
     };
     dispatch(handlers, STORAGE);
     dispatch(handlers, FORWARD);

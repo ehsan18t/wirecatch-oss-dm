@@ -102,7 +102,7 @@ pub fn default_settings() -> AppSettings {
         accent: Accent::Cyan,
         start_with_system: false,
         close_to_tray: true,
-        finish_notice: FinishNotice::Notification,
+        finish_notice: FinishNotice::Browser,
         finish_note_time: FinishNoteTime::EightSeconds,
         start_notice: StartNotice::Browser,
         start_note_time: StartNoteTime::ThreeSeconds,

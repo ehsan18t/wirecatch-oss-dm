@@ -1415,6 +1415,13 @@ export function isUiEvent(value: unknown): value is UiEvent {
       isMediaChoice(value1['data']))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) &&
+      value1['type'] === 'media_captured' &&
+      ((value2: unknown): boolean =>
+        isRecord(value2) && isQuestionId(value2['id']) && typeof value2['title'] === 'string')(
+        value1['data'],
+      ))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
       value1['type'] === 'media_analysing' &&
       ((value2: unknown): boolean =>
         isRecord(value2) && isQuestionId(value2['id']) && typeof value2['url'] === 'string')(
