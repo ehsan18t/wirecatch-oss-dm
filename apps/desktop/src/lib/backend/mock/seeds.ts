@@ -183,8 +183,7 @@ export const SEEDS: readonly Seed[] = [
     rate: 2 * MB,
     age: 3,
     error: {
-      message:
-        'Wirecatch cannot save to E:\\Backups because that drive is not connected. Choose another folder.',
+      message: String.raw`Wirecatch cannot save to E:\Backups because that drive is not connected. Choose another folder.`,
       fix: 'choose_folder',
     },
   },

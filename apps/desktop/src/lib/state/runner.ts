@@ -49,8 +49,8 @@ export class Runner {
     this.#clear();
     try {
       return await action();
-    } catch (err) {
-      if (!recover(err)) this.#fail(errorMessage(err));
+    } catch (error) {
+      if (!recover(error)) this.#fail(errorMessage(error));
       return undefined;
     }
   }

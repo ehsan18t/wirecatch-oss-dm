@@ -1,6 +1,8 @@
 <script lang="ts">
   // An add-on's state and what can be done with it: one main button that installs, updates, tries again or stops, so the keyboard focus stays on it as the state changes, and the checks and removal once installed. `align` is where it sits: at a settings row's end, or after text in a dialog.
   import type { AddonInfo } from '@wirecatch/protocol';
+  import { formatBytes } from '@wirecatch/units';
+  import { Button, cn, ProgressBar } from '@wirecatch/ui';
   import {
     addonAction,
     addonAnnouncement,
@@ -11,8 +13,6 @@
   import { findElement } from '$lib/dom';
   import { getApp } from '$lib/state/app.svelte';
   import { track } from '$lib/state/reactivity';
-  import { formatBytes } from '@wirecatch/units';
-  import { Button, cn, ProgressBar } from '@wirecatch/ui';
 
   let {
     addon,

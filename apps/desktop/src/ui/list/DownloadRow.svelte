@@ -96,8 +96,8 @@
   const folded = $derived(
     [
       !shown.has('progress') && percent && group !== 'finished' ? percent : '',
-      !shown.has('size') ? size : '',
-      !shown.has('speed') ? speed : '',
+      shown.has('size') ? '' : size,
+      shown.has('speed') ? '' : speed,
       !shown.has('left') && eta ? `${eta} left` : '',
     ].filter(Boolean),
   );

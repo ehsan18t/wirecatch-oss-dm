@@ -177,9 +177,9 @@ export const isBackgroundMessage = variants<BackgroundMessage>({
 
 /** The part of `runtime.Port` both sides use; `Out` is what this side sends, `In` what it receives. */
 export interface Channel<Out, In> {
-  postMessage(message: Out): void;
-  onMessage: { addListener(listener: (message: In) => void): void };
-  onDisconnect: { addListener(listener: () => void): void };
+  postMessage: (message: Out) => void;
+  onMessage: { addListener: (listener: (message: In) => void) => void };
+  onDisconnect: { addListener: (listener: () => void) => void };
 }
 
 const isTabId = refine(isNumber, (id) => Number.isInteger(id) && id >= 0);

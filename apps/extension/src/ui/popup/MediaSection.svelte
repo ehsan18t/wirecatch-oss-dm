@@ -70,8 +70,8 @@
         Update Wirecatch to choose how videos download from here.
       </p>
     {:else}
-      {@const media = controls.media}
-      {@const kbps = kbpsChoices(media.audio.format)}
+      {const media = $derived(controls.media)}
+      {const kbps = $derived(kbpsChoices(media.audio.format))}
       <SettingRow label={SETTINGS.quality.label} description={SETTINGS.quality.description} stacked>
         {#snippet children(control)}
           <Select

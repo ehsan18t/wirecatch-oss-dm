@@ -279,16 +279,16 @@ export function scheduleAllows(schedule: Schedule | null, now: Date): boolean {
  */
 export function linkForDisplay(url: string): string {
   const scheme = url.indexOf(SCHEME_END);
-  if (scheme < 0) return url;
+  if (scheme === -1) return url;
   const start = scheme + SCHEME_END.length;
   const rest = url.slice(start);
   const end = rest.search(/[/?#]/);
   const authority = end < 0 ? rest : rest.slice(0, end);
   const at = authority.lastIndexOf('@');
-  if (at < 0) return url;
+  if (at === -1) return url;
   const userinfo = authority.slice(0, at);
   const colon = userinfo.indexOf(':');
-  const masked = colon < 0 ? '***' : `${userinfo.slice(0, colon)}:***`;
+  const masked = colon === -1 ? '***' : `${userinfo.slice(0, colon)}:***`;
   return `${url.slice(0, start)}${masked}${rest.slice(at)}`;
 }
 
@@ -357,7 +357,7 @@ export function extractUrls(text: string): string[] {
 export function fileNameFromUrl(url: string): string {
   try {
     const u = new URL(url);
-    const last = u.pathname.split('/').filter(Boolean).pop();
+    const last = u.pathname.split('/').findLast(Boolean);
     if (!last) return u.host;
     return decodeURIComponent(last);
   } catch {

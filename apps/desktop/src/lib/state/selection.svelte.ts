@@ -71,7 +71,7 @@ export class Selection {
     const list = this.#host.visible();
     const from = this.#anchor === null ? -1 : list.indexOf(this.#anchor);
     const to = list.indexOf(id);
-    if (from < 0 || to < 0) {
+    if (from < 0 || to === -1) {
       this.only(id);
       return;
     }

@@ -118,7 +118,7 @@ export const noTypeArgumentAssertion = {
 
     /** Whether the type parameter `target` takes part in nothing the call is given. */
     function unchecked(target, parameters) {
-      return !parameters.some((type) => takesPart({ checker, target }, type, true));
+      return parameters.every((type) => !takesPart({ checker, target }, type, true));
     }
 
     function checkTypeArguments(node, { typeParameters, parameters }) {

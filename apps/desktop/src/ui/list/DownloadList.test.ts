@@ -11,6 +11,8 @@ const rendered = () =>
     .getAllByRole('row')
     .filter((r) => r.dataset.id !== undefined);
 const idOf = (row: HTMLElement) => downloadId(Number(row.dataset.id));
+/** Download ids in number order. */
+const byId = (a: DownloadId, b: DownloadId) => a - b;
 
 async function setup(options: Parameters<typeof renderApp>[0] = {}) {
   const r = await renderApp(options);
@@ -141,12 +143,12 @@ describe('the download list', () => {
     await user.keyboard('{Shift>}');
     await user.click(c);
     await user.keyboard('{/Shift}');
-    expect(app.selection.list.toSorted()).toEqual([idOf(a), idOf(b), idOf(c)].toSorted());
+    expect(app.selection.list.toSorted(byId)).toEqual([idOf(a), idOf(b), idOf(c)].toSorted(byId));
     await user.keyboard('{Control>}');
     await user.click(b);
     await user.click(d);
     await user.keyboard('{/Control}');
-    expect(app.selection.list.toSorted()).toEqual([idOf(a), idOf(c), idOf(d)].toSorted());
+    expect(app.selection.list.toSorted(byId)).toEqual([idOf(a), idOf(c), idOf(d)].toSorted(byId));
     expect(b).toHaveAttribute('aria-selected', 'false');
   });
 
@@ -184,7 +186,7 @@ describe('the download list', () => {
     const { app } = await setup({ count: 500 });
     app.folded.clear();
     await settle();
-    expect(app.visible.length).toBe(500);
+    expect(app.visible).toHaveLength(500);
     const before = rendered();
     expect(before.length).toBeLessThan(40);
     const staying = before[8];

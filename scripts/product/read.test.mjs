@@ -12,7 +12,7 @@ const PRODUCT_TOML = readFileSync(
 /** The repository's product.toml with one line replaced. */
 function changed(from, to) {
   assert.ok(PRODUCT_TOML.includes(from), `product.toml has no ${from}`);
-  return PRODUCT_TOML.replace(from, to);
+  return PRODUCT_TOML.replace(from, () => to);
 }
 
 function rejects(text, problem) {
@@ -81,7 +81,7 @@ test('the values still to decide are found as placeholders', () => {
 });
 
 test('a value that would break the quoting of a shell or NSIS script is refused', () => {
-  for (const name of ['Wire"catch', 'Wire$catch', 'Wire`catch', 'Wire\\catch']) {
+  for (const name of ['Wire"catch', 'Wire$catch', 'Wire`catch', String.raw`Wire\catch`]) {
     // A TOML literal string, so the value reaches the check as written.
     rejects(changed('name = "Wirecatch"', `name = '${name}'`), /product\.name/);
   }

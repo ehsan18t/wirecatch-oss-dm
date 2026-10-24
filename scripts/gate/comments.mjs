@@ -16,27 +16,30 @@ const COMMENT_SCOPE = [
   '*.svelte',
 ];
 /** What a file must contain to be read at all. */
-const ANY_DIRECTIVE = 'eslint|svelte-ignore|/\\*\\s*(globals?|exported)\\s';
+const ANY_DIRECTIVE = String.raw`eslint|svelte-ignore|/\*\s*(globals?|exported)\s`;
 /** The start of a comment, in a script (`//`, `/*`) or in Svelte markup (`<!--`). */
 const OPEN = String.raw`(\/\/|\/\*|<!--)\s*`;
 /** The end of a comment's text: its closing marker, or the end of the line. */
 const CLOSE = String.raw`(.*?)(?:\*\/|-->|$)`;
 /** An ESLint disable comment in any of its forms, with the rules and reason that follow it. */
 const ESLINT_DISABLE = new RegExp(
-  `${OPEN}eslint-disable(-next-line|-line)?(?=\\s|\\*\\/|-->|$)${CLOSE}`,
+  String.raw`${OPEN}eslint-disable(-next-line|-line)?(?=\s|\*\/|-->|$)${CLOSE}`,
   'gm',
 );
 /** ESLint configuration written in a comment: rule settings, globals and environments. ESLint reads these from block comments only. */
-const INLINE_CONFIG = new RegExp(`${OPEN}(eslint|globals?|eslint-env|exported)\\s${CLOSE}`, 'gm');
+const INLINE_CONFIG = new RegExp(
+  String.raw`${OPEN}(eslint|globals?|eslint-env|exported)\s${CLOSE}`,
+  'gm',
+);
 /** A svelte-ignore comment, in markup or in a script, with the codes and reason that follow it. */
-const SVELTE_IGNORE = new RegExp(`${OPEN}svelte-ignore\\s${CLOSE}`, 'gm');
+const SVELTE_IGNORE = new RegExp(String.raw`${OPEN}svelte-ignore\s${CLOSE}`, 'gm');
 /** Svelte reads the codes, separated by commas, from the start of a svelte-ignore comment and treats what follows as prose. */
 const SVELTE_IGNORE_CODES = /^\s*[\w$-]+(?:\s*,\s*[\w$-]+)*/;
 /** Where an ESLint comment's reason starts: its `--` separator. */
-const REASON_SEPARATOR = /(?:^|\s)--+\s+\S/;
+const REASON_SEPARATOR = /(?:^|\s)-{2,}\s+\S/;
 /** A svelte-ignore comment's reason, in parentheses after its codes. Svelte reads text after the codes as prose, but svelte/no-unused-svelte-ignore reads every word as a code, so a `--` reason fails ESLint; parentheses pass both. */
-const SVELTE_IGNORE_REASON = /^\([^)]*[^)\s][^)]*\)$/;
-const REASON_SPLIT = /\s--+\s/;
+const SVELTE_IGNORE_REASON = /^\(\s*[^\s)][^)]*\)$/;
+const REASON_SPLIT = /\s-{2,}\s/;
 
 /** The names a comment's list gives, before its reason: `a, b -- why` gives `a` and `b`. */
 function listedNames(text) {
@@ -52,7 +55,7 @@ function listedNames(text) {
 function configuredRules(text) {
   let settings = text.split(REASON_SPLIT)[0];
   while (/[[{][^[\]{}]*[\]}]/.test(settings))
-    settings = settings.replace(/[[{][^[\]{}]*[\]}]/g, '');
+    settings = settings.replaceAll(/[[{][^[\]{}]*[\]}]/g, '');
   return [...settings.matchAll(/([@\w][\w@/-]*)\s*:/g)].map((m) => m[1]).sort();
 }
 

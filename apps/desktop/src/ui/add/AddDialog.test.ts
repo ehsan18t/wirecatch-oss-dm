@@ -116,16 +116,16 @@ describe('the Add dialog', () => {
 
   it('saves where the person picks, or back where Settings says', async () => {
     const { app, backend, click } = await setup();
-    vi.spyOn(backend, 'pickFolder').mockResolvedValueOnce('E:\\Media');
+    vi.spyOn(backend, 'pickFolder').mockResolvedValueOnce(String.raw`E:\Media`);
     app.openDialog({ kind: 'add', urls: ['https://a.example/1.zip'] });
     await settle();
     const saveTo = inDialog().getByRole('group', { name: 'Save to' });
     expect(saveTo).toHaveTextContent('By file type, as set in Settings');
     expect(within(saveTo).queryByRole('button', { name: 'Use default' })).toBeNull();
     await click(within(saveTo).getByRole('button', { name: 'Change' }));
-    expect(saveTo).toHaveTextContent('E:\\Media');
+    expect(saveTo).toHaveTextContent(String.raw`E:\Media`);
     expect(within(saveTo).getByRole('button', { name: 'Change' })).toHaveAccessibleDescription(
-      'E:\\Media',
+      String.raw`E:\Media`,
     );
     await click(within(saveTo).getByRole('button', { name: 'Use default' }));
     expect(saveTo).toHaveTextContent('By file type');
@@ -133,7 +133,7 @@ describe('the Add dialog', () => {
 
   it('keeps the focus in the form when Use default goes with the folder', async () => {
     const { app, backend, click, press } = await setup();
-    vi.spyOn(backend, 'pickFolder').mockResolvedValueOnce('E:\\Media');
+    vi.spyOn(backend, 'pickFolder').mockResolvedValueOnce(String.raw`E:\Media`);
     app.openDialog({ kind: 'add', urls: ['https://a.example/1.zip'] });
     await settle();
     const saveTo = inDialog().getByRole('group', { name: 'Save to' });

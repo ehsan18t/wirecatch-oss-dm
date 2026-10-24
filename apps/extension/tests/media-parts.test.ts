@@ -57,7 +57,7 @@ describe('DownloadableChecks', () => {
     // A no is kept for a while, then asked again.
     expect(checks.allowed(el)).toBe(false);
     expect(asked).toHaveLength(1);
-    now = 3_000;
+    now = 3000;
     expect(checks.allowed(el)).toBe(false);
     await flush();
     expect(asked).toHaveLength(2);
@@ -169,9 +169,9 @@ describe('mediaAt', () => {
 
 describe('backoffDelay', () => {
   it('walks the table and then repeats its last delay', () => {
-    const table = [1_000, 2_000, 4_000] as const;
+    const table = [1000, 2000, 4000] as const;
     expect([0, 1, 2, 3, 10].map((attempt) => backoffDelay(table, attempt))).toEqual([
-      1_000, 2_000, 4_000, 4_000, 4_000,
+      1000, 2000, 4000, 4000, 4000,
     ]);
     expect([0, 5].map((attempt) => backoffDelay([60_000], attempt))).toEqual([60_000, 60_000]);
   });

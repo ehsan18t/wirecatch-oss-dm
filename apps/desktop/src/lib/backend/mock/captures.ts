@@ -55,7 +55,7 @@ export function confirmCapture(
 }
 
 export function rejectCapture(state: MockState, id: QuestionId): void {
-  if (!state.pending.some((x) => x.id === id)) throw new BackendError(ALREADY_ANSWERED);
+  if (state.pending.every((x) => x.id !== id)) throw new BackendError(ALREADY_ANSWERED);
   state.pending = state.pending.filter((x) => x.id !== id);
   closeQuestion(state, id);
 }

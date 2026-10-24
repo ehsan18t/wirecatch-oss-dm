@@ -9,14 +9,14 @@ import { originPattern } from '../site-access';
 /** The part of `windows` and `tabs` this needs. */
 export interface FocusApi {
   /** `windows.getLastFocused()`. */
-  lastFocusedWindow(): Promise<{
+  lastFocusedWindow: () => Promise<{
     id?: number;
     focused: boolean;
     state?: string;
     incognito: boolean;
   }>;
   /** The active tab of the window `windowId`: `tabs.query({ active: true, windowId })`. */
-  activeTab(windowId: number): Promise<{ id?: number; url?: string } | undefined>;
+  activeTab: (windowId: number) => Promise<{ id?: number; url?: string } | undefined>;
 }
 
 /** The tab the person is looking at, or null when a note there would go unseen or cannot show. */

@@ -22,7 +22,7 @@ export interface FinishedWindowHost {
   /** What the window lists: the shell's, or the sample page's. */
   finished: () => FinishedSource;
   /** Closes the window. */
-  close(): void;
+  close: () => void;
 }
 
 /** Makes the download complete window's state over a backend the caller does not hand out. */
@@ -95,8 +95,8 @@ export class FinishedWindowState {
       this.groups = list.groups;
       this.settings = settings;
       this.name = name;
-    } catch (err) {
-      this.error = errorMessage(err);
+    } catch (error) {
+      this.error = errorMessage(error);
     } finally {
       this.loaded = true;
       events.release();
@@ -128,11 +128,11 @@ export class FinishedWindowState {
     downloads_changed: (e) => {
       // A batch holds only the rows that changed, and the window lists few.
       const changed = (id: DownloadId) => e.data.find((row) => row.id === id);
-      if (!this.rows.some((row) => changed(row.id))) return;
+      if (this.rows.every((row) => !changed(row.id))) return;
       this.#update((row) => changed(row.id) ?? row);
     },
     downloads_removed: (e) => {
-      if (!this.rows.some((row) => e.data.includes(row.id))) return;
+      if (this.rows.every((row) => !e.data.includes(row.id))) return;
       this.#update((row) => (e.data.includes(row.id) ? null : row));
     },
     settings_changed: (e) => {

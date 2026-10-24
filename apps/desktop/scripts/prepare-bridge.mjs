@@ -54,7 +54,7 @@ if (!host) {
 }
 
 const args = bridgeCargoArgs(release);
-if (args.some((a) => /^(--features|--all-features|-F)$/.test(a))) {
+if (args.some((a) => /^(?:--features|--all-features|-F)$/.test(a))) {
   console.error(
     'A bundled bridge must never be built with a cargo feature (test-overrides is for tests only).',
   );

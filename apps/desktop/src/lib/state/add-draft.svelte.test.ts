@@ -112,13 +112,13 @@ describe('the Add dialog in state', () => {
     app.openDialog({ kind: 'add', urls: ['https://a.org/x.zip'] });
     const draft = draftOf(app);
     draft.fileName = '  report.zip ';
-    draft.folder = 'D:\\Saved';
+    draft.folder = String.raw`D:\Saved`;
     draft.queue = queueId(2);
     expect(await draft.submit(false)).toBe(true);
     expect(add).toHaveBeenCalledWith({
       url: 'https://a.org/x.zip',
       queue: queueId(2),
-      folder: 'D:\\Saved',
+      folder: String.raw`D:\Saved`,
       file_name: 'report.zip',
       start: false,
     });
@@ -194,9 +194,9 @@ describe('the Add dialog in state', () => {
     const { app, backend } = await make();
     app.openDialog({ kind: 'add', urls: [] });
     const draft = draftOf(app);
-    vi.spyOn(backend, 'pickFolder').mockResolvedValueOnce('E:\\Media');
+    vi.spyOn(backend, 'pickFolder').mockResolvedValueOnce(String.raw`E:\Media`);
     await draft.chooseFolder();
-    expect(draft.folder).toBe('E:\\Media');
+    expect(draft.folder).toBe(String.raw`E:\Media`);
     draft.useDefaultFolder();
     expect(draft.folder).toBeNull();
     vi.spyOn(backend, 'pickFolder').mockRejectedValueOnce(new Error('No picker here.'));
@@ -209,9 +209,9 @@ describe('the Add dialog in state', () => {
     // Nothing went to the notes behind the dialog.
     expect(app.toasts.items).toEqual([]);
     // A folder picked afterwards takes the failure away.
-    vi.spyOn(backend, 'pickFolder').mockResolvedValueOnce('E:\\Media');
+    vi.spyOn(backend, 'pickFolder').mockResolvedValueOnce(String.raw`E:\Media`);
     await draft.chooseFolder();
-    expect(draft.folder).toBe('E:\\Media');
+    expect(draft.folder).toBe(String.raw`E:\Media`);
     expect(draft.problem).toBeNull();
   });
 });

@@ -1,7 +1,6 @@
 <script lang="ts">
   // What a download window shows under its title bar (D23): a heading, a body that scrolls, and the buttons at the bottom, which always stay in view. The first `[data-autofocus]` element takes the focus when a view appears, so Enter does what the main button says, and again whenever the control holding the focus goes away. The frame reports the height its content needs, so the window is only as tall as what it shows (see `fit.ts`).
-  import type { Snippet } from 'svelte';
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import { Callout, cn, fade, FOCUS_RING_INSET } from '@wirecatch/ui';
   import { findElement } from '$lib/dom';
   import { fitReporter, getFitWindow, neededHeight } from '$lib/window/fit';
@@ -43,7 +42,7 @@
           frame: framePart.getBoundingClientRect().height,
           body: bodyPart.getBoundingClientRect().height,
           content: contentPart.getBoundingClientRect().height,
-          padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+          padding: Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom),
         }),
       );
     };

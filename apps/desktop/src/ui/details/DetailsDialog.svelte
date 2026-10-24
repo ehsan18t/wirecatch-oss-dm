@@ -106,17 +106,19 @@
 </script>
 
 {#if row}
-  {@const r = row}
-  {@const group = groupOf(r.status)}
-  {@const live = group === 'active'}
-  {@const progress = rowProgress(r)}
-  {@const percent = formatPercent(r.done, r.total)}
-  {@const queueName = app.queues.byId(r.queue)?.name ?? 'Its queue'}
-  {@const detail = statusDetail(r, queueName)}
-  {@const can = applicable([r])}
-  {@const fix = r.status === 'failed' ? r.error?.fix : undefined}
-  {@const folder = r.path.endsWith(r.file_name) ? r.path.slice(0, -r.file_name.length) : ''}
-  {@const facts = factsOf(r)}
+  {const r = $derived(row)}
+  {const group = $derived(groupOf(r.status))}
+  {const live = $derived(group === 'active')}
+  {const progress = $derived(rowProgress(r))}
+  {const percent = $derived(formatPercent(r.done, r.total))}
+  {const queueName = $derived(app.queues.byId(r.queue)?.name ?? 'Its queue')}
+  {const detail = $derived(statusDetail(r, queueName))}
+  {const can = $derived(applicable([r]))}
+  {const fix = $derived(r.status === 'failed' ? r.error?.fix : undefined)}
+  {const folder = $derived(
+    r.path.endsWith(r.file_name) ? r.path.slice(0, -r.file_name.length) : '',
+  )}
+  {const facts = $derived(factsOf(r))}
   <Dialog
     open
     title={r.file_name}

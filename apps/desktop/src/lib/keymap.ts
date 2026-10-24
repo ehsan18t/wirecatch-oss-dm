@@ -188,7 +188,7 @@ export function matches(b: KeyBinding, e: KeyboardEvent): boolean {
     modifierMatches(b.ctrl, e.ctrlKey || e.metaKey) &&
     modifierMatches(b.shift, e.shiftKey) &&
     modifierMatches(b.alt, e.altKey) &&
-    !(b.outsideFields === true && isEditable(e.target))
+    (b.outsideFields !== true || !isEditable(e.target))
   );
 }
 

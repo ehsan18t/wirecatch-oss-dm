@@ -26,7 +26,7 @@ test('the workflows install the cargo tools only from the gate tool specs', () =
       const where = `${file}:${String(index + 1)}`;
       const code = line.trim();
       if (code.startsWith('#')) continue;
-      if (/^tool:/.test(code)) assert.equal(code, TOOL_INPUT, `${where} installs other tools`);
+      if (code.startsWith('tool:')) assert.equal(code, TOOL_INPUT, `${where} installs other tools`);
       for (const tool of Object.keys(TOOLS)) {
         assert.ok(!code.includes(tool), `${where} names ${tool}; take it from the gate tool specs`);
       }

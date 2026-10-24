@@ -76,7 +76,7 @@ export function crateMetadataProblems(root) {
   return crateManifests(root).flatMap((path) => {
     const text = readFileSync(join(root, path), 'utf8');
     return INHERITED.filter(
-      (key) => !new RegExp(`^${key}\\.workspace\\s*=\\s*true`, 'm').test(text),
+      (key) => !new RegExp(String.raw`^${key}\.workspace\s*=\s*true`, 'm').test(text),
     ).map((key) => `${path}: ${key} must be \`${key}.workspace = true\``);
   });
 }

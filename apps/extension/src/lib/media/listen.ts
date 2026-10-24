@@ -19,31 +19,31 @@ export interface RequestFilter {
 }
 
 interface Event<L> {
-  addListener(listener: L): void;
+  addListener: (listener: L) => void;
 }
 
 /** The parts of the extension APIs this module uses. */
 export interface MediaEventApi {
   onSendHeaders: {
-    addListener(
+    addListener: (
       listener: (details: ObservedRequest) => void,
       filter: RequestFilter,
       extra: ('requestHeaders' | 'extraHeaders')[],
-    ): void;
+    ) => void;
   };
   onResponseStarted: {
-    addListener(
+    addListener: (
       listener: (details: ObservedResponse) => void,
       filter: RequestFilter,
       extra: 'responseHeaders'[],
-    ): void;
+    ) => void;
   };
   onTabRemoved: Event<(tabId: number) => void>;
   onTabUpdated: {
-    addListener(
+    addListener: (
       listener: (tabId: number, change: { url?: string }) => void,
       filter?: { properties: string[] },
-    ): void;
+    ) => void;
   };
   onMessage: Event<
     (

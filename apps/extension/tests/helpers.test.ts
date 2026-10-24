@@ -57,7 +57,7 @@ describe('file types', () => {
     expect(fileNameFromUrl('https://x.org/a/%E0%A4%A')).toBe('%E0%A4%A');
     expect(fileNameFromUrl('https://x.org/')).toBeNull();
     expect(fileNameFromUrl('nonsense')).toBeNull();
-    expect(baseName('C:\\Users\\me\\a.zip')).toBe('a.zip');
+    expect(baseName(String.raw`C:\Users\me\a.zip`)).toBe('a.zip');
     expect(baseName('/home/me/a.zip')).toBe('a.zip');
   });
 });

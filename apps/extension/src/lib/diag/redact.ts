@@ -22,7 +22,7 @@ const ELLIPSIS = '…';
 const WINDOWS_PATH = /\b[a-z]:[\\/][^\s"'<>]*/gi;
 /** A share is two backslashes, a host and a backslash; two backslashes alone are an escape (`\\\"`). */
 const UNC_PATH = /\\\\[\w.$-]+\\[^\s"'<>]*/g;
-const UNIX_PATH = /(^|[\s("'=])(?:~\/|\/(?!\/)[^\s/"'<>]+\/)[^\s"'<>]*/g;
+const UNIX_PATH = /(^|[\s("'=])(?:~\/|\/[^\s/"'<>]+\/)[^\s"'<>]*/g;
 /** Addresses that are their own contents: a `data:` URL is the file, a `javascript:` URL is code. */
 const INLINE_URL = /\b(data|javascript):[^\s"'<>]+/gi;
 /** Any address with an authority, `scheme://...`, up to the next space or quote. */
@@ -115,7 +115,9 @@ function decodeRun(run: string): string {
     return decodeURIComponent(run);
   } catch {
     // Not UTF-8 once decoded: what reads as ASCII is still decoded, so nothing hides behind it.
-    return run.replace(PERCENT_ASCII, (_m, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    return run.replaceAll(PERCENT_ASCII, (_m, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
   }
 }
 
@@ -123,7 +125,7 @@ function decodeRun(run: string): string {
 function decodePercent(text: string): string {
   let decoded = text;
   for (let round = 0; round < DECODE_ROUNDS; round += 1) {
-    const next = decoded.replace(PERCENT_RUN, decodeRun);
+    const next = decoded.replaceAll(PERCENT_RUN, (run) => decodeRun(run));
     if (next === decoded) break;
     decoded = next;
   }
@@ -153,24 +155,24 @@ function isOpaque(run: string): boolean {
 /** Reduces every address to its site and every path, e-mail address and query to a placeholder. */
 function reduceAddresses(text: string): string {
   return text
-    .replace(WINDOWS_PATH, '[path]')
-    .replace(UNC_PATH, '[path]')
-    .replace(UNIX_PATH, (_m, before: string) => `${before}[path]`)
-    .replace(INLINE_URL, (_m, scheme: string) => `${scheme}:${ELLIPSIS}`)
-    .replace(URL_WITH_AUTHORITY, siteOf)
-    .replace(
+    .replaceAll(WINDOWS_PATH, '[path]')
+    .replaceAll(UNC_PATH, '[path]')
+    .replaceAll(UNIX_PATH, (_m, before: string) => `${before}[path]`)
+    .replaceAll(INLINE_URL, (_m, scheme: string) => `${scheme}:${ELLIPSIS}`)
+    .replaceAll(URL_WITH_AUTHORITY, (url) => siteOf(url))
+    .replaceAll(
       RELATIVE_URL,
       (_m, before: string, host: string, rest: string) => `${before}//${hostWith(host, rest)}`,
     )
-    .replace(WWW_URL, (_m, host: string, rest: string) => hostWith(host, rest))
-    .replace(
+    .replaceAll(WWW_URL, (_m, host: string, rest: string) => hostWith(host, rest))
+    .replaceAll(
       BARE_HOST,
       (_m, before: string, host: string, rest: string) => `${before}${hostWith(host, rest)}`,
     )
-    .replace(BARE_CREDENTIALS, `${HIDDEN}@`)
-    .replace(EMAIL, '[email]')
-    .replace(OTHER_SCHEME, (_m, scheme: string) => `${scheme}:${ELLIPSIS}`)
-    .replace(QUERY, (_m, before: string, mark: string) => `${before}${mark}${ELLIPSIS}`);
+    .replaceAll(BARE_CREDENTIALS, () => `${HIDDEN}@`)
+    .replaceAll(EMAIL, '[email]')
+    .replaceAll(OTHER_SCHEME, (_m, scheme: string) => `${scheme}:${ELLIPSIS}`)
+    .replaceAll(QUERY, (_m, before: string, mark: string) => `${before}${mark}${ELLIPSIS}`);
 }
 
 /** `text` with every address reduced to its site and every secret hidden, on one line and at most `MAX_TEXT` long. */
@@ -178,9 +180,9 @@ export function redact(text: string): string {
   // Secrets before any other rewriting, which could change the quotes and escapes they are found
   // by; a placeholder left inside an address is reduced with it.
   const clean = reduceAddresses(hideSecrets(decodePercent(text.slice(0, MAX_INPUT))))
-    .replace(JWT, '[token]')
-    .replace(OPAQUE, (run) => (isOpaque(run) ? '[token]' : run))
-    .replace(CONTROL, ' ')
+    .replaceAll(JWT, '[token]')
+    .replaceAll(OPAQUE, (run) => (isOpaque(run) ? '[token]' : run))
+    .replaceAll(CONTROL, ' ')
     .trim();
   return clean.length > MAX_TEXT ? `${clean.slice(0, MAX_TEXT - 1)}${ELLIPSIS}` : clean;
 }

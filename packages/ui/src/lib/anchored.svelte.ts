@@ -36,7 +36,7 @@ export function dismissOnOutside(
   const onPointerDown = (event: PointerEvent) => {
     const target = event.target;
     if (!(target instanceof Node)) return;
-    if (!inside().some((element) => element?.contains(target))) close();
+    if (inside().every((element) => !element?.contains(target))) close();
   };
   // Compared, not closed outright: a scroll queued as the flyout opened moved nothing since.
   const onScroll = () => {

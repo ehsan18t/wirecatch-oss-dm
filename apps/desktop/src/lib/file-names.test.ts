@@ -14,7 +14,7 @@ describe('file names', () => {
   });
 
   it('shows the last two folders of a path, in its own separator', () => {
-    expect(folderTail('C:\\Users\\you\\Downloads\\Video')).toBe('Downloads\\Video');
+    expect(folderTail(String.raw`C:\Users\you\Downloads\Video`)).toBe(String.raw`Downloads\Video`);
     expect(folderTail('/home/you/Downloads')).toBe('you/Downloads');
     expect(folderTail('Downloads')).toBe('Downloads');
   });

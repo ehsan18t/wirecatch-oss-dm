@@ -83,7 +83,7 @@ async function setup(options: Options = {}): Promise<Setup> {
     notice,
     badge: { set: (text) => void badges.push(text) },
     newHandoverId: () => `h${String((next += 1))}`,
-    timing: { connectWaitMs: 3_000, requestTimeoutMs: 5_000, withdrawTimeoutMs: 3_000 },
+    timing: { connectWaitMs: 3000, requestTimeoutMs: 5000, withdrawTimeoutMs: 3000 },
   });
   const started = hub.start();
   if (options.start !== false) {
@@ -286,12 +286,13 @@ describe('handover', () => {
 
   it('fails one oversized request on its own and keeps the connection', async () => {
     s = await setup();
-    const hugeCookieSite = 'https://example.com/' + 'x'.repeat(MAX_FRAME_LEN);
+    const hugeCookieSite = `https://example.com/${'x'.repeat(MAX_FRAME_LEN)}`;
     const result = await s.hub.onDownload(
       downloadItem({ url: hugeCookieSite, finalUrl: hugeCookieSite }),
     );
     expect(result).toMatchObject({ kind: 'kept', reason: 'app_refused', browserCopy: 'resumed' });
-    if (result?.kind === 'kept') expect(result.detail).toContain('too large');
+    if (result?.kind !== 'kept') throw new Error('the download was not kept in the browser');
+    expect(result.detail).toContain('too large');
     expect(s.app.calls('add_download')).toHaveLength(0);
     expect(s.app.calls('withdraw_download')).toHaveLength(0);
     expect(s.client.status.state).toBe('connected');
@@ -306,7 +307,7 @@ describe('handover', () => {
         },
       });
       const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(4_999);
+      await vi.advanceTimersByTimeAsync(4999);
       expect(s.downloads.log).toEqual(['pause:1']);
       expect(s.app.calls('withdraw_download')).toHaveLength(0);
       await vi.advanceTimersByTimeAsync(1);
@@ -331,7 +332,7 @@ describe('handover', () => {
         },
       });
       const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5000);
       expect(await pending).toMatchObject({ kind: 'kept', reason: 'no_answer', uncertain: false });
       expect(s.downloads.log).toEqual(['pause:1', 'resume:1']);
     });
@@ -344,7 +345,7 @@ describe('handover', () => {
         },
       });
       const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5000);
       expect(await pending).toEqual({
         kind: 'handed_over',
         handoverId: 'h1',
@@ -362,9 +363,9 @@ describe('handover', () => {
         },
       });
       const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5000);
       expect(s.downloads.log).toEqual(['pause:1']);
-      await vi.advanceTimersByTimeAsync(3_000);
+      await vi.advanceTimersByTimeAsync(3000);
       expect(await pending).toMatchObject({
         kind: 'kept',
         reason: 'no_answer',
@@ -382,7 +383,7 @@ describe('handover', () => {
         },
       });
       const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5000);
       expect(await pending).toMatchObject({
         kind: 'kept',
         reason: 'no_answer',
@@ -400,7 +401,7 @@ describe('handover', () => {
         },
       });
       const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5000);
       expect(await pending).toMatchObject({
         kind: 'kept',
         reason: 'no_answer',
@@ -413,14 +414,14 @@ describe('handover', () => {
       s = await setup({
         configure: (app) => {
           app.addBehavior = 'unexpected_action';
-          app.addLateMs = 9_000;
+          app.addLateMs = 9000;
           app.withdrawBehavior = 'hang';
         },
       });
       const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(8000);
       expect(await pending).toMatchObject({ kind: 'kept', uncertain: true });
-      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(1000);
       // Unreadable, so it may or may not be a confirmation: never "took it after all".
       expect(latestNotice(s.hub)?.message).toBe(
         'big.zip may be downloading twice: Wirecatch may have taken it, and the browser is downloading it too. If Wirecatch has it, cancel one of them.',
@@ -431,18 +432,18 @@ describe('handover', () => {
       s = await setup({
         configure: (app) => {
           app.addBehavior = 'started';
-          app.addLateMs = 9_000; // after the 5 s timeout and the 3 s withdraw
+          app.addLateMs = 9000; // after the 5 s timeout and the 3 s withdraw
           app.withdrawBehavior = 'hang';
         },
       });
       const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(8000);
       await pending;
       // A failed withdraw leaves both copies possible, and says so at once.
       expect(latestNotice(s.hub)?.message).toBe(
         'big.zip may be downloading twice: Wirecatch may have taken it, and the browser is downloading it too. If Wirecatch has it, cancel one of them.',
       );
-      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(1000);
       expect(latestNotice(s.hub)?.message).toBe(
         'big.zip may be downloading twice: Wirecatch took it after all, and the browser kept its copy too. You can cancel one of them.',
       );
@@ -469,10 +470,10 @@ describe('handover', () => {
         s.downloads.failing.add('resume');
         s.downloads.browserState = { state: 'in_progress', paused: true };
         const pending = s.hub.onDownload(downloadItem());
-        await vi.advanceTimersByTimeAsync(8_000);
+        await vi.advanceTimersByTimeAsync(8000);
         expect(await pending).toMatchObject({ browserCopy: 'stuck_paused', uncertain: true });
         meanwhile();
-        await vi.advanceTimersByTimeAsync(1_000);
+        await vi.advanceTimersByTimeAsync(1000);
       }
 
       /** The person resumes the copy, as the notice asks, before the late answer comes. */
@@ -486,7 +487,7 @@ describe('handover', () => {
       ] as const)(
         'says nothing new when the copy was %s before a sure answer',
         async (_label, state) => {
-          await stuckWithLateAnswer('started', 9_000, () => {
+          await stuckWithLateAnswer('started', 9000, () => {
             s.downloads.states.set(1, state === null ? null : { ...state });
           });
           expect(s.hub.snapshot().notices).toMatchObject([{ message: STUCK }]);
@@ -494,13 +495,13 @@ describe('handover', () => {
       );
 
       it('warns of two copies when a sure answer comes after the person resumed the copy', async () => {
-        await stuckWithLateAnswer('started', 9_000, resumedByThePerson);
+        await stuckWithLateAnswer('started', 9000, resumedByThePerson);
         expect(s.hub.snapshot().notices).toMatchObject([{ urgent: true }]);
         expect(latestNotice(s.hub)?.message).toContain('Wirecatch took it after all');
       });
 
       it('warns of two possible copies when an unreadable answer comes after the person resumed the copy', async () => {
-        await stuckWithLateAnswer('unexpected_action', 9_000, resumedByThePerson);
+        await stuckWithLateAnswer('unexpected_action', 9000, resumedByThePerson);
         expect(s.hub.snapshot().notices).toMatchObject([{ urgent: true }]);
         expect(latestNotice(s.hub)?.message).toContain(
           'Wirecatch may have taken it, and the browser is downloading it too',
@@ -511,23 +512,23 @@ describe('handover', () => {
         s = await setup({
           configure: (app) => {
             app.addBehavior = 'started';
-            app.addLateMs = 9_000;
+            app.addLateMs = 9000;
             app.withdrawBehavior = 'hang';
           },
         });
         s.downloads.failing.add('resume');
         s.downloads.failing.add('state');
         const pending = s.hub.onDownload(downloadItem());
-        await vi.advanceTimersByTimeAsync(8_000);
+        await vi.advanceTimersByTimeAsync(8000);
         expect(await pending).toMatchObject({ browserCopy: 'maybe_paused', uncertain: true });
-        await vi.advanceTimersByTimeAsync(1_000);
+        await vi.advanceTimersByTimeAsync(1000);
         expect(s.hub.snapshot().notices).toMatchObject([{ urgent: true }]);
         expect(latestNotice(s.hub)?.message).toContain('Wirecatch took it after all');
       });
 
       it.each([
-        ['after the browser kept it', 9_000],
-        ['while the withdraw was waiting', 6_000],
+        ['after the browser kept it', 9000],
+        ['while the withdraw was waiting', 6000],
       ])(
         'keeps the notice to resume it when an unreadable late answer comes %s',
         async (_label, ms) => {
@@ -539,8 +540,8 @@ describe('handover', () => {
       );
 
       it.each([
-        ['after the browser kept it', 9_000],
-        ['while the withdraw was waiting', 6_000],
+        ['after the browser kept it', 9000],
+        ['while the withdraw was waiting', 6000],
       ])(
         'says the paused copy is left over when a sure confirmation comes %s',
         async (_label, ms) => {
@@ -554,7 +555,7 @@ describe('handover', () => {
       s = await setup({
         configure: (app) => {
           app.addBehavior = 'unexpected_action';
-          app.addLateMs = 6_000;
+          app.addLateMs = 6000;
           app.withdrawBehavior = 'hang';
         },
       });
@@ -562,7 +563,7 @@ describe('handover', () => {
         if (call === 'resume:1') s.downloads.states.set(1, { state: 'in_progress', paused: true });
       };
       const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(8000);
       expect(await pending).toMatchObject({ browserCopy: 'resumed', uncertain: true });
       expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
     });
@@ -571,12 +572,12 @@ describe('handover', () => {
       s = await setup({
         configure: (app) => {
           app.addBehavior = 'started';
-          app.addLateMs = 6_000; // during the withdraw
+          app.addLateMs = 6000; // during the withdraw
           app.withdrawBehavior = 'hang';
         },
       });
       const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(8_000);
+      await vi.advanceTimersByTimeAsync(8000);
       await pending;
       expect(s.downloads.log).toEqual(['pause:1', 'resume:1']);
       expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
@@ -586,14 +587,14 @@ describe('handover', () => {
       s = await setup({
         configure: (app) => {
           app.addBehavior = 'started';
-          app.addLateMs = 9_000;
+          app.addLateMs = 9000;
           app.withdrawBehavior = 'withdrawn';
         },
       });
       const pending = s.hub.onDownload(downloadItem());
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5000);
       await pending;
-      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.advanceTimersByTimeAsync(5000);
       expect(latestNotice(s.hub)?.message).not.toContain('twice');
     });
 
@@ -672,7 +673,7 @@ describe('handover', () => {
       await flush();
       // An event still arrives while the request waits: it is the newest copy, and it says no.
       s.app.changeSettings({ capture_enabled: false });
-      await vi.advanceTimersByTimeAsync(3_000);
+      await vi.advanceTimersByTimeAsync(3000);
       const result = await pending;
       expect(result).toMatchObject({ kind: 'kept', reason: 'capture_off', browserCopy: 'resumed' });
       expect(s.app.calls('add_download')).toHaveLength(0);
@@ -724,7 +725,7 @@ describe('handover', () => {
     s = await setup({
       configure: (fake, cache) => {
         fake.running = false;
-        fake.startDelayMs = 1_000;
+        fake.startDelayMs = 1000;
         cache.value = { settings: DEFAULT_SETTINGS, appClosed: true };
       },
     });
@@ -735,7 +736,7 @@ describe('handover', () => {
     const [, background] = channelPair<PopupRequest, BackgroundMessage>();
     s.hub.addPopup(background);
     await flush();
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1000);
 
     expect(await download).toMatchObject({ kind: 'handed_over' });
     expect(s.app.ports).toHaveLength(1);
@@ -851,7 +852,7 @@ describe('handover', () => {
     });
     s.hub.notify('error', 'The video could not be sent.');
     const pending = s.hub.onDownload(downloadItem());
-    await vi.advanceTimersByTimeAsync(8_000);
+    await vi.advanceTimersByTimeAsync(8000);
     await pending;
     expect(s.hub.snapshot().notices.map((n) => n.tone)).toEqual(['warning', 'error']);
     expect(latestNotice(s.hub)?.message).toContain('may be downloading twice');
@@ -915,7 +916,7 @@ describe('handover', () => {
       }
     };
     const pending = s.hub.onDownload(downloadItem());
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(5000);
     expect(await pending).toMatchObject({ kind: 'kept', browserCopy: 'resumed' });
     expect(latestNotice(s.hub)?.tone).not.toBe('error');
   });
@@ -1025,7 +1026,7 @@ describe('handover', () => {
     });
     const first = s.hub.onDownload(downloadItem());
     expect(await s.hub.onDownload(downloadItem())).toBeNull();
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(5000);
     await first;
   });
 });
@@ -1398,7 +1399,7 @@ describe('downloads left paused by a restarted background', () => {
         start: false,
         configure: (app, cache) => {
           app.running = false;
-          app.startDelayMs = 9_500;
+          app.startDelayMs = 9500;
           app.withdrawBehavior = 'already_started';
           cache.value = { settings: DEFAULT_SETTINGS, appClosed: true };
         },
@@ -1574,7 +1575,7 @@ describe('context menu', () => {
       },
     });
     const pending = s.hub.onMenuClick({ linkUrl: 'https://example.com/file.iso' }, undefined);
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(5000);
     expect(await pending).toBe('handed_over');
     expect(s.downloads.log).toEqual([]);
   });
@@ -1587,7 +1588,7 @@ describe('context menu', () => {
       },
     });
     const pending = s.hub.onMenuClick({ linkUrl: 'https://example.com/file.iso' }, undefined);
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(5000);
     expect(await pending).toBe('browser');
     expect(s.downloads.log).toEqual(['start:https://example.com/file.iso']);
   });
@@ -1600,7 +1601,7 @@ describe('context menu', () => {
       },
     });
     const pending = s.hub.onMenuClick({ linkUrl: 'https://example.com/file.iso' }, undefined);
-    await vi.advanceTimersByTimeAsync(8_000);
+    await vi.advanceTimersByTimeAsync(8000);
     expect(await pending).toBe('browser');
     expect(latestNotice(s.hub)?.message).toBe(
       'file.iso may be downloading twice: Wirecatch may have taken it, and the browser is downloading it too. If Wirecatch has it, cancel one of them.',

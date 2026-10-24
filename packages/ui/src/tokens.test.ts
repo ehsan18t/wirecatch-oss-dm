@@ -13,7 +13,7 @@ const css = readFileSync(resolve(process.cwd(), 'src/tokens.css'), 'utf8');
 /** Every `--name: value;` declaration in the file, the last one winning. */
 function declarations(text: string): Map<string, string> {
   const found = new Map<string, string>();
-  for (const match of text.matchAll(/(--[\w-]+):\s*([^;]+);/g))
+  for (const match of text.matchAll(/(--[\w-]+):\s*([^\s;][^;]*);/g))
     found.set(match[1]!, match[2]!.trim());
   return found;
 }
@@ -21,7 +21,7 @@ function declarations(text: string): Map<string, string> {
 /** The declarations inside the rule whose selector list contains `selector`. */
 function rule(selector: string): Map<string, string> {
   const start = css.indexOf(selector);
-  if (start < 0) throw new Error(`no rule for ${selector}`);
+  if (start === -1) throw new Error(`no rule for ${selector}`);
   const open = css.indexOf('{', start);
   return declarations(css.slice(open + 1, css.indexOf('}', open)));
 }
@@ -37,7 +37,7 @@ function pair(name: string, value = colours.get(name)): [Rgba, Rgba] {
     const share = Number(alpha[2]) / 100;
     return [withAlpha(light, share), withAlpha(dark, share)];
   }
-  const match = value ? /^light-dark\((.+?),\s*(.+)\)$/.exec(value) : null;
+  const match = value ? /^light-dark\(([^,]+),\s*(\S.*)\)$/.exec(value) : null;
   if (!match) throw new Error(`${name} is not a light-dark() pair: ${String(value)}`);
   return [parseColor(match[1]!), parseColor(match[2]!)];
 }

@@ -23,13 +23,13 @@ export interface DownloadState {
 
 /** The browser download controls the handover needs (`browser.downloads`). */
 export interface DownloadControl {
-  pause(id: number): Promise<void>;
-  resume(id: number): Promise<void>;
-  cancel(id: number): Promise<void>;
+  pause: (id: number) => Promise<void>;
+  resume: (id: number) => Promise<void>;
+  cancel: (id: number) => Promise<void>;
   /** Removes the entry from the browser's download list (not the file; there is none after cancel). */
-  erase(id: number): Promise<void>;
+  erase: (id: number) => Promise<void>;
   /** The download's current state, or null when the browser no longer lists it. */
-  state(id: number): Promise<DownloadState | null>;
+  state: (id: number) => Promise<DownloadState | null>;
 }
 
 /** Settings to judge a download by, and whether they came from the app just now or from the session copy (D61). */
@@ -41,9 +41,9 @@ export interface JudgingSettings {
 /** Sends `add_download` and, when the answer is lost, `withdraw_download`. */
 export interface SubmitDeps {
   /** Rejects with a `RequestError` on an app error, a lost connection, a timeout or an answer that cannot be read. */
-  addDownload(download: NewDownload): Promise<AddedDownload>;
+  addDownload: (download: NewDownload) => Promise<AddedDownload>;
   /** Asks the app to forget a handover (short time limit). Rejects if that fails or times out. */
-  withdraw(handoverId: string): Promise<WithdrawOutcome>;
+  withdraw: (handoverId: string) => Promise<WithdrawOutcome>;
 }
 
 export type SubmitResult =
@@ -101,9 +101,13 @@ export interface HandoverDeps extends SubmitDeps {
    * The settings to judge by after pausing: the app's live ones (waiting briefly for
    * the connection), or the cached ones when the app cannot be reached; null if neither.
    */
-  liveSettings(): Promise<JudgingSettings | null>;
+  liveSettings: () => Promise<JudgingSettings | null>;
   /** The `Cookie` header the browser would send to a URL in this context, or null. Never rejects. */
-  cookieHeader(url: string, storeId: string | null, context: CookieContext): Promise<string | null>;
+  cookieHeader: (
+    url: string,
+    storeId: string | null,
+    context: CookieContext,
+  ) => Promise<string | null>;
   userAgent: string | null;
 }
 

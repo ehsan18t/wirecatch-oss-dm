@@ -9,8 +9,8 @@ import type { MockBackend } from '$lib/backend/mock';
 import { BackendError } from '$lib/backend';
 import { mockBackend, NOON, settle, windowState } from '$lib/testing/setup';
 import { HOURS_PER_DAY, MS_PER_HOUR } from '$lib/time';
-import DownloadWindow from './DownloadWindow.svelte';
 import { CLOSE_AFTER_MS, type Target } from '$lib/window/download-window.svelte';
+import DownloadWindow from './DownloadWindow.svelte';
 
 async function show(b: MockBackend, target: Target) {
   const { win, host } = windowState(b, target);

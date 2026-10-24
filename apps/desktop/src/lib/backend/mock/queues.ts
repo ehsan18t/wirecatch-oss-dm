@@ -37,7 +37,7 @@ export function createQueue(state: MockState, name: string): Queue {
 
 export function updateQueue(state: MockState, queue: Queue): void {
   const i = state.queues.findIndex((q) => q.id === queue.id);
-  if (i < 0) throw new BackendError('That queue no longer exists.');
+  if (i === -1) throw new BackendError('That queue no longer exists.');
   if (!queue.name.trim()) throw new BackendError(NO_QUEUE_NAME);
   const old = state.queues[i];
   // Pausing and "start now" have their own commands; an edit keeps the queue's current state.

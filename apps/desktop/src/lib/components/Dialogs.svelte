@@ -36,7 +36,7 @@
 </script>
 
 {#if app.dialog}
-  {@const d = app.dialog}
+  {const d = $derived(app.dialog)}
   {#key d}
     {@render viewOf(d)(d)}
   {/key}

@@ -36,7 +36,7 @@ export class MockFinished implements FinishedSource {
     state.listeners.add((event) => this.#observe(event));
     // Closing the window forgets what it listed, as the shell does.
     state.windows.subscribe((windows) => {
-      if (!windows.some((w) => w.label === FINISHED_LABEL)) this.#list = { groups: [] };
+      if (windows.every((w) => w.label !== FINISHED_LABEL)) this.#list = { groups: [] };
     });
   }
 

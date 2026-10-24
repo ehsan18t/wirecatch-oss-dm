@@ -19,8 +19,8 @@ export interface CachedSettings {
 }
 
 export interface SettingsCache {
-  load(): Promise<CachedSettings | null>;
-  save(value: CachedSettings): Promise<void>;
+  load: () => Promise<CachedSettings | null>;
+  save: (value: CachedSettings) => Promise<void>;
 }
 
 /** A browser download paused for a handover, and the handover id it is (or will be) offered under. */
@@ -35,8 +35,8 @@ export interface InFlightEntry {
  * area is cleared when the extension is updated, so it never holds another version's shape.
  */
 export interface InFlightStore {
-  load(): Promise<InFlightEntry[]>;
-  save(entries: InFlightEntry[]): Promise<void>;
+  load: () => Promise<InFlightEntry[]>;
+  save: (entries: InFlightEntry[]) => Promise<void>;
 }
 
 /**
@@ -45,17 +45,17 @@ export interface InFlightStore {
  * script the browser stopped.
  */
 export interface NoticeStore {
-  load(): Promise<Notice[]>;
-  save(notices: Notice[]): Promise<void>;
+  load: () => Promise<Notice[]>;
+  save: (notices: Notice[]) => Promise<void>;
 }
 
 export interface BrowserDownloads extends DownloadControl {
   /** Starts a download in the browser itself (`downloads.download`), used when the app cannot take a context menu link. */
-  start(url: string): Promise<void>;
+  start: (url: string) => Promise<void>;
 }
 
 export interface Badge {
-  set(text: string, title: string): void;
+  set: (text: string, title: string) => void;
 }
 
 export interface HubDeps {
@@ -63,9 +63,13 @@ export interface HubDeps {
   cache: SettingsCache;
   downloads: BrowserDownloads;
   /** The `Cookie` header the browser would send to a URL in this context, or null. Never rejects. */
-  cookieHeader(url: string, storeId: string | null, context: CookieContext): Promise<string | null>;
+  cookieHeader: (
+    url: string,
+    storeId: string | null,
+    context: CookieContext,
+  ) => Promise<string | null>;
   /** True when the extension may read cookies for this address (the person can revoke site access in Firefox). */
-  hasSiteAccess(url: string): Promise<boolean>;
+  hasSiteAccess: (url: string) => Promise<boolean>;
   userAgent: string | null;
   inFlight?: InFlightStore;
   notice?: NoticeStore;
@@ -75,17 +79,17 @@ export interface HubDeps {
   /** How long to wait for the app; each value missing here is taken from `DEFAULT_TIMING`. */
   timing?: Partial<HubTiming>;
   /** Tells the media buttons on open pages that "Show download button on videos" changed (`MEDIA_BUTTON_SETTING`). */
-  mediaButtonSetting?: { publish(on: boolean): Promise<void> };
+  mediaButtonSetting?: { publish: (on: boolean) => Promise<void> };
   /** The media lists the popup shows (`MediaCenter`); without it the popup's media commands fail. */
   media?: MediaCommands;
   /** Shows the app's notes in the tab the person is looking at (`NoteCenter`, D65); without it, the app shows them in system notifications. */
-  notes?: { show(note: BrowserNote): Promise<void> };
+  notes?: { show: (note: BrowserNote) => Promise<void> };
 }
 
 /** What the popup's media commands need from the background's media side. */
 export interface MediaCommands {
-  watch(tabId: number, push: (view: MediaView) => void): () => void;
-  download(tabId: number, key: string): Promise<MediaSendResult>;
+  watch: (tabId: number, push: (view: MediaView) => void) => () => void;
+  download: (tabId: number, key: string) => Promise<MediaSendResult>;
 }
 
 /** What the context menu passes on a click (`contextMenus.OnClickData`), plus the tab it happened in. */

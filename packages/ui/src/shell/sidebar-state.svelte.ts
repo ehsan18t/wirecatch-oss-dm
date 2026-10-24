@@ -64,9 +64,9 @@ export class SidebarState {
 export interface SidebarContext {
   readonly showLabels: boolean;
   /** Called by the item that has become the current one, so the marker can travel from the last. */
-  activated(item: HTMLElement): void;
+  activated: (item: HTMLElement) => void;
   /** Called after choosing an item, so a drawer closes. */
-  chose(): void;
+  chose: () => void;
 }
 
 export const [getSidebarContext, setSidebarContext] = createContext<SidebarContext>();

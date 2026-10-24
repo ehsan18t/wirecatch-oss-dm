@@ -24,11 +24,11 @@ const HELLO: HelloIdentity = {
   browser: { name: 'chrome', version: '141' },
 };
 
-function makeClient(app: FakeApp, backoffMs: Backoff = [1_000, 2_000, 4_000]): NativeClient {
+function makeClient(app: FakeApp, backoffMs: Backoff = [1000, 2000, 4000]): NativeClient {
   return new NativeClient({
     transport: app,
     hello: () => Promise.resolve(HELLO),
-    helloTimeoutMs: 5_000,
+    helloTimeoutMs: 5000,
     backoffMs,
   });
 }
@@ -105,7 +105,7 @@ describe('NativeClient', () => {
     client.start();
     await flush();
 
-    const reply = await client.request({ method: 'get_extension_settings' }, 5_000);
+    const reply = await client.request({ method: 'get_extension_settings' }, 5000);
 
     expect(reply.type).toBe('extension_settings');
     expect(app.starts).toBe(1);
@@ -120,7 +120,7 @@ describe('NativeClient', () => {
     client = makeClient(app);
     client.start();
 
-    const reply = await client.request({ method: 'get_extension_settings' }, 5_000);
+    const reply = await client.request({ method: 'get_extension_settings' }, 5000);
 
     expect(reply.type).toBe('extension_settings');
     expect(app.starts).toBe(1);
@@ -142,8 +142,8 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     app.answers = false;
-    const settings = client.request({ method: 'get_extension_settings' }, 1_000);
-    const queues = client.request({ method: 'list_queues' }, 1_000);
+    const settings = client.request({ method: 'get_extension_settings' }, 1000);
+    const queues = client.request({ method: 'list_queues' }, 1000);
     await flush();
     const [first, second] = app.requests.slice(-2);
     const port = app.openPort;
@@ -195,8 +195,8 @@ describe('NativeClient', () => {
     await flush();
     app.answers = false;
     const settings = client
-      .request({ method: 'get_extension_settings' }, 1_000)
-      .catch((e: unknown) => e);
+      .request({ method: 'get_extension_settings' }, 1000)
+      .catch((error: unknown) => error);
     await flush();
     const request = app.requests.at(-1);
     if (request === undefined) throw new Error('request missing');
@@ -234,9 +234,9 @@ describe('NativeClient', () => {
             queue: null,
           },
         },
-        1_000,
+        1000,
       )
-      .catch((e: unknown) => e);
+      .catch((error_: unknown) => error_);
     expect(error).toMatchObject({ kind: 'unreadable' });
   });
 
@@ -245,8 +245,8 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     app.answers = false;
-    const result = client.request({ method: 'pause_all' }, 2_000).catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(2_000);
+    const result = client.request({ method: 'pause_all' }, 2000).catch((error_: unknown) => error_);
+    await vi.advanceTimersByTimeAsync(2000);
     const error = await result;
     expect(error).toBeInstanceOf(RequestError);
     expect((error as RequestError).kind).toBe('timeout');
@@ -262,9 +262,9 @@ describe('NativeClient', () => {
     const error = await client
       .request(
         { method: 'update_extension_settings', params: patchOf({ add_ignored_sites: [huge] }) },
-        1_000,
+        1000,
       )
-      .catch((e: unknown) => e);
+      .catch((error_: unknown) => error_);
     expect(error).toMatchObject({ kind: 'too_large' });
     expect((error as RequestError).message).toContain(
       `too large to send to Wirecatch (over ${formatBytes(MAX_FRAME_LEN)})`,
@@ -272,7 +272,7 @@ describe('NativeClient', () => {
     expect(app.calls('update_extension_settings')).toHaveLength(0);
     expect(client.status.state).toBe('connected');
     expect(app.openPort).toBe(port);
-    expect(await client.request({ method: 'pause_all' }, 1_000)).toEqual({ type: 'done' });
+    expect(await client.request({ method: 'pause_all' }, 1000)).toEqual({ type: 'done' });
   });
 
   it('counts the limit in UTF-8 bytes, not characters', async () => {
@@ -284,9 +284,9 @@ describe('NativeClient', () => {
     const error = await client
       .request(
         { method: 'update_extension_settings', params: patchOf({ add_ignored_sites: [wide] }) },
-        1_000,
+        1000,
       )
-      .catch((e: unknown) => e);
+      .catch((error_: unknown) => error_);
     expect(error).toMatchObject({ kind: 'too_large' });
   });
 
@@ -297,8 +297,8 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     app.answers = false;
-    const result = client.request({ method: 'pause_all' }, 1_000).catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(1_000);
+    const result = client.request({ method: 'pause_all' }, 1000).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(await result).toMatchObject({ kind: 'timeout' });
     const sent = app.requests.at(-1);
     if (sent === undefined) throw new Error('nothing sent');
@@ -326,8 +326,8 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     app.answers = false;
-    const result = client.request({ method: 'pause_all' }, 1_000).catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(1_000);
+    const result = client.request({ method: 'pause_all' }, 1000).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1000);
     await result;
     const sent = app.requests.at(-1);
     if (sent === undefined) throw new Error('nothing sent');
@@ -347,8 +347,8 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     app.answers = false;
-    const result = client.request({ method: 'pause_all' }, 1_000).catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(1_000);
+    const result = client.request({ method: 'pause_all' }, 1000).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1000);
     await result;
     const sent = app.requests.at(-1);
     if (sent === undefined) throw new Error('nothing sent');
@@ -366,7 +366,7 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     app.answers = false;
-    const pending = client.request({ method: 'pause_all' }, 1_000).catch((e: unknown) => e);
+    const pending = client.request({ method: 'pause_all' }, 1000).catch((error: unknown) => error);
     await flush();
     const sent = app.requests.at(-1);
     const port = app.openPort;
@@ -381,7 +381,7 @@ describe('NativeClient', () => {
     expect(port.closedByExtension).toBe(true);
     expect(client.status.state).toBe('unavailable');
     app.answers = true;
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(client.status.state).toBe('connected');
   });
 
@@ -390,7 +390,7 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     app.answers = false;
-    const pending = client.request({ method: 'pause_all' }, 1_000).catch((e: unknown) => e);
+    const pending = client.request({ method: 'pause_all' }, 1000).catch((error: unknown) => error);
     await flush();
     expect(app.requests.map((r) => r.id)).not.toContain(UNKNOWN_REQUEST_ID);
     app.openPort?.deliver({
@@ -400,7 +400,7 @@ describe('NativeClient', () => {
     });
     await flush();
     expect(client.status.state).toBe('connected');
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(await pending).toMatchObject({ kind: 'timeout' });
   });
 
@@ -410,8 +410,8 @@ describe('NativeClient', () => {
     await flush();
     app.updateError = { code: 'invalid_request', message: 'No such queue.' };
     const error = await client
-      .request({ method: 'update_extension_settings', params: {} }, 1_000)
-      .catch((e: unknown) => e);
+      .request({ method: 'update_extension_settings', params: {} }, 1000)
+      .catch((error_: unknown) => error_);
     expect(error).toMatchObject({
       kind: 'app',
       message: 'No such queue.',
@@ -446,16 +446,16 @@ describe('NativeClient', () => {
     expect(app.ports).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(app.ports).toHaveLength(2);
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(2000);
     expect(app.ports).toHaveLength(3);
-    await vi.advanceTimersByTimeAsync(4_000);
+    await vi.advanceTimersByTimeAsync(4000);
     expect(app.ports).toHaveLength(4);
     // The last delay repeats.
-    await vi.advanceTimersByTimeAsync(4_000);
+    await vi.advanceTimersByTimeAsync(4000);
     expect(app.ports).toHaveLength(5);
 
     app.hostMissing = null;
-    await vi.advanceTimersByTimeAsync(4_000);
+    await vi.advanceTimersByTimeAsync(4000);
     expect(client.status.state).toBe('connected');
     expect(statuses.at(-1)).toEqual({ state: 'connected', appVersion: '0.1.0' });
   });
@@ -469,12 +469,12 @@ describe('NativeClient', () => {
       state: 'unavailable',
       problem: { kind: 'disconnected' },
     });
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(client.status.state).toBe('connected');
     app.openPort?.browserDisconnect('Native host has exited.');
     const before = app.ports.length;
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(app.ports.length).toBe(before + 1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(app.ports).toHaveLength(before + 1);
   });
 
   it('shows AppUnavailable from the bridge as its own problem', async () => {
@@ -496,8 +496,8 @@ describe('NativeClient', () => {
     if (first === undefined) throw new Error('no port');
     app.updateError = { code: 'app_unavailable', message: 'Wirecatch closed.' };
     const error = await client
-      .request({ method: 'update_extension_settings', params: {} }, 1_000)
-      .catch((e: unknown) => e);
+      .request({ method: 'update_extension_settings', params: {} }, 1000)
+      .catch((error_: unknown) => error_);
     expect(error).toMatchObject({ kind: 'app', protocolError: { code: 'app_unavailable' } });
     expect(client.status).toMatchObject({
       state: 'unavailable',
@@ -519,7 +519,7 @@ describe('NativeClient', () => {
     await flush();
     expect(client.status.state).toBe('connected');
     // Later calls go on the new port only.
-    await client.request({ method: 'pause_all' }, 1_000);
+    await client.request({ method: 'pause_all' }, 1000);
     expect(first.methods).toEqual(['hello', 'update_extension_settings']);
     expect(second?.methods).toEqual(['hello', 'pause_all']);
   });
@@ -533,7 +533,7 @@ describe('NativeClient', () => {
     expect(first?.closedByExtension).toBe(true);
     expect(first?.methods).toEqual(['hello']);
     app.helloError = null;
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(app.ports).toHaveLength(2);
     expect(app.ports[1]?.methods).toEqual(['hello']);
     expect(client.status.state).toBe('connected');
@@ -568,10 +568,10 @@ describe('NativeClient', () => {
     await flush();
     expect(mismatch()).toContain('Update the extension');
     app.chosenVersion = MIN_PROTOCOL_VERSION - 1;
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(mismatch()).toContain('Update the Wirecatch app');
     app.chosenVersion = MIN_PROTOCOL_VERSION + 0.5;
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(2000);
     expect(app.ports).toHaveLength(3);
     expect(mismatch()).toContain('does not exist');
   });
@@ -601,7 +601,9 @@ describe('NativeClient', () => {
     expect(client.status.state).toBe('connected');
     expect(client.supports('pause_all')).toBe(true);
     expect(client.supports('show_window')).toBe(false);
-    const error = await client.request({ method: 'show_window' }, 1_000).catch((e: unknown) => e);
+    const error = await client
+      .request({ method: 'show_window' }, 1000)
+      .catch((error_: unknown) => error_);
     expect(error).toBeInstanceOf(RequestError);
     expect(error).toMatchObject({ kind: 'app', protocolError: { code: 'unsupported_call' } });
     expect(app.calls('show_window')).toEqual([]);
@@ -630,7 +632,7 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     expect(client.supports('show_window')).toBe(true);
-    await expect(client.request({ method: 'show_window' }, 1_000)).resolves.toEqual({
+    await expect(client.request({ method: 'show_window' }, 1000)).resolves.toEqual({
       type: 'done',
     });
   });
@@ -640,11 +642,13 @@ describe('NativeClient', () => {
     client = makeClient(app);
     client.start();
     await flush();
-    const error = await client.request({ method: 'show_window' }, 1_000).catch((e: unknown) => e);
+    const error = await client
+      .request({ method: 'show_window' }, 1000)
+      .catch((error_: unknown) => error_);
     expect(error).toBeInstanceOf(RequestError);
     expect(error).toMatchObject({ kind: 'app', protocolError: { code: 'unsupported_call' } });
     expect(client.status.state).toBe('connected');
-    await expect(client.request({ method: 'pause_all' }, 1_000)).resolves.toEqual({
+    await expect(client.request({ method: 'pause_all' }, 1000)).resolves.toEqual({
       type: 'done',
     });
     expect(app.ports).toHaveLength(1);
@@ -654,13 +658,13 @@ describe('NativeClient', () => {
     app.answers = false;
     client = makeClient(app);
     client.start();
-    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(5000);
     expect(client.status).toMatchObject({
       state: 'unavailable',
       problem: { kind: 'disconnected' },
     });
     app.answers = true;
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(client.status.state).toBe('connected');
   });
 
@@ -669,7 +673,9 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     app.answers = false;
-    const pending = client.request({ method: 'pause_all' }, 10_000).catch((e: unknown) => e);
+    const pending = client
+      .request({ method: 'pause_all' }, 10_000)
+      .catch((error: unknown) => error);
     await flush();
     app.openPort?.browserDisconnect('Native host has exited.');
     expect(await pending).toMatchObject({ kind: 'disconnected' });
@@ -682,7 +688,7 @@ describe('NativeClient', () => {
     await flush();
     expect(client.status.state).toBe('unavailable');
     app.hostMissing = null;
-    const reply = await client.request({ method: 'pause_all' }, 1_000);
+    const reply = await client.request({ method: 'pause_all' }, 1000);
     expect(reply).toEqual({ type: 'done' });
   });
 
@@ -691,7 +697,9 @@ describe('NativeClient', () => {
     client = makeClient(app, [60_000]);
     client.start();
     await flush();
-    const error = await client.request({ method: 'pause_all' }, 30_000).catch((e: unknown) => e);
+    const error = await client
+      .request({ method: 'pause_all' }, 30_000)
+      .catch((error_: unknown) => error_);
     expect(error).toMatchObject({ kind: 'disconnected' });
   });
 
@@ -709,7 +717,7 @@ describe('NativeClient', () => {
   it('leaves a retry a request scheduled to its timer when the popup starts the client', async () => {
     app.hostMissing = 'Specified native messaging host not found.';
     client = makeClient(app);
-    await client.request({ method: 'pause_all' }, 1_000).catch(() => undefined);
+    await client.request({ method: 'pause_all' }, 1000).catch(() => undefined);
     expect(app.ports).toHaveLength(1);
     expect(client.status).toMatchObject({
       state: 'unavailable',
@@ -719,7 +727,7 @@ describe('NativeClient', () => {
     client.start();
     await flush();
     expect(app.ports).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(app.ports).toHaveLength(2);
   });
 

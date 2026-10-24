@@ -164,7 +164,7 @@ async function untippedLabels(page: Page, labels: string[]): Promise<string[]> {
   for (const label of labels) {
     await page.getByRole('button', { name: label, exact: true }).hover();
     const tip = page.getByRole('tooltip').filter({ hasText: label });
-    const shown = await tip.waitFor({ timeout: 2_000 }).then(
+    const shown = await tip.waitFor({ timeout: 2000 }).then(
       () => true,
       () => false,
     );

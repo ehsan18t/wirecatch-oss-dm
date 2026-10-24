@@ -11,11 +11,11 @@
   import { onMount } from 'svelte';
   import { createDownloadWindowBackend, inTauri, type DownloadWindowBackend } from '$lib/backend';
   import { Appearance, followLook } from '$lib/state/appearance.svelte';
-  import DownloadWindow from '../ui/download/DownloadWindow.svelte';
-  import FinishedWindow from '../ui/download/FinishedWindow.svelte';
   import { DownloadWindowState, type Target } from '$lib/window/download-window.svelte';
   import { FinishedWindowState } from '$lib/window/finished-window.svelte';
   import { setFitWindow } from '$lib/window/fit';
+  import FinishedWindow from '../ui/download/FinishedWindow.svelte';
+  import DownloadWindow from '../ui/download/DownloadWindow.svelte';
 
   /** What the address asks for, or `null` when it names nothing usable. */
   function target(search: string): Target | 'finished' | null {

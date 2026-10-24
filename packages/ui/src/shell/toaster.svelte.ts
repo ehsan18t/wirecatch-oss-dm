@@ -33,7 +33,7 @@ export const TOAST_DURATION = {
   success: 4000,
   warning: 6000,
   danger: 8000,
-  action: 10000,
+  action: 10_000,
 } as const;
 
 /** The most toasts on screen; a new one pushes out the oldest that goes by itself, else the oldest. */

@@ -67,7 +67,7 @@
   {:else}
     <div class="flex flex-col gap-4">
       {#each win.groups as group (group.key)}
-        {@const label = heading(group)}
+        {const label = $derived(heading(group))}
         <section aria-label={label ?? 'Finished one by one'} class="flex flex-col">
           {#if label}
             <h2 class="text-small font-semibold text-ink-muted">{label}</h2>

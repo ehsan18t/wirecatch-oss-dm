@@ -18,8 +18,9 @@ describe('the redaction samples', () => {
       for (const secret of [...sample.secrets, ...sample.private]) {
         expect(sample.text, secret).toContain(secret);
       }
-      if (sample.skippedBy !== null) expect(expected(sample, sample.skippedBy)).toBeNull();
-      if (sample.keptBy.length > 0) expect(sample.secrets).toEqual([]);
+      const skipped = sample.skippedBy === null ? null : expected(sample, sample.skippedBy);
+      expect(skipped, sample.text).toBeNull();
+      expect(sample.keptBy.length > 0 ? sample.secrets : [], sample.text).toEqual([]);
     }
   });
 

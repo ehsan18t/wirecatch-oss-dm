@@ -1,24 +1,26 @@
 // What the mock core holds, and the small operations every part of the mock shares: looking
 // things up, adding a download, and telling listeners what changed.
 
-import type {
-  AddonInfo,
-  AppSettings,
-  DownloadId,
-  DownloadSummary,
-  MediaChoice,
-  MediaReading,
-  PendingCapture,
-  ProcessingStep,
-  Queue,
-  QuestionId,
-  QueueId,
-  SettingsProfile,
-  SuffixListInfo,
-  UiEvent,
-  UserError,
+import {
+  type AddonInfo,
+  type AppSettings,
+  type DownloadId,
+  type DownloadSummary,
+  type MediaChoice,
+  type MediaReading,
+  type PendingCapture,
+  type ProcessingStep,
+  type Queue,
+  type QuestionId,
+  type QueueId,
+  type SettingsProfile,
+  type SuffixListInfo,
+  type UiEvent,
+  type UserError,
+  downloadId,
+  questionId,
+  queueId,
 } from '@wirecatch/protocol';
-import { downloadId, questionId, queueId } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { fileNameFromUrl } from '../../format';
 import type { WindowRegistry } from '../../sample-windows';

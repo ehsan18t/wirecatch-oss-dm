@@ -8,13 +8,13 @@ const TAKEOVER_FAILED = 'Taking over a download failed; the browser keeps it';
 export interface DownloadEvents {
   /** Chromium only; Firefox does not have it, whatever the shared typings say. */
   onDeterminingFilename?: {
-    addListener(
+    addListener: (
       listener: (item: DownloadItemLike, suggest: () => void) => boolean | undefined,
-    ): void;
+    ) => void;
   };
-  onCreated: { addListener(listener: (item: DownloadItemLike) => void): void };
-  onChanged: { addListener(listener: (delta: DownloadDelta) => void): void };
-  onErased: { addListener(listener: (downloadId: number) => void): void };
+  onCreated: { addListener: (listener: (item: DownloadItemLike) => void) => void };
+  onChanged: { addListener: (listener: (delta: DownloadDelta) => void) => void };
+  onErased: { addListener: (listener: (downloadId: number) => void) => void };
 }
 
 /** What changed about a download (`downloads.onChanged`); only the fields read here. */
@@ -25,9 +25,9 @@ export interface DownloadDelta {
 }
 
 export interface CaptureHandler {
-  onDownload(item: DownloadItemLike): Promise<unknown>;
+  onDownload: (item: DownloadItemLike) => Promise<unknown>;
   /** The download now runs, finished, was cancelled or was erased from the list: it no longer waits paused. */
-  onDownloadMoved(downloadId: number): void;
+  onDownloadMoved: (downloadId: number) => void;
 }
 
 /**

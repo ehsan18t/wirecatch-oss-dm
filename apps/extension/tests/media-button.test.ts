@@ -208,7 +208,7 @@ describe('MediaButton', () => {
     video.dispatchEvent(new Event('play'));
     await settle();
     expect(fake.checks).toHaveLength(1);
-    clock += 3_500;
+    clock += 3500;
     video.dispatchEvent(new Event('play'));
     await settle();
     expect(fake.checks).toHaveLength(2);
@@ -784,7 +784,8 @@ describe('MediaButton on a page that looks for it', () => {
     const video = document.querySelector('video');
     expect(video).not.toBeNull();
     // The host is still an element the page did not add, so a page can find it and remove it.
-    for (const child of [...document.documentElement.children])
+    // A copy: removing from the live collection while walking it would skip the next host.
+    for (const child of Array.from(document.documentElement.children))
       if (child !== document.head && child !== document.body) child.remove();
     expect(b.host.isConnected).toBe(false);
     clock += ACTIVE_MS + 1;

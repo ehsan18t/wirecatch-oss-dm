@@ -14,7 +14,7 @@ const CHROMIUM_ID_BYTES = 16;
 const HEX = 16;
 const FIRST_ID_LETTER = 'a'.charCodeAt(0);
 
-const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Z.-]+)?$/i;
 const SLUG = /^[a-z][a-z0-9-]*$/;
 /** Reverse-DNS identifiers, as Tauri and the operating systems accept them. */
 const IDENTIFIER = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
@@ -22,16 +22,16 @@ const IDENTIFIER = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
 const HOST_NAME = /^[a-z0-9_]+(\.[a-z0-9_]+)*$/;
 const CHROMIUM_ID = /^[a-p]{32}$/;
 /** Firefox add-on ids are email-like or a braced GUID, at most 255 characters. */
-const FIREFOX_ID_FORM = /^([A-Za-z0-9._-]+@[A-Za-z0-9.-]+|\{[0-9a-fA-F-]{36}\})$/;
+const FIREFOX_ID_FORM = /^(?:[\w.-]+@[A-Z0-9.-]+|\{[0-9a-f-]{36}\})$/i;
 const MAX_FIREFOX_ID_LENGTH = 255;
 const FIREFOX_ID = {
   test: (value) => value.length <= MAX_FIREFOX_ID_LENGTH && FIREFOX_ID_FORM.test(value),
 };
-const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const EMAIL = /^[^@\s]+@[^\s@][^\s.@]*\.[^\s@]+$/;
 /** One folder or file name: no separator and nothing a Windows or Linux file name cannot hold. */
 const FILE_NAME_CHARACTERS = /^(?!\.{1,2}$)[^\\/:*?"<>|\p{Cc}]+$/u;
 /** Names Windows reserves for devices, with or without an extension. */
-const RESERVED_WINDOWS_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+const RESERVED_WINDOWS_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 /** Windows drops a trailing dot or space, so the name would not be the one written here. */
 const TRAILING_DOT_OR_SPACE = /[. ]$/;
 const FILE_NAME = {
@@ -40,7 +40,7 @@ const FILE_NAME = {
     !RESERVED_WINDOWS_NAME.test(value) &&
     !TRAILING_DOT_OR_SPACE.test(value),
 };
-const PIPE_PREFIX = /^[A-Za-z0-9-]+-$/;
+const PIPE_PREFIX = /^[A-Z0-9-]+-$/i;
 const SOCKET = /^[a-z0-9-]+\.sock$/;
 /** Characters that would end or expand a quoted string in the generated shell and NSIS scripts or Rust and TypeScript sources; no identity value needs them. */
 const UNQUOTABLE = /["$`\\]/;
@@ -66,7 +66,7 @@ const SCHEMA = {
   native_host: { name: HOST_NAME, description: TEXT },
   extension: {
     chromium_id: CHROMIUM_ID,
-    chromium_public_key: /^[A-Za-z0-9+/]+={0,2}$/,
+    chromium_public_key: /^[A-Z0-9+/]+={0,2}$/i,
     firefox_id: FIREFOX_ID,
     description: TEXT,
   },
@@ -121,9 +121,9 @@ function tableProblems(where, table, shape) {
 /** The Chromium extension id that follows from a base64 public key. */
 export function chromiumIdOf(publicKey) {
   const digest = createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('hex');
-  return [...digest.slice(0, CHROMIUM_ID_BYTES * 2)]
-    .map((digit) => String.fromCharCode(FIRST_ID_LETTER + Number.parseInt(digit, HEX)))
-    .join('');
+  return Array.from(digest.slice(0, CHROMIUM_ID_BYTES * 2), (digit) =>
+    String.fromCharCode(FIRST_ID_LETTER + Number.parseInt(digit, HEX)),
+  ).join('');
 }
 
 function channelProblems(raw) {

@@ -85,7 +85,7 @@ export function shift(
 
 /** Flyouts and popovers: grow from slightly smaller toward their anchor; set `transform-origin` on the node. */
 export function pop(_node: Element, { speed = 'normal' }: MotionParams = {}): TransitionConfig {
-  const from = 1 - (parseFloat(token('--motion-scale-delta')) || 0);
+  const from = 1 - (Number.parseFloat(token('--motion-scale-delta')) || 0);
   return {
     duration: duration(speed),
     easing: easing('out'),
@@ -95,7 +95,7 @@ export function pop(_node: Element, { speed = 'normal' }: MotionParams = {}): Tr
 
 /** Dialogs settle from slightly larger, as Windows' content dialogs do. */
 export function settle(_node: Element, { speed = 'slow' }: MotionParams = {}): TransitionConfig {
-  const from = 1 + (parseFloat(token('--motion-scale-delta')) || 0);
+  const from = 1 + (Number.parseFloat(token('--motion-scale-delta')) || 0);
   return {
     duration: duration(speed),
     easing: easing('out'),

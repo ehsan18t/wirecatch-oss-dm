@@ -87,7 +87,7 @@
     query = '';
     open = true;
     const index = options.findIndex((option) => option.value === value);
-    highlighted = index >= 0 ? index : nextEnabledIndex(options, -1, 1);
+    highlighted = index === -1 ? nextEnabledIndex(options, -1, 1) : index;
     await tick();
     if (trigger && panel) anchored.place(trigger.getBoundingClientRect(), panel, PLACEMENT);
     search?.focus();
@@ -266,7 +266,7 @@
       class="min-h-0 flex-1 overflow-y-auto p-1"
     >
       {#each shown as option, index (option.value)}
-        {@const isSelected = option.value === value}
+        {const isSelected = $derived(option.value === value)}
         <!-- Options take no focus: the trigger or the search keeps it and points here with aria-activedescendant. -->
         <div
           id={optionId(index)}

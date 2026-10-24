@@ -72,8 +72,8 @@
 </script>
 
 {#each headings as heading (heading.id)}
-  {@const resize = heading.resize}
-  {@const sort = heading.sort}
+  {const resize = $derived(heading.resize)}
+  {const sort = $derived(heading.sort)}
   <span
     role="columnheader"
     aria-sort={sort ? ariaSort(sort) : undefined}
@@ -86,7 +86,7 @@
     {#if heading.hidden}
       <span class="sr-only">{heading.label}</span>
     {:else if sort}
-      {@const on = app.sort.column === sort}
+      {const on = $derived(app.sort.column === sort)}
       <button
         type="button"
         tabindex={-1}

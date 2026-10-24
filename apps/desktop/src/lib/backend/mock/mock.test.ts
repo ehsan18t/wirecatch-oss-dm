@@ -56,9 +56,8 @@ describe('MockBackend', () => {
     expect(fixes).toEqual(
       new Set(['retry', 'refresh_link', 'choose_folder', 'free_disk_space', 'keep_original']),
     );
-    for (const r of rows) {
-      if (r.error) expect(r.error.message).not.toMatch(/\u2014/);
-    }
+    const messages = rows.flatMap((r) => (r.error ? [r.error.message] : []));
+    expect(messages.filter((m) => m.includes('\u2014'))).toEqual([]);
   });
 
   it('respects queue limits, the global limit and schedules', async () => {
@@ -78,11 +77,9 @@ describe('MockBackend', () => {
   it('moves bytes and finishes downloads, sending only changed rows', async () => {
     const { mock, events, advance } = make();
     advance(1000);
-    const batch = events.filter((e) => e.type === 'downloads_changed').at(-1);
-    expect(batch?.type).toBe('downloads_changed');
-    if (batch?.type === 'downloads_changed') {
-      expect(batch.data.length).toBeLessThan((await mock.listDownloads()).length);
-    }
+    const batch = events.findLast((e) => e.type === 'downloads_changed');
+    if (batch?.type !== 'downloads_changed') throw new Error('no batch of changes was sent');
+    expect(batch.data.length).toBeLessThan((await mock.listDownloads()).length);
     for (let i = 0; i < 400; i++) advance(1000);
     const blender = (await mock.listDownloads()).find((r) => r.file_name.startsWith('blender'));
     expect(blender?.status).toBe('completed');
@@ -133,14 +130,14 @@ describe('MockBackend', () => {
     const b = await mock.addDownload({
       url: 'https://x.org/b.mp4',
       queue: null,
-      folder: 'D:\\Media',
+      folder: String.raw`D:\Media`,
       file_name: 'clip.mp4',
       start: false,
     });
     let rows = await mock.listDownloads();
     expect(rows.map((r) => r.file_name)).toEqual(['a.zip', 'clip.mp4']);
-    expect(rows[0]?.path).toBe('C:\\Users\\you\\Downloads\\Archives\\a.zip');
-    expect(rows[1]?.path).toBe('D:\\Media\\clip.mp4');
+    expect(rows[0]?.path).toBe(String.raw`C:\Users\you\Downloads\Archives\a.zip`);
+    expect(rows[1]?.path).toBe(String.raw`D:\Media\clip.mp4`);
     expect(rows[1]?.status).toBe('paused');
     await mock.reorder(queueId(1), [b, a]);
     rows = await mock.listDownloads();
@@ -166,12 +163,12 @@ describe('MockBackend', () => {
   it('round-trips settings through export and import', async () => {
     const { mock } = make();
     const s = await mock.getSettings();
-    await mock.exportSettings('C:\\p.json');
+    await mock.exportSettings(String.raw`C:\p.json`);
     await mock.changeSettings({ theme: 'dark' });
     expect((await mock.getSettings()).theme).toBe('dark');
-    await mock.importSettings('C:\\p.json');
+    await mock.importSettings(String.raw`C:\p.json`);
     expect((await mock.getSettings()).theme).toBe(s.theme);
-    await expect(mock.importSettings('C:\\missing.json')).rejects.toThrow(
+    await expect(mock.importSettings(String.raw`C:\missing.json`)).rejects.toThrow(
       /not a Wirecatch settings file/,
     );
   });
@@ -194,7 +191,7 @@ describe('MockBackend', () => {
     expect(mock.windows.windows.map((w) => w.shows)).toEqual([{ kind: 'question', id }]);
     expect(await mock.getQuestion(id)).toEqual({ kind: 'capture', data: pending[0] });
     const confirmed = await mock.confirmCapture(id, {
-      folder: 'D:\\Media',
+      folder: String.raw`D:\Media`,
       file_name: 'renamed.pdf',
       queue: null,
       later: false,
@@ -203,7 +200,7 @@ describe('MockBackend', () => {
     expect(await mock.getQuestion(id)).toBeNull();
     expect((await mock.getDownload(confirmed)).file_name).toBe('renamed.pdf');
     const added = (await mock.listDownloads()).at(-1);
-    expect(added?.path).toBe('D:\\Media\\renamed.pdf');
+    expect(added?.path).toBe(String.raw`D:\Media\renamed.pdf`);
   });
 
   it('can generate 10,000 downloads for load testing', async () => {
@@ -237,7 +234,7 @@ describe('MockBackend', () => {
     vi.useFakeTimers();
     const { mock } = make({ empty: true, latencyMs: 50 });
     let error: unknown = null;
-    void mock.pause(downloadId(42)).catch((e: unknown) => (error = e));
+    void mock.pause(downloadId(42)).catch((error_: unknown) => (error = error_));
     await vi.advanceTimersByTimeAsync(49);
     expect(error).toBeNull();
     await vi.advanceTimersByTimeAsync(1);

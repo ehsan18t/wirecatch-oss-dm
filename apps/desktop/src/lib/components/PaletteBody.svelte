@@ -2,9 +2,9 @@
   // The command palette: every action and setting, found by typing; results stay grouped by kind, best group first.
   import Search from '~icons/lucide/search';
   import { onMount } from 'svelte';
+  import { cn, DIALOG_SURFACE, Icon, Kbd } from '@wirecatch/ui';
   import { buildCommands, groupCommands, searchCommands, type Command } from '$lib/commands';
   import { getApp } from '$lib/state/app.svelte';
-  import { cn, DIALOG_SURFACE, Icon, Kbd } from '@wirecatch/ui';
 
   const app = getApp();
 
@@ -119,7 +119,7 @@
           {group.name}
         </div>
         {#each group.items as c (c.id)}
-          {@const i = flat.indexOf(c)}
+          {const i = $derived(flat.indexOf(c))}
           <!-- The search field keeps the focus and moves through the options (aria-activedescendant); each option is a button, so a click runs it and it is a control in its own right. -->
           <button
             type="button"

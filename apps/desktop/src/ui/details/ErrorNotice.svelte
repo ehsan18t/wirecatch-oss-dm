@@ -16,7 +16,7 @@
 </script>
 
 {#if row.error}
-  {@const fix = row.error.fix}
+  {const fix = $derived(row.error.fix)}
   <div class="flex flex-col gap-2">
     <Callout
       tone="danger"

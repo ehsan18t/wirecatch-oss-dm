@@ -32,8 +32,8 @@ export class SuffixList {
     try {
       this.info = await this.#host.backend().suffixList();
       this.error = null;
-    } catch (err) {
-      this.error = errorMessage(err);
+    } catch (error) {
+      this.error = errorMessage(error);
     }
   }
 

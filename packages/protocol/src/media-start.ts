@@ -41,7 +41,7 @@ function pick(saved: MediaDefaults, options: readonly MediaOption[]): [number, s
   if (quality === 'best') return [0, null];
   if (quality === 'audio_only') {
     const index = options.findIndex((o) => o.audio_only);
-    return index >= 0 ? [index, null] : [0, 'Audio only'];
+    return index === -1 ? [0, 'Audio only'] : [index, null];
   }
   const wanted = quality.height;
   const videos = options.flatMap((o, i): [number, number][] =>

@@ -12,7 +12,7 @@ const NO_GALLERY_IMPORT = {
   message: 'The component gallery is dev-only: import it from nowhere outside src/gallery.',
 };
 const NO_TAURI_DYNAMIC_IMPORT = {
-  selector: 'ImportExpression[source.value=/^@tauri-apps\\//]',
+  selector: String.raw`ImportExpression[source.value=/^@tauri-apps\//]`,
   message: 'Call Tauri through `$lib/backend` only.',
 };
 

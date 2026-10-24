@@ -51,6 +51,11 @@ const LINT_EXCEPTIONS = [
     file: 'apps/desktop/src/ui/download/WindowFrame.svelte',
     lints: ['a11y_no_noninteractive_tabindex'],
   },
+  {
+    id: 'E14',
+    file: 'apps/extension/src/lib/diag/secrets.ts',
+    lints: ['regexp/no-potentially-useless-backreference'],
+  },
 ];
 const WHERE_LISTED = 'LINT_EXCEPTIONS in scripts/gate/exceptions.mjs and docs/AUDIT.md W14';
 

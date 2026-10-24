@@ -13,8 +13,8 @@ export const RETIRED_LOCAL_KEYS: readonly string[] = [
 
 /** The part of a storage area the copy uses. */
 export interface StorageArea {
-  get(key: string): Promise<Record<string, unknown>>;
-  set(items: Record<string, unknown>): Promise<void>;
+  get: (key: string) => Promise<Record<string, unknown>>;
+  set: (items: Record<string, unknown>) => Promise<void>;
 }
 
 /** `appClosed` is read leniently: one that does not read counts as false, so waking connects once to find out. */

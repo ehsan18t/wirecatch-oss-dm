@@ -124,7 +124,7 @@ export function conversionNote(
   const name = FORMAT_LABEL[format];
   if (fit.video === 'none') {
     if (fit.audio === 'encode' || kbps !== null) {
-      const at = kbps !== null ? ` at ${kbps} kbps` : '';
+      const at = kbps === null ? '' : ` at ${kbps} kbps`;
       return `The audio is converted to ${name}${at} after it is downloaded, which is quick.`;
     }
     return `No conversion: the audio is copied into ${name} as it is.`;

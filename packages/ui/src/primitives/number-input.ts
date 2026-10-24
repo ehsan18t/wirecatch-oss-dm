@@ -35,7 +35,7 @@ export function stepValue(value: number | null, steps: number, range: NumberRang
 export function parseNumber(text: string): number | null {
   const trimmed = text.trim().replace(',', '.');
   if (trimmed === '') return null;
-  return /^-?\d*\.?\d+$|^-?\d+\.$/.test(trimmed) ? Number(trimmed) : Number.NaN;
+  return /^-?(?:\d+(?:\.\d+)?|\.\d+)$|^-?\d+\.$/.test(trimmed) ? Number(trimmed) : Number.NaN;
 }
 
 /** The value a spin button key sets, or null for a key it does not take. */

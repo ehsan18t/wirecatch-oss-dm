@@ -11,7 +11,7 @@ const SAFE = new Set(SAFE_EXTENSIONS);
 export function fileType(name: string): string | null {
   const trimmed = name.replace(/[. ]+$/, '');
   const dot = trimmed.lastIndexOf('.');
-  if (dot < 0 || dot === trimmed.length - 1) return null;
+  if (dot === -1 || dot === trimmed.length - 1) return null;
   return trimmed.slice(dot + 1).toLowerCase();
 }
 

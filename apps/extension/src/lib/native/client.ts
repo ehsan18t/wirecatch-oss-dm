@@ -33,17 +33,17 @@ const LATE_MEMORY = 64;
 
 /** The part of `runtime.Port` the client uses, so tests can pass a fake. */
 export interface NativePort {
-  postMessage(message: Message): void;
-  disconnect(): void;
-  onMessage: { addListener(listener: (message: unknown) => void): void };
-  onDisconnect: { addListener(listener: () => void): void };
+  postMessage: (message: Message) => void;
+  disconnect: () => void;
+  onMessage: { addListener: (listener: (message: unknown) => void) => void };
+  onDisconnect: { addListener: (listener: () => void) => void };
 }
 
 export interface NativeTransport {
   /** Opens a new connection to the native host (`runtime.connectNative`). Throws if the browser refuses. */
-  connect(): NativePort;
+  connect: () => NativePort;
   /** Why the port closed, read inside the disconnect listener (Chromium `runtime.lastError`, Firefox `port.error`). */
-  disconnectReason(port: NativePort): string | null;
+  disconnectReason: (port: NativePort) => string | null;
 }
 
 /** What the extension says about itself in `hello`; the client adds the protocol versions it speaks and whether the app may be started. */
@@ -90,8 +90,8 @@ export class RequestError extends Error {
 
 interface Pending {
   call: Call;
-  resolve(reply: Reply): void;
-  reject(error: RequestError): void;
+  resolve: (reply: Reply) => void;
+  reject: (error: RequestError) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
@@ -175,7 +175,10 @@ export class NativeClient {
   #startWanted = false;
   #retryTimer: ReturnType<typeof setTimeout> | null = null;
   readonly #pending = new Map<number, Pending>();
-  readonly #readyWaiters = new Set<{ resolve(): void; reject(error: RequestError): void }>();
+  readonly #readyWaiters = new Set<{
+    resolve: () => void;
+    reject: (error: RequestError) => void;
+  }>();
   readonly #statusListeners = new Set<(status: ConnectionStatus) => void>();
   readonly #eventListeners = new Set<(event: Event) => void>();
 
@@ -425,17 +428,17 @@ export class NativeClient {
    */
   #onResponse(id: number, outcome: Outcome | null, unreadableError = false): void {
     const pending = this.#pending.get(id);
-    if (pending !== undefined) {
+    if (pending === undefined) {
+      const late = this.#late.get(id);
+      if (late === undefined) return; // Unknown id, including UNKNOWN_REQUEST_ID: nothing waits for it.
+      this.#late.delete(id);
+      if (!unreadableError) for (const listener of this.#lateListeners) listener(late, outcome);
+    } else {
       this.#pending.delete(id);
       clearTimeout(pending.timer);
       if (outcome === null) pending.reject(new RequestError('unreadable', UNREADABLE_ANSWER));
       else if (outcome.status === 'ok') pending.resolve(outcome.value);
       else pending.reject(new RequestError('app', outcome.value.message, outcome.value));
-    } else {
-      const late = this.#late.get(id);
-      if (late === undefined) return; // Unknown id, including UNKNOWN_REQUEST_ID: nothing waits for it.
-      this.#late.delete(id);
-      if (!unreadableError) for (const listener of this.#lateListeners) listener(late, outcome);
     }
     // The bridge never reconnects to the app within one port (a new app connection must
     // start with hello), so close this port and connect again later with a fresh hello.

@@ -75,7 +75,9 @@ function packageJson(json, product) {
 /** The folders of the `packages` globs in pnpm-workspace.yaml (each a `folder/*`): every folder under them is a package, so one that has lost its package.json is reported missing rather than skipped. */
 function packageFolders(root) {
   const manifest = current(root, WORKSPACE_FILE);
-  const list = /^packages:\s*\n((?:\s+-\s+.*\n)+)/m.exec(manifest);
+  const list = /^packages:[ \t]*\r?\n((?:(?:[ \t]*\r?\n)*[ \t]+-[ \t]+(?:\S.*)?\r?\n)+)/m.exec(
+    manifest,
+  );
   if (!list) throw new ManifestError(`${WORKSPACE_FILE} has no \`packages\` list.`);
   const globs = [...list[1].matchAll(/-\s+["']?([^"'\s]+)["']?/g)].map((m) => m[1]);
   return globs.flatMap((glob) => {

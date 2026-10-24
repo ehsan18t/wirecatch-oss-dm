@@ -2,11 +2,11 @@
   // Saving files: the download folder, and a folder for each type of file.
   import type { Category } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
+  import { Button, TagInput, textIfCut, tooltip } from '@wirecatch/ui';
   import { CATEGORIES, CATEGORY_LABEL, displayPath } from '$lib/format';
   import { typedExtension } from '$lib/file-names';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
-  import { Button, TagInput, textIfCut, tooltip } from '@wirecatch/ui';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
@@ -77,8 +77,8 @@
     class="flex w-full flex-col divide-y divide-line rounded-md border border-line"
   >
     {#each CATEGORIES.filter((c) => c !== 'other') as category (category)}
-      {@const rule = ruleFor(category)}
-      {@const name = CATEGORY_LABEL[category]}
+      {const rule = $derived(ruleFor(category))}
+      {const name = $derived(CATEGORY_LABEL[category])}
       <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2">
         <span class="w-32 shrink-0 truncate text-ui font-medium text-ink">{name}</span>
         <TagInput

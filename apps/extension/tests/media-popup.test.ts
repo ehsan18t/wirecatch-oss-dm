@@ -134,7 +134,7 @@ describe('Media on this page', () => {
     const hint = (): string =>
       within(section())
         .getByText(/^On a page, press/)
-        .textContent.replace(/\s+/g, ' ')
+        .textContent.replaceAll(/\s+/g, ' ')
         .trim();
     // An empty list has no Download buttons to point at.
     expect(hint()).toMatch(

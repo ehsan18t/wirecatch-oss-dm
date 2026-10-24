@@ -1,5 +1,4 @@
 import { getDomain } from 'tldts';
-
 import { parseUrl } from './url';
 
 /** The fields of a `cookies.Cookie` needed to build a `Cookie` header. */

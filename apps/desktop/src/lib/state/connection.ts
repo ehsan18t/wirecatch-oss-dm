@@ -38,9 +38,9 @@ export class Connection {
         this.#loaded = backend;
         return backend;
       },
-      (err: unknown) => {
+      (error: unknown) => {
         this.#loading = null;
-        throw err;
+        throw error;
       },
     );
     return this.#loading;
@@ -79,10 +79,10 @@ export class Connection {
           if (current()) onReveal(reveal);
         }),
       );
-    } catch (err) {
+    } catch (error) {
       // Nothing would ever close the listeners that did start otherwise.
       stop();
-      throw err;
+      throw error;
     }
     if (!current()) {
       stop();

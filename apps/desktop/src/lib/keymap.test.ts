@@ -55,7 +55,7 @@ function overlap(a: KeyBinding, b: KeyBinding): boolean {
   if (a.scope !== b.scope || a.key.toLowerCase() !== b.key.toLowerCase()) return false;
   const differ = (x: boolean | undefined, y: boolean | undefined) =>
     x !== undefined && y !== undefined && x !== y;
-  return !(differ(a.ctrl, b.ctrl) || differ(a.shift, b.shift) || differ(a.alt, b.alt));
+  return !differ(a.ctrl, b.ctrl) && !differ(a.shift, b.shift) && !differ(a.alt, b.alt);
 }
 
 describe('keymap', () => {
@@ -69,7 +69,7 @@ describe('keymap', () => {
   });
 
   it('has a key for every shortcut', () => {
-    const missing = Object.keys(EVERY_COMMAND).filter((c) => !KEYMAP.some((b) => b.command === c));
+    const missing = Object.keys(EVERY_COMMAND).filter((c) => KEYMAP.every((b) => b.command !== c));
     expect(missing).toEqual([]);
   });
 

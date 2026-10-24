@@ -1,8 +1,8 @@
 // The package's styles as a production build makes them, and enough of the cascade to read a property off them. jsdom computes no styles, so what only the built CSS shows (a focus ring that resolves to `outline-style: none`, a colour resolved on the wrong element) is checked here, over the real output of Tailwind and Lightning CSS.
+import { join } from 'node:path';
 import { compile, optimize } from '@tailwindcss/node';
 import { Scanner } from '@tailwindcss/oxide';
 import { Features, transform } from 'lightningcss';
-import { join } from 'node:path';
 
 const SOURCE = join(import.meta.dirname, '..');
 const ENTRY = "@import './tokens.css';\n@import './base.css';";
@@ -64,7 +64,9 @@ function splitTop(text: string, separator: string): string[] {
 function declarations(body: string): CssRule['declarations'] {
   return splitTop(body, ';').flatMap((part) => {
     const colon = part.indexOf(':');
-    return colon < 0 ? [] : [[part.slice(0, colon).trim(), part.slice(colon + 1).trim()] as const];
+    return colon === -1
+      ? []
+      : [[part.slice(0, colon).trim(), part.slice(colon + 1).trim()] as const];
   });
 }
 
@@ -108,9 +110,9 @@ export function parseCss(css: string): Stylesheet {
     let i = 0;
     for (;;) {
       const open = text.indexOf('{', i);
-      if (open < 0) return;
+      if (open === -1) return;
       const statement = text.indexOf(';', i);
-      if (statement >= 0 && statement < open) {
+      if (statement !== -1 && statement < open) {
         const prelude = text.slice(i, statement).trim();
         if (prelude.startsWith('@layer')) addLayers(prelude.slice('@layer'.length));
         i = statement + 1;
@@ -158,7 +160,7 @@ function compoundParts(selector: string): string[] {
 }
 
 /** `\:` and the other escapes in a class selector, undone. */
-const unescape = (name: string) => name.replace(/\\(.)/g, '$1');
+const unescape = (name: string) => name.replaceAll(/\\(.)/g, '$1');
 
 /**
  * The specificity of `selector` if it matches the element, else null. Only what utilities and base.css use is understood: `*`, classes and the focus pseudo-classes. Anything else (`:root`, attributes, combinators, pseudo-elements) is taken as not matching, so the result errs towards fewer rules, never more.
@@ -213,7 +215,7 @@ export function computedValue(
   let winner: string | null = null;
   let winnerRank: number[] = [];
   for (const [order, rule] of sheet.rules.entries()) {
-    if (!rule.conditions.every((condition) => conditionHolds(condition, element))) continue;
+    if (rule.conditions.some((condition) => !conditionHolds(condition, element))) continue;
     const specificity = bestMatch(rule, element);
     if (specificity === null) continue;
     const layer = rule.layer === null ? sheet.layers.length : sheet.layers.indexOf(rule.layer);
@@ -230,8 +232,8 @@ export function computedValue(
 }
 
 function resolveVars(sheet: Stylesheet, element: ElementModel, value: string): string {
-  return value.replace(
-    /var\((--[\w-]+)(?:,\s*([^()]*))?\)/g,
+  return value.replaceAll(
+    /var\((--[\w-]+)(?:,\s*([^\s()][^()]*)?)?\)/g,
     (_match, name: string, fallback?: string) =>
       (computedValue(sheet, element, name) ?? fallback ?? '').trim(),
   );

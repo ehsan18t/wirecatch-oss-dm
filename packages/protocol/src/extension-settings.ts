@@ -39,7 +39,7 @@ function parsedHost(site: string): string | null {
  * The host name an ignored site stands for, the way the app keeps it: the host as a browser reports it (lower case, ASCII, a Unicode name in its punycode form, an IP address in its usual form), without a scheme, user, port, path, query, leading `*.` or `.`, or trailing dot. So `https://Bücher.de/page`, `*.bücher.de`, `.bücher.de` and `xn--bcher-kva.de.` are all `xn--bcher-kva.de`. Null when no host is left, or what is left is not a host name; that includes a `*` anywhere else, which no host a browser reports holds.
  */
 export function normalizeSite(input: string): string | null {
-  let site = input.replace(SURROUNDING_WHITE_SPACE, '').replace(SCHEME, '');
+  let site = input.replaceAll(SURROUNDING_WHITE_SPACE, '').replace(SCHEME, '');
   site = beforePath(site);
   site = site.slice(site.lastIndexOf('@') + 1);
   site = site.replace(LEADING_WILDCARDS, '');
@@ -51,7 +51,7 @@ export function normalizeSite(input: string): string | null {
 
 /** A file type the way the app keeps it in its lists (`normalize_file_type`): lower case, without white space around it or the leading `*.` or `.` a person may type, so `*.ZIP`, `.zip` and `zip` are all `zip`. Null when nothing is left. */
 export function normalizeFileType(input: string): string | null {
-  const type = input.replace(SURROUNDING_WHITE_SPACE, '').replace(LEADING_WILDCARDS, '');
+  const type = input.replaceAll(SURROUNDING_WHITE_SPACE, '').replace(LEADING_WILDCARDS, '');
   return type === '' ? null : type.toLowerCase();
 }
 

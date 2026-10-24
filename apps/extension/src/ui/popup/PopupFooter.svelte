@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { Button, cn } from '@wirecatch/ui';
   import Pause from '~icons/lucide/pause';
   import Play from '~icons/lucide/play';
+  import { Button, cn } from '@wirecatch/ui';
   import type { Feedback } from '../../lib/popup/model.svelte';
   import { offlineReason } from '../connection';
   import { wholeLabel } from '../cut-label';

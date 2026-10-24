@@ -18,7 +18,7 @@ function* files(dir) {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) yield* files(path);
-    else if (/\.(js|html|css)$/.test(name)) yield path;
+    else if (/\.(?:js|html|css)$/.test(name)) yield path;
   }
 }
 
@@ -31,7 +31,7 @@ for (const file of files('build')) {
 }
 
 if (found.length > 0) {
-  console.error('The production build contains mock backend or gallery code:\n' + found.join('\n'));
+  console.error(`The production build contains mock backend or gallery code:\n${found.join('\n')}`);
   process.exit(1);
 }
 console.log(`Checked ${scanned} files in build: no mock backend or gallery code.`);

@@ -131,8 +131,8 @@
     await win.choose({
       option_id: picked.id,
       file_name: fileName.trim() ? fileName.trim() : null,
-      folder: folder !== choice.folder ? folder : null,
-      queue: queue !== choice.queue ? queue : null,
+      folder: folder === choice.folder ? null : folder,
+      queue: queue === choice.queue ? null : queue,
       later,
       ...outputSelection(picked, choice, output),
       every_video: win.settings ? everyVideoShown : null,
@@ -179,15 +179,13 @@
         onchange={selectOption}
       >
         {#snippet aside(quality: SelectOption)}
-          {@const index = choice.options.findIndex((o) => o.id === quality.value)}
-          {@const option = choice.options[index]}
+          {const index = $derived(choice.options.findIndex((o) => o.id === quality.value))}
+          {const option = $derived(choice.options[index])}
           {#if option}
-            {@const tag = rowTag(
-              option,
-              output.format,
-              option.id === optionId ? output.kbps : null,
+            {const tag = $derived(
+              rowTag(option, output.format, option.id === optionId ? output.kbps : null),
             )}
-            {@const size = rowSize(option)}
+            {const size = $derived(rowSize(option))}
             {#if index === 0}<Badge size="sm">Best</Badge>{/if}
             {#if tag === 'converts'}<Badge tone="warning" size="sm">Converts</Badge>{/if}
             {#if size !== null}

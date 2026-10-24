@@ -79,7 +79,7 @@ class Tooltip {
   };
 
   readonly hideOnFocusOut = (event: FocusEvent): void => {
-    if (!(event.relatedTarget instanceof Node && this.#node.contains(event.relatedTarget))) {
+    if (!(event.relatedTarget instanceof Node) || !this.#node.contains(event.relatedTarget)) {
       this.hide();
     }
   };

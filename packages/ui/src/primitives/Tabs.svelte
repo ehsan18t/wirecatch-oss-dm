@@ -72,7 +72,7 @@
     {onkeydown}
   >
     {#each tabs as tab, index (tab.value)}
-      {@const isSelected = index === selectedIndex}
+      {const isSelected = $derived(index === selectedIndex)}
       <button
         type="button"
         role="tab"

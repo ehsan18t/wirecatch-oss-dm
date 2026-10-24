@@ -1,8 +1,8 @@
+import Download from '~icons/lucide/download';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import Download from '~icons/lucide/download';
 import Button from './Button.svelte';
 import IconButton from './IconButton.svelte';
 

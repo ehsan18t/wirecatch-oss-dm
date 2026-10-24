@@ -51,8 +51,8 @@ export class Addons {
     try {
       this.list = await this.#host.backend().listAddons();
       this.error = null;
-    } catch (err) {
-      this.error = errorMessage(err);
+    } catch (error) {
+      this.error = errorMessage(error);
     }
   }
 
