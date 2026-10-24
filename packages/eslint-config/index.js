@@ -2,6 +2,7 @@
 import comments from '@eslint-community/eslint-plugin-eslint-comments';
 import js from '@eslint/js';
 import prettier from 'eslint-config-prettier';
+import importX from 'eslint-plugin-import-x';
 import svelte from 'eslint-plugin-svelte';
 import globals from 'globals';
 import ts from 'typescript-eslint';
@@ -60,6 +61,8 @@ const BASELINE_RULES = {
   '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
   '@typescript-eslint/switch-exhaustiveness-check': 'error',
   '@typescript-eslint/consistent-type-imports': 'error',
+  // One import per module, types inline (`import { a, type B }`); `--fix` merges duplicates.
+  'import-x/no-duplicates': ['error', { 'prefer-inline': true }],
   '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
   // `onclick={() => model.reconnect()}` is clearer than wrapping every handler in braces.
   '@typescript-eslint/no-confusing-void-expression': ['error', { ignoreArrowShorthand: true }],
@@ -158,7 +161,11 @@ export function wirecatch({
         globals: runtimeGlobals,
         parserOptions: { projectService: true, tsconfigRootDir, extraFileExtensions: ['.svelte'] },
       },
-      plugins: { wirecatch: plugin, '@eslint-community/eslint-comments': comments },
+      plugins: {
+        wirecatch: plugin,
+        '@eslint-community/eslint-comments': comments,
+        'import-x': importX,
+      },
       linterOptions: { reportUnusedDisableDirectives: 'error' },
       rules: BASELINE_RULES,
     },

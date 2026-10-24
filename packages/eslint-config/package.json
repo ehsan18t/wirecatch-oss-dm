@@ -16,6 +16,7 @@
     "@eslint-community/eslint-plugin-eslint-comments": "catalog:",
     "@eslint/js": "catalog:",
     "eslint-config-prettier": "catalog:",
+    "eslint-plugin-import-x": "catalog:",
     "eslint-plugin-svelte": "catalog:",
     "globals": "catalog:",
     "typescript-eslint": "catalog:"
