@@ -188,7 +188,7 @@ for (const font of FONTS) {
       }
 
       // The Downloads and Video and audio sections, unfolded (D61).
-      for (const state of ['long', 'connected', 'old-app']) {
+      for (const state of ['long', 'connected', 'no-media', 'old-app']) {
         test(`keeps everything inside the popup with its sections open (${state})`, async ({
           page,
         }) => {

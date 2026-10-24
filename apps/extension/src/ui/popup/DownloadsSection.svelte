@@ -8,7 +8,6 @@
     type QueueSummary,
   } from '@wirecatch/protocol';
   import {
-    Card,
     Disclosure,
     NumberInput,
     Select,
@@ -57,71 +56,69 @@
   );
 </script>
 
-<Disclosure label="Downloads" {summary}>
-  <Card padding="none" class="divide-y divide-line">
-    <SettingRow
-      label={SETTINGS.defaultQueue.label}
-      description={SETTINGS.defaultQueue.description}
-      stacked
-    >
+<Disclosure variant="card" label="Downloads" {summary}>
+  <SettingRow
+    label={SETTINGS.defaultQueue.label}
+    description={SETTINGS.defaultQueue.description}
+    stacked
+  >
+    {#snippet children(control)}
+      <Select
+        {...control}
+        class="w-full"
+        value={settings.default_queue}
+        options={queueOptions}
+        disabled={!editable}
+        onchange={(queue: QueueId) => void model.update({ default_queue: queue })}
+      />
+    {/snippet}
+  </SettingRow>
+  {#if controls !== null}
+    {const limit = $derived(controls.global_speed_limit)}
+    <!-- One block, so no hairline comes between the switch and its limit. -->
+    <div>
+      <SettingSwitch
+        id="speed-limit"
+        label={SETTINGS.speedLimit.label}
+        description={SETTINGS.speedLimit.description}
+        checked={limit !== null}
+        disabled={!editable}
+        onchange={(on: boolean) =>
+          void model.updateControls({ global_speed_limit: on ? FIRST_TOTAL_SPEED_LIMIT : null })}
+      />
+      {#if limit !== null}
+        <div class="-mt-1 px-4 pb-3">
+          <NumberInput
+            label="Total speed limit"
+            class="w-36"
+            unit="MB/s"
+            min={SPEED_FIELD.MB.min}
+            step={SPEED_FIELD.MB.step}
+            value={inUnit(limit, 'MB')}
+            disabled={!editable}
+            onchange={(value: number | null) => {
+              const bytes = value === null ? null : toBytes(value, 'MB');
+              if (bytes !== null && bytes > 0)
+                void model.updateControls({ global_speed_limit: bytes });
+            }}
+          />
+        </div>
+      {/if}
+    </div>
+    <SettingRow label={SETTINGS.concurrent.label} description={SETTINGS.concurrent.description}>
       {#snippet children(control)}
-        <Select
+        <NumberInput
           {...control}
-          class="w-full"
-          value={settings.default_queue}
-          options={queueOptions}
+          class="w-24"
+          min={1}
+          max={MAX_CONCURRENT_DOWNLOADS}
+          value={controls.max_concurrent_downloads}
           disabled={!editable}
-          onchange={(queue: QueueId) => void model.update({ default_queue: queue })}
+          onchange={(value: number | null) => {
+            if (value !== null) void model.updateControls({ max_concurrent_downloads: value });
+          }}
         />
       {/snippet}
     </SettingRow>
-    {#if controls !== null}
-      {const limit = $derived(controls.global_speed_limit)}
-      <!-- One block, so no hairline comes between the switch and its limit. -->
-      <div>
-        <SettingSwitch
-          id="speed-limit"
-          label={SETTINGS.speedLimit.label}
-          description={SETTINGS.speedLimit.description}
-          checked={limit !== null}
-          disabled={!editable}
-          onchange={(on: boolean) =>
-            void model.updateControls({ global_speed_limit: on ? FIRST_TOTAL_SPEED_LIMIT : null })}
-        />
-        {#if limit !== null}
-          <div class="-mt-1 px-4 pb-3">
-            <NumberInput
-              label="Total speed limit"
-              class="w-36"
-              unit="MB/s"
-              min={SPEED_FIELD.MB.min}
-              step={SPEED_FIELD.MB.step}
-              value={inUnit(limit, 'MB')}
-              disabled={!editable}
-              onchange={(value: number | null) => {
-                const bytes = value === null ? null : toBytes(value, 'MB');
-                if (bytes !== null && bytes > 0)
-                  void model.updateControls({ global_speed_limit: bytes });
-              }}
-            />
-          </div>
-        {/if}
-      </div>
-      <SettingRow label={SETTINGS.concurrent.label} description={SETTINGS.concurrent.description}>
-        {#snippet children(control)}
-          <NumberInput
-            {...control}
-            class="w-24"
-            min={1}
-            max={MAX_CONCURRENT_DOWNLOADS}
-            value={controls.max_concurrent_downloads}
-            disabled={!editable}
-            onchange={(value: number | null) => {
-              if (value !== null) void model.updateControls({ max_concurrent_downloads: value });
-            }}
-          />
-        {/snippet}
-      </SettingRow>
-    {/if}
-  </Card>
+  {/if}
 </Disclosure>

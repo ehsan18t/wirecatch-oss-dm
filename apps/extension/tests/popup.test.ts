@@ -34,6 +34,7 @@ async function openPopup(
     currentUrl?: string | null;
     siteAccess?: boolean;
     requestSiteAccess?: () => Promise<boolean>;
+    mediaShortcut?: string | null;
   } = {},
 ): Promise<Opened> {
   const wired = await wirePage(options.configure);
@@ -46,6 +47,7 @@ async function openPopup(
         options.currentUrl === undefined ? 'https://www.example.com/page' : options.currentUrl,
       siteAccess: options.siteAccess ?? true,
       requestSiteAccess: options.requestSiteAccess,
+      mediaShortcut: options.mediaShortcut ?? null,
       openShortcuts,
       close,
     },
@@ -202,10 +204,23 @@ describe('popup', () => {
     expect(app.calls('show_window')).toHaveLength(1);
   });
 
-  it("opens the browser's shortcuts page from the media hint", async () => {
+  it("shows the keyboard shortcut under Video and audio, and opens the browser's shortcuts page to set it", async () => {
     const { openShortcuts } = await openPopup();
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Set a shortcut' }));
+    await unfold('Video and audio');
+    expect(screen.getByText('Not set')).toBeTruthy();
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: 'Set the keyboard shortcut' }));
     expect(openShortcuts).toHaveBeenCalledTimes(1);
+    cleanup();
+    await openPopup({ mediaShortcut: 'Alt+Shift+D' });
+    await unfold('Video and audio');
+    expect([...document.querySelectorAll('kbd kbd')].map((key) => key.textContent)).toEqual([
+      'Alt',
+      'Shift',
+      'D',
+    ]);
+    expect(screen.getByRole('button', { name: 'Change the keyboard shortcut' })).toBeTruthy();
   });
 
   it('asks about each video, or stops asking, in the app (D61)', async () => {
@@ -546,7 +561,7 @@ describe('popup accessibility', () => {
     await openPopup();
     const user = userEvent.setup();
     const order: string[] = [];
-    for (let i = 0; i < 11; i += 1) {
+    for (let i = 0; i < 9; i += 1) {
       await user.tab();
       order.push(describeFocus(document.activeElement));
     }
@@ -556,8 +571,6 @@ describe('popup accessibility', () => {
       'switch:Show a window before each download',
       'switch:Ask about each video',
       'button:Ignore this site',
-      'button:Set a shortcut',
-      'button:Turn it off',
       'button:Downloads No speed limit · 3 at once · Main',
       'button:Video and audio Best available · Original',
       'button:Pause all',
