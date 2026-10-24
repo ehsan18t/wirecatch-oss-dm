@@ -2,7 +2,6 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -224,7 +223,7 @@ pub(crate) struct Shared {
     pub progress: Arc<Progress>,
     pub opts: DownloadOptions,
     /// Connections currently streaming a response body.
-    pub receiving: AtomicUsize,
+    pub receiving: worker::Receivers,
 }
 
 impl Shared {
@@ -365,7 +364,7 @@ pub(crate) async fn download_guarded(
         part_path: target.part.clone(),
         progress,
         opts,
-        receiving: AtomicUsize::new(0),
+        receiving: worker::Receivers::default(),
     });
     let saver = Arc::new(ResumeSaver::new(
         shared.clone(),

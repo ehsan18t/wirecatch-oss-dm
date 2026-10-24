@@ -535,6 +535,15 @@ Decided with the maintainer on 2026-10-24, who downloaded a YouTube video with t
 3. It shows regardless of `finish_notice`: that setting is about how a download that ended is told, and turning the start's window off must not leave the person with nothing. Each download that starts gets its own notification; downloads starting together (a playlist with the saved choices) are not grouped as finished ones are (D52.3), since grouping would hold each back for the batch's three seconds. The system shows a few at a time, and one still waiting when its five seconds are up is never shown, which suits news this small.
 4. The main window shows no note of its own for such a download, even when it is open: one way to be told, and one that reaches the person in the browser. So the page no longer takes the downloads it missed while loading (`take_captured` is gone, with `PendingCaptures`), and the shell no longer shows a window without the focus for a capture (`Focus` and `PendingReveal` are gone). The download complete window still opens without the focus (`show_quietly`).
 
+### D64. A connection the server refuses steps back as soon as another connection is receiving
+
+Decided on 2026-10-24, after `extra_connections_told_to_wait_step_back_at_once` failed on Windows CI on a change that touched only `deny.toml` (W6, flaky tests). It writes down the engine's rule for servers that limit connections, which no decision recorded, and changes when it applies.
+
+1. A connection the server turns away twice in a row, or once with a long wait (`Retry-After`, or a delay past the normal backoff), hands its segment back to the connections that are working rather than asking again (`retry::REFUSALS_BEFORE_STEPPING_BACK`): the server allows no more connections than are open, and those finish the file.
+2. It steps back only while another connection is receiving data and some other segment's owner still has bytes to fetch, decided under the segment table's lock, so a segment is never left without a connection that will come back for it. When no other connection is receiving, it keeps its segment and waits as the server asked.
+3. That wait ends early: the moment another connection starts receiving, the refused one checks again and steps back (`worker::wait_or_step_back`). Before, it checked only when it handled the refusal. Just then the connections the server serves may all be waiting for their headers, the first one not yet started on the first response, and the wait can be minutes, so the segment sat idle while they could fetch it and the download waited for it at the end.
+4. Rejected: counting a connection that has asked and is waiting for its answer as working. It would step back on a guess: when the other is refused as well, one connection is left to wait out the delay and then fetch both segments.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

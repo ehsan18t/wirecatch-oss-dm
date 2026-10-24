@@ -3,7 +3,11 @@
 use std::fs::File;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
+use tokio::sync::Notify;
+use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::download::Shared;
@@ -13,7 +17,7 @@ use crate::limiter::{Paced, pace};
 use crate::numeric::clamp_to_len;
 use crate::receive::{Received, receive, skip_start};
 use crate::retry::{Attempts, Next, Refusals};
-use crate::segment::{Assignment, UNKNOWN_END};
+use crate::segment::{Assignment, SharedTable, UNKNOWN_END};
 use crate::transport::{Body, Connection};
 use crate::writer::Writer;
 
@@ -99,9 +103,9 @@ pub(crate) async fn run(
 ///
 /// A 429 or 503 with `Retry-After` is retried no sooner than the server asked.
 /// When the server keeps refusing this connection (or asks it to wait) while
-/// others of the same download are receiving data, the connection steps back
-/// instead of retrying: the server's connection limit is reached, and the
-/// remaining connections finish the work.
+/// others of the same download are receiving data, or start to while it waits,
+/// the connection steps back instead of retrying: the server's connection limit
+/// is reached, and the remaining connections finish the work.
 async fn run_assignment(
     shared: &Shared,
     connection: &mut Connection,
@@ -150,16 +154,30 @@ async fn run_assignment(
                 let next = attempts.after_failure(&f.error, f.retry_after, now > from);
                 let delay = match next {
                     Next::GiveUp => return Err(f.error),
-                    Next::StepBackOrRetry(_) if step_back(shared, index) => {
+                    Next::StepBackOrRetry(_)
+                        if step_back(&shared.table, &shared.receiving, index) =>
+                    {
                         info!(error = %Chain(&f.error), "server refuses another connection; continuing with the open ones");
                         return Ok(Ended::SteppedBack);
                     }
                     Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
                 };
                 warn!(error = %Chain(&f.error), retry_in = ?delay, "connection failed, retrying");
-                tokio::select! {
-                    () = shared.request.cancel.cancelled() => return Ok(Ended::Cancelled),
-                    () = tokio::time::sleep(delay) => {}
+                let cancel = &shared.request.cancel;
+                let waited = match next {
+                    Next::StepBackOrRetry(_) => {
+                        wait_or_step_back(&shared.table, &shared.receiving, cancel, index, delay)
+                            .await
+                    }
+                    _ => wait(cancel, delay).await,
+                };
+                match waited {
+                    Waited::Out => {}
+                    Waited::Cancelled => return Ok(Ended::Cancelled),
+                    Waited::SteppedBack => {
+                        info!("another connection is receiving now; continuing with the open ones");
+                        return Ok(Ended::SteppedBack);
+                    }
                 }
             }
         }
@@ -180,7 +198,7 @@ async fn stream(
     mut skip: u64,
 ) -> Result<Ended> {
     let _connection = shared.progress.connection_opened();
-    let _receiving = Receiving::new(&shared.receiving);
+    let _receiving = shared.receiving.start();
     writer.start(index, from);
     let stall = shared.request.stall_timeout;
     // Whether receiving failed (rather than, say, writing to disk).
@@ -247,31 +265,169 @@ async fn stream(
     }
 }
 
+/// How a wait before the next attempt ended.
+#[derive(Debug, PartialEq, Eq)]
+enum Waited {
+    /// The delay is over: try again.
+    Out,
+    Cancelled,
+    /// Another connection started receiving, and the segment went back to the
+    /// table for it.
+    SteppedBack,
+}
+
+/// Waits `delay` before the next attempt, unless the download is cancelled first.
+async fn wait(cancel: &CancellationToken, delay: Duration) -> Waited {
+    tokio::select! {
+        () = cancel.cancelled() => Waited::Cancelled,
+        () = tokio::time::sleep(delay) => Waited::Out,
+    }
+}
+
+/// Waits `delay` before connection `index` asks again, as a connection the
+/// server keeps refusing: it steps back for the others as soon as one of them
+/// is receiving data, not only if one is at the moment of the refusal. The
+/// connections the server does serve may all be waiting for a response just
+/// then, and the delay can be minutes (`Retry-After`), so waiting it out would
+/// hold the segment while they could fetch it.
+async fn wait_or_step_back(
+    table: &SharedTable,
+    receiving: &Receivers,
+    cancel: &CancellationToken,
+    index: usize,
+    delay: Duration,
+) -> Waited {
+    let deadline = Instant::now() + delay;
+    loop {
+        // Registered before the check, so a connection starting in between is not missed.
+        let started = receiving.started.notified();
+        if step_back(table, receiving, index) {
+            return Waited::SteppedBack;
+        }
+        tokio::select! {
+            () = cancel.cancelled() => return Waited::Cancelled,
+            () = tokio::time::sleep_until(deadline) => return Waited::Out,
+            () = started => {}
+        }
+    }
+}
+
 /// Hands segment `index` back for the other connections if at least one is
 /// receiving data and another segment's owner still has bytes to fetch (so it
 /// will come back for more work and pick this segment up). Decided under the
 /// table lock, so the segment can never be left without a connection to take it.
-fn step_back(shared: &Shared, index: usize) -> bool {
-    let mut table = shared.table.lock();
-    let others_working = shared.receiving.load(Ordering::SeqCst) > 0 && table.others_active(index);
+fn step_back(table: &SharedTable, receiving: &Receivers, index: usize) -> bool {
+    let mut table = table.lock();
+    let others_working = receiving.any() && table.others_active(index);
     if others_working {
         table.release(index);
     }
     others_working
 }
 
-/// Counts a connection as receiving while it streams a body.
-struct Receiving<'a>(&'a AtomicUsize);
+/// The connections of one download that are receiving data.
+#[derive(Debug, Default)]
+pub(crate) struct Receivers {
+    count: AtomicUsize,
+    /// Wakes the connections waiting to step back when one starts receiving.
+    started: Notify,
+}
 
-impl<'a> Receiving<'a> {
-    fn new(count: &'a AtomicUsize) -> Self {
-        count.fetch_add(1, Ordering::SeqCst);
-        Self(count)
+impl Receivers {
+    /// Counts a connection as receiving until the guard is dropped.
+    fn start(&self) -> Receiving<'_> {
+        self.count.fetch_add(1, Ordering::SeqCst);
+        self.started.notify_waiters();
+        Receiving(self)
+    }
+
+    fn any(&self) -> bool {
+        self.count.load(Ordering::SeqCst) > 0
     }
 }
 
+/// Counts a connection as receiving while it streams a body.
+struct Receiving<'a>(&'a Receivers);
+
 impl Drop for Receiving<'_> {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
+        self.0.count.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::segment::SegmentTable;
+    use crate::units::MIB;
+
+    /// A wait as long as a refusal's `Retry-After` may ask for.
+    const LONG_WAIT: Duration = Duration::from_secs(300);
+
+    /// The connection that owns segment `mine` waits as a refused one would,
+    /// while another connection starts receiving a second in. How the wait
+    /// ended, and how long it took.
+    async fn refused_while_another_starts(table: &SharedTable, mine: usize) -> (Waited, Duration) {
+        let receiving = Receivers::default();
+        let cancel = CancellationToken::new();
+        let started = Instant::now();
+        let another_starts = async {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            receiving.start()
+        };
+        let (waited, _receiving) = tokio::join!(
+            wait_or_step_back(table, &receiving, &cancel, mine, LONG_WAIT),
+            another_starts,
+        );
+        (waited, started.elapsed())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refused_connection_steps_back_once_another_starts_receiving() {
+        // Another connection owns a segment with bytes left, but is not
+        // receiving when the refusal comes: it waits for its response.
+        let mut table = SegmentTable::new(Some(8 * MIB), MIB);
+        let mine = table.acquire(0).unwrap().index;
+        table.acquire(1).unwrap();
+        let table = SharedTable::new(table);
+
+        let (waited, took) = refused_while_another_starts(&table, mine).await;
+
+        assert_eq!(waited, Waited::SteppedBack);
+        assert_eq!(
+            took,
+            Duration::from_secs(1),
+            "held its segment for the wait"
+        );
+        let next = table.lock().acquire(1).map(|a| a.index);
+        assert_eq!(next, Some(mine), "the segment was not handed back");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refused_connection_keeps_the_last_segment_and_waits() {
+        // No other segment has bytes left: the connection receiving will not
+        // come back for more work, so this one keeps its segment.
+        let mut table = SegmentTable::new(Some(8 * MIB), MIB);
+        let mine = table.acquire(0).unwrap().index;
+        let table = SharedTable::new(table);
+
+        let (waited, took) = refused_while_another_starts(&table, mine).await;
+
+        assert_eq!(waited, Waited::Out);
+        assert!(took >= LONG_WAIT, "retried after {took:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancelling_ends_a_refused_connections_wait() {
+        let mut table = SegmentTable::new(Some(8 * MIB), MIB);
+        let mine = table.acquire(0).unwrap().index;
+        let table = SharedTable::new(table);
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let waited =
+            wait_or_step_back(&table, &Receivers::default(), &cancel, mine, LONG_WAIT).await;
+
+        assert_eq!(waited, Waited::Cancelled);
     }
 }
