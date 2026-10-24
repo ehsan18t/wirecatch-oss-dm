@@ -574,6 +574,14 @@ Decided with the maintainer on 2026-10-24, who found the note in the browser the
 3. A video or stream from the browser that is read for its qualities without a window (D50) is told as soon as it is handed over, by its title ("Keynote, reading the video"), instead of seconds later once it was read and its download began: the core sends `UiEvent::MediaCaptured`, and the shell tells nothing more when its download starts. A file is still told once the server has answered the app, which is near instant and is when Wirecatch really has it; told any earlier, a file the server refuses would go back to the browser just after its note. A setting for when the note comes was rejected: only a video would show the difference.
 4. A video added in the app's own Add dialog is told nothing, since the person is in the app: only a capture from the browser sends `MediaCaptured`. The note no longer names the quality the saved choices took; the download's details do (D50).
 
+### D68. The extension's site normalizer checks Punycode labels itself instead of trusting the runtime's URL parser
+
+Decided on 2026-10-24, when the shared site cases failed on Node 24.22: `normalize_site` (D37.2) is ported to TypeScript on top of `URL`, and runtimes no longer agree on what `URL` does with an `xn--` label. Node 24.22 (Ada 4.0) and Chromium 152 keep any such label as it is, so `xn--zz` or `xn--a-ecp.ru` became a site to ignore in the extension while the app's `url::Host::parse` refuses them; Node 22, which CI runs, still refused them, so CI passed while a developer's machine failed.
+
+1. The TypeScript side decodes every `xn--` label of a parsed host itself (`decodePunycode`, RFC 3492, in `packages/protocol/src/punycode.ts`) and keeps it only when it decodes to a name beyond ASCII that `URL` encodes back to the same label. That second step is the direction every runtime still validates (Unicode to ASCII, with the IDNA mapping), so the rule no longer depends on how a runtime treats a label that is already ASCII. A label that fails makes the whole site invalid, as it does in Rust.
+2. The shared cases in `site_cases()` now hold labels that are no Punycode at all, labels that decode to plain ASCII, labels in capitals and labels that decode to a name IDNA would map differently, so a runtime that changes this again fails the test on whatever Node it runs.
+3. Only decoding is ported. Encoding stays with `URL`, which every runtime does the same way, and a full IDNA implementation in TypeScript was rejected as far more code for the same answer.
+
 ### D69. A connection the server refuses steps back as soon as another connection is receiving
 
 Decided on 2026-10-24, after `extra_connections_told_to_wait_step_back_at_once` failed on Windows CI on a change that touched only `deny.toml` (W6, flaky tests). It writes down the engine's rule for servers that limit connections, which no decision recorded, and changes when it applies.

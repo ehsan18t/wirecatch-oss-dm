@@ -11870,10 +11870,6 @@
       "typed": "a<b.com"
     },
     {
-      "site": null,
-      "typed": "xn--zz"
-    },
-    {
       "site": "example.com",
       "typed": "example.com\\path"
     },
@@ -12008,6 +12004,74 @@
     {
       "site": null,
       "typed": "exa mple.com"
+    },
+    {
+      "site": "xn--mnchen-3ya.de",
+      "typed": "xn--mnchen-3ya.de"
+    },
+    {
+      "site": "xn--mnchen-3ya.de",
+      "typed": "xn--Mnchen-3ya.de"
+    },
+    {
+      "site": "xn--ls8h",
+      "typed": "XN--LS8H"
+    },
+    {
+      "site": "xn--55qx5d",
+      "typed": "xn--55qx5d"
+    },
+    {
+      "site": "xn--bcher-kvaa",
+      "typed": "xn--bcher-kvaa"
+    },
+    {
+      "site": null,
+      "typed": "xn--"
+    },
+    {
+      "site": null,
+      "typed": "xn--a"
+    },
+    {
+      "site": null,
+      "typed": "xn--abc"
+    },
+    {
+      "site": null,
+      "typed": "xn--ab-"
+    },
+    {
+      "site": null,
+      "typed": "xn--abc-"
+    },
+    {
+      "site": null,
+      "typed": "xn--ab--"
+    },
+    {
+      "site": null,
+      "typed": "xn--0"
+    },
+    {
+      "site": null,
+      "typed": "xn--9-yka"
+    },
+    {
+      "site": null,
+      "typed": "xn--a-ecp.ru"
+    },
+    {
+      "site": null,
+      "typed": "xn--xn--zz"
+    },
+    {
+      "site": null,
+      "typed": "a.xn--zz.b"
+    },
+    {
+      "site": null,
+      "typed": "xn--zz"
     }
   ]
 }

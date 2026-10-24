@@ -5,6 +5,7 @@ import type { ExtensionSettings } from './generated/ExtensionSettings';
 import type { ExtensionSettingsPatch } from './generated/ExtensionSettingsPatch';
 import type { OutputDefaults } from './generated/OutputDefaults';
 import type { OutputDefaultsPatch } from './generated/OutputDefaultsPatch';
+import { decodePunycode, NOT_ASCII } from './punycode';
 
 /** White space as Rust's `char::is_whitespace` and `str::trim` have it (the Unicode White_Space property), which `String.prototype.trim` and `\s` do not: they take U+FEFF and leave U+0085. */
 const WHITE_SPACE = /\p{White_Space}/u;
@@ -22,17 +23,34 @@ function beforePath(text: string): string {
 /** The scheme an address is parsed with to read its host: one whose host the URL standard parses as a browser does. */
 const HOST_SCHEME = 'http://';
 
+/** What `URL` makes of `host`, or null when it is no host. */
+function urlHost(host: string): string | null {
+  try {
+    return new URL(`${HOST_SCHEME}${host}`).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether an `xn--` label of a parsed host is one the URL standard keeps: its Punycode decodes, to a name beyond ASCII that encodes back to the same label. Runtimes differ here (Node 24.22 and current Chromium keep any `xn--` label as it is, D68), so the label is checked rather than left to `URL`; turning the decoded Unicode name back into ASCII is the direction every runtime still checks.
+ */
+function isPunycodeLabel(label: string): boolean {
+  const decoded = decodePunycode(label.slice('xn--'.length));
+  return decoded !== null && NOT_ASCII.test(decoded) && urlHost(decoded) === label;
+}
+
 /**
  * The host the URL standard's host parser makes of `site` (IDNA, IPv4 and IPv6 forms, the characters no host may hold), as `url::Host::parse` does in Rust; null when it is no host. A colon is only allowed inside an IPv6 literal: elsewhere `URL` would read it as a port, where the host parser refuses it.
  */
 function parsedHost(site: string): string | null {
   const literal = site.startsWith('[') && site.endsWith(']');
   if (!literal && site.includes(':')) return null;
-  try {
-    return new URL(`${HOST_SCHEME}${site}`).hostname;
-  } catch {
-    return null;
-  }
+  const host = urlHost(site);
+  if (host === null || literal) return host;
+  return host.split('.').every((label) => !label.startsWith('xn--') || isPunycodeLabel(label))
+    ? host
+    : null;
 }
 
 /**
