@@ -19,7 +19,10 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  # The oldest Node that "engines" in package.json allows, which every job runs.
   NODE_VERSION: "22"
+  # The Node developers run, which the JavaScript job also runs on one system: runtimes differ in what their URL parser accepts (D68).
+  NODE_NEWEST: "24"
   # The first part of every Rust cache key. Raise it when a build setting changes what the caches hold so much that restoring an older one costs more than it saves.
   CACHE_PREFIX: v1-rust
   # Free disk below which a Rust job warns: the dependency tree grows, and a link that runs out of disk fails with a bus error rather than a clear message.
@@ -158,12 +161,16 @@ jobs:
         run: node scripts/gate.mjs supply-chain
 
   js:
-    name: JavaScript (${{ matrix.os }})
+    name: JavaScript (${{ matrix.os }}, ${{ matrix.node }} Node)
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        node: [oldest]
+        include:
+          - os: ubuntu-latest
+            node: newest
     runs-on: ${{ matrix.os }}
     steps:
       # The whole history, so the commit check can compare against main.
@@ -187,7 +194,7 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ matrix.node == 'newest' && env.NODE_NEWEST || env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
@@ -198,7 +205,7 @@ jobs:
 
       # The commits the commit check covers: a pull request's own, or the ones a push brought. A new branch or a manual run has no earlier commit to compare with, so it checks against main. After a force push the earlier commit is in no branch, so it is fetched by its hash; when GitHub no longer has it, only the newest commit is checked.
       - name: Choose the commits to check
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.node == 'oldest'
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
@@ -221,7 +228,7 @@ jobs:
 
       # The repository rules read files, manifests and commits, and answer the same on every system, so they run once.
       - name: Gate (repository rules)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.node == 'oldest'
         run: node scripts/gate.mjs repo
 
   # The checks in a real browser, alongside the JavaScript job: they take minutes and need no Rust. They run on both systems because each lays text out in its own fonts.
