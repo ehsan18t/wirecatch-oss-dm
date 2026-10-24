@@ -133,7 +133,7 @@ describe('how downloads are told', () => {
   it('is picked from a list, and names when the default queue tells, with a way to change it', async () => {
     const { app } = await openSettings('notifications');
     const pick = screen.getByRole('combobox', { name: 'When a download finishes' });
-    expect(pick).toHaveTextContent('Show a notification');
+    expect(pick).toHaveTextContent('Show a note in the browser');
     expect(screen.getByText('Main tells you each time a download finishes.')).toBeVisible();
     await fireEvent.click(pick);
     await settle();
@@ -146,7 +146,7 @@ describe('how downloads are told', () => {
     expect(app.dialog).toEqual({ kind: 'queue', id: app.queues.defaultQueue?.id });
   });
 
-  it('notes a started download in the browser for 3 seconds, and a finished one when asked (D65)', async () => {
+  it('notes a started download in the browser for 3 seconds, and a finished one for 8 (D65, D67)', async () => {
     const { app } = await openSettings('notifications');
     expect(screen.getByRole('combobox', { name: 'When a download starts' })).toHaveTextContent(
       'Show a note in the browser',
@@ -154,17 +154,18 @@ describe('how downloads are told', () => {
     const startFor = screen.getByRole('combobox', { name: 'Show the start note for' });
     expect(startFor).toHaveTextContent('3 seconds');
     expect(startFor).toBeEnabled();
+    // D67: a finished download is told in the browser too, unless the person chose otherwise.
     const finishFor = screen.getByRole('combobox', { name: 'Show the finish note for' });
     expect(finishFor).toHaveTextContent('8 seconds');
-    expect(finishFor).toBeDisabled();
+    expect(finishFor).toBeEnabled();
 
     await app.updateSettings((d) => {
       d.start_notice = 'nothing';
-      d.finish_notice = 'browser';
+      d.finish_notice = 'notification';
     });
     await settle();
     expect(screen.getByRole('combobox', { name: 'Show the start note for' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Show the finish note for' })).toBeEnabled();
+    expect(screen.getByRole('combobox', { name: 'Show the finish note for' })).toBeDisabled();
   });
 
   it('shows notifications during Do Not Disturb unless turned off (D64)', async () => {

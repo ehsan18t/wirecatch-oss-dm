@@ -294,6 +294,54 @@ fn a_note_goes_to_the_browser_that_shows_it_or_to_a_notification() -> TestResult
     Ok(())
 }
 
+/// D67: a video read without a window is told as added when the browser hands it over, by its
+/// title, and not again when its download starts.
+#[test]
+fn a_video_is_told_as_added_once_when_handed_over() -> TestResult {
+    let sandbox = Sandbox::new()?;
+    let app = app_with(Some(Core::new(sandbox.config()?)))?;
+    tauri::async_runtime::block_on(app.state::<Core>().manager())?;
+    let handle = app.handle().clone();
+    let (sender, receiver) = broadcast::channel(16);
+    let task = tauri::async_runtime::spawn(forward(handle.clone(), receiver));
+
+    sender
+        .send(UiEvent::MediaCaptured {
+            id: QuestionId(3),
+            title: "Keynote".into(),
+        })
+        .unwrap();
+    let mut video = ended_row(8, 1, DownloadStatus::Downloading);
+    video.media = Some(wirecatch_protocol::app::MediaSummary {
+        quality: "720p".into(),
+        source: wirecatch_protocol::extension::MediaKind::Page,
+        video_key: None,
+        instead_of: None,
+    });
+    sender.send(UiEvent::Captured(video)).unwrap();
+    // A file after it: its note shows only once the events before it were handled.
+    sender
+        .send(UiEvent::Captured(ended_row(
+            9,
+            1,
+            DownloadStatus::Downloading,
+        )))
+        .unwrap();
+    wait_until("the file's note", || titles(&handle).len() == 2);
+    let bodies: Vec<String> = handle
+        .state::<ShownNotices>()
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|s| s.notice.body.clone())
+        .collect();
+    assert_eq!(bodies, ["Keynote, reading the video", "file-9.zip"]);
+    assert_eq!(titles(&handle), ["Download added", "Download added"]);
+    task.abort();
+    Ok(())
+}
+
 /// D64: what the person must know asks to show during Do Not Disturb until they turn that off.
 #[test]
 fn important_notices_follow_the_do_not_disturb_switch() -> TestResult {

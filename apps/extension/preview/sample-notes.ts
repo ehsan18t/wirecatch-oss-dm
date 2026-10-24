@@ -15,8 +15,8 @@ const nextId = () => noteId(++lastId);
 const STARTED: BrowserNote = {
   id: nextId(),
   kind: 'started',
-  title: 'Download started',
-  body: 'Conference keynote 2026.mp4, 1080p',
+  title: 'Download added',
+  body: 'Conference keynote 2026, reading the video',
   buttons: [],
   stays_ms: null,
 };

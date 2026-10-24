@@ -15,7 +15,7 @@ use wirecatch_protocol::app::{
     AppSettings, AppSettingsPatch, DownloadSummary, FinishNotice, Queue, QueueNotify, QueueReport,
     StartNotice, UiEvent,
 };
-use wirecatch_protocol::extension::NoteKind;
+use wirecatch_protocol::extension::{MediaKind, NoteKind};
 
 use crate::activity::{Activity, Ended};
 use crate::autostart::{self, Action};
@@ -58,6 +58,7 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
                         &wirecatch_protocol::desktop::Reveal::browser_settings(),
                     ),
                     Attention::Started(row) => started(&app, &row),
+                    Attention::VideoAdded(title) => video_added(&app, &title),
                     Attention::NoteShown(id) => browser_notes::shown(&app, id),
                     Attention::NotePressed(pressed) => browser_notes::pressed(&app, &pressed),
                     Attention::Theme(theme) => crate::appearance::follow_theme(&app, theme),
@@ -188,6 +189,29 @@ impl Teller {
 /// Tells the person that a browser download started without a window, the way `settings` say
 /// (D65): a note in the browser for as long as they say, else a notification as brief.
 pub fn started<R: Runtime>(app: &AppHandle<R>, row: &DownloadSummary) {
+    // A video read for its qualities was told when it was handed over (`video_added`, D67); one
+    // added in the app is not the browser's.
+    if row
+        .media
+        .as_ref()
+        .is_some_and(|m| m.source != MediaKind::Direct)
+    {
+        return;
+    }
+    tell_added(app, |stays| crate::notices::started(row, stays));
+}
+
+/// Tells that a video from the browser was added, by its `title`, as soon as it is handed over
+/// to be read without a window (D67).
+pub fn video_added<R: Runtime>(app: &AppHandle<R>, title: &str) {
+    tell_added(app, |stays| crate::notices::video_added(title, stays));
+}
+
+/// Tells the notice `made` gives for how long the start note stays, the way the settings say.
+fn tell_added<R: Runtime>(
+    app: &AppHandle<R>,
+    made: impl FnOnce(Duration) -> crate::notices::Notice,
+) {
     let Some(settings) = settings_now(app) else {
         return;
     };
@@ -195,8 +219,7 @@ pub fn started<R: Runtime>(app: &AppHandle<R>, row: &DownloadSummary) {
         return;
     }
     let stays = Duration::from_millis(settings.start_note_time.millis());
-    let notice = crate::notices::started(row, stays);
-    browser_notes::tell(app, notice, NoteKind::Started, Some(stays));
+    browser_notes::tell(app, made(stays), NoteKind::Started, Some(stays));
 }
 
 fn settings_now<R: Runtime>(app: &AppHandle<R>) -> Option<AppSettings> {

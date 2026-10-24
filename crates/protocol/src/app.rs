@@ -869,10 +869,11 @@ pub enum Accent {
 #[ts(export)]
 pub enum FinishNotice {
     /// A system notification with buttons to open the file or show it in its folder.
-    #[default]
     Notification,
     /// A note in the browser tab the person is looking at, with the same buttons (D65); a
-    /// system notification when no browser can show it.
+    /// system notification when no browser can show it. The default: a system notification
+    /// only when the person is not in the browser (D67).
+    #[default]
     Browser,
     /// The download complete window, which collects what finished until the person closes it.
     Window,
@@ -1541,6 +1542,15 @@ pub enum UiEvent {
     SettingsImported(ImportSummary),
     /// Media with several qualities: the UI shows the picker.
     MediaChoiceRequested(MediaChoice),
+    /// A video or stream from the browser was handed over and is read for its qualities
+    /// without a window (D50): the desktop tells the person it was added at once, before the
+    /// read ends (D67). Its download is not told again when it starts.
+    MediaCaptured {
+        /// The id the read has, as a question it may yet ask.
+        id: QuestionId,
+        /// Its title, or its address with any password removed.
+        title: String,
+    },
     /// Wirecatch started reading a captured page or stream to find its qualities, which can
     /// take a few seconds. It ends with a [`MediaChoiceRequested`](Self::MediaChoiceRequested)
     /// with the same id, or a [`ConfirmationClosed`](Self::ConfirmationClosed) with it

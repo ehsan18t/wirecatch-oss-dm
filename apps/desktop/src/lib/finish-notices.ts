@@ -17,15 +17,15 @@ import type { SelectOption } from '@wirecatch/ui';
 /** How finished and failed downloads are told, for the setting's dropdown. */
 export const FINISH_NOTICE_OPTIONS: readonly SelectOption<FinishNotice>[] = [
   {
-    value: 'notification',
-    label: 'Show a notification',
-    description: 'With buttons to open the file or show it in its folder.',
-  },
-  {
     value: 'browser',
     label: 'Show a note in the browser',
     description:
       'In the tab you are looking at, with the same buttons. A notification when the browser is not in front.',
+  },
+  {
+    value: 'notification',
+    label: 'Show a notification',
+    description: 'With buttons to open the file or show it in its folder.',
   },
   {
     value: 'window',

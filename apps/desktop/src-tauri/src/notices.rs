@@ -108,25 +108,31 @@ fn retry_helps(row: &DownloadSummary) -> bool {
         .is_none_or(|fix| RETRY_FIXES.contains(&fix))
 }
 
+const ADDED: &str = "Download added";
+
 /// For a browser download that started without a window of its own (D63): it `stays` briefly, since
-/// the person is still browsing. A video says the quality the saved choices took (D50).
+/// the person is still browsing.
 #[must_use]
 pub fn started(row: &DownloadSummary, stays: std::time::Duration) -> Notice {
-    let body = match &row.media {
-        None => row.file_name.clone(),
-        Some(media) => match &media.instead_of {
-            None => format!("{}, {}", row.file_name, media.quality),
-            Some(wanted) => format!(
-                "{}, {} ({wanted} wasn’t offered)",
-                row.file_name, media.quality
-            ),
-        },
-    };
     Notice {
-        title: "Download started".to_owned(),
-        body,
+        title: ADDED.to_owned(),
+        body: row.file_name.clone(),
         buttons: Vec::new(),
         click: show(None, &[row]),
+        lasts: Lasts::Brief(stays),
+        important: false,
+    }
+}
+
+/// For a video from the browser read for its qualities without a window (D67): told as soon as
+/// it is handed over, by its `title`, before its file has a name.
+#[must_use]
+pub fn video_added(title: &str, stays: std::time::Duration) -> Notice {
+    Notice {
+        title: ADDED.to_owned(),
+        body: format!("{title}, reading the video"),
+        buttons: Vec::new(),
+        click: show(None, &[]),
         lasts: Lasts::Brief(stays),
         important: false,
     }
@@ -265,8 +271,7 @@ pub fn queue_done(report: &QueueReport) -> Option<Notice> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wirecatch_protocol::app::{Category, DownloadStatus, FixAction, MediaSummary, UserError};
-    use wirecatch_protocol::extension::MediaKind;
+    use wirecatch_protocol::app::{Category, DownloadStatus, FixAction, UserError};
 
     fn row(id: i64, folder: &str, status: DownloadStatus) -> DownloadSummary {
         DownloadSummary {
@@ -322,26 +327,23 @@ mod tests {
     const BRIEFLY: std::time::Duration = std::time::Duration::from_secs(3);
 
     #[test]
-    fn a_started_download_is_told_briefly_with_the_quality_a_video_took() {
-        let mut started = row(1, "videos", DownloadStatus::Downloading);
+    fn a_download_from_the_browser_is_told_briefly_as_added() {
+        let started = row(1, "videos", DownloadStatus::Downloading);
         let notice = super::started(&started, BRIEFLY);
-        assert_eq!(notice.title, "Download started");
+        assert_eq!(notice.title, "Download added");
         assert_eq!(notice.body, "file-1.zip");
         assert_eq!(notice.buttons, []);
         assert_eq!(notice.click, reveal(None, &[1]));
         assert_eq!(notice.lasts, Lasts::Brief(BRIEFLY));
         assert!(!notice.important, "news, never through Do Not Disturb");
-        started.media = Some(MediaSummary {
-            quality: "720p".into(),
-            source: MediaKind::Page,
-            video_key: None,
-            instead_of: Some("1080p".into()),
-        });
-        assert_eq!(
-            super::started(&started, BRIEFLY).body,
-            "file-1.zip, 720p (1080p wasn’t offered)"
-        );
         assert_eq!(finished(&[&done(2)]).unwrap().lasts, Lasts::Kept);
+
+        let video = video_added("Keynote", BRIEFLY);
+        assert_eq!(
+            (video.title.as_str(), video.body.as_str()),
+            ("Download added", "Keynote, reading the video")
+        );
+        assert_eq!(video.lasts, Lasts::Brief(BRIEFLY));
     }
 
     #[test]
