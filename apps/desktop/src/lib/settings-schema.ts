@@ -110,6 +110,14 @@ const DEFS = [
       'notification notify alert done complete finished failed popup dialog window toast message tell',
   },
   {
+    id: 'notify_during_do_not_disturb',
+    section: 'general',
+    label: 'Show notifications during Do Not Disturb',
+    help: 'Notifications about finished and failed downloads, and about problems, still show while Windows is set to Do Not Disturb. Windows can still hold them back in its own settings for Wirecatch.',
+    keywords:
+      'do not disturb dnd focus assist quiet hours silent mute priority important notification',
+  },
+  {
     id: 'default_folder',
     section: 'files',
     label: 'Download folder',

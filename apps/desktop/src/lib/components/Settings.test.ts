@@ -146,6 +146,15 @@ describe('how finished downloads are told', () => {
     expect(app.dialog).toEqual({ kind: 'queue', id: app.queues.defaultQueue?.id });
   });
 
+  it('shows notifications during Do Not Disturb unless turned off (D64)', async () => {
+    const { app } = await openSettings('general');
+    const toggle = screen.getByRole('switch', { name: 'Show notifications during Do Not Disturb' });
+    expect(toggle).toBeChecked();
+    await fireEvent.click(toggle);
+    await settle();
+    expect(app.settings?.notify_during_do_not_disturb).toBe(false);
+  });
+
   it('leaves out when the queue tells while nothing is told', async () => {
     const { app } = await openSettings('general');
     await app.updateSettings((d) => void (d.finish_notice = 'nothing'));

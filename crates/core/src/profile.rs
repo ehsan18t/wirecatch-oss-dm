@@ -48,10 +48,41 @@ pub(crate) fn export(
 #[derive(Debug)]
 pub(crate) struct Parsed {
     pub profile: SettingsProfile,
-    /// Whether its settings say if the Public Suffix List is kept current (D44.2). One
-    /// written before that setting existed does not, and then the choice made here
-    /// stays: turning the refresh off is a privacy choice an import must not undo.
-    pub sets_suffix_list_updates: bool,
+    /// The settings it names of those an older profile may not.
+    pub names: Names,
+}
+
+/// Which of the settings added after profiles were first written a profile names. One written
+/// before a setting existed does not, and then the choice made here stays, since the person
+/// made it and the profile knew nothing of it.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Names {
+    /// Whether the Public Suffix List is kept current (D44.2): turning the refresh off is a
+    /// privacy choice an import must not undo.
+    pub suffix_list_updates: bool,
+    /// Whether notifications show during Do Not Disturb (D64).
+    pub do_not_disturb: bool,
+}
+
+impl Names {
+    /// What the settings of a profile's `value` name.
+    fn read(value: &serde_json::Value) -> Self {
+        let names = |setting: &str| value.pointer(&format!("/settings/{setting}")).is_some();
+        Self {
+            suffix_list_updates: names("update_suffix_list"),
+            do_not_disturb: names("notify_during_do_not_disturb"),
+        }
+    }
+
+    /// Gives `settings` the choices made `here` for the settings this profile does not name.
+    fn keep_here(self, settings: &mut AppSettings, here: &AppSettings) {
+        if !self.suffix_list_updates {
+            settings.update_suffix_list = here.update_suffix_list;
+        }
+        if !self.do_not_disturb {
+            settings.notify_during_do_not_disturb = here.notify_during_do_not_disturb;
+        }
+    }
 }
 
 /// Reads a profile file. The version is checked before anything else, so a file
@@ -72,14 +103,11 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Parsed> {
     if version == 0 {
         return Err(CoreError::InvalidProfile("its format version is 0".into()));
     }
-    let sets_suffix_list_updates = value.pointer("/settings/update_suffix_list").is_some();
+    let names = Names::read(&value);
     upgrade_finish_notice(&mut value);
     let profile =
         serde_json::from_value(value).map_err(|e| CoreError::InvalidProfile(e.to_string()))?;
-    Ok(Parsed {
-        profile,
-        sets_suffix_list_updates,
-    })
+    Ok(Parsed { profile, names })
 }
 
 /// A profile written before D52 says whether finished downloads notify with a switch,
@@ -132,22 +160,19 @@ pub(crate) struct Imported {
 pub(crate) struct Localized {
     pub profile: SettingsProfile,
     pub folders: Vec<ImportedFolder>,
-    /// See [`Parsed::sets_suffix_list_updates`].
-    pub sets_suffix_list_updates: bool,
+    /// See [`Parsed::names`].
+    pub names: Names,
 }
 
 /// Resolves the profile's folders on this machine; see [`Localized`]. Blocks on
 /// the disk.
 pub(crate) fn localize(parsed: Parsed, folders: &KnownFolders) -> Localized {
-    let Parsed {
-        mut profile,
-        sets_suffix_list_updates,
-    } = parsed;
+    let Parsed { mut profile, names } = parsed;
     let report = localize_folders(&mut profile.settings, folders);
     Localized {
         profile,
         folders: report,
-        sets_suffix_list_updates,
+        names,
     }
 }
 
@@ -183,7 +208,10 @@ pub(crate) fn merge(
     let here = profile.settings.clone();
     let parsed = Parsed {
         profile,
-        sets_suffix_list_updates: true,
+        names: Names {
+            suffix_list_updates: true,
+            do_not_disturb: true,
+        },
     };
     merge_localized(
         localize(parsed, folders),
@@ -217,7 +245,7 @@ pub(crate) fn merge_localized(
     let Localized {
         profile,
         folders: folder_report,
-        sets_suffix_list_updates,
+        names,
     } = localized;
     // Checked before the merge so a huge file costs nothing.
     settings::check_queue_count(profile.queues.len())?;
@@ -260,9 +288,7 @@ pub(crate) fn merge_localized(
     }
 
     let mut settings = profile.settings;
-    if !sets_suffix_list_updates {
-        settings.update_suffix_list = here.update_suffix_list;
-    }
+    names.keep_here(&mut settings, here);
     // A profile is stored data, possibly from an older version: its sites are read as a stored list is.
     settings.extension.ignored_sites = settings::stored_sites(settings.extension.ignored_sites);
     settings.extension.default_queue = ids
@@ -452,6 +478,30 @@ mod tests {
             assert_eq!(read.settings.finish_notice, told, "switch {on}");
             assert_eq!(read.queues[0].notify, QueueNotify::EachDownload);
         }
+    }
+
+    /// D64: a profile from before the Do Not Disturb switch leaves the choice made here.
+    #[test]
+    fn a_profile_from_before_the_do_not_disturb_switch_keeps_the_choice_made_here() {
+        let profile = export(&default_settings(), &[default_queue()], &folders(), 42);
+        let mut old = serde_json::to_value(&profile).unwrap();
+        old["settings"]
+            .as_object_mut()
+            .unwrap()
+            .remove("notify_during_do_not_disturb");
+        let parsed = parse(&serde_json::to_vec(&old).unwrap()).unwrap();
+        let mut here = default_settings();
+        here.notify_during_do_not_disturb = false;
+        let merged = merge_localized(
+            localize(parsed, &folders()),
+            &[default_queue()],
+            &here,
+            &folders(),
+            &SuffixList::built_in(),
+            || QueueId(99),
+        )
+        .unwrap();
+        assert!(!merged.settings.notify_during_do_not_disturb);
     }
 
     #[test]

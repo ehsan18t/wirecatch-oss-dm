@@ -17,7 +17,7 @@ use wirecatch_desktop_lib::activity::Ended;
 use wirecatch_desktop_lib::api;
 use wirecatch_desktop_lib::autostart::{Action, EntryState};
 use wirecatch_desktop_lib::background::{
-    Launcher, NOTIFY_BATCH, Tell, Teller, apply_autostart, forward, tell,
+    Launcher, NOTIFY_BATCH, Tell, Teller, apply_autostart, forward, show_notification, tell,
 };
 use wirecatch_desktop_lib::download_windows::{DownloadWindows, Shows, may_act_on};
 use wirecatch_desktop_lib::finished_window::{self, FinishedWindow};
@@ -151,7 +151,10 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResul
         !handle.state::<ShownNotices>().0.lock().unwrap().is_empty()
     });
     assert!(handle.get_webview_window(MAIN_WINDOW).is_none());
-    let notice = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
+    let shown = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
+    // D64: what the person must know shows during Do Not Disturb by default.
+    assert!(shown.through_do_not_disturb);
+    let notice = shown.notice;
     assert!(notice.title.contains("could not save"));
     assert_eq!(notice.body, "The disk is full.");
 
@@ -199,7 +202,12 @@ fn a_download_started_without_asking_is_told_briefly_and_opens_no_window() -> Te
     sender.send(UiEvent::Captured(started.clone())).unwrap();
     wait_until("the notification", || titles(&handle).len() == 1);
     assert!(handle.get_webview_window(MAIN_WINDOW).is_none());
-    let notice = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
+    let shown = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
+    assert!(
+        !shown.through_do_not_disturb,
+        "news waits out Do Not Disturb"
+    );
+    let notice = shown.notice;
     assert_eq!(notice, wirecatch_desktop_lib::notices::started(&started));
     assert_eq!(notice.lasts, Lasts::Brief);
 
@@ -207,6 +215,30 @@ fn a_download_started_without_asking_is_told_briefly_and_opens_no_window() -> Te
     sender.send(UiEvent::Captured(started)).unwrap();
     wait_until("the second notification", || titles(&handle).len() == 2);
     task.abort();
+    Ok(())
+}
+
+/// D64: what the person must know asks to show during Do Not Disturb until they turn that off.
+#[test]
+fn important_notices_follow_the_do_not_disturb_switch() -> TestResult {
+    let sandbox = Sandbox::new()?;
+    let app = app_with(Some(Core::new(sandbox.config()?)))?;
+    let handle = app.handle().clone();
+    let manager = tauri::async_runtime::block_on(handle.state::<Core>().manager())?.clone();
+    show_notification(&handle, "Before".into(), String::new());
+    let mut settings = manager.get_settings();
+    settings.notify_during_do_not_disturb = false;
+    manager.update_settings(settings)?;
+    show_notification(&handle, "After".into(), String::new());
+    let through: Vec<bool> = handle
+        .state::<ShownNotices>()
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|s| s.through_do_not_disturb)
+        .collect();
+    assert_eq!(through, [true, false]);
     Ok(())
 }
 
@@ -380,7 +412,7 @@ fn titles(handle: &tauri::AppHandle<MockRuntime>) -> Vec<String> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
-        .map(|n| n.title.clone())
+        .map(|n| n.notice.title.clone())
         .collect()
 }
 

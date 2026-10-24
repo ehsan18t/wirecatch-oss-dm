@@ -257,6 +257,7 @@ export function isAppSettings(value: unknown): value is AppSettings {
     typeof value1['start_with_system'] === 'boolean' &&
     typeof value1['close_to_tray'] === 'boolean' &&
     isFinishNotice(value1['finish_notice']) &&
+    typeof value1['notify_during_do_not_disturb'] === 'boolean' &&
     typeof value1['auto_update_addons'] === 'boolean' &&
     typeof value1['show_progress_windows'] === 'boolean' &&
     isMediaDefaults(value1['media']) &&
@@ -284,6 +285,8 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
       typeof value1['start_with_system'] === 'boolean') &&
     (value1['close_to_tray'] === undefined || typeof value1['close_to_tray'] === 'boolean') &&
     (value1['finish_notice'] === undefined || isFinishNotice(value1['finish_notice'])) &&
+    (value1['notify_during_do_not_disturb'] === undefined ||
+      typeof value1['notify_during_do_not_disturb'] === 'boolean') &&
     (value1['auto_update_addons'] === undefined ||
       typeof value1['auto_update_addons'] === 'boolean') &&
     (value1['show_progress_windows'] === undefined ||

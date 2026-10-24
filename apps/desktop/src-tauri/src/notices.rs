@@ -57,6 +57,9 @@ pub struct Notice {
     pub click: Act,
     /// How long it stays.
     pub lasts: Lasts,
+    /// Whether it matters enough to show during the system's Do Not Disturb, while the person
+    /// allows it (D64): what ended and what went wrong do; news does not.
+    pub important: bool,
 }
 
 const OPEN: &str = "Open";
@@ -129,6 +132,7 @@ pub fn started(row: &DownloadSummary) -> Notice {
         buttons: Vec::new(),
         click: show(None, &[row]),
         lasts: Lasts::Brief,
+        important: false,
     }
 }
 
@@ -156,6 +160,7 @@ fn finished_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Noti
             ],
             click: show(queue, rows),
             lasts: Lasts::Kept,
+            important: true,
         },
         [first, ..] => Notice {
             title: format!("{} finished", downloads(rows.len())),
@@ -163,6 +168,7 @@ fn finished_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Noti
             buttons: vec![folder_or_app(rows, first.id, queue)],
             click: show(queue, rows),
             lasts: Lasts::Kept,
+            important: true,
         },
     };
     Some(notice)
@@ -207,6 +213,7 @@ fn failed_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Notice
                 .collect(),
             click: show(queue, rows),
             lasts: Lasts::Kept,
+            important: true,
         },
         _ => Notice {
             title: format!("{} failed", downloads(rows.len())),
@@ -217,6 +224,7 @@ fn failed_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Notice
             }],
             click: show(queue, rows),
             lasts: Lasts::Kept,
+            important: true,
         },
     };
     Some(notice)
@@ -252,6 +260,7 @@ pub fn queue_done(report: &QueueReport) -> Option<Notice> {
                 buttons: vec![button],
                 click: show(queue, &all),
                 lasts: Lasts::Kept,
+                important: true,
             })
         }
     }
@@ -323,6 +332,7 @@ mod tests {
         assert_eq!(notice.buttons, []);
         assert_eq!(notice.click, reveal(None, &[1]));
         assert_eq!(notice.lasts, Lasts::Brief);
+        assert!(!notice.important, "news, never through Do Not Disturb");
         started.media = Some(MediaSummary {
             quality: "720p".into(),
             source: MediaKind::Page,

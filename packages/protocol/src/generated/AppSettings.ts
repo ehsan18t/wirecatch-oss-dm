@@ -56,6 +56,13 @@ export type AppSettings = {
    */
   finish_notice: FinishNotice;
   /**
+   * Notifications about downloads that finished or failed, and problems the person must know
+   * about, show even while the system's Do Not Disturb is on (D64). Off: Do Not Disturb holds
+   * them back, as it does any app's. The brief notice of a download that started is never
+   * one of them.
+   */
+  notify_during_do_not_disturb: boolean;
+  /**
    * Keep installed add-ons up to date without asking.
    */
   auto_update_addons: boolean;

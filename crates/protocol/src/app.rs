@@ -950,6 +950,8 @@ pub struct AppSettingsPatch {
     pub close_to_tray: Option<bool>,
     /// The new [`AppSettings::finish_notice`].
     pub finish_notice: Option<FinishNotice>,
+    /// The new [`AppSettings::notify_during_do_not_disturb`].
+    pub notify_during_do_not_disturb: Option<bool>,
     /// The new [`AppSettings::auto_update_addons`].
     pub auto_update_addons: Option<bool>,
     /// The new [`AppSettings::show_progress_windows`].
@@ -1154,6 +1156,12 @@ pub struct AppSettings {
     #[serde(default, with = "known_or_default")]
     #[ts(as = "FinishNotice")]
     pub finish_notice: FinishNotice,
+    /// Notifications about downloads that finished or failed, and problems the person must know
+    /// about, show even while the system's Do Not Disturb is on (D64). Off: Do Not Disturb holds
+    /// them back, as it does any app's. The brief notice of a download that started is never
+    /// one of them.
+    #[serde(default = "default_true")]
+    pub notify_during_do_not_disturb: bool,
     /// Keep installed add-ons up to date without asking.
     #[serde(default = "default_true")]
     pub auto_update_addons: bool,
@@ -1195,6 +1203,7 @@ impl AppSettings {
             start_with_system,
             close_to_tray,
             finish_notice,
+            notify_during_do_not_disturb,
             auto_update_addons,
             show_progress_windows,
             media,
@@ -1213,6 +1222,7 @@ impl AppSettings {
             start_with_system: new_start_with_system,
             close_to_tray: new_close_to_tray,
             finish_notice: new_finish_notice,
+            notify_during_do_not_disturb: new_notify_during_do_not_disturb,
             auto_update_addons: new_auto_update_addons,
             show_progress_windows: new_show_progress_windows,
             media: media_patch,
@@ -1232,6 +1242,10 @@ impl AppSettings {
         set(start_with_system, new_start_with_system);
         set(close_to_tray, new_close_to_tray);
         set(finish_notice, new_finish_notice);
+        set(
+            notify_during_do_not_disturb,
+            new_notify_during_do_not_disturb,
+        );
         set(auto_update_addons, new_auto_update_addons);
         set(show_progress_windows, new_show_progress_windows);
         if let Some(media_patch) = media_patch {
@@ -1685,6 +1699,20 @@ mod tests {
             (&"dark".into(), &"green".into())
         );
         assert_eq!(read_settings(written), settings);
+    }
+
+    /// D64: settings saved before the switch existed show notifications during Do Not Disturb,
+    /// as a fresh profile does.
+    #[test]
+    fn settings_saved_before_the_do_not_disturb_switch_notify_through_it() {
+        let settings = read_settings(stored_settings());
+        assert!(settings.notify_during_do_not_disturb);
+        let mut off = settings.clone();
+        off.apply(AppSettingsPatch {
+            notify_during_do_not_disturb: Some(false),
+            ..AppSettingsPatch::default()
+        });
+        assert!(!off.notify_during_do_not_disturb);
     }
 
     /// Settings saved before the accent existed have none, and a newer build may have saved a

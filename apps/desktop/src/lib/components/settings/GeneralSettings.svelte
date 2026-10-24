@@ -1,5 +1,5 @@
 <script lang="ts">
-  // General: the theme and accent, and how Wirecatch starts, closes and tells about finished files. When it tells is each queue's choice, so the default queue's is named under the dropdown, with a way to change it.
+  // General: the theme and accent, and how Wirecatch starts, closes and tells about finished files, also during the system's Do Not Disturb (D64). When it tells is each queue's choice, so the default queue's is named under the dropdown, with a way to change it.
   import Check from '~icons/lucide/check';
   import { ACCENTS, type Accent, type FinishNotice, type Theme } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
@@ -61,6 +61,7 @@
     start_with_system: startWithSystem,
     close_to_tray: closeToTray,
     finish_notice: finishNotice,
+    notify_during_do_not_disturb: notifyDuringDoNotDisturb,
   };
 
   const defaultQueue = $derived(app.queues.defaultQueue);
@@ -123,6 +124,15 @@
     label={def.label}
     checked={s.close_to_tray}
     onchange={(v: boolean) => save((d) => void (d.close_to_tray = v))}
+  />
+{/snippet}
+
+{#snippet notifyDuringDoNotDisturb({ def, s, control }: Row)}
+  <SettingToggle
+    {control}
+    label={def.label}
+    checked={s.notify_during_do_not_disturb}
+    onchange={(v: boolean) => save((d) => void (d.notify_during_do_not_disturb = v))}
   />
 {/snippet}
 

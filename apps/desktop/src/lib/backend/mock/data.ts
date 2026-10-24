@@ -104,6 +104,7 @@ export function defaultSettings(): AppSettings {
     start_with_system: true,
     close_to_tray: true,
     finish_notice: 'notification',
+    notify_during_do_not_disturb: true,
     auto_update_addons: true,
     show_progress_windows: true,
     media: {

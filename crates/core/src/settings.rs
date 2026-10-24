@@ -103,6 +103,7 @@ pub fn default_settings() -> AppSettings {
         start_with_system: false,
         close_to_tray: true,
         finish_notice: FinishNotice::Notification,
+        notify_during_do_not_disturb: true,
         auto_update_addons: true,
         show_progress_windows: true,
         // Original: nobody's downloads change until they choose (D24).

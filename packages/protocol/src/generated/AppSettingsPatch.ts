@@ -56,6 +56,10 @@ export type AppSettingsPatch = {
    */
   finish_notice?: FinishNotice;
   /**
+   * The new [`AppSettings::notify_during_do_not_disturb`].
+   */
+  notify_during_do_not_disturb?: boolean;
+  /**
    * The new [`AppSettings::auto_update_addons`].
    */
   auto_update_addons?: boolean;
