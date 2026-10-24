@@ -36,7 +36,7 @@ const MAX_COPIES = 4;
 /** How many words a comment needs to give a reason. */
 const REASON_WORDS = 3;
 /** Comments that are not reasons: lint and type directives, and notes of work still to do. */
-const NOT_A_REASON = /^(eslint|global|exported|jshint|@ts-)|\b(todo|fixme|xxx|hack)\b/i;
+const NOT_A_REASON = /^(?:eslint|global|exported|jshint|@ts-)|\b(?:todo|fixme|xxx|hack)\b/i;
 /** Literals made from the error whose member is something else: `[e][1]`, `{ e }.x`. */
 const LITERALS = new Set(['ArrayExpression', 'ObjectExpression']);
 

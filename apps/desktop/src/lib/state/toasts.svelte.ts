@@ -25,8 +25,8 @@ export class Toasts {
   }
 
   #record(id: string, toast: Omit<Toast, 'id'>): void {
-    for (const key of [...this.#kinds.keys()]) {
-      if (!this.toaster.list.some((t) => t.id === key)) this.#kinds.delete(key);
+    for (const key of this.#kinds.keys()) {
+      if (this.toaster.list.every((t) => t.id !== key)) this.#kinds.delete(key);
     }
     this.#kinds.set(id, toast);
   }

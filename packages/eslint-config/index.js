@@ -1,9 +1,13 @@
 // The shared ESLint configuration. Each package calls `wirecatch()` with what is specific to it (its globals, ignored folders and layer rules) and gets the same strict baseline as every other package. Change the baseline here, never in a package.
 import comments from '@eslint-community/eslint-plugin-eslint-comments';
 import js from '@eslint/js';
+import vitest from '@vitest/eslint-plugin';
 import prettier from 'eslint-config-prettier';
+import deMorgan from 'eslint-plugin-de-morgan';
 import importX from 'eslint-plugin-import-x';
+import regexp from 'eslint-plugin-regexp';
 import svelte from 'eslint-plugin-svelte';
+import unicorn from 'eslint-plugin-unicorn';
 import globals from 'globals';
 import ts from 'typescript-eslint';
 import { noAssertionOnInput } from './rules/no-assertion-on-input.js';
@@ -14,6 +18,14 @@ import { noTypeArgumentAssertion } from './rules/no-type-argument-assertion.js';
 import { noValueOfType } from './rules/no-value-of-type.js';
 import { tokensOnly } from './rules/tokens-only.js';
 import { useUiPrimitives } from './rules/use-ui-primitives.js';
+import {
+  CORE_RULES,
+  IMPORT_RULES,
+  SVELTE_RULES,
+  TYPESCRIPT_RULES,
+  UNICORN_RULES,
+  VITEST_RULES,
+} from './rule-sets.js';
 
 /** Rules of our own, used as `wirecatch/<name>`. */
 const plugin = {
@@ -117,6 +129,43 @@ const BASELINE_RULES = {
   'svelte/prefer-svelte-reactivity': 'error',
   'svelte/no-unused-svelte-ignore': 'error',
   'svelte/button-has-type': 'error',
+  // The rule sets adopted beyond the presets (rule-sets.js), and two presets in full: regular expressions that backtrack catastrophically or never match, and negated conditions written plainly.
+  ...CORE_RULES,
+  ...TYPESCRIPT_RULES,
+  ...IMPORT_RULES,
+  ...UNICORN_RULES,
+  ...regexp.configs.recommended.rules,
+  // A capturing group nothing reads becomes a non-capturing one by itself.
+  'regexp/no-unused-capturing-group': ['error', { fixable: true }],
+  ...deMorgan.configs.recommended.rules,
+};
+
+/** Every plugin whose rules the baseline names, by the prefix it uses. */
+const PLUGINS = {
+  wirecatch: plugin,
+  '@eslint-community/eslint-comments': comments,
+  'import-x': importX,
+  unicorn,
+  regexp,
+  'de-morgan': deMorgan,
+};
+
+/** What tests may do that code may not: name fixtures inline, run as long as the scenario needs, and build odd values on purpose (an error with no message). */
+const TEST_RULES = {
+  'wirecatch/no-magic-numbers': 'off',
+  'wirecatch/no-assertion-on-input': 'off',
+  '@typescript-eslint/no-unsafe-type-assertion': 'off',
+  'wirecatch/no-type-argument-assertion': 'off',
+  '@typescript-eslint/no-non-null-assertion': 'off',
+  'max-lines-per-function': 'off',
+  'max-lines': 'off',
+  'unicorn/error-message': 'off',
+};
+
+/** What eslint-plugin-import-x reads other modules with: TypeScript's parser, never on Svelte components, which it cannot parse. */
+const IMPORT_SETTINGS = {
+  'import-x/parsers': { '@typescript-eslint/parser': ['.ts', '.mts', '.cts', '.d.ts'] },
+  'import-x/ignore': [String.raw`\.svelte$`],
 };
 
 /**
@@ -161,11 +210,8 @@ export function wirecatch({
         globals: runtimeGlobals,
         parserOptions: { projectService: true, tsconfigRootDir, extraFileExtensions: ['.svelte'] },
       },
-      plugins: {
-        wirecatch: plugin,
-        '@eslint-community/eslint-comments': comments,
-        'import-x': importX,
-      },
+      plugins: PLUGINS,
+      settings: IMPORT_SETTINGS,
       linterOptions: { reportUnusedDisableDirectives: 'error' },
       rules: BASELINE_RULES,
     },
@@ -173,18 +219,17 @@ export function wirecatch({
       files: ['**/*.svelte', '**/*.svelte.ts'],
       languageOptions: { parserOptions: { parser: ts.parser, svelteConfig } },
     },
+    { files: ['**/*.svelte'], rules: SVELTE_RULES },
+    {
+      // Unit tests only: the end-to-end specs are Playwright's, whose `expect` differs.
+      files: ['**/*.test.ts'],
+      plugins: { vitest },
+      rules: { ...vitest.configs.recommended.rules, ...VITEST_RULES },
+    },
     {
       // Tests name their fixtures inline and may be as long as the scenario needs.
       files: TEST_FILES,
-      rules: {
-        'wirecatch/no-magic-numbers': 'off',
-        'wirecatch/no-assertion-on-input': 'off',
-        '@typescript-eslint/no-unsafe-type-assertion': 'off',
-        'wirecatch/no-type-argument-assertion': 'off',
-        '@typescript-eslint/no-non-null-assertion': 'off',
-        'max-lines-per-function': 'off',
-        'max-lines': 'off',
-      },
+      rules: TEST_RULES,
     },
     {
       files: TOOLING_FILES,

@@ -47,7 +47,7 @@ export class TextSync {
   /** Drops what the owner has now answered; whether `value` was an echo of typed text. */
   #answered(value: string): boolean {
     const index = this.#pending.lastIndexOf(value);
-    if (index < 0) return false;
+    if (index === -1) return false;
     this.#pending = this.#pending.slice(index + 1);
     return true;
   }

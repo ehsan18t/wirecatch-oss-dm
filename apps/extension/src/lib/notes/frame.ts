@@ -15,13 +15,13 @@ const TOP_LAYER = '2147483647';
 /** What the frame needs from the page around it. */
 export interface FramePage {
   /** Where the host goes: the element shown full screen, else the document's root. */
-  container(): Element;
+  container: () => Element;
   /** The notes page's address with `token` after the `#`. */
-  notesUrl(token: string): string;
+  notesUrl: (token: string) => string;
   /** The extension's origin, the only one the size channel is handed to. */
   extensionOrigin: string;
   /** A fresh token no website can guess. */
-  newToken(): string;
+  newToken: () => string;
 }
 
 export class NotesFrame {

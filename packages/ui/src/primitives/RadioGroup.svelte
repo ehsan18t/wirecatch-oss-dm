@@ -51,13 +51,13 @@
     )}
   >
     {#each options as option, index (option.value)}
-      {@const hintId = `${uid}-hint-${String(index)}`}
-      {@const asideId = `${uid}-aside-${String(index)}`}
-      {@const labelId = `${uid}-label-${String(index)}`}
-      {@const checked = option.value === value}
-      {@const described = [option.description ? hintId : '', aside ? asideId : '']
-        .filter(Boolean)
-        .join(' ')}
+      {const hintId = $derived(`${uid}-hint-${String(index)}`)}
+      {const asideId = $derived(`${uid}-aside-${String(index)}`)}
+      {const labelId = $derived(`${uid}-label-${String(index)}`)}
+      {const checked = $derived(option.value === value)}
+      {const described = $derived(
+        [option.description ? hintId : '', aside ? asideId : ''].filter(Boolean).join(' '),
+      )}
       <label
         data-checked={checked ? '' : undefined}
         class={cn(

@@ -81,27 +81,27 @@ export interface MediaView {
 
 /** Where the registry is saved, so a restarted background script still knows each tab's media. */
 export interface MediaStore {
-  load(): Promise<unknown>;
-  save(value: SavedMedia): Promise<void>;
+  load: () => Promise<unknown>;
+  save: (value: SavedMedia) => Promise<void>;
 }
 
 export interface MediaCenterDeps {
   registry: MediaRegistry;
   /** Null when the tab no longer exists. */
-  getTab(tabId: number): Promise<TabInfo | null>;
+  getTab: (tabId: number) => Promise<TabInfo | null>;
   /** Hands media to the app (`Hub.sendMedia`). */
-  send(request: MediaRequest): Promise<MediaSendResult>;
+  send: (request: MediaRequest) => Promise<MediaSendResult>;
   store?: MediaStore;
   /** The "sites to ignore" setting: no media button there. */
-  ignoredSites?(): readonly string[];
+  ignoredSites?: () => readonly string[];
   /** Sites with video pages the person added to the ones the apps know (D51). */
-  videoSites?(): readonly string[];
+  videoSites?: () => readonly string[];
   /** "Show download button on videos", for a button asking as its page loads; on when missing. */
-  mediaButtonOn?(): Promise<boolean>;
+  mediaButtonOn?: () => Promise<boolean>;
   /**
    * The tabs open now with the address each shows (null when it cannot be read), so saved lists of closed tabs, or of a page a tab has since left, are not restored.
    */
-  liveTabs?(): Promise<{ id: number; url: string | null }[]>;
+  liveTabs?: () => Promise<{ id: number; url: string | null }[]>;
   /** How long changes are gathered before the lists are saved; `SAVE_DELAY_MS` when missing. */
   saveDelayMs?: number;
 }
@@ -121,7 +121,7 @@ const ITEM_GONE =
 const MAX_TITLE = 200;
 
 function cleanTitle(title: string | null | undefined): string | null {
-  const text = title?.replace(/\s+/g, ' ').trim() ?? '';
+  const text = title?.replaceAll(/\s+/g, ' ').trim() ?? '';
   return text === '' ? null : text.slice(0, MAX_TITLE);
 }
 

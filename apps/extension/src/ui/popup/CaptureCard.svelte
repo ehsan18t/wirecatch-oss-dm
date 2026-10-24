@@ -91,7 +91,7 @@
       onclick={toggleSite}
       {@attach labelTip}
     >
-      <span class="truncate">{ignoredBy !== null ? 'Stop ignoring' : 'Ignore this site'}</span>
+      <span class="truncate">{ignoredBy === null ? 'Ignore this site' : 'Stop ignoring'}</span>
     </Button>
   </div>
 </Card>

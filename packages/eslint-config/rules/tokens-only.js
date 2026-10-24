@@ -56,7 +56,7 @@ const OBVIOUS_MOTION = new Set([0, 1]);
 const ALLOWED_CSS = new Set(['@wirecatch/ui/tokens.css', '@wirecatch/ui/base.css']);
 const CSS_MODULE = /\.css(?:\?.*)?$/;
 /** An alpha step on a colour utility: the name before the slash ends in a letter, so `w-1/2` is a fraction. */
-const BARE_ALPHA = /^[a-z][\w-]*[a-z]\/(\d+)$/;
+const BARE_ALPHA = /^[a-z][\w-]*[a-z]\/\d+$/;
 /** Opacities that read as themselves. */
 const OBVIOUS_OPACITY = new Set(['0', '100']);
 
@@ -70,7 +70,7 @@ function utilityOf(token) {
     else if (char === ']' || char === ')') depth--;
     else if (char === ':' && depth === 0) start = i + 1;
   }
-  return token.slice(start).replace(/^!|!$/g, '');
+  return token.slice(start).replaceAll(/^!|!$/g, '');
 }
 
 /** What is wrong with one whitespace-separated piece of a string, or null. */

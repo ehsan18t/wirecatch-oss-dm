@@ -51,7 +51,7 @@ describe('redact, the shared samples', () => {
 describe('redact, the length of an entry', () => {
   it('cuts a long text, page-sized ones included', () => {
     const text = redact(`<html>${'page text '.repeat(500_000)}</html>`);
-    expect(text.length).toBe(MAX_TEXT);
+    expect(text).toHaveLength(MAX_TEXT);
     expect(text.endsWith('…')).toBe(true);
   });
 });
@@ -127,7 +127,7 @@ describe('describeError', () => {
       describeError(
         new RequestError('timeout', 'Wirecatch did not answer in time.', {
           code: 'internal',
-          message: 'disk full at C:\\Users\\Alice',
+          message: String.raw`disk full at C:\Users\Alice`,
         }),
       ),
     ).toBe('RequestError [timeout, internal]: Wirecatch did not answer in time.');

@@ -134,11 +134,11 @@ export class DownloadStore {
       }
       if (LIST_FIELDS.some((field) => !same(row[field], s[field]))) structural = true;
       speedDelta += s.speed - row.speed;
-      if (row.queue !== s.queue) {
+      if (row.queue === s.queue) {
+        queueDelta.add(s.queue, s.speed - row.speed);
+      } else {
         queueDelta.add(row.queue, -row.speed);
         queueDelta.add(s.queue, s.speed);
-      } else {
-        queueDelta.add(s.queue, s.speed - row.speed);
       }
       for (const field of FIELDS) update(row, s, field);
     }

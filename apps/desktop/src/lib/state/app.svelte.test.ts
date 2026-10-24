@@ -70,7 +70,7 @@ describe('AppState', () => {
   it('loads everything and applies events', async () => {
     const { app, backend } = await make();
     expect(app.ready).toBe(true);
-    expect(app.queues.list.length).toBe(3);
+    expect(app.queues.list).toHaveLength(3);
     expect(app.downloads.size).toBe(app.counts.all);
     await app.setAskBeforeDownload(false);
     const before = app.downloads.size;
@@ -232,7 +232,7 @@ describe('AppState', () => {
     const id = app.visible.find((x) => app.downloads.get(x)?.error?.fix === 'choose_folder')!;
     await app.actions.fix(id, 'choose_folder');
     expect(app.downloads.get(id)?.status).toBe('queued');
-    expect(app.downloads.get(id)?.path).not.toContain('E:\\Backups');
+    expect(app.downloads.get(id)?.path).not.toContain(String.raw`E:\Backups`);
   });
 
   it('cancels a download, then starts it over from zero', async () => {

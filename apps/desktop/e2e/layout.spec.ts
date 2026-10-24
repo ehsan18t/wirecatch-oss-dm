@@ -170,7 +170,7 @@ for (const { root, scale, height } of TEXT_SIZES) {
         for (let i = 1; i < items.length; i += 1) {
           if (Math.abs(items[i]!.top - items[i - 1]!.bottom) > 1) return `gap at ${String(i)}`;
         }
-        const end = parseFloat(getComputedStyle(el).paddingBottom);
+        const end = Number.parseFloat(getComputedStyle(el).paddingBottom);
         const tall = header.getBoundingClientRect().height + area.getBoundingClientRect().height;
         return Math.abs(el.scrollHeight - (tall + end)) <= 1 ? 'fits' : 'too tall or short';
       });

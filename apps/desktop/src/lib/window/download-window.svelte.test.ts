@@ -295,10 +295,10 @@ describe('a progress window', () => {
   it('keeps only its own row from each batch', async () => {
     const b = backend();
     const { win } = await running(b);
-    const other = { ...win.row!, id: downloadId(999), done: 12345 };
+    const other = { ...win.row!, id: downloadId(999), done: 12_345 };
     const mine = { ...win.row!, done: 42 };
     win.handle({ type: 'downloads_changed', data: [other] });
-    expect(win.row?.done).not.toBe(12345);
+    expect(win.row?.done).not.toBe(12_345);
     win.handle({ type: 'downloads_changed', data: [other, mine] });
     expect(win.row?.done).toBe(42);
   });

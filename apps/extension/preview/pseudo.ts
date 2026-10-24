@@ -15,7 +15,7 @@ const grown = new WeakMap<Text, string>();
 
 function lengthen(node: Text): void {
   if (grown.get(node) === node.data || node.data.trim() === '') return;
-  const longer = node.data.replace(/[\p{L}\p{N}]+/gu, grow);
+  const longer = node.data.replaceAll(/[\p{L}\p{N}]+/gu, (word) => grow(word));
   grown.set(node, longer);
   node.data = longer;
 }

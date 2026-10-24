@@ -232,7 +232,7 @@
       class="min-h-0 flex-1 overflow-y-auto p-1"
     >
       {#each shown as option, index (option.value)}
-        {@const on = values.includes(option.value)}
+        {const on = $derived(values.includes(option.value))}
         <!-- Options take no focus: the search field keeps it and points here. -->
         <div
           id={optionId(index)}

@@ -91,7 +91,7 @@
   {#if app.screen === 'settings'}
     <SidebarSection title="Settings">
       {#each SECTIONS as section (section.id)}
-        {@const found = matches?.[section.id] ?? 0}
+        {const found = $derived(matches?.[section.id] ?? 0)}
         <!-- While searching, each section counts its matches; one with none says nothing. -->
         <SidebarItem
           label={section.title}
@@ -112,7 +112,7 @@
         onclick={() => app.show({ kind: 'all' })}
       />
       {#each STATUS_GROUPS as group (group)}
-        {@const count = app.counts.status[group]}
+        {const count = $derived(app.counts.status[group])}
         <SidebarItem
           label={STATUS_GROUP_LABEL[group]}
           icon={STATUS_ICON[group]}

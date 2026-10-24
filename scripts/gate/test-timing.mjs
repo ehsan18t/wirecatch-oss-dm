@@ -14,7 +14,7 @@ const FIXED_WAIT = String.raw`(?:\btimeout|_within)\((?:[^()]|\([^()]*\))*?Durat
 const NOTHING_CAME = /\.is_err\(\)|\.is_none\(\)/;
 
 /** A file that holds nothing but tests: an integration test, or a `tests.rs` module. */
-const TEST_FILE = /(^|\/)tests\/|(^|\/)tests\.rs$/;
+const TEST_FILE = /(?:^|\/)tests\/|(?:^|\/)tests\.rs$/;
 
 /** `[start, end)` of each `{ ... }` that opens where `pattern` ends. */
 function bracedRegions(code, pattern) {
@@ -51,7 +51,9 @@ function upperBounds(subject) {
 
 /** The functions in `code` that return a duration they measured, such as a helper that times a download: what they return counts as measured where they are called. */
 function measuringHelpers(code) {
-  return [...code.matchAll(/\bfn\s+(\w+)[^{;]*->[^{;]*Duration[^{;]*\{/g)]
+  return [
+    ...code.matchAll(/\bfn\s+(\w+)(?=[\s<(])[^{;-]+(?:-(?!>)[^{;-]*)*->[^{;]*Duration[^{;]*\{/g),
+  ]
     .filter((match) => {
       const open = match.index + match[0].length - 1;
       return new RegExp(MEASURED).test(code.slice(open, closingBracket(code, open)));
@@ -83,7 +85,7 @@ export function timingRaces(file, text) {
   const lineAt = (index) => code.slice(0, index).split('\n').length;
   const found = new Map();
   const report = (index) => found.set(lineAt(index), lines[lineAt(index) - 1].trim());
-  for (const [start, end] of bracedRegions(code, /\bfn\s+\w+[^{;]*\{/g)) {
+  for (const [start, end] of bracedRegions(code, /\bfn\s+\w[^{;]*\{/g)) {
     if (!inside(tests, start) || inside(paused, start)) continue;
     const body = code.slice(start, end);
     const bound = upperBounds(

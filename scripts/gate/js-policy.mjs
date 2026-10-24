@@ -4,18 +4,18 @@ import { join } from 'node:path';
 import { capture, GateError, ROOT } from './process.mjs';
 
 /** Sources that make a package subject to the shared ESLint configuration. */
-const LINTED_SOURCE = /\.(ts|mts|cts|svelte|js|mjs|cjs)$/;
+const LINTED_SOURCE = /\.(?:ts|mts|cts|svelte|js|mjs|cjs)$/;
 const ESLINT_CONFIG_PACKAGE = '@wirecatch/eslint-config';
 /** The folder of the repository's own scripts, which the root lints and formats besides the workspace packages. */
 const ROOT_FOLDERS = ['scripts'];
 /** What the root lints: its scripts and the eslint.config.js that covers them. */
 const ROOT_LINTED = [...ROOT_FOLDERS, 'eslint.config.js'];
 /** The root package's sources: what its lint script lints, and its configuration. */
-const ROOT_SOURCES = /^(scripts\/|eslint\.config\.js$)/;
+const ROOT_SOURCES = /^(?:scripts\/|eslint\.config\.js$)/;
 /** Scripts only the root has: lint and format run once over the whole repository, so a package has no way of its own to run them. */
 const ROOT_ONLY_SCRIPTS = ['lint', 'format'];
 /** Prettier, run from the root, reads only the root's ignore files, so one anywhere else would be silently unused. */
-const IGNORE_FILE = /(^|\/)\.(gitignore|prettierignore)$/;
+const IGNORE_FILE = /(?:^|\/)\.(?:gitignore|prettierignore)$/;
 /**
  * The only tracked sources a package configuration may ignore, each for a reason: the types ts-rs generates from crates/protocol (their source is linted as Rust, and tsc checks them), and the file the rule tests lint with code of their own.
  */
@@ -29,7 +29,9 @@ const UNTYPED_JAVASCRIPT = ['**/*.js', '**/*.cjs'];
 /** The folders that hold the workspace packages, from the `packages` globs in pnpm-workspace.yaml (each a `folder/*`). */
 function workspaceParents() {
   const manifest = readFileSync(join(ROOT, 'pnpm-workspace.yaml'), 'utf8');
-  const list = /^packages:\s*\n((?:\s+-\s+.*\n)+)/m.exec(manifest);
+  const list = /^packages:[ \t]*\r?\n((?:(?:[ \t]*\r?\n)*[ \t]+-[ \t]+(?:\S.*)?\r?\n)+)/m.exec(
+    manifest,
+  );
   if (!list) throw new GateError('pnpm-workspace.yaml has no `packages` list.');
   const globs = [...list[1].matchAll(/-\s+["']?([^"'\s]+)["']?/g)].map((m) => m[1]);
   return globs.map((glob) => {
@@ -104,20 +106,20 @@ function setupProblems(folder, manifest) {
       `${where}: eslint.config.js must build its configuration with \`wirecatch()\` from '${source}'.`,
     );
   }
-  if (folder !== '.') {
-    const own = ROOT_ONLY_SCRIPTS.filter((name) => manifest.scripts?.[name] !== undefined);
-    for (const name of own) {
-      problems.push(
-        `${where}: package.json has a \`${name}\` script, but ${name} runs once from the root (\`pnpm ${name}\`); remove it.`,
-      );
-    }
-  } else {
+  if (folder === '.') {
     for (const [name, script] of Object.entries(rootScripts())) {
       if (manifest.scripts?.[name] !== script) {
         problems.push(
           `the root package: package.json needs exactly \`"${name}": "${script}"\`, so \`pnpm ${name}\` covers every package and the root's scripts with nothing switched off.`,
         );
       }
+    }
+  } else {
+    const own = ROOT_ONLY_SCRIPTS.filter((name) => manifest.scripts?.[name] !== undefined);
+    for (const name of own) {
+      problems.push(
+        `${where}: package.json has a \`${name}\` script, but ${name} runs once from the root (\`pnpm ${name}\`); remove it.`,
+      );
     }
   }
   return problems;
@@ -180,7 +182,7 @@ async function weakenedRules(folder, files) {
     const path = fromRoot(folder, file);
     const actual = await effective.calculateConfigForFile(join(cwd, file));
     if (actual === undefined) {
-      if (!MAY_BE_IGNORED.some((allowed) => path.startsWith(allowed))) {
+      if (MAY_BE_IGNORED.every((allowed) => !path.startsWith(allowed))) {
         problems.push(
           `${path}: ignored by its package's ESLint configuration; only the folders in MAY_BE_IGNORED (scripts/gate/js-policy.mjs) may be.`,
         );
@@ -210,7 +212,7 @@ export async function jsPolicy() {
   // The root package lints the repository's own scripts.
   for (const folder of [...workspacePackages(), '.']) {
     const files = packageFiles(folder);
-    if (!files.some((file) => LINTED_SOURCE.test(file))) continue;
+    if (files.every((file) => !LINTED_SOURCE.test(file))) continue;
     const manifest = JSON.parse(readFileSync(join(ROOT, folder, 'package.json'), 'utf8'));
     const setup = setupProblems(folder, manifest);
     problems.push(...setup, ...(setup.length === 0 ? await configProblems(folder, files) : []));

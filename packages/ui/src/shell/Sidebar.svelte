@@ -87,7 +87,7 @@
     if (!sidebar.drawerOpen || !panel || event.defaultPrevented) return;
     // Keys meant for something above the drawer, such as a dialog, are not the drawer's.
     const target = event.target;
-    if (!(target instanceof Node) || !(target === document.body || panel.contains(target))) return;
+    if (!(target instanceof Node) || (target !== document.body && !panel.contains(target))) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       sidebar.closeDrawer();

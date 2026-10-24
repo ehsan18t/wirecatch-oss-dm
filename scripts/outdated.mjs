@@ -13,7 +13,7 @@ const WORKFLOWS = join(ROOT, '.github', 'workflows');
 
 /** One `cargo update --dry-run --verbose` line: a package that would move, or one that stays although a newer version exists. */
 const CARGO_LINE =
-  /^\s*(?:Updating|Unchanged)\s+(\S+) v(\d\S*?)(?: -> v(\d\S*?))?(?: \(available: v(\d\S*?)\))?\s*$/;
+  /^\s*(?:Updating|Unchanged)\s+(\S+) v(\d\S*)(?: -> v(\d\S*))?(?: \(available: v(\d\S*?)\))?\s*$/;
 /** A step's `uses: owner/repo[/path]@<sha> # <version>`. */
 const PINNED_ACTION = /uses:\s*([\w.-]+\/[\w.-]+)(?:\/\S*)?@[0-9a-f]{40}\s*#\s*(v?\d\S*)/;
 

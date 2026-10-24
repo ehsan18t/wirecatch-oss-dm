@@ -27,6 +27,6 @@ export class Requests<R> {
 
   /** Gives every waiting request the same result, for when the answers can no longer come. */
   settleAll(result: R): void {
-    for (const id of [...this.#waiting.keys()]) this.settle(id, result);
+    for (const id of this.#waiting.keys()) this.settle(id, result);
   }
 }

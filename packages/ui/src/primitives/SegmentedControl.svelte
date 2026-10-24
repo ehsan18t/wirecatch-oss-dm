@@ -62,7 +62,7 @@
     if (disabled) return;
     const all = segments();
     const focused = all.findIndex((segment) => segment === document.activeElement);
-    const next = listKeyIndex(options, focused >= 0 ? focused : selectedIndex, event.key);
+    const next = listKeyIndex(options, focused === -1 ? selectedIndex : focused, event.key);
     if (next === null) return;
     event.preventDefault();
     if (next < 0) return;
@@ -87,7 +87,7 @@
   {onkeydown}
 >
   {#each options as option, index (option.value)}
-    {@const isSelected = index === selectedIndex}
+    {const isSelected = $derived(index === selectedIndex)}
     <button
       type="button"
       role="radio"

@@ -43,7 +43,7 @@
         class="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised shadow-raised forced-colors:border-sys-text"
       >
         {#each run.defs as def (def.id)}
-          {@const control = controls[def.id]}
+          {const control = $derived(controls[def.id])}
           <div
             id={settingAnchor(def.id)}
             class={cn(

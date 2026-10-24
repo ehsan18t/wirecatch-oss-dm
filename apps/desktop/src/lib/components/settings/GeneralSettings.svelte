@@ -82,7 +82,7 @@
     class="flex flex-wrap items-center gap-2"
   >
     {#each offeredAccents(s.accent) as a (a)}
-      {@const on = s.accent === a}
+      {const on = $derived(s.accent === a)}
       <button
         type="button"
         role="radio"

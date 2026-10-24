@@ -11,7 +11,7 @@ function source(row: DownloadSummary): string {
 
 /** What went wrong in a few words: the first sentence of the error, whose rest (what to do) the details and the row's tooltip say. */
 export function failureShort(message: string): string {
-  const end = message.search(/[.!?](\s|$)/);
+  const end = message.search(/[.!?](?:\s|$)/);
   return end === -1 ? message : message.slice(0, end + 1);
 }
 

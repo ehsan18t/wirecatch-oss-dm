@@ -46,7 +46,7 @@ describe('media choices', () => {
     const unnamed = kept.filter((c) => c.label === `${c.value} (${c.value})`);
     expect(unnamed.map((c) => c.value)).toEqual(['qaa']);
     expect(choices.map((c) => c.label)).toEqual(
-      [...choices.map((c) => c.label)].sort((a, b) => a.localeCompare(b)),
+      choices.map((c) => c.label).sort((a, b) => a.localeCompare(b)),
     );
   });
 });

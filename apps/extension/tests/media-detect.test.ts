@@ -89,7 +89,7 @@ describe('classifyResponse', () => {
       kind: 'direct',
       url: 'https://files.example.com/clip.mp4',
       mime: 'video/mp4',
-      size: 1234567,
+      size: 1_234_567,
       audio: false,
     });
 
@@ -102,15 +102,15 @@ describe('classifyResponse', () => {
         headers: { 'Content-Range': 'bytes 0-1023/987654', 'Content-Length': '1024' },
       }),
     );
-    expect(audio).toMatchObject({ kind: 'direct', audio: true, size: 987654 });
+    expect(audio).toMatchObject({ kind: 'direct', audio: true, size: 987_654 });
   });
 
   // YouTube's voice search sounds, played as media on every watch page.
   it.each([
-    ['no_input.mp3', 6_034],
-    ['failure.mp3', 5_888],
-    ['success.mp3', 6_195],
-    ['open.mp3', 5_973],
+    ['no_input.mp3', 6034],
+    ['failure.mp3', 5888],
+    ['success.mp3', 6195],
+    ['open.mp3', 5973],
   ])('ignores the interface sound %s (%i bytes), as a 200 or a 206 answer', (name, size) => {
     const url = `https://www.youtube.com/s/search/audio/${name}`;
     expect(
@@ -335,7 +335,10 @@ describe('size limits', () => {
     // 200 tabs of 30 near-limit addresses is about 48 MB: far over the cap and the browser's quota.
     for (let tab = 1; tab <= 200; tab += 1) {
       for (let n = 0; n < MAX_ITEMS_PER_TAB; n += 1) {
-        const url = urlOf(MAX_MEDIA_URL_LENGTH - 8).replace('/v/', `/${String(tab)}/${String(n)}/`);
+        const url = urlOf(MAX_MEDIA_URL_LENGTH - 8).replace(
+          '/v/',
+          () => `/${String(tab)}/${String(n)}/`,
+        );
         expect(
           registry.add(tab, { kind: 'direct', url, mime: 'video/mp4', size: null, audio: false }),
         ).toBe(true);
@@ -352,9 +355,9 @@ describe('size limits', () => {
 
     const saved = registry.save();
     expect(JSON.stringify(saved).length).toBeLessThanOrEqual(MAX_SAVED_CHARS);
-    expect(saved.tabs[saved.tabs.length - 1]?.[0]).toBe(5);
-    const tab5 = saved.tabs[saved.tabs.length - 1]?.[1] ?? [];
-    expect(tab5[tab5.length - 1]?.url).toBe('https://e.com/new.mp4');
+    expect(saved.tabs.at(-1)?.[0]).toBe(5);
+    const tab5 = saved.tabs.at(-1)?.[1] ?? [];
+    expect(tab5.at(-1)?.url).toBe('https://e.com/new.mp4');
     // Tab 200 changed just before it; the first tabs no longer fit.
     expect(saved.tabs.map(([id]) => id)).toContain(200);
     expect(saved.tabs.map(([id]) => id)).not.toContain(1);
@@ -498,7 +501,7 @@ describe('MediaRegistry', () => {
     registry.add(1, { ...hls('https://cdn.e.com/v/master.m3u8'), sentCookies: 'token=1' });
     clock = 800;
     registry.add(1, { ...hls('https://cdn.e.com/v/720p.m3u8'), sentCookies: 'token=2' });
-    clock = 1_600;
+    clock = 1600;
     // A playlist request that was not seen changes nothing.
     registry.add(1, hls('https://cdn.e.com/v/480p.m3u8'));
     expect(registry.items(1).map((i) => [i.url, i.sentCookies])).toEqual([
@@ -513,7 +516,7 @@ describe('MediaRegistry', () => {
     clock = 800;
     expect(registry.add(1, hls('https://cdn.e.com/v/abc/720p/index.m3u8'), 0)).toBe(false);
     // Variants in another folder or on another server are still the same stream.
-    clock = 1_500;
+    clock = 1500;
     expect(registry.add(1, hls('https://edge2.e.net/x/y/480.m3u8'), 0)).toBe(false);
     // A live stream keeps requesting its variants, which keeps the stream open.
     for (let i = 0; i < 5; i += 1) {

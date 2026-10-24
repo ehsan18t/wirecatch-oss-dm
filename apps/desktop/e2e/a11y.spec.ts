@@ -126,7 +126,7 @@ test('keyboard only: every stop shows a visible focus ring', async ({ page }) =>
       const el = document.activeElement as HTMLElement | null;
       if (!el || el === document.body) return null;
       const s = getComputedStyle(el);
-      const ring = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2;
+      const ring = s.outlineStyle !== 'none' && Number.parseFloat(s.outlineWidth) >= 2;
       // A text field of the design system shows focus on its box, with an accent line (as e2e/gallery.spec.ts reads it).
       const box = el.matches('input, textarea') ? el.parentElement : null;
       const shadow =

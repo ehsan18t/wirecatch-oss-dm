@@ -130,7 +130,7 @@
 
   function reveal(id: DownloadId) {
     const index = ids.indexOf(id);
-    if (!scroller || index < 0) return;
+    if (!scroller || index === -1) return;
     const to = scrollToShow(geo, index, { ...viewport, scrollTop: scroller.scrollTop });
     if (to !== null) scroller.scrollTop = to;
   }

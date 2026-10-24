@@ -17,7 +17,7 @@ export const BADGE_TOKEN = '--wc-warning';
  */
 export function cssColor(name: string, css: string): string {
   const match = new RegExp(
-    `(?:^|[\\s;{])${name}:\\s*light-dark\\(\\s*(#[0-9a-fA-F]{3,8})\\s*,[^;]*;`,
+    String.raw`(?:^|[\s;{])${name}:\s*light-dark\(\s*(#[0-9a-fA-F]{3,8})\s*,[^;]*;`,
   ).exec(css);
   const value = match?.[1];
   if (value === undefined) throw new Error(`tokens.css has no light colour ${name}`);

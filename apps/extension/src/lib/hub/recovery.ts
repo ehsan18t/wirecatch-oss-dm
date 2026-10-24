@@ -49,7 +49,7 @@ export interface RecoveryResult {
 export interface RecoveryDeps {
   downloads: DownloadControl;
   /** `withdraw_download`, connecting (or starting the app) first; rejects without an answer it can read. */
-  withdraw(handoverId: string): Promise<WithdrawOutcome>;
+  withdraw: (handoverId: string) => Promise<WithdrawOutcome>;
 }
 
 /**

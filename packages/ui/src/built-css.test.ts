@@ -122,7 +122,7 @@ describe('scoped schemes and accents in the built CSS', () => {
   it('declares each scheme- or accent-dependent token again on every element that picks its own', () => {
     const scopes = scopesOf(sheet);
     // Token rules only: a utility declares its variables on the element it styles, where they resolve correctly.
-    const tokenRules = sheet.rules.filter((rule) => !rule.selectors.some((s) => s.includes('.')));
+    const tokenRules = sheet.rules.filter((rule) => rule.selectors.every((s) => !s.includes('.')));
     const missing = tokenRules.flatMap((rule) =>
       rule.declarations.flatMap(([name]) => {
         if (ROOTS.has(name)) return [];
@@ -134,7 +134,7 @@ describe('scoped schemes and accents in the built CSS', () => {
           ) {
             return false;
           }
-          return !rule.selectors.some((selector) => selector.endsWith(scope));
+          return rule.selectors.every((selector) => !selector.endsWith(scope));
         });
         return needed.map((scope) => `${rule.selectors.join(', ')} { ${name} } misses ${scope}`);
       }),

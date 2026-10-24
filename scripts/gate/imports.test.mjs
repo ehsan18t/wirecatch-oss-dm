@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const SCRIPTS = fileURLToPath(new URL('..', import.meta.url));
 
 /** A static `import` or `export ... from` at the start of a line: its source is the first or second group. */
-const STATIC_IMPORT = /^(?:import|export)\b[^;]*?\bfrom\s+'([^']+)'|^import\s+'([^']+)'/gm;
+const STATIC_IMPORT = /^(?:import|export)\b[^;]+?\bfrom\s+'([^']+)'|^import\s+'([^']+)'/gm;
 
 /** Every package the modules reachable from `entry` import statically, as `file: package`. Dynamic `import()` is left out: it runs only when a check does. */
 function packagesLoadedAtStart(entry) {

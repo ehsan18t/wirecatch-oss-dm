@@ -1,10 +1,10 @@
 /// <reference types="vitest/config" />
-import { svelte } from '@sveltejs/vite-plugin-svelte';
-import tailwindcss from '@tailwindcss/vite';
-import { svelteTesting } from '@testing-library/svelte/vite';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import tailwindcss from '@tailwindcss/vite';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import Icons from 'unplugin-icons/vite';
 import { defineConfig, type Plugin } from 'vite';
 import { devOnlyModules } from './scripts/dev-only-modules.mjs';

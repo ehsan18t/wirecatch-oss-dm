@@ -83,7 +83,7 @@ function parts(url: string): { origin: string; path: string } | null {
 /** A page's address without its fragment: a change of the fragment alone is not a new page. */
 export function pageKey(url: string): string {
   const hash = url.indexOf('#');
-  return hash < 0 ? url : url.slice(0, hash);
+  return hash === -1 ? url : url.slice(0, hash);
 }
 
 export function itemKey(kind: DetectedKind, url: string): string {
@@ -204,7 +204,7 @@ export class MediaRegistry {
     const list = this.#tabs.get(tabId) ?? [];
     const key = itemKey(detection.kind, detection.url);
     const index = list.findIndex((i) => i.key === key);
-    if (index >= 0) return this.#seenAgain(tabId, index, detection, now);
+    if (index !== -1) return this.#seenAgain(tabId, index, detection, now);
     if (detection.kind === 'hls' && extendsStream(list, detection, frameId, now)) return false;
     const kept =
       list.length >= MAX_ITEMS_PER_TAB ? list.slice(list.length - MAX_ITEMS_PER_TAB + 1) : list;
@@ -324,7 +324,7 @@ export class MediaRegistry {
     const current = this.#tabs.get(tabId) ?? [];
     const merged = [
       ...savedItems,
-      ...current.filter((c) => !savedItems.some((s) => s.key === c.key)),
+      ...current.filter((c) => savedItems.every((s) => s.key !== c.key)),
     ];
     if (merged.length === 0) return;
     if (page !== undefined) this.#pages.set(tabId, page);

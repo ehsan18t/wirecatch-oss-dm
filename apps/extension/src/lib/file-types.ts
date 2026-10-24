@@ -17,7 +17,7 @@ export function fileNameFromUrl(url: string): string | null {
 /** The file name at the end of a local path (works with both `/` and `\` separators). */
 export function baseName(path: string): string {
   const parts = path.split(/[\\/]/);
-  return parts[parts.length - 1] ?? path;
+  return parts.at(-1) ?? path;
 }
 
 /** True when `fileName` ends with one of `types` (each without the dot); an empty list matches everything. */

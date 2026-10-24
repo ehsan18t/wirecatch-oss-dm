@@ -30,7 +30,7 @@
 {#if notices.length > 0}
   <ul aria-label="Messages" class="flex flex-col gap-2" bind:this={list}>
     {#each notices as notice, index (notice.id)}
-      {@const messageId = `${uid}-notice-${String(index)}`}
+      {const messageId = $derived(`${uid}-notice-${String(index)}`)}
       <li>
         <Callout tone={notice.tone === 'error' ? 'danger' : 'warning'}>
           <p id={messageId} class="text-ink">{notice.message}</p>

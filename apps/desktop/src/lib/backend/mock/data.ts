@@ -17,8 +17,8 @@ import {
 import { PRODUCT_NAME, PRODUCT_SLUG } from '@wirecatch/product';
 import { MB } from '@wirecatch/units';
 
-export const HOME = 'C:\\Users\\you';
-export const DOWNLOADS = `${HOME}\\Downloads`;
+export const HOME = String.raw`C:\Users\you`;
+export const DOWNLOADS = String.raw`${HOME}\Downloads`;
 
 const MEDIA_ADDON: AddonInfo = {
   id: 'media',
@@ -178,12 +178,12 @@ export function defaultQueues(): Queue[] {
 /** Turns `{Downloads}/Video` into a real Windows-style folder. */
 export function resolvePortable(path: string): string {
   return path
-    .replace('{Downloads}', DOWNLOADS)
-    .replace('{Home}', HOME)
-    .replace('{Documents}', `${HOME}\\Documents`)
-    .replace('{Videos}', `${HOME}\\Videos`)
-    .replace('{Music}', `${HOME}\\Music`)
-    .replace('{Pictures}', `${HOME}\\Pictures`)
+    .replace('{Downloads}', () => DOWNLOADS)
+    .replace('{Home}', () => HOME)
+    .replace('{Documents}', () => String.raw`${HOME}\Documents`)
+    .replace('{Videos}', () => String.raw`${HOME}\Videos`)
+    .replace('{Music}', () => String.raw`${HOME}\Music`)
+    .replace('{Pictures}', () => String.raw`${HOME}\Pictures`)
     .replaceAll('/', '\\');
 }
 

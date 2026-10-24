@@ -136,8 +136,8 @@
 {/snippet}
 
 {#snippet audioFormat({ s, control }: Row)}
-  {@const audio = s.media.audio}
-  {@const kbps = kbpsChoices(audio.format)}
+  {const audio = $derived(s.media.audio)}
+  {const kbps = $derived(kbpsChoices(audio.format))}
   <Select
     {...control}
     class="w-36"
@@ -158,7 +158,7 @@
 {/snippet}
 
 {#snippet subtitles({ def, s, control }: Row)}
-  {@const kind = kindOf(def.id)}
+  {const kind = $derived(kindOf(def.id))}
   <MultiSelect
     {...control}
     class="w-64"
@@ -171,7 +171,7 @@
 {/snippet}
 
 {#snippet autoSubtitles({ def, s, control }: Row)}
-  {@const kind = kindOf(def.id)}
+  {const kind = $derived(kindOf(def.id))}
   <SettingToggle
     {control}
     label={def.label}
@@ -181,7 +181,7 @@
 {/snippet}
 
 {#snippet chapters({ def, s, control }: Row)}
-  {@const kind = kindOf(def.id)}
+  {const kind = $derived(kindOf(def.id))}
   <SettingToggle
     {control}
     label={def.label}

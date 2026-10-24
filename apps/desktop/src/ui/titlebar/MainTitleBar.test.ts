@@ -68,7 +68,7 @@ describe('the title bar', () => {
     await user.click(search);
     await user.keyboard('blender');
     await settle();
-    expect(app.visible.length).toBe(1);
+    expect(app.visible).toHaveLength(1);
     await user.keyboard('{Escape}');
     expect(app.search).toBe('');
     await user.keyboard('{ArrowDown}');

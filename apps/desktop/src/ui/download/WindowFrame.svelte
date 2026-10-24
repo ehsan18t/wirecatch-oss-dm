@@ -42,7 +42,7 @@
           frame: framePart.getBoundingClientRect().height,
           body: bodyPart.getBoundingClientRect().height,
           content: contentPart.getBoundingClientRect().height,
-          padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+          padding: Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom),
         }),
       );
     };

@@ -211,7 +211,7 @@ export class FakeApp implements NativeTransport {
   }
 
   get openPort(): FakeNativePort | undefined {
-    return this.ports.filter((p) => !p.closed).at(-1);
+    return this.ports.findLast((p) => !p.closed);
   }
 
   calls(method: Call['method']): Call[] {

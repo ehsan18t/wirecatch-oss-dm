@@ -6,7 +6,7 @@
 </script>
 
 {#each [true, false] as assertive (assertive)}
-  {@const current = announcement?.assertive === assertive ? announcement : null}
+  {const current = $derived(announcement?.assertive === assertive ? announcement : null)}
   <div
     class="sr-only"
     role={assertive ? 'alert' : 'status'}

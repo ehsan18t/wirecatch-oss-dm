@@ -33,9 +33,9 @@ export type Phase = 'loading' | 'ask' | 'progress' | 'gone';
 export interface DownloadWindowHost {
   backend: () => Backend;
   /** Closes the window. Never answers its question. */
-  close(): void;
+  close: () => void;
   /** The window now shows download `id` (only the sample page needs telling). */
-  becameDownload?(id: DownloadId): void;
+  becameDownload?: (id: DownloadId) => void;
 }
 
 /** What the window was opened for. */
@@ -164,8 +164,8 @@ export class DownloadWindowState {
       } else {
         await this.#loadQuestion(this.#target.question);
       }
-    } catch (err) {
-      this.#gone(errorMessage(err));
+    } catch (error) {
+      this.#gone(errorMessage(error));
     } finally {
       events.release();
     }
@@ -386,8 +386,8 @@ export class DownloadWindowState {
     this.phase = 'progress';
     try {
       this.row = await this.#host.backend().getDownload(id);
-    } catch (err) {
-      this.#gone(errorMessage(err));
+    } catch (error) {
+      this.#gone(errorMessage(error));
     }
   }
 

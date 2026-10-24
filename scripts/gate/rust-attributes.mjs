@@ -10,7 +10,7 @@ const CHAR_LITERAL = /^'(?:\\(?:u\{[0-9a-fA-F]+\}|x[0-9a-fA-F]{2}|.)|[^\\'\n])'/
 
 /** `text` with every character other than a line break turned into a space, so positions and line numbers stay. */
 function blank(text) {
-  return text.replace(/[^\n]/g, ' ');
+  return text.replaceAll(/[^\n]/g, ' ');
 }
 
 /** Where the comment, string or character literal starting at `i` ends, or -1 when none starts there. */
@@ -145,6 +145,8 @@ let cached = null;
  * Every lint attribute in the Rust sources, with the file and line it is on and the lints it names. Comments and string literals are not read, so docs and tests may show the syntax. Read once per gate run.
  */
 export function rustLintAttributes() {
-  cached ??= filesMatching('(allow|expect|cfg_attr)\\s*\\(', ['*.rs']).flatMap(attributesIn);
+  cached ??= filesMatching(String.raw`(allow|expect|cfg_attr)\s*\(`, ['*.rs']).flatMap(
+    attributesIn,
+  );
   return cached;
 }

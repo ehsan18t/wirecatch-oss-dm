@@ -43,7 +43,7 @@ export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
       app.queues.list = e.data;
       const view = app.view;
       // A queue on screen that was deleted leaves the list showing everything.
-      if (view.kind === 'queue' && !e.data.some((q) => q.id === view.id)) {
+      if (view.kind === 'queue' && e.data.every((q) => q.id !== view.id)) {
         app.view = { kind: 'all' };
       }
     },

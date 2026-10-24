@@ -131,7 +131,7 @@ const VARIANT = { release: 'Release', dev: 'Dev' };
 const VARIANT_DOC = { release: 'Release builds.', dev: 'Debug builds.' };
 
 /** A Rust string literal; read.mjs has made sure no value holds a control character. */
-const rustString = (value) => `"${value.replace(/[\\"]/g, '\\$&')}"`;
+const rustString = (value) => `"${value.replaceAll(/[\\"]/g, String.raw`\$&`)}"`;
 
 function rustConstants(product) {
   return CONSTANTS.filter(([, , , uses]) => uses.rust).map(

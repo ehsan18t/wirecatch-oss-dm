@@ -121,7 +121,7 @@ describe('keyboard only', () => {
       screen.getByRole('searchbox', { name: 'Search downloads' }),
     );
     await press('blender');
-    expect(app.visible.length).toBe(1);
+    expect(app.visible).toHaveLength(1);
     await press('{Escape}');
     expect(app.search).toBe('');
     await press('{Control>},{/Control}');

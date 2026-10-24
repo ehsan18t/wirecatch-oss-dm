@@ -98,8 +98,8 @@ export class AddDraft {
       // The picker works again: its earlier failure no longer applies.
       if (this.problem?.title === PICKER_FAILED) this.problem = null;
       if (picked !== null) this.folder = picked;
-    } catch (err) {
-      this.problem = { title: PICKER_FAILED, message: errorMessage(err) };
+    } catch (error) {
+      this.problem = { title: PICKER_FAILED, message: errorMessage(error) };
     }
   }
 

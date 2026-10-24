@@ -881,10 +881,10 @@ describe('popup media list', () => {
     const { center, registry } = await setup();
     const watcher = new MediaWatcher(registry, { isPrivateTab: () => Promise.resolve(false) });
     const sounds: [string, number][] = [
-      ['no_input.mp3', 6_034],
-      ['failure.mp3', 5_888],
-      ['success.mp3', 6_195],
-      ['open.mp3', 5_973],
+      ['no_input.mp3', 6034],
+      ['failure.mp3', 5888],
+      ['success.mp3', 6195],
+      ['open.mp3', 5973],
     ];
     for (const [name, size] of sounds) {
       await watcher.onResponse({

@@ -256,9 +256,9 @@ export class AppState {
         },
         (reveal) => revealDownloads(this, reveal),
       );
-    } catch (err) {
+    } catch (error) {
       if (current()) {
-        this.loadError = errorMessage(err);
+        this.loadError = errorMessage(error);
         this.ready = true;
       }
       return false;
@@ -282,8 +282,8 @@ export class AppState {
       this.questions.pending = pending;
       this.name = name;
       this.loadError = null;
-    } catch (err) {
-      if (current()) this.loadError = errorMessage(err);
+    } catch (error) {
+      if (current()) this.loadError = errorMessage(error);
     }
   }
 

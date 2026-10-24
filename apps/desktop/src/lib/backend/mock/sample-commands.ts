@@ -5,12 +5,12 @@ import type { MockFinished } from './finished';
 
 /** What the mock can pretend happened. */
 export interface Scenarios {
-  simulateCapture(): void;
-  simulateConfirmation(): void;
-  simulateMediaChoice(): void;
-  simulateAddonRequired(): void;
-  simulateAnsweredElsewhere(): void;
-  simulateSlowReading(): void;
+  simulateCapture: () => void;
+  simulateConfirmation: () => void;
+  simulateMediaChoice: () => void;
+  simulateAddonRequired: () => void;
+  simulateAnsweredElsewhere: () => void;
+  simulateSlowReading: () => void;
 }
 
 export function sampleCommands(mock: Scenarios, finished: MockFinished): SampleData['commands'] {

@@ -73,8 +73,8 @@ export class DownloadActions {
           await backend.addVideoPage(r);
           videos += 1;
         }
-      } catch (err) {
-        failed.push({ url: r.url, error: errorMessage(err) });
+      } catch (error) {
+        failed.push({ url: r.url, error: errorMessage(error) });
       }
     }
     if (ids.length > 0) {

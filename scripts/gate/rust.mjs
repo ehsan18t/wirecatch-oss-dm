@@ -63,7 +63,7 @@ function ensureDesktopFrontend() {
 /** Whether a manifest has `workspace = true` inside its `[lints]` table. */
 function followsWorkspaceLints(manifest) {
   const table = /^\[lints\][^\S\r\n]*\r?\n([\s\S]*?)(?=^\[|(?![\s\S]))/m.exec(manifest);
-  return table !== null && /^\s*workspace\s*=\s*true\s*(#.*)?$/m.test(table[1]);
+  return table !== null && /^\s*workspace\s*=\s*true\s*(?:#.*)?$/m.test(table[1]);
 }
 
 /** Every crate opts into `[workspace.lints]`, so no crate can quietly follow a weaker policy. */

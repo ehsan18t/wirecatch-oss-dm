@@ -56,11 +56,11 @@ export class Questions {
   }
 
   confirmationRequested(capture: PendingCapture): void {
-    if (!this.pending.some((p) => p.id === capture.id)) this.pending = [...this.pending, capture];
+    if (this.pending.every((p) => p.id !== capture.id)) this.pending = [...this.pending, capture];
   }
 
   mediaChoiceRequested(choice: MediaChoice): void {
-    if (!this.mediaChoices.some((c) => c.id === choice.id)) {
+    if (this.mediaChoices.every((c) => c.id !== choice.id)) {
       this.mediaChoices = [...this.mediaChoices, choice];
     }
     this.#notWaitingForAddon(choice.id);
@@ -73,7 +73,7 @@ export class Questions {
 
   addonRequired(id: number): void {
     // A quality list whose picked quality needs the add-on is already counted.
-    if (!this.mediaChoices.some((c) => c.id === id) && !this.addonPages.includes(id)) {
+    if (this.mediaChoices.every((c) => c.id !== id) && !this.addonPages.includes(id)) {
       this.addonPages = [...this.addonPages, id];
     }
   }

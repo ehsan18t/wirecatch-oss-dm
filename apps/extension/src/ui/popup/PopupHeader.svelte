@@ -1,7 +1,7 @@
 <script lang="ts">
+  import Settings from '~icons/lucide/settings';
   import { PRODUCT_NAME } from '@wirecatch/product';
   import { AppMark, IconButton } from '@wirecatch/ui';
-  import Settings from '~icons/lucide/settings';
   import type { ConnectionStatus } from '../../lib/native/status';
   import ConnectionBadge from '../common/ConnectionBadge.svelte';
 

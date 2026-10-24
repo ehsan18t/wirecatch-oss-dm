@@ -65,8 +65,11 @@ export class Popups {
   /** Sends the snapshot to one popup, or to every open one. */
   publish(snapshot: Snapshot, to?: PopupChannel): void {
     const message: BackgroundMessage = { type: 'snapshot', snapshot };
-    if (to !== undefined) this.#post(to, message);
-    else for (const channel of this.#channels) this.#post(channel, message);
+    if (to === undefined) {
+      for (const channel of this.#channels) this.#post(channel, message);
+    } else {
+      this.#post(to, message);
+    }
   }
 
   #post(channel: PopupChannel, message: BackgroundMessage): void {

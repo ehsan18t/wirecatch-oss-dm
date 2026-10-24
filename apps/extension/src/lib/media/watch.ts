@@ -17,7 +17,7 @@ export const MAX_UNANSWERED_REQUESTS = 256;
 
 export interface WatchDeps {
   /** True when the tab is in a private window. Rejects or resolves true when that cannot be told. */
-  isPrivateTab(tabId: number): Promise<boolean>;
+  isPrivateTab: (tabId: number) => Promise<boolean>;
   /**
    * Settles once the lists saved by a previous run are restored (`MediaCenter.start`).
    * Responses wait for it, in order, so a navigation that woke the background clears

@@ -53,11 +53,11 @@ export class DuplicateWatch {
    */
   confirmedLate(handoverId: string, name: string, certain: boolean): void {
     const kept = this.#uncertain.get(handoverId);
-    if (kept !== undefined) {
+    if (kept === undefined) {
+      remember(this.#lateConfirmed, handoverId, { name, certain });
+    } else {
       this.#uncertain.delete(handoverId);
       this.#matched(kept, certain);
-    } else {
-      remember(this.#lateConfirmed, handoverId, { name, certain });
     }
   }
 }

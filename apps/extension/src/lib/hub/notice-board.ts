@@ -23,11 +23,11 @@ const NOT_SAVED = 'Could not save the notices';
 export const MAX_NOTICES = 5;
 
 export interface NoticeBoardDeps {
-  now(): number;
+  now: () => number;
   /** Where the notices are kept across a background restart; without it, they last as long as this run. */
   store?: NoticeStore;
   /** Called after every change, to publish the notices. */
-  changed(): void;
+  changed: () => void;
   /** How the browser lists the download now: null when it no longer does, `unreadable` when it would not say. */
   readCopy?: (downloadId: number) => Promise<DownloadState | null | 'unreadable'>;
 }
@@ -86,8 +86,8 @@ export class NoticeBoard {
       (old, i) =>
         paused[i] === true &&
         !this.#dismissed.has(old.id) &&
-        !(old.untilResumed && old.downloadId !== null && this.#moved.has(old.downloadId)) &&
-        !this.#notices.some((now) => now.id === old.id || sameDownload(now, old)),
+        (!old.untilResumed || old.downloadId === null || !this.#moved.has(old.downloadId)) &&
+        this.#notices.every((now) => now.id !== old.id && !sameDownload(now, old)),
     );
     this.#notices = newestFirst([...this.#notices, ...kept]);
     if (kept.length !== stored.length) {
@@ -172,7 +172,7 @@ export class NoticeBoard {
   /** The browser reports a download running or finished: a notice asking to resume it is done. */
   downloadMoved(downloadId: number): void {
     this.#moved.set(downloadId, (this.#moved.get(downloadId) ?? 0) + 1);
-    const left = this.#notices.filter((n) => !(n.downloadId === downloadId && n.untilResumed));
+    const left = this.#notices.filter((n) => n.downloadId !== downloadId || !n.untilResumed);
     if (left.length !== this.#notices.length) this.#set(left);
   }
 
@@ -268,7 +268,7 @@ function newestFirst(notices: Notice[]): Notice[] {
   const sorted = [...notices].sort((a, b) => b.at - a.at);
   while (sorted.length > MAX_NOTICES) {
     const other = sorted.map((n) => n.urgent).lastIndexOf(false);
-    sorted.splice(other >= 0 ? other : sorted.length - 1, 1);
+    sorted.splice(other === -1 ? sorted.length - 1 : other, 1);
   }
   return sorted;
 }

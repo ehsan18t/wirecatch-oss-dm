@@ -73,7 +73,7 @@
   }
 
   function onfocusout(event: FocusEvent) {
-    if (!(event.relatedTarget instanceof Node && region?.contains(event.relatedTarget))) release();
+    if (!(event.relatedTarget instanceof Node) || !region?.contains(event.relatedTarget)) release();
   }
 
   function setHovered(next: boolean) {

@@ -70,7 +70,7 @@ describe('event handler tables', () => {
     expect(app.storageProblem).toBeNull();
     app.handle(STORAGE);
     expect(app.storageProblem).toBe('Disk full.');
-    expect(app.toasts.items.length).toBe(notes);
+    expect(app.toasts.items).toHaveLength(notes);
   });
 
   it('leave a question window alone for events about another question', async () => {

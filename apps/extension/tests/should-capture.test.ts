@@ -348,7 +348,7 @@ describe('candidateFromItem', () => {
       downloadItem({
         url: 'https://example.com/get?id=1',
         finalUrl: 'https://cdn.example.com/file.zip',
-        filename: 'C:\\Users\\me\\Downloads\\file.zip',
+        filename: String.raw`C:\Users\me\Downloads\file.zip`,
         totalBytes: 0,
         fileSize: -1,
         byExtensionId: '',

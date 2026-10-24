@@ -47,7 +47,7 @@ async function walkFocus(page: Page): Promise<FocusStop[]> {
       element.dataset.walked = 'yes';
       const outlined = (target: Element) => {
         const style = getComputedStyle(target);
-        return style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0;
+        return style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0;
       };
       const text = element.matches(
         'input:not([type="checkbox"], [type="radio"], [type="range"]), textarea',

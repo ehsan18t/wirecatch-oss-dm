@@ -115,8 +115,8 @@
       <!-- A row too, so rows line up with entries; never focused, as the keys skip it. -->
       <div role="separator" data-menu-row class="mx-2 my-1 h-px bg-line"></div>
     {:else}
-      {@const isCheckbox = entry.kind === 'checkbox'}
-      {@const danger = entry.kind !== 'checkbox' && entry.danger === true}
+      {const isCheckbox = $derived(entry.kind === 'checkbox')}
+      {const danger = $derived(entry.kind !== 'checkbox' && entry.danger === true)}
       <div
         role={isCheckbox ? 'menuitemcheckbox' : 'menuitem'}
         aria-checked={entry.kind === 'checkbox' ? entry.checked : undefined}

@@ -131,8 +131,8 @@
       {#key searching ? 'search' : app.settingsSection}
         <div class="flex max-w-page animate-rise-in flex-col gap-6">
           {#each SECTIONS as s (s.id)}
-            {@const items = itemsIn(s.id)}
-            {@const View = SECTION_VIEW[s.id]}
+            {const items = $derived(itemsIn(s.id))}
+            {const View = $derived(SECTION_VIEW[s.id])}
             {#if items.length > 0}
               <section
                 aria-labelledby={searching ? `sec-${s.id}` : 'settings-title'}

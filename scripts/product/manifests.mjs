@@ -39,10 +39,17 @@ export function setTomlKey(text, path, header, [key, value]) {
   const lines = text.split('\n');
   const { start, end } = tableBody(lines, header, path);
   // The indentation, the key, its value and a trailing comment that holds no quote.
-  const setting = new RegExp(`^(\\s*)${key.replace(/\./g, '\\.')}\\s*=\\s*(.*?)(\\s+#[^"']*)?$`);
+  const setting = new RegExp(
+    String.raw`^(\s*)${key.replaceAll('.', String.raw`\.`)}\s*=\s*(.*?)(\s+#[^"']*)?$`,
+  );
   const line = `${key} = ${value}`;
   const existing = lines.findIndex((l, i) => i >= start && i < end && setting.test(l));
-  if (existing !== -1) {
+  if (existing === -1) {
+    let last = end - 1;
+    while (last >= start && (lines[last].trim() === '' || lines[last].trim().startsWith('#')))
+      last -= 1;
+    lines.splice(last + 1, 0, line);
+  } else {
     const [, indent, current, comment = ''] = setting.exec(lines[existing]) ?? [];
     if (continuesOnNextLine(current ?? '')) {
       throw new ManifestError(
@@ -50,11 +57,6 @@ export function setTomlKey(text, path, header, [key, value]) {
       );
     }
     lines[existing] = `${indent ?? ''}${line}${comment}`;
-  } else {
-    let last = end - 1;
-    while (last >= start && (lines[last].trim() === '' || lines[last].trim().startsWith('#')))
-      last -= 1;
-    lines.splice(last + 1, 0, line);
   }
   return lines.join('\n');
 }
@@ -65,14 +67,17 @@ export function setPathDependencyVersions(text, header, version, path) {
   const { start, end } = tableBody(lines, header, path);
   for (let i = start; i < end; i += 1) {
     if (/\bpath\s*=/.test(lines[i])) {
-      lines[i] = lines[i].replace(/\bversion\s*=\s*"[^"]*"/, `version = ${tomlString(version)}`);
+      lines[i] = lines[i].replace(
+        /\bversion\s*=\s*"[^"]*"/,
+        () => `version = ${tomlString(version)}`,
+      );
     }
   }
   return lines.join('\n');
 }
 
 /** A TOML basic string; read.mjs has made sure no value holds a control character. */
-export const tomlString = (value) => `"${value.replace(/[\\"]/g, '\\$&')}"`;
+export const tomlString = (value) => `"${value.replaceAll(/[\\"]/g, String.raw`\$&`)}"`;
 
 /** The value of `product` at a dotted `path`, which must name a string. */
 function valueAt(product, path, template) {
@@ -90,13 +95,13 @@ function valueAt(product, path, template) {
 export function fillTemplate(template, product, name) {
   const placeholder = /\{\{\s*([a-z_.]+)\s*\}\}/g;
   // Checked in the template, not the result, so a value holding braces is not taken for one.
-  const leftover = /\{\{[^\n]*/.exec(template.replace(placeholder, ''));
+  const leftover = /\{\{[^\n]*/.exec(template.replaceAll(placeholder, ''));
   if (leftover) {
     throw new ManifestError(
       `${name} has a placeholder that is not of the form {{section.key}}: ${leftover[0]}`,
     );
   }
-  return template.replace(placeholder, (_, path) => valueAt(product, path, name));
+  return template.replaceAll(placeholder, (_, path) => valueAt(product, path, name));
 }
 
 /** How each kind of file writes a comment line, and whether a first line (a `#!`) must stay first. */

@@ -1,8 +1,8 @@
+import Download from '~icons/lucide/download';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
-import Download from '~icons/lucide/download';
 import DisclosureHost from '../testing/DisclosureHost.svelte';
 import FieldHost from '../testing/FieldHost.svelte';
 import RemovedFieldHost from '../testing/RemovedFieldHost.svelte';
@@ -444,7 +444,7 @@ describe('Kbd', () => {
     const { container } = render(Kbd, { keys: ['Alt', 'Up'] });
     const caps = [...container.querySelectorAll('kbd kbd')].map((k) => k.textContent);
     expect(caps).toEqual(['Alt', '↑']);
-    expect(container.textContent.replace(/\s+/g, '')).toBe('Alt+↑');
+    expect(container.textContent.replaceAll(/\s+/g, '')).toBe('Alt+↑');
     // The plus is for screen readers and copies, not drawn.
     expect(container.querySelector('.sr-only')?.textContent).toBe('+');
   });

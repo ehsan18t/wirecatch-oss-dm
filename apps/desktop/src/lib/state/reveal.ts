@@ -10,13 +10,13 @@ import { groupOf, isGrouped, type StatusGroup, type View } from './view';
 
 /** What showing downloads or the browser settings needs from the main window. */
 export interface RevealTarget {
-  readonly downloads: { get(id: DownloadId): DownloadSummary | undefined };
-  readonly queues: { byId(id: QueueId): Queue | undefined };
+  readonly downloads: { get: (id: DownloadId) => DownloadSummary | undefined };
+  readonly queues: { byId: (id: QueueId) => Queue | undefined };
   readonly view: View;
   readonly folded: SvelteSet<StatusGroup>;
   readonly selection: Selection;
-  show(view: View): void;
-  openSettingsSection(section: SectionId): void;
+  show: (view: View) => void;
+  openSettingsSection: (section: SectionId) => void;
 }
 
 /** Shows the browser settings, or the downloads `reveal` names that are still in the list; none left changes nothing. */

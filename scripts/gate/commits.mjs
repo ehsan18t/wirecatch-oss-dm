@@ -41,7 +41,7 @@ const AUTHOR_CREDITS = [
   /^\W*generated with \[[^\]]+\]\(https?:/im,
 ];
 /** Subjects git writes for `--fixup`, `--squash` and `--fixup=amend:`; they disappear in an autosquash rebase. */
-const AUTOSQUASH = /^(fixup|squash|amend)! /;
+const AUTOSQUASH = /^(?:fixup|squash|amend)! /;
 /** Where `git commit -v` starts the diff it appends to the message. */
 const SCISSORS = /^# -+ >8 -+$/m;
 /** Bots whose commit bodies quote upstream release notes we do not control; only their subjects are checked. */
@@ -49,12 +49,12 @@ const BOT_AUTHORS = /\[bot\]@users\.noreply\.github\.com$/;
 /** The character the rules ban, written by its code so this file does not contain it. */
 const EM_DASH = String.fromCharCode(0x2014);
 const SUBJECT = new RegExp(
-  `^(${COMMIT_TYPES.join('|')})(\\((${COMMIT_SCOPES.join('|')})\\))?!?: (.+)$`,
+  String.raw`^(?:${COMMIT_TYPES.join('|')})(?:\((?:${COMMIT_SCOPES.join('|')})\))?!?: (?<words>.+)$`,
 );
 
 /** What a commit message says, without git's comment lines or the diff `git commit -v` appends. */
 function messageText(raw) {
-  const normalized = raw.replace(/\r\n?/g, '\n');
+  const normalized = raw.replaceAll(/\r\n?/g, '\n');
   const scissors = SCISSORS.exec(normalized);
   const kept = scissors ? normalized.slice(0, scissors.index) : normalized;
   return kept
@@ -68,17 +68,17 @@ function messageText(raw) {
 function subjectProblems(subject) {
   const problems = [];
   const match = SUBJECT.exec(subject);
-  if (!match) {
+  if (match) {
+    const words = match.groups.words;
+    if (/^[A-Z]/.test(words)) problems.push('the subject must start in lower case');
+    if (words.endsWith('.')) problems.push('the subject must not end with a period');
+  } else {
     const revert = subject.startsWith('Revert "')
       ? ' For a revert, write `revert: <the original subject>`.'
       : '';
     problems.push(
       `the subject must look like \`type(scope): subject\`, with a type from ${COMMIT_TYPES.join(', ')} and a scope from ${COMMIT_SCOPES.join(', ')} (or no scope for a repository-wide change).${revert}`,
     );
-  } else {
-    const words = match[4];
-    if (/^[A-Z]/.test(words)) problems.push('the subject must start in lower case');
-    if (words.endsWith('.')) problems.push('the subject must not end with a period');
   }
   if (subject.length > MAX_SUBJECT_LENGTH) {
     problems.push(

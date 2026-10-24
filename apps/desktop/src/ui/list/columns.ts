@@ -128,7 +128,9 @@ const BROWSER_TEXT_SIZE = 16;
 
 /** A rem in pixels, so widths in rem follow the person's text size. */
 export function remInPixels(): number {
-  return parseFloat(getComputedStyle(document.documentElement).fontSize) || BROWSER_TEXT_SIZE;
+  return (
+    Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || BROWSER_TEXT_SIZE
+  );
 }
 
 /** The most a column widens: this many times its usual width. */

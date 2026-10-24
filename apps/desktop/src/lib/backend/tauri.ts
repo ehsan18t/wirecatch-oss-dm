@@ -121,8 +121,8 @@ export class TauriBackend implements DownloadWindowBackend {
     let answer: unknown;
     try {
       answer = await this.#invoke(command, args.length === 0 ? undefined : { args: args[0] });
-    } catch (err) {
-      throw toBackendError(err);
+    } catch (error) {
+      throw toBackendError(error);
     }
     const fits: (value: unknown) => value is OutputOf<C> = COMMAND_OUTPUTS[command];
     if (!fits(answer)) throw new BackendError(unreadableAnswer(command));

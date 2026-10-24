@@ -31,6 +31,7 @@ const MAYBE_QUOTE = `(?:${QUOTE})?`;
 /** A quoted string, escapes included, on one line. */
 const QUOTED = String.raw`"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'`;
 
+/* eslint-disable regexp/no-potentially-useless-backreference -- a name's quote is optional, and a backreference to the skipped quote group matching nothing is the point: `\k<q>` closes the quote that opened, or nothing; `groups.q` then reads undefined, which tells an unquoted name apart. */
 // Each pattern below ends where the value starts, and names the secret's name `name` and the quote around it, if any, `q`.
 /** `name: value`, `name=value` and `"name": value`: a header, a pair, a JSON key or a field. */
 const NAMED = new RegExp(
@@ -46,6 +47,7 @@ const NAME_FIRST = new RegExp(
   String.raw`\bname${MAYBE_QUOTE}\s*[:=]\s*(?<q>${QUOTE})?(?<name>${NAME})\k<q>\s*[,&;]\s*${MAYBE_QUOTE}value${MAYBE_QUOTE}\s*[:=]\s*`,
   'g',
 );
+/* eslint-enable regexp/no-potentially-useless-backreference */
 /** A header object, value first: `{"value": "...", "name": "Cookie"}`, matched whole. */
 const VALUE_FIRST = new RegExp(
   String.raw`(?<before>\bvalue${MAYBE_QUOTE}\s*[:=]\s*)(?<value>${QUOTED})(?<after>\s*,\s*${MAYBE_QUOTE}name${MAYBE_QUOTE}\s*[:=]\s*${QUOTE}(?<name>${NAME}))`,
@@ -62,7 +64,7 @@ const LINE_BREAK = /\r\n|\r|\n/y;
 /** What starts a field of its own at the start of a line: `User-Agent:`. */
 const NEW_FIELD = /[\w-]+[ \t]*:/y;
 /** What separates a scheme word from its credential: blanks and at most one line break, as a header folds it. */
-const SCHEME_GAP = String.raw`(?=\s)[ \t]*(?:\r\n|[\r\n])?[ \t]*`;
+const SCHEME_GAP = String.raw`(?=\s)[ \t]*(?:(?:\r\n|[\r\n])[ \t]*)?`;
 /** An authorization scheme in any case, and the word after it. */
 const SCHEME = new RegExp(
   String.raw`\b(?<scheme>${AUTH_SCHEMES.join('|')})${SCHEME_GAP}(?<credential>(?!\[)[\w\-.~+/]+=*)`,

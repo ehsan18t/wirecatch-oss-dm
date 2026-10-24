@@ -28,12 +28,12 @@
       class="flex w-full flex-col divide-y divide-line rounded-md border border-line"
     >
       {#each app.queues.list as queue (queue.id)}
-        {@const facts = [
+        {const facts = $derived([
           queue.paused ? 'Paused' : formatSchedule(queue.schedule),
           `${String(queue.max_concurrent)} at once`,
           queue.speed_limit === null ? 'No speed limit' : `Up to ${formatRate(queue.speed_limit)}`,
           ...(queue.notify === 'when_done' ? ['Tells you once the queue is done'] : []),
-        ]}
+        ])}
         <li class="flex items-center gap-3 py-2 pr-2 pl-3">
           <span class="flex min-w-0 flex-1 flex-col gap-0.5">
             <span class="flex items-center gap-2 text-ui font-medium text-ink">

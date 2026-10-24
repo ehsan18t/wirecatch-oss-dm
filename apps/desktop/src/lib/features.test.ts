@@ -172,7 +172,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
   it('status filters: 1 click; file types from the palette', async () => {
     const { app, click, palette } = await setup();
     await click(nav().getByRole('button', { name: /^Needs attention/ }));
-    expect(app.visible.length).toBe(6);
+    expect(app.visible).toHaveLength(6);
     await buildCommands(app)
       .find((c) => c.id === 'show.category.video')
       ?.run();
@@ -376,14 +376,13 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
       exported_at: 0,
       settings: {
         ...before,
-        default_folder:
-          'C:\\Users\\ada\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup',
+        default_folder: String.raw`C:\Users\ada\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup`,
         connections_per_download: 3,
       },
       queues: plain(app.queues.list),
       addons: [],
     };
-    backend.putSettingsFile('C:\\Users\\ada\\Downloads\\evil.json', profile);
+    backend.putSettingsFile(String.raw`C:\Users\ada\Downloads\evil.json`, profile);
     app.openDialog({ kind: 'import' });
     await settle();
     await click(button('Choose a settings file'));

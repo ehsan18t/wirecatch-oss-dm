@@ -4,8 +4,8 @@
 // then measures frame times with requestAnimationFrame while (a) idle and (b) scrolling the
 // list continuously, and records long tasks. Results go to test-results/performance.json and the test's attachments.
 
-import { expect, test } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { expect, test } from '@playwright/test';
 import { open, rows } from './helpers';
 
 interface FrameStats {

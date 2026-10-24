@@ -76,7 +76,7 @@
       {/snippet}
     </SettingRow>
     {#if controls !== null}
-      {@const limit = controls.global_speed_limit}
+      {const limit = $derived(controls.global_speed_limit)}
       <!-- One block, so no hairline comes between the switch and its limit. -->
       <div>
         <SettingSwitch

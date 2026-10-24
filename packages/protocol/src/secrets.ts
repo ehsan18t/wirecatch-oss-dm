@@ -17,7 +17,7 @@ const CREDENTIAL_SIGN = /[\d+/=]/;
 
 /** `text` in lowercase as Rust's `to_ascii_lowercase` has it: only `A` to `Z` change. */
 const asciiLowercase = (text: string): string =>
-  text.replace(ASCII_CAPITAL, (capital) => capital.toLowerCase());
+  text.replaceAll(ASCII_CAPITAL, (capital) => capital.toLowerCase());
 
 /** The segments of `name`, in ASCII lowercase. */
 const segmentsOf = (name: string): string[] => name.split(SEGMENT_BREAK).map(asciiLowercase);

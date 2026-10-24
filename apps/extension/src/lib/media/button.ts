@@ -22,14 +22,14 @@ import { INSET, placeButton, type Position } from './placement';
 
 export interface ButtonDeps {
   /** Whether anything downloadable is known for this element (asked before showing). */
-  check(info: ElementInfo): Promise<boolean>;
+  check: (info: ElementInfo) => Promise<boolean>;
   /** Hands the element's media to the app. */
-  download(request: ElementInfo & { title: string | null }): Promise<DownloadAnswer>;
+  download: (request: ElementInfo & { title: string | null }) => Promise<DownloadAnswer>;
   /**
    * Whether an activation came from the person (`event.isTrusted`), not from a script.
    * Replaceable for tests only: jsdom marks every event as untrusted.
    */
-  isTrusted?(event: Event): boolean;
+  isTrusted?: (event: Event) => boolean;
 }
 
 /** Added to the wait for the button to fade, so the timer fires just after that moment, not before. */

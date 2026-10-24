@@ -81,8 +81,11 @@ export class KnownSettings {
   ): void {
     if (queues !== null) this.#queues = queues;
     if (controls !== null) this.#controls = controls;
-    if (settings !== null) this.adopt(settings);
-    else this.#changed();
+    if (settings === null) {
+      this.#changed();
+    } else {
+      this.adopt(settings);
+    }
   }
 
   adoptQueues(queues: QueueSummary[]): void {

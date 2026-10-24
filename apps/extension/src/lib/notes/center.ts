@@ -19,26 +19,26 @@ export const CONNECT_WAIT_MS = 3000;
 /** What the note center needs from the browser and the app. */
 export interface NoteCenterDeps {
   /** The tab the person is looking at, while the browser is in front and the tab is a web page; null otherwise. */
-  focusedTab(): Promise<number | null>;
+  focusedTab: () => Promise<number | null>;
   /** Asks the tab's page script to place a fresh notes frame: its token, or null when the page cannot. */
-  mount(tabId: number): Promise<string | null>;
+  mount: (tabId: number) => Promise<string | null>;
   /** Asks the tab's page script to take the notes frame away. */
-  unmount(tabId: number): Promise<void>;
+  unmount: (tabId: number) => Promise<void>;
   /** Tells the app the note is on screen. */
-  shown(id: NoteId): Promise<void>;
+  shown: (id: NoteId) => Promise<void>;
   /** Tells the app the person pressed one of the note's buttons. */
-  pressed(id: NoteId, button: number): Promise<void>;
+  pressed: (id: NoteId, button: number) => Promise<void>;
   /** Milliseconds since some fixed point. */
-  now(): number;
+  now: () => number;
 }
 
 /** The part of a `runtime.Port` the note center uses. */
 export interface NotesPort {
   name: string;
-  postMessage(message: ToNotesPage): void;
-  disconnect(): void;
-  onMessage: { addListener(listener: (message: unknown) => void): void };
-  onDisconnect: { addListener(listener: () => void): void };
+  postMessage: (message: ToNotesPage) => void;
+  disconnect: () => void;
+  onMessage: { addListener: (listener: (message: unknown) => void) => void };
+  onDisconnect: { addListener: (listener: () => void) => void };
 }
 
 /** One tab's notes frame. */

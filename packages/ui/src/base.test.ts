@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { THEME_NAMES } from './lib/cn';
 
-const css = readFileSync(resolve(process.cwd(), 'src/base.css'), 'utf8').replace(
+const css = readFileSync(resolve(process.cwd(), 'src/base.css'), 'utf8').replaceAll(
   /\/\*[\s\S]*?\*\//g,
   '',
 );
@@ -31,7 +31,7 @@ describe('base.css', () => {
   });
 
   it('leaves the root font size alone, so a rem stays the 16px every length in tokens.css is written for', () => {
-    const sizes = THEME_NAMES.text.map((name) => new RegExp(`(^|\\s)text-${name}(\\s|;)`));
+    const sizes = THEME_NAMES.text.map((name) => new RegExp(String.raw`(^|\s)text-${name}(\s|;)`));
     const root = rulesFor('html');
     expect(root.length).toBeGreaterThan(0);
     for (const declarations of root) {
@@ -39,6 +39,6 @@ describe('base.css', () => {
       expect(declarations).not.toMatch(/font-size/);
     }
     // The page's text size is the body's, which a rem does not follow.
-    expect(rulesFor('body').some((d) => /(^|\s)text-body(\s|;)/.test(d))).toBe(true);
+    expect(rulesFor('body').some((d) => /(?:^|\s)text-body(?:\s|;)/.test(d))).toBe(true);
   });
 });

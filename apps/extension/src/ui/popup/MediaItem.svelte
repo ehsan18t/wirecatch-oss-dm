@@ -1,8 +1,8 @@
 <script lang="ts">
   // One item of "Media on this page". The title names the kind ("Audio file", "Video stream (HLS)"); the detail, usually the file name, is what tells items apart, so it gets the row's width and up to two lines, and the Download button is an icon.
+  import Download from '~icons/lucide/download';
   import { cn, IconButton, textIfCut, tooltip } from '@wirecatch/ui';
   import { formatBytes } from '@wirecatch/units';
-  import Download from '~icons/lucide/download';
   import type { MediaEntry } from '../../lib/media/center';
   import type { MediaStatus } from '../../lib/popup/model.svelte';
 

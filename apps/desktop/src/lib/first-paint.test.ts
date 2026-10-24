@@ -113,7 +113,9 @@ describe('the background a page paints before its styles load', () => {
   it("is the tokens' base in each scheme, and no other colour", () => {
     expect(base).not.toBeNull();
     const [, light, dark] = base!;
-    const painted = [...firstPaint.matchAll(/background:\s*([^;]+);/g)].map((m) => m[1]!.trim());
+    const painted = [...firstPaint.matchAll(/background:\s*([^\s;][^;]*);/g)].map((m) =>
+      m[1]!.trim(),
+    );
     expect(painted[0]).toBe(light);
     expect(new Set(painted)).toEqual(new Set([light, dark]));
   });

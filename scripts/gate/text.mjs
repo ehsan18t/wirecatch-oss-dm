@@ -7,7 +7,7 @@ const EM_DASH = 0x2014;
 /** Ways an em dash gets into the repository. Escapes only count in TypeScript, JavaScript and Svelte outside tests, where interface text lives: tests use them to assert there is none, and Rust tests do the same inside `#[cfg(test)]` modules that a path cannot tell apart. */
 // The character is built and the entity split so this line does not match itself. The character itself, not `\x{2014}`, goes to git: without a UTF-8 locale git's PCRE refuses code points above 255, and a literal matches its bytes in any locale.
 export const EM_DASH_LITERAL = `${String.fromCodePoint(EM_DASH)}|&${'mdash;'}`;
-const EM_DASH_ESCAPED = '\\\\u2014|\\\\u\\{2014\\}';
+const EM_DASH_ESCAPED = String.raw`\\u2014|\\u\{2014\}`;
 const TEXT_SCOPE = ['.', ':!Cargo.lock', ':!pnpm-lock.yaml'];
 const ESCAPE_SCOPE = [
   '*.ts',
@@ -47,7 +47,7 @@ export const CREDENTIAL_PATTERN = [
   String.raw`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`,
   String.raw`\bAIza[0-9A-Za-z_-]{20,}`,
   String.raw`\beyJ[0-9A-Za-z_-]{8,}\.eyJ[0-9A-Za-z_-]{4,}\.[0-9A-Za-z_-]{6,}`,
-  String.raw`-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----`,
+  '-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----',
 ].join('|');
 const CREDENTIAL_SCOPE = ['.', ':!Cargo.lock', ':!pnpm-lock.yaml'];
 
@@ -61,7 +61,7 @@ function credentialShapes() {
 }
 
 /** How an HTML comment opens, split so these examples are not comments themselves. */
-const MARKUP = '<' + '!--';
+const MARKUP = ['<', '!--'].join('');
 /** The ESLint comments the shared configuration allows in scripts (`no-use`); Svelte markup, which that rule does not read, is held to the same list here. */
 const ALLOWED_IN_MARKUP = new Set([
   'eslint-disable',

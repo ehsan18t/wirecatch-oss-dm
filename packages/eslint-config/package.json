@@ -15,9 +15,13 @@
   "dependencies": {
     "@eslint-community/eslint-plugin-eslint-comments": "catalog:",
     "@eslint/js": "catalog:",
+    "@vitest/eslint-plugin": "catalog:",
     "eslint-config-prettier": "catalog:",
+    "eslint-plugin-de-morgan": "catalog:",
     "eslint-plugin-import-x": "catalog:",
+    "eslint-plugin-regexp": "catalog:",
     "eslint-plugin-svelte": "catalog:",
+    "eslint-plugin-unicorn": "catalog:",
     "globals": "catalog:",
     "typescript-eslint": "catalog:"
   },

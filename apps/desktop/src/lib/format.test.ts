@@ -36,7 +36,7 @@ describe('time', () => {
     expect(formatEta(180)).toBe('3 min');
     expect(formatEta(3600)).toBe('1 h');
     expect(formatEta(4800)).toBe('1 h 20 min');
-    expect(formatEta(3 * 86400)).toBe('3 days');
+    expect(formatEta(3 * 86_400)).toBe('3 days');
   });
 });
 
@@ -156,7 +156,9 @@ describe('links', () => {
   it('guesses file names and folders', () => {
     expect(fileNameFromUrl('https://example.com/dir/My%20File.pdf?x=1')).toBe('My File.pdf');
     expect(fileNameFromUrl('https://example.com/')).toBe('example.com');
-    expect(folderOf('C:\\Users\\you\\Downloads\\a.zip')).toBe('C:\\Users\\you\\Downloads');
+    expect(folderOf(String.raw`C:\Users\you\Downloads\a.zip`)).toBe(
+      String.raw`C:\Users\you\Downloads`,
+    );
     expect(folderOf('/home/you/a.zip')).toBe('/home/you');
   });
 });

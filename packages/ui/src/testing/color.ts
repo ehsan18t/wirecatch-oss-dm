@@ -11,7 +11,7 @@ export function parseColor(text: string): Rgba {
   const value = text.trim();
   const hex = /^#([0-9a-f]{6})$/i.exec(value);
   if (hex?.[1]) {
-    const n = parseInt(hex[1], 16);
+    const n = Number.parseInt(hex[1], 16);
     return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: 1 };
   }
   const rgb = /^rgb\((\d+) (\d+) (\d+)(?: \/ ([\d.]+))?\)$/.exec(value);

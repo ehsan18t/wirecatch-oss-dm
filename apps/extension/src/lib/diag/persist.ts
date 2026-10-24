@@ -25,8 +25,8 @@ export type DiagContext = 'background' | 'popup' | 'notes';
 
 /** The part of a `storage` area this needs. */
 export interface DiagStore {
-  get(key: string): Promise<Record<string, unknown>>;
-  set(items: Record<string, unknown>): Promise<void>;
+  get: (key: string) => Promise<Record<string, unknown>>;
+  set: (items: Record<string, unknown>) => Promise<void>;
 }
 
 const isEntry = fields<DiagEntry>({
@@ -117,14 +117,11 @@ export async function readDiagnostics(store: DiagStore): Promise<DiagEntry[]> {
 
 /** The part of the global scope the error events come from: `self` in the background, `window` in a page. */
 export interface ErrorEvents {
-  addEventListener(
+  addEventListener: ((
     type: 'error',
     listener: (event: { error?: unknown; message?: unknown }) => void,
-  ): void;
-  addEventListener(
-    type: 'unhandledrejection',
-    listener: (event: { reason?: unknown }) => void,
-  ): void;
+  ) => void) &
+    ((type: 'unhandledrejection', listener: (event: { reason?: unknown }) => void) => void);
 }
 
 /**

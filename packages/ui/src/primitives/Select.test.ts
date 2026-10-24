@@ -100,7 +100,7 @@ describe('Select, searchable, with what sets each option apart', () => {
     expect(combobox.textContent).toContain('1.80 GB');
     await userEvent.click(combobox);
     expect(
-      screen.getAllByRole('option').map((o) => o.textContent.replace(/\s+/g, ' ').trim()),
+      screen.getAllByRole('option').map((o) => o.textContent.replaceAll(/\s+/g, ' ').trim()),
     ).toEqual(['2160p 1.80 GB', '1080p 612 MB', '720p 298 MB']);
   });
 
