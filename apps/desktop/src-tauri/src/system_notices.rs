@@ -109,7 +109,7 @@ pub fn show<R: Runtime>(app: &AppHandle<R>, notice: Notice) {
 }
 
 /// Picks what a click did: a button by its place, or the notification itself.
-fn chosen(notice: &Notice, button: Option<usize>) -> Option<Act> {
+pub(crate) fn chosen(notice: &Notice, button: Option<usize>) -> Option<Act> {
     match button {
         None => Some(notice.click.clone()),
         Some(at) => notice.buttons.get(at).map(|b| b.act.clone()),
@@ -195,7 +195,7 @@ mod platform {
     use windows_core::{HSTRING, IInspectable, Interface as _};
 
     use super::{button_argument, chosen, clicked_button, escape_text};
-    use crate::notices::{BRIEF, Lasts, Notice};
+    use crate::notices::{Lasts, Notice};
 
     /// Escapes text for the toast's XML, quotes included, so it is safe inside an attribute too.
     fn escape(text: &str) -> String {
@@ -245,7 +245,7 @@ mod platform {
         pub fn show<R: Runtime>(&self, app: &AppHandle<R>, notice: Notice, through: bool) {
             let held = match notice.lasts {
                 Lasts::Kept => &self.kept,
-                Lasts::Brief => &self.brief,
+                Lasts::Brief(_) => &self.brief,
             };
             match self.toast(app, notice, through && self.important_toasts) {
                 Ok(toast) => {
@@ -268,9 +268,9 @@ mod platform {
             let xml = XmlDocument::new()?;
             xml.LoadXml(&HSTRING::from(toast_xml(&notice, important)))?;
             let toast = ToastNotification::CreateToastNotification(&xml)?;
-            if notice.lasts == Lasts::Brief {
+            if let Lasts::Brief(stays) = notice.lasts {
                 let expires = PropertyValue::CreateDateTime(DateTime {
-                    UniversalTime: ticks(SystemTime::now() + BRIEF),
+                    UniversalTime: ticks(SystemTime::now() + stays),
                 })?;
                 toast.SetExpirationTime(&expires.cast::<IReference<DateTime>>()?)?;
             }
@@ -415,7 +415,7 @@ mod platform {
     use tauri::{AppHandle, Manager as _, Runtime};
 
     use super::{button_argument, chosen, clicked_button, escape_text};
-    use crate::notices::{BRIEF, Lasts, Notice};
+    use crate::notices::{Lasts, Notice};
 
     /// The action a notification service sends for a click on the notification itself.
     const CLICK: &str = "default";
@@ -468,9 +468,9 @@ mod platform {
             .appname(name)
             .summary(&notice.title)
             .body(&escape_text(&notice.body));
-        if notice.lasts == Lasts::Brief {
+        if let Lasts::Brief(stays) = notice.lasts {
             notification
-                .timeout(BRIEF)
+                .timeout(stays)
                 .hint(notify_rust::Hint::Transient(true));
         }
         if waits {

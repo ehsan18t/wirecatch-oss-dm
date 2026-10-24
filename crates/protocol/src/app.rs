@@ -871,10 +871,98 @@ pub enum FinishNotice {
     /// A system notification with buttons to open the file or show it in its folder.
     #[default]
     Notification,
+    /// A note in the browser tab the person is looking at, with the same buttons (D65); a
+    /// system notification when no browser can show it.
+    Browser,
     /// The download complete window, which collects what finished until the person closes it.
     Window,
     /// Nothing: the download list shows how each download ended.
     Nothing,
+}
+
+/// How the person is told that a browser download started without a window of its own (D65).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum StartNotice {
+    /// A note in the browser tab the person is looking at; a system notification when no
+    /// browser can show it.
+    #[default]
+    Browser,
+    /// Nothing: the download list shows it.
+    Nothing,
+}
+
+/// How long a browser note about a download that started stays before it goes by itself (D65):
+/// short, since the person just started it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum StartNoteTime {
+    /// Three seconds.
+    #[default]
+    ThreeSeconds,
+    /// Five seconds.
+    FiveSeconds,
+    /// Eight seconds.
+    EightSeconds,
+    /// Ten seconds.
+    TenSeconds,
+}
+
+impl StartNoteTime {
+    /// How long it stays, in seconds.
+    #[must_use]
+    pub const fn seconds(self) -> u64 {
+        match self {
+            StartNoteTime::ThreeSeconds => 3,
+            StartNoteTime::FiveSeconds => 5,
+            StartNoteTime::EightSeconds => 8,
+            StartNoteTime::TenSeconds => 10,
+        }
+    }
+
+    /// How long it stays, in milliseconds.
+    #[must_use]
+    pub const fn millis(self) -> u64 {
+        self.seconds() * 1000
+    }
+}
+
+/// How long a browser note about finished downloads stays before it goes by itself (D65). A note
+/// about a failure stays until it is closed, whatever this says.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum FinishNoteTime {
+    /// Five seconds.
+    FiveSeconds,
+    /// Eight seconds.
+    #[default]
+    EightSeconds,
+    /// Fifteen seconds.
+    FifteenSeconds,
+    /// Until the person closes it.
+    UntilClosed,
+}
+
+impl FinishNoteTime {
+    /// How long it stays in seconds, or `None` until the person closes it.
+    #[must_use]
+    pub const fn seconds(self) -> Option<u64> {
+        match self {
+            FinishNoteTime::FiveSeconds => Some(5),
+            FinishNoteTime::EightSeconds => Some(8),
+            FinishNoteTime::FifteenSeconds => Some(15),
+            FinishNoteTime::UntilClosed => None,
+        }
+    }
+
+    /// How long it stays in milliseconds, or `None` until the person closes it.
+    #[must_use]
+    pub fn millis(self) -> Option<u64> {
+        self.seconds().map(|seconds| seconds * 1000)
+    }
 }
 
 /// When a queue tells the person its downloads finished (D52). How is [`FinishNotice`].
@@ -950,6 +1038,12 @@ pub struct AppSettingsPatch {
     pub close_to_tray: Option<bool>,
     /// The new [`AppSettings::finish_notice`].
     pub finish_notice: Option<FinishNotice>,
+    /// The new [`AppSettings::finish_note_time`].
+    pub finish_note_time: Option<FinishNoteTime>,
+    /// The new [`AppSettings::start_notice`].
+    pub start_notice: Option<StartNotice>,
+    /// The new [`AppSettings::start_note_time`].
+    pub start_note_time: Option<StartNoteTime>,
     /// The new [`AppSettings::notify_during_do_not_disturb`].
     pub notify_during_do_not_disturb: Option<bool>,
     /// The new [`AppSettings::auto_update_addons`].
@@ -1101,6 +1195,21 @@ crate::exported::exported_consts! {
     /// download complete window offer Try again for them (D52). The others need the person's
     /// answer first: a fresh link, another folder, or keeping the original.
     pub const RETRY_FIXES: &[FixAction] = &[FixAction::Retry, FixAction::FreeDiskSpace];
+    /// Every [`StartNoteTime`] with its seconds, in the order settings offer them (D65).
+    pub const START_NOTE_TIMES: &[(StartNoteTime, u64)] = &[
+        (StartNoteTime::ThreeSeconds, StartNoteTime::ThreeSeconds.seconds()),
+        (StartNoteTime::FiveSeconds, StartNoteTime::FiveSeconds.seconds()),
+        (StartNoteTime::EightSeconds, StartNoteTime::EightSeconds.seconds()),
+        (StartNoteTime::TenSeconds, StartNoteTime::TenSeconds.seconds()),
+    ];
+    /// Every [`FinishNoteTime`] with its seconds (`null` until closed), in the order settings
+    /// offer them (D65).
+    pub const FINISH_NOTE_TIMES: &[(FinishNoteTime, Option<u64>)] = &[
+        (FinishNoteTime::FiveSeconds, FinishNoteTime::FiveSeconds.seconds()),
+        (FinishNoteTime::EightSeconds, FinishNoteTime::EightSeconds.seconds()),
+        (FinishNoteTime::FifteenSeconds, FinishNoteTime::FifteenSeconds.seconds()),
+        (FinishNoteTime::UntilClosed, FinishNoteTime::UntilClosed.seconds()),
+    ];
     /// Every [`Accent`], in the order settings offer them. The design system in `packages/ui`
     /// reads this list and defines a palette for each of these but `system`; its tests fail on
     /// an accent without one.
@@ -1156,6 +1265,18 @@ pub struct AppSettings {
     #[serde(default, with = "known_or_default")]
     #[ts(as = "FinishNotice")]
     pub finish_notice: FinishNotice,
+    /// How long a browser note about finished downloads stays (D65).
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "FinishNoteTime")]
+    pub finish_note_time: FinishNoteTime,
+    /// How the person is told that a browser download started without a window (D65).
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "StartNotice")]
+    pub start_notice: StartNotice,
+    /// How long a browser note about a download that started stays (D65).
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "StartNoteTime")]
+    pub start_note_time: StartNoteTime,
     /// Notifications about downloads that finished or failed, and problems the person must know
     /// about, show even while the system's Do Not Disturb is on (D64). Off: Do Not Disturb holds
     /// them back, as it does any app's. The brief notice of a download that started is never
@@ -1203,6 +1324,9 @@ impl AppSettings {
             start_with_system,
             close_to_tray,
             finish_notice,
+            finish_note_time,
+            start_notice,
+            start_note_time,
             notify_during_do_not_disturb,
             auto_update_addons,
             show_progress_windows,
@@ -1222,6 +1346,9 @@ impl AppSettings {
             start_with_system: new_start_with_system,
             close_to_tray: new_close_to_tray,
             finish_notice: new_finish_notice,
+            finish_note_time: new_finish_note_time,
+            start_notice: new_start_notice,
+            start_note_time: new_start_note_time,
             notify_during_do_not_disturb: new_notify_during_do_not_disturb,
             auto_update_addons: new_auto_update_addons,
             show_progress_windows: new_show_progress_windows,
@@ -1242,6 +1369,9 @@ impl AppSettings {
         set(start_with_system, new_start_with_system);
         set(close_to_tray, new_close_to_tray);
         set(finish_notice, new_finish_notice);
+        set(finish_note_time, new_finish_note_time);
+        set(start_notice, new_start_notice);
+        set(start_note_time, new_start_note_time);
         set(
             notify_during_do_not_disturb,
             new_notify_during_do_not_disturb,
@@ -1451,6 +1581,11 @@ pub enum UiEvent {
     WindowRequested,
     /// A client asked for the browser settings (the popup's settings button, D61): the desktop shows its main window on them.
     BrowserSettingsRequested,
+    /// A browser showed the note with this id (D65): the desktop tells no one else.
+    NoteShown(crate::extension::NoteId),
+    /// The person pressed one of a browser note's buttons (D65): the desktop does what it stands
+    /// for.
+    NotePressed(crate::extension::NotePressed),
     /// A queue is done; the desktop tells the person when the queue is set to
     /// [`QueueNotify::WhenDone`] (D52).
     QueueFinished(QueueReport),

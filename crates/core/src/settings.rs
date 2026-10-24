@@ -5,9 +5,9 @@ use std::path::PathBuf;
 
 use wirecatch_protocol::app::{
     Accent, AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
-    DEFAULT_MAX_CONCURRENT_DOWNLOADS, DEFAULT_QUEUE_MAX_CONCURRENT, FinishNotice,
+    DEFAULT_MAX_CONCURRENT_DOWNLOADS, DEFAULT_QUEUE_MAX_CONCURRENT, FinishNoteTime, FinishNotice,
     MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD, MediaDefaults, OutputDefaults,
-    PortablePath, Queue, QueueNotify, Theme, VideoQuality,
+    PortablePath, Queue, QueueNotify, StartNoteTime, StartNotice, Theme, VideoQuality,
 };
 use wirecatch_protocol::extension::{
     ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, MAX_VIDEO_SITES,
@@ -103,6 +103,9 @@ pub fn default_settings() -> AppSettings {
         start_with_system: false,
         close_to_tray: true,
         finish_notice: FinishNotice::Notification,
+        finish_note_time: FinishNoteTime::EightSeconds,
+        start_notice: StartNotice::Browser,
+        start_note_time: StartNoteTime::ThreeSeconds,
         notify_during_do_not_disturb: true,
         auto_update_addons: true,
         show_progress_windows: true,

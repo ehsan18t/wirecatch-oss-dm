@@ -78,7 +78,7 @@
   /** What the queue's choice of when to tell does, given how Settings says to tell. */
   const notifyHelp = $derived.by(() => {
     if (app.settings?.finish_notice === 'nothing')
-      return 'Settings, General, says to tell you nothing, so this applies once you change that.';
+      return 'Settings, Notifications, says to tell you nothing, so this applies once you change that.';
     return notify === 'each_download'
       ? 'Downloads that finish a few seconds apart are grouped together.'
       : 'Tells you once, when nothing in it downloads or waits to start. You still hear about a failed download right away.';

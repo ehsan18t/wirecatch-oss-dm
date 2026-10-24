@@ -268,6 +268,9 @@ export class DownloadWindowState {
     window_requested: ignore,
     browser_settings_requested: ignore,
     queue_finished: ignore,
+    // Between the shell and the browsers (D65).
+    note_shown: ignore,
+    note_pressed: ignore,
   };
 
   /** Keeps what concerns this window from one core event. */

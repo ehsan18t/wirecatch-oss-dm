@@ -116,38 +116,55 @@ fn branded(number: i64, name: &'static str, import: &'static [&'static str]) -> 
     }
 }
 
-#[cfg(test)]
-impl Exported for &[crate::app::Accent] {
-    fn written(&self) -> Written {
-        Written {
-            value: serde_json::to_string(self).unwrap(),
-            annotation: Some("readonly Accent[]"),
-            imports: &["Accent"],
-        }
-    }
+/// Lists of a generated enum: each written as its JSON strings, typed as that enum.
+macro_rules! enum_lists {
+    ($($name:ident),+) => {
+        $(
+            #[cfg(test)]
+            impl Exported for &[crate::app::$name] {
+                fn written(&self) -> Written {
+                    Written {
+                        value: serde_json::to_string(self).unwrap(),
+                        annotation: Some(concat!("readonly ", stringify!($name), "[]")),
+                        imports: &[stringify!($name)],
+                    }
+                }
+            }
+        )+
+    };
 }
 
-#[cfg(test)]
-impl Exported for &[crate::app::Theme] {
-    fn written(&self) -> Written {
-        Written {
-            value: serde_json::to_string(self).unwrap(),
-            annotation: Some("readonly Theme[]"),
-            imports: &["Theme"],
-        }
-    }
+enum_lists!(Accent, Theme, FixAction);
+
+/// Lists of a generated enum's values with their seconds (`$seconds` is `u64`, or `Option<u64>`
+/// for `null`), as `[value, seconds]` pairs.
+macro_rules! timed_lists {
+    ($($name:ident: $seconds:ty => $ts:literal),+) => {
+        $(
+            #[cfg(test)]
+            impl Exported for &[(crate::app::$name, $seconds)] {
+                fn written(&self) -> Written {
+                    Written {
+                        value: serde_json::to_string(self).unwrap(),
+                        annotation: Some(concat!(
+                            "readonly (readonly [",
+                            stringify!($name),
+                            ", ",
+                            $ts,
+                            "])[]"
+                        )),
+                        imports: &[stringify!($name)],
+                    }
+                }
+            }
+        )+
+    };
 }
 
-#[cfg(test)]
-impl Exported for &[crate::app::FixAction] {
-    fn written(&self) -> Written {
-        Written {
-            value: serde_json::to_string(self).unwrap(),
-            annotation: Some("readonly FixAction[]"),
-            imports: &["FixAction"],
-        }
-    }
-}
+timed_lists!(
+    StartNoteTime: u64 => "number",
+    FinishNoteTime: Option<u64> => "number | null"
+);
 
 #[cfg(test)]
 impl Exported for crate::QueueId {

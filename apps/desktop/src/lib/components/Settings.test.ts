@@ -129,9 +129,9 @@ describe('the settings screen', () => {
   });
 });
 
-describe('how finished downloads are told', () => {
+describe('how downloads are told', () => {
   it('is picked from a list, and names when the default queue tells, with a way to change it', async () => {
-    const { app } = await openSettings('general');
+    const { app } = await openSettings('notifications');
     const pick = screen.getByRole('combobox', { name: 'When a download finishes' });
     expect(pick).toHaveTextContent('Show a notification');
     expect(screen.getByText('Main tells you each time a download finishes.')).toBeVisible();
@@ -146,8 +146,29 @@ describe('how finished downloads are told', () => {
     expect(app.dialog).toEqual({ kind: 'queue', id: app.queues.defaultQueue?.id });
   });
 
+  it('notes a started download in the browser for 3 seconds, and a finished one when asked (D65)', async () => {
+    const { app } = await openSettings('notifications');
+    expect(screen.getByRole('combobox', { name: 'When a download starts' })).toHaveTextContent(
+      'Show a note in the browser',
+    );
+    const startFor = screen.getByRole('combobox', { name: 'Show the start note for' });
+    expect(startFor).toHaveTextContent('3 seconds');
+    expect(startFor).toBeEnabled();
+    const finishFor = screen.getByRole('combobox', { name: 'Show the finish note for' });
+    expect(finishFor).toHaveTextContent('8 seconds');
+    expect(finishFor).toBeDisabled();
+
+    await app.updateSettings((d) => {
+      d.start_notice = 'nothing';
+      d.finish_notice = 'browser';
+    });
+    await settle();
+    expect(screen.getByRole('combobox', { name: 'Show the start note for' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Show the finish note for' })).toBeEnabled();
+  });
+
   it('shows notifications during Do Not Disturb unless turned off (D64)', async () => {
-    const { app } = await openSettings('general');
+    const { app } = await openSettings('notifications');
     const toggle = screen.getByRole('switch', { name: 'Show notifications during Do Not Disturb' });
     expect(toggle).toBeChecked();
     await fireEvent.click(toggle);
@@ -156,7 +177,7 @@ describe('how finished downloads are told', () => {
   });
 
   it('leaves out when the queue tells while nothing is told', async () => {
-    const { app } = await openSettings('general');
+    const { app } = await openSettings('notifications');
     await app.updateSettings((d) => void (d.finish_notice = 'nothing'));
     await settle();
     expect(screen.queryByText(/tells you each time/)).toBeNull();

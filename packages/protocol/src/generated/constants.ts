@@ -5,9 +5,11 @@ import type { Call } from './Call';
 import type { ErrorCode } from './ErrorCode';
 import type { Event } from './Event';
 import type { ExtensionSettings } from './ExtensionSettings';
+import type { FinishNoteTime } from './FinishNoteTime';
 import type { FixAction } from './FixAction';
 import type { OutputFormat } from './OutputFormat';
 import type { QueueId } from './QueueId';
+import type { StartNoteTime } from './StartNoteTime';
 import type { Theme } from './Theme';
 
 /**
@@ -41,6 +43,13 @@ export const UNKNOWN_REQUEST_ID = 0;
  * start the app waits longer than this for the answer to `hello`.
  */
 export const BRIDGE_START_BUDGET_MS = 5000;
+
+/**
+ * How long the app waits, in milliseconds, for a browser to say it showed a note
+ * ([`Call::NoteShown`]) before it shows the system notification instead (D65). A browser
+ * gives no note that waited longer for its frame, since the person was told by then.
+ */
+export const NOTE_ANSWER_WAIT_MS = 1000;
 
 /**
  * Largest message body in bytes. Browsers refuse messages from a native host larger
@@ -132,6 +141,27 @@ export const THEMES: readonly Theme[] = ['system', 'light', 'dark'];
  * answer first: a fresh link, another folder, or keeping the original.
  */
 export const RETRY_FIXES: readonly FixAction[] = ['retry', 'free_disk_space'];
+
+/**
+ * Every [`StartNoteTime`] with its seconds, in the order settings offer them (D65).
+ */
+export const START_NOTE_TIMES: readonly (readonly [StartNoteTime, number])[] = [
+  ['three_seconds', 3],
+  ['five_seconds', 5],
+  ['eight_seconds', 8],
+  ['ten_seconds', 10],
+];
+
+/**
+ * Every [`FinishNoteTime`] with its seconds (`null` until closed), in the order settings
+ * offer them (D65).
+ */
+export const FINISH_NOTE_TIMES: readonly (readonly [FinishNoteTime, number | null])[] = [
+  ['five_seconds', 5],
+  ['eight_seconds', 8],
+  ['fifteen_seconds', 15],
+  ['until_closed', null],
+];
 
 /**
  * Every [`Accent`], in the order settings offer them. The design system in `packages/ui`
@@ -451,6 +481,8 @@ export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
   get_extension_settings: 1,
   hello: 1,
   list_queues: 1,
+  note_pressed: 2,
+  note_shown: 2,
   pause_all: 1,
   resume_all: 1,
   show_browser_settings: 2,
@@ -466,6 +498,7 @@ export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
 export const EVENT_SINCE: Readonly<Record<Event['type'], number>> = {
   browser_controls_changed: 2,
   extension_settings_changed: 1,
+  note_requested: 2,
   queues_changed: 1,
 };
 

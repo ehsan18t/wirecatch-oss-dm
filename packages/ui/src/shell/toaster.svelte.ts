@@ -16,14 +16,15 @@ export interface Toast {
   title?: string | undefined;
   /** Milliseconds; 0 stays until dismissed. */
   duration: number;
-  action?: ToastAction | undefined;
+  /** What it offers to do, in order; each dismisses the toast. */
+  actions: readonly ToastAction[];
 }
 
 export interface ToastOptions {
   title?: string | undefined;
   duration?: number | undefined;
-  /** One thing to do about it. A toast with an action stays longer; the same action must also be reachable elsewhere, as the toast goes away on its own. */
-  action?: ToastAction | undefined;
+  /** What to do about it, in order. A toast with actions stays longer; each action must also be reachable elsewhere, as the toast goes away on its own. */
+  actions?: readonly ToastAction[] | undefined;
 }
 
 /** How long a toast stays, by what it says; `action` for one that offers something to do. Longer for worse news, which takes longer to read and act on. */
@@ -35,7 +36,7 @@ export const TOAST_DURATION = {
   action: 10000,
 } as const;
 
-/** The most toasts on screen; a new one pushes the oldest out. */
+/** The most toasts on screen; a new one pushes out the oldest that goes by itself, else the oldest. */
 export const MAX_TOASTS = 4;
 
 /** What the live regions read: the newest toast only, so removing one never repeats an older one. */
@@ -61,10 +62,13 @@ export class Toaster {
   show(tone: ToastTone, message: string, options: ToastOptions = {}): string {
     this.#next += 1;
     const id = `toast-${String(this.#next)}`;
+    const actions = options.actions ?? [];
     const duration =
-      options.duration ?? (options.action ? TOAST_DURATION.action : TOAST_DURATION[tone]);
+      options.duration ?? (actions.length > 0 ? TOAST_DURATION.action : TOAST_DURATION[tone]);
+    // The oldest that goes by itself makes room first: one that stays until dismissed waits for the person.
     while (this.list.length >= MAX_TOASTS) {
-      const oldest = this.list.find((toast) => toast.id !== this.#held) ?? this.list[0];
+      const free = this.list.filter((toast) => toast.id !== this.#held);
+      const oldest = free.find((toast) => toast.duration > 0) ?? free[0] ?? this.list[0];
       if (!oldest) break;
       this.dismiss(oldest.id);
     }
@@ -74,7 +78,7 @@ export class Toaster {
       message,
       title: options.title,
       duration,
-      action: options.action,
+      actions,
     };
     this.list = [...this.list, toast];
     this.announcement = {
@@ -101,6 +105,13 @@ export class Toaster {
     this.#timers.clear(id);
     if (this.#held === id) this.#held = null;
     this.list = this.list.filter((toast) => toast.id !== id);
+  }
+
+  /** Dismisses every toast at once: the person is done with them all. */
+  clear(): void {
+    for (const toast of this.list) this.#timers.clear(toast.id);
+    this.#held = null;
+    this.list = [];
   }
 
   /** Holds every countdown while the person reads or acts on a toast. */

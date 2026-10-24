@@ -3,6 +3,7 @@ import type {
   Call,
   ExtensionSettings,
   NewDownload,
+  NoteId,
   Reply,
   WithdrawOutcome,
 } from '@wirecatch/protocol';
@@ -152,6 +153,22 @@ export class AppCalls {
       // The status listener already reports a broken connection; a slow answer is retried on the next connection.
       log.warn('settings', 'Could not refresh the settings and queues', error);
     }
+  }
+
+  /** Tells the app a note showed (D65). Only while connected: the note came from the app. */
+  async noteShown(id: NoteId): Promise<void> {
+    await this.#client.request(
+      { method: 'note_shown', params: { id } },
+      this.#timing.requestTimeoutMs,
+    );
+  }
+
+  /** Tells the app the person pressed one of a note's buttons (D65). */
+  async notePressed(id: NoteId, button: number): Promise<void> {
+    await this.#client.request(
+      { method: 'note_pressed', params: { id, button } },
+      this.#timing.requestTimeoutMs,
+    );
   }
 
   /** Shows the app's window. Sent even when the app is closed: a request starts it, and the app then shows its window. */

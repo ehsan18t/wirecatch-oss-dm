@@ -5,4 +5,4 @@
  * each download, or once the queue is done ([`QueueNotify`]). A failure is told at once either
  * way.
  */
-export type FinishNotice = 'notification' | 'window' | 'nothing';
+export type FinishNotice = 'notification' | 'browser' | 'window' | 'nothing';

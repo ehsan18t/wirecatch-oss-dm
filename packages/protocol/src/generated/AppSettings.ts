@@ -2,9 +2,12 @@
 import type { Accent } from './Accent';
 import type { CategoryRule } from './CategoryRule';
 import type { ExtensionSettings } from './ExtensionSettings';
+import type { FinishNoteTime } from './FinishNoteTime';
 import type { FinishNotice } from './FinishNotice';
 import type { MediaDefaults } from './MediaDefaults';
 import type { PortablePath } from './PortablePath';
+import type { StartNoteTime } from './StartNoteTime';
+import type { StartNotice } from './StartNotice';
 import type { Theme } from './Theme';
 
 /**
@@ -55,6 +58,18 @@ export type AppSettings = {
    * How the person is told that downloads finished or failed (D52).
    */
   finish_notice: FinishNotice;
+  /**
+   * How long a browser note about finished downloads stays (D65).
+   */
+  finish_note_time: FinishNoteTime;
+  /**
+   * How the person is told that a browser download started without a window (D65).
+   */
+  start_notice: StartNotice;
+  /**
+   * How long a browser note about a download that started stays (D65).
+   */
+  start_note_time: StartNoteTime;
   /**
    * Notifications about downloads that finished or failed, and problems the person must know
    * about, show even while the system's Do Not Disturb is on (D64). Off: Do Not Disturb holds

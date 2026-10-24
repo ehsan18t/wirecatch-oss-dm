@@ -247,6 +247,64 @@ pub enum WithdrawOutcome {
     AlreadyStarted,
 }
 
+/// Names one note the app asked a browser to show (D65), so the extension can say it showed it and
+/// which of its buttons was pressed. The app keeps what each button does; the extension never
+/// holds a download's id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct NoteId(#[ts(type = "number & { readonly __brand: \"NoteId\" }")] pub u64);
+
+/// What a note is about, which decides how it looks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum NoteKind {
+    /// A browser download started without a window of its own.
+    Started,
+    /// Downloads finished.
+    Finished,
+    /// Downloads failed, or finished and failed together.
+    Failed,
+}
+
+/// A note the app asks the browser in front to show in the tab the person is looking at (D65):
+/// the words of the system notification it stands in for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct BrowserNote {
+    /// Names it in [`NoteShown`] and [`NotePressed`].
+    pub id: NoteId,
+    /// What it is about.
+    pub kind: NoteKind,
+    /// The first line.
+    pub title: String,
+    /// The text under it.
+    pub body: String,
+    /// Its buttons' words, in order. Pressing one sends its place back in [`NotePressed`].
+    pub buttons: Vec<String>,
+    /// How long it stays in milliseconds before it goes by itself; `None` until it is closed.
+    #[ts(type = "number | null")]
+    pub stays_ms: Option<u64>,
+}
+
+/// The browser showed a note in the tab the person is looking at, so the app tells no one else.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct NoteShown {
+    /// The note.
+    pub id: NoteId,
+}
+
+/// The person pressed one of a note's buttons.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct NotePressed {
+    /// The note.
+    pub id: NoteId,
+    /// The button's place among [`BrowserNote::buttons`].
+    pub button: u32,
+}
+
 /// The settings that are the extension's own. The app stores them; the extension only edits
 /// them remotely and keeps a copy for the browser session (D61).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

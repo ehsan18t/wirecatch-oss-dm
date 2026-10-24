@@ -23,6 +23,7 @@ export const SCOPES = {
   hub: true,
   media: true,
   native: true,
+  notes: true,
   notices: true,
   page: true,
   popup: true,

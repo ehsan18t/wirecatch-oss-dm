@@ -15,7 +15,7 @@
 </script>
 
 <script lang="ts">
-  // The window's toasts, stacked at the bottom right. Screen readers hear each new toast once, through two live regions that are always on the page (a region must exist before its text arrives): failures interrupt, the rest wait their turn. While a modal layer is open the page behind it is inert, toasts included; the layer repeats new toasts inside itself, for the toaster the window's root provided (`provideToaster`).
+  // The window's toasts, stacked at the bottom right with the newest nearest the corner, each with its actions and a close button, and one button to clear them all while there are several, always at the bottom. Screen readers hear each new toast once, through two live regions that are always on the page (a region must exist before its text arrives): failures interrupt, the rest wait their turn. While a modal layer is open the page behind it is inert, toasts included; the layer repeats new toasts inside itself, for the toaster the window's root provided (`provideToaster`).
   import X from '~icons/lucide/x';
   import { cn } from '../lib/cn';
   import { closestElement, findElement } from '../lib/dom';
@@ -32,9 +32,11 @@
     toaster: Toaster;
     /** The region's name for screen readers. */
     label?: string;
+    /** Laid out where it is placed instead of fixed to the window's corner: for a frame that is itself in the corner, and is as tall as its toasts. */
+    inPlace?: boolean;
   }
 
-  let { toaster, label = 'Notifications' }: Props = $props();
+  let { toaster, label = 'Notifications', inPlace = false }: Props = $props();
 
   let region = $state<HTMLElement | null>(null);
   let hovered = false;
@@ -79,6 +81,12 @@
     toaster.setPaused(hovered || focused);
   }
 
+  /** Clears every toast; focus goes back to where it came from. */
+  function clearAll() {
+    if (region?.contains(document.activeElement) && returnFocus?.isConnected) returnFocus.focus();
+    toaster.clear();
+  }
+
   /** Before a focused toast goes, focus moves to its neighbour, or back to where it came from. */
   function dismiss(id: string) {
     if (toastElement(id)?.contains(document.activeElement)) {
@@ -97,14 +105,16 @@
   bind:this={region}
   role="region"
   aria-label={label}
-  class="pointer-events-none fixed right-4 bottom-4 z-toast flex w-toast max-w-full flex-col-reverse gap-2"
+  class={cn(
+    'pointer-events-none flex w-toast max-w-full flex-col gap-2',
+    inPlace ? 'p-2' : 'fixed right-4 bottom-4 z-toast',
+  )}
   onpointerenter={() => setHovered(true)}
   onpointerleave={() => setHovered(false)}
   {onfocusin}
   {onfocusout}
 >
   {#each toaster.list as toast (toast.id)}
-    {@const action = toast.action}
     <div
       data-toast={toast.id}
       class={cn(
@@ -123,18 +133,21 @@
           <p class="truncate text-ui font-semibold text-ink">{toast.title}</p>
         {/if}
         <p class="text-ui wrap-break-word text-ink-muted">{toast.message}</p>
-        {#if action}
-          <Button
-            variant="link"
-            size="sm"
-            class="mt-1 self-start"
-            onclick={() => {
-              action.run();
-              dismiss(toast.id);
-            }}
-          >
-            {action.label}
-          </Button>
+        {#if toast.actions.length > 0}
+          <div class="mt-1 flex flex-wrap gap-x-3">
+            {#each toast.actions as action (action.label)}
+              <Button
+                variant="link"
+                size="sm"
+                onclick={() => {
+                  action.run();
+                  dismiss(toast.id);
+                }}
+              >
+                {action.label}
+              </Button>
+            {/each}
+          </div>
         {/if}
       </div>
       <IconButton
@@ -147,6 +160,15 @@
       />
     </div>
   {/each}
+  {#if toaster.list.length > 1}
+    <!-- Last, below the newest toast, so it stays in the same corner however many toasts there are and comes last with Tab as on screen; on the toasts' own surface, so it reads on whatever is behind the region, a website included. -->
+    <div
+      class={cn(FLYOUT_SURFACE, 'pointer-events-auto self-end')}
+      in:shift={{ from: 'right', by: 'lg' }}
+    >
+      <Button variant="ghost" size="sm" onclick={clearAll}>Clear all</Button>
+    </div>
+  {/if}
 </div>
 
 <LiveRegions announcement={toaster.announcement} />

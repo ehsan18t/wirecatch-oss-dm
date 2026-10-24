@@ -25,6 +25,7 @@
   import FileSettings from './settings/FileSettings.svelte';
   import GeneralSettings from './settings/GeneralSettings.svelte';
   import MediaSettings from './settings/MediaSettings.svelte';
+  import NotificationSettings from './settings/NotificationSettings.svelte';
   import QueueSettings from './settings/QueueSettings.svelte';
   import SpeedSettings from './settings/SpeedSettings.svelte';
   import type { SectionProps } from './settings/row';
@@ -35,6 +36,7 @@
   /** The component that shows each section's settings. */
   const SECTION_VIEW: Record<SectionId, Component<SectionProps>> = {
     general: GeneralSettings,
+    notifications: NotificationSettings,
     files: FileSettings,
     browser: BrowserSettings,
     media: MediaSettings,

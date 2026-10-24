@@ -35,13 +35,9 @@ pub struct Button {
 pub enum Lasts {
     /// Until the person dismisses it, and in the system's list of notifications.
     Kept,
-    /// A few seconds ([`BRIEF`]), and never in the system's list: news the person needs no
-    /// record of.
-    Brief,
+    /// This long, and never in the system's list: news the person needs no record of.
+    Brief(std::time::Duration),
 }
-
-/// How long a [`Lasts::Brief`] notification shows.
-pub const BRIEF: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// One system notification.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,10 +108,10 @@ fn retry_helps(row: &DownloadSummary) -> bool {
         .is_none_or(|fix| RETRY_FIXES.contains(&fix))
 }
 
-/// For a browser download that started without a window of its own (D63): brief, since the person
-/// is still browsing. A video says the quality the saved choices took (D50).
+/// For a browser download that started without a window of its own (D63): it `stays` briefly, since
+/// the person is still browsing. A video says the quality the saved choices took (D50).
 #[must_use]
-pub fn started(row: &DownloadSummary) -> Notice {
+pub fn started(row: &DownloadSummary, stays: std::time::Duration) -> Notice {
     let body = match &row.media {
         None => row.file_name.clone(),
         Some(media) => match &media.instead_of {
@@ -131,7 +127,7 @@ pub fn started(row: &DownloadSummary) -> Notice {
         body,
         buttons: Vec::new(),
         click: show(None, &[row]),
-        lasts: Lasts::Brief,
+        lasts: Lasts::Brief(stays),
         important: false,
     }
 }
@@ -323,15 +319,17 @@ mod tests {
         notice.buttons.iter().map(|b| b.label).collect()
     }
 
+    const BRIEFLY: std::time::Duration = std::time::Duration::from_secs(3);
+
     #[test]
     fn a_started_download_is_told_briefly_with_the_quality_a_video_took() {
         let mut started = row(1, "videos", DownloadStatus::Downloading);
-        let notice = super::started(&started);
+        let notice = super::started(&started, BRIEFLY);
         assert_eq!(notice.title, "Download started");
         assert_eq!(notice.body, "file-1.zip");
         assert_eq!(notice.buttons, []);
         assert_eq!(notice.click, reveal(None, &[1]));
-        assert_eq!(notice.lasts, Lasts::Brief);
+        assert_eq!(notice.lasts, Lasts::Brief(BRIEFLY));
         assert!(!notice.important, "news, never through Do Not Disturb");
         started.media = Some(MediaSummary {
             quality: "720p".into(),
@@ -340,7 +338,7 @@ mod tests {
             instead_of: Some("1080p".into()),
         });
         assert_eq!(
-            super::started(&started).body,
+            super::started(&started, BRIEFLY).body,
             "file-1.zip, 720p (1080p wasn’t offered)"
         );
         assert_eq!(finished(&[&done(2)]).unwrap().lasts, Lasts::Kept);

@@ -1,0 +1,3 @@
+/* The notes preview's frame: the notes page's own stylesheet, so the preview shows what the extension does. */
+@import '../src/entrypoints/notes/style.css';
+@source '../src/ui/notes';

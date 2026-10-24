@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>A website</title>
+    <style>
+      body {
+        margin: 0;
+        font:
+          16px/1.6 Georgia,
+          serif;
+        background: #f4efe6;
+        color: #222;
+      }
+      main {
+        max-width: 42rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+      }
+      a {
+        color: #8a3b12;
+      }
+      :root[data-site='dark'] body {
+        background: #15171c;
+        color: #ddd;
+      }
+      :root[data-site='dark'] a {
+        color: #f5a97f;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>A website the person is reading</h1>
+      <p>
+        The notes come in over whatever page is open, at its bottom right, in a frame only as big as
+        they are, so the rest of the page stays as it was.
+      </p>
+      <p>
+        <a id="page-link" href="#clicked"
+          >A link under where the notes would be, if the frame were bigger than its notes</a
+        >
+      </p>
+      <p style="height: 120vh">More of the page.</p>
+    </main>
+    <script type="module" src="./notes-host.ts"></script>
+  </body>
+</html>

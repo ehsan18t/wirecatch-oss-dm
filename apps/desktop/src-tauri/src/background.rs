@@ -12,15 +12,18 @@ use tokio::time::Instant;
 use wirecatch_core::Manager;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
-    AppSettingsPatch, DownloadSummary, FinishNotice, Queue, QueueNotify, QueueReport, UiEvent,
+    AppSettings, AppSettingsPatch, DownloadSummary, FinishNotice, Queue, QueueNotify, QueueReport,
+    StartNotice, UiEvent,
 };
+use wirecatch_protocol::extension::NoteKind;
 
 use crate::activity::{Activity, Ended};
 use crate::autostart::{self, Action};
 use crate::questions::{Attention, attention};
 use crate::window::MAIN_WINDOW;
 use crate::{
-    RESYNC_EVENT, UI_EVENT, download_windows, finished_window, sleep, system_notices, tray,
+    RESYNC_EVENT, UI_EVENT, browser_notes, download_windows, finished_window, sleep,
+    system_notices, tray,
 };
 
 /// The tooltip changes at most this often.
@@ -54,9 +57,9 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
                         &app,
                         &wirecatch_protocol::desktop::Reveal::browser_settings(),
                     ),
-                    Attention::Started(row) => {
-                        system_notices::show(&app, crate::notices::started(&row));
-                    }
+                    Attention::Started(row) => started(&app, &row),
+                    Attention::NoteShown(id) => browser_notes::shown(&app, id),
+                    Attention::NotePressed(pressed) => browser_notes::pressed(&app, &pressed),
                     Attention::Theme(theme) => crate::appearance::follow_theme(&app, theme),
                     Attention::Notify { title, body } => {
                         let unseen = app.get_webview_window(MAIN_WINDOW).is_none()
@@ -182,18 +185,57 @@ impl Teller {
     }
 }
 
-/// Tells the person, the way `how` says (D52).
-pub fn tell<R: Runtime>(app: &AppHandle<R>, how: FinishNotice, tell: &Tell) {
-    match how {
+/// Tells the person that a browser download started without a window, the way `settings` say
+/// (D65): a note in the browser for as long as they say, else a notification as brief.
+pub fn started<R: Runtime>(app: &AppHandle<R>, row: &DownloadSummary) {
+    let Some(settings) = settings_now(app) else {
+        return;
+    };
+    if settings.start_notice == StartNotice::Nothing {
+        return;
+    }
+    let stays = Duration::from_millis(settings.start_note_time.millis());
+    let notice = crate::notices::started(row, stays);
+    browser_notes::tell(app, notice, NoteKind::Started, Some(stays));
+}
+
+fn settings_now<R: Runtime>(app: &AppHandle<R>) -> Option<AppSettings> {
+    app.try_state::<crate::host::Core>()
+        .and_then(|core| core.get().map(Manager::get_settings))
+}
+
+/// Tells the person, the way `settings` say (D52, D65).
+pub fn tell<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings, tell: &Tell) {
+    let notice = || match tell {
+        Tell::Finished(rows) => crate::notices::finished(&rows.iter().collect::<Vec<_>>()),
+        Tell::Failed(rows) => crate::notices::failed(&rows.iter().collect::<Vec<_>>()),
+        Tell::Queue(report) => crate::notices::queue_done(report),
+    };
+    match settings.finish_notice {
         FinishNotice::Nothing => {}
         FinishNotice::Notification => {
-            let notice = match tell {
-                Tell::Finished(rows) => crate::notices::finished(&rows.iter().collect::<Vec<_>>()),
-                Tell::Failed(rows) => crate::notices::failed(&rows.iter().collect::<Vec<_>>()),
-                Tell::Queue(report) => crate::notices::queue_done(report),
-            };
-            if let Some(notice) = notice {
+            if let Some(notice) = notice() {
                 system_notices::show(app, notice);
+            }
+        }
+        FinishNotice::Browser => {
+            let failed = match tell {
+                Tell::Finished(_) => false,
+                Tell::Failed(_) => true,
+                Tell::Queue(report) => !report.failed.is_empty(),
+            };
+            // A failure needs the person: its note stays until it is closed.
+            let (kind, stays) = if failed {
+                (NoteKind::Failed, None)
+            } else {
+                let stays = settings
+                    .finish_note_time
+                    .millis()
+                    .map(Duration::from_millis);
+                (NoteKind::Finished, stays)
+            };
+            if let Some(notice) = notice() {
+                browser_notes::tell(app, notice, kind, stays);
             }
         }
         FinishNotice::Window => match tell {
@@ -245,7 +287,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
                         UiEvent::QueuesChanged(queues) => teller.queues(&queues),
                         UiEvent::QueueFinished(report) => {
                             if let Some(now) = teller.queue_finished(&report) {
-                                tell(&app, settings.finish_notice, &now);
+                                tell(&app, &settings, &now);
                             }
                         }
                         _ => {}
@@ -271,7 +313,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
             }
             () = at(teller.due()) => {
                 for due in teller.take_due(Instant::now()) {
-                    tell(&app, settings.finish_notice, &due);
+                    tell(&app, &settings, &due);
                 }
             }
         }

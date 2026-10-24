@@ -15,6 +15,7 @@ use wirecatch_protocol::QuestionId;
 use wirecatch_protocol::app::{
     AddonRequestItem, DownloadSummary, MediaChoice, MediaReading, PendingCapture, Theme, UiEvent,
 };
+use wirecatch_protocol::extension::{NoteId, NotePressed};
 
 /// What a core event needs from the desktop besides reaching the open windows.
 #[derive(Debug, Clone, PartialEq)]
@@ -32,9 +33,13 @@ pub enum Attention {
     /// them, and a page still loading takes them later ([`crate::window::PendingSelection`]).
     ShowBrowserSettings,
     /// A browser download started without a window of its own (`ask_before_download` off, or a
-    /// video downloaded with the saved choices): a brief notification, and no window comes up,
-    /// since the person is still browsing (D63).
+    /// video downloaded with the saved choices): told briefly as the settings say, and no window
+    /// comes up, since the person is still browsing (D63, D65).
     Started(Box<DownloadSummary>),
+    /// A browser showed the note with this id (D65).
+    NoteShown(NoteId),
+    /// The person pressed one of a browser note's buttons (D65).
+    NotePressed(NotePressed),
     /// The settings changed: every window takes on their theme (see [`crate::appearance`]).
     Theme(Theme),
     /// Something went wrong that the person must know about: a system notification when no
@@ -60,6 +65,8 @@ pub fn attention(event: &UiEvent) -> Attention {
         UiEvent::WindowRequested => Attention::ShowMain,
         UiEvent::BrowserSettingsRequested => Attention::ShowBrowserSettings,
         UiEvent::Captured(row) => Attention::Started(Box::new(row.clone())),
+        UiEvent::NoteShown(id) => Attention::NoteShown(*id),
+        UiEvent::NotePressed(pressed) => Attention::NotePressed(pressed.clone()),
         UiEvent::SettingsChanged(settings) => Attention::Theme(settings.theme),
         UiEvent::StorageFailed(error) => Attention::Notify {
             title: format!(

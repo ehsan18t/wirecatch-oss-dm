@@ -5,6 +5,8 @@ import type { DownloadId } from './DownloadId';
 import type { DownloadSummary } from './DownloadSummary';
 import type { ImportSummary } from './ImportSummary';
 import type { MediaChoice } from './MediaChoice';
+import type { NoteId } from './NoteId';
+import type { NotePressed } from './NotePressed';
 import type { PendingCapture } from './PendingCapture';
 import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
@@ -71,4 +73,6 @@ export type UiEvent =
     }
   | { type: 'window_requested' }
   | { type: 'browser_settings_requested' }
+  | { type: 'note_shown'; data: NoteId }
+  | { type: 'note_pressed'; data: NotePressed }
   | { type: 'queue_finished'; data: QueueReport };

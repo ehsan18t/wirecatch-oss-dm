@@ -1,6 +1,7 @@
 // The picture of each settings section, in the navigation and the command palette.
 
 import ArrowRightLeft from '~icons/lucide/arrow-right-left';
+import Bell from '~icons/lucide/bell';
 import Folder from '~icons/lucide/folder';
 import Gauge from '~icons/lucide/gauge';
 import Globe from '~icons/lucide/globe';
@@ -14,6 +15,7 @@ import type { SectionId } from '$lib/settings-schema';
 
 export const SECTION_ICON: Record<SectionId, IconComponent> = {
   general: Monitor,
+  notifications: Bell,
   files: Folder,
   browser: Globe,
   media: Video,
