@@ -51,6 +51,7 @@
   import { DAYS_PER_WEEK, WEEKDAYS } from '$lib/time';
   import {
     concurrentLimitHelp,
+    firstConcurrent,
     ownConnectionsHelp,
     queueConcurrentProblem,
     queueConnectionsProblem,
@@ -67,7 +68,7 @@
   const original = (() => (id === null ? undefined : app.queues.byId(id)))();
   const opened = original?.settings;
   // What the form suggests when a limit or schedule is turned on for a queue that has none.
-  // The core makes a new queue that follows the app; a limit switched on starts at the app's value.
+  // The core makes a new queue that follows the app; a limit switched on starts near the app's value.
   const FIRST_SPEED_LIMIT = 2 * MB;
   const FIRST_START: TimeOfDay = { hour: 1, minute: 0 };
   const FIRST_STOP: TimeOfDay = { hour: 7, minute: 0 };
@@ -81,7 +82,8 @@
   let description = $state(opened?.description ?? '');
   let concurrentOn = $state(ownConcurrent !== null);
   let maxConcurrent = $state(
-    ownConcurrent ?? app.settings?.max_concurrent_downloads ?? DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+    ownConcurrent ??
+      firstConcurrent(app.settings?.max_concurrent_downloads ?? DEFAULT_MAX_CONCURRENT_DOWNLOADS),
   );
   let limitOn = $state(ownLimit !== null);
   const initialLimit = splitKbOrMb(
@@ -97,22 +99,18 @@
   // Picking single days is its own choice, kept while the days picked happen to make a pattern.
   let pickingDays = $state(dayPattern(opened?.schedule?.days ?? []) === 'custom');
   let notify = $state<QueueNotify>(opened?.notify ?? 'each_download');
+  const appConnections = app.settings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD;
   let connectionsOn = $state(ownConnections !== null);
-  let connections = $state(
-    ownConnections ?? app.settings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD,
-  );
+  let connections = $state(ownConnections ?? appConnections);
 
-  const appSettings = $derived(app.settings);
   const concurrentHelp = $derived(
-    concurrentLimitHelp(concurrentOn, appSettings?.max_concurrent_downloads),
-  );
-  const limitHelp = $derived(speedLimitHelp(limitOn, appSettings?.global_speed_limit ?? null));
-  const connectionsHelp = $derived(
-    ownConnectionsHelp(
-      connectionsOn,
-      appSettings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+    concurrentLimitHelp(
+      concurrentOn ? maxConcurrent : null,
+      app.settings?.max_concurrent_downloads,
     ),
   );
+  const limitHelp = $derived(speedLimitHelp(limitOn, app.settings?.global_speed_limit ?? null));
+  const connectionsHelp = $derived(ownConnectionsHelp(connectionsOn, appConnections));
 
   const notifyHelp = $derived(queueNotifyHelp(notify, app.settings?.finish_notice));
   let error = $state('');
@@ -262,8 +260,9 @@
       {/snippet}
     </Field>
 
+    <h3 id="{formId}-limits" class="-mb-3 text-ui font-medium text-ink">Limits</h3>
     <section
-      aria-label="Limits"
+      aria-labelledby="{formId}-limits"
       class="flex flex-col divide-y divide-line rounded-md border border-line bg-layer"
     >
       <SwitchCard

@@ -30,8 +30,8 @@
       {#each app.queues.list as queue (queue.id)}
         {const facts = $derived([
           queue.status.paused ? 'Paused' : formatSchedule(queue.settings.schedule),
-          ...queueLimitFacts(queue.settings),
           ...(queue.settings.notify === 'when_done' ? ['Tells you once the queue is done'] : []),
+          ...queueLimitFacts(queue.settings),
         ])}
         <li class="flex items-center gap-3 py-2 pr-2 pl-3">
           <span class="flex min-w-0 flex-1 flex-col gap-0.5">

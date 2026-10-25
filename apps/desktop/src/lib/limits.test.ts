@@ -9,6 +9,7 @@ import { MB } from '@wirecatch/units';
 import { describe, expect, it } from 'vitest';
 import {
   concurrentLimitHelp,
+  firstConcurrent,
   ownConnectionsHelp,
   queueConcurrentProblem,
   queueConnectionsProblem,
@@ -63,15 +64,20 @@ describe('download limits', () => {
   });
 
   it('says what the app still limits, whether a queue has its own limit or not', () => {
-    expect(concurrentLimitHelp(false, 5)).toBe("Uses the app's limit: 5 at once.");
-    expect(concurrentLimitHelp(true, 5)).toBe(
-      "Others in this queue wait their turn. The app's limit of 5 still applies to all downloads.",
+    expect(concurrentLimitHelp(null, 5)).toBe("Uses the app's limit: 5 at once.");
+    expect(concurrentLimitHelp(2, 5)).toBe(
+      "Up to this many of its downloads run at once, and the rest wait their turn. The app's limit of 5 still applies to all downloads.",
     );
-    expect(speedLimitHelp(false, null)).toBe("Uses the app's speed limit, which is off.");
+    expect(concurrentLimitHelp(8, 5)).toMatch(
+      /The app's limit of 5 is lower, so at most 5 run at once\.$/,
+    );
+    expect(firstConcurrent(5)).toBe(4);
+    expect(firstConcurrent(1)).toBe(1);
+    expect(speedLimitHelp(false, null)).toBe("Uses the app's limit: none.");
     expect(speedLimitHelp(true, 2 * MB)).toBe(
       "Shared by everything running in this queue. The app's limit of 2 MB/s still applies.",
     );
-    expect(ownConnectionsHelp(false, 8)).toBe("Uses the app's 8.");
+    expect(ownConnectionsHelp(false, 8)).toBe("Uses the app's setting: 8 per download.");
     expect(ownConnectionsHelp(true, 8)).toBe(
       "Each download in this queue opens up to this many, instead of the app's 8.",
     );
