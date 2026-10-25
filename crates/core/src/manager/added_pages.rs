@@ -14,34 +14,33 @@ use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 
 use super::Manager;
-use super::downloads::{NewEntry, parse_web_url};
+use super::arrival::{Fetch, Kind, NewEntry, Wanted};
+use super::downloads::parse_web_url;
 use super::media::{Held, MediaPending, MediaSource, check_room};
 use super::placement::QueueRequest;
 use super::state::Entry;
 use crate::error::Result;
-use crate::local_network::ChosenBy;
-use crate::store::Origin;
 
 /// A download added in the app whose server answered with a web page, to be
 /// read for its video instead.
 pub(super) struct AnsweredPage {
-    pub url: Url,
+    pub fetch: Fetch,
     pub queue: QueueId,
     /// The folder the person chose for it, if any.
     pub folder: Option<PathBuf>,
-    pub origin: Origin,
-    pub chosen_by: ChosenBy,
 }
 
 impl AnsweredPage {
     /// The page download `entry` answered with.
     pub(super) fn of(entry: &Entry) -> Option<Self> {
         Some(Self {
-            url: Url::parse(&entry.row.url).ok()?,
+            fetch: Fetch {
+                url: Url::parse(&entry.row.url).ok()?,
+                origin: entry.origin.clone(),
+                chosen_by: entry.chosen_by,
+            },
             queue: entry.row.queue,
             folder: entry.naming.folder.as_ref().map(PathBuf::from),
-            origin: entry.origin.clone(),
-            chosen_by: entry.chosen_by,
         })
     }
 }
@@ -73,12 +72,12 @@ impl Manager {
         if let Some((&id, _)) = state
             .media
             .iter()
-            .find(|(_, m)| m.source.url == url && m.source.kind == MediaKind::Page)
+            .find(|(_, m)| m.source.fetch.url == url && m.source.kind == MediaKind::Page)
         {
             return Ok(id);
         }
         check_room(&state)?;
-        let source = MediaSource::page(url, Origin::default(), ChosenBy::Person);
+        let source = MediaSource::page(Fetch::typed(url));
         let held = Held {
             handovers: Vec::new(),
             folder,
@@ -96,7 +95,7 @@ impl Manager {
         let Ok(mut state) = self.lock_open() else {
             return;
         };
-        let source = MediaSource::page(page.url, page.origin, page.chosen_by);
+        let source = MediaSource::page(page.fetch);
         let held = Held {
             handovers: Vec::new(),
             folder: page.folder,
@@ -112,19 +111,14 @@ impl Manager {
         let source = pending.source;
         let added = self
             .insert(NewEntry {
-                url: source.url,
-                file_name: None,
-                hint_name: None,
-                folder: pending.folder,
+                fetch: source.fetch,
+                wanted: Wanted {
+                    folder: pending.folder,
+                    ..Wanted::default()
+                },
                 queue: pending.queue,
                 start: !pending.later,
-                origin: source.origin,
-                chosen_by: source.chosen_by,
-                handover: None,
-                expect: None,
-                media: None,
-                video_check: false,
-                category: None,
+                kind: Kind::File { video_check: false },
             })
             .await;
         if let Err(e) = added {

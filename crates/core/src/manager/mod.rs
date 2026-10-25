@@ -3,6 +3,7 @@
 
 mod added_pages;
 mod addons;
+mod arrival;
 mod captures;
 mod downloads;
 #[cfg(test)]
