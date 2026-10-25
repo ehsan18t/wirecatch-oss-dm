@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::convert::EncoderCatalog;
-use crate::addons::ToolPaths;
+use wirecatch_addons::ToolPaths;
 
 /// The media add-on's programs, as media runs them.
 #[derive(Debug, Clone)]

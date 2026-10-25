@@ -10,9 +10,9 @@
 
 #![forbid(unsafe_code)]
 
-pub(crate) mod archive;
-pub(crate) mod manifest;
-pub(crate) mod signature;
+pub mod archive;
+pub mod manifest;
+pub mod signature;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -23,16 +23,17 @@ use tracing::warn;
 use manifest::{AddonComponent, ComponentId, Sha256Digest};
 
 /// The add-on's folder inside the data folder.
-pub(crate) fn media_dir(data_dir: &Path) -> PathBuf {
+#[must_use]
+pub fn media_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("addons").join(manifest::MEDIA_ADDON_FOLDER)
 }
 
 /// The record of what is installed, in the add-on folder.
-pub(crate) const RECORD_FILE: &str = "installed.json";
+pub const RECORD_FILE: &str = "installed.json";
 
 /// What is installed, as recorded on disk.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Record {
+pub struct Record {
     /// By part.
     pub components: BTreeMap<ComponentId, InstalledComponent>,
     /// When the update check last ran, in Unix milliseconds.
@@ -42,7 +43,7 @@ pub(crate) struct Record {
 
 /// One installed part.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct InstalledComponent {
+pub struct InstalledComponent {
     pub version: String,
     /// The program to run, relative to the component folder.
     pub program: String,
@@ -52,7 +53,7 @@ pub(crate) struct InstalledComponent {
 
 /// One installed file, as unpacked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct InstalledFile {
+pub struct InstalledFile {
     /// Relative to the part's folder, with `/` separators.
     pub path: String,
     pub size: u64,
@@ -83,6 +84,7 @@ impl Record {
         wirecatch_files::whole_file::replace(dir, RECORD_FILE, &json)
     }
 
+    #[must_use]
     pub fn version(&self, id: ComponentId) -> Option<&str> {
         self.components.get(&id).map(|c| c.version.as_str())
     }
@@ -90,7 +92,7 @@ impl Record {
 
 /// How closely the add-on's files are looked at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Check {
+pub enum Check {
     /// Each file is there with its recorded size: on every start of the app.
     Sizes,
     /// Each file's SHA-256 matches too: when repairing, and after a program could not be started.
@@ -99,7 +101,7 @@ pub(crate) enum Check {
 
 /// The programs of an installed, intact media add-on.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ToolPaths {
+pub struct ToolPaths {
     pub ytdlp: PathBuf,
     pub ffmpeg: PathBuf,
     pub deno: PathBuf,
@@ -108,12 +110,14 @@ pub(crate) struct ToolPaths {
 }
 
 /// yt-dlp's cache folder in the add-on folder `dir`.
-pub(crate) fn ytdlp_cache(dir: &Path) -> PathBuf {
+#[must_use]
+pub fn ytdlp_cache(dir: &Path) -> PathBuf {
     dir.join("cache")
 }
 
 /// The add-on's programs if every recorded file is there with its recorded size, so nothing half-installed or damaged is ever run, and with [`Check::Hashes`] its SHA-256. Each program must be one of those files: a record naming any other (written by hand, or by a bug) runs nothing. Blocks on the disk.
-pub(crate) fn tools(dir: &Path, record: &Record, check: Check) -> Option<ToolPaths> {
+#[must_use]
+pub fn tools(dir: &Path, record: &Record, check: Check) -> Option<ToolPaths> {
     let program = |id: ComponentId| -> Option<PathBuf> {
         let component = record.components.get(&id)?;
         if !component.files.iter().any(|f| f.path == component.program) {
@@ -146,7 +150,8 @@ pub(crate) fn tools(dir: &Path, record: &Record, check: Check) -> Option<ToolPat
 /// Whether yt-dlp version `candidate` is newer than `installed`. Versions are
 /// dates such as `2026.08.19`, sometimes with a fourth number; they compare
 /// number by number.
-pub(crate) fn newer(candidate: &str, installed: &str) -> bool {
+#[must_use]
+pub fn newer(candidate: &str, installed: &str) -> bool {
     let parse = |v: &str| -> Option<Vec<u64>> {
         v.trim_start_matches('v')
             .split('.')
@@ -162,7 +167,7 @@ pub(crate) fn newer(candidate: &str, installed: &str) -> bool {
 
 /// A GitHub release, as far as the update check reads it.
 #[derive(Debug, Deserialize)]
-pub(crate) struct Release {
+pub struct Release {
     pub tag_name: String,
     /// When it was published (RFC 3339).
     #[serde(default)]
@@ -179,7 +184,7 @@ pub(crate) struct Release {
 
 /// A file attached to a GitHub release.
 #[derive(Debug, Deserialize)]
-pub(crate) struct Asset {
+pub struct Asset {
     pub name: String,
     pub browser_download_url: String,
     #[serde(default)]
@@ -188,7 +193,8 @@ pub(crate) struct Asset {
 
 /// The checksum of `file` in a `SHA2-256SUMS` list (`<hex>  <name>` lines; a
 /// `*` before the name marks binary mode).
-pub(crate) fn checksum_for(list: &str, file: &str) -> Option<Sha256Digest> {
+#[must_use]
+pub fn checksum_for(list: &str, file: &str) -> Option<Sha256Digest> {
     list.lines().find_map(|line| {
         let (hash, name) = line.trim().split_once(char::is_whitespace)?;
         let name = name.trim().trim_start_matches('*');
@@ -199,7 +205,8 @@ pub(crate) fn checksum_for(list: &str, file: &str) -> Option<Sha256Digest> {
 }
 
 /// Whether `wanted` must be installed: its installed version differs, keeping a yt-dlp that is already newer than `wanted` (the update check installed it).
-pub(crate) fn outdated(record: &Record, wanted: &AddonComponent) -> bool {
+#[must_use]
+pub fn outdated(record: &Record, wanted: &AddonComponent) -> bool {
     match record.version(wanted.id()) {
         None => true,
         Some(have) if wanted.id() == ComponentId::YtDlp => newer(wanted.version(), have),

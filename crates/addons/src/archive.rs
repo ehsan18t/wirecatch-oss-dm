@@ -25,7 +25,7 @@ const MAX_FILE: u64 = GIB;
 /// other program may write to, replace or delete it while it is open, so the
 /// bytes that are unpacked are the bytes that were checked. (On Unix the open
 /// file stays the one checked even if another is renamed over it.)
-pub(crate) fn open_release(path: &Path) -> io::Result<File> {
+pub fn open_release(path: &Path) -> io::Result<File> {
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
@@ -43,12 +43,12 @@ pub(crate) fn open_release(path: &Path) -> io::Result<File> {
 }
 
 /// The SHA-256 of a file.
-pub(crate) fn sha256_file(path: &Path) -> io::Result<Sha256Digest> {
+pub fn sha256_file(path: &Path) -> io::Result<Sha256Digest> {
     sha256_of(&mut open_release(path)?)
 }
 
 /// The SHA-256 of everything in `file`, from its start.
-pub(crate) fn sha256_of(file: &mut File) -> io::Result<Sha256Digest> {
+pub fn sha256_of(file: &mut File) -> io::Result<Sha256Digest> {
     file.seek(SeekFrom::Start(0))?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; MIB_USIZE];
@@ -63,11 +63,11 @@ pub(crate) fn sha256_of(file: &mut File) -> io::Result<Sha256Digest> {
 }
 
 /// The installed files of a part.
-pub(crate) type Installed = Vec<super::InstalledFile>;
+pub type Installed = Vec<super::InstalledFile>;
 
 /// Why a release could not be unpacked. Each message is a sentence for a person, and says its cause, so the cause is a field rather than a source.
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum ArchiveError {
+pub enum ArchiveError {
     /// The manifest names no file to install.
     #[error("The add-on manifest names no file.")]
     NoFiles,
@@ -103,7 +103,7 @@ pub(crate) enum ArchiveError {
 /// Puts the component's files from the verified release file `release` (the
 /// same open file that was checked) into the empty folder `stage`. `Err` says
 /// what was wrong, in a sentence.
-pub(crate) fn unpack(
+pub fn unpack(
     component: &AddonComponent,
     release: &mut File,
     stage: &Path,
@@ -205,7 +205,7 @@ fn claim(
 
 /// `base` joined with the relative path `relative` (`/` separators), refusing
 /// anything [`is_safe_relative`] refuses.
-pub(crate) fn safe_join(base: &Path, relative: &str) -> Result<PathBuf, ArchiveError> {
+pub fn safe_join(base: &Path, relative: &str) -> Result<PathBuf, ArchiveError> {
     if !is_safe_relative(relative) {
         return Err(ArchiveError::UnsafePath(relative.to_string()));
     }
@@ -220,7 +220,7 @@ const WINDOWS_NUMBERED_DEVICES: [&str; 2] = ["COM", "LPT"];
 const WINDOWS_FORBIDDEN: [char; 8] = ['<', '>', ':', '"', '\\', '|', '?', '*'];
 
 /// Whether `relative` (`/` separators) names a file inside its folder, and the same file on every system: nothing absolute, no drive letter or `..`, no `:` (a Windows stream or drive), none of the characters Windows forbids, no part ending in a dot or space (Windows drops them, so two names would meet in one file), no Windows device name, and nothing shaped like a Windows short name (`FFMPEG~1.EXE`), which can be another file's second name.
-pub(crate) fn is_safe_relative(relative: &str) -> bool {
+pub fn is_safe_relative(relative: &str) -> bool {
     !relative.is_empty()
         && relative.split('/').all(is_safe_part)
         && Path::new(relative)
@@ -348,7 +348,7 @@ fn copy_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::addons::manifest::{AddonFile, ComponentId, ReleaseFile};
+    use crate::manifest::{AddonFile, ComponentId, ReleaseFile};
 
     #[test]
     fn hashes_are_lower_case_hex() {

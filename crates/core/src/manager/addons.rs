@@ -21,12 +21,12 @@ use wirecatch_engine::{
 use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
 
 use super::Manager;
-use crate::addons::manifest::{self, AddonComponent, ComponentId, ReleaseFile};
-use crate::addons::{self, Check, Record, archive, signature};
 use crate::error::{CoreError, Result};
 use crate::media::MediaTools;
 use crate::media::ytdlp;
 use crate::user_error;
+use wirecatch_addons::manifest::{self, AddonComponent, ComponentId, ReleaseFile};
+use wirecatch_addons::{self as addons, Check, Record, archive, signature};
 use wirecatch_engine::units::{KIB, MIB};
 use wirecatch_streams::process::{self, RunError, RunOptions};
 
@@ -1333,8 +1333,8 @@ fn swap_in(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::addons::InstalledComponent;
-    use crate::addons::manifest::{ArchiveKind, Sha256Digest};
+    use wirecatch_addons::InstalledComponent;
+    use wirecatch_addons::manifest::{ArchiveKind, Sha256Digest};
 
     /// Add-on downloads name the app, never the engine library's default.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

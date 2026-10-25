@@ -6,7 +6,6 @@
 //! [`UiEvent`](wirecatch_protocol::app::UiEvent)s for the UI and protocol
 //! [`Event`](wirecatch_protocol::wire::Event)s for socket clients, which `wirecatch-server` serves.
 
-mod addons;
 mod batches;
 mod clock;
 mod error;
@@ -22,10 +21,6 @@ mod speed;
 mod store;
 mod user_error;
 
-pub use addons::manifest::{
-    AddonComponent, AddonFile, ArchiveKind, ComponentId, Fingerprint, MEDIA_ADDON_FOLDER,
-    ManifestError, MediaAddonSources, PinnedKey, ReleaseFile, Sha256Digest,
-};
 pub use clock::{Clock, ManualClock, Sleep, SystemClock};
 pub use error::{CoreError, Result};
 pub use folders::{KnownFolders, PathError};
@@ -36,3 +31,7 @@ pub use manager::{
 pub use proxy::{PROXY_TEST_URL, UpdaterProxy, from_system as system_proxy};
 pub use settings::{DEFAULT_QUEUE_ID, default_settings};
 pub use store::{DATABASE_FILE, DATABASE_SIDE_FILES};
+pub use wirecatch_addons::manifest::{
+    AddonComponent, AddonFile, ArchiveKind, ComponentId, Fingerprint, MEDIA_ADDON_FOLDER,
+    ManifestError, MediaAddonSources, PinnedKey, ReleaseFile, Sha256Digest,
+};

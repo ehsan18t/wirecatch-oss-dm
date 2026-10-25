@@ -33,13 +33,13 @@ use super::captures::origin_of;
 use super::downloads::parse_web_url;
 use super::handovers::{Handover, Target};
 use super::state::State;
-use crate::addons::Check;
 use crate::error::{CoreError, Result};
 use crate::headers::Origin;
 use crate::media::MediaTools;
 use crate::media::choice::{self, Offer, Plan, Resolved};
 use crate::media::{self, MediaJob, Pick, StoredMedia, describe, output, ytdlp};
 use crate::{headers, settings};
+use wirecatch_addons::Check;
 use wirecatch_sites::local_network::ChosenBy;
 
 /// How long a page waits for the media add-on before it becomes a failed

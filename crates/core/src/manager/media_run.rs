@@ -30,7 +30,6 @@ use super::media::{addon_missing, cookie_header, media_options};
 use super::policy::RunPolicy;
 use super::run::{MediaDone, RunEnd};
 use super::state::{Gauge, State};
-use crate::addons::Check;
 use crate::clock::Clock;
 use crate::headers::Origin;
 use crate::media::MediaTools;
@@ -44,6 +43,7 @@ use crate::media::output::{
 use crate::media::ytdlp::{self, Fetched, Format, FormatId, Transport};
 use crate::media::{self, Content, MediaJob, MediaProgress, Pick, safe_ext};
 use crate::{headers, user_error};
+use wirecatch_addons::Check;
 use wirecatch_engine::units::MIB;
 use wirecatch_sites::local_network::{self, ChosenBy};
 

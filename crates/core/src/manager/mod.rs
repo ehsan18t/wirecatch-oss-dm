@@ -45,7 +45,6 @@ use wirecatch_protocol::app::{StartupNotice, UiEvent};
 use wirecatch_protocol::extension::{BrowserNote, NoteId, NotePressed};
 use wirecatch_protocol::wire::Event;
 
-use crate::addons::manifest::MediaAddonSources;
 use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::folders::KnownFolders;
@@ -55,6 +54,7 @@ use crate::user_error;
 pub use downloads::LinkFrom;
 use state::{Entry, State, Stop};
 pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
+use wirecatch_addons::manifest::MediaAddonSources;
 use wirecatch_sites::public_suffix::SuffixList;
 
 /// How many UI events may wait for a slow subscriber before it starts missing some.
@@ -316,7 +316,7 @@ impl Manager {
             );
         });
         let dir = config.data_dir.clone();
-        let addon_dir = crate::addons::media_dir(&config.data_dir);
+        let addon_dir = wirecatch_addons::media_dir(&config.data_dir);
         let temp_dir = config.data_dir.join("tmp");
         let (now, now_millis) = (config.clock.local_now(), config.clock.unix_millis());
         let (addons_at, temp_at) = (addon_dir.clone(), temp_dir.clone());

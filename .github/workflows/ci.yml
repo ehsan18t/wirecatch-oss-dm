@@ -75,14 +75,14 @@ jobs:
           cache-bin: false
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # The streams and media tests need a real ffmpeg; they skip without one, so Linux CI is where real joins and conversions are proven. It is the build the media add-on installs, from the add-on's pinned address and checked against its pinned SHA-256 (`crates/core/src/addons/manifest.rs`, printed by the ffmpeg_release example), and the cache keeps it until that file changes.
+      # The streams and media tests need a real ffmpeg; they skip without one, so Linux CI is where real joins and conversions are proven. It is the build the media add-on installs, from the add-on's pinned address and checked against its pinned SHA-256 (`crates/addons/src/manifest.rs`, printed by the ffmpeg_release example), and the cache keeps it until that file changes.
       - name: Restore ffmpeg
         id: ffmpeg
         if: runner.os == 'Linux'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/ffmpeg
-          key: ffmpeg-${{ runner.os }}-${{ hashFiles('crates/core/src/addons/manifest.rs') }}
+          key: ffmpeg-${{ runner.os }}-${{ hashFiles('crates/addons/src/manifest.rs') }}
 
       - name: Download ffmpeg
         if: runner.os == 'Linux' && steps.ffmpeg.outputs.cache-hit != 'true'

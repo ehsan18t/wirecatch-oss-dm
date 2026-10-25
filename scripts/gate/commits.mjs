@@ -28,6 +28,7 @@ const COMMIT_SCOPES = [
   'server',
   'sites',
   'files',
+  'addons',
   'cli',
   'e2e',
   'test-support',
