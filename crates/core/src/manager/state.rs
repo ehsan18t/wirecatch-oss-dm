@@ -263,8 +263,9 @@ pub(super) struct Pending {
 }
 
 impl State {
-    /// The proxies every request the app sends follows (D71).
-    pub fn proxy(&self) -> ProxyChoice {
+    /// The proxies the app's own requests follow (D71): add-on and suffix-list fetches and the
+    /// updater. A download's are in its [`RunPolicy`](super::policy::RunPolicy).
+    pub fn app_proxy(&self) -> ProxyChoice {
         proxy::engine_choice(&self.settings.proxy, &self.proxy_logins)
     }
 

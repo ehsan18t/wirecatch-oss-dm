@@ -203,7 +203,7 @@ impl Manager {
         &self,
         source: &Url,
     ) -> std::result::Result<Option<Arc<SuffixList>>, NotTaken> {
-        let proxy = self.lock().proxy();
+        let proxy = self.lock().app_proxy();
         let options = crate::headers::download_options(SUFFIX_NETWORK, proxy);
         let cancel = self.inner.stopped.child_token();
         let fetched = tokio::time::timeout(FETCH_TIMEOUT, async {

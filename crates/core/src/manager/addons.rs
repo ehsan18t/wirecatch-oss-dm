@@ -852,9 +852,10 @@ impl Manager {
     /// Options for every request for the add-on: the app's own identity, and no request to the local network, since a release host never is on it (D38.5).
     fn addon_download_options(&self) -> DownloadOptions {
         let state = self.lock();
-        let mut options = crate::headers::download_options(ADDON_NETWORK, state.proxy());
-        options.connections = usize::from(state.settings.connections_per_download);
-        options.rate_limiters = vec![self.inner.global_limiter.clone()];
+        let policy = self.app_policy(&state);
+        let mut options = crate::headers::download_options(ADDON_NETWORK, policy.proxy);
+        options.connections = policy.connections;
+        options.rate_limiters = policy.limiters;
         options
     }
 
@@ -901,7 +902,7 @@ impl Manager {
             return Ok(Vec::new());
         };
         let cancel = self.inner.stopped.child_token();
-        let proxy = self.lock().proxy();
+        let proxy = self.lock().app_proxy();
         let mut options = crate::headers::download_options(ADDON_NETWORK, proxy);
         options.headers.insert(
             ACCEPT,
