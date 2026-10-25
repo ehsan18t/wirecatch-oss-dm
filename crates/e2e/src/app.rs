@@ -10,10 +10,11 @@ use std::time::Duration;
 use tokio::sync::{broadcast::error::RecvError, watch};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::Instant;
-use wirecatch_core::{KnownFolders, Manager, ManagerConfig, serve_connection};
+use wirecatch_core::{KnownFolders, Manager, ManagerConfig};
 use wirecatch_ipc::{Endpoint, Listener};
 use wirecatch_protocol::app::DownloadSummary;
 use wirecatch_protocol::extension::NewDownload;
+use wirecatch_server::serve_connection;
 use wirecatch_test_support::{PrivateDir, private_dir};
 
 use crate::PATIENCE;

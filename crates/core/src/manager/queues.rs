@@ -17,7 +17,8 @@ impl Manager {
     }
 
     /// Queue names and ids, as socket clients see them.
-    pub(crate) fn queue_summaries(&self) -> Vec<QueueSummary> {
+    #[must_use]
+    pub fn queue_summaries(&self) -> Vec<QueueSummary> {
         self.lock().queue_summaries()
     }
 

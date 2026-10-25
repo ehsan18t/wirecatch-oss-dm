@@ -16,6 +16,7 @@ wirecatch-engine = { path = "crates/engine", version = "0.1.0" }
 wirecatch-protocol = { path = "crates/protocol", version = "0.1.0" }
 wirecatch-queues = { path = "crates/queues", version = "0.1.0" }
 wirecatch-core = { path = "crates/core", version = "0.1.0" }
+wirecatch-server = { path = "crates/server", version = "0.1.0" }
 wirecatch-ipc = { path = "crates/ipc", version = "0.1.0" }
 wirecatch-streams = { path = "crates/streams", version = "0.1.0" }
 wirecatch-product = { path = "crates/product", version = "0.1.0" }

@@ -1,0 +1,24 @@
+[package]
+name = "wirecatch-server"
+description = "The local protocol server of Wirecatch: one client connection over any byte stream, answered by the download manager"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+wirecatch-core.workspace = true
+wirecatch-engine.workspace = true
+wirecatch-protocol = { workspace = true, features = ["tokio"] }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["io-util"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["io-util", "test-util"] }
+
+[lints]
+workspace = true
