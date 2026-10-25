@@ -36,6 +36,7 @@ import type { DismissMediaChoiceArgs } from './DismissMediaChoiceArgs';
 import type { DownloadId } from './DownloadId';
 import type { DownloadStatus } from './DownloadStatus';
 import type { DownloadSummary } from './DownloadSummary';
+import type { DraftClaims } from './DraftClaims';
 import type { EarlierDownloadArgs } from './EarlierDownloadArgs';
 import type { ErrorCode } from './ErrorCode';
 import type { Event } from './Event';
@@ -61,7 +62,9 @@ import type { ImportedFolder } from './ImportedFolder';
 import type { InstallAddonArgs } from './InstallAddonArgs';
 import type { KeepOriginalArgs } from './KeepOriginalArgs';
 import type { Link } from './Link';
+import type { LinkClaims } from './LinkClaims';
 import type { LinkProtocol } from './LinkProtocol';
+import type { LinkTrial } from './LinkTrial';
 import type { MediaChoice } from './MediaChoice';
 import type { MediaDefaults } from './MediaDefaults';
 import type { MediaDefaultsPatch } from './MediaDefaultsPatch';
@@ -144,6 +147,8 @@ import type { SystemAppearance } from './SystemAppearance';
 import type { TestProxyArgs } from './TestProxyArgs';
 import type { Theme } from './Theme';
 import type { TimeOfDay } from './TimeOfDay';
+import type { TriedClaim } from './TriedClaim';
+import type { TryLinkArgs } from './TryLinkArgs';
 import type { UiEvent } from './UiEvent';
 import type { UpdateAddonArgs } from './UpdateAddonArgs';
 import type { UpdateQueueArgs } from './UpdateQueueArgs';
@@ -590,6 +595,14 @@ export function isDownloadSummary(value: unknown): value is DownloadSummary {
     (isProcessingProgress(value1['processing']) || value1['processing'] === null))(value);
 }
 
+/** Whether `value` has the shape of a {@link DraftClaims}; fields it does not name are not checked. */
+export function isDraftClaims(value: unknown): value is DraftClaims {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (isQueueId(value1['queue']) || value1['queue'] === null) &&
+    isQueueTakes(value1['takes']))(value);
+}
+
 /** Whether `value` has the shape of a {@link EarlierDownloadArgs}; fields it does not name are not checked. */
 export function isEarlierDownloadArgs(value: unknown): value is EarlierDownloadArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isQuestionId(value1['id']))(value);
@@ -854,9 +867,25 @@ export function isLink(value: unknown): value is Link {
   return typeof value === 'string';
 }
 
+/** Whether `value` has the shape of a {@link LinkClaims}; fields it does not name are not checked. */
+export function isLinkClaims(value: unknown): value is LinkClaims {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (isTriedClaim(value1['taken']) || value1['taken'] === null) &&
+    (isTriedClaim(value1['switched_off']) || value1['switched_off'] === null))(value);
+}
+
 /** Whether `value` has the shape of a {@link LinkProtocol}; fields it does not name are not checked. */
 export function isLinkProtocol(value: unknown): value is LinkProtocol {
   return value === 'http' || value === 'https' || value === 'ftp';
+}
+
+/** Whether `value` has the shape of a {@link LinkTrial}; fields it does not name are not checked. */
+export function isLinkTrial(value: unknown): value is LinkTrial {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['url'] === 'string' &&
+    (isDraftClaims(value1['draft']) || value1['draft'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link MediaChoice}; fields it does not name are not checked. */
@@ -1617,6 +1646,19 @@ export function isTimeOfDay(value: unknown): value is TimeOfDay {
   );
 }
 
+/** Whether `value` has the shape of a {@link TriedClaim}; fields it does not name are not checked. */
+export function isTriedClaim(value: unknown): value is TriedClaim {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (isQueueId(value1['queue']) || value1['queue'] === null) &&
+    isClaim(value1['claim']))(value);
+}
+
+/** Whether `value` has the shape of a {@link TryLinkArgs}; fields it does not name are not checked. */
+export function isTryLinkArgs(value: unknown): value is TryLinkArgs {
+  return ((value1: unknown): boolean => isRecord(value1) && isLinkTrial(value1['trial']))(value);
+}
+
 /** Whether `value` has the shape of a {@link UiEvent}; fields it does not name are not checked. */
 export function isUiEvent(value: unknown): value is UiEvent {
   return (
@@ -1893,6 +1935,7 @@ export const COMMAND_OUTPUTS: {
   check_suffix_list: (value: unknown): value is CommandMap['check_suffix_list']['output'] =>
     isSuffixListInfo(value),
   set_proxy: (value: unknown): value is CommandMap['set_proxy']['output'] => value === null,
+  try_link: (value: unknown): value is CommandMap['try_link']['output'] => isLinkClaims(value),
   test_proxy: (value: unknown): value is CommandMap['test_proxy']['output'] =>
     isProxyTestResult(value),
   system_proxy: (value: unknown): value is CommandMap['system_proxy']['output'] =>

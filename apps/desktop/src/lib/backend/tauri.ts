@@ -39,6 +39,7 @@ import {
   type UiEvent,
   type WindowAction,
   type WindowFrame,
+  type LinkTrial,
 } from '@wirecatch/protocol';
 import { keysOf } from '../keys';
 import {
@@ -296,6 +297,10 @@ export class TauriBackend implements DownloadWindowBackend {
   setProxy(change: ProxyChange) {
     return this.#exec('set_proxy', { change });
   }
+  tryLink(trial: LinkTrial) {
+    return this.#call('try_link', { trial });
+  }
+
   testProxy(test: ProxyTest) {
     return this.#call('test_proxy', { test });
   }

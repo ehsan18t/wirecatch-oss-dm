@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::QueueId;
 use crate::app::Category;
 
 crate::exported::exported_consts! {
@@ -86,4 +87,36 @@ pub enum Claim {
     FileType(String),
     Category(Category),
     Protocol(LinkProtocol),
+}
+
+/// A link to try against the claims, for Try a link (D72.5, D72.7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LinkTrial {
+    pub url: String,
+    /// One queue's claims as its editor has them, tried in its place before they are saved; `None` tries the saved claims.
+    pub draft: Option<DraftClaims>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DraftClaims {
+    /// `None` for a queue not made yet, tried after every saved queue.
+    pub queue: Option<QueueId>,
+    pub takes: QueueTakes,
+}
+
+/// What the claims make of a link: the claim that takes it, and a switched-off queue that would have taken it instead. A queue of `None` is the queue being made.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LinkClaims {
+    pub taken: Option<TriedClaim>,
+    pub switched_off: Option<TriedClaim>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TriedClaim {
+    pub queue: Option<QueueId>,
+    pub claim: Claim,
 }

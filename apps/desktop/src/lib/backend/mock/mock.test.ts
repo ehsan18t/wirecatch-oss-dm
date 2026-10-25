@@ -4,6 +4,8 @@ import {
   MANUAL_QUEUE,
   ownSetting,
   ownValue,
+  type QueueClaims,
+  type QueueTakes,
   questionId,
   queueId,
   type DownloadSummary,
@@ -33,6 +35,15 @@ function make(opts: ConstructorParameters<typeof MockBackend>[0] = {}) {
     },
   };
 }
+
+/** An auto queue's claims of the kinds the mock does not read. */
+const EMPTY_CLAIMS: Omit<QueueClaims, 'enabled' | 'sites'> = {
+  file_names: [],
+  file_name_syntax: 'wildcards',
+  file_types: [],
+  categories: [],
+  protocols: [],
+};
 
 const running = (rows: DownloadSummary[], queue?: number) =>
   rows.filter(
@@ -179,6 +190,36 @@ describe('MockBackend', () => {
     await expect(mock.createQueue({ ...weekend, name: '  ' })).rejects.toThrow(/name/);
     await mock.deleteQueue(q.id);
     expect((await mock.listQueues()).some((x) => x.id === q.id)).toBe(false);
+  });
+
+  it('tries a link against saved and unsaved site claims', async () => {
+    const { mock } = make();
+    const takes = (enabled: boolean): QueueTakes => ({
+      ...EMPTY_CLAIMS,
+      kind: 'auto',
+      enabled,
+      sites: ['example.com'],
+    });
+    const videos = await mock.createQueue({
+      name: 'Videos',
+      description: '',
+      max_concurrent: FOLLOW_APP,
+      speed_limit: FOLLOW_APP,
+      connections: FOLLOW_APP,
+      takes: takes(true),
+      schedule: null,
+      notify: 'each_download',
+    });
+    const link = 'https://cdn.example.com/a.mp4';
+    const site = { kind: 'site', claim: 'example.com' } as const;
+    expect(await mock.tryLink({ url: link, draft: null })).toEqual({
+      taken: { queue: videos.id, claim: site },
+      switched_off: null,
+    });
+    expect(
+      await mock.tryLink({ url: link, draft: { queue: videos.id, takes: takes(false) } }),
+    ).toEqual({ taken: null, switched_off: { queue: videos.id, claim: site } });
+    await expect(mock.tryLink({ url: 'not a link', draft: null })).rejects.toThrow(/valid link/);
   });
 
   it('round-trips settings through export and import', async () => {

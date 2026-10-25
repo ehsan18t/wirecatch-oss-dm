@@ -1,12 +1,13 @@
 use wirecatch_engine::Url;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::Category;
-use wirecatch_protocol::claims::{QueueReason, QueueTakes};
-use wirecatch_queues::claims::{self, Claimed, ClaimingQueue, Link};
+use wirecatch_protocol::claims::{DraftClaims, LinkClaims, QueueReason, QueueTakes, TriedClaim};
+use wirecatch_queues::claims::{self, Claimed, ClaimingQueue, Found, Link};
 use wirecatch_sites::local_network::is_on_own_network;
 
 use super::state::State;
 use crate::error::Result;
+use crate::naming;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum QueueRequest {
@@ -113,14 +114,47 @@ impl State {
         let auto: Vec<ClaimingQueue<'_>> = self
             .queues
             .iter()
-            .filter_map(|slot| match &slot.queue.settings.takes {
-                QueueTakes::Auto(claims) => Some(ClaimingQueue {
-                    id: slot.queue.id,
-                    claims,
-                }),
-                QueueTakes::Manual => None,
+            .filter_map(|slot| auto_queue(slot.queue.id, &slot.queue.settings.takes))
+            .collect();
+        self.claim_among(&auto, candidate)
+    }
+
+    /// What the claims make of `url` for Try a link: the saved claims, or `draft` in its queue's place, a queue not made yet after every saved one (D72.7).
+    pub fn try_link(&self, url: &Url, draft: Option<&DraftClaims>) -> LinkClaims {
+        let drafted = |id: QueueId| draft.filter(|d| d.queue == Some(id)).map(|d| &d.takes);
+        let mut auto: Vec<ClaimingQueue<'_, Option<QueueId>>> = self
+            .queues
+            .iter()
+            .filter_map(|slot| {
+                let id = slot.queue.id;
+                auto_queue(Some(id), drafted(id).unwrap_or(&slot.queue.settings.takes))
             })
             .collect();
+        if let Some(new) = draft.filter(|d| d.queue.is_none()) {
+            auto.extend(auto_queue(None, &new.takes));
+        }
+        let name = naming::file_name(None, url).unwrap_or_default();
+        let candidate = Candidate {
+            url,
+            file_name: &name,
+            category: None,
+        };
+        let claimed = self.claim_among(&auto, &candidate);
+        let tried = |found: Found<Option<QueueId>>| TriedClaim {
+            queue: found.queue,
+            claim: found.claim,
+        };
+        LinkClaims {
+            taken: claimed.taken.map(tried),
+            switched_off: claimed.switched_off.map(tried),
+        }
+    }
+
+    fn claim_among<K: Copy + PartialEq>(
+        &self,
+        queues: &[ClaimingQueue<'_, K>],
+        candidate: &Candidate<'_>,
+    ) -> Claimed<K> {
         let category = candidate.category.unwrap_or_else(|| {
             wirecatch_settings::category_of(&self.settings, candidate.file_name)
         });
@@ -129,9 +163,16 @@ impl State {
             file_name: candidate.file_name,
             category,
         };
-        claims::claim(&auto, &link, &|url| {
+        claims::claim(queues, &link, &|url| {
             is_on_own_network(url, &self.settings.local_sites, &self.suffixes)
         })
+    }
+}
+
+fn auto_queue<K>(id: K, takes: &QueueTakes) -> Option<ClaimingQueue<'_, K>> {
+    match takes {
+        QueueTakes::Auto(claims) => Some(ClaimingQueue { id, claims }),
+        QueueTakes::Manual => None,
     }
 }
 
@@ -259,6 +300,63 @@ mod tests {
             place(&browser_queue_gone, QueueRequest::Browser(None), ELSEWHERE).unwrap(),
             at(DEFAULT_QUEUE_ID, QueueReason::DefaultQueue)
         );
+    }
+
+    fn tried(queue: Option<QueueId>, site: &str) -> TriedClaim {
+        TriedClaim {
+            queue,
+            claim: Claim::Site(site.into()),
+        }
+    }
+
+    fn sites(on: bool, sites: &[&str]) -> QueueTakes {
+        QueueTakes::Auto(QueueClaims {
+            enabled: on,
+            sites: sites.iter().map(ToString::to_string).collect(),
+            ..QueueClaims::default()
+        })
+    }
+
+    #[test]
+    fn try_a_link_answers_by_the_saved_claims_or_one_queues_unsaved_ones() {
+        let state = state_with(OTHER, true);
+        let url = Url::parse(CLAIMED).unwrap();
+        let saved = state.try_link(&url, None);
+        assert_eq!(saved.taken, Some(tried(Some(VIDEOS), "example.com")));
+
+        let other_drafted = DraftClaims {
+            queue: Some(OTHER),
+            takes: sites(true, &["cdn.example.com"]),
+        };
+        let drafted = state.try_link(&url, Some(&other_drafted));
+        assert_eq!(drafted.taken, Some(tried(Some(OTHER), "cdn.example.com")));
+
+        let videos_off = DraftClaims {
+            queue: Some(VIDEOS),
+            takes: sites(false, &["example.com"]),
+        };
+        let off = state.try_link(&url, Some(&videos_off));
+        assert_eq!(off.taken, None);
+        assert_eq!(off.switched_off, Some(tried(Some(VIDEOS), "example.com")));
+
+        let new_queue = DraftClaims {
+            queue: None,
+            takes: sites(true, &["example.com"]),
+        };
+        let tie = state.try_link(&url, Some(&new_queue));
+        assert_eq!(
+            tie.taken,
+            Some(tried(Some(VIDEOS), "example.com")),
+            "a saved queue wins a tie"
+        );
+        let new_wins = state.try_link(
+            &url,
+            Some(&DraftClaims {
+                takes: sites(true, &["cdn.example.com"]),
+                ..new_queue
+            }),
+        );
+        assert_eq!(new_wins.taken, Some(tried(None, "cdn.example.com")));
     }
 
     #[test]

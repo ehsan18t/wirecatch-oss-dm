@@ -1,6 +1,15 @@
 // What the mock core does to queues: create, edit, pause, start now and delete them.
 
-import type { DownloadSummary, Queue, QueueId, QueueSettings } from '@wirecatch/protocol';
+import type {
+  DownloadSummary,
+  LinkClaims,
+  LinkTrial,
+  Queue,
+  QueueId,
+  QueueSettings,
+  QueueTakes,
+  TriedClaim,
+} from '@wirecatch/protocol';
 import { scheduleAllows } from '../../format';
 import { BackendError } from '../types';
 import { QUEUE_RUNNING } from './data';
@@ -71,4 +80,31 @@ export function deleteQueue(state: MockState, id: QueueId): void {
   }
   state.queuesChanged();
   state.changed(moved);
+}
+
+/** Try a link in the mock, by site claims alone: a name covers itself and the names under it. The app matches every kind and pattern in `wirecatch-queues`; this stands in for it so the windows can be built against sample data. */
+export function tryLink(state: MockState, trial: LinkTrial): LinkClaims {
+  let host: string;
+  try {
+    host = new URL(trial.url).hostname;
+  } catch {
+    throw new BackendError(
+      `"${trial.url}" is not a valid link. Check that it starts with http://, https://, ftp:// or ftps://.`,
+    );
+  }
+  const { draft } = trial;
+  const queues: { id: QueueId | null; takes: QueueTakes }[] = state.queues.map((q) => ({
+    id: q.id,
+    takes: draft?.queue === q.id ? draft.takes : q.settings.takes,
+  }));
+  if (draft?.queue === null) queues.push({ id: null, takes: draft.takes });
+  const claimOf = (enabled: boolean): TriedClaim | null => {
+    for (const { id, takes } of queues) {
+      if (takes.kind !== 'auto' || takes.enabled !== enabled) continue;
+      const site = takes.sites.find((s) => host === s || host.endsWith(`.${s}`));
+      if (site !== undefined) return { queue: id, claim: { kind: 'site', claim: site } };
+    }
+    return null;
+  };
+  return { taken: claimOf(true), switched_off: claimOf(false) };
 }

@@ -151,6 +151,15 @@ export function defaultOutput(): AppSettings['media']['video'] {
 
 export const QUEUE_RUNNING: QueueStatus = { paused: false, running_outside_schedule: false };
 
+/** The seed of the sample data people and screenshots see. */
+export const DEFAULT_SEED = 7;
+/** With `autoCapture`, the browser "sends" a download this long after start. */
+export const AUTO_CAPTURE_MS = 6000;
+/** The sample system's accent colour: Windows' own default blue. */
+export const SAMPLE_SYSTEM_ACCENT = '#0078d4';
+/** How long the slow sample page takes to read. */
+export const SLOW_READING_MS = 3000;
+
 // Unlike a fresh install, the sample's Main has its own limit: the demo needs it full while the other queues run.
 const MAIN_AT_ONCE = 3;
 const OVERNIGHT_SPEED_LIMIT = 4 * MB;
