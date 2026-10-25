@@ -16,7 +16,7 @@ use wirecatch_protocol::app::Category;
 
 use super::Manager;
 use super::state::{Entry, Expectation, State, Stop};
-use crate::{naming, settings};
+use crate::naming;
 
 /// What the server said about the file, as far as choosing its path goes.
 #[derive(Debug, Clone)]
@@ -116,16 +116,18 @@ impl Manager {
                 &entry.row.file_name,
             )
             .map_err(|e| e.to_string())?;
-            let mut category = settings::category_of(&state.settings, &name);
+            let mut category = wirecatch_settings::category_of(&state.settings, &name);
             if category == Category::Other
                 && let Some(content_type) = &remote.content_type
             {
-                category = settings::category_from_mime(content_type);
+                category = wirecatch_settings::category_from_mime(content_type);
             }
             let dir = match &entry.naming.folder {
                 Some(folder) => PathBuf::from(folder),
-                None => settings::folder_for(&state.settings, category, &self.inner.folders)
-                    .map_err(|e| e.to_string())?,
+                None => {
+                    wirecatch_settings::folder_for(&state.settings, category, &self.inner.folders)
+                        .map_err(|e| e.to_string())?
+                }
             };
             (dir, name, category, entry.path().to_path_buf())
         };

@@ -1,0 +1,30 @@
+[package]
+name = "wirecatch-settings"
+description = "Wirecatch's settings: their defaults and checks, the category rules that pick a folder, the proxy setting, and settings files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+wirecatch-engine.workspace = true
+wirecatch-files.workspace = true
+wirecatch-protocol.workspace = true
+wirecatch-queues.workspace = true
+wirecatch-records.workspace = true
+wirecatch-sites.workspace = true
+dirs = "7.0.0"
+# The user name in a proxy address the computer sets (Copy from system, D71).
+percent-encoding.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

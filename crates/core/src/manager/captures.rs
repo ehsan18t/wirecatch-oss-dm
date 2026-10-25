@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 use wirecatch_engine::{CancellationToken, Url};
+use wirecatch_media::StoredMedia;
 use wirecatch_protocol::app::{
     CaptureConfirmation, Category, DownloadSummary, MediaSummary, PendingCapture, PortablePath,
     UiEvent,
@@ -18,6 +19,7 @@ use wirecatch_protocol::extension::{
     AddAction, AddedDownload, MediaKind, NewDownload, WithdrawOutcome,
 };
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId, Secret};
+use wirecatch_sites::local_network::{self, ChosenBy};
 
 use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
@@ -27,10 +29,7 @@ use super::placement::QueueRequest;
 use super::state::{Expectation, Pending};
 use crate::error::{CoreError, Result};
 use crate::headers::Origin;
-use crate::settings;
 use crate::{headers, naming};
-use wirecatch_media::StoredMedia;
-use wirecatch_sites::local_network::{self, ChosenBy};
 
 /// Most captures that can wait for confirmation at once.
 const MAX_PENDING: usize = 100;
@@ -428,8 +427,9 @@ impl Manager {
             )));
         }
         let file_name = naming::file_name(capture.suggested_name.as_deref(), url)?;
-        let category = settings::category_of(&state.settings, &file_name);
-        let folder = settings::folder_for(&state.settings, category, &self.inner.folders)?;
+        let category = wirecatch_settings::category_of(&state.settings, &file_name);
+        let folder =
+            wirecatch_settings::folder_for(&state.settings, category, &self.inner.folders)?;
         let id = state.ids.pending();
         let proposal = PendingCapture {
             id,

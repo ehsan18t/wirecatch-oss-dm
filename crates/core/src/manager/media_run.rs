@@ -15,11 +15,18 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tracing::warn;
+use wirecatch_addons::Check;
 use wirecatch_engine::numeric::saturating_cast;
+use wirecatch_engine::units::MIB;
 use wirecatch_engine::{
     CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, Outcome,
     PrivateNetwork, Progress, Url,
 };
+use wirecatch_media::MediaTools;
+use wirecatch_media::convert;
+use wirecatch_media::describe;
+use wirecatch_media::ffmpeg::{FfmpegError, Finished};
+use wirecatch_media::merge;
 use wirecatch_protocol::app::{FixAction, ProcessingStep, UserError};
 use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::{DownloadId, Secret};
@@ -33,13 +40,6 @@ use super::state::{Gauge, State};
 use crate::clock::Clock;
 use crate::headers;
 use crate::headers::Origin;
-use wirecatch_addons::Check;
-use wirecatch_engine::units::MIB;
-use wirecatch_media::MediaTools;
-use wirecatch_media::convert;
-use wirecatch_media::describe;
-use wirecatch_media::ffmpeg::{FfmpegError, Finished};
-use wirecatch_media::merge;
 use wirecatch_media::output::{
     self, Container, ImageFormat, Inputs, OutputJob, SubtitleFormat, SubtitlePick, VideoAction,
 };
@@ -326,7 +326,7 @@ async fn page_attempt(
     let (video, audio) = (&page.video, &page.audio);
     let format = &ytdlp::selection(video.as_ref(), audio.as_ref());
     let cookies = cookie_header(&job.origin);
-    let proxy = crate::proxy::ytdlp_proxy(&job.options.proxy);
+    let proxy = wirecatch_settings::proxy::ytdlp_proxy(&job.options.proxy);
     let ctx = ytdlp::Context {
         tools,
         page: &job.url,

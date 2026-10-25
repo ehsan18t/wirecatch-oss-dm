@@ -7,7 +7,6 @@ use wirecatch_protocol::wire::{Event, QueueSummary};
 use super::Manager;
 use super::state::{QueueSlot, State, Stop};
 use crate::error::{CoreError, Result};
-use crate::settings;
 
 impl Manager {
     /// Every queue, in sidebar order. The default queue is always there.
@@ -25,8 +24,8 @@ impl Manager {
     /// Adds a running queue, last in the sidebar.
     pub fn create_queue(&self, settings: QueueSettings) -> Result<Queue> {
         let mut state = self.lock_open()?;
-        settings::check_queue_count(state.queues.len() + 1)?;
-        let settings = settings::validate_queue(settings)?;
+        wirecatch_settings::check_queue_count(state.queues.len() + 1)?;
+        let settings = wirecatch_settings::validate_queue(settings)?;
         ensure_name_free(&state, &settings.name, None)?;
         let queue = Queue {
             id: state.ids.queue(),
@@ -42,7 +41,7 @@ impl Manager {
 
     /// Replaces queue `id`'s settings; new limits apply to running downloads at once.
     pub fn update_queue(&self, id: QueueId, settings: QueueSettings) -> Result<()> {
-        let settings = settings::validate_queue(settings)?;
+        let settings = wirecatch_settings::validate_queue(settings)?;
         let mut state = self.lock_open()?;
         ensure_name_free(&state, &settings.name, Some(id))?;
         apply_to_slot(state.slot_mut(id)?, settings);

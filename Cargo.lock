@@ -7283,9 +7283,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "dirs 7.0.0",
  "lzma-rust2",
- "percent-encoding",
  "pgp",
  "rand 0.8.8",
  "rusqlite",
@@ -7308,6 +7306,7 @@ dependencies = [
  "wirecatch-queues",
  "wirecatch-records",
  "wirecatch-server",
+ "wirecatch-settings",
  "wirecatch-sites",
  "wirecatch-store",
  "wirecatch-streams",
@@ -7511,6 +7510,24 @@ dependencies = [
  "wirecatch-core",
  "wirecatch-engine",
  "wirecatch-protocol",
+]
+
+[[package]]
+name = "wirecatch-settings"
+version = "0.1.0"
+dependencies = [
+ "dirs 7.0.0",
+ "percent-encoding",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "wirecatch-engine",
+ "wirecatch-files",
+ "wirecatch-protocol",
+ "wirecatch-queues",
+ "wirecatch-records",
+ "wirecatch-sites",
 ]
 
 [[package]]

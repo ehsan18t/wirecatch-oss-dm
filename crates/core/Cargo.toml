@@ -1,6 +1,6 @@
 [package]
 name = "wirecatch-core"
-description = "Download manager for Wirecatch: queues, scheduling, settings, and running downloads and media downloads"
+description = "Download manager for Wirecatch: queues, scheduling, and running downloads and media downloads"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -20,13 +20,11 @@ wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
 wirecatch-queues.workspace = true
 wirecatch-records.workspace = true
+wirecatch-settings.workspace = true
 wirecatch-sites.workspace = true
 wirecatch-store.workspace = true
 wirecatch-streams.workspace = true
 chrono = { workspace = true, features = ["clock"] }
-dirs = "7.0.0"
-# The user name in a proxy address the computer sets (Copy from system, D71).
-percent-encoding.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

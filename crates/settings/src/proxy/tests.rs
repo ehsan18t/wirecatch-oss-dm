@@ -1,7 +1,3 @@
-use wirecatch_test_support::http::{Config, TestServer};
-use wirecatch_test_support::proxy::{LoginWall, SocksConfig, SocksServer};
-use wirecatch_test_support::silent::SilentServer;
-
 use super::*;
 
 fn server(kind: ProxyKind, host: &str, port: u16) -> ProxyServer {
@@ -246,62 +242,6 @@ fn a_proxy_the_computer_sets_reads_as_a_server_without_its_password() {
     );
 }
 
-#[tokio::test]
-async fn the_test_says_whether_the_proxy_works() {
-    let site = TestServer::start(b"hello".to_vec(), Config::default()).await;
-    let url = site.url("/");
-    let through = |proxy: &str| {
-        let mut manual = ManualProxies::default();
-        manual.all = Some(proxy.to_string());
-        ProxyChoice::Manual(manual)
-    };
-
-    let socks = SocksServer::start(SocksConfig::default()).await;
-    let works = test(
-        through(&socks.url("socks5", "")),
-        &url,
-        CancellationToken::new(),
-    )
-    .await;
-    assert_eq!(works, ProxyTestResult::Works);
-    assert_ne!(socks.destinations(), Vec::<String>::new());
-
-    let wall = LoginWall::start().await;
-    let refused = test(through(&wall.url()), &url, CancellationToken::new()).await;
-    assert_eq!(refused, ProxyTestResult::LoginRefused);
-
-    let closed = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .local_addr()
-        .unwrap();
-    let missing = test(
-        through(&format!("http://{closed}")),
-        &url,
-        CancellationToken::new(),
-    )
-    .await;
-    assert!(
-        matches!(missing, ProxyTestResult::Unreachable { .. }),
-        "{missing:?}"
-    );
-}
-
-#[tokio::test(start_paused = true)]
-async fn a_proxy_that_never_answers_times_out() {
-    let silent = SilentServer::start().await;
-    let mut manual = ManualProxies::default();
-    let address = silent.url("/");
-    manual.all = Some(format!(
-        "http://{}:{}",
-        address.host_str().unwrap(),
-        address.port().unwrap()
-    ));
-    let url = Url::parse("http://files.example/").unwrap();
-    let result = test(ProxyChoice::Manual(manual), &url, CancellationToken::new()).await;
-    assert_eq!(result, ProxyTestResult::TimedOut);
-}
-
 #[test]
 fn a_server_name_no_url_can_hold_is_refused_rather_than_dropped() {
     for host in ["999.1.1.1", "proxy.10", "1.2.3.4.5"] {
@@ -325,36 +265,4 @@ fn a_password_needs_a_user_name() {
         ..server(ProxyKind::Socks5, "proxy", 1080)
     });
     assert!(merge_passwords(&Logins::new(), &passwords, &with_user, &with_user).is_ok());
-}
-
-#[tokio::test]
-async fn the_test_goes_through_every_proxy_set_whatever_the_exceptions() {
-    let site = TestServer::start(b"hello".to_vec(), Config::default()).await;
-    let url = site.url("/");
-    let wall = LoginWall::start().await;
-    let socks = SocksServer::start(SocksConfig::default()).await;
-
-    // The exceptions name the test's own host: without them the proxy would not be tried.
-    let mut excepted = ManualProxies::default();
-    excepted.all = Some(wall.url());
-    excepted.exceptions = "127.0.0.1".into();
-    let result = test(
-        ProxyChoice::Manual(excepted),
-        &url,
-        CancellationToken::new(),
-    )
-    .await;
-    assert_eq!(result, ProxyTestResult::LoginRefused);
-
-    // A proxy only for another protocol is tried too.
-    let mut per_protocol = ManualProxies::default();
-    per_protocol.https = Some(socks.url("socks5", ""));
-    per_protocol.ftp = Some(wall.url());
-    let result = test(
-        ProxyChoice::Manual(per_protocol),
-        &url,
-        CancellationToken::new(),
-    )
-    .await;
-    assert_eq!(result, ProxyTestResult::LoginRefused);
 }

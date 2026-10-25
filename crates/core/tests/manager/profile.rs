@@ -1,7 +1,7 @@
 //! Acceptance 5: settings exported on one machine and imported on another (with a
 //! different home folder) come back with folders resolved for the new machine.
 
-use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
+use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, ProfileError};
 use wirecatch_protocol::app::{
     AddonId, Category, PortablePath, Queue, QueueSettings, Schedule, TimeOfDay, UiEvent,
 };
@@ -135,7 +135,10 @@ async fn a_profile_from_a_newer_version_is_refused() -> TestResult {
     std::fs::write(&file, r#"{"format_version": 99, "settings": "who knows"}"#).unwrap();
     let before = h.manager.get_settings();
     let err = h.manager.import_settings(&file).await.unwrap_err();
-    assert!(matches!(err, CoreError::ProfileTooNew { found: 99, .. }));
+    assert!(matches!(
+        err,
+        CoreError::Profile(ProfileError::TooNew { found: 99, .. })
+    ));
     assert!(err.to_string().contains("newer version of Wirecatch"));
     assert_eq!(h.manager.get_settings(), before);
     assert_eq!(h.manager.list_queues().len(), 1);

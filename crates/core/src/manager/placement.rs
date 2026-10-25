@@ -43,7 +43,7 @@ mod tests {
     use crate::error::CoreError;
     use crate::manager::restore::first_start;
     use crate::manager::state::QueueSlot;
-    use crate::settings::{DEFAULT_QUEUE_ID, default_queue};
+    use wirecatch_settings::{DEFAULT_QUEUE_ID, default_queue};
 
     const OTHER: QueueId = QueueId(7);
     const GONE: QueueId = QueueId(99);
