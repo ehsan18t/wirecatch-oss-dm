@@ -10,9 +10,11 @@ pub(crate) mod describe;
 pub(crate) mod ffmpeg;
 pub(crate) mod merge;
 pub(crate) mod output;
+mod tools;
 pub(crate) mod ytdlp;
 
-use std::path::{Path, PathBuf};
+pub(crate) use tools::MediaTools;
+
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::{Deserialize, Serialize};
@@ -20,12 +22,9 @@ use wirecatch_engine::Progress;
 use wirecatch_protocol::app::{MediaSummary, PER_MILLE_DONE, ProcessingProgress, ProcessingStep};
 use wirecatch_streams::{Stage, StreamProgress};
 
+pub(crate) use crate::naming::{stream_dir, work_dir};
 use output::OutputJob;
 use ytdlp::FormatId;
-
-/// Next to a media download's file while it runs: the folder for its parts
-/// (video, audio, yt-dlp's own files) until they are joined.
-pub(crate) const WORK_SUFFIX: &str = ".wcmedia";
 
 /// Which track of a stream to take.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,22 +83,6 @@ pub(crate) struct StoredMedia {
     pub summary: MediaSummary,
     /// `None` for a direct media file, which downloads like any other file.
     pub job: Option<MediaJob>,
-}
-
-/// Where a media download keeps its parts while it runs.
-pub(crate) fn work_dir(output: &Path) -> PathBuf {
-    with_suffix(output, WORK_SUFFIX)
-}
-
-/// The folder `wirecatch-streams` keeps segments in while downloading `output`.
-pub(crate) fn stream_dir(output: &Path) -> PathBuf {
-    with_suffix(output, wirecatch_streams::DIR_SUFFIX)
-}
-
-fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
-    let mut name = path.as_os_str().to_owned();
-    name.push(suffix);
-    PathBuf::from(name)
 }
 
 /// The progress of a media download, made of the progress of its parts. Updates come a few times a second at most, so one lock over all of it costs nothing and every reading is consistent.

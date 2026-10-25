@@ -12,7 +12,7 @@ use super::choice::format_name;
 use super::ffmpeg::FfmpegError;
 use super::output::{OutputJob, VideoAction};
 use super::ytdlp::YtDlpError;
-use crate::addons::MediaTools;
+use crate::media::MediaTools;
 use crate::user_error;
 use wirecatch_sites::local_network::ChosenBy;
 

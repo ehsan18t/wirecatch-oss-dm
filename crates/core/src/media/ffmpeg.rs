@@ -14,7 +14,7 @@ use wirecatch_streams::codec::VideoCodec;
 use wirecatch_streams::process::STALL_TIMEOUT;
 use wirecatch_streams::process::{self, Output, RunError, RunOptions};
 
-use crate::addons::MediaTools;
+use crate::media::MediaTools;
 
 /// How an ffmpeg run that did not fail ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -20,7 +20,7 @@ use tracing::debug;
 use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_streams::process::{self, Ran, RunError, RunOptions};
 
-use crate::addons::MediaTools;
+use crate::media::MediaTools;
 use cookies::CookiesFile;
 
 /// Where and how yt-dlp runs.

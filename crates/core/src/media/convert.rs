@@ -22,7 +22,7 @@ use super::ffmpeg::{self, FfmpegError, Finished};
 use super::output::{
     self, AudioAction, Encoder, Inputs, OutputJob, SubtitleFormat, VideoAction, VideoCodec,
 };
-use crate::addons::MediaTools;
+use crate::media::MediaTools;
 
 /// How long asking ffmpeg for its encoders, or one encoder test, may take.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);

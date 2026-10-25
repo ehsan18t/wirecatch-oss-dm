@@ -11,7 +11,7 @@ use wirecatch_streams::ffmpeg::{CopyInput, copy_arguments};
 use wirecatch_streams::{InputFormat, Role};
 
 use super::ffmpeg::{self, FfmpegError, Finished};
-use crate::addons::MediaTools;
+use crate::media::MediaTools;
 
 /// The format ffmpeg may read the downloaded `role` as, recognized from its first bytes. A file that is none of the expected formats is refused before ffmpeg starts.
 pub(crate) async fn input_format(path: &Path, role: Role) -> Result<InputFormat, FfmpegError> {

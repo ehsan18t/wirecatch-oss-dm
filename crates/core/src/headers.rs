@@ -4,11 +4,24 @@
 //! whole file, uncompressed, to split it into byte ranges. Letting a client set
 //! them would break or confuse downloads.
 
+use serde::{Deserialize, Serialize};
 use tracing::warn;
 use wirecatch_engine::header::{HeaderMap, HeaderName, HeaderValue};
 use wirecatch_engine::{DownloadOptions, PrivateNetwork, ProxyChoice};
 use wirecatch_product::{PRODUCT_NAME, PRODUCT_VERSION};
 use wirecatch_protocol::extension::Header;
+
+/// What a download needs from the browser to keep working after a restart:
+/// cookies, referrer and other headers, and the user agent.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Origin {
+    pub user_agent: Option<String>,
+    pub headers: Vec<Header>,
+    /// Its cookies and credentials were deleted because it did not finish
+    /// within a week, so a failure that needs a fresh link says so.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub forgot_sign_in: bool,
+}
 
 /// The engine's request options as the app sends them when no browser handed over its own
 /// user agent: the app's name and version (`<name>/<version>`), never the engine library's

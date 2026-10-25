@@ -23,7 +23,9 @@ use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::batches::StoredBatch;
 use crate::error::{CoreError, Result};
+use crate::headers::Origin;
 use crate::media::StoredMedia;
+use crate::naming::with_suffix;
 use crate::owner_only;
 use crate::proxy::Logins;
 use wirecatch_sites::local_network::ChosenBy;
@@ -143,18 +145,6 @@ const PROXY_LOGINS_KEY: &str = "proxy_passwords";
 pub(crate) struct LastIds {
     pub download: i64,
     pub queue: i64,
-}
-
-/// What a download needs from the browser to keep working after a restart:
-/// cookies, referrer and other headers, and the user agent.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Origin {
-    pub user_agent: Option<String>,
-    pub headers: Vec<Header>,
-    /// Its cookies and credentials were deleted because it did not finish
-    /// within a week, so a failure that needs a fresh link says so.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub forgot_sign_in: bool,
 }
 
 /// One download as stored.
@@ -837,13 +827,6 @@ fn is_damage(error: &rusqlite::Error) -> bool {
         error.sqlite_error_code(),
         Some(rusqlite::ErrorCode::NotADatabase | rusqlite::ErrorCode::DatabaseCorrupt)
     )
-}
-
-/// `path` with `suffix` added to its file name.
-fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
-    let mut name = path.as_os_str().to_owned();
-    name.push(suffix);
-    PathBuf::from(name)
 }
 
 /// Moves a damaged database to `<name>.damaged-<unix ms>` and its side files next to it as `<that name>-wal` and `-shm`, the names SQLite pairs with it, so the kept list opens with what was still in its journal. Either everything moves or nothing does: when one move fails (a sync tool holding a file, say), the ones before it are undone, and the next start tries again. Returns where the database went.

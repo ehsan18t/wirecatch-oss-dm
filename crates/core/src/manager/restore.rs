@@ -13,10 +13,11 @@ use super::handovers::Handovers;
 use super::state::{Counters, Entry, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
+use crate::headers::Origin;
 use crate::naming::Claimed;
 use crate::proxy;
 use crate::settings::{self, DEFAULT_QUEUE_ID};
-use crate::store::{Origin, Snapshot, StoredDownload};
+use crate::store::{Snapshot, StoredDownload};
 use wirecatch_sites::public_suffix::SuffixList;
 
 fn mark_completed(entry: &mut Entry, size: u64, now_millis: i64) {

@@ -15,7 +15,7 @@ use super::state::{Entry, State};
 use super::{Inner, Manager};
 use crate::clock::Clock;
 use crate::headers;
-use crate::store::Origin;
+use crate::headers::Origin;
 
 /// How long an unfinished download keeps the browser's sign-in.
 pub(super) const FORGET_AFTER_MILLIS: i64 = 7 * 24 * 60 * 60 * 1000;
