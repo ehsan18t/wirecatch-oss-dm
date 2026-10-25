@@ -15,7 +15,7 @@ use ts_rs::TS;
 use crate::app::{
     AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
     CaptureConfirmation, DownloadSummary, ImportPreview, MediaChoice, MediaSelection,
-    PendingCapture, Question, Queue, StartupNotice, SuffixListInfo,
+    PendingCapture, Question, Queue, QueueSettings, StartupNotice, SuffixListInfo,
 };
 use crate::proxy::{ProxyChange, ProxySettings, ProxyTest, ProxyTestResult};
 use crate::secret::Link;
@@ -358,13 +358,15 @@ commands! {
     list_queues -> Vec<Queue>;
     /// Makes a new queue.
     create_queue: CreateQueueArgs {
-        /// Its name.
-        name: String,
+        /// What the person set for it.
+        settings: QueueSettings,
     } -> Queue;
-    /// Saves a queue's name, limits and schedule.
+    /// Saves what the person set for a queue: its name, limits, schedule and notices.
     update_queue: UpdateQueueArgs {
-        /// The queue as it should be.
-        queue: Queue,
+        /// The queue.
+        id: QueueId,
+        /// Its settings as they should be.
+        settings: QueueSettings,
     } -> ();
     /// Deletes a queue; its downloads move to the default queue.
     delete_queue: DeleteQueueArgs {

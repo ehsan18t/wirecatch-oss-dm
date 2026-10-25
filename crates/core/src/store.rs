@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tracing::{debug, error, warn};
 use wirecatch_engine::numeric::saturating_cast;
-use wirecatch_protocol::app::{AppSettings, DownloadStatus, DownloadSummary, MediaSummary, Queue};
+use wirecatch_protocol::app::{
+    AppSettings, DownloadStatus, DownloadSummary, MediaSummary, Queue, QueueStatus,
+};
 use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::{DownloadId, QueueId};
@@ -103,6 +105,30 @@ const MIGRATIONS: &[&str] = &[
         CASE json_extract(value, '$.notify_on_complete') WHEN 0 THEN 'nothing' ELSE 'notification' END
     )
     WHERE key = 'app' AND json_valid(value) AND json_type(value, '$.notify_on_complete') IS NOT NULL;
+",
+    // A negative speed limit or a schedule that is not JSON becomes none; a schedule of another
+    // shape makes the queue unreadable, and its downloads join the default queue.
+    r"
+    ALTER TABLE queues RENAME TO queues_before_settings;
+    CREATE TABLE queues (
+        id                       INTEGER PRIMARY KEY,
+        position                 INTEGER NOT NULL,
+        is_default               INTEGER NOT NULL,
+        paused                   INTEGER NOT NULL,
+        running_outside_schedule INTEGER NOT NULL,
+        settings                 TEXT    NOT NULL
+    );
+    INSERT INTO queues (id, position, is_default, paused, running_outside_schedule, settings)
+    SELECT id, position, is_default, paused, running_outside_schedule,
+           json_object(
+               'name', name,
+               'max_concurrent', max_concurrent,
+               'speed_limit', CASE WHEN speed_limit >= 0 THEN speed_limit END,
+               'schedule', CASE WHEN json_valid(schedule) THEN json(schedule) END,
+               'notify', notify
+           )
+    FROM queues_before_settings;
+    DROP TABLE queues_before_settings;
 ",
 ];
 
@@ -199,12 +225,10 @@ pub(crate) enum Recovery {
     },
     /// This many downloads could not be read (a newer version may have saved them) and are kept, hidden, for a version that can, without their sign-in. Counted once: on the start that first found them.
     UnreadableKept(usize),
-    /// Downloads and queues held a negative size, count or speed limit, which Wirecatch never saves. Each was reset and written back, so it is counted once: a size to unknown (or, for a finished download, its file's size), a downloaded count to nothing (or the whole file), a speed limit to none.
+    /// Negative sizes or counts, each reset and written back, so counted once.
     ValuesReset {
         /// Downloads whose size or downloaded count was reset.
         downloads: usize,
-        /// Queues whose speed limit was removed.
-        queues: usize,
     },
 }
 
@@ -960,28 +984,17 @@ fn write_value<T: Serialize>(tx: &Transaction<'_>, key: &str, value: &T) -> rusq
     Ok(())
 }
 
-/// The queues, in order, and how many had a damaged speed limit removed (and
-/// written back).
-fn load_queues(conn: &Connection) -> Result<(Vec<Queue>, usize)> {
+/// In sidebar order, without queues whose settings cannot be read.
+fn load_queues(conn: &Connection) -> Result<Vec<Queue>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, max_concurrent, speed_limit, schedule, is_default, paused,
-                running_outside_schedule, notify
+        "SELECT id, is_default, paused, running_outside_schedule, settings
          FROM queues ORDER BY position",
     )?;
     let mut queues = Vec::new();
-    let mut reset = 0;
     for row in stmt.query_map([], read_queue)? {
-        let (queue, limit_damaged) = row?;
-        if limit_damaged {
-            conn.execute(
-                "UPDATE queues SET speed_limit = NULL WHERE id = ?1",
-                params![queue.id.0],
-            )?;
-            reset += 1;
-        }
-        queues.push(queue);
+        queues.extend(row?);
     }
-    Ok((queues, reset))
+    Ok(queues)
 }
 
 fn load(conn: &Connection) -> Result<Snapshot> {
@@ -990,7 +1003,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     let batches = read_value(conn, BATCHES_KEY, "queue batches")?.unwrap_or_default();
     let proxy_logins = read_value(conn, PROXY_LOGINS_KEY, "proxy passwords")?.unwrap_or_default();
 
-    let (queues, queues_reset) = load_queues(conn)?;
+    let queues = load_queues(conn)?;
     let mut downloads_reset = 0;
 
     let mut stmt = conn.prepare(
@@ -1051,9 +1064,8 @@ fn load(conn: &Connection) -> Result<Snapshot> {
         proxy_logins,
         recoveries: [
             (newly_unreadable > 0).then_some(Recovery::UnreadableKept(newly_unreadable)),
-            (downloads_reset + queues_reset > 0).then_some(Recovery::ValuesReset {
+            (downloads_reset > 0).then_some(Recovery::ValuesReset {
                 downloads: downloads_reset,
-                queues: queues_reset,
             }),
         ]
         .into_iter()
@@ -1092,22 +1104,17 @@ fn forgotten_origin() -> Origin {
 fn save_queues(tx: &Transaction<'_>, queues: &[Queue]) -> rusqlite::Result<()> {
     tx.execute("DELETE FROM queues", [])?;
     let mut stmt = tx.prepare_cached(
-        "INSERT INTO queues (id, position, name, max_concurrent, speed_limit, schedule, is_default,
-                             paused, running_outside_schedule, notify)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO queues (id, position, is_default, paused, running_outside_schedule, settings)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )?;
     for (position, q) in (0i64..).zip(queues) {
         stmt.execute(params![
             q.id.0,
             position,
-            q.name,
-            q.max_concurrent,
-            q.speed_limit.map(saturating_cast::<i64, u64>),
-            q.schedule.as_ref().map(to_json),
             q.is_default,
-            q.paused,
-            q.running_outside_schedule,
-            enum_text(&q.notify),
+            q.status.paused,
+            q.status.running_outside_schedule,
+            to_json(&q.settings),
         ])?;
     }
     Ok(())
@@ -1119,25 +1126,20 @@ fn stored_count(value: i64) -> Option<u64> {
     u64::try_from(value).ok()
 }
 
-/// A queue, and whether its stored speed limit was damaged (and dropped).
-fn read_queue(row: &Row<'_>) -> rusqlite::Result<(Queue, bool)> {
-    let stored_limit = row.get::<_, Option<i64>>(3)?;
-    let speed_limit = stored_limit.and_then(stored_count);
-    let limit_damaged = stored_limit.is_some() && speed_limit.is_none();
-    let queue = Queue {
-        id: QueueId(row.get(0)?),
-        name: row.get(1)?,
-        max_concurrent: row.get(2)?,
-        speed_limit,
-        schedule: row
-            .get::<_, Option<String>>(4)?
-            .and_then(|json| from_json(&json, "queue schedule")),
-        is_default: row.get(5)?,
-        paused: row.get(6)?,
-        running_outside_schedule: row.get(7)?,
-        notify: from_text(&row.get::<_, String>(8)?).unwrap_or_default(),
+fn read_queue(row: &Row<'_>) -> rusqlite::Result<Option<Queue>> {
+    let id = QueueId(row.get(0)?);
+    let Some(settings) = from_json(&row.get::<_, String>(4)?, "queue settings") else {
+        return Ok(None);
     };
-    Ok((queue, limit_damaged))
+    Ok(Some(Queue {
+        id,
+        is_default: row.get(1)?,
+        settings,
+        status: QueueStatus {
+            paused: row.get(2)?,
+            running_outside_schedule: row.get(3)?,
+        },
+    }))
 }
 
 fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result<()> {
@@ -1343,8 +1345,8 @@ mod tests {
 
     use super::*;
     use wirecatch_protocol::app::{
-        Accent, Category, DownloadStatus, FinishNotice, FixAction, QueueNotify, Schedule, Theme,
-        TimeOfDay, UserError,
+        Accent, Category, DownloadStatus, FinishNotice, FixAction, QueueNotify, QueueSettings,
+        Schedule, Theme, TimeOfDay, UserError,
     };
 
     fn download(id: i64) -> StoredDownload {
@@ -1701,21 +1703,25 @@ mod tests {
 
         let queue = Queue {
             id: QueueId(4),
-            name: "Night".into(),
-            max_concurrent: 2,
-            speed_limit: Some(1000),
-            schedule: Some(Schedule {
-                start: TimeOfDay {
-                    hour: 1,
-                    minute: 30,
-                },
-                stop: None,
-                days: vec![],
-            }),
             is_default: false,
-            paused: false,
-            running_outside_schedule: false,
-            notify: QueueNotify::WhenDone,
+            settings: QueueSettings {
+                name: "Night".into(),
+                max_concurrent: 2,
+                speed_limit: Some(1000),
+                schedule: Some(Schedule {
+                    start: TimeOfDay {
+                        hour: 1,
+                        minute: 30,
+                    },
+                    stop: None,
+                    days: vec![],
+                }),
+                notify: QueueNotify::WhenDone,
+            },
+            status: QueueStatus {
+                paused: true,
+                running_outside_schedule: false,
+            },
         };
         let settings = crate::settings::default_settings();
         store.save_queues(vec![queue.clone()]);
@@ -2065,28 +2071,13 @@ mod tests {
         );
     }
 
-    /// A negative size, count or limit cannot be saved by Wirecatch, so it is
-    /// damage: it is repaired (an unknown size, nothing downloaded, no limit),
-    /// written back, and reported once rather than read as zero in silence.
     #[tokio::test]
     async fn negative_counts_are_repaired_and_reported() {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
-        let queue = Queue {
-            id: QueueId(2),
-            name: "Night".into(),
-            max_concurrent: 2,
-            speed_limit: Some(1000),
-            schedule: None,
-            is_default: false,
-            paused: false,
-            running_outside_schedule: false,
-            notify: QueueNotify::EachDownload,
-        };
         let mut finished = download(3);
         finished.summary.status = DownloadStatus::Completed;
         finished.summary.done = 100;
-        store.save_queues(vec![queue.clone()]);
         store.save_downloads(vec![download(1), download(2), finished.clone()]);
         store.flush().await;
         drop(store);
@@ -2099,33 +2090,22 @@ mod tests {
         // A finished download is whole: its count comes back as its size.
         conn.execute("UPDATE downloads SET done = -1 WHERE id = 3", [])
             .unwrap();
-        conn.execute("UPDATE queues SET speed_limit = -1 WHERE id = 2", [])
-            .unwrap();
         drop(conn);
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(
             snapshot.recoveries,
-            vec![Recovery::ValuesReset {
-                downloads: 2,
-                queues: 1
-            }]
+            vec![Recovery::ValuesReset { downloads: 2 }]
         );
         let mut repaired = download(2);
         repaired.summary.total = None;
         repaired.summary.done = 0;
         let expected = vec![download(1), repaired, finished];
         assert_eq!(snapshot.downloads, expected);
-        let unlimited = Queue {
-            speed_limit: None,
-            ..queue
-        };
-        assert_eq!(snapshot.queues, vec![unlimited.clone()]);
 
         let (_, again) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(again.recoveries, vec![], "told once");
         assert_eq!(again.downloads, expected);
-        assert_eq!(again.queues, vec![unlimited]);
     }
 
     /// Repairs found on the same start are all reported, since each is written
@@ -2152,10 +2132,7 @@ mod tests {
             snapshot.recoveries,
             vec![
                 Recovery::UnreadableKept(1),
-                Recovery::ValuesReset {
-                    downloads: 1,
-                    queues: 0
-                }
+                Recovery::ValuesReset { downloads: 1 }
             ]
         );
     }
@@ -2263,9 +2240,85 @@ mod tests {
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         let main = &snapshot.queues[0];
-        assert_eq!((main.name.as_str(), main.max_concurrent), ("Main", 3));
-        assert!(!main.paused && !main.running_outside_schedule);
+        assert_eq!(
+            (main.settings.name.as_str(), main.settings.max_concurrent),
+            ("Main", 3)
+        );
+        assert_eq!(main.status, QueueStatus::default());
         assert_old_download_upgraded(&snapshot);
+    }
+
+    #[test]
+    fn queues_are_carried_over_when_their_settings_become_one_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("queues_before_settings"))
+            .unwrap();
+        database_with_settings(dir.path(), before, true);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        let night = Schedule {
+            start: TimeOfDay { hour: 1, minute: 0 },
+            stop: None,
+            days: vec![],
+        };
+        conn.execute(
+            "INSERT INTO queues (id, position, name, max_concurrent, speed_limit, schedule,
+                                 is_default, paused, running_outside_schedule, notify)
+             VALUES (1, 0, 'Main', 3, NULL, NULL, 1, 0, 0, 'each_download'),
+                    (5, 2, 'Broken', 1, -1, 'not json', 0, 0, 0, 'each_download'),
+                    (4, 1, 'Night', 2, 1000, ?1, 0, 1, 1, 'when_done')",
+            [to_json(&night)],
+        )
+        .unwrap();
+        drop(conn);
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let queue = |id, is_default, settings, status| Queue {
+            id: QueueId(id),
+            is_default,
+            settings,
+            status,
+        };
+        let running = QueueStatus::default();
+        assert_eq!(
+            snapshot.queues,
+            vec![
+                queue(
+                    1,
+                    true,
+                    QueueSettings {
+                        max_concurrent: 3,
+                        ..QueueSettings::new("Main")
+                    },
+                    running
+                ),
+                queue(
+                    4,
+                    false,
+                    QueueSettings {
+                        max_concurrent: 2,
+                        speed_limit: Some(1000),
+                        schedule: Some(night),
+                        notify: QueueNotify::WhenDone,
+                        ..QueueSettings::new("Night")
+                    },
+                    QueueStatus {
+                        paused: true,
+                        running_outside_schedule: true,
+                    }
+                ),
+                queue(
+                    5,
+                    false,
+                    QueueSettings {
+                        max_concurrent: 1,
+                        ..QueueSettings::new("Broken")
+                    },
+                    running
+                ),
+            ]
+        );
     }
 
     #[test]
@@ -2286,7 +2339,10 @@ mod tests {
         drop(conn);
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
-        assert!(snapshot.queues[0].paused, "the queue's pause was lost");
+        assert!(
+            snapshot.queues[0].status.paused,
+            "the queue's pause was lost"
+        );
         assert_old_download_upgraded(&snapshot);
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         let version: u32 = conn
@@ -2441,7 +2497,10 @@ mod tests {
 
     /// A database just before D52, with the notification switch stored as `notify`.
     fn database_before_finish_notices(dir: &Path, notify: bool) {
-        let before = MIGRATIONS.len() - 1;
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("notify_on_complete"))
+            .unwrap();
         database_with_settings(dir, before, true);
         let conn = Connection::open(dir.join(DATABASE_FILE)).unwrap();
         let mut stored = stored_defaults();
@@ -2473,7 +2532,10 @@ mod tests {
             let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
             let settings = snapshot.settings.expect("the settings survive");
             assert_eq!(settings.finish_notice, told, "switch {notify}");
-            assert_eq!(snapshot.queues[0].notify, QueueNotify::EachDownload);
+            assert_eq!(
+                snapshot.queues[0].settings.notify,
+                QueueNotify::EachDownload
+            );
             let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
             let stored: String = conn
                 .query_row(
@@ -2492,7 +2554,7 @@ mod tests {
         let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.batches, Vec::new());
         let mut queue = crate::settings::default_queue();
-        queue.notify = QueueNotify::WhenDone;
+        queue.settings.notify = QueueNotify::WhenDone;
         store.save_queues(vec![queue.clone()]);
         let batches = vec![StoredBatch {
             queue: queue.id,

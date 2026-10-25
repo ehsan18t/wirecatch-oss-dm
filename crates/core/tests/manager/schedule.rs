@@ -15,8 +15,8 @@ fn schedule_default_queue(h: &Harness, schedule: Schedule) -> TestResult {
         .into_iter()
         .find(|q| q.id == DEFAULT_QUEUE_ID)
         .ok_or("the default queue is missing")?;
-    queue.schedule = Some(schedule);
-    h.manager.update_queue(queue)?;
+    queue.settings.schedule = Some(schedule);
+    h.manager.update_queue(queue.id, queue.settings)?;
     Ok(())
 }
 

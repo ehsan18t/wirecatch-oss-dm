@@ -13,8 +13,8 @@ import type {
   ProxyChange,
   ProxyTest,
   QuestionId,
-  Queue,
   QueueId,
+  QueueSettings,
   Reveal,
   SettingsProfile,
   StartupNotice,
@@ -244,12 +244,12 @@ export class MockBackend implements Backend {
     return this.#call(() => queues.listQueues(this.#state));
   }
 
-  createQueue(name: string) {
-    return this.#call(() => queues.createQueue(this.#state, name));
+  createQueue(settings: QueueSettings) {
+    return this.#call(() => queues.createQueue(this.#state, settings));
   }
 
-  updateQueue(queue: Queue) {
-    return this.#call(() => queues.updateQueue(this.#state, queue));
+  updateQueue(id: QueueId, settings: QueueSettings) {
+    return this.#call(() => queues.updateQueue(this.#state, id, settings));
   }
 
   setQueuePaused(id: QueueId, paused: boolean) {

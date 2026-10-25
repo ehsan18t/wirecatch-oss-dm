@@ -72,26 +72,30 @@ impl Manager {
             .queues
             .iter_mut()
             .map(|slot| {
-                let queue = &mut slot.queue;
-                let has_work = busy.contains(&queue.id);
+                let id = slot.queue.id;
+                let settings = &slot.queue.settings;
+                let status = &mut slot.queue.status;
+                let has_work = busy.contains(&id);
                 // Always evaluated, so a start time crossed meanwhile is not missed.
-                let in_schedule = slot
-                    .gate
-                    .is_open(queue.schedule.as_ref(), since, now, has_work);
-                if queue.running_outside_schedule && (!has_work || queue.paused) {
-                    queue.running_outside_schedule = false;
+                let in_schedule =
+                    slot.gate
+                        .is_open(settings.schedule.as_ref(), since, now, has_work);
+                if status.running_outside_schedule && (!has_work || status.paused) {
+                    status.running_outside_schedule = false;
                     flags_changed = true;
                 }
-                let closed = if queue.paused {
+                let closed = if status.paused {
                     Some(Closed::Paused)
-                } else if queue.running_outside_schedule || in_schedule {
+                } else if status.running_outside_schedule || in_schedule {
                     None
                 } else {
-                    Some(Closed::Schedule(queue.schedule.as_ref().map(|s| s.start)))
+                    Some(Closed::Schedule(
+                        settings.schedule.as_ref().map(|s| s.start),
+                    ))
                 };
                 GateView {
-                    id: queue.id,
-                    max_concurrent: queue.max_concurrent,
+                    id,
+                    max_concurrent: settings.max_concurrent,
                     closed,
                 }
             })

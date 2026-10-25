@@ -29,7 +29,7 @@
   );
   const speed = $derived(app.downloads.queueSpeed[queue.id] ?? 0);
   const count = $derived(app.counts.queue.get(queue.id)?.total ?? 0);
-  const outside = $derived(app.queues.isOutsideSchedule(queue) && !queue.paused);
+  const outside = $derived(app.queues.isOutsideSchedule(queue) && !queue.status.paused);
 
   const entries = $derived<MenuEntry[]>([
     ...(outside
@@ -44,9 +44,9 @@
       : []),
     {
       id: 'pause',
-      label: queue.paused ? 'Resume the queue' : 'Pause the queue',
-      icon: queue.paused ? Play : Pause,
-      onselect: () => void app.queues.setPaused(queue.id, !queue.paused),
+      label: queue.status.paused ? 'Resume the queue' : 'Pause the queue',
+      icon: queue.status.paused ? Play : Pause,
+      onselect: () => void app.queues.setPaused(queue.id, !queue.status.paused),
     },
     {
       id: 'edit',
@@ -81,11 +81,11 @@
   {ondrop}
 >
   <SidebarItem
-    label={queue.name}
+    label={queue.settings.name}
     icon={ListOrdered}
     active={shown}
     count={speed > 0 ? undefined : count}
-    description={app.queues.status(queue)}
+    description={app.queues.describe(queue)}
     onclick={() => app.show({ kind: 'queue', id: queue.id })}
   >
     {#snippet trailing()}
@@ -96,9 +96,14 @@
       {/if}
     {/snippet}
     {#snippet actions()}
-      <Menu {entries} label="{queue.name} queue" align="start">
+      <Menu {entries} label="{queue.settings.name} queue" align="start">
         {#snippet trigger(props: MenuTriggerProps)}
-          <IconButton {...props} icon={Ellipsis} label="Actions for {queue.name}" size="xs" />
+          <IconButton
+            {...props}
+            icon={Ellipsis}
+            label="Actions for {queue.settings.name}"
+            size="xs"
+          />
         {/snippet}
       </Menu>
     {/snippet}

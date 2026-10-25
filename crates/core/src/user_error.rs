@@ -201,26 +201,18 @@ fn recovered(recovery: &Recovery) -> StartupNotice {
             ),
             set_aside: false,
         },
-        Recovery::ValuesReset { downloads, queues } => {
-            let mut said = Vec::new();
-            if *downloads > 0 {
-                said.push(format!(
-                    "{downloads} {} in the list held an impossible size or progress, which Wirecatch reset.",
-                    if *downloads == 1 { "download" } else { "downloads" },
-                ));
-            }
-            if *queues > 0 {
-                said.push(format!(
-                    "{queues} {} held an impossible speed limit, which Wirecatch removed. Check your queues' speed limits.",
-                    if *queues == 1 { "queue" } else { "queues" },
-                ));
-            }
-            StartupNotice {
-                title: "Wirecatch repaired some damaged values".to_owned(),
-                message: said.join(" "),
-                set_aside: false,
-            }
-        }
+        Recovery::ValuesReset { downloads } => StartupNotice {
+            title: "Wirecatch repaired some damaged values".to_owned(),
+            message: format!(
+                "{downloads} {} in the list held an impossible size or progress, which Wirecatch reset.",
+                if *downloads == 1 {
+                    "download"
+                } else {
+                    "downloads"
+                },
+            ),
+            set_aside: false,
+        },
     }
 }
 
@@ -739,14 +731,8 @@ mod tests {
             },
             Recovery::UnreadableKept(1),
             Recovery::UnreadableKept(3),
-            Recovery::ValuesReset {
-                downloads: 1,
-                queues: 0,
-            },
-            Recovery::ValuesReset {
-                downloads: 3,
-                queues: 2,
-            },
+            Recovery::ValuesReset { downloads: 1 },
+            Recovery::ValuesReset { downloads: 3 },
         ];
         let notices = recoveries
             .iter()
@@ -760,21 +746,13 @@ mod tests {
             assert!(notice.message.ends_with('.'), "{}", notice.message);
         }
         assert_eq!(list_recovered(&[]), None);
-        let message = |downloads, queues| {
-            list_recovered(&[Recovery::ValuesReset { downloads, queues }])
+        let message = |downloads| {
+            list_recovered(&[Recovery::ValuesReset { downloads }])
                 .map(|n| n.message)
                 .unwrap_or_default()
         };
-        assert!(
-            message(1, 0).starts_with("1 download in"),
-            "{}",
-            message(1, 0)
-        );
-        assert!(!message(1, 0).contains("speed limit"), "{}", message(1, 0));
-        let both = message(3, 2);
-        assert!(both.starts_with("3 downloads in"), "{both}");
-        assert!(both.contains("2 queues held"), "{both}");
-        assert!(both.ends_with("Check your queues' speed limits."), "{both}");
+        assert!(message(1).starts_with("1 download in"), "{}", message(1));
+        assert!(message(3).starts_with("3 downloads in"), "{}", message(3));
         let open = not_private(Path::new("/data"), "access denied");
         for text in [&open.title, &open.message] {
             assert!(!text.contains('\u{2014}'), "em dash in {text}");

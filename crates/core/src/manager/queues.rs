@@ -1,7 +1,7 @@
 //! Creating, editing and deleting queues.
 
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{NEW_QUEUE_MAX_CONCURRENT, Queue, QueueNotify, UiEvent};
+use wirecatch_protocol::app::{Queue, QueueSettings, QueueStatus, UiEvent};
 use wirecatch_protocol::wire::{Event, QueueSummary};
 
 use super::Manager;
@@ -21,31 +21,17 @@ impl Manager {
         self.lock().queue_summaries()
     }
 
-    /// Adds a queue with no schedule and no speed limit.
-    ///
-    /// # Errors
-    ///
-    /// [`CoreError::Invalid`] when the name is empty, too long or taken, or there are
-    /// already as many queues as allowed; and [`CoreError::Closed`] once the manager
-    /// has shut down.
-    pub fn create_queue(&self, name: &str) -> Result<Queue> {
+    /// Adds a running queue, last in the sidebar.
+    pub fn create_queue(&self, settings: QueueSettings) -> Result<Queue> {
         let mut state = self.lock_open()?;
         settings::check_queue_count(state.queues.len() + 1)?;
-        let queue = settings::validate_queue(Queue {
-            id: QueueId(0),
-            name: name.to_string(),
-            max_concurrent: NEW_QUEUE_MAX_CONCURRENT,
-            speed_limit: None,
-            schedule: None,
-            is_default: false,
-            paused: false,
-            running_outside_schedule: false,
-            notify: QueueNotify::EachDownload,
-        })?;
-        ensure_name_free(&state, &queue.name, None)?;
+        let settings = settings::validate_queue(settings)?;
+        ensure_name_free(&state, &settings.name, None)?;
         let queue = Queue {
             id: state.ids.queue(),
-            ..queue
+            is_default: false,
+            settings,
+            status: QueueStatus::default(),
         };
         self.inner.store.save_last_ids(state.ids.last());
         state.queues.push(QueueSlot::new(queue.clone()));
@@ -53,22 +39,12 @@ impl Manager {
         Ok(queue)
     }
 
-    /// Changes a queue's name, limits or schedule. New limits apply to running
-    /// downloads at once. Whether a queue is the default, paused or started now is
-    /// not changed here (see [`set_queue_paused`](Self::set_queue_paused) and
-    /// [`start_queue_now`](Self::start_queue_now)). The stored queue arrives as
-    /// `QueuesChanged`.
-    ///
-    /// # Errors
-    ///
-    /// [`CoreError::Invalid`] for a name or limit that cannot be used,
-    /// [`CoreError::QueueNotFound`] when there is no such queue, and
-    /// [`CoreError::Closed`] once the manager has shut down.
-    pub fn update_queue(&self, queue: Queue) -> Result<()> {
-        let queue = settings::validate_queue(queue)?;
+    /// Replaces queue `id`'s settings; new limits apply to running downloads at once.
+    pub fn update_queue(&self, id: QueueId, settings: QueueSettings) -> Result<()> {
+        let settings = settings::validate_queue(settings)?;
         let mut state = self.lock_open()?;
-        ensure_name_free(&state, &queue.name, Some(queue.id))?;
-        apply_to_slot(state.slot_mut(queue.id)?, queue);
+        ensure_name_free(&state, &settings.name, Some(id))?;
+        apply_to_slot(state.slot_mut(id)?, settings);
         self.queues_changed(&mut state);
         Ok(())
     }
@@ -84,10 +60,10 @@ impl Manager {
     /// [`CoreError::Closed`] once the manager has shut down.
     pub fn set_queue_paused(&self, id: QueueId, paused: bool) -> Result<()> {
         let mut state = self.lock_open()?;
-        let queue = &mut state.slot_mut(id)?.queue;
-        queue.paused = paused;
+        let status = &mut state.slot_mut(id)?.queue.status;
+        status.paused = paused;
         if paused {
-            queue.running_outside_schedule = false;
+            status.running_outside_schedule = false;
         }
         self.queues_changed(&mut state);
         Ok(())
@@ -103,9 +79,9 @@ impl Manager {
     /// [`CoreError::Closed`] once the manager has shut down.
     pub fn start_queue_now(&self, id: QueueId) -> Result<()> {
         let mut state = self.lock_open()?;
-        let queue = &mut state.slot_mut(id)?.queue;
-        queue.paused = false;
-        queue.running_outside_schedule = true;
+        let status = &mut state.slot_mut(id)?.queue.status;
+        status.paused = false;
+        status.running_outside_schedule = true;
         self.queues_changed(&mut state);
         Ok(())
     }
@@ -171,23 +147,16 @@ impl Manager {
     }
 }
 
-/// Replaces a slot's settings (name, limits, schedule) with `queue`'s, applying a
-/// new speed limit live and restarting the schedule's bookkeeping if the schedule
-/// changed. Whether the queue is the default, paused or started now is kept.
-pub(super) fn apply_to_slot(slot: &mut QueueSlot, queue: Queue) {
-    if slot.queue.schedule != queue.schedule {
+/// A changed schedule restarts the gate's bookkeeping.
+pub(super) fn apply_to_slot(slot: &mut QueueSlot, settings: QueueSettings) {
+    let old = &slot.queue.settings;
+    if old.schedule != settings.schedule {
         slot.gate.reset();
     }
-    if slot.queue.speed_limit != queue.speed_limit {
-        slot.limiter.set_limit(queue.speed_limit);
+    if old.speed_limit != settings.speed_limit {
+        slot.limiter.set_limit(settings.speed_limit);
     }
-    slot.queue = Queue {
-        id: slot.queue.id,
-        is_default: slot.queue.is_default,
-        paused: slot.queue.paused,
-        running_outside_schedule: slot.queue.running_outside_schedule,
-        ..queue
-    };
+    slot.queue.settings = settings;
 }
 
 fn ensure_name_free(state: &State, name: &str, except: Option<QueueId>) -> Result<()> {

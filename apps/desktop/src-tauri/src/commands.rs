@@ -185,8 +185,8 @@ pub async fn create_queue(
     core: CoreState<'_>,
     args: contract::create_queue::Args,
 ) -> CommandResult<contract::create_queue::Output> {
-    let CreateQueueArgs { name } = args;
-    api::create_queue(core.manager().await?, &name)
+    let CreateQueueArgs { settings } = args;
+    api::create_queue(core.manager().await?, settings)
 }
 
 #[tauri::command]
@@ -194,8 +194,8 @@ pub async fn update_queue(
     core: CoreState<'_>,
     args: contract::update_queue::Args,
 ) -> CommandResult<contract::update_queue::Output> {
-    let UpdateQueueArgs { queue } = args;
-    api::update_queue(core.manager().await?, queue)
+    let UpdateQueueArgs { id, settings } = args;
+    api::update_queue(core.manager().await?, id, settings)
 }
 
 #[tauri::command]

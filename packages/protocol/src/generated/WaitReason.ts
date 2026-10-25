@@ -24,7 +24,7 @@ export type WaitReason =
          */
         running: number;
         /**
-         * The queue's [`Queue::max_concurrent`].
+         * The queue's [`QueueSettings::max_concurrent`].
          */
         limit: number;
       };

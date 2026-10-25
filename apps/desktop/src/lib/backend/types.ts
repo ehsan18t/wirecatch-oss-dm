@@ -26,6 +26,7 @@ import type {
   QuestionId,
   Queue,
   QueueId,
+  QueueSettings,
   Reveal,
   StartupNotice,
   SystemAppearance,
@@ -87,8 +88,8 @@ export interface Backend {
   resumeAll: () => Promise<void>;
 
   listQueues: () => Promise<Queue[]>;
-  createQueue: (name: string) => Promise<Queue>;
-  updateQueue: (queue: Queue) => Promise<void>;
+  createQueue: (settings: QueueSettings) => Promise<Queue>;
+  updateQueue: (id: QueueId, settings: QueueSettings) => Promise<void>;
   deleteQueue: (id: QueueId) => Promise<void>;
   /** A paused queue starts nothing new and pauses what it was running. */
   setQueuePaused: (id: QueueId, paused: boolean) => Promise<void>;

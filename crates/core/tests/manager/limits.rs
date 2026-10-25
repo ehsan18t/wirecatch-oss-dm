@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast::error::RecvError;
 use wirecatch_core::DEFAULT_QUEUE_ID;
-use wirecatch_protocol::app::{DownloadStatus, Queue, UiEvent};
+use wirecatch_protocol::app::{DownloadStatus, QueueSettings, UiEvent};
 
 use crate::common::{Harness, TestResult, fast_server, is_running, throttled_server, tune};
 use wirecatch_engine::units::KIB;
@@ -15,7 +15,7 @@ use wirecatch_engine::units::KIB;
 fn set_queue(
     h: &Harness,
     id: wirecatch_protocol::QueueId,
-    change: impl FnOnce(&mut Queue),
+    change: impl FnOnce(&mut QueueSettings),
 ) -> TestResult {
     let mut queue = h
         .manager
@@ -23,8 +23,8 @@ fn set_queue(
         .into_iter()
         .find(|q| q.id == id)
         .ok_or("no such queue")?;
-    change(&mut queue);
-    h.manager.update_queue(queue)?;
+    change(&mut queue.settings);
+    h.manager.update_queue(id, queue.settings)?;
     Ok(())
 }
 
@@ -34,7 +34,10 @@ async fn queue_and_global_concurrency_limits_hold() -> TestResult {
     let h = Harness::new().await?;
     tune(&h.manager, |s| s.max_concurrent_downloads = 3)?;
     set_queue(&h, DEFAULT_QUEUE_ID, |q| q.max_concurrent = 1)?;
-    let second = h.manager.create_queue("Second").unwrap();
+    let second = h
+        .manager
+        .create_queue(QueueSettings::new("Second"))
+        .unwrap();
     set_queue(&h, second.id, |q| q.max_concurrent = 3)?;
     let limits = HashMap::from([(DEFAULT_QUEUE_ID, 1), (second.id, 3)]);
 

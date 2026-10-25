@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, LinkFrom};
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::{DownloadStatus, FixAction, UiEvent};
+use wirecatch_protocol::app::{DownloadStatus, FixAction, QueueSettings, UiEvent};
 use wirecatch_protocol::wire::ErrorCode;
 
 use crate::common::{
@@ -209,9 +209,10 @@ async fn commands_return_what_the_ui_expects() -> TestResult {
         start: false,
     };
     let id: DownloadId = m.add_download(request).await.unwrap();
-    let queue: wirecatch_protocol::app::Queue = m.create_queue("Later").unwrap();
+    let queue: wirecatch_protocol::app::Queue =
+        m.create_queue(QueueSettings::new("Later")).unwrap();
     let nothing: [(); 11] = [
-        m.update_queue(queue.clone()).unwrap(),
+        m.update_queue(queue.id, queue.settings.clone()).unwrap(),
         m.update_settings(m.get_settings()).unwrap(),
         m.pause(id).unwrap(),
         m.resume(id).unwrap(),
@@ -250,8 +251,10 @@ async fn sync_methods_work_from_a_thread_outside_the_runtime() -> TestResult {
         manager.resume_all().unwrap();
         manager.resume(started.id).unwrap();
         manager.cancel(cancelled.id).unwrap();
-        let queue = manager.create_queue("From a thread").unwrap();
-        manager.update_queue(queue).unwrap();
+        let queue = manager
+            .create_queue(QueueSettings::new("From a thread"))
+            .unwrap();
+        manager.update_queue(queue.id, queue.settings).unwrap();
         let settings = manager.get_settings();
         manager.update_settings(settings).unwrap();
     })
@@ -426,13 +429,17 @@ async fn downloads_move_between_queues_and_keep_their_order() -> TestResult {
     assert_eq!(order(), vec![(c, main), (a, main), (b, main)]);
     assert!(h.manager.reorder(DEFAULT_QUEUE_ID, &[a, a]).is_err());
 
-    let later = h.manager.create_queue("Later").unwrap().id;
+    let later = h
+        .manager
+        .create_queue(QueueSettings::new("Later"))
+        .unwrap()
+        .id;
     h.manager.move_to_queue(&[a], later).unwrap();
     assert_eq!(order(), vec![(c, main), (b, main), (a, later)]);
     assert!(h.manager.reorder(DEFAULT_QUEUE_ID, &[a, b]).is_err());
 
     assert!(matches!(
-        h.manager.create_queue("later"),
+        h.manager.create_queue(QueueSettings::new("later")),
         Err(CoreError::Invalid(_))
     ));
     assert!(matches!(
@@ -552,7 +559,11 @@ async fn choosing_a_new_folder_fixes_a_folder_error() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_list_is_grouped_by_queue_in_line_order() -> TestResult {
     let h = Harness::new().await?;
-    let later = h.manager.create_queue("Later").unwrap().id;
+    let later = h
+        .manager
+        .create_queue(QueueSettings::new("Later"))
+        .unwrap()
+        .id;
     let main = DEFAULT_QUEUE_ID;
     let mut add = Vec::new();
     // Added alternately, so neither id nor time order matches the expected order.

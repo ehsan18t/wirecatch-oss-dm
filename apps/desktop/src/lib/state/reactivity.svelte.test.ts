@@ -38,11 +38,11 @@ describe('state loaded from the sample backend', () => {
     const seen: string[] = [];
     const cleanup = $effect.root(() => {
       $effect(() => {
-        seen.push(queue.name);
+        seen.push(queue.settings.name);
       });
     });
     flushSync();
-    queue.name = 'Renamed';
+    queue.settings.name = 'Renamed';
     flushSync();
     expect(seen.at(-1)).toBe('Renamed');
     expect(seen).toHaveLength(2);

@@ -40,7 +40,7 @@
   }
 
   const queueOptions = $derived(
-    app.queues.list.map((q): SelectOption<QueueId> => ({ value: q.id, label: q.name })),
+    app.queues.list.map((q): SelectOption<QueueId> => ({ value: q.id, label: q.settings.name })),
   );
 
   /** Saves the smallest file the extension catches as the number shown, in a new unit. */

@@ -69,11 +69,11 @@
     />
     {#if defaultQueue && s.finish_notice !== 'nothing'}
       <p class="flex flex-wrap items-baseline gap-x-1.5 text-small text-ink-muted">
-        <span>{queueNotifyLine(defaultQueue.name, defaultQueue.notify)}</span>
+        <span>{queueNotifyLine(defaultQueue.settings.name, defaultQueue.settings.notify)}</span>
         <Button
           variant="link"
           size="sm"
-          aria-label="Change when {defaultQueue.name} tells you"
+          aria-label="Change when {defaultQueue.settings.name} tells you"
           onclick={() => app.openDialog({ kind: 'queue', id: defaultQueue.id })}>Change</Button
         >
       </p>

@@ -91,5 +91,9 @@ function makeRoomFor(state: MockState, active: number) {
     active + LOAD_TEST_GLOBAL_ROOM,
   );
   const main = state.queues.find((q) => q.is_default);
-  if (main) main.max_concurrent = Math.max(main.max_concurrent, active + LOAD_TEST_QUEUE_ROOM);
+  if (main)
+    main.settings.max_concurrent = Math.max(
+      main.settings.max_concurrent,
+      active + LOAD_TEST_QUEUE_ROOM,
+    );
 }

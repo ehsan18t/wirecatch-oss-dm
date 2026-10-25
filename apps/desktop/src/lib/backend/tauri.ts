@@ -32,7 +32,7 @@ import {
   type ProxyChange,
   type ProxyTest,
   type QuestionId,
-  type Queue,
+  type QueueSettings,
   type QueueId,
   type Reveal,
   type SystemAppearance,
@@ -181,11 +181,11 @@ export class TauriBackend implements DownloadWindowBackend {
   listQueues() {
     return this.#call('list_queues');
   }
-  createQueue(name: string) {
-    return this.#call('create_queue', { name });
+  createQueue(settings: QueueSettings) {
+    return this.#call('create_queue', { settings });
   }
-  updateQueue(queue: Queue) {
-    return this.#exec('update_queue', { queue });
+  updateQueue(id: QueueId, settings: QueueSettings) {
+    return this.#exec('update_queue', { id, settings });
   }
   setQueuePaused(id: QueueId, paused: boolean) {
     return this.#exec('set_queue_paused', { id, paused });

@@ -131,7 +131,7 @@ export type CommandMap = {
    */
   create_queue: Command<CreateQueueArgs, Queue>;
   /**
-   * Saves a queue's name, limits and schedule.
+   * Saves what the person set for a queue: its name, limits, schedule and notices.
    */
   update_queue: Command<UpdateQueueArgs, null>;
   /**

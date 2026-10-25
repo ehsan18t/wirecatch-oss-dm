@@ -131,7 +131,7 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
     await click(button('Actions for Main'));
     await click(screen.getByRole('menuitem', { name: 'Pause the queue' }));
     expect(setPaused).toHaveBeenCalledWith(1, true);
-    expect(app.queues.byId(queueId(1))?.paused).toBe(true);
+    expect(app.queues.byId(queueId(1))?.status.paused).toBe(true);
     const main = screen.getByRole('button', { name: /^Main/ });
     expect(main).toHaveTextContent('Paused');
     const inMain = app.downloads.idsInQueue(queueId(1)).map((id) => app.downloads.get(id));
@@ -145,7 +145,7 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
     ]);
     await click(button('Actions for Main'));
     await click(screen.getByRole('menuitem', { name: 'Resume the queue' }));
-    expect(app.queues.byId(queueId(1))?.paused).toBe(false);
+    expect(app.queues.byId(queueId(1))?.status.paused).toBe(false);
   });
 
   it('starts a scheduled queue now and shows it runs outside its hours', async () => {
@@ -153,7 +153,7 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
     expect(app.queues.isOutsideSchedule(app.queues.byId(queueId(2)) as never)).toBe(true);
     await click(button('Actions for Overnight'));
     await click(screen.getByRole('menuitem', { name: 'Start now, outside its hours' }));
-    expect(app.queues.byId(queueId(2))?.running_outside_schedule).toBe(true);
+    expect(app.queues.byId(queueId(2))?.status.running_outside_schedule).toBe(true);
     expect(screen.getByRole('button', { name: /^Overnight/ })).toHaveTextContent(
       'Started by hand, outside its hours',
     );
@@ -176,14 +176,14 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
       start: true,
     });
     await backend.startQueueNow(queueId(2));
-    expect((await backend.listQueues()).find((x) => x.id === 2)?.running_outside_schedule).toBe(
-      true,
-    );
+    expect(
+      (await backend.listQueues()).find((x) => x.id === 2)?.status.running_outside_schedule,
+    ).toBe(true);
     for (let i = 0; i < 2000; i++) backend.tick(1000);
-    expect(q?.name).toBe('Overnight');
-    expect((await backend.listQueues()).find((x) => x.id === 2)?.running_outside_schedule).toBe(
-      false,
-    );
+    expect(q?.settings.name).toBe('Overnight');
+    expect(
+      (await backend.listQueues()).find((x) => x.id === 2)?.status.running_outside_schedule,
+    ).toBe(false);
   });
 });
 
@@ -274,18 +274,20 @@ describe('11. Pause all and Resume all show only when they would do something', 
 });
 
 describe('13. creating a queue is one atomic step', () => {
-  it('a failed save retried does not create a second queue', async () => {
+  it('a refused save makes no queue, and saving again makes exactly one', async () => {
     const { app, backend, user, click } = await setup();
-    const create = vi.spyOn(backend, 'createQueue');
-    vi.spyOn(backend, 'updateQueue').mockRejectedValueOnce(new Error('Disk is busy.'));
+    const create = vi
+      .spyOn(backend, 'createQueue')
+      .mockRejectedValueOnce(new Error('Disk is busy.'));
     app.openDialog({ kind: 'queue', id: null });
     await settle();
     await user.type(screen.getByLabelText('Name'), 'Weekend');
     await click(button('Create queue'));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Save again to retry');
-    await click(button('Save'));
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(app.queues.list.filter((q) => q.name === 'Weekend')).toHaveLength(1);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(app.queues.list.filter((q) => q.settings.name === 'Weekend')).toHaveLength(0);
+    await click(button('Create queue'));
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(app.queues.list.filter((q) => q.settings.name === 'Weekend')).toHaveLength(1);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

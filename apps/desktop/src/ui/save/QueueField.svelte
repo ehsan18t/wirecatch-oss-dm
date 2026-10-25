@@ -17,7 +17,7 @@
   const options = $derived(
     queues.map((q) => ({
       value: q.id,
-      label: q.name,
+      label: q.settings.name,
       description: q.is_default ? 'The default queue' : undefined,
     })),
   );

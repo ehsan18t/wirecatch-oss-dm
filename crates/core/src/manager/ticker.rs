@@ -135,7 +135,7 @@ fn queue_report(state: &State, queue: QueueId, outcomes: &Outcomes) -> Option<Qu
     };
     let report = QueueReport {
         queue,
-        name: state.slot(queue).ok()?.queue.name.clone(),
+        name: state.slot(queue).ok()?.queue.settings.name.clone(),
         completed: rows(&outcomes.completed),
         failed: rows(&outcomes.failed),
     };

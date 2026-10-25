@@ -3,9 +3,10 @@
 use std::time::Duration;
 
 use chrono::TimeDelta;
-use wirecatch_core::DEFAULT_QUEUE_ID;
+use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
 use wirecatch_protocol::app::{
-    AddRequest, DownloadStatus, Queue, QueueReport, Schedule, TimeOfDay, UiEvent, WaitReason,
+    AddRequest, DownloadStatus, Queue, QueueNotify, QueueReport, QueueSettings, Schedule,
+    TimeOfDay, UiEvent, WaitReason,
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 
@@ -49,7 +50,7 @@ async fn a_paused_queue_starts_nothing_and_resumes_only_what_it_paused() -> Test
 
     // The pause survives a restart.
     h.restart().await?;
-    assert!(queue(&h, DEFAULT_QUEUE_ID)?.paused);
+    assert!(queue(&h, DEFAULT_QUEUE_ID)?.status.paused);
     assert_eq!(h.row(running).status, DownloadStatus::Queued);
     assert_eq!(waiting(&h, later.id), Some(WaitReason::QueuePaused));
 
@@ -67,12 +68,12 @@ async fn start_now_runs_a_scheduled_queue_until_it_is_empty() -> TestResult {
     let h = Harness::at(monday(12, 0)?).await?;
     let two = TimeOfDay { hour: 2, minute: 0 };
     let mut main = queue(&h, DEFAULT_QUEUE_ID)?;
-    main.schedule = Some(Schedule {
+    main.settings.schedule = Some(Schedule {
         start: two,
         stop: Some(TimeOfDay { hour: 3, minute: 0 }),
         days: vec![],
     });
-    h.manager.update_queue(main).unwrap();
+    h.manager.update_queue(main.id, main.settings).unwrap();
     let outside = Some(WaitReason::QueueSchedule {
         starts_at: Some(two),
     });
@@ -84,7 +85,7 @@ async fn start_now_runs_a_scheduled_queue_until_it_is_empty() -> TestResult {
     // Empty now, so the schedule applies again on its own.
     crate::common::wait_until("the start-now run to end", || {
         queue(&h, DEFAULT_QUEUE_ID)
-            .map(|q| (!q.running_outside_schedule).then_some(()))
+            .map(|q| (!q.status.running_outside_schedule).then_some(()))
             .transpose()
     })
     .await?;
@@ -104,23 +105,23 @@ async fn start_now_and_its_end_by_pausing_survive_a_restart() -> TestResult {
     let silent = SilentServer::start().await;
     let mut h = Harness::with_stop_timeout(SHORT).await?;
     let mut main = queue(&h, DEFAULT_QUEUE_ID)?;
-    main.schedule = Some(Schedule {
+    main.settings.schedule = Some(Schedule {
         start: TimeOfDay { hour: 2, minute: 0 },
         stop: Some(TimeOfDay { hour: 3, minute: 0 }),
         days: vec![],
     });
-    h.manager.update_queue(main).unwrap();
+    h.manager.update_queue(main.id, main.settings).unwrap();
     let row = h.add(&silent.url("slow.bin")).await?;
     h.manager.start_queue_now(DEFAULT_QUEUE_ID).unwrap();
     assert!(is_running(&h.row(row.id)));
 
     h.restart().await?;
-    assert!(queue(&h, DEFAULT_QUEUE_ID)?.running_outside_schedule);
+    assert!(queue(&h, DEFAULT_QUEUE_ID)?.status.running_outside_schedule);
     assert!(is_running(&h.row(row.id)));
 
     // Pausing ends the run; resuming then follows the schedule again.
     h.manager.set_queue_paused(DEFAULT_QUEUE_ID, true).unwrap();
-    assert!(!queue(&h, DEFAULT_QUEUE_ID)?.running_outside_schedule);
+    assert!(!queue(&h, DEFAULT_QUEUE_ID)?.status.running_outside_schedule);
     h.manager.set_queue_paused(DEFAULT_QUEUE_ID, false).unwrap();
     let back = h.wait_status(row.id, DownloadStatus::Queued).await;
     assert!(matches!(
@@ -135,10 +136,14 @@ async fn waiting_downloads_say_why() -> TestResult {
     let silent = SilentServer::start().await;
     let h = Harness::new().await?;
     let mut events = h.manager.subscribe();
-    let other = h.manager.create_queue("Other").unwrap().id;
+    let other = h
+        .manager
+        .create_queue(QueueSettings::new("Other"))
+        .unwrap()
+        .id;
     let mut main = queue(&h, DEFAULT_QUEUE_ID)?;
-    main.max_concurrent = 1;
-    h.manager.update_queue(main).unwrap();
+    main.settings.max_concurrent = 1;
+    h.manager.update_queue(main.id, main.settings).unwrap();
 
     // The queue is full.
     let a1 = h.add(&silent.url("a1.bin")).await?.id;
@@ -191,8 +196,8 @@ async fn pause_all_clears_the_reasons_of_downloads_it_paused() -> TestResult {
     let silent = SilentServer::start().await;
     let h = Harness::with_stop_timeout(SHORT).await?;
     let mut main = queue(&h, DEFAULT_QUEUE_ID)?;
-    main.max_concurrent = 1;
-    h.manager.update_queue(main).unwrap();
+    main.settings.max_concurrent = 1;
+    h.manager.update_queue(main.id, main.settings).unwrap();
     let running = h.add(&silent.url("running.bin")).await?.id;
     let behind = h.add(&silent.url("behind.bin")).await?.id;
     assert!(is_running(&h.row(running)));
@@ -217,7 +222,11 @@ async fn deleting_a_queue_moves_its_waiting_confirmations_to_the_default() -> Te
     let server = fast_server(1024).await?;
     let h = Harness::new().await?;
     tune(&h.manager, |s| s.extension.ask_before_download = true)?;
-    let later = h.manager.create_queue("Later").unwrap().id;
+    let later = h
+        .manager
+        .create_queue(QueueSettings::new("Later"))
+        .unwrap()
+        .id;
     let capture = wirecatch_protocol::extension::NewDownload {
         handover_id: "tab-1".into(),
         url: server.url("report.pdf").to_string(),
@@ -282,7 +291,7 @@ async fn a_queue_reports_once_when_nothing_in_it_runs_or_waits() -> TestResult {
 
     let report = queue_finished(&mut ui).await;
     assert_eq!(report.queue, DEFAULT_QUEUE_ID);
-    assert_eq!(report.name, queue(&h, DEFAULT_QUEUE_ID)?.name);
+    assert_eq!(report.name, queue(&h, DEFAULT_QUEUE_ID)?.settings.name);
     let mut expected = vec![first, second];
     expected.sort();
     assert_eq!(
@@ -317,5 +326,41 @@ async fn a_queue_counts_what_finished_before_a_restart() -> TestResult {
     let report = queue_finished(&mut ui).await;
     assert_eq!(ids_of(&report.completed), vec![done]);
     assert_eq!(report.failed, Vec::new());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queue_is_made_with_its_settings_or_not_at_all() -> TestResult {
+    let mut h = Harness::new().await?;
+    let night = QueueSettings {
+        max_concurrent: 4,
+        speed_limit: Some(64 * KIB),
+        schedule: Some(Schedule {
+            start: TimeOfDay { hour: 1, minute: 0 },
+            stop: None,
+            days: vec![],
+        }),
+        notify: QueueNotify::WhenDone,
+        ..QueueSettings::new("Night")
+    };
+    let made = h.manager.create_queue(night.clone())?;
+    assert_eq!(made.settings, night);
+    h.restart().await?;
+    assert_eq!(queue(&h, made.id)?.settings, night);
+
+    let none_at_once = QueueSettings {
+        max_concurrent: 0,
+        ..QueueSettings::new("Never")
+    };
+    assert!(matches!(
+        h.manager.create_queue(none_at_once),
+        Err(CoreError::Invalid(_))
+    ));
+    assert!(
+        !h.manager
+            .list_queues()
+            .iter()
+            .any(|q| q.settings.name == "Never")
+    );
     Ok(())
 }

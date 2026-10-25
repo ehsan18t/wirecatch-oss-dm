@@ -2,6 +2,7 @@
 //! progress, and the ones that were running continue on their own.
 
 use wirecatch_protocol::app::DownloadStatus;
+use wirecatch_protocol::app::QueueSettings;
 
 use crate::common::{
     Harness, TestResult, fast_server, is_running, partial_files, throttled_server,
@@ -62,15 +63,18 @@ async fn ids_are_never_reused_after_deleting_the_newest() -> TestResult {
     h.add_with("https://example.com/a.bin", paused).await?;
     let newest = h.add_with("https://example.com/b.bin", paused).await?;
     h.manager.remove(&[newest.id], false).await.unwrap();
-    h.manager.create_queue("Kept").unwrap();
-    let newest_queue = h.manager.create_queue("Deleted").unwrap();
+    h.manager.create_queue(QueueSettings::new("Kept")).unwrap();
+    let newest_queue = h
+        .manager
+        .create_queue(QueueSettings::new("Deleted"))
+        .unwrap();
     h.manager.delete_queue(newest_queue.id).unwrap();
 
     h.restart().await?;
 
     let next = h.add_with("https://example.com/c.bin", paused).await?;
     assert!(next.id.0 > newest.id.0, "download id {} reused", next.id.0);
-    let queue = h.manager.create_queue("New").unwrap();
+    let queue = h.manager.create_queue(QueueSettings::new("New")).unwrap();
     assert!(
         queue.id.0 > newest_queue.id.0,
         "queue id {} reused",

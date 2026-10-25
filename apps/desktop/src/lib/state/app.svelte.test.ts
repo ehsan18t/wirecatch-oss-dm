@@ -39,32 +39,28 @@ describe('AppState', () => {
     await app.init();
     const queue = app.queues.defaultQueue;
     if (!queue) throw new Error('The sample has no default queue.');
-    expect(app.queues.status(queue)).toBe(`Idle, up to ${String(queue.max_concurrent)} at once`);
+    expect(app.queues.describe(queue)).toBe(
+      `Idle, up to ${String(queue.settings.max_concurrent)} at once`,
+    );
   });
 
-  it('saves a new queue by making it first, and on a retry updates the one it made', async () => {
+  it('makes a new queue with its settings in one step, and a refused one makes nothing', async () => {
     const { app, backend } = await make();
-    const changes = {
+    const settings = {
       name: 'Night',
       max_concurrent: 2,
       speed_limit: null,
       schedule: null,
       notify: 'each_download' as const,
     };
-    const refuse = vi
-      .spyOn(backend, 'updateQueue')
-      .mockRejectedValueOnce(new BackendError('Not now.'));
+    const named = () => app.queues.list.filter((q) => q.settings.name === 'Night');
+    vi.spyOn(backend, 'createQueue').mockRejectedValueOnce(new BackendError('Not now.'));
 
-    const first = await app.queues.save(undefined, changes);
-    expect(first.kind).toBe('made');
-    const made = first.kind === 'made' ? first.queue : undefined;
-    expect(app.queues.list.filter((q) => q.name === 'Night')).toHaveLength(1);
+    expect(await app.queues.save(null, settings)).toBeUndefined();
+    expect(named()).toHaveLength(0);
 
-    refuse.mockRestore();
-    const retried = await app.queues.save(made, { ...changes, max_concurrent: 3 });
-    expect(retried).toEqual({ kind: 'saved', queue: made });
-    expect(app.queues.list.filter((q) => q.name === 'Night')).toHaveLength(1);
-    expect(app.queues.byId(made?.id ?? queueId(0))?.max_concurrent).toBe(3);
+    const id = await app.queues.save(null, { ...settings, max_concurrent: 3 });
+    expect(named().map((q) => [q.id, q.settings.max_concurrent])).toEqual([[id, 3]]);
   });
 
   it('loads everything and applies events', async () => {

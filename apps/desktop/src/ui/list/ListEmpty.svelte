@@ -20,7 +20,7 @@
   const search = $derived(app.search.trim());
   const queue = $derived(app.view.kind === 'queue' ? app.queues.byId(app.view.id) : undefined);
   const otherQueue = $derived(
-    app.queues.list.find((q) => q.id !== queue?.id)?.name ?? 'another queue',
+    app.queues.list.find((q) => q.id !== queue?.id)?.settings.name ?? 'another queue',
   );
 
   /** A view with nothing in it: what it would hold, and its picture. */
@@ -83,7 +83,7 @@
     <EmptyState
       icon={ListPlus}
       tone="neutral"
-      title="{queue.name} is empty"
+      title="{queue.settings.name} is empty"
       description="Add a download straight into this queue, or drag downloads onto it in the sidebar from {otherQueue} or any other list."
     >
       {#snippet actions()}
@@ -91,7 +91,7 @@
           variant="primary"
           icon={Plus}
           onclick={() => app.openDialog({ kind: 'add', urls: [], queue: queue.id })}
-          >Add to {queue.name}</Button
+          >Add to {queue.settings.name}</Button
         >
       {/snippet}
     </EmptyState>

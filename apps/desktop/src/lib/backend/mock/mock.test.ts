@@ -66,7 +66,7 @@ describe('MockBackend', () => {
     const rows = await mock.listDownloads();
     const queues = await mock.listQueues();
     for (const q of queues)
-      expect(running(rows, q.id).length).toBeLessThanOrEqual(q.max_concurrent);
+      expect(running(rows, q.id).length).toBeLessThanOrEqual(q.settings.max_concurrent);
     expect(running(rows).length).toBeLessThanOrEqual(
       (await mock.getSettings()).max_concurrent_downloads,
     );
@@ -91,7 +91,7 @@ describe('MockBackend', () => {
     for (let i = 0; i < 12; i++) advance(250);
     const work = running(await mock.listDownloads(), 3);
     const total = work.reduce((s, r) => s + r.speed, 0);
-    const limit = (await mock.listQueues()).find((q) => q.id === 3)?.speed_limit;
+    const limit = (await mock.listQueues()).find((q) => q.id === 3)?.settings.speed_limit;
     expect(limit).toBeTypeOf('number');
     // Speeds are rounded to whole bytes, so the total may go one byte over.
     expect(total).toBeLessThanOrEqual((limit ?? 0) + 1);
@@ -151,11 +151,18 @@ describe('MockBackend', () => {
 
   it('manages queues and refuses to delete the default one', async () => {
     const { mock } = make();
-    const q = await mock.createQueue('Weekend');
-    await mock.updateQueue({ ...q, max_concurrent: 5 });
-    expect((await mock.listQueues()).find((x) => x.id === q.id)?.max_concurrent).toBe(5);
+    const weekend = {
+      name: 'Weekend',
+      max_concurrent: 2,
+      speed_limit: null,
+      schedule: null,
+      notify: 'each_download',
+    } as const;
+    const q = await mock.createQueue(weekend);
+    await mock.updateQueue(q.id, { ...weekend, max_concurrent: 5 });
+    expect((await mock.listQueues()).find((x) => x.id === q.id)?.settings.max_concurrent).toBe(5);
     await expect(mock.deleteQueue(queueId(1))).rejects.toThrow(/default queue cannot be deleted/);
-    await expect(mock.createQueue('  ')).rejects.toThrow(/name/);
+    await expect(mock.createQueue({ ...weekend, name: '  ' })).rejects.toThrow(/name/);
     await mock.deleteQueue(q.id);
     expect((await mock.listQueues()).some((x) => x.id === q.id)).toBe(false);
   });

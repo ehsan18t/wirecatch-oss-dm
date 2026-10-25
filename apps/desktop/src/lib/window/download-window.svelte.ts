@@ -129,7 +129,7 @@ export class DownloadWindowState {
   }
 
   queueName(id: Queue['id']): string {
-    return this.queues.find((q) => q.id === id)?.name ?? 'Its queue';
+    return this.queues.find((q) => q.id === id)?.settings.name ?? 'Its queue';
   }
 
   /** Loads the window's question or download and starts listening. */

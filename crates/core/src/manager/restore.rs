@@ -128,7 +128,12 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
 fn restore_queues(stored: Vec<Queue>) -> Vec<QueueSlot> {
     let mut queues: Vec<QueueSlot> = stored
         .into_iter()
-        .map(|queue| QueueSlot::new(settings::queue_within_limits(queue)))
+        .map(|queue| {
+            QueueSlot::new(Queue {
+                settings: settings::queue_within_limits(queue.settings),
+                ..queue
+            })
+        })
         .collect();
     if !queues.iter().any(|s| s.queue.is_default) {
         queues.insert(0, QueueSlot::new(settings::default_queue()));
@@ -306,8 +311,8 @@ mod tests {
         stored_settings.max_concurrent_downloads = 0;
         stored_settings.global_speed_limit = Some(0);
         let mut queue = settings::default_queue();
-        queue.max_concurrent = 0;
-        queue.speed_limit = Some(0);
+        queue.settings.max_concurrent = 0;
+        queue.settings.speed_limit = Some(0);
         let snapshot = Snapshot {
             settings: Some(stored_settings),
             queues: vec![queue],
@@ -321,7 +326,7 @@ mod tests {
         assert_eq!(loaded.connections_per_download, 1);
         assert_eq!(loaded.max_concurrent_downloads, 1);
         assert_eq!(loaded.global_speed_limit, None);
-        let queue = &restored.state.queue_list()[0];
+        let queue = &restored.state.queue_list()[0].settings;
         assert_eq!((queue.max_concurrent, queue.speed_limit), (1, None));
     }
 

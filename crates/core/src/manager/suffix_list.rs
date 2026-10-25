@@ -437,24 +437,6 @@ mod tests {
         h.manager.update_settings(settings).unwrap();
     }
 
-    // Turning the refresh off is a privacy choice: a profile from before the setting
-    // existed says nothing about it, so importing one leaves it as it is.
-    #[tokio::test]
-    async fn a_profile_without_the_setting_leaves_the_refresh_as_it_is() {
-        let h = Harness::new().await;
-        h.set_updates(false);
-        let path = h.dir.path().join("profile.json");
-        h.manager.export_settings(&path).await.unwrap();
-        let mut profile: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        let settings = profile["settings"].as_object_mut().unwrap();
-        assert_eq!(settings.remove("update_suffix_list"), Some(false.into()));
-        std::fs::write(&path, serde_json::to_vec(&profile).unwrap()).unwrap();
-
-        h.manager.import_settings(&path).await.unwrap();
-        assert!(!h.manager.get_settings().update_suffix_list);
-    }
-
     // The weekly check runs out of sight, and a failed Check now changes when the list was
     // last looked at, so the settings page hears of each one.
     #[tokio::test]

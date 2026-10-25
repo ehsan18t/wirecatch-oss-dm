@@ -90,6 +90,7 @@ import type { PortablePath } from './PortablePath';
 import type { PreviewImportArgs } from './PreviewImportArgs';
 import type { ProcessingProgress } from './ProcessingProgress';
 import type { ProcessingStep } from './ProcessingStep';
+import type { ProfileQueue } from './ProfileQueue';
 import type { ProtocolError } from './ProtocolError';
 import type { ProxyChange } from './ProxyChange';
 import type { ProxyKind } from './ProxyKind';
@@ -107,6 +108,8 @@ import type { Queue } from './Queue';
 import type { QueueId } from './QueueId';
 import type { QueueNotify } from './QueueNotify';
 import type { QueueReport } from './QueueReport';
+import type { QueueSettings } from './QueueSettings';
+import type { QueueStatus } from './QueueStatus';
 import type { QueueSummary } from './QueueSummary';
 import type { RefreshLinkArgs } from './RefreshLinkArgs';
 import type { RejectCaptureArgs } from './RejectCaptureArgs';
@@ -500,7 +503,7 @@ export function isControlWindowArgs(value: unknown): value is ControlWindowArgs 
 
 /** Whether `value` has the shape of a {@link CreateQueueArgs}; fields it does not name are not checked. */
 export function isCreateQueueArgs(value: unknown): value is CreateQueueArgs {
-  return ((value1: unknown): boolean => isRecord(value1) && typeof value1['name'] === 'string')(
+  return ((value1: unknown): boolean => isRecord(value1) && isQueueSettings(value1['settings']))(
     value,
   );
 }
@@ -1115,6 +1118,15 @@ export function isProcessingStep(value: unknown): value is ProcessingStep {
   return value === 'joining' || value === 'finishing' || value === 'converting';
 }
 
+/** Whether `value` has the shape of a {@link ProfileQueue}; fields it does not name are not checked. */
+export function isProfileQueue(value: unknown): value is ProfileQueue {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isQueueId(value1['id']) &&
+    typeof value1['is_default'] === 'boolean' &&
+    isQueueSettings(value1['settings']))(value);
+}
+
 /** Whether `value` has the shape of a {@link ProtocolError}; fields it does not name are not checked. */
 export function isProtocolError(value: unknown): value is ProtocolError {
   return ((value1: unknown): boolean =>
@@ -1246,14 +1258,9 @@ export function isQueue(value: unknown): value is Queue {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     isQueueId(value1['id']) &&
-    typeof value1['name'] === 'string' &&
-    typeof value1['max_concurrent'] === 'number' &&
-    (typeof value1['speed_limit'] === 'number' || value1['speed_limit'] === null) &&
-    (isSchedule(value1['schedule']) || value1['schedule'] === null) &&
     typeof value1['is_default'] === 'boolean' &&
-    typeof value1['paused'] === 'boolean' &&
-    typeof value1['running_outside_schedule'] === 'boolean' &&
-    isQueueNotify(value1['notify']))(value);
+    isQueueSettings(value1['settings']) &&
+    isQueueStatus(value1['status']))(value);
 }
 
 /** Whether `value` has the shape of a {@link QueueId}; fields it does not name are not checked. */
@@ -1274,6 +1281,25 @@ export function isQueueReport(value: unknown): value is QueueReport {
     typeof value1['name'] === 'string' &&
     isArrayOf(value1['completed'], isDownloadSummary) &&
     isArrayOf(value1['failed'], isDownloadSummary))(value);
+}
+
+/** Whether `value` has the shape of a {@link QueueSettings}; fields it does not name are not checked. */
+export function isQueueSettings(value: unknown): value is QueueSettings {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['name'] === 'string' &&
+    typeof value1['max_concurrent'] === 'number' &&
+    (typeof value1['speed_limit'] === 'number' || value1['speed_limit'] === null) &&
+    (isSchedule(value1['schedule']) || value1['schedule'] === null) &&
+    isQueueNotify(value1['notify']))(value);
+}
+
+/** Whether `value` has the shape of a {@link QueueStatus}; fields it does not name are not checked. */
+export function isQueueStatus(value: unknown): value is QueueStatus {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['paused'] === 'boolean' &&
+    typeof value1['running_outside_schedule'] === 'boolean')(value);
 }
 
 /** Whether `value` has the shape of a {@link QueueSummary}; fields it does not name are not checked. */
@@ -1414,7 +1440,7 @@ export function isSettingsProfile(value: unknown): value is SettingsProfile {
     typeof value1['app_version'] === 'string' &&
     typeof value1['exported_at'] === 'number' &&
     isAppSettings(value1['settings']) &&
-    isArrayOf(value1['queues'], isQueue) &&
+    isArrayOf(value1['queues'], isProfileQueue) &&
     isArrayOf(value1['addons'], isAddonId))(value);
 }
 
@@ -1590,7 +1616,8 @@ export function isUpdateAddonArgs(value: unknown): value is UpdateAddonArgs {
 
 /** Whether `value` has the shape of a {@link UpdateQueueArgs}; fields it does not name are not checked. */
 export function isUpdateQueueArgs(value: unknown): value is UpdateQueueArgs {
-  return ((value1: unknown): boolean => isRecord(value1) && isQueue(value1['queue']))(value);
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && isQueueId(value1['id']) && isQueueSettings(value1['settings']))(value);
 }
 
 /** Whether `value` has the shape of a {@link UserError}; fields it does not name are not checked. */

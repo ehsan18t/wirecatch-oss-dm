@@ -7,7 +7,8 @@ use wirecatch_protocol::app::{
     Accent, AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS, DEFAULT_QUEUE_MAX_CONCURRENT, FinishNoteTime, FinishNotice,
     MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD, MediaDefaults, OutputDefaults,
-    PortablePath, Queue, QueueNotify, StartNoteTime, StartNotice, Theme, VideoQuality,
+    PortablePath, Queue, QueueNotify, QueueSettings, QueueStatus, StartNoteTime, StartNotice,
+    Theme, VideoQuality,
 };
 use wirecatch_protocol::extension::{
     ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, MAX_VIDEO_SITES,
@@ -122,14 +123,15 @@ pub fn default_settings() -> AppSettings {
 pub(crate) fn default_queue() -> Queue {
     Queue {
         id: DEFAULT_QUEUE_ID,
-        name: "Main".into(),
-        max_concurrent: DEFAULT_QUEUE_MAX_CONCURRENT,
-        speed_limit: None,
-        schedule: None,
         is_default: true,
-        paused: false,
-        running_outside_schedule: false,
-        notify: QueueNotify::EachDownload,
+        settings: QueueSettings {
+            name: "Main".into(),
+            max_concurrent: DEFAULT_QUEUE_MAX_CONCURRENT,
+            speed_limit: None,
+            schedule: None,
+            notify: QueueNotify::EachDownload,
+        },
+        status: QueueStatus::default(),
     }
 }
 
@@ -226,10 +228,10 @@ fn too_many(rules: &ListRules) -> CoreError {
 }
 
 /// [`within_limits`] for a queue.
-pub(crate) fn queue_within_limits(mut queue: Queue) -> Queue {
-    queue.max_concurrent = queue.max_concurrent.clamp(1, MAX_CONCURRENT_DOWNLOADS);
-    queue.speed_limit = speed_limit_within_limits(queue.speed_limit);
-    queue
+pub(crate) fn queue_within_limits(mut settings: QueueSettings) -> QueueSettings {
+    settings.max_concurrent = settings.max_concurrent.clamp(1, MAX_CONCURRENT_DOWNLOADS);
+    settings.speed_limit = speed_limit_within_limits(settings.speed_limit);
+    settings
 }
 
 /// A limit of zero would stop every download for good, so it reads as no limit, which is what it was meant to say.
@@ -409,7 +411,7 @@ pub(crate) fn check_queue_count(count: usize) -> Result<()> {
 }
 
 /// Checks a queue's name, limits and schedule, trimming the name.
-pub(crate) fn validate_queue(mut queue: Queue) -> Result<Queue> {
+pub(crate) fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> {
     queue.name = queue.name.trim().to_string();
     if queue.name.is_empty() {
         return Err(CoreError::Invalid("Give the queue a name.".into()));
@@ -906,7 +908,7 @@ mod tests {
 
     #[test]
     fn queue_validation() {
-        let mut q = default_queue();
+        let mut q = default_queue().settings;
         q.name = "  Night  ".into();
         assert_eq!(validate_queue(q.clone()).unwrap().name, "Night");
         q.name = " ".into();
