@@ -30,7 +30,7 @@ import * as addons from './addons';
 import * as captures from './captures';
 import { MockFinished } from './finished';
 import * as suffixList from './suffix-list';
-import { DOWNLOADS, HOME, PICKED_FOLDERS, startupNoticesFor } from './data';
+import * as data from './data';
 import * as downloads from './downloads';
 import * as media from './media';
 import { populate } from './populate';
@@ -42,15 +42,6 @@ import * as settings from './settings';
 import { DEFAULT_TICK_MS, step } from './simulator';
 import type { MockOptions } from './options';
 import { MockState } from './state';
-
-/** The seed of the sample data people and screenshots see. */
-const DEFAULT_SEED = 7;
-/** With `autoCapture`, the browser "sends" a download this long after start. */
-const AUTO_CAPTURE_MS = 6000;
-/** The sample system's accent colour: Windows' own default blue. */
-export const SAMPLE_SYSTEM_ACCENT = '#0078d4';
-/** How long the slow sample page takes to read. */
-const SLOW_READING_MS = 3000;
 
 /** What a call to the mock core came to: its value, or the error it failed with. */
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
@@ -95,9 +86,9 @@ export class MockBackend implements Backend {
 
   constructor(options: MockOptions = {}) {
     const now = options.now ?? (() => Date.now());
-    this.#state = new MockState(this.windows, mulberry32(options.seed ?? DEFAULT_SEED), now);
+    this.#state = new MockState(this.windows, mulberry32(options.seed ?? data.DEFAULT_SEED), now);
     this.#latencyMs = options.latencyMs ?? 0;
-    this.#startupNotices = startupNoticesFor(options);
+    this.#startupNotices = data.startupNoticesFor(options);
     this.#lastTick = now();
     if (!options.empty) populate(this.#state, options.count ?? SEEDS.length, options.active ?? 0);
     this.#finished = new MockFinished(this.#state);
@@ -119,7 +110,7 @@ export class MockBackend implements Backend {
     autoCapture = false,
   }: MockOptions): void {
     if (autoTick) this.#timer = setInterval(() => this.tick(), tickMs);
-    if (autoCapture) this.#after(AUTO_CAPTURE_MS, () => this.simulateCapture());
+    if (autoCapture) this.#after(data.AUTO_CAPTURE_MS, () => this.simulateCapture());
   }
 
   /** Stops the timers, including answers still on their way back; those never arrive. */
@@ -174,8 +165,6 @@ export class MockBackend implements Backend {
       });
     }
   }
-
-  // ---- Downloads ----
 
   listDownloads() {
     return this.#call(() => downloads.listDownloads(this.#state));
@@ -238,8 +227,6 @@ export class MockBackend implements Backend {
     return this.#call(() => ({ ...this.#state.row(id) }));
   }
 
-  // ---- Queues ----
-
   listQueues() {
     return this.#call(() => queues.listQueues(this.#state));
   }
@@ -270,8 +257,6 @@ export class MockBackend implements Backend {
     return this.#call(() => queues.deleteQueue(this.#state, id));
   }
 
-  // ---- Settings ----
-
   getSettings() {
     return this.#call(() => structuredClone(this.#state.settings));
   }
@@ -296,8 +281,6 @@ export class MockBackend implements Backend {
   importSettings(path: string) {
     return this.#call(() => settings.importSettings(this.#state, path));
   }
-
-  // ---- Browser captures and their questions ----
 
   pendingConfirmations() {
     return this.#call(() => this.#state.pending.map((p) => ({ ...p })));
@@ -350,8 +333,6 @@ export class MockBackend implements Backend {
     captures.simulateConfirmation(this.#state, this.#captureIndex++);
   }
 
-  // ---- Media and add-ons ----
-
   /** Sample data only: the browser found media with several qualities. */
   simulateMediaChoice(page?: string, id?: QuestionId): void {
     media.simulateMediaChoice(this.#state, this.#mediaIndex++, page, id);
@@ -366,7 +347,7 @@ export class MockBackend implements Backend {
   #readSlowly(page: string): QuestionId {
     const id = media.startReading(this.#state, page);
     const stillReading = () => this.#state.reading.some((r) => r.id === id);
-    this.#after(SLOW_READING_MS, () => stillReading() && this.simulateMediaChoice(page, id));
+    this.#after(data.SLOW_READING_MS, () => stillReading() && this.simulateMediaChoice(page, id));
     return id;
   }
 
@@ -445,8 +426,6 @@ export class MockBackend implements Backend {
     return this.#call(() => addons.removeAddon(this.#state, id));
   }
 
-  // ---- The desktop shell ----
-
   takeLaunchLinks() {
     return this.#call((): string[] => []);
   }
@@ -474,7 +453,7 @@ export class MockBackend implements Backend {
   }
 
   systemAppearance() {
-    return this.#call((): SystemAppearance => ({ accent: SAMPLE_SYSTEM_ACCENT }));
+    return this.#call((): SystemAppearance => ({ accent: data.SAMPLE_SYSTEM_ACCENT }));
   }
 
   onSystemAppearance(_listener: (appearance: SystemAppearance) => void) {
@@ -513,8 +492,6 @@ export class MockBackend implements Backend {
     });
   }
 
-  // ---- Files and pickers ----
-
   openFile(id: DownloadId) {
     return this.#call(() => {
       if (downloads.mayOpen(this.#state, id, this.answerProgramWarning)) this.opened.push(id);
@@ -533,20 +510,22 @@ export class MockBackend implements Backend {
 
   pickFolder(current?: string) {
     return this.#call(() => {
-      const next = () => PICKED_FOLDERS[this.#folderPick++ % PICKED_FOLDERS.length] ?? DOWNLOADS;
+      const next = () =>
+        data.PICKED_FOLDERS[this.#folderPick++ % data.PICKED_FOLDERS.length] ?? data.DOWNLOADS;
       const first = next();
       return first === current ? next() : first;
     });
   }
 
   pickSaveFile(suggestedName: string) {
-    return this.#call(() => `${HOME}\\Documents\\${suggestedName}`);
+    return this.#call(() => `${data.HOME}\\Documents\\${suggestedName}`);
   }
 
   pickOpenFile() {
     return this.#call(
       () =>
-        [...this.#state.files.keys()].pop() ?? `${HOME}\\Documents\\${PRODUCT_SLUG}-settings.json`,
+        [...this.#state.files.keys()].pop() ??
+        `${data.HOME}\\Documents\\${PRODUCT_SLUG}-settings.json`,
     );
   }
 
