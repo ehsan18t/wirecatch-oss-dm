@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use wirecatch_protocol::app::MediaSubtitle;
 
-use super::job::SubtitlePick;
+use super::SubtitlePick;
 use crate::media::ytdlp::{Info, SubtitleFile};
 
 /// The longest subtitle key read as a language (`en`, `pt-BR`, `zh-Hans-orig`).

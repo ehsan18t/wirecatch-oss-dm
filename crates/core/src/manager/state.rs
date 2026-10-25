@@ -14,6 +14,10 @@ use wirecatch_protocol::app::{
 use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
+use wirecatch_queues::schedule::Gate;
+use wirecatch_sites::local_network::ChosenBy;
+use wirecatch_sites::public_suffix::SuffixList;
+use wirecatch_store::{LastIds, NameChoice, StoredDownload};
 
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
@@ -26,10 +30,6 @@ use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use crate::naming::Claimed;
 use crate::proxy::{self, Logins};
 use crate::speed::SpeedMeter;
-use crate::store::{LastIds, NameChoice, StoredDownload};
-use wirecatch_queues::schedule::Gate;
-use wirecatch_sites::local_network::ChosenBy;
-use wirecatch_sites::public_suffix::SuffixList;
 
 pub(super) struct State {
     pub settings: AppSettings,

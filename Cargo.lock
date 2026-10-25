@@ -7304,8 +7304,10 @@ dependencies = [
  "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-queues",
+ "wirecatch-records",
  "wirecatch-server",
  "wirecatch-sites",
+ "wirecatch-store",
  "wirecatch-streams",
  "wirecatch-test-support",
  "zip",
@@ -7456,6 +7458,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wirecatch-records"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "wirecatch-protocol",
+ "wirecatch-streams",
+]
+
+[[package]]
 name = "wirecatch-server"
 version = "0.1.0"
 dependencies = [
@@ -7479,6 +7492,26 @@ dependencies = [
  "tracing",
  "wirecatch-engine",
  "wirecatch-protocol",
+ "wirecatch-test-support",
+]
+
+[[package]]
+name = "wirecatch-store"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "wirecatch-engine",
+ "wirecatch-files",
+ "wirecatch-product",
+ "wirecatch-protocol",
+ "wirecatch-records",
+ "wirecatch-sites",
  "wirecatch-test-support",
 ]
 

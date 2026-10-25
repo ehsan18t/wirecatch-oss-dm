@@ -6,7 +6,7 @@ use wirecatch_engine::numeric::{f64_to_u64, saturating_cast};
 use wirecatch_protocol::app::{OutputFit, OutputFormat, StreamAction};
 
 use super::codec::{audio_codec, default_kbps, video_codec};
-use super::job::{AudioAction, VideoAction};
+use super::{AudioAction, VideoAction};
 use super::{AudioCodec, Container, VideoCodec};
 use crate::media::ytdlp::{Format, FormatId};
 use crate::media::{Content, is_media_ext, safe_ext};

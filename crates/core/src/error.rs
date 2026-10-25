@@ -4,6 +4,7 @@ use std::io;
 
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
+use wirecatch_store::StoreError;
 
 use crate::folders::PathError;
 
@@ -109,32 +110,9 @@ pub enum CoreError {
     )]
     InvalidProfile(String),
 
-    /// Another manager has the download list open: another copy of Wirecatch, which may run
-    /// with other rights than this one.
-    #[error(
-        "Another copy of Wirecatch has the download list in {path} open. Close it, or keep using that copy."
-    )]
-    AlreadyOpen {
-        /// The folder that holds the list.
-        path: String,
-    },
-
-    /// The database was written by a newer Wirecatch.
-    #[error(
-        "The download list was saved by a newer version of Wirecatch (database version {found}, this version reads up to {supported}). Update Wirecatch to open it."
-    )]
-    DatabaseTooNew {
-        /// Schema version found in the database.
-        found: u32,
-        /// Newest schema version this build reads.
-        supported: u32,
-    },
-
-    /// The database could not be read or written.
-    #[error(
-        "The download list could not be read or saved ({0}). Check that Wirecatch's data folder can be written to and the disk is not full, then restart Wirecatch."
-    )]
-    Database(#[from] rusqlite::Error),
+    /// The download list could not be opened or saved.
+    #[error(transparent)]
+    Store(#[from] StoreError),
 
     /// A file the user named could not be read or written.
     #[error(
@@ -214,9 +192,7 @@ impl CoreError {
             | CoreError::ProfileTooOld { .. }
             | CoreError::InvalidProfile(_) => ErrorCode::InvalidRequest,
             CoreError::AddonRequired => ErrorCode::AddonRequired,
-            CoreError::DatabaseTooNew { .. }
-            | CoreError::AlreadyOpen { .. }
-            | CoreError::Database(_)
+            CoreError::Store(_)
             | CoreError::File { .. }
             | CoreError::FilesSplit { .. }
             | CoreError::AddonFilesLeft { .. }
@@ -301,11 +277,6 @@ mod tests {
             },
             CoreError::ProfileTooOld { found: 1 },
             CoreError::InvalidProfile("it has no format version".into()),
-            CoreError::DatabaseTooNew {
-                found: 9,
-                supported: 3,
-            },
-            CoreError::AlreadyOpen { path: "/x".into() },
             CoreError::File {
                 path: "/x".into(),
                 source: io(),

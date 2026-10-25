@@ -1,7 +1,6 @@
 //! The app's proxy setting (D71) as the engine, yt-dlp and the updater take it: its checks,
 //! its saved passwords, copying the system's setting into it, and the test before it is saved.
 
-use std::collections::BTreeMap;
 use std::net::IpAddr;
 use std::time::Duration;
 
@@ -16,10 +15,9 @@ use wirecatch_protocol::proxy::{
     ProxyPasswords, ProxyRole, ProxyServer, ProxySettings, ProxyTestResult,
 };
 
-use crate::error::{CoreError, Result};
+pub(crate) use wirecatch_records::proxy::Logins;
 
-/// The passwords of the manual proxies, which never leave the app (D71.2).
-pub(crate) type Logins = BTreeMap<ProxyRole, Secret>;
+use crate::error::{CoreError, Result};
 
 /// Where the Test connection button sends its request: the project's own host, which the app
 /// already reaches for the media add-on.

@@ -17,73 +17,12 @@ pub(crate) use tools::MediaTools;
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use serde::{Deserialize, Serialize};
 use wirecatch_engine::Progress;
-use wirecatch_protocol::app::{MediaSummary, PER_MILLE_DONE, ProcessingProgress, ProcessingStep};
+use wirecatch_protocol::app::{PER_MILLE_DONE, ProcessingProgress, ProcessingStep};
 use wirecatch_streams::{Stage, StreamProgress};
 
 pub(crate) use crate::naming::{stream_dir, work_dir};
-use output::OutputJob;
-use ytdlp::FormatId;
-
-/// Which track of a stream to take.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "id", rename_all = "snake_case")]
-pub(crate) enum Pick {
-    /// The best the stream offers.
-    Auto,
-    Track(String),
-    Skip,
-}
-
-/// What a media download downloads, stored with it so it can continue after a
-/// restart. The link itself is the download's URL: the playlist or manifest for
-/// a stream, the page for yt-dlp.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub(crate) enum MediaJob {
-    /// An HLS or DASH stream, downloaded with `wirecatch-streams`.
-    Stream { video: Pick, audio: Pick },
-    /// A page read by yt-dlp. Its format addresses expire, so the page is read
-    /// again on every start; the chosen formats are found again by id. yt-dlp's
-    /// selection is made from the ids ([`ytdlp::selection`]); a `format` field
-    /// stored by earlier builds is ignored when read.
-    Page {
-        /// The video format id, when the choice names one.
-        video: Option<FormatId>,
-        /// The audio format id, when separate from the video.
-        audio: Option<FormatId>,
-        /// How the downloaded video or audio is saved (D24); `None` keeps it
-        /// as downloaded.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        output: Option<Box<OutputJob>>,
-        /// The extension the joined video gets when it is kept as downloaded
-        /// after a conversion failed ("Keep the original"); `None` takes the
-        /// planned file's.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        keep_ext: Option<String>,
-    },
-    /// What to download was stored but cannot be read back (a damaged
-    /// database). It never runs: downloading the link as a plain file would
-    /// save a web page, or worse.
-    Unreadable,
-}
-
-/// The message for a media download whose stored details cannot be read.
-pub(crate) fn unreadable() -> wirecatch_protocol::app::UserError {
-    wirecatch_protocol::app::UserError {
-        message: "The saved details of this video could not be read, so it cannot continue. Remove it and download the video again from its page.".into(),
-        fix: None,
-    }
-}
-
-/// The media part of a stored download.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct StoredMedia {
-    pub summary: MediaSummary,
-    /// `None` for a direct media file, which downloads like any other file.
-    pub job: Option<MediaJob>,
-}
+pub(crate) use wirecatch_records::media::{MediaJob, Pick, StoredMedia, unreadable};
 
 /// The progress of a media download, made of the progress of its parts. Updates come a few times a second at most, so one lock over all of it costs nothing and every reading is consistent.
 #[derive(Debug, Default)]
@@ -323,99 +262,6 @@ mod tests {
         );
         assert_eq!(file_name("   ", "m4a"), "video.m4a");
         assert!(file_name(&"x".repeat(400), "mp4").len() < 200);
-    }
-
-    #[test]
-    fn a_conversion_stored_by_the_previous_build_is_read_as_it_was() {
-        let read = |json: &str| -> output::OutputJob {
-            let job: MediaJob = serde_json::from_str(json).unwrap();
-            let MediaJob::Page {
-                output: Some(output),
-                ..
-            } = job
-            else {
-                panic!("not a page with an output: {job:?}");
-            };
-            *output
-        };
-        // As the build before `Extras` wrote it: chapters and tags are fields of
-        // the job itself.
-        let stored = read(
-            r#"{"type":"page","format":"313+140","video":"313","audio":"140","output":{"container":"mp4","video":{"type":"encode","codec":"h264","kbps":8000},"audio":{"type":"copy"},"subtitles":[],"subtitle_files":false,"chapters":true,"tags":true,"duration_ms":1000,"original_ext":"webm","original":false}}"#,
-        );
-        assert_eq!(
-            stored.extras,
-            output::Extras {
-                chapters: true,
-                tags: true,
-            }
-        );
-        assert_eq!(stored.container, output::Container::Mp4);
-        assert_eq!(stored.duration_ms, Some(1000));
-        // Without them (both are optional when read): neither is added.
-        let older = read(
-            r#"{"type":"page","format":"313+140","video":"313","audio":"140","output":{"container":"mp4","video":{"type":"copy"},"audio":{"type":"copy"},"original_ext":"webm"}}"#,
-        );
-        assert_eq!(older.extras, output::Extras::default());
-        assert!(!older.subtitle_files && !older.original);
-    }
-
-    #[test]
-    fn the_job_is_stored_as_plain_json() {
-        let id = |id: &str| FormatId::try_from(id.to_string()).unwrap();
-        let job = MediaJob::Page {
-            video: Some(id("137")),
-            audio: Some(id("140")),
-            output: None,
-            keep_ext: None,
-        };
-        let json = serde_json::to_string(&job).unwrap();
-        // The selection is made from the ids, never stored.
-        assert_eq!(json, r#"{"type":"page","video":"137","audio":"140"}"#);
-        assert_eq!(serde_json::from_str::<MediaJob>(&json).unwrap(), job);
-        // As earlier builds stored it: the selection is read past.
-        let stored = r#"{"type":"page","format":"137+140","video":"137","audio":"140"}"#;
-        assert_eq!(serde_json::from_str::<MediaJob>(stored).unwrap(), job);
-        let converting = MediaJob::Page {
-            video: Some(id("313")),
-            audio: Some(id("140")),
-            output: Some(Box::new(OutputJob {
-                container: output::Container::Mp4,
-                video: output::VideoAction::Encode {
-                    codec: output::VideoCodec::H264,
-                    kbps: 8000,
-                },
-                audio: output::AudioAction::Copy,
-                subtitles: vec![output::SubtitlePick {
-                    key: "en-orig".into(),
-                    auto: true,
-                    language: "en".into(),
-                    name: "English".into(),
-                }],
-                subtitle_files: false,
-                extras: output::Extras {
-                    chapters: true,
-                    tags: false,
-                },
-                duration_ms: Some(1000),
-                original_ext: "webm".into(),
-                original: false,
-            })),
-            keep_ext: None,
-        };
-        let json = serde_json::to_string(&converting).unwrap();
-        // The extras are stored as fields of the job, as jobs saved before were.
-        assert!(
-            json.contains(r#""subtitle_files":false,"chapters":true,"tags":false,"#),
-            "{json}"
-        );
-        assert_eq!(serde_json::from_str::<MediaJob>(&json).unwrap(), converting);
-        let job = MediaJob::Stream {
-            video: Pick::Track("v1".into()),
-            audio: Pick::Skip,
-        };
-        let json = serde_json::to_string(&job).unwrap();
-        assert_eq!(serde_json::from_str::<MediaJob>(&json).unwrap(), job);
     }
 
     #[test]

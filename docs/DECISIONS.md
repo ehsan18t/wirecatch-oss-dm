@@ -680,6 +680,7 @@ Decided with the maintainer on 2026-10-25. `wirecatch-core` holds 31,000 lines, 
 3. Before the media add-on, the store and media can leave, core's modules depend on each other only one way: the add-on check reports where its programs are and media wraps them in its own `MediaTools`; the notices of a repaired download list live with the manager that opens it; a download's browser headers (`Origin`) live with the code that reads them, in `headers`; and the folders a download keeps beside its file, media's work folders included, are `naming`'s.
 4. Done after that: `crates/files`, the file helpers the add-on, the store and the manager share: writing a file whole, discarding one, keeping one private to its owner (D17) and marking a download with the zone it came from.
 5. Done after that: `crates/addons`, the media add-on's pinned releases, checksums, signatures, archive reading and the check of its installed programs, with every archive and signature library; the manager keeps the install and update work, which drives downloads and the add-on's state.
+6. Done after that: `crates/records`, the types saved with a download, a queue's batch and the proxy passwords, which the store and core both use (D81); and `crates/store`, the SQLite database with its own error, `StoreError`, which core passes on as `CoreError::Store`. The store knows records and protocol types, never the manager.
 
 ### D80. The media add-on's ffmpeg comes from a copy Wirecatch keeps
 
@@ -688,6 +689,16 @@ Decided with the maintainer on 2026-10-25, when the pinned build disappeared. It
 1. BtbN publishes a dated build every day and deletes each after about two weeks, so a pin to one stops working within weeks, and installing the media add-on then fails for everyone. The builds the add-on pins are copied unchanged, one release per build, to a public repository of their own, `ehsan18t/wirecatch-addons` (`links.addon_files` in `config/product.toml`), so a pin lasts as long as Wirecatch keeps it. The app's own releases stay on its repository's Releases page alone.
 2. Each copy is checked against BtbN's published checksums before it is uploaded, and the add-on checks it again against the SHA-256 it pins. Each release names the build it was copied from and the FFmpeg source commit, as the LGPL asks.
 3. Moving to a newer build is a new release there and a new pin here; old releases stay for the versions of the app that pin them.
+4. Not done: building FFmpeg from source (first by running BtbN's build scripts, pinned to a commit, in an action of `ehsan18t/wirecatch-addons`), set aside for later.
+
+### D81. What is saved has its own crate, checked by the compiler
+
+Decided with the maintainer on 2026-10-25, when the store left core (D79).
+
+1. The store saves types core works with: a media download's job, a queue's batch, a download's browser headers (`Origin`) and the proxy passwords. They live in `wirecatch-records`, which the store and core both depend on, so the compiler checks every value that passes between them. Rejected: the store keeping them as raw JSON for core to decode, which leaves a mismatch to be found at run time, and a store generic over core's types, whose methods would not tie a column to its type.
+2. `wirecatch-records` depends on `wirecatch-streams` for the codec and container names a media job saves.
+3. Samples of what is saved live in `crates/store/samples`, and a test loads every one with the current code. A sample is never edited: a change to the saved format adds a new sample, and a change that breaks an old one needs a serde `alias` or `default`, or a migration, before it can land.
+4. Not caught: a saved value whose meaning changes while its shape stays (milliseconds stored where seconds were, a variant kept under its name with another meaning). Old data then loads and is read wrongly. Review is the check, helped by a rule: a saved field or variant whose meaning changes gets a new name, so the samples test sees it. If this ever causes a bug, the next step weighed was a saved schema version, with a gate check that refuses a changed shape without a new version and a migration; it was set aside as more than the risk needs today.
 
 ## Assumptions (not yet confirmed)
 

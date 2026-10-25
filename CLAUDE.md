@@ -17,9 +17,11 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 |---|---|
 | `crates/engine` | Download engine library, published to crates.io. Its public API is documented and kept stable. |
 | `crates/protocol` | Every type, name and limit crossing a process boundary. TypeScript is generated from it. |
-| `crates/core` | The download manager: queue, persistence, media, add-ons. |
+| `crates/core` | The download manager: queue, media, add-ons. |
 | `crates/streams` | HLS and DASH downloads. |
 | `crates/addons` | The media add-on: pinned releases, checksums, signatures, safe unpacking, and finding the installed programs (D20, D21). |
+| `crates/records` | What is saved of a download, a queue's batch and the proxy passwords: the types the store keeps and core uses. |
+| `crates/store` | The download list on disk: the SQLite database, its migrations and the repair of a damaged one (D17). |
 | `crates/files` | File helpers: writing a file whole, discarding one, keeping one private to its owner, and the Mark of the Web. |
 | `crates/sites` | Site rules: the Public Suffix List with its built-in snapshot, and which links may reach the person's own network (D39, D44). |
 | `crates/server` | The local protocol server (D14): one client connection over any byte stream, answered by the manager. |

@@ -51,8 +51,10 @@ cargo run --release -p wirecatch-engine --example bench_local
 | `crates/engine` | `wirecatch-engine`: the download engine library (HTTP, FTP, segmented, resumable), for crates.io. Its public API is documented and kept stable. |
 | `crates/streams` | `wirecatch-streams`: HLS and DASH download and joining. |
 | `crates/queues` | `wirecatch-queues`: queue rules as pure functions, such as which downloads start under each queue's limits and when a scheduled queue runs (D74). |
-| `crates/core` | `wirecatch-core`: the download manager (queues, schedules, persistence, settings, media, add-ons). |
+| `crates/core` | `wirecatch-core`: the download manager (queues, schedules, settings, media, add-ons). |
 | `crates/addons` | `wirecatch-addons`: the media add-on's releases, checks and unpacking (D20, D21). |
+| `crates/records` | `wirecatch-records`: the saved types of a download, a queue's batch and the proxy passwords. |
+| `crates/store` | `wirecatch-store`: the download list in SQLite, its migrations and repairs (D17). |
 | `crates/files` | `wirecatch-files`: writing a file whole, discarding, owner-only access and the Mark of the Web. |
 | `crates/sites` | `wirecatch-sites`: the Public Suffix List and the local network rules (D39, D44). |
 | `crates/server` | `wirecatch-server`: the local protocol server (D14) that answers the extension and the CLI from the manager. |
