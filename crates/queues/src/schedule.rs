@@ -1,9 +1,5 @@
-//! When a scheduled queue may run. Pure functions of the schedule and the local time.
-//!
-//! A schedule with a stop time is a window: the queue runs from `start` until
-//! `stop` on the listed days, and a stop earlier than the start means the window
-//! ends the next morning. A schedule without a stop time starts the queue at
-//! `start` and lets it run until it has nothing left to do.
+//! With a stop time a schedule is a window, which ends the next morning when the stop is before
+//! the start; without one, the queue starts at `start` and runs until it has nothing left.
 
 use std::cmp::Ordering;
 
@@ -13,16 +9,14 @@ use wirecatch_protocol::app::{Schedule, TimeOfDay, Weekday};
 /// How far back a jump of the clock is searched for a missed start time.
 const MAX_CATCH_UP_DAYS: i64 = 7;
 
-/// Whether a queue may start downloads, remembering a run that a schedule without
-/// a stop time has begun.
+/// Remembers a run a schedule without a stop time has begun.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Gate {
     running_until_empty: bool,
 }
 
 impl Gate {
-    /// Re-evaluates the gate for the interval of local time `(since, now]`.
-    /// `has_work` tells whether the queue still has downloads waiting or running.
+    /// For local time `(since, now]`; `has_work`: downloads still waiting or running.
     pub fn is_open(
         &mut self,
         schedule: Option<&Schedule>,
@@ -45,19 +39,16 @@ impl Gate {
         self.running_until_empty
     }
 
-    /// Continues a run that was under way when the app last stopped.
     pub fn resume_run(&mut self) {
         self.running_until_empty = true;
     }
 
-    /// Forgets any run in progress, for example after the schedule was edited.
     pub fn reset(&mut self) {
         self.running_until_empty = false;
     }
 }
 
-/// Whether a schedule with a stop time is inside its window at `now`. A schedule
-/// without a stop time has no window and is never open by this test.
+/// A schedule without a stop time has no window and is never open here.
 fn window_open(schedule: &Schedule, now: NaiveDateTime) -> bool {
     let (Some(start), Some(stop)) = (to_time(schedule.start), schedule.stop.and_then(to_time))
     else {
@@ -77,7 +68,6 @@ fn window_open(schedule: &Schedule, now: NaiveDateTime) -> bool {
     }
 }
 
-/// Whether a start time of the schedule falls in `(since, now]`.
 fn start_crossed(schedule: &Schedule, since: NaiveDateTime, now: NaiveDateTime) -> bool {
     let Some(start) = to_time(schedule.start) else {
         return false;
@@ -97,8 +87,7 @@ fn start_crossed(schedule: &Schedule, since: NaiveDateTime, now: NaiveDateTime) 
         })
 }
 
-/// The start of the minute after `now`. Schedules have minute precision, so this
-/// is the next moment their answer can change.
+/// Schedules have minute precision: the next moment their answer can change.
 #[must_use]
 pub fn next_minute(now: NaiveDateTime) -> NaiveDateTime {
     let floor = now
@@ -108,7 +97,6 @@ pub fn next_minute(now: NaiveDateTime) -> NaiveDateTime {
     floor + TimeDelta::minutes(1)
 }
 
-/// Whether `time` names a real time of day.
 #[must_use]
 pub fn is_valid_time(time: TimeOfDay) -> bool {
     to_time(time).is_some()
