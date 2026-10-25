@@ -146,6 +146,12 @@ const MIGRATIONS: &[&str] = &[
     )
     WHERE json_valid(settings);
 "#,
+    // D72.2: every stored queue is manual.
+    r#"
+    UPDATE queues
+    SET settings = json_set(settings, '$.takes', json('{"kind":"manual"}'))
+    WHERE json_valid(settings);
+"#,
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -1328,6 +1334,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use wirecatch_protocol::DEFAULT_QUEUE_ID;
+    use wirecatch_protocol::claims::{QueueClaims, QueueTakes};
     use wirecatch_test_support::PATIENCE;
 
     use super::*;
@@ -1711,6 +1718,12 @@ mod tests {
                 max_concurrent: Setting::Own(2),
                 speed_limit: Setting::Own(1000),
                 connections: Setting::Own(4),
+                takes: QueueTakes::Auto(QueueClaims {
+                    enabled: true,
+                    sites: vec!["example.com".into()],
+                    categories: vec![Category::Archive],
+                    ..QueueClaims::default()
+                }),
                 schedule: Some(Schedule {
                     start: TimeOfDay {
                         hour: 1,

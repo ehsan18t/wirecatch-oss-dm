@@ -21,10 +21,12 @@ use wirecatch_protocol::extension::{
 };
 use wirecatch_protocol::proxy::ProxySettings;
 
-use crate::folders::KnownFolders;
-use wirecatch_queues::schedule;
+use wirecatch_protocol::claims::QueueTakes;
+use wirecatch_queues::{claims, schedule};
 use wirecatch_sites::local_network::{self, NotALocalSite};
 use wirecatch_sites::public_suffix::SuffixList;
+
+use crate::folders::KnownFolders;
 
 pub use error::{ProfileError, Result, SettingsError};
 
@@ -442,6 +444,9 @@ pub fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> {
     }
     if let Setting::Own(connections) = queue.connections {
         check_connections(connections)?;
+    }
+    if let QueueTakes::Auto(claims) = queue.takes {
+        queue.takes = QueueTakes::Auto(claims::checked(claims).map_err(SettingsError::Invalid)?);
     }
     if let Some(s) = &queue.schedule {
         let times_valid =
@@ -955,6 +960,26 @@ mod tests {
             days: vec![],
         });
         assert!(validate_queue(q).unwrap_err().to_string().contains("00:00"));
+    }
+
+    #[test]
+    fn an_auto_queue_keeps_its_claims_cleaned_and_refuses_one_that_names_nothing() {
+        use wirecatch_protocol::claims::QueueClaims;
+        let mut q = default_queue().settings;
+        q.takes = QueueTakes::Auto(QueueClaims {
+            enabled: true,
+            sites: vec![" example.com ".into(), String::new()],
+            ..QueueClaims::default()
+        });
+        let QueueTakes::Auto(kept) = validate_queue(q.clone()).unwrap().takes else {
+            panic!("the queue stopped being an auto queue");
+        };
+        assert_eq!(kept.sites, ["example.com"]);
+        q.takes = QueueTakes::Auto(QueueClaims {
+            sites: vec!["*".into()],
+            ..QueueClaims::default()
+        });
+        assert!(validate_queue(q).unwrap_err().to_string().contains("\"*\""));
     }
 
     #[test]
