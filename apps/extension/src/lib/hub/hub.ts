@@ -21,10 +21,16 @@ import type { MediaRequest, MediaSendResult } from '../media/center';
 import type { Notice, PopupCommand, Snapshot } from '../messages';
 import type { NativeClient } from '../native/client';
 import type { ConnectionStatus } from '../native/status';
-import { REQUEST_TIMEOUT_MS, START_WAIT_MS, WITHDRAW_TIMEOUT_MS } from '../native/timing';
 import { refererFor } from '../referrer';
 import { AppCalls, isLocalCommand } from './app';
-import type { HubDeps, HubTiming, InFlightEntry, MenuClick, MenuResult, MenuTab } from './deps';
+import {
+  hubTiming,
+  type HubDeps,
+  type InFlightEntry,
+  type MenuClick,
+  type MenuResult,
+  type MenuTab,
+} from './deps';
 import { planMenuClick } from './menu';
 import { NoticeBoard } from './notice-board';
 import {
@@ -39,29 +45,6 @@ import {
 import { Popups, type PopupChannel } from './popups';
 import { recoverHandover } from './recovery';
 import { KnownSettings } from './settings';
-
-/**
- * The waits used unless `HubDeps.timing` says otherwise. A paused download waits less
- * than a call does, so the browser resumes it soon when the app cannot be reached; a
- * withdraw only runs after a call already took too long, so it waits the least.
- */
-const DEFAULT_TIMING: HubTiming = {
-  connectWaitMs: START_WAIT_MS,
-  requestTimeoutMs: REQUEST_TIMEOUT_MS,
-  withdrawTimeoutMs: WITHDRAW_TIMEOUT_MS,
-};
-
-/**
- * The waits to use: each one given, or its `DEFAULT_TIMING` value. Field by field, so
- * one given as `undefined` still gets its default (a spread would copy the undefined).
- */
-export function hubTiming(given: Partial<HubTiming> = {}): HubTiming {
-  return {
-    connectWaitMs: given.connectWaitMs ?? DEFAULT_TIMING.connectWaitMs,
-    requestTimeoutMs: given.requestTimeoutMs ?? DEFAULT_TIMING.requestTimeoutMs,
-    withdrawTimeoutMs: given.withdrawTimeoutMs ?? DEFAULT_TIMING.withdrawTimeoutMs,
-  };
-}
 
 /**
  * The background script's state: the connection, the app's settings and queues,

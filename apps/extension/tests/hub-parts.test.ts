@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DownloadState, HandoverResult } from '../src/lib/capture/handover';
 import { DuplicateWatch } from '../src/lib/hub/duplicates';
 import { AppCalls } from '../src/lib/hub/app';
-import { hubTiming } from '../src/lib/hub/hub';
+import { hubTiming } from '../src/lib/hub/deps';
 import { planMenuClick } from '../src/lib/hub/menu';
 import { MAX_NOTICES, NoticeBoard } from '../src/lib/hub/notice-board';
 import { keptInBrowser, mediaAnswer } from '../src/lib/hub/notices';
