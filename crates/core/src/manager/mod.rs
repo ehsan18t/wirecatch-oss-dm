@@ -336,7 +336,7 @@ impl Manager {
             restored.state.addon = addons::AddonSlot::load(&addons_at);
             restored.state.suffix_check = suffix_list::SuffixCheck::load(&dir);
             // Cookies files left by a crash: nothing may keep them.
-            crate::discard::dir(&temp_at);
+            wirecatch_files::discard::dir(&temp_at);
             Ok((store, restored, recoveries, not_private))
         })
         .await?;

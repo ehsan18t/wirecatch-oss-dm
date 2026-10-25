@@ -7,7 +7,7 @@ use std::path::Path;
 /// Writes `bytes` to `name` in `dir`, which is made if missing: first to a file
 /// beside it, flushed to the disk, which then replaces `name` in one step. When
 /// any step fails, `name` is left as it was. Blocks on the disk.
-pub(crate) fn replace(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
+pub fn replace(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let staged = dir.join(format!("{name}.tmp"));
     let mut file = std::fs::File::create(&staged)?;

@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 wirecatch-engine.workspace = true
+wirecatch-files.workspace = true
 wirecatch-logging.workspace = true
 wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
@@ -38,15 +39,7 @@ tracing.workspace = true
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = [
-    "Wdk_Foundation",
-    "Wdk_Storage_FileSystem",
-    "Win32_Foundation",
-    "Win32_Security",
-    "Win32_Security_Authorization",
-    "Win32_Storage_FileSystem",
-    "Win32_System_Threading",
-] }
+windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 anyhow.workspace = true
@@ -58,6 +51,7 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "test-util"] }
 # Logging for the headless example.
 wirecatch-logging = { workspace = true, features = ["setup"] }
+wirecatch-files = { workspace = true, features = ["testing"] }
 wirecatch-server.workspace = true
 wirecatch-sites = { workspace = true, features = ["testing"] }
 wirecatch-test-support = { path = "../test-support", features = ["servers", "resume"] }

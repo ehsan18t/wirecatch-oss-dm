@@ -1014,18 +1014,18 @@ async fn finish(
     let sidecars = sidecars.to_vec();
     let moved = tokio::task::spawn_blocking(move || -> std::io::Result<(PathBuf, u64)> {
         // Marked before it is put in place, so it is never there unmarked.
-        crate::zone::mark(&file, &url, referrer.as_deref());
+        wirecatch_files::zone::mark(&file, &url, referrer.as_deref());
         let target = place(&file, &planned, &reserve)?;
         let bytes = std::fs::metadata(&target)?.len();
         let anywhere: Reserve = Arc::new(|_: &Path, _| true);
         for (subtitle, language) in &sidecars {
-            crate::zone::mark(subtitle, &url, referrer.as_deref());
+            wirecatch_files::zone::mark(subtitle, &url, referrer.as_deref());
             let beside = sidecar_path(&target, language);
             if let Err(e) = place(subtitle, &beside, &anywhere) {
                 warn!(error = %e, "could not put a subtitle file next to the video");
             }
         }
-        crate::discard::dir(&work);
+        wirecatch_files::discard::dir(&work);
         Ok((target, bytes))
     })
     .await
@@ -1145,7 +1145,7 @@ fn place(file: &Path, planned: &Path, reserve: &Reserve) -> std::io::Result<Path
         // since the check is left alone.
         let moved = match std::fs::hard_link(file, &candidate) {
             Ok(()) => {
-                crate::discard::file(file);
+                wirecatch_files::discard::file(file);
                 Ok(true)
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),

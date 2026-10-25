@@ -27,6 +27,7 @@ const COMMIT_SCOPES = [
   'queues',
   'server',
   'sites',
+  'files',
   'cli',
   'e2e',
   'test-support',
