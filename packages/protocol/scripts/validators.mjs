@@ -9,7 +9,7 @@ export const VALIDATORS = 'validators';
 /** Files in the folder that are not one ts-rs type each. */
 const NOT_TYPES = new Set(['constants', VALIDATORS]);
 
-/** Why a declaration gets no guard: a type that takes type parameters can only be checked once they are known. */
+/** Why a declaration gets no guard: a shape the generator cannot check. */
 class Unsupported extends Error {}
 
 /** The generated type declarations in `folder`, by name. */
@@ -67,12 +67,35 @@ function isList(node) {
   return node.typeName.getText() === 'Array' && node.typeArguments?.length === 1;
 }
 
-/** The check that `subject` is of the referenced type: a list, or another generated type. */
+/** The check that `subject` is of the referenced type: a list, a type parameter, a generic type with its arguments, or another generated type. */
 function referenceCheck(node, subject, context) {
-  if (!isList(node)) return `${namedGuard(node, context)}(${subject})`;
+  if (!isList(node)) {
+    const name = node.typeName.getText();
+    const bound = context.parameters.get(name);
+    if (bound !== undefined)
+      return check(bound.node, subject, { ...bound.context, depth: context.depth });
+    const generic = context.found.get(name);
+    if (
+      node.typeArguments !== undefined &&
+      generic?.typeParameters?.length === node.typeArguments.length
+    ) {
+      const parameters = new Map(
+        generic.typeParameters.map((typeParameter, i) => [
+          typeParameter.name.text,
+          { node: node.typeArguments[i], context },
+        ]),
+      );
+      return `(${check(generic.type, subject, { ...context, parameters })})`;
+    }
+    return `${namedGuard(node, context)}(${subject})`;
+  }
   const [itemType] = node.typeArguments;
   // A list of a generated type passes that type's guard as it is.
-  if (ts.isTypeReferenceNode(itemType) && !isList(itemType)) {
+  if (
+    ts.isTypeReferenceNode(itemType) &&
+    !isList(itemType) &&
+    itemType.typeArguments === undefined
+  ) {
     return `isArrayOf(${subject}, ${namedGuard(itemType, context)})`;
   }
   const item = context.depth + 1;
@@ -150,16 +173,25 @@ function check(node, subject, context) {
   throw new Unsupported(`type ${node.getText()}`);
 }
 
-/** A guard for each declaration that can have one; a type that names one without a guard gets none either. */
-function guards(found) {
-  const known = new Set([...found.keys()].filter((name) => !found.get(name).typeParameters));
+/** What every check reads: the declarations, the types that have a guard, and the type arguments in force inside a generic type. */
+function rootContext(found, known) {
+  return { depth: 0, found, known, parameters: new Map() };
+}
+
+/** A guard for each declaration that can have one; a type that names one without a guard gets none either. A generic type has none of its own: it is checked where it is used, with its type arguments. */
+function guards(found, withoutGuard) {
+  const known = new Set(
+    [...found.keys()].filter(
+      (name) => !found.get(name).typeParameters && !withoutGuard.includes(name),
+    ),
+  );
   const written = new Map();
   let changed = true;
   while (changed) {
     changed = false;
     for (const name of [...known].sort()) {
       try {
-        written.set(name, check(found.get(name).type, parameter(0), { depth: 0, known }));
+        written.set(name, check(found.get(name).type, parameter(0), rootContext(found, known)));
       } catch (error) {
         if (!(error instanceof Unsupported)) throw error;
         known.delete(name);
@@ -188,7 +220,7 @@ function commandOutputs(found, known) {
     }
     const name = member.name.getText();
     const answer = `${COMMAND_MAP}["${name}"]["output"]`;
-    const body = check(command.typeArguments[1], parameter(0), { depth: 0, known });
+    const body = check(command.typeArguments[1], parameter(0), rootContext(found, known));
     return `  ${name}: (value: unknown): value is ${answer} => ${body},`;
   });
   return [
@@ -200,15 +232,15 @@ function commandOutputs(found, known) {
   ];
 }
 
-/** The generated types that have no guard on purpose: the command map, checked one answer at a time by `COMMAND_OUTPUTS`, and the generic it wraps each command in. */
-const WITHOUT_GUARD = [COMMAND, COMMAND_MAP];
+/** The generated type that has no guard on purpose: the command map, checked one answer at a time by `COMMAND_OUTPUTS`. */
+const WITHOUT_GUARD = [COMMAND_MAP];
 
 /** The text of validators.ts for the generated types in `folder`. Fails when a type other than those in `withoutGuard` gets no guard, so a type the generator cannot check (a map, a generic) is never left unchecked without anyone noticing. */
 export function validatorsSource(folder, { withoutGuard = WITHOUT_GUARD } = {}) {
   const found = declarations(folder);
-  const written = guards(found);
+  const written = guards(found, withoutGuard);
   const unguarded = [...found.keys()].filter(
-    (name) => !written.has(name) && !withoutGuard.includes(name),
+    (name) => !written.has(name) && !withoutGuard.includes(name) && !found.get(name).typeParameters,
   );
   if (unguarded.length > 0) {
     throw new Error(

@@ -3,7 +3,7 @@
 
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, ProfileError};
 use wirecatch_protocol::app::{
-    AddonId, Category, PortablePath, Queue, QueueSettings, Schedule, TimeOfDay, UiEvent,
+    AddonId, Category, PortablePath, Queue, QueueSettings, Schedule, Setting, TimeOfDay, UiEvent,
 };
 
 use crate::common::{Harness, TestResult, tune};
@@ -19,8 +19,8 @@ fn set_up_first_machine(here: &Harness) -> TestResult<Queue> {
     let night = here.manager.create_queue(QueueSettings::new("Night"))?;
     let night = Queue {
         settings: QueueSettings {
-            max_concurrent: 4,
-            speed_limit: Some(500_000),
+            max_concurrent: Setting::Own(4),
+            speed_limit: Setting::Own(500_000),
             schedule: Some(Schedule {
                 start: TimeOfDay { hour: 1, minute: 0 },
                 stop: Some(TimeOfDay {

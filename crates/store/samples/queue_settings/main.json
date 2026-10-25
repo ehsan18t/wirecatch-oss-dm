@@ -1,7 +1,15 @@
 {
   "name": "Main",
-  "max_concurrent": 3,
-  "speed_limit": null,
+  "description": "",
+  "max_concurrent": {
+    "source": "follow_app"
+  },
+  "speed_limit": {
+    "source": "follow_app"
+  },
+  "connections": {
+    "source": "follow_app"
+  },
   "schedule": null,
   "notify": "each_download"
 }

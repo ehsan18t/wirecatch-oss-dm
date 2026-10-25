@@ -5,7 +5,7 @@ use std::time::Duration;
 use chrono::TimeDelta;
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
 use wirecatch_protocol::app::{
-    AddRequest, DownloadStatus, Queue, QueueNotify, QueueReport, QueueSettings, Schedule,
+    AddRequest, DownloadStatus, Queue, QueueNotify, QueueReport, QueueSettings, Schedule, Setting,
     TimeOfDay, UiEvent, WaitReason,
 };
 use wirecatch_protocol::{DownloadId, QueueId};
@@ -142,7 +142,7 @@ async fn waiting_downloads_say_why() -> TestResult {
         .unwrap()
         .id;
     let mut main = queue(&h, DEFAULT_QUEUE_ID)?;
-    main.settings.max_concurrent = 1;
+    main.settings.max_concurrent = Setting::Own(1);
     h.manager.update_queue(main.id, main.settings).unwrap();
 
     // The queue is full.
@@ -196,7 +196,7 @@ async fn pause_all_clears_the_reasons_of_downloads_it_paused() -> TestResult {
     let silent = SilentServer::start().await;
     let h = Harness::with_stop_timeout(SHORT).await?;
     let mut main = queue(&h, DEFAULT_QUEUE_ID)?;
-    main.settings.max_concurrent = 1;
+    main.settings.max_concurrent = Setting::Own(1);
     h.manager.update_queue(main.id, main.settings).unwrap();
     let running = h.add(&silent.url("running.bin")).await?.id;
     let behind = h.add(&silent.url("behind.bin")).await?.id;
@@ -333,8 +333,8 @@ async fn a_queue_counts_what_finished_before_a_restart() -> TestResult {
 async fn a_queue_is_made_with_its_settings_or_not_at_all() -> TestResult {
     let mut h = Harness::new().await?;
     let night = QueueSettings {
-        max_concurrent: 4,
-        speed_limit: Some(64 * KIB),
+        max_concurrent: Setting::Own(4),
+        speed_limit: Setting::Own(64 * KIB),
         schedule: Some(Schedule {
             start: TimeOfDay { hour: 1, minute: 0 },
             stop: None,
@@ -349,7 +349,7 @@ async fn a_queue_is_made_with_its_settings_or_not_at_all() -> TestResult {
     assert_eq!(queue(&h, made.id)?.settings, night);
 
     let none_at_once = QueueSettings {
-        max_concurrent: 0,
+        max_concurrent: Setting::Own(0),
         ..QueueSettings::new("Never")
     };
     assert!(matches!(

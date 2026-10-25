@@ -149,11 +149,10 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     await click(button('Edit queue'));
     const d = dialog();
     expect(within(d).getByLabelText('Only run at certain times')).toBeChecked();
-    expect(within(d).getByLabelText("Limit this queue's speed")).toBeChecked();
-    expect(within(d).getByLabelText('Downloads at the same time')).toHaveAttribute(
-      'aria-valuenow',
-      '2',
-    );
+    expect(within(d).getByRole('switch', { name: 'Speed limit' })).toBeChecked();
+    expect(
+      within(d).getByRole('spinbutton', { name: 'Downloads at the same time' }),
+    ).toHaveAttribute('aria-valuenow', '2');
     await click(within(d).getByRole('button', { name: 'Delete queue' }));
     await click(within(d).getByRole('button', { name: 'Delete Overnight' }));
     expect(app.queues.list.some((q) => q.settings.name === 'Overnight')).toBe(false);

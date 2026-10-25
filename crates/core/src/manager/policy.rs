@@ -15,15 +15,21 @@ pub(super) struct RunPolicy {
 
 impl Manager {
     /// Reading a stream or page before the run takes only the connections and proxy, unlimited.
-    /// A queue that is gone leaves the app's limit alone.
+    /// A queue that is gone leaves the app's limit and connections alone.
     pub(super) fn run_policy(&self, state: &State, queue: QueueId) -> RunPolicy {
-        let queue_limiter = state.slot(queue).ok().map(|s| s.limiter.clone());
+        let app = self.app_policy(state);
+        let Ok(slot) = state.slot(queue) else {
+            return app;
+        };
         RunPolicy {
-            limiters: [Some(self.inner.global_limiter.clone()), queue_limiter]
-                .into_iter()
-                .flatten()
-                .collect(),
-            ..self.app_policy(state)
+            connections: slot
+                .queue
+                .settings
+                .connections
+                .own()
+                .map_or(app.connections, |own| usize::from(own).max(1)),
+            limiters: vec![self.inner.global_limiter.clone(), slot.limiter.clone()],
+            ..app
         }
     }
 

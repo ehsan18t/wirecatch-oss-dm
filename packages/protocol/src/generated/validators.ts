@@ -1294,8 +1294,28 @@ export function isQueueSettings(value: unknown): value is QueueSettings {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     typeof value1['name'] === 'string' &&
-    typeof value1['max_concurrent'] === 'number' &&
-    (typeof value1['speed_limit'] === 'number' || value1['speed_limit'] === null) &&
+    typeof value1['description'] === 'string' &&
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'follow_app')(
+      value1['max_concurrent'],
+    ) ||
+      ((value2: unknown): boolean =>
+        isRecord(value2) && value2['source'] === 'own' && typeof value2['value'] === 'number')(
+        value1['max_concurrent'],
+      )) &&
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'follow_app')(
+      value1['speed_limit'],
+    ) ||
+      ((value2: unknown): boolean =>
+        isRecord(value2) && value2['source'] === 'own' && typeof value2['value'] === 'number')(
+        value1['speed_limit'],
+      )) &&
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'follow_app')(
+      value1['connections'],
+    ) ||
+      ((value2: unknown): boolean =>
+        isRecord(value2) && value2['source'] === 'own' && typeof value2['value'] === 'number')(
+        value1['connections'],
+      )) &&
     (isSchedule(value1['schedule']) || value1['schedule'] === null) &&
     isQueueNotify(value1['notify']))(value);
 }

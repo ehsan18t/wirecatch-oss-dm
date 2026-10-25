@@ -124,7 +124,7 @@ pub(super) struct QueueSlot {
 impl QueueSlot {
     pub fn new(queue: Queue) -> Self {
         Self {
-            limiter: Arc::new(RateLimiter::new(queue.settings.speed_limit)),
+            limiter: Arc::new(RateLimiter::new(queue.settings.speed_limit.own())),
             queue,
             gate: Gate::default(),
         }
