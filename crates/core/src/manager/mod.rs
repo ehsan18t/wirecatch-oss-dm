@@ -11,6 +11,7 @@ mod handovers;
 mod media;
 
 mod media_run;
+mod placement;
 mod policy;
 mod preferences;
 mod proxy;
