@@ -111,6 +111,7 @@ import type { Queue } from './Queue';
 import type { QueueClaims } from './QueueClaims';
 import type { QueueId } from './QueueId';
 import type { QueueNotify } from './QueueNotify';
+import type { QueueReason } from './QueueReason';
 import type { QueueReport } from './QueueReport';
 import type { QueueSettings } from './QueueSettings';
 import type { QueueStatus } from './QueueStatus';
@@ -573,6 +574,7 @@ export function isDownloadSummary(value: unknown): value is DownloadSummary {
     typeof value1['file_name'] === 'string' &&
     typeof value1['path'] === 'string' &&
     isQueueId(value1['queue']) &&
+    isQueueReason(value1['queue_reason']) &&
     isCategory(value1['category']) &&
     isDownloadStatus(value1['status']) &&
     (typeof value1['total'] === 'number' || value1['total'] === null) &&
@@ -867,6 +869,7 @@ export function isMediaChoice(value: unknown): value is MediaChoice {
     isArrayOf(value1['options'], isMediaOption) &&
     typeof value1['folder'] === 'string' &&
     isQueueId(value1['queue']) &&
+    isQueueReason(value1['queue_reason']) &&
     isArrayOf(value1['subtitles'], isMediaSubtitle) &&
     typeof value1['chapters'] === 'boolean' &&
     (typeof value1['duration_ms'] === 'number' || value1['duration_ms'] === null) &&
@@ -1133,6 +1136,7 @@ export function isPendingCapture(value: unknown): value is PendingCapture {
     isCategory(value1['category']) &&
     (typeof value1['size'] === 'number' || value1['size'] === null) &&
     isQueueId(value1['queue']) &&
+    isQueueReason(value1['queue_reason']) &&
     (typeof value1['page_url'] === 'string' || value1['page_url'] === null))(value);
 }
 
@@ -1327,6 +1331,17 @@ export function isQueueId(value: unknown): value is QueueId {
 /** Whether `value` has the shape of a {@link QueueNotify}; fields it does not name are not checked. */
 export function isQueueNotify(value: unknown): value is QueueNotify {
   return value === 'each_download' || value === 'when_done';
+}
+
+/** Whether `value` has the shape of a {@link QueueReason}; fields it does not name are not checked. */
+export function isQueueReason(value: unknown): value is QueueReason {
+  return (
+    ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'picked')(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'claimed' && isClaim(value1['claim']))(value) ||
+    ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'browser_queue')(value) ||
+    ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'default_queue')(value)
+  );
 }
 
 /** Whether `value` has the shape of a {@link QueueReport}; fields it does not name are not checked. */

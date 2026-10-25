@@ -27,6 +27,7 @@ const ROW_FIELDS: Readonly<Record<RowField, true>> = {
   file_name: true,
   path: true,
   queue: true,
+  queue_reason: true,
   category: true,
   status: true,
   total: true,

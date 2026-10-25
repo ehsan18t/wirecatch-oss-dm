@@ -11,21 +11,22 @@ use tracing::warn;
 use wirecatch_engine::Url;
 use wirecatch_protocol::app::{AddRequest, PortablePath};
 use wirecatch_protocol::extension::MediaKind;
-use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
+use wirecatch_protocol::{DownloadId, QuestionId};
 
 use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::downloads::parse_web_url;
 use super::media::{Held, MediaPending, MediaSource, check_room};
-use super::placement::QueueRequest;
+use super::placement::{Candidate, Placed, QueueRequest};
 use super::state::Entry;
 use crate::error::Result;
+use crate::naming;
 
 /// A download added in the app whose server answered with a web page, to be
 /// read for its video instead.
 pub(super) struct AnsweredPage {
     pub fetch: Fetch,
-    pub queue: QueueId,
+    pub placed: Placed,
     /// The folder the person chose for it, if any.
     pub folder: Option<PathBuf>,
 }
@@ -39,7 +40,10 @@ impl AnsweredPage {
                 origin: entry.origin.clone(),
                 chosen_by: entry.chosen_by,
             },
-            queue: entry.row.queue,
+            placed: Placed {
+                queue: entry.row.queue,
+                reason: entry.row.queue_reason.clone(),
+            },
             folder: entry.naming.folder.as_ref().map(PathBuf::from),
         })
     }
@@ -68,7 +72,9 @@ impl Manager {
             .map(|f| self.inner.folders.resolve(&PortablePath(f)))
             .transpose()?;
         let mut state = self.lock_open()?;
-        let queue = state.queue_for(QueueRequest::in_app(request.queue))?;
+        let request_queue = QueueRequest::in_app(request.queue);
+        let name = naming::file_name(None, &url)?;
+        let placed = state.place(request_queue, &Candidate::video(&url, &name))?;
         if let Some((&id, _)) = state
             .media
             .iter()
@@ -83,8 +89,9 @@ impl Manager {
             folder,
             later: !request.start,
             page_otherwise: false,
+            request: request_queue,
         };
-        Ok(self.hold_media(&mut state, source, queue, held))
+        Ok(self.hold_media(&mut state, source, placed, held))
     }
 
     /// Removes download `id`, stopped because its server answered with a web
@@ -101,8 +108,9 @@ impl Manager {
             folder: page.folder,
             later: false,
             page_otherwise: true,
+            request: page.placed.request(),
         };
-        self.hold_media(&mut state, source, page.queue, held);
+        self.hold_media(&mut state, source, page.placed, held);
     }
 
     /// Downloads a page on which no video was found as the page it is, without
@@ -116,7 +124,7 @@ impl Manager {
                     folder: pending.folder,
                     ..Wanted::default()
                 },
-                queue: pending.queue,
+                placed: pending.placed,
                 start: !pending.later,
                 kind: Kind::File { video_check: false },
             })

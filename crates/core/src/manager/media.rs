@@ -37,6 +37,7 @@ use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::captures::origin_of;
 use super::downloads::parse_web_url;
 use super::handovers::{Handover, Target};
+use super::placement::{Candidate, Placed, QueueRequest};
 use super::state::State;
 use crate::error::{CoreError, Result};
 use crate::headers;
@@ -65,7 +66,9 @@ pub(super) struct MediaPending {
     /// When it was captured, in Unix milliseconds.
     pub added_at: i64,
     pub source: MediaSource,
-    pub queue: QueueId,
+    /// Where it goes for now; placed again once its window proposes a name (D72.11).
+    pub placed: Placed,
+    pub request: QueueRequest,
     /// The extension's handover ids for it.
     pub handovers: Vec<String>,
     pub stage: MediaStage,
@@ -94,16 +97,18 @@ pub(super) struct Held {
     pub later: bool,
     /// See [`MediaPending::page_otherwise`].
     pub page_otherwise: bool,
+    pub request: QueueRequest,
 }
 
 impl Held {
     /// A capture from the browser, under its handover id.
-    fn capture(handover: String) -> Self {
+    fn capture(handover: String, queue: Option<QueueId>) -> Self {
         Self {
             handovers: vec![handover],
             folder: None,
             later: false,
             page_otherwise: false,
+            request: QueueRequest::Browser(queue),
         }
     }
 }
@@ -192,7 +197,7 @@ impl Manager {
     pub(super) fn add_media_capture(
         &self,
         capture: &NewDownload,
-        queue: QueueId,
+        placed: Placed,
         chosen_by: ChosenBy,
     ) -> Result<AddedDownload> {
         let url = parse_web_url(&capture.url)?;
@@ -234,8 +239,8 @@ impl Manager {
             .unwrap_or_else(|| {
                 wirecatch_logging::redact::url_for_display(source.fetch.url.as_str())
             });
-        let held = Held::capture(capture.handover_id.clone());
-        let id = self.hold_media(&mut state, source, queue, held);
+        let held = Held::capture(capture.handover_id.clone(), capture.queue);
+        let id = self.hold_media(&mut state, source, placed, held);
         // Read without a window: the person hears it was added now, not seconds later when its
         // download starts (D67).
         if state.media.get(&id).is_some_and(|m| m.quiet) {
@@ -259,7 +264,7 @@ impl Manager {
         &self,
         state: &mut State,
         source: MediaSource,
-        queue: QueueId,
+        placed: Placed,
         held: Held,
     ) -> QuestionId {
         let id = state.ids.pending();
@@ -278,7 +283,8 @@ impl Manager {
             MediaPending {
                 added_at: self.inner.clock.unix_millis(),
                 source,
-                queue,
+                placed,
+                request: held.request,
                 handovers: held.handovers,
                 stage: first_stage,
                 video: None,
@@ -639,7 +645,7 @@ impl Manager {
             (
                 pending.source.clone(),
                 state.addon.tools.clone(),
-                self.run_policy(&state, pending.queue),
+                self.run_policy(&state, pending.placed.queue),
                 pending.quiet,
             )
         };
@@ -726,6 +732,7 @@ impl Manager {
                     Category::Video
                 };
                 let folder = self.folder_for(&state, pending, category);
+                let placed = placed_by_title(&state, pending, &title, category);
                 let later = pending.later;
                 let page_url = pending.source.page_url.clone().or_else(|| {
                     (pending.source.kind == MediaKind::Page)
@@ -739,7 +746,8 @@ impl Manager {
                     page_url,
                     options,
                     folder: folder.to_string_lossy().into_owned(),
-                    queue: pending.queue,
+                    queue: placed.queue,
+                    queue_reason: placed.reason.clone(),
                     subtitles,
                     chapters,
                     duration_ms,
@@ -760,6 +768,7 @@ impl Manager {
                         plans,
                     };
                     pending.video = video;
+                    pending.placed = placed;
                 }
                 if without_asking {
                     let (mut selection, instead_of) = (choice.start, choice.missing_quality);
@@ -926,7 +935,7 @@ impl Manager {
                     category: Some(Category::Video),
                     ..Wanted::default()
                 },
-                queue: pending.queue,
+                placed: pending.placed.clone(),
                 start: false,
                 kind: Kind::Media(StoredMedia {
                     summary: MediaSummary {
@@ -993,7 +1002,13 @@ impl Manager {
                     }),
                     hint_name: None,
                 },
-                queue: selection.queue.unwrap_or(choice.queue),
+                placed: Placed::answered(
+                    Placed {
+                        queue: choice.queue,
+                        reason: choice.queue_reason.clone(),
+                    },
+                    selection.queue,
+                ),
                 start: !selection.later,
                 kind: Kind::Media(StoredMedia {
                     summary: MediaSummary {
@@ -1083,6 +1098,28 @@ impl Manager {
             Err(e) => warn!(error = %e, "could not remember the media choices"),
         }
     }
+}
+
+/// Where a video goes once its window proposes a name from `title` (D72.11); where it was going when the queue it would join is gone.
+fn placed_by_title(
+    state: &State,
+    pending: &MediaPending,
+    title: &str,
+    category: Category,
+) -> Placed {
+    let page = pending
+        .source
+        .page_url
+        .as_deref()
+        .and_then(|p| Url::parse(p).ok());
+    let name = wirecatch_media::file_name(title, "mp4");
+    let candidate = Candidate {
+        category: Some(category),
+        ..Candidate::video(page.as_ref().unwrap_or(&pending.source.fetch.url), &name)
+    };
+    state
+        .place(pending.request, &candidate)
+        .unwrap_or_else(|_| pending.placed.clone())
 }
 
 /// Keeps the format, audio quality, subtitles and chapters chosen as the

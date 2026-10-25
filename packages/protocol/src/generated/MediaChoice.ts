@@ -4,6 +4,7 @@ import type { MediaSelection } from './MediaSelection';
 import type { MediaSubtitle } from './MediaSubtitle';
 import type { QuestionId } from './QuestionId';
 import type { QueueId } from './QueueId';
+import type { QueueReason } from './QueueReason';
 
 /**
  * The app found several qualities and asks the user to pick one.
@@ -33,6 +34,10 @@ export type MediaChoice = {
    * The queue it goes to if the user just confirms.
    */
   queue: QueueId;
+  /**
+   * Why it goes to that queue (D72.8).
+   */
+  queue_reason: QueueReason;
   /**
    * The subtitles the video has, human-written ones first, then auto-generated ones (D24).
    * Empty for streams and for videos without subtitles.
