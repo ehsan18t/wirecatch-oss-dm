@@ -633,6 +633,14 @@ Decided with the maintainer on 2026-10-25, to build after D72. It replaces D71's
 4. Deleting a profile that queues use asks what those queues use instead. Running downloads finish on the proxy they started with. A download that failed because of its proxy (unreachable, or a refused login) offers Change queue, and the tray menu and the command palette switch the app's proxy.
 5. Not covered: automatic configuration (PAC or WPAD), following the proxy of the browser a download came from, proxy lists that rotate, and the desktop proxy settings of Linux desktops (GNOME, KDE).
 
+### D74. Queue rules live in their own crate, and core decides a download's queue and how it runs in one place each
+
+Decided with the maintainer on 2026-10-25, before D72 is built on it. It changes no behaviour.
+
+1. `crates/queues` (`wirecatch-queues`) holds the queue rules that are pure functions of what they are given: which downloads start and stop under each queue's limit and the app's (`plan`), and when a scheduled queue may run (`schedule`). It needs no database, no async runtime and no engine, so its rules are tested alone and it is linted for Linux from any system. D72's claims join it. The queues themselves stay in core's manager, whose state ties them to the downloads, the store and the speed limiters.
+2. One place says what a request may use of the network (`manager/policy.rs`): `run_policy` gives a download's connections, the speed limits it shares (the app's, then its queue's) and its proxy, by its queue; its run takes all three, and reading its stream or video page first takes the connections and the proxy, unlimited in speed as before; `app_policy` gives the same for the app's own downloads, such as the media add-on's, and `State::app_proxy` the proxy of the app's own requests (add-on and suffix-list fetches, the updater). D72 makes a queue's values its own or the app's there, and D73 its proxy, without touching a run.
+3. One function picks the queue a new download joins (`State::queue_for`, `manager/placement.rs`): the queue the person picked, which must exist; else for a browser download the queue the extension named or the browser's queue, a queue deleted since the extension last synced giving way to the default queue; else the default queue. Every way a download is added asks it; D72's claims go into it.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
