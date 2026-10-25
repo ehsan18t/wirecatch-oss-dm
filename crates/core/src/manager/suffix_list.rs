@@ -16,8 +16,8 @@ use wirecatch_protocol::app::{SuffixListInfo, UiEvent};
 use super::Manager;
 use super::state::State;
 use crate::error::{CoreError, Result};
-use crate::public_suffix::{MAX_LIST_BYTES, Refused, SuffixList};
 use crate::settings;
+use wirecatch_sites::public_suffix::{KEPT_FILE, MAX_LIST_BYTES, Refused, SuffixList};
 
 /// Where publicsuffix.org publishes the list (D44).
 pub const PUBLIC_SUFFIX_LIST_URL: &str = "https://publicsuffix.org/list/public_suffix_list.dat";
@@ -225,12 +225,14 @@ impl Manager {
             if list.published() <= current.published() {
                 return Ok(Ok(None));
             }
-            Ok(match SuffixList::keep(&dir, &fetched.body) {
-                Ok(()) => Ok(Some(Arc::new(list))),
-                Err(e) => Err(NotTaken::Failed(format!(
-                    "the new list could not be saved: {e}"
-                ))),
-            })
+            Ok(
+                match crate::whole_file::replace(&dir, KEPT_FILE, &fetched.body) {
+                    Ok(()) => Ok(Some(Arc::new(list))),
+                    Err(e) => Err(NotTaken::Failed(format!(
+                        "the new list could not be saved: {e}"
+                    ))),
+                },
+            )
         })
         .await
         .map_err(|e| NotTaken::Failed(e.to_string()))?
@@ -285,7 +287,7 @@ mod tests {
     use crate::ManagerConfig;
     use crate::clock::{Clock, ManualClock};
     use crate::folders::KnownFolders;
-    use crate::public_suffix::testing;
+    use wirecatch_sites::public_suffix::testing;
     use wirecatch_test_support::files::FileServer;
 
     const DAY: i64 = 24 * 60 * 60 * 1000;

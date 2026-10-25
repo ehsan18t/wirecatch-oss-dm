@@ -15,9 +15,9 @@ use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
 use crate::naming::Claimed;
 use crate::proxy;
-use crate::public_suffix::SuffixList;
 use crate::settings::{self, DEFAULT_QUEUE_ID};
 use crate::store::{Origin, Snapshot, StoredDownload};
+use wirecatch_sites::public_suffix::SuffixList;
 
 fn mark_completed(entry: &mut Entry, size: u64, now_millis: i64) {
     entry.row.status = DownloadStatus::Completed;
@@ -212,10 +212,10 @@ pub(super) fn first_start() -> State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::local_network::ChosenBy;
     use crate::store::{LastIds, NameChoice};
     use wirecatch_protocol::app::{Category, DownloadSummary};
     use wirecatch_protocol::{DownloadId, QueueId};
+    use wirecatch_sites::local_network::ChosenBy;
 
     fn nowhere(finished_size: &dyn Fn(&Path) -> Option<u64>) -> Surroundings<'_> {
         Surroundings {

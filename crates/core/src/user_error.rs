@@ -6,8 +6,8 @@ use std::path::Path;
 use wirecatch_engine::{Error as EngineError, ProxySetting};
 use wirecatch_protocol::app::{FixAction, StartupNotice, UserError};
 
-use crate::local_network::ChosenBy;
 use crate::store::Recovery;
+use wirecatch_sites::local_network::ChosenBy;
 
 /// Raw OS codes for a full disk, in case the standard library does not classify them.
 #[cfg(windows)]

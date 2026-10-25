@@ -23,10 +23,10 @@ use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::batches::StoredBatch;
 use crate::error::{CoreError, Result};
-use crate::local_network::ChosenBy;
 use crate::media::StoredMedia;
 use crate::owner_only;
 use crate::proxy::Logins;
+use wirecatch_sites::local_network::ChosenBy;
 
 /// File name of the database inside the data folder (`config/product.toml`).
 pub use wirecatch_product::DATABASE_FILE;

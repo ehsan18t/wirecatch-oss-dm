@@ -32,7 +32,6 @@ use super::run::{MediaDone, RunEnd};
 use super::state::{Gauge, State};
 use crate::addons::{Check, MediaTools};
 use crate::clock::Clock;
-use crate::local_network::{self, ChosenBy};
 use crate::media::convert;
 use crate::media::describe;
 use crate::media::ffmpeg::{FfmpegError, Finished};
@@ -45,6 +44,7 @@ use crate::media::{self, Content, MediaJob, MediaProgress, Pick, safe_ext};
 use crate::store::Origin;
 use crate::{headers, user_error};
 use wirecatch_engine::units::MIB;
+use wirecatch_sites::local_network::{self, ChosenBy};
 
 /// Everything a media run needs, copied out of the manager's state.
 struct Job {

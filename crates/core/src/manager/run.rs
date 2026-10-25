@@ -20,10 +20,10 @@ use super::settle::path_resolver;
 use super::state::{Entry, Gauge, Run, State, Stop};
 use super::{Inner, Manager};
 use crate::headers;
-use crate::local_network::{self, ChosenBy};
 use crate::speed::SpeedMeter;
 use crate::store::Origin;
 use crate::user_error;
+use wirecatch_sites::local_network::{self, ChosenBy};
 
 /// How a run ended.
 pub(super) enum RunEnd {

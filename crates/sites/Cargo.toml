@@ -1,0 +1,34 @@
+[package]
+name = "wirecatch-sites"
+description = "Site rules for Wirecatch: the Public Suffix List, and which links may reach the person's own network"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[features]
+# The lists tests build from the built-in snapshot.
+testing = []
+
+[dependencies]
+wirecatch-engine.workspace = true
+wirecatch-protocol.workspace = true
+chrono.workspace = true
+# Reading the Public Suffix List, the snapshot built in and the newer ones the
+# app downloads, both its sections: which names are open to anyone's
+# registration (D39, D44). Its default feature adds each rule's ASCII form.
+publicsuffix = "2.3.0"
+serde.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["net", "time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+wirecatch-test-support = { path = "../test-support" }
+tokio = { workspace = true, features = ["macros", "rt"] }
+
+[lints]
+workspace = true

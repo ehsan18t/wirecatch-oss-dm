@@ -13,7 +13,7 @@ Work is split into packages that touch separate folders, so several agents can b
 ```
 Wave 0  (done)   Workspace, shared protocol, engine APIs the others need
 Wave 1  (parallel)
-        WP1 Core          crates/core, crates/queues, crates/server
+        WP1 Core          crates/core, crates/queues, crates/server, crates/sites
         WP2 Bridge + IPC  crates/bridge, crates/ipc
         WP3 Extension     apps/extension
         WP4 Desktop UI    apps/desktop        (runs against a mock backend)

@@ -15,7 +15,7 @@ use crate::public_suffix::SuffixList;
 /// local network, so no single call site can pick the wrong one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ChosenBy {
+pub enum ChosenBy {
     /// The person typed or pasted it into Wirecatch, so it may name a server
     /// on their own network: a NAS or an intranet host.
     Person,
@@ -32,7 +32,8 @@ impl ChosenBy {
     /// The engine's rule for the local network. [`PrivateNetwork::Block`]
     /// still lets a website's link through when its host is written as an
     /// address (D34.4); [`refuses`] and [`refuses_address`] refuse that case.
-    pub(crate) fn private_network(self) -> PrivateNetwork {
+    #[must_use]
+    pub fn private_network(self) -> PrivateNetwork {
         match self {
             Self::Person | Self::LocalPage => PrivateNetwork::Auto,
             Self::Website => PrivateNetwork::Block,
@@ -49,7 +50,8 @@ impl ChosenBy {
     /// it. Nothing here looks a name up: a page's owner controls what its
     /// name answers (CORE-3). Being the same site as the link proves nothing
     /// for the same reason.
-    pub(crate) fn of_capture(
+    #[must_use]
+    pub fn of_capture(
         capture: &NewDownload,
         local_sites: &[String],
         suffixes: &SuffixList,
@@ -117,8 +119,9 @@ const UNRESERVED_LOCAL_SUFFIXES: &[&str] = &[
 /// Whether `url`'s host is on the local network by what is written in it: a
 /// local address, a single-label name (`nas`) that is not a top-level domain
 /// (public DNS may serve records at `ai.` itself), or a name under one of
-/// [`LOCAL_SUFFIXES`] or [`UNRESERVED_LOCAL_SUFFIXES`].
-pub(crate) fn is_local_by_itself(url: &Url, suffixes: &SuffixList) -> bool {
+/// `LOCAL_SUFFIXES` or `UNRESERVED_LOCAL_SUFFIXES`.
+#[must_use]
+pub fn is_local_by_itself(url: &Url, suffixes: &SuffixList) -> bool {
     if let Some(ip) = address_in(url) {
         return is_local(ip);
     }
@@ -140,7 +143,7 @@ pub(crate) fn is_local_by_itself(url: &Url, suffixes: &SuffixList) -> bool {
 
 /// Why an entry cannot be one of the person's sites on their network.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum NotALocalSite {
+pub enum NotALocalSite {
     /// It names no host.
     Unreadable,
     /// It is an address. A page at a local address is on the network without
@@ -156,10 +159,7 @@ pub(crate) enum NotALocalSite {
 /// address; lower case, international names in ASCII form, no dots at either
 /// end, as the URL parser writes a page's host), when it is a registrable
 /// domain or a name under one. `None` for an entry of nothing but white space.
-pub(crate) fn local_site(
-    entry: &str,
-    suffixes: &SuffixList,
-) -> Result<Option<String>, NotALocalSite> {
+pub fn local_site(entry: &str, suffixes: &SuffixList) -> Result<Option<String>, NotALocalSite> {
     let Some(host) = read_site(entry).map_err(|_| NotALocalSite::Unreadable)? else {
         return Ok(None);
     };
@@ -206,7 +206,7 @@ const CAPTURE_CHECK: Duration = Duration::from_secs(3);
 /// name that answers public here and local when the engine connects is still
 /// refused by the engine, and a name that does not answer in time goes on to
 /// the engine, which decides.
-pub(crate) async fn refuses(chosen_by: ChosenBy, url: &Url) -> bool {
+pub async fn refuses(chosen_by: ChosenBy, url: &Url) -> bool {
     if chosen_by != ChosenBy::Website {
         return false;
     }
@@ -220,12 +220,13 @@ pub(crate) async fn refuses(chosen_by: ChosenBy, url: &Url) -> bool {
 /// [`refuses`] without the lookup, for a download about to start: a website's
 /// link written as a local address, which the engine's `Block` lets through as
 /// the starting origin (D34.4) because only its caller can classify it.
-pub(crate) fn refuses_address(chosen_by: ChosenBy, url: &Url) -> bool {
+pub fn refuses_address(chosen_by: ChosenBy, url: &Url) -> bool {
     chosen_by == ChosenBy::Website && address_in(url).is_some_and(is_local)
 }
 
 /// The address `url`'s host is written as, if it is one.
-pub(crate) fn address_in(url: &Url) -> Option<IpAddr> {
+#[must_use]
+pub fn address_in(url: &Url) -> Option<IpAddr> {
     let host = url.host_str()?;
     host.trim_start_matches('[')
         .trim_end_matches(']')
@@ -235,7 +236,7 @@ pub(crate) fn address_in(url: &Url) -> Option<IpAddr> {
 
 /// The addresses of `url`'s host: the address itself, or what its name
 /// resolves to within `timeout` (nothing if it does not).
-pub(crate) async fn addresses(url: &Url, timeout: Duration) -> Vec<IpAddr> {
+pub async fn addresses(url: &Url, timeout: Duration) -> Vec<IpAddr> {
     if let Some(ip) = address_in(url) {
         return vec![ip];
     }
@@ -251,7 +252,8 @@ pub(crate) async fn addresses(url: &Url, timeout: Duration) -> Vec<IpAddr> {
 
 /// Whether `ip` is on the local network, by the engine's own table, so the
 /// two never disagree (CORE-2).
-pub(crate) fn is_local(ip: IpAddr) -> bool {
+#[must_use]
+pub fn is_local(ip: IpAddr) -> bool {
     !AddressKind::of(ip).is_public()
 }
 

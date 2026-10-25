@@ -49,12 +49,12 @@ use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::folders::KnownFolders;
 use crate::naming;
-use crate::public_suffix::SuffixList;
 use crate::store::{Recovery, Store};
 use crate::user_error;
 pub use downloads::LinkFrom;
 use state::{Entry, State, Stop};
 pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
+use wirecatch_sites::public_suffix::SuffixList;
 
 /// How many UI events may wait for a slow subscriber before it starts missing some.
 const UI_EVENT_BUFFER: usize = 1024;

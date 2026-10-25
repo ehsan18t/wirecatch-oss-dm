@@ -26,12 +26,12 @@ use super::handovers::{self, Handover, Target};
 use super::placement::QueueRequest;
 use super::state::{Expectation, Pending};
 use crate::error::{CoreError, Result};
-use crate::local_network::{self, ChosenBy};
 use crate::media::StoredMedia;
 use crate::settings;
 use crate::store::Origin;
 use crate::user_error;
 use crate::{headers, naming};
+use wirecatch_sites::local_network::{self, ChosenBy};
 
 /// Most captures that can wait for confirmation at once.
 const MAX_PENDING: usize = 100;

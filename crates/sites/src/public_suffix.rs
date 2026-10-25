@@ -26,19 +26,19 @@ const SECTIONS: [&str; 4] = [
 ];
 
 /// The file a downloaded list is kept in, in the data folder.
-const KEPT_FILE: &str = "public-suffix-list.dat";
+pub const KEPT_FILE: &str = "public-suffix-list.dat";
 
 /// The line of the file that says when it was published, before the time.
 const VERSION_LINE: &str = "// VERSION: ";
 
 /// The largest list accepted. The file was about 330 KB in 2026 and grows by a few KB a month.
-pub(crate) const MAX_LIST_BYTES: u64 = 2 * MIB;
+pub const MAX_LIST_BYTES: u64 = 2 * MIB;
 
 /// How far past the clock a list may say it was published, for a clock a little behind.
 const CLOCK_SLACK_MILLIS: i64 = 24 * 60 * 60 * 1000;
 
 /// A Public Suffix List, both its ICANN and its private section.
-pub(crate) struct SuffixList {
+pub struct SuffixList {
     rules: List,
     /// How many rules it holds.
     count: usize,
@@ -60,7 +60,7 @@ impl std::fmt::Debug for SuffixList {
 
 /// Why a list was not taken.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum Refused {
+pub enum Refused {
     /// Larger than [`MAX_LIST_BYTES`].
     #[error("it is larger than {MAX_LIST_BYTES} bytes")]
     TooLarge,
@@ -101,7 +101,7 @@ pub(crate) enum Refused {
 
 impl SuffixList {
     /// The list built into this release, read once per process.
-    pub(crate) fn built_in() -> Arc<Self> {
+    pub fn built_in() -> Arc<Self> {
         static LIST: OnceLock<Arc<SuffixList>> = OnceLock::new();
         LIST.get_or_init(|| {
             Arc::new(Self::read(BUILT_IN.as_bytes()).unwrap_or_else(|e| {
@@ -121,13 +121,13 @@ impl SuffixList {
     }
 
     /// `bytes` as a list that may take the place of `current` at `now` (milliseconds since
-    /// the Unix epoch): one [`read`](Self::read) takes that holds at least nine tenths of
+    /// the Unix epoch): one `read` takes that holds at least nine tenths of
     /// `current`'s rules and of its ICANN rules, at most twice its rules, and says it was
     /// published no later than a day after `now`. A list loses a few rules from one week to
     /// the next; one that lost more is not the list, or was cut short where no section
     /// marker shows it. One far larger or dated ahead would stay in use for good, since
     /// every real list after it would look much smaller or older.
-    pub(crate) fn accept(bytes: &[u8], current: &Self, now: i64) -> Result<Self, Refused> {
+    pub fn accept(bytes: &[u8], current: &Self, now: i64) -> Result<Self, Refused> {
         let list = Self::read(bytes)?;
         let too_small = |rules: usize, current: usize| rules * 10 < current * 9;
         if too_small(list.count, current.count) {
@@ -177,7 +177,7 @@ impl SuffixList {
     /// The list to use at start, at `now`: the one kept in `dir`, unless it is damaged, not
     /// newer than the built-in one (which an update of the app may have overtaken it with),
     /// or one [`accept`](Self::accept) would refuse today. Blocks on the disk.
-    pub(crate) fn load(dir: &Path, now: i64) -> Arc<Self> {
+    pub fn load(dir: &Path, now: i64) -> Arc<Self> {
         let built_in = Self::built_in();
         let bytes = match read_kept(&dir.join(KEPT_FILE)) {
             Ok(bytes) => bytes,
@@ -197,13 +197,6 @@ impl SuffixList {
         }
     }
 
-    /// Keeps `bytes`, a list [`accept`](Self::accept) took, in `dir` for the next start.
-    /// It replaces the one kept before in one step, so a failure leaves that one as it
-    /// was. Blocks on the disk.
-    pub(crate) fn keep(dir: &Path, bytes: &[u8]) -> io::Result<()> {
-        crate::whole_file::replace(dir, KEPT_FILE, bytes)
-    }
-
     /// The registrable domain `name` is or is under (`example.com` for
     /// `wiki.corp.example.com`), or `None` when `name` is a public suffix or
     /// above one, which no single owner holds. `name` is a host name as the URL
@@ -211,7 +204,8 @@ impl SuffixList {
     /// last label the list does not know counts as a suffix of its own, as the
     /// list's implicit `*` rule says, so `corp.mycompany` is registrable and
     /// `mycompany` is not.
-    pub(crate) fn registrable_domain<'a>(&self, name: &'a str) -> Option<&'a str> {
+    #[must_use]
+    pub fn registrable_domain<'a>(&self, name: &'a str) -> Option<&'a str> {
         let domain = self.rules.domain(name.as_bytes())?;
         std::str::from_utf8(domain.as_bytes()).ok()
     }
@@ -219,14 +213,16 @@ impl SuffixList {
     /// Whether `name` (written as for [`registrable_domain`](Self::registrable_domain))
     /// is itself on the list (`com`, `ai`, `xn--p1ai`, `co.uk`, `github.io`), so
     /// public DNS may serve it. A single label the list does not know (`nas`) is not.
-    pub(crate) fn is_public_suffix(&self, name: &str) -> bool {
+    #[must_use]
+    pub fn is_public_suffix(&self, name: &str) -> bool {
         self.rules
             .suffix(name.as_bytes())
             .is_some_and(|suffix| suffix.is_known() && suffix.as_bytes() == name.as_bytes())
     }
 
     /// When publicsuffix.org published this list, in milliseconds since the Unix epoch.
-    pub(crate) fn published(&self) -> i64 {
+    #[must_use]
+    pub fn published(&self) -> i64 {
         self.published
     }
 }
@@ -283,18 +279,19 @@ fn published(text: &str) -> Option<i64> {
 }
 
 /// Lists for tests, all made from the built-in snapshot.
-#[cfg(test)]
-pub(crate) mod testing {
+#[cfg(any(test, feature = "testing"))]
+pub mod testing {
     use super::{BUILT_IN, SECTIONS, VERSION_LINE};
 
     /// A `VERSION` later than any snapshot's.
-    pub(crate) const NEWER: &str = "2099-01-01_00-00-00_UTC";
+    pub const NEWER: &str = "2099-01-01_00-00-00_UTC";
     /// [`NEWER`] in milliseconds since the Unix epoch.
-    pub(crate) const NEWER_MILLIS: i64 = 4_070_908_800_000;
+    pub const NEWER_MILLIS: i64 = 4_070_908_800_000;
 
     /// The built-in snapshot as published at `version` (`2099-01-01_00-00-00_UTC`), with
     /// `rules` added at the start of its private section.
-    pub(crate) fn list(version: &str, rules: &[&str]) -> String {
+    #[must_use]
+    pub fn list(version: &str, rules: &[&str]) -> String {
         let at = BUILT_IN.find(VERSION_LINE).unwrap_or_default() + VERSION_LINE.len();
         let end = at + BUILT_IN[at..].find('\n').unwrap_or_default();
         let text = format!("{}{version}{}", &BUILT_IN[..at], &BUILT_IN[end..]);
@@ -501,7 +498,7 @@ mod tests {
     #[test]
     fn a_kept_list_dated_after_today_gives_way_to_the_built_in_one() {
         let dir = private_dir("suffix-kept-ahead").unwrap();
-        SuffixList::keep(dir.path(), newer().as_bytes()).unwrap();
+        keep(dir.path(), newer().as_bytes());
         assert_eq!(
             SuffixList::load(dir.path(), testing::NEWER_MILLIS - 2 * DAY).published(),
             SuffixList::built_in().published()
@@ -511,7 +508,7 @@ mod tests {
     #[test]
     fn a_kept_list_newer_than_the_built_in_one_is_read_back() {
         let dir = private_dir("suffix-kept").unwrap();
-        SuffixList::keep(dir.path(), newer().as_bytes()).unwrap();
+        keep(dir.path(), newer().as_bytes());
         assert_eq!(
             SuffixList::load(dir.path(), testing::NEWER_MILLIS).published(),
             testing::NEWER_MILLIS
@@ -529,34 +526,20 @@ mod tests {
             built_in
         );
         let older = testing::list("2020-01-01_00-00-00_UTC", &[]);
-        SuffixList::keep(dir.path(), older.as_bytes()).unwrap();
+        keep(dir.path(), older.as_bytes());
         assert_eq!(
             SuffixList::load(dir.path(), testing::NEWER_MILLIS).published(),
             built_in
         );
         let text = newer();
-        SuffixList::keep(dir.path(), &text.as_bytes()[..text.len() / 2]).unwrap();
+        keep(dir.path(), &text.as_bytes()[..text.len() / 2]);
         assert_eq!(
             SuffixList::load(dir.path(), testing::NEWER_MILLIS).published(),
             built_in
         );
     }
 
-    #[test]
-    fn a_failed_save_leaves_the_kept_list_as_it_was() {
-        let dir = private_dir("suffix-kept-fail").unwrap();
-        SuffixList::keep(dir.path(), newer().as_bytes()).unwrap();
-        // The file a new list is written to first cannot be made.
-        std::fs::create_dir(dir.path().join(format!("{KEPT_FILE}.tmp"))).unwrap();
-        let later = testing::list("2100-01-01_00-00-00_UTC", &[]);
-        SuffixList::keep(dir.path(), later.as_bytes()).unwrap_err();
-        assert_eq!(
-            std::fs::read(dir.path().join(KEPT_FILE)).unwrap(),
-            newer().into_bytes()
-        );
-        assert_eq!(
-            SuffixList::load(dir.path(), testing::NEWER_MILLIS).published(),
-            testing::NEWER_MILLIS
-        );
+    fn keep(dir: &Path, bytes: &[u8]) {
+        std::fs::write(dir.join(KEPT_FILE), bytes).unwrap();
     }
 }
