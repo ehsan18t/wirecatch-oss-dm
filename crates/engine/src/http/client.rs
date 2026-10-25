@@ -41,7 +41,7 @@ static SHARED_TLS: OnceLock<rustls::ClientConfig> = OnceLock::new();
 
 impl Clients {
     /// Uses the operating system's root certificates, read once per process,
-    /// and the proxy settings in effect now. The first call reads the
+    /// and the proxy settings `opts` asks for, as they are now. The first call reads the
     /// certificate store, so it must not run on an async thread; see
     /// [`Clients::shared_ready`]. The proxy settings come from the environment
     /// and, on Windows, the current user's registry hive, which is in memory,
@@ -54,7 +54,11 @@ impl Clients {
             let config = tls_config(native_roots())?;
             SHARED_TLS.get_or_init(|| config)
         };
-        Ok(Self::with_config(opts, tls.clone(), Proxies::current()))
+        Ok(Self::with_config(
+            opts,
+            tls.clone(),
+            Proxies::of(&opts.proxy),
+        ))
     }
 
     /// Whether [`Clients::new`] would return without touching the disk.

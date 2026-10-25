@@ -587,3 +587,36 @@ async fn a_child_that_left_the_group_does_not_hold_the_run() -> TestResult {
     assert!(ran.success());
     Ok(())
 }
+
+#[tokio::test]
+async fn the_program_gets_the_environment_it_is_given_and_its_debug_hides_the_values() -> TestResult
+{
+    let options = RunOptions::collect().with_environment(vec![
+        (
+            "WIRECATCH_TEST_GIVEN".into(),
+            Some("socks5h://u:secret@proxy:1080".into()),
+        ),
+        ("PATH".into(), None),
+    ]);
+    let shown = format!("{options:?}");
+    assert!(
+        !shown.contains("secret") && shown.contains("WIRECATCH_TEST_GIVEN"),
+        "{shown}"
+    );
+    let ran = run(
+        &["env", "WIRECATCH_TEST_GIVEN", "PATH"],
+        options,
+        &CancellationToken::new(),
+        |_, _| {},
+    )
+    .await??;
+    let stdout = String::from_utf8(ran.stdout)?;
+    assert_eq!(
+        stdout.lines().collect::<Vec<_>>(),
+        [
+            "WIRECATCH_TEST_GIVEN=socks5h://u:secret@proxy:1080",
+            "PATH unset"
+        ]
+    );
+    Ok(())
+}

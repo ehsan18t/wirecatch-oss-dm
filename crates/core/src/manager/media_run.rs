@@ -101,7 +101,11 @@ impl Manager {
             self.fail_to_start(state, id, error);
             return;
         }
-        let mut options = media_options(&entry.origin, entry.chosen_by.private_network());
+        let mut options = media_options(
+            &entry.origin,
+            entry.chosen_by.private_network(),
+            state.proxy(),
+        );
         options.connections = bandwidth.connections.max(1);
         options.rate_limiters = bandwidth.limiters;
         let tools = state.addon.tools.clone();
@@ -320,6 +324,7 @@ async fn page_attempt(
     let (video, audio) = (&page.video, &page.audio);
     let format = &ytdlp::selection(video.as_ref(), audio.as_ref());
     let cookies = cookie_header(&job.origin);
+    let proxy = crate::proxy::ytdlp_proxy(&job.options.proxy);
     let ctx = ytdlp::Context {
         tools,
         page: &job.url,
@@ -327,6 +332,7 @@ async fn page_attempt(
         user_agent: job.origin.user_agent.as_deref(),
         temp_dir: &job.temp_dir,
         timeout: job.timeout,
+        proxy: proxy.as_deref(),
     };
     // Format addresses expire: read the page again on every start.
     let info = ytdlp::extract(&ctx, cancel)

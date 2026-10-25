@@ -46,7 +46,7 @@ Need torrents? Wirecatch doesn't do them. Free Download Manager and Motrix do.
 - Refresh an expired link and keep everything already downloaded.
 - Automatic retries that respect what the server asks for.
 - HTTP, HTTPS, FTP and FTPS, with HTTP/3 as an option.
-- Proxy support: use your system's proxy, or set an HTTP or SOCKS proxy of your own.
+- Proxy support: use your system's proxy, no proxy, or an HTTP, HTTPS or SOCKS5 proxy of your own, one for everything or one per protocol, with a login, hosts to reach directly, Copy from system and a connection test. Downloads, videos, add-ons and updates all follow it.
 - Never overwrites a file: a free name like `file (1).zip` is used instead.
 - Files sorted into folders by type: videos, music, archives and more.
 
@@ -96,6 +96,7 @@ The `wirecatch` command downloads a link from a terminal with the same engine:
 ```bash
 wirecatch https://example.com/file.iso
 wirecatch -o ~/Downloads -c 16 https://example.com/file.iso
+wirecatch --proxy socks5h://proxy.example:1080 https://example.com/file.iso
 ```
 
 ## Privacy

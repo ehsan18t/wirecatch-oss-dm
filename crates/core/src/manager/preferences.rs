@@ -8,6 +8,7 @@ use wirecatch_protocol::app::{AddonId, AppSettings, AppSettingsPatch, ImportPrev
 use wirecatch_protocol::extension::{
     BrowserControls, BrowserControlsPatch, ExtensionSettings, ExtensionSettingsPatch,
 };
+use wirecatch_protocol::proxy::ProxySettings;
 use wirecatch_protocol::wire::Event;
 
 use super::Manager;
@@ -23,7 +24,8 @@ impl Manager {
         self.lock().settings.clone()
     }
 
-    /// Replaces every setting after checking them. Lists are cleaned up (lower case,
+    /// Replaces every setting after checking them, but the proxy, which changes only with its
+    /// passwords through [`set_proxy`](Self::set_proxy). Lists are cleaned up (lower case,
     /// no duplicates), and the stored result arrives as `SettingsChanged`. New
     /// limits apply to running downloads at once.
     ///
@@ -37,8 +39,9 @@ impl Manager {
     /// [`CoreError::Path`] for a folder that does not resolve, and
     /// [`CoreError::Closed`] once the manager has shut down. Nothing changes on an
     /// error.
-    pub fn update_settings(&self, new: AppSettings) -> Result<()> {
+    pub fn update_settings(&self, mut new: AppSettings) -> Result<()> {
         let mut state = self.lock_open()?;
+        new.proxy = state.settings.proxy.clone();
         let new = settings::validate(
             new,
             &state.queue_list(),
@@ -192,6 +195,22 @@ impl Manager {
             }
             // Queues first: the new settings may name a queue that was just added.
             self.queues_changed(&mut state);
+            // A profile has no proxy passwords (A6). The saved ones belong to the proxies set
+            // here, so they go when the profile brings others.
+            let unmarked = |proxy: &ProxySettings| {
+                let mut proxy = proxy.clone();
+                crate::proxy::mark_passwords(&mut proxy, &crate::proxy::Logins::new());
+                proxy
+            };
+            if unmarked(&imported.settings.proxy) != unmarked(&state.settings.proxy)
+                && !state.proxy_logins.is_empty()
+            {
+                state.proxy_logins.clear();
+                self.inner
+                    .store
+                    .save_proxy_logins(crate::proxy::Logins::new());
+            }
+            crate::proxy::mark_passwords(&mut imported.settings.proxy, &state.proxy_logins);
             self.apply_settings(&mut state, imported.settings);
             if wants_media && state.addon.tools.is_none() {
                 imported.summary.addons_to_offer.push(AddonId::Media);
@@ -272,7 +291,7 @@ impl Manager {
         if old.browser_controls() != controls {
             self.emit_wire(Event::BrowserControlsChanged(controls));
         }
-        self.emit(UiEvent::SettingsChanged(new.clone()));
+        self.emit(UiEvent::SettingsChanged(Box::new(new.clone())));
         self.reconcile(state);
     }
 }

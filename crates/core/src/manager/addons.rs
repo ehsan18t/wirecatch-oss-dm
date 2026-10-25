@@ -852,7 +852,7 @@ impl Manager {
     /// Options for every request for the add-on: the app's own identity, and no request to the local network, since a release host never is on it (D38.5).
     fn addon_download_options(&self) -> DownloadOptions {
         let state = self.lock();
-        let mut options = crate::headers::download_options(ADDON_NETWORK);
+        let mut options = crate::headers::download_options(ADDON_NETWORK, state.proxy());
         options.connections = usize::from(state.settings.connections_per_download);
         options.rate_limiters = vec![self.inner.global_limiter.clone()];
         options
@@ -901,7 +901,8 @@ impl Manager {
             return Ok(Vec::new());
         };
         let cancel = self.inner.stopped.child_token();
-        let mut options = crate::headers::download_options(ADDON_NETWORK);
+        let proxy = self.lock().proxy();
+        let mut options = crate::headers::download_options(ADDON_NETWORK, proxy);
         options.headers.insert(
             ACCEPT,
             HeaderValue::from_static("application/vnd.github+json"),
@@ -1343,7 +1344,11 @@ mod tests {
         let agent = manager.addon_download_options().user_agent;
         assert_eq!(
             agent,
-            crate::headers::download_options(PrivateNetwork::Allow).user_agent
+            crate::headers::download_options(
+                PrivateNetwork::Allow,
+                wirecatch_engine::ProxyChoice::System
+            )
+            .user_agent
         );
         assert_ne!(agent, DownloadOptions::default().user_agent);
     }

@@ -454,3 +454,118 @@ fn a_setting_says_how_to_go_around_it() {
     );
     assert!(ProxySetting::System.remedy().contains("exceptions"));
 }
+
+/// Manual proxies: `all` for every protocol, and `exceptions`.
+fn manual(all: &str, exceptions: &str) -> Proxies {
+    Proxies::of(&ProxyChoice::Manual(ManualProxies {
+        all: Some(all.to_string()),
+        exceptions: exceptions.to_string(),
+        ..ManualProxies::default()
+    }))
+}
+
+#[test]
+fn direct_and_manual_read_neither_the_environment_nor_the_system() {
+    assert_eq!(Proxies::of(&ProxyChoice::Direct), Proxies::default());
+    let set = manual("http://given:8080", "");
+    for scheme in [Scheme::Http, Scheme::Https, Scheme::Ftp] {
+        assert_eq!(
+            setting(&set, scheme, "h.example"),
+            Some(ProxySetting::Given)
+        );
+    }
+    assert_eq!(
+        client_target(&set, "https://h.example/"),
+        Some("http://given:8080/".into())
+    );
+}
+
+#[test]
+fn a_protocol_of_its_own_comes_before_the_one_for_every_protocol() {
+    let set = Proxies::of(&ProxyChoice::Manual(ManualProxies {
+        all: Some("socks5h://socks:1080".into()),
+        https: Some("http://secure:3128".into()),
+        ..ManualProxies::default()
+    }));
+    assert_eq!(
+        client_target(&set, "https://h.example/"),
+        Some("http://secure:3128/".into())
+    );
+    assert_eq!(
+        client_target(&set, "http://h.example/"),
+        Some("socks5h://socks:1080".into())
+    );
+}
+
+#[test]
+fn manual_exceptions_take_the_systems_forms_and_commas() {
+    let set = manual(
+        "http://given:8080",
+        "*.corp.example; 10.*, <local>, files.example",
+    );
+    for direct in [
+        "wiki.corp.example",
+        "corp.example",
+        "10.1.2.3",
+        "intranet",
+        "files.example",
+    ] {
+        assert_eq!(setting(&set, Scheme::Https, direct), None, "{direct}");
+    }
+    assert_eq!(
+        setting(&set, Scheme::Https, "www.example"),
+        Some(ProxySetting::Given)
+    );
+}
+
+#[test]
+fn ftp_goes_through_socks5_and_otherwise_is_refused_unless_it_may_go_directly() {
+    let socks = manual("socks5://socks:1080", "");
+    assert!(socks.ftp_route("ftp.example").unwrap().is_some());
+
+    let http = manual("http://given:8080", "ftp.corp");
+    assert_eq!(http.ftp_route("ftp.example"), Err(ProxySetting::Given));
+    assert_eq!(http.ftp_route("ftp.corp"), Ok(None));
+    let direct = ManualProxies {
+        all: Some("http://given:8080".into()),
+        ftp_direct: true,
+        ..ManualProxies::default()
+    };
+    assert_eq!(
+        Proxies::of(&ProxyChoice::Manual(direct)).ftp_route("ftp.example"),
+        Ok(None)
+    );
+    // SOCKS4 cannot carry FTP's data connections either.
+    assert_eq!(
+        manual("socks4://socks:1080", "").ftp_route("ftp.example"),
+        Err(ProxySetting::Given)
+    );
+}
+
+#[test]
+fn manual_proxies_hide_their_logins() {
+    let proxies = ManualProxies {
+        all: Some("socks5://alice:secret@socks:1080".into()),
+        ..ManualProxies::default()
+    };
+    let shown = format!("{proxies:?}");
+    assert!(
+        !shown.contains("secret") && !shown.contains("alice"),
+        "{shown}"
+    );
+    assert!(shown.contains("socks5://***@socks:1080"), "{shown}");
+}
+
+#[test]
+fn the_systems_proxies_read_back_as_manual_ones() {
+    let system = from_system("http=web:80;socks=socks:1080", "*.corp;<local>");
+    let manual = system.as_manual().unwrap();
+    assert_eq!(manual.http.as_deref(), Some("web:80"));
+    assert_eq!(manual.all.as_deref(), Some("socks4://socks:1080"));
+    assert_eq!(manual.exceptions, "corp,<local>");
+    assert_eq!(
+        Proxies::of(&ProxyChoice::Manual(manual.clone())).as_manual(),
+        Some(manual)
+    );
+    assert_eq!(from_env(&[]).as_manual(), None);
+}

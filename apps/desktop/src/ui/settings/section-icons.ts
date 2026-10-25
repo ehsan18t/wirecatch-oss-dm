@@ -6,6 +6,7 @@ import Folder from '~icons/lucide/folder';
 import Gauge from '~icons/lucide/gauge';
 import Globe from '~icons/lucide/globe';
 import ListOrdered from '~icons/lucide/list-ordered';
+import Network from '~icons/lucide/network';
 import Monitor from '~icons/lucide/monitor';
 import Package from '~icons/lucide/package';
 import Video from '~icons/lucide/video';
@@ -22,6 +23,7 @@ export const SECTION_ICON: Record<SectionId, IconComponent> = {
   addons: Package,
   speed: Gauge,
   queues: ListOrdered,
+  network: Network,
   transfer: ArrowRightLeft,
   advanced: Wrench,
 };

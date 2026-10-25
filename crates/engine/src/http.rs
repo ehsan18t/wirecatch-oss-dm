@@ -147,13 +147,16 @@ impl Failure {
             .flatten()
             .and_then(|v| v.to_str().ok())
             .and_then(|v| parse_retry_after(v, SystemTime::now()));
-        Self {
-            error: Error::HttpStatus {
+        // Only a proxy answers 407; a server asking for a login answers 401.
+        let error = if status == StatusCode::PROXY_AUTHENTICATION_REQUIRED {
+            Error::ProxyLoginRefused
+        } else {
+            Error::HttpStatus {
                 status: status.as_u16(),
                 url: url.to_string(),
-            },
-            retry_after,
-        }
+            }
+        };
+        Self { error, retry_after }
     }
 }
 

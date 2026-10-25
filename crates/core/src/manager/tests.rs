@@ -20,17 +20,18 @@ use super::{LinkFrom, Manager};
 use crate::error::CoreError;
 use crate::naming;
 use crate::{DEFAULT_CAPTURE_TIMEOUT, DEFAULT_QUEUE_ID, KnownFolders, ManagerConfig};
-use wirecatch_engine::PrivateNetwork;
+use wirecatch_engine::{PrivateNetwork, ProxyChoice};
 
 /// A media download without a browser's agent names the app, never the engine
 /// library's default; with one, it is the browser's.
 #[test]
 fn media_requests_name_the_app_or_the_browser() {
     let mut origin = crate::store::Origin::default();
-    let agent = super::media::media_options(&origin, PrivateNetwork::Block).user_agent;
+    let agent =
+        super::media::media_options(&origin, PrivateNetwork::Block, ProxyChoice::System).user_agent;
     assert_eq!(
         agent,
-        crate::headers::download_options(PrivateNetwork::Block).user_agent
+        crate::headers::download_options(PrivateNetwork::Block, ProxyChoice::System).user_agent
     );
     assert_ne!(
         agent,
@@ -38,7 +39,7 @@ fn media_requests_name_the_app_or_the_browser() {
     );
     origin.user_agent = Some("TestBrowser/1".into());
     assert_eq!(
-        super::media::media_options(&origin, PrivateNetwork::Block).user_agent,
+        super::media::media_options(&origin, PrivateNetwork::Block, ProxyChoice::System).user_agent,
         "TestBrowser/1"
     );
 }

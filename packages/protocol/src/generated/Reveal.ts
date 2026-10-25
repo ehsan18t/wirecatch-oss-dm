@@ -4,8 +4,9 @@ import type { QueueId } from './QueueId';
 
 /**
  * What the main window shows when it comes to the front for someone: downloads it selects and
- * scrolls to, because the person clicked a notification about them (D52), or the browser
- * settings, for the extension's settings button (D61).
+ * scrolls to, because the person clicked a notification about them (D52), the browser
+ * settings, for the extension's settings button (D61), or the proxy settings, for a progress
+ * window's fix of a proxy error (D71).
  */
 export type Reveal = {
   /**
@@ -21,4 +22,8 @@ export type Reveal = {
    * Show the browser settings instead of downloads.
    */
   browser_settings?: boolean;
+  /**
+   * Show the proxy settings instead of downloads.
+   */
+  proxy_settings?: boolean;
 };

@@ -6,6 +6,7 @@ import type { FinishNoteTime } from './FinishNoteTime';
 import type { FinishNotice } from './FinishNotice';
 import type { MediaDefaults } from './MediaDefaults';
 import type { PortablePath } from './PortablePath';
+import type { ProxySettings } from './ProxySettings';
 import type { StartNoteTime } from './StartNoteTime';
 import type { StartNotice } from './StartNotice';
 import type { Theme } from './Theme';
@@ -102,4 +103,10 @@ export type AppSettings = {
    * downloads are idle (D44). Off: the list in use stays until the person checks.
    */
   update_suffix_list: boolean;
+  /**
+   * Which proxy everything the app sends goes through (D71), without its passwords. It
+   * changes as a whole, with a [`ProxyChange`](crate::proxy::ProxyChange), never in a
+   * patch.
+   */
+  proxy: ProxySettings;
 };

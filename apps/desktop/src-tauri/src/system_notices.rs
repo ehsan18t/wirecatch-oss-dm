@@ -63,6 +63,7 @@ pub fn plain(title: String, body: String) -> Notice {
             queue: None,
             ids: Vec::new(),
             browser_settings: false,
+            proxy_settings: false,
         }),
         lasts: Lasts::Kept,
         important: true,

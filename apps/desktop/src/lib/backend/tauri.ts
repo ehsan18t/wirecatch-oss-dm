@@ -29,6 +29,8 @@ import {
   type DownloadId,
   type FinishedList,
   type MediaSelection,
+  type ProxyChange,
+  type ProxyTest,
   type QuestionId,
   type Queue,
   type QueueId,
@@ -290,6 +292,18 @@ export class TauriBackend implements DownloadWindowBackend {
   }
   checkSuffixList() {
     return this.#call('check_suffix_list');
+  }
+  setProxy(change: ProxyChange) {
+    return this.#exec('set_proxy', { change });
+  }
+  testProxy(test: ProxyTest) {
+    return this.#call('test_proxy', { test });
+  }
+  systemProxy() {
+    return this.#call('system_proxy');
+  }
+  showProxySettings() {
+    return this.#exec('show_proxy_settings');
   }
 
   /** Passes on every event with the contract's shape. One without it is a bug on one side: it is dropped, reported to the shell's log, and `reload` is called to load everything again from the commands, whose answers are checked; for a kind that keeps failing, at most once every `UNREADABLE_RELOAD_MS`. */

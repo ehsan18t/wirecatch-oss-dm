@@ -341,6 +341,21 @@ export const MAX_VIDEO_SITES = 200;
 export const MAX_SITE_CHARS = 253;
 
 /**
+ * Most characters in a proxy's host name.
+ */
+export const MAX_PROXY_HOST_CHARS = 253;
+
+/**
+ * Most bytes in a proxy's user name or password: SOCKS5 sends each in at most 255 (RFC 1929).
+ */
+export const MAX_PROXY_LOGIN_BYTES = 255;
+
+/**
+ * Most hosts the proxy's exceptions list.
+ */
+export const MAX_PROXY_EXCEPTIONS = 256;
+
+/**
  * Words that make a name a secret's when one of its segments is the word (see the module documentation for how a name is split). `key` alone counts, so `Invalid key: 5` loses its 5: a bare `key=` pair is most often an API key.
  */
 export const SECRET_WORDS: readonly string[] = [

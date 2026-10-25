@@ -33,6 +33,8 @@ import type { OpenFolderArgs } from './OpenFolderArgs';
 import type { PauseArgs } from './PauseArgs';
 import type { PendingCapture } from './PendingCapture';
 import type { PreviewImportArgs } from './PreviewImportArgs';
+import type { ProxySettings } from './ProxySettings';
+import type { ProxyTestResult } from './ProxyTestResult';
 import type { Question } from './Question';
 import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
@@ -47,12 +49,14 @@ import type { RetryArgs } from './RetryArgs';
 import type { Reveal } from './Reveal';
 import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
 import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
+import type { SetProxyArgs } from './SetProxyArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
 import type { StartQueueNowArgs } from './StartQueueNowArgs';
 import type { StartupNotice } from './StartupNotice';
 import type { SuffixListInfo } from './SuffixListInfo';
 import type { SystemAppearance } from './SystemAppearance';
+import type { TestProxyArgs } from './TestProxyArgs';
 import type { UpdateAddonArgs } from './UpdateAddonArgs';
 import type { UpdateQueueArgs } from './UpdateQueueArgs';
 import type { WindowFrame } from './WindowFrame';
@@ -251,6 +255,26 @@ export type CommandMap = {
    * list in use.
    */
   check_suffix_list: Command<null, SuffixListInfo>;
+  /**
+   * Saves a new proxy setting (D71) with its passwords, restarting the running downloads
+   * when it asks. Fails with `invalid_request` and a message for the person for a proxy that cannot
+   * work, changing nothing.
+   */
+  set_proxy: Command<SetProxyArgs, null>;
+  /**
+   * Sends one request through a proxy setting before it is saved (D71.5).
+   */
+  test_proxy: Command<TestProxyArgs, ProxyTestResult>;
+  /**
+   * The computer's proxy as a manual setting, without passwords, for Copy from system;
+   * `null` when the computer sets none.
+   */
+  system_proxy: Command<null, ProxySettings | null>;
+  /**
+   * Brings the main window to the front on the proxy settings, for a progress window's fix
+   * of a proxy error.
+   */
+  show_proxy_settings: Command<null, null>;
   /**
    * The open question a download window shows, or `null` once it is answered, dismissed or
    * taken back by the browser.

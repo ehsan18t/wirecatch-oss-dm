@@ -13,8 +13,9 @@ use wirecatch_protocol::desktop::{
     GetDownloadArgs, GetQuestionArgs, ImportSettingsArgs, InstallAddonArgs, KeepOriginalArgs,
     MoveToQueueArgs, OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs,
     RejectCaptureArgs, RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs,
-    ResumeArgs, RetryArgs, SetDownloadFolderArgs, SetMaximizeButtonArgs, SetQueuePausedArgs,
-    ShowProgressWindowArgs, StartQueueNowArgs, SystemAppearance, UpdateAddonArgs, UpdateQueueArgs,
+    ResumeArgs, RetryArgs, SetDownloadFolderArgs, SetMaximizeButtonArgs, SetProxyArgs,
+    SetQueuePausedArgs, ShowProgressWindowArgs, StartQueueNowArgs, SystemAppearance, TestProxyArgs,
+    UpdateAddonArgs, UpdateQueueArgs,
 };
 
 use crate::api::{self, CommandResult};
@@ -568,6 +569,37 @@ pub async fn check_suffix_list(
 }
 
 #[tauri::command]
+pub async fn set_proxy(
+    core: CoreState<'_>,
+    args: contract::set_proxy::Args,
+) -> CommandResult<contract::set_proxy::Output> {
+    let SetProxyArgs { change } = args;
+    api::set_proxy(core.manager().await?, change)
+}
+
+#[tauri::command]
+pub async fn test_proxy(
+    core: CoreState<'_>,
+    args: contract::test_proxy::Args,
+) -> CommandResult<contract::test_proxy::Output> {
+    let TestProxyArgs { test } = args;
+    api::test_proxy(core.manager().await?, test).await
+}
+
+#[tauri::command]
+pub async fn system_proxy() -> CommandResult<contract::system_proxy::Output> {
+    Ok(api::system_proxy())
+}
+
+#[tauri::command]
+pub async fn show_proxy_settings<R: Runtime>(
+    app: AppHandle<R>,
+) -> CommandResult<contract::show_proxy_settings::Output> {
+    crate::window::reveal(&app, &wirecatch_protocol::desktop::Reveal::proxy_settings());
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn control_window<R: Runtime>(
     window: WebviewWindow<R>,
     args: contract::control_window::Args,
@@ -710,6 +742,10 @@ handler![
     check_addon_updates,
     suffix_list,
     check_suffix_list,
+    set_proxy,
+    test_proxy,
+    system_proxy,
+    show_proxy_settings,
     get_question,
     get_download,
     earlier_download,

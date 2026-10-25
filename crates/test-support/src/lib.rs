@@ -12,6 +12,8 @@
 //! - `ftp::FtpServer`: a scripted FTP and FTPS server.
 //! - `silent::SilentServer`: a server that accepts connections and never
 //!   answers.
+//! - `proxy::SocksServer`: a SOCKS5 proxy, with or without a login, and
+//!   `proxy::LoginWall`: an HTTP proxy that answers every request with `407`.
 //! - `TestCertificate`: a self-signed certificate for the TLS servers.
 //! - `http3` (with the `http3` feature): HTTPS servers that advertise and speak
 //!   HTTP/3.
@@ -52,6 +54,8 @@ pub mod http;
 pub mod http3;
 #[cfg(feature = "logs")]
 pub mod logs;
+#[cfg(feature = "servers")]
+pub mod proxy;
 #[cfg(feature = "redaction")]
 pub mod redaction;
 #[cfg(feature = "resume")]

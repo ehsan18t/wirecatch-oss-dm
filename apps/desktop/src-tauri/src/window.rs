@@ -127,14 +127,14 @@ impl PendingSelection {
 }
 
 /// Shows the main window, in front and focused, on what `reveal` names: the downloads a
-/// notification the person clicked was about, or the browser settings.
+/// notification the person clicked was about, the browser settings, or the proxy settings.
 pub fn reveal<R: Runtime>(app: &AppHandle<R>, reveal: &Reveal) {
     let listening = app
         .try_state::<PendingSelection>()
         .is_some_and(|pending| pending.request(reveal));
     // Showing wakes a page asleep in the tray first, so the selection reaches it awake.
     show_main_window(app);
-    if listening && (!reveal.ids.is_empty() || reveal.browser_settings) {
+    if listening && (!reveal.ids.is_empty() || reveal.browser_settings || reveal.proxy_settings) {
         warn_if_failed(
             "show what the main window was asked for",
             app.emit_to(MAIN_WINDOW, REVEAL_EVENT, reveal),

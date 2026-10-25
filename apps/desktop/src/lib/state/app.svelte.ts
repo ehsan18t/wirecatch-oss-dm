@@ -23,6 +23,7 @@ import { DownloadActions } from './download-actions.svelte';
 import { DownloadStore } from './downloads.svelte';
 import { mainWindowEvents } from './app-events';
 import { dispatch, HeldEvents } from './events';
+import { ProxyForm } from './proxy-form.svelte';
 import { Questions } from './questions.svelte';
 import { revealDownloads } from './reveal';
 import { Queues } from './queues.svelte';
@@ -88,6 +89,13 @@ export class AppState {
     runner: this.#runner,
     toasts: this.toasts,
   });
+  /** The proxy setting as edited, saved as a whole (D71). */
+  readonly proxy = new ProxyForm({
+    backend: () => this.#backend,
+    runner: this.#runner,
+    saved: () => this.settings?.proxy ?? null,
+    running: () => this.counts.status.active - this.counts.joining,
+  });
   readonly queues = new Queues({
     backend: () => this.#backend,
     runner: this.#runner,
@@ -99,7 +107,7 @@ export class AppState {
     backend: () => this.#backend,
     runner: this.#runner,
     imported: (settings, queues) => {
-      if (settings) this.settings = settings;
+      if (settings) this.settingsArrived(settings);
       if (queues) this.queues.list = queues;
     },
   });
@@ -111,6 +119,7 @@ export class AppState {
     selection: this.selection,
     queues: this.queues,
     openDialog: (dialog) => this.openDialog(dialog),
+    openSettings: (focus) => this.openSettings(focus),
     sort: () => this.sort,
     videoSites: () => this.settings?.extension.video_sites ?? [],
     videosAsk: () => this.settings?.media.ask_each_time ?? true,
@@ -278,7 +287,7 @@ export class AppState {
       if (!current()) return;
       this.downloads.load(downloads);
       this.queues.list = queues;
-      this.settings = settings;
+      this.settingsArrived(settings);
       this.questions.pending = pending;
       this.name = name;
       this.loadError = null;
@@ -467,6 +476,12 @@ export class AppState {
   }
 
   // ---- Settings ----
+
+  /** The app's settings as the core has them, loaded or changed; the proxy being edited follows unless it is being edited. */
+  settingsArrived(settings: AppSettings): void {
+    this.settings = settings;
+    this.proxy.savedChanged();
+  }
 
   /** Changes settings right away and saves only what changed; on failure those settings come back. */
   updateSettings(change: (draft: AppSettings) => void): Promise<void> {

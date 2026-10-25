@@ -18,6 +18,7 @@ export type SectionId =
   | 'addons'
   | 'speed'
   | 'queues'
+  | 'network'
   | 'transfer'
   | 'advanced';
 
@@ -53,6 +54,11 @@ export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[
     id: 'queues',
     title: 'Queues',
     blurb: 'Each queue has its own hours and limits.',
+  },
+  {
+    id: 'network',
+    title: 'Network',
+    blurb: 'How Wirecatch reaches the internet.',
   },
   {
     id: 'transfer',
@@ -354,6 +360,14 @@ const DEFS = [
     label: 'Connections per download',
     help: `More connections can be faster on servers that allow it. ${DEFAULT_CONNECTIONS_PER_DOWNLOAD} suits most servers.`,
     keywords: 'threads segments parts parallel connections speed',
+  },
+  {
+    id: 'proxy',
+    section: 'network',
+    label: 'Proxy',
+    help: 'Everything Wirecatch sends goes through it: downloads, videos, add-ons and updates. Changes take effect when you save them.',
+    keywords:
+      'proxy socks socks5 http https firewall vpn corporate office no proxy direct system exceptions bypass login password',
   },
   {
     id: 'local_sites',

@@ -56,7 +56,7 @@ async fn ftp_is_refused_while_a_proxy_is_set() {
             "{named} for {variable}"
         );
         let text = error.to_string();
-        assert!(text.contains("cannot go through a proxy"), "{text}");
+        assert!(text.contains("only go through a SOCKS5 proxy"), "{text}");
         assert!(
             text.contains(&format!("remove {named}")),
             "says how to go on: {text}"

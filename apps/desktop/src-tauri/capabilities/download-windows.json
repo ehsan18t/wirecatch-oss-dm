@@ -15,6 +15,7 @@
     "allow-retry",
     "allow-refresh-link",
     "allow-keep-original",
+    "allow-show-proxy-settings",
     "allow-list-queues",
     "allow-get-settings",
     "allow-change-settings",

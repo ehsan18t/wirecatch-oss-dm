@@ -17,6 +17,7 @@ use crate::app::{
     CaptureConfirmation, DownloadSummary, ImportPreview, MediaChoice, MediaSelection,
     PendingCapture, Question, Queue, StartupNotice, SuffixListInfo,
 };
+use crate::proxy::{ProxyChange, ProxySettings, ProxyTest, ProxyTestResult};
 use crate::secret::Link;
 use crate::{DownloadId, QuestionId, QueueId};
 
@@ -127,8 +128,9 @@ pub struct SystemAppearance {
 }
 
 /// What the main window shows when it comes to the front for someone: downloads it selects and
-/// scrolls to, because the person clicked a notification about them (D52), or the browser
-/// settings, for the extension's settings button (D61).
+/// scrolls to, because the person clicked a notification about them (D52), the browser
+/// settings, for the extension's settings button (D61), or the proxy settings, for a progress
+/// window's fix of a proxy error (D71).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Reveal {
@@ -141,6 +143,10 @@ pub struct Reveal {
     #[serde(default)]
     #[ts(optional, as = "Option<bool>")]
     pub browser_settings: bool,
+    /// Show the proxy settings instead of downloads.
+    #[serde(default)]
+    #[ts(optional, as = "Option<bool>")]
+    pub proxy_settings: bool,
 }
 
 impl Reveal {
@@ -151,6 +157,18 @@ impl Reveal {
             queue: None,
             ids: Vec::new(),
             browser_settings: true,
+            proxy_settings: false,
+        }
+    }
+
+    /// The proxy settings, for a progress window's fix of a proxy error (D71).
+    #[must_use]
+    pub fn proxy_settings() -> Self {
+        Self {
+            queue: None,
+            ids: Vec::new(),
+            browser_settings: false,
+            proxy_settings: true,
         }
     }
 }
@@ -477,6 +495,24 @@ commands! {
     /// a message for the person when it could not be fetched or was refused, keeping the
     /// list in use.
     check_suffix_list -> SuffixListInfo;
+    /// Saves a new proxy setting (D71) with its passwords, restarting the running downloads
+    /// when it asks. Fails with `invalid_request` and a message for the person for a proxy that cannot
+    /// work, changing nothing.
+    set_proxy: SetProxyArgs {
+        /// The new setting.
+        change: ProxyChange,
+    } -> ();
+    /// Sends one request through a proxy setting before it is saved (D71.5).
+    test_proxy: TestProxyArgs {
+        /// The setting to try.
+        test: ProxyTest,
+    } -> ProxyTestResult;
+    /// The computer's proxy as a manual setting, without passwords, for Copy from system;
+    /// `null` when the computer sets none.
+    system_proxy -> Option<ProxySettings>;
+    /// Brings the main window to the front on the proxy settings, for a progress window's fix
+    /// of a proxy error.
+    show_proxy_settings -> ();
     /// The open question a download window shows, or `null` once it is answered, dismissed or
     /// taken back by the browser.
     get_question: GetQuestionArgs {

@@ -91,6 +91,15 @@ import type { PreviewImportArgs } from './PreviewImportArgs';
 import type { ProcessingProgress } from './ProcessingProgress';
 import type { ProcessingStep } from './ProcessingStep';
 import type { ProtocolError } from './ProtocolError';
+import type { ProxyChange } from './ProxyChange';
+import type { ProxyKind } from './ProxyKind';
+import type { ProxyMode } from './ProxyMode';
+import type { ProxyPasswords } from './ProxyPasswords';
+import type { ProxyRole } from './ProxyRole';
+import type { ProxyServer } from './ProxyServer';
+import type { ProxySettings } from './ProxySettings';
+import type { ProxyTest } from './ProxyTest';
+import type { ProxyTestResult } from './ProxyTestResult';
 import type { QualityFallback } from './QualityFallback';
 import type { Question } from './Question';
 import type { QuestionId } from './QuestionId';
@@ -112,6 +121,7 @@ import type { Reveal } from './Reveal';
 import type { Schedule } from './Schedule';
 import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
 import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
+import type { SetProxyArgs } from './SetProxyArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
 import type { SettingsProfile } from './SettingsProfile';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
@@ -122,6 +132,7 @@ import type { StartupNotice } from './StartupNotice';
 import type { StreamAction } from './StreamAction';
 import type { SuffixListInfo } from './SuffixListInfo';
 import type { SystemAppearance } from './SystemAppearance';
+import type { TestProxyArgs } from './TestProxyArgs';
 import type { Theme } from './Theme';
 import type { TimeOfDay } from './TimeOfDay';
 import type { UiEvent } from './UiEvent';
@@ -273,7 +284,8 @@ export function isAppSettings(value: unknown): value is AppSettings {
     typeof value1['show_progress_windows'] === 'boolean' &&
     isMediaDefaults(value1['media']) &&
     isArrayOf(value1['local_sites'], (value2: unknown) => typeof value2 === 'string') &&
-    typeof value1['update_suffix_list'] === 'boolean')(value);
+    typeof value1['update_suffix_list'] === 'boolean' &&
+    isProxySettings(value1['proxy']))(value);
 }
 
 /** Whether `value` has the shape of a {@link AppSettingsPatch}; fields it does not name are not checked. */
@@ -706,7 +718,8 @@ export function isFixAction(value: unknown): value is FixAction {
     value === 'refresh_link' ||
     value === 'choose_folder' ||
     value === 'free_disk_space' ||
-    value === 'keep_original'
+    value === 'keep_original' ||
+    value === 'proxy_settings'
   );
 }
 
@@ -1110,6 +1123,98 @@ export function isProtocolError(value: unknown): value is ProtocolError {
   );
 }
 
+/** Whether `value` has the shape of a {@link ProxyChange}; fields it does not name are not checked. */
+export function isProxyChange(value: unknown): value is ProxyChange {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isProxySettings(value1['settings']) &&
+    isProxyPasswords(value1['passwords']) &&
+    typeof value1['restart_running'] === 'boolean')(value);
+}
+
+/** Whether `value` has the shape of a {@link ProxyKind}; fields it does not name are not checked. */
+export function isProxyKind(value: unknown): value is ProxyKind {
+  return value === 'http' || value === 'https' || value === 'socks5';
+}
+
+/** Whether `value` has the shape of a {@link ProxyMode}; fields it does not name are not checked. */
+export function isProxyMode(value: unknown): value is ProxyMode {
+  return value === 'system' || value === 'direct' || value === 'manual';
+}
+
+/** Whether `value` has the shape of a {@link ProxyPasswords}; fields it does not name are not checked. */
+export function isProxyPasswords(value: unknown): value is ProxyPasswords {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (value1['all'] === undefined || typeof value1['all'] === 'string' || value1['all'] === null) &&
+    (value1['http'] === undefined ||
+      typeof value1['http'] === 'string' ||
+      value1['http'] === null) &&
+    (value1['https'] === undefined ||
+      typeof value1['https'] === 'string' ||
+      value1['https'] === null) &&
+    (value1['ftp'] === undefined || typeof value1['ftp'] === 'string' || value1['ftp'] === null) &&
+    (value1['socks'] === undefined ||
+      typeof value1['socks'] === 'string' ||
+      value1['socks'] === null))(value);
+}
+
+/** Whether `value` has the shape of a {@link ProxyRole}; fields it does not name are not checked. */
+export function isProxyRole(value: unknown): value is ProxyRole {
+  return (
+    value === 'all' || value === 'http' || value === 'https' || value === 'ftp' || value === 'socks'
+  );
+}
+
+/** Whether `value` has the shape of a {@link ProxyServer}; fields it does not name are not checked. */
+export function isProxyServer(value: unknown): value is ProxyServer {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isProxyKind(value1['kind']) &&
+    typeof value1['host'] === 'string' &&
+    typeof value1['port'] === 'number' &&
+    typeof value1['user'] === 'string' &&
+    typeof value1['has_password'] === 'boolean')(value);
+}
+
+/** Whether `value` has the shape of a {@link ProxySettings}; fields it does not name are not checked. */
+export function isProxySettings(value: unknown): value is ProxySettings {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isProxyMode(value1['mode']) &&
+    typeof value1['per_protocol'] === 'boolean' &&
+    isProxyServer(value1['all']) &&
+    isProxyServer(value1['http']) &&
+    isProxyServer(value1['https']) &&
+    isProxyServer(value1['ftp']) &&
+    isProxyServer(value1['socks']) &&
+    isArrayOf(value1['exceptions'], (value2: unknown) => typeof value2 === 'string') &&
+    typeof value1['ftp_direct'] === 'boolean')(value);
+}
+
+/** Whether `value` has the shape of a {@link ProxyTest}; fields it does not name are not checked. */
+export function isProxyTest(value: unknown): value is ProxyTest {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isProxySettings(value1['settings']) &&
+    isProxyPasswords(value1['passwords']))(value);
+}
+
+/** Whether `value` has the shape of a {@link ProxyTestResult}; fields it does not name are not checked. */
+export function isProxyTestResult(value: unknown): value is ProxyTestResult {
+  return (
+    ((value1: unknown): boolean => isRecord(value1) && value1['outcome'] === 'works')(value) ||
+    ((value1: unknown): boolean => isRecord(value1) && value1['outcome'] === 'login_refused')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['outcome'] === 'unreachable' &&
+      typeof value1['reason'] === 'string')(value) ||
+    ((value1: unknown): boolean => isRecord(value1) && value1['outcome'] === 'timed_out')(value)
+  );
+}
+
 /** Whether `value` has the shape of a {@link QualityFallback}; fields it does not name are not checked. */
 export function isQualityFallback(value: unknown): value is QualityFallback {
   return value === 'lower' || value === 'higher' || value === 'ask';
@@ -1263,7 +1368,8 @@ export function isReveal(value: unknown): value is Reveal {
     isRecord(value1) &&
     (isQueueId(value1['queue']) || value1['queue'] === null) &&
     isArrayOf(value1['ids'], isDownloadId) &&
-    (value1['browser_settings'] === undefined || typeof value1['browser_settings'] === 'boolean'))(
+    (value1['browser_settings'] === undefined || typeof value1['browser_settings'] === 'boolean') &&
+    (value1['proxy_settings'] === undefined || typeof value1['proxy_settings'] === 'boolean'))(
     value,
   );
 }
@@ -1287,6 +1393,11 @@ export function isSetDownloadFolderArgs(value: unknown): value is SetDownloadFol
 export function isSetMaximizeButtonArgs(value: unknown): value is SetMaximizeButtonArgs {
   return ((value1: unknown): boolean =>
     isRecord(value1) && (isButtonArea(value1['area']) || value1['area'] === null))(value);
+}
+
+/** Whether `value` has the shape of a {@link SetProxyArgs}; fields it does not name are not checked. */
+export function isSetProxyArgs(value: unknown): value is SetProxyArgs {
+  return ((value1: unknown): boolean => isRecord(value1) && isProxyChange(value1['change']))(value);
 }
 
 /** Whether `value` has the shape of a {@link SetQueuePausedArgs}; fields it does not name are not checked. */
@@ -1359,6 +1470,11 @@ export function isSuffixListInfo(value: unknown): value is SuffixListInfo {
 export function isSystemAppearance(value: unknown): value is SystemAppearance {
   return ((value1: unknown): boolean =>
     isRecord(value1) && (typeof value1['accent'] === 'string' || value1['accent'] === null))(value);
+}
+
+/** Whether `value` has the shape of a {@link TestProxyArgs}; fields it does not name are not checked. */
+export function isTestProxyArgs(value: unknown): value is TestProxyArgs {
+  return ((value1: unknown): boolean => isRecord(value1) && isProxyTest(value1['test']))(value);
 }
 
 /** Whether `value` has the shape of a {@link Theme}; fields it does not name are not checked. */
@@ -1648,6 +1764,13 @@ export const COMMAND_OUTPUTS: {
     isSuffixListInfo(value),
   check_suffix_list: (value: unknown): value is CommandMap['check_suffix_list']['output'] =>
     isSuffixListInfo(value),
+  set_proxy: (value: unknown): value is CommandMap['set_proxy']['output'] => value === null,
+  test_proxy: (value: unknown): value is CommandMap['test_proxy']['output'] =>
+    isProxyTestResult(value),
+  system_proxy: (value: unknown): value is CommandMap['system_proxy']['output'] =>
+    isProxySettings(value) || value === null,
+  show_proxy_settings: (value: unknown): value is CommandMap['show_proxy_settings']['output'] =>
+    value === null,
   get_question: (value: unknown): value is CommandMap['get_question']['output'] =>
     isQuestion(value) || value === null,
   get_download: (value: unknown): value is CommandMap['get_download']['output'] =>

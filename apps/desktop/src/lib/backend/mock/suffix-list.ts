@@ -28,3 +28,12 @@ export function checkSuffixList(state: MockState, finds: SuffixCheck): SuffixLis
   }
   return { ...list };
 }
+
+/** The core's weekly check, which only logs a failure: its event says how it went. */
+export function weeklyCheck(state: MockState, finds: SuffixCheck): void {
+  try {
+    checkSuffixList(state, finds);
+  } catch {
+    // `suffix_list_checked` already told every window.
+  }
+}

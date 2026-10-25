@@ -13,7 +13,8 @@ use clap::Parser;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use wirecatch_engine::header::{HeaderName, HeaderValue};
 use wirecatch_engine::{
-    CancellationToken, DownloadOptions, DownloadRequest, Outcome, Progress, Url, download,
+    CancellationToken, DownloadOptions, DownloadRequest, ManualProxies, Outcome, Progress,
+    ProxyChoice, Url, download,
 };
 
 /// Which lines are logged unless the log filter variable chooses others (`wirecatch-logging`): only problems.
@@ -73,6 +74,16 @@ struct Args {
     /// The other connections switch to HTTP/3 when the server's first answer advertises it, and switch back to HTTP/2 or HTTP/1.1 on any problem. Needs a wirecatch built with the http3 feature.
     #[arg(long)]
     http3: bool,
+
+    /// Send every request through this proxy instead of the one the environment or the system sets.
+    ///
+    /// `http://`, `https://`, `socks5://` or `socks5h://` (the proxy resolves names), with a login as `user:password@` when it asks for one. Hosts named in `NO_PROXY` are still reached directly. FTP links go only through a SOCKS5 proxy.
+    #[arg(long, value_name = "URL", conflicts_with = "no_proxy")]
+    proxy: Option<String>,
+
+    /// Use no proxy, whatever the environment or the system sets.
+    #[arg(long)]
+    no_proxy: bool,
 
     /// Print no progress bar.
     #[arg(short, long)]
@@ -151,6 +162,9 @@ fn build_request(args: Args) -> anyhow::Result<DownloadRequest> {
     }
 
     let mut request = DownloadRequest::new(url, args.output_dir);
+    request.options.proxy = proxy_choice(args.proxy.as_deref(), args.no_proxy, |name| {
+        std::env::var(name).ok()
+    })?;
     request.file_name = args.name;
     request.options.connections = args.connections.into();
     request.options.http3 = args.http3;
@@ -159,6 +173,41 @@ fn build_request(args: Args) -> anyhow::Result<DownloadRequest> {
         request.options.headers.append(name, value);
     }
     Ok(request)
+}
+
+/// The proxies `--proxy` or `--no-proxy` ask for, or the environment's and the system's when
+/// neither is given. `env` reads `NO_PROXY`, whose hosts `--proxy` leaves alone.
+fn proxy_choice(
+    proxy: Option<&str>,
+    no_proxy: bool,
+    env: impl Fn(&str) -> Option<String>,
+) -> anyhow::Result<ProxyChoice> {
+    if no_proxy {
+        return Ok(ProxyChoice::Direct);
+    }
+    let Some(proxy) = proxy.map(str::trim) else {
+        return Ok(ProxyChoice::System);
+    };
+    let readable = if proxy.contains("://") {
+        Url::parse(proxy)
+    } else {
+        Url::parse(&format!("http://{proxy}"))
+    };
+    let scheme_known = readable.as_ref().is_ok_and(|url| {
+        url.has_host()
+            && ["http", "https", "socks4", "socks4a", "socks5", "socks5h"].contains(&url.scheme())
+    });
+    if !scheme_known {
+        bail!(
+            "--proxy is not a proxy URL; use http://, https://, socks5:// or socks5h:// with a host, as in socks5h://proxy.example:1080"
+        );
+    }
+    let mut manual = ManualProxies::default();
+    manual.all = Some(proxy.to_string());
+    manual.exceptions = env("NO_PROXY")
+        .or_else(|| env("no_proxy"))
+        .unwrap_or_default();
+    Ok(ProxyChoice::Manual(manual))
 }
 
 /// Why a link was refused. The link is repeated only when it cannot hold a password
@@ -313,6 +362,41 @@ mod tests {
         let (name, value) = parse_header("Cookie:  a=b ").unwrap();
         assert_eq!(name, "cookie");
         assert_eq!(value, "a=b");
+    }
+
+    #[test]
+    fn the_proxy_flags_choose_the_engines_proxies() {
+        let no_env = |_: &str| None;
+        assert_eq!(
+            proxy_choice(None, false, no_env).unwrap(),
+            ProxyChoice::System
+        );
+        assert_eq!(
+            proxy_choice(None, true, no_env).unwrap(),
+            ProxyChoice::Direct
+        );
+        let with_exceptions =
+            |name: &str| (name == "no_proxy").then(|| "files.example".to_string());
+        let ProxyChoice::Manual(manual) =
+            proxy_choice(Some("socks5h://u:p@proxy:1080"), false, with_exceptions).unwrap()
+        else {
+            panic!("expected a manual proxy");
+        };
+        assert_eq!(manual.all.as_deref(), Some("socks5h://u:p@proxy:1080"));
+        assert_eq!(manual.exceptions, "files.example");
+        assert!(proxy_choice(Some("proxy:3128"), false, no_env).is_ok());
+    }
+
+    #[test]
+    fn a_proxy_that_is_not_a_proxy_url_is_refused_without_repeating_it() {
+        for bad in [
+            "ftp://user:secret@proxy",
+            "://",
+            "socks9://user:secret@proxy",
+        ] {
+            let error = proxy_choice(Some(bad), false, |_| None).unwrap_err();
+            assert!(!printed(&error).contains("secret"), "{bad}");
+        }
     }
 
     #[test]

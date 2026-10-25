@@ -30,6 +30,8 @@ pub(crate) fn export(
     exported_at: i64,
 ) -> SettingsProfile {
     let mut settings = settings.clone();
+    // Passwords stay on this computer (A6), so the profile has none to speak of.
+    crate::proxy::mark_passwords(&mut settings.proxy, &crate::proxy::Logins::new());
     settings.default_folder = folders.to_portable(&settings.default_folder);
     for rule in &mut settings.categories {
         rule.folder = folders.to_portable(&rule.folder);
@@ -62,6 +64,8 @@ pub(crate) struct Names {
     pub suffix_list_updates: bool,
     /// Whether notifications show during Do Not Disturb (D64).
     pub do_not_disturb: bool,
+    /// The proxy (D71).
+    pub proxy: bool,
 }
 
 impl Names {
@@ -71,6 +75,7 @@ impl Names {
         Self {
             suffix_list_updates: names("update_suffix_list"),
             do_not_disturb: names("notify_during_do_not_disturb"),
+            proxy: names("proxy"),
         }
     }
 
@@ -81,6 +86,9 @@ impl Names {
         }
         if !self.do_not_disturb {
             settings.notify_during_do_not_disturb = here.notify_during_do_not_disturb;
+        }
+        if !self.proxy {
+            settings.proxy = here.proxy.clone();
         }
     }
 }
@@ -211,6 +219,7 @@ pub(crate) fn merge(
         names: Names {
             suffix_list_updates: true,
             do_not_disturb: true,
+            proxy: true,
         },
     };
     merge_localized(

@@ -7,6 +7,7 @@ import FileCheck from '~icons/lucide/file-check';
 import FolderInput from '~icons/lucide/folder-input';
 import FolderPen from '~icons/lucide/folder-pen';
 import Link from '~icons/lucide/link';
+import Network from '~icons/lucide/network';
 import PanelRight from '~icons/lucide/panel-right';
 import Pause from '~icons/lucide/pause';
 import Play from '~icons/lucide/play';
@@ -26,6 +27,7 @@ const FIX_ICON: Record<FixAction, IconComponent> = {
   choose_folder: FolderPen,
   free_disk_space: FolderOpen,
   keep_original: FileCheck,
+  proxy_settings: Network,
 };
 
 /** A failed download's own fix, which the row and the details offer and Enter runs, leads the menu. */

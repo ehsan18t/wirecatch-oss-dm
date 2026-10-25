@@ -10,6 +10,8 @@ import type {
   CaptureConfirmation,
   DownloadId,
   MediaSelection,
+  ProxyChange,
+  ProxyTest,
   QuestionId,
   Queue,
   QueueId,
@@ -28,7 +30,7 @@ import * as addons from './addons';
 import * as captures from './captures';
 import { MockFinished } from './finished';
 import * as suffixList from './suffix-list';
-import { DOWNLOADS, HOME, startupNoticesFor } from './data';
+import { DOWNLOADS, HOME, PICKED_FOLDERS, startupNoticesFor } from './data';
 import * as downloads from './downloads';
 import * as media from './media';
 import { populate } from './populate';
@@ -414,13 +416,25 @@ export class MockBackend implements Backend {
     return this.#call(() => suffixList.checkSuffixList(this.#state, this.nextSuffixCheck));
   }
 
+  setProxy(change: ProxyChange) {
+    return this.#call(() => settings.setProxy(this.#state, change));
+  }
+
+  testProxy(test: ProxyTest) {
+    return this.#call(() => settings.testProxy(this.#state, test));
+  }
+
+  systemProxy() {
+    return this.#call(() => settings.systemProxy());
+  }
+
+  showProxySettings() {
+    return this.#call(() => undefined);
+  }
+
   /** Set by tests: the core's weekly check of the Public Suffix List runs, finding `finds`. */
   simulateWeeklySuffixCheck(finds: suffixList.SuffixCheck): void {
-    try {
-      suffixList.checkSuffixList(this.#state, finds);
-    } catch {
-      // The core only logs a weekly check that failed; its event says so.
-    }
+    suffixList.weeklyCheck(this.#state, finds);
   }
 
   cancelAddonOperation(id: string) {
@@ -519,15 +533,7 @@ export class MockBackend implements Backend {
 
   pickFolder(current?: string) {
     return this.#call(() => {
-      // The last is long, for the layout checks; later picks reach it.
-      const options = [
-        String.raw`${HOME}\Videos`,
-        String.raw`${DOWNLOADS}\Later`,
-        String.raw`D:\Media`,
-        String.raw`${HOME}\Desktop`,
-        String.raw`D:\Projects\Customer deliveries\2026\October\Raw footage from the second shoot, unedited and not yet sorted`,
-      ];
-      const next = () => options[this.#folderPick++ % options.length] ?? DOWNLOADS;
+      const next = () => PICKED_FOLDERS[this.#folderPick++ % PICKED_FOLDERS.length] ?? DOWNLOADS;
       const first = next();
       return first === current ? next() : first;
     });

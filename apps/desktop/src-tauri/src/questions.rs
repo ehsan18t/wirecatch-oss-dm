@@ -255,7 +255,7 @@ mod tests {
         let mut settings = wirecatch_core::default_settings();
         settings.theme = Theme::Dark;
         assert_eq!(
-            attention(&UiEvent::SettingsChanged(settings)),
+            attention(&UiEvent::SettingsChanged(Box::new(settings))),
             Attention::Theme(Theme::Dark)
         );
     }

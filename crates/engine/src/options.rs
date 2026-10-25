@@ -8,6 +8,7 @@ use reqwest::header::HeaderMap;
 use crate::error::{Error, Result};
 use crate::limiter::RateLimiter;
 use crate::net_guard::PrivateNetwork;
+use crate::proxy::ProxyChoice;
 use crate::units::{MIB, MIB_USIZE};
 
 /// Most connections one download may open ([`DownloadOptions::connections`]). More only adds load on the server and on this machine.
@@ -69,7 +70,8 @@ pub struct DownloadOptions {
     ///
     /// Proxy credentials do not belong here: a `Proxy-Authorization` header is
     /// sent to the server, not to a proxy. Put them in the proxy URL instead,
-    /// for example `HTTPS_PROXY=http://user:password@proxy.example:8080`.
+    /// for example `HTTPS_PROXY=http://user:password@proxy.example:8080`, or
+    /// in [`proxy`](Self::proxy).
     pub headers: HeaderMap,
     /// How often the resume file is rewritten while downloading (default 1 s).
     /// A killed process loses at most this much progress.
@@ -133,6 +135,12 @@ pub struct DownloadOptions {
     /// [`download`](fn@crate::download) uses it: a [`Fetcher`](crate::Fetcher) sends the requests
     /// its caller asks for.
     pub max_request_bytes: Option<u64>,
+    /// Which proxies the requests go through (default
+    /// [`ProxyChoice::System`]: the environment, or else the system's proxy
+    /// setting). Read once when the download or [`Fetcher`](crate::Fetcher)
+    /// starts. HTTP/3 is not used through a proxy, and FTP goes only through
+    /// a SOCKS5 one.
+    pub proxy: ProxyChoice,
 }
 
 impl Default for DownloadOptions {
@@ -152,12 +160,13 @@ impl Default for DownloadOptions {
             http3: false,
             private_network: PrivateNetwork::Allow,
             max_request_bytes: None,
+            proxy: ProxyChoice::System,
         }
     }
 }
 
 impl DownloadOptions {
-    /// Checks that every option can work. [`download`](fn@crate::download) and [`Fetcher`](crate::Fetcher) call this before sending anything, so a zero connection count, split size, buffer size, timeout or checkpoint interval is an error instead of a hang or a panic, and so are more than [`MAX_CONNECTIONS`] connections or a buffer over [`MAX_BUFFER_SIZE`], which would exhaust memory.
+    /// Checks that every option can work. [`download`](fn@crate::download) and [`Fetcher`](crate::Fetcher) call this before sending anything, so a zero connection count, split size, buffer size, timeout or checkpoint interval is an error instead of a hang or a panic, and so is a manual proxy the HTTP client cannot read, which it would otherwise go around, and so are more than [`MAX_CONNECTIONS`] connections or a buffer over [`MAX_BUFFER_SIZE`], which would exhaust memory.
     ///
     /// # Errors
     ///
@@ -176,6 +185,7 @@ impl DownloadOptions {
             ("stall_timeout", !self.stall_timeout.is_zero()),
             ("connect_timeout", !self.connect_timeout.is_zero()),
             ("checkpoint_interval", !self.checkpoint_interval.is_zero()),
+            ("proxy", self.proxy.readable()),
         ];
         match in_range.into_iter().find(|&(_, ok)| !ok) {
             Some((option, _)) => Err(Error::InvalidOption(option)),

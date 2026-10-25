@@ -3,7 +3,6 @@
 
 use super::reply;
 use std::io;
-use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -18,6 +17,7 @@ use tracing::debug;
 
 use crate::error::{Chain, Error};
 use crate::http::Failure;
+use crate::socks::{Destination, Socks5, SocksFailure};
 
 /// Longest reply line accepted. Real replies are far shorter; the cap keeps a
 /// misbehaving server from filling memory.
@@ -43,18 +43,55 @@ impl Stream {
         matches!(self, Stream::Tls(_))
     }
 
-    /// Opens a TCP connection to `addr` within `timeout`.
-    pub async fn connect(addr: SocketAddr, timeout: Duration, what: &str) -> Result<Self, Failure> {
-        let tcp = match tokio::time::timeout(timeout, TcpStream::connect(addr)).await {
-            Ok(Ok(tcp)) => tcp,
-            Ok(Err(e)) => {
-                return Err(
-                    Error::socket(format!("could not open the {what} to {addr}"), e, true).into(),
-                );
+    /// Opens a TCP connection to `to` within `timeout`, through `via` when
+    /// it is set.
+    pub async fn connect(
+        to: &Destination,
+        via: Option<&Socks5>,
+        timeout: Duration,
+        what: &str,
+    ) -> Result<Self, Failure> {
+        let opening = async {
+            match (via, to) {
+                (Some(proxy), _) => proxy.connect(to).await.map_err(|failure| {
+                    let through =
+                        format!("{what} to {to} through the SOCKS proxy {}", proxy.address());
+                    match failure {
+                        SocksFailure::Proxy(e) => Error::socket(
+                            format!(
+                                "could not reach the SOCKS proxy {} for the {what}",
+                                proxy.address()
+                            ),
+                            e,
+                            true,
+                        ),
+                        SocksFailure::LoginRefused => Error::ProxyLoginRefused,
+                        SocksFailure::Refused(why) => Error::socket(
+                            format!("could not open the {through}"),
+                            io::Error::new(io::ErrorKind::ConnectionRefused, why),
+                            true,
+                        ),
+                        SocksFailure::Garbled(why) => Error::socket(
+                            format!("could not open the {through}"),
+                            io::Error::new(io::ErrorKind::InvalidData, why),
+                            true,
+                        ),
+                    }
+                }),
+                (None, Destination::Address(addr)) => TcpStream::connect(addr).await.map_err(|e| {
+                    Error::socket(format!("could not open the {what} to {addr}"), e, true)
+                }),
+                (None, Destination::Name(..)) => Err(Error::Internal(
+                    "an FTP server name was left for a proxy that is not there".into(),
+                )),
             }
+        };
+        let tcp = match tokio::time::timeout(timeout, opening).await {
+            Ok(Ok(tcp)) => tcp,
+            Ok(Err(e)) => return Err(e.into()),
             Err(_) => {
                 return Err(Error::socket(
-                    format!("could not open the {what} to {addr}"),
+                    format!("could not open the {what} to {to}"),
                     io::ErrorKind::TimedOut.into(),
                     true,
                 )
@@ -431,9 +468,14 @@ mod tests {
             // Keep the connection open so a reader waiting for more stalls.
             std::future::pending::<()>().await;
         });
-        let stream = Stream::connect(addr, Duration::from_secs(5), "test connection")
-            .await
-            .unwrap();
+        let stream = Stream::connect(
+            &addr.into(),
+            None,
+            Duration::from_secs(5),
+            "test connection",
+        )
+        .await
+        .unwrap();
         Control::new(stream, Duration::from_secs(2))
     }
 

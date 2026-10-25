@@ -21,7 +21,7 @@ fn url(s: &str) -> Url {
 fn target(s: &str) -> Result<Target, Error> {
     let roots = rustls::RootCertStore::empty();
     let clients = Clients::with_roots(&DownloadOptions::default(), roots);
-    Target::new(&url(s), &DownloadOptions::default(), clients.tls())
+    Target::new(&url(s), &DownloadOptions::default(), clients.tls(), None)
 }
 
 #[test]
@@ -308,10 +308,10 @@ async fn a_file_modified_since_the_first_connection_is_reported_as_changed() {
     })
     .await;
     let target = target(server.url("ftp", "alice:pw@", "file.bin").as_str()).unwrap();
-    let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
+    let addr = Destination::from(SocketAddr::from(([127, 0, 0, 1], server.port)));
     let first_saw = |modified: &str| Server {
         target: target.clone(),
-        addr,
+        addr: addr.clone(),
         size: Some(1000),
         modified: Some(modified.into()),
         epsv_refused: AtomicBool::new(false),
@@ -339,8 +339,8 @@ async fn a_file_modified_before_a_kept_connection_starts_its_next_range_is_repor
     .await;
     let url = server.url("ftp", "alice:pw@", "file.bin");
     let target = target(url.as_str()).unwrap();
-    let addr = SocketAddr::from(([127, 0, 0, 1], server.port));
-    let mut control = target.connect(addr, None).await.unwrap();
+    let addr = Destination::from(SocketAddr::from(([127, 0, 0, 1], server.port)));
+    let mut control = target.connect(&addr, None).await.unwrap();
     target.login(&mut control, false).await.unwrap();
     let mut connection = Connection::new(Arc::new(Server {
         target: target.clone(),

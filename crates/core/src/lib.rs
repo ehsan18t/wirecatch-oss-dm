@@ -20,6 +20,7 @@ mod media;
 mod naming;
 mod owner_only;
 mod profile;
+mod proxy;
 mod public_suffix;
 mod schedule;
 mod server;
@@ -41,6 +42,7 @@ pub use manager::{
     DEFAULT_CAPTURE_TIMEOUT, DEFAULT_MEDIA_REFRESH_DELAYS, DEFAULT_MEDIA_TIMEOUT,
     DEFAULT_STOP_TIMEOUT, LinkFrom, Manager, ManagerConfig, PUBLIC_SUFFIX_LIST_URL,
 };
+pub use proxy::{PROXY_TEST_URL, UpdaterProxy, from_system as system_proxy};
 pub use server::{MAX_REQUESTS_IN_FLIGHT, serve_connection};
 pub use settings::{DEFAULT_QUEUE_ID, default_settings};
 pub use store::{DATABASE_FILE, DATABASE_SIDE_FILES};

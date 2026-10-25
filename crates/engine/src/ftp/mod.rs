@@ -39,6 +39,7 @@ use crate::error::Error;
 use crate::http::{Failure, Validators};
 use crate::options::DownloadOptions;
 use crate::request::RequestContext;
+use crate::socks::{Destination, Socks5};
 use crate::units::KIB_USIZE;
 use crate::url::without_password;
 use control::{Control, Reply, Stream, Tls};
@@ -95,17 +96,21 @@ pub(crate) struct Target {
     /// The URL without its password, for messages and the resume file.
     display_url: Url,
     tls: Option<Tls>,
+    /// The SOCKS5 proxy every connection goes through, when one is set.
+    via: Option<Socks5>,
     connect_timeout: Duration,
     stall: Duration,
 }
 
 impl Target {
-    /// Reads the URL. Fails for anything that cannot be sent safely, such as a
-    /// line break in the path, which would let the URL inject FTP commands.
+    /// Reads the URL, for connections that go through `via` when it is set.
+    /// Fails for anything that cannot be sent safely, such as a line break in
+    /// the path, which would let the URL inject FTP commands.
     pub fn new(
         url: &Url,
         opts: &DownloadOptions,
         tls: &rustls::ClientConfig,
+        via: Option<Socks5>,
     ) -> Result<Self, Error> {
         let invalid = |why: &str| Error::InvalidUrl(format!("{} {why}", without_password(url)));
         let (security, port) =
@@ -191,6 +196,7 @@ impl Target {
             path,
             display_url: without_password(url),
             tls,
+            via,
             connect_timeout: opts.connect_timeout,
             stall: opts.stall_timeout,
         })
@@ -205,11 +211,15 @@ impl Target {
         self.host.to_string()
     }
 
-    /// The server's addresses, as the system resolves its name.
-    async fn resolve(&self) -> Result<Vec<SocketAddr>, Failure> {
+    /// The server's addresses, as the system resolves its name, or the name
+    /// itself when the proxy resolves it.
+    async fn resolve(&self) -> Result<Vec<Destination>, Failure> {
         let name = match &self.host {
-            Host::Ipv4(ip) => return Ok(vec![SocketAddr::new((*ip).into(), self.port)]),
-            Host::Ipv6(ip) => return Ok(vec![SocketAddr::new((*ip).into(), self.port)]),
+            Host::Ipv4(ip) => return Ok(vec![SocketAddr::new((*ip).into(), self.port).into()]),
+            Host::Ipv6(ip) => return Ok(vec![SocketAddr::new((*ip).into(), self.port).into()]),
+            Host::Domain(name) if self.via.as_ref().is_some_and(Socks5::resolves_names) => {
+                return Ok(vec![Destination::Name(name.clone(), self.port)]);
+            }
             Host::Domain(name) => name,
         };
         let what = format!("could not find the FTP server {name}");
@@ -220,7 +230,7 @@ impl Target {
         .await
         {
             Ok(Ok(found)) => {
-                let found: Vec<_> = found.collect();
+                let found: Vec<Destination> = found.map(Destination::from).collect();
                 if found.is_empty() {
                     Err(Error::socket(what, io::ErrorKind::NotFound.into(), true).into())
                 } else {
@@ -232,11 +242,16 @@ impl Target {
         }
     }
 
-    /// Connects to `addr`, reads the greeting and sets up TLS as the URL asks,
+    /// Connects to `to`, reads the greeting and sets up TLS as the URL asks,
     /// with `tls`: the session cache of this control connection.
-    async fn connect(&self, addr: SocketAddr, tls: Option<&Tls>) -> Result<Control, Failure> {
-        let mut stream =
-            Stream::connect(addr, self.connect_timeout, "FTP control connection").await?;
+    async fn connect(&self, to: &Destination, tls: Option<&Tls>) -> Result<Control, Failure> {
+        let mut stream = Stream::connect(
+            to,
+            self.via.as_ref(),
+            self.connect_timeout,
+            "FTP control connection",
+        )
+        .await?;
         if let (Security::Implicit, Some(tls)) = (self.security, tls) {
             stream = stream
                 .into_tls(tls, self.connect_timeout, "control connection")
@@ -380,7 +395,7 @@ pub(crate) struct Server {
     /// The address the first connection reached. Every later connection,
     /// control or data, goes to the same address: the same machine serves
     /// every range, and credentials only ever go there.
-    addr: SocketAddr,
+    addr: Destination,
     /// The size the first connection saw, to notice a file that changed.
     size: Option<u64>,
     /// The modification time the first connection saw, for the same reason.
@@ -393,7 +408,7 @@ impl Server {
     /// A new, logged-in control connection for one more worker, once it has
     /// checked that the file is still the one the first connection found.
     async fn connect(&self, tls: Option<&Tls>) -> Result<Control, Failure> {
-        let mut control = self.target.connect(self.addr, tls).await?;
+        let mut control = self.target.connect(&self.addr, tls).await?;
         self.target.login(&mut control, false).await?;
         self.check_same_file(&mut control).await?;
         Ok(control)
@@ -455,9 +470,9 @@ impl Server {
         tls: Option<&Tls>,
     ) -> Result<Transfer, Failure> {
         let port = self.passive_port(&mut control).await?;
-        let data_addr = SocketAddr::new(self.addr.ip(), port);
         let mut data = Stream::connect(
-            data_addr,
+            &self.addr.with_port(port),
+            self.target.via.as_ref(),
             self.target.connect_timeout,
             "FTP data connection",
         )
@@ -527,7 +542,7 @@ pub(crate) async fn probe(target: &Target, cancel: &CancellationToken) -> Result
         let mut last = None;
         let mut connected = None;
         for addr in target.resolve().await? {
-            match target.connect(addr, tls.as_ref()).await {
+            match target.connect(&addr, tls.as_ref()).await {
                 Ok(control) => {
                     connected = Some((control, addr));
                     break;

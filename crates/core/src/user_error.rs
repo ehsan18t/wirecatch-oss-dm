@@ -101,6 +101,7 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
         } => ftp_login_refused(host, *code, message, *anonymous),
         EngineError::FtpTlsUnavailable { host, .. } => ftp_tls_unavailable(host),
         EngineError::FtpProxyUnsupported { setting, .. } => ftp_proxy_unsupported(setting),
+        EngineError::ProxyLoginRefused => proxy_login_refused(),
         EngineError::InvalidOption(option) => invalid_option(option),
         // A kind of error added to the engine after this was written.
         other => fix(
@@ -251,17 +252,37 @@ fn ftp_tls_unavailable(host: &str) -> UserError {
     )
 }
 
-/// An FTP link while `setting` asks for a proxy.
+/// A proxy that wants a login it was not given, or refused the one it was.
+fn proxy_login_refused() -> UserError {
+    fix(
+        "The proxy asked for a user name and password, or did not accept the ones it was given. Check the proxy's login in the proxy settings, then try again.",
+        FixAction::ProxySettings,
+    )
+}
+
+/// An FTP link while `setting` asks for a proxy that cannot carry it.
 fn ftp_proxy_unsupported(setting: &ProxySetting) -> UserError {
-    let message = match setting {
-        ProxySetting::Variable(name) => format!(
-            "FTP downloads cannot go through a proxy yet, and the {name} setting on this computer asks for one. Remove {name} from the environment to download this link directly, then try again."
+    match setting {
+        ProxySetting::Variable(name) => fix(
+            format!(
+                "FTP downloads can only go through a SOCKS5 proxy, and the {name} setting on this computer asks for another kind. Remove {name} from the environment to download this link directly, or choose a proxy in the proxy settings, then try again."
+            ),
+            FixAction::ProxySettings,
         ),
-        ProxySetting::System => "FTP downloads cannot go through a proxy yet, and the proxy in this computer's network settings covers this link. Turn that proxy off, or add this server to its exceptions, to download this link directly, then try again.".to_string(),
+        ProxySetting::System => fix(
+            "FTP downloads can only go through a SOCKS5 proxy, and the proxy in this computer's network settings, which covers this link, is another kind. Turn that proxy off or add this server to its exceptions, or choose a proxy in the proxy settings, then try again.",
+            FixAction::ProxySettings,
+        ),
+        ProxySetting::Given => fix(
+            "FTP downloads can only go through a SOCKS5 proxy, and the proxy in the proxy settings is another kind. Turn on Download FTP links directly, add this server to the proxy's exceptions, or use a SOCKS5 proxy, then try again.",
+            FixAction::ProxySettings,
+        ),
         // A kind of setting added to the engine after this was written.
-        _ => "FTP downloads cannot go through a proxy yet, and a proxy set on this computer covers this link. Turn it off to download this link directly, then try again.".to_string(),
-    };
-    fix(message, FixAction::Retry)
+        _ => fix(
+            "FTP downloads can only go through a SOCKS5 proxy, and a proxy set on this computer covers this link. Turn it off to download this link directly, then try again.",
+            FixAction::ProxySettings,
+        ),
+    }
 }
 
 /// A download option out of range. Settings are checked when they change and
@@ -493,8 +514,12 @@ mod tests {
         let system = ftp_proxy_unsupported(&ProxySetting::System);
         assert!(system.message.contains("network settings"));
         assert!(system.message.contains("exceptions"));
-        for e in [variable, system] {
-            assert_eq!(e.fix, Some(FixAction::Retry));
+        let given = ftp_proxy_unsupported(&ProxySetting::Given);
+        assert!(given.message.contains("Download FTP links directly"));
+        let login = describe(&EngineError::ProxyLoginRefused, Path::new(""), false);
+        assert!(login.message.contains("user name and password"));
+        for e in [variable, system, given, login] {
+            assert_eq!(e.fix, Some(FixAction::ProxySettings));
             assert!(e.message.ends_with('.') && !e.message.contains('\u{2014}'));
         }
     }

@@ -192,11 +192,15 @@
 //! RFC 1738 says; start it with `%2F` for an absolute path. Paths are sent as
 //! UTF-8 (`OPTS UTF8 ON` is sent after logging in).
 //!
-//! FTP does not go through proxies yet. While `ALL_PROXY` or `FTP_PROXY` is
-//! set, or with no proxy variable set the system's proxy setting covers FTP,
-//! an FTP link ends with [`Error::FtpProxyUnsupported`] instead of quietly
-//! going around the proxy, unless `NO_PROXY` (or the system setting's
-//! exceptions) names its host.
+//! FTP goes through a SOCKS5 proxy, its control connection and every data
+//! connection alike, and through no other kind: while a proxy that cannot
+//! carry FTP covers an FTP link (see [Proxies](#proxies)), the link ends with
+//! [`Error::FtpProxyUnsupported`] instead of quietly going around the proxy,
+//! unless the proxy's exceptions name its host or
+//! [`ManualProxies::ftp_direct`] lets it go directly. Through a proxy that
+//! resolves names (`socks5h://`), each connection hands the proxy the server's
+//! name again, so for a name with several addresses a data connection may reach
+//! another machine than the control connection did, and fail.
 //!
 //! Each connection logs in once and then downloads range after range: it
 //! asks for a passive data connection, sends `REST` with the offset and
@@ -207,6 +211,24 @@
 //! resume. A server that allows only so many sessions (refusing more with
 //! `421`, or with `530` for a login that worked on the first connection) is
 //! handled like an HTTP server that limits connections.
+//!
+//! # Proxies
+//!
+//! [`DownloadOptions::proxy`] says which proxies a download's requests go
+//! through. By default ([`ProxyChoice::System`]) that is what the environment
+//! sets, the way most programs read it: `HTTP_PROXY`, `HTTPS_PROXY` and
+//! `FTP_PROXY` for their schemes, then `ALL_PROXY`, with `NO_PROXY` naming the
+//! hosts reached directly. With no proxy variable set it is the system's proxy
+//! setting: on Windows the manual proxy in the network settings; Linux has
+//! none the engine reads. An application with a setting of its own passes
+//! [`ProxyChoice::Direct`] or [`ProxyChoice::Manual`], and then neither is
+//! read.
+//!
+//! A proxy may be `http://`, `https://`, `socks4://`, `socks5://` or
+//! `socks5h://` (the proxy resolves names), with a login in its URL
+//! (`http://user:password@proxy.example:8080`). A proxy that refuses the
+//! login ends the download with [`Error::ProxyLoginRefused`]. HTTP/3 is not
+//! used through a proxy, since QUIC would go around it.
 //!
 //! # HTTP/3 (experimental)
 //!
@@ -237,6 +259,7 @@ mod receive;
 mod request;
 mod retry;
 mod segment;
+mod socks;
 mod state;
 mod storage;
 mod target;
@@ -258,6 +281,6 @@ pub use limiter::RateLimiter;
 pub use net_guard::{AddressKind, PrivateNetwork};
 pub use options::{DownloadOptions, MAX_BUFFER_SIZE, MAX_CONNECTIONS};
 pub use progress::Progress;
-pub use proxy::ProxySetting;
+pub use proxy::{ManualProxies, ProxyChoice, ProxySetting};
 pub use storage::{PART_EXT, STATE_EXT};
 pub use tokio_util::sync::CancellationToken;

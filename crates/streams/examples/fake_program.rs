@@ -10,6 +10,7 @@
 //! - `start-holder <address>`: starts itself as `hold <address>`, sharing its outputs, then waits until it is killed.
 //! - `hold <address>`: connects to the TCP listener at `address`, writes `holding`, and keeps the connection open until the listener closes it, so the listener learns when this process ends, and it never ends by itself while a test waits for that.
 //! - `linger`: does nothing for a minute, then exits.
+//! - `env <name>...`: writes `<name>=<value>` for each variable that is set and `<name> unset` for each that is not, one per line, to standard output.
 //! - `fail`: writes `ERROR: it went wrong` to standard error and exits with failure.
 //! - `fail-after <count> <bytes> <code> <line>`: writes `count` lines of `bytes` bytes of `x`, then `<line>`, to standard error, and exits with `code`.
 
@@ -54,6 +55,12 @@ fn main() -> ExitCode {
                     written += STEP_TIME;
                     file.set_modified(written)
                 })
+            }),
+        Some("env") => args[1..]
+            .iter()
+            .try_for_each(|name| match std::env::var(name) {
+                Ok(value) => writeln!(out, "{name}={value}"),
+                Err(_) => writeln!(out, "{name} unset"),
             }),
         Some("long-line") => {
             let len = usize::try_from(number(1)).unwrap_or(0);

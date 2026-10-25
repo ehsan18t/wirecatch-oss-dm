@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use chrono::NaiveDateTime;
 use tokio::task::AbortHandle;
-use wirecatch_engine::{CancellationToken, Progress, RateLimiter};
+use wirecatch_engine::{CancellationToken, Progress, ProxyChoice, RateLimiter};
 use wirecatch_protocol::app::{
     AppSettings, DownloadStatus, DownloadSummary, PendingCapture, Queue,
 };
@@ -24,6 +24,7 @@ use crate::error::{CoreError, Result};
 use crate::local_network::ChosenBy;
 use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use crate::naming::Claimed;
+use crate::proxy::{self, Logins};
 use crate::public_suffix::SuffixList;
 use crate::schedule::Gate;
 use crate::speed::SpeedMeter;
@@ -56,6 +57,8 @@ pub(super) struct State {
     pub dirty: BTreeSet<DownloadId>,
     /// What each queue at work has finished or failed so far (D52).
     pub batches: Batches,
+    /// The passwords of the manual proxies, which never leave the app (D71.2).
+    pub proxy_logins: Logins,
     /// When schedules were last evaluated, so a start time crossed since then is seen.
     pub last_checked: NaiveDateTime,
     pub ids: Counters,
@@ -260,6 +263,11 @@ pub(super) struct Pending {
 }
 
 impl State {
+    /// The proxies every request the app sends follows (D71).
+    pub fn proxy(&self) -> ProxyChoice {
+        proxy::engine_choice(&self.settings.proxy, &self.proxy_logins)
+    }
+
     /// A download that exists and is not being removed.
     pub fn entry(&self, id: DownloadId) -> Result<&Entry> {
         self.downloads

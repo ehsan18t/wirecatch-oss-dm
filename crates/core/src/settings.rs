@@ -13,6 +13,7 @@ use wirecatch_protocol::extension::{
     ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, MAX_VIDEO_SITES,
     NotASite, SitesRefused, normalize_file_type, read_site,
 };
+use wirecatch_protocol::proxy::ProxySettings;
 
 use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
@@ -113,6 +114,7 @@ pub fn default_settings() -> AppSettings {
         media: MediaDefaults::default(),
         local_sites: Vec::new(),
         update_suffix_list: true,
+        proxy: ProxySettings::default(),
     }
 }
 
@@ -142,6 +144,12 @@ pub(crate) fn within_limits(mut settings: AppSettings, suffixes: &SuffixList) ->
     settings.global_speed_limit = speed_limit_within_limits(settings.global_speed_limit);
     settings.extension.ignored_sites = stored_sites(settings.extension.ignored_sites);
     settings.local_sites = stored_local_sites(&settings.local_sites, suffixes);
+    // A stored proxy this build would refuse cannot be followed as it is; the computer's
+    // proxy takes its place until the person sets one again.
+    settings.proxy = crate::proxy::validate(settings.proxy).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "the stored proxy setting cannot be used; following the computer's proxy instead");
+        ProxySettings::default()
+    });
     settings
 }
 
@@ -290,6 +298,7 @@ pub(crate) fn validate(
         ));
     }
     settings.local_sites = clean_local_sites(&settings.local_sites, suffixes)?;
+    settings.proxy = crate::proxy::validate(settings.proxy)?;
     Ok(settings)
 }
 

@@ -25,6 +25,7 @@
   import FileSettings from './settings/FileSettings.svelte';
   import GeneralSettings from './settings/GeneralSettings.svelte';
   import MediaSettings from './settings/MediaSettings.svelte';
+  import NetworkSettings from './settings/NetworkSettings.svelte';
   import NotificationSettings from './settings/NotificationSettings.svelte';
   import QueueSettings from './settings/QueueSettings.svelte';
   import SpeedSettings from './settings/SpeedSettings.svelte';
@@ -43,6 +44,7 @@
     addons: AddonSettings,
     speed: SpeedSettings,
     queues: QueueSettings,
+    network: NetworkSettings,
     transfer: TransferSettings,
     advanced: AdvancedSettings,
   };

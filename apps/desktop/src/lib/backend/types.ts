@@ -18,6 +18,10 @@ import type {
   MediaChoice,
   MediaSelection,
   PendingCapture,
+  ProxyChange,
+  ProxySettings,
+  ProxyTest,
+  ProxyTestResult,
   Question,
   QuestionId,
   Queue,
@@ -161,6 +165,15 @@ export interface Backend {
   suffixList: () => Promise<SuffixListInfo>;
   /** Looks for a newer Public Suffix List now; the list in use afterwards. */
   checkSuffixList: () => Promise<SuffixListInfo>;
+
+  /** Saves a new proxy setting with its passwords, restarting running downloads when it asks (D71). */
+  setProxy: (change: ProxyChange) => Promise<void>;
+  /** Sends one request through a proxy setting before it is saved. */
+  testProxy: (test: ProxyTest) => Promise<ProxyTestResult>;
+  /** The computer's proxy as a manual setting, without passwords; `null` when it sets none. */
+  systemProxy: () => Promise<ProxySettings | null>;
+  /** Brings the main window forward on the proxy settings, for a progress window's fix. */
+  showProxySettings: () => Promise<void>;
 
   /** Every change the core pushes, in order; `reload` when one could not be read, so the caller loads what it shows again. */
   subscribe: (listener: (event: UiEvent) => void, reload: () => void) => Promise<Unsubscribe>;

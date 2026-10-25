@@ -6,18 +6,23 @@
 
 use tracing::warn;
 use wirecatch_engine::header::{HeaderMap, HeaderName, HeaderValue};
-use wirecatch_engine::{DownloadOptions, PrivateNetwork};
+use wirecatch_engine::{DownloadOptions, PrivateNetwork, ProxyChoice};
 use wirecatch_product::{PRODUCT_NAME, PRODUCT_VERSION};
 use wirecatch_protocol::extension::Header;
 
 /// The engine's request options as the app sends them when no browser handed over its own
 /// user agent: the app's name and version (`<name>/<version>`), never the engine library's
 /// default, which names the library. Every request names its rule for the local network,
-/// so none runs under the engine's default (`Allow`) by being forgotten (D34.9).
-pub(crate) fn download_options(private_network: PrivateNetwork) -> DownloadOptions {
+/// so none runs under the engine's default (`Allow`) by being forgotten (D34.9), and the
+/// proxy the person set, so none goes around it (D71.3).
+pub(crate) fn download_options(
+    private_network: PrivateNetwork,
+    proxy: ProxyChoice,
+) -> DownloadOptions {
     let mut options = DownloadOptions::default();
     options.user_agent = format!("{PRODUCT_NAME}/{PRODUCT_VERSION}");
     options.private_network = private_network;
+    options.proxy = proxy;
     options
 }
 
@@ -152,7 +157,7 @@ mod tests {
 
     #[test]
     fn requests_name_the_app_not_the_engine() {
-        let agent = download_options(PrivateNetwork::Block).user_agent;
+        let agent = download_options(PrivateNetwork::Block, ProxyChoice::System).user_agent;
         assert_eq!(agent, app_agent());
         assert_ne!(agent, DownloadOptions::default().user_agent);
     }
@@ -172,7 +177,7 @@ mod tests {
             header("Cookie", "sid=cookie-that-must-not-print"),
             header("Authorization", "Bearer token-that-must-not-print"),
         ]);
-        let mut options = download_options(PrivateNetwork::Auto);
+        let mut options = download_options(PrivateNetwork::Auto, ProxyChoice::System);
         options.headers = map;
         let printed = format!("{options:?}");
         assert!(!printed.contains("must-not-print"), "{printed}");
