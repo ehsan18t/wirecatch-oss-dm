@@ -1,0 +1,17 @@
+[package]
+name = "wirecatch-queues"
+description = "Queue rules for Wirecatch: which downloads start under each queue's limits, and when a scheduled queue runs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+wirecatch-protocol.workspace = true
+chrono.workspace = true
+
+[lints]
+workspace = true

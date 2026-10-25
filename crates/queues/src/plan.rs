@@ -7,8 +7,10 @@ use wirecatch_protocol::{DownloadId, QueueId};
 
 /// A queue as the planner sees it.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct QueueView {
+pub struct QueueView {
+    /// The queue.
     pub id: QueueId,
+    /// Most of its downloads that may run at once.
     pub max_concurrent: u32,
     /// Whether its schedule lets it run now.
     pub open: bool,
@@ -16,7 +18,7 @@ pub(super) struct QueueView {
 
 /// What a download is doing, as far as limits are concerned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Activity {
+pub enum Activity {
     /// Waiting for a slot.
     Waiting,
     /// Running.
@@ -27,18 +29,23 @@ pub(super) enum Activity {
 
 /// A download that is waiting or holds a slot.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct DownloadView {
+pub struct DownloadView {
+    /// The download.
     pub id: DownloadId,
+    /// Its queue.
     pub queue: QueueId,
+    /// Its place in its queue; lower runs first.
     pub position: i64,
     /// Goes before other waiting downloads (it was running before a restart).
     pub first: bool,
+    /// What it is doing.
     pub activity: Activity,
 }
 
 /// The changes needed to honour every limit.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(super) struct Plan {
+pub struct Plan {
+    /// Waiting downloads to start.
     pub start: Vec<DownloadId>,
     /// Running downloads to send back to waiting.
     pub stop: Vec<DownloadId>,
@@ -52,7 +59,8 @@ pub(super) struct Plan {
 /// order), so one long queue cannot starve the others. A download that is still
 /// stopping keeps its slot until it has stopped, so a limit is never exceeded even
 /// briefly.
-pub(super) fn plan(queues: &[QueueView], downloads: &[DownloadView], global_max: u32) -> Plan {
+#[must_use]
+pub fn plan(queues: &[QueueView], downloads: &[DownloadView], global_max: u32) -> Plan {
     let mut out = Plan::default();
     let mut held: HashMap<QueueId, u32> = HashMap::new();
     let mut running_total = 0u32;

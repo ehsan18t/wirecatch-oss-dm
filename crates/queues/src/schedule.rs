@@ -16,7 +16,7 @@ const MAX_CATCH_UP_DAYS: i64 = 7;
 /// Whether a queue may start downloads, remembering a run that a schedule without
 /// a stop time has begun.
 #[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct Gate {
+pub struct Gate {
     running_until_empty: bool,
 }
 
@@ -58,7 +58,7 @@ impl Gate {
 
 /// Whether a schedule with a stop time is inside its window at `now`. A schedule
 /// without a stop time has no window and is never open by this test.
-pub(crate) fn window_open(schedule: &Schedule, now: NaiveDateTime) -> bool {
+fn window_open(schedule: &Schedule, now: NaiveDateTime) -> bool {
     let (Some(start), Some(stop)) = (to_time(schedule.start), schedule.stop.and_then(to_time))
     else {
         return false;
@@ -78,7 +78,7 @@ pub(crate) fn window_open(schedule: &Schedule, now: NaiveDateTime) -> bool {
 }
 
 /// Whether a start time of the schedule falls in `(since, now]`.
-pub(crate) fn start_crossed(schedule: &Schedule, since: NaiveDateTime, now: NaiveDateTime) -> bool {
+fn start_crossed(schedule: &Schedule, since: NaiveDateTime, now: NaiveDateTime) -> bool {
     let Some(start) = to_time(schedule.start) else {
         return false;
     };
@@ -99,7 +99,8 @@ pub(crate) fn start_crossed(schedule: &Schedule, since: NaiveDateTime, now: Naiv
 
 /// The start of the minute after `now`. Schedules have minute precision, so this
 /// is the next moment their answer can change.
-pub(crate) fn next_minute(now: NaiveDateTime) -> NaiveDateTime {
+#[must_use]
+pub fn next_minute(now: NaiveDateTime) -> NaiveDateTime {
     let floor = now
         .with_second(0)
         .and_then(|t| t.with_nanosecond(0))
@@ -108,7 +109,8 @@ pub(crate) fn next_minute(now: NaiveDateTime) -> NaiveDateTime {
 }
 
 /// Whether `time` names a real time of day.
-pub(crate) fn is_valid_time(time: TimeOfDay) -> bool {
+#[must_use]
+pub fn is_valid_time(time: TimeOfDay) -> bool {
     to_time(time).is_some()
 }
 
