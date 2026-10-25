@@ -89,7 +89,7 @@ impl PinnedKey {
 
 /// Why a detached signature cannot be trusted. Each message is a short phrase, spliced into a sentence by the caller.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum SignatureError {
+pub enum SignatureError {
     /// The pinned key itself cannot be read.
     #[error("the signing key cannot be read ({0})")]
     UnreadableKey(String),
@@ -119,7 +119,7 @@ pub(crate) enum SignatureError {
 /// # Errors
 ///
 /// Why the signature cannot be trusted.
-pub(crate) fn verify_detached(
+pub fn verify_detached(
     key: &PinnedKey,
     data: &[u8],
     signature: &[u8],

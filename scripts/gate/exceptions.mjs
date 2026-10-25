@@ -45,7 +45,7 @@ const LINT_EXCEPTIONS = [
     file: 'apps/desktop/src/ui/download/ProgressView.svelte',
     lints: ['a11y_no_static_element_interactions'],
   },
-  { id: 'E12', file: 'crates/core/src/addons/manifest.rs', lints: ['clippy::expect_used'] },
+  { id: 'E12', file: 'crates/addons/src/manifest.rs', lints: ['clippy::expect_used'] },
   {
     id: 'E13',
     file: 'apps/desktop/src/ui/download/WindowFrame.svelte',

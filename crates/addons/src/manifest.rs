@@ -506,7 +506,8 @@ fn ytdlp_asset() -> &'static str {
 }
 
 /// The program's name inside the add-on folder.
-pub(crate) fn program_name(stem: &str) -> String {
+#[must_use]
+pub fn program_name(stem: &str) -> String {
     format!("{stem}{}", std::env::consts::EXE_SUFFIX)
 }
 

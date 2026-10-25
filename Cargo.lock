@@ -7226,6 +7226,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "wirecatch-addons"
+version = "0.1.0"
+dependencies = [
+ "lzma-rust2",
+ "pgp",
+ "rand 0.8.8",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "windows-sys 0.61.2",
+ "wirecatch-engine",
+ "wirecatch-files",
+ "wirecatch-product",
+ "zip",
+]
+
+[[package]]
 name = "wirecatch-bridge"
 version = "0.1.0"
 dependencies = [
@@ -7276,7 +7297,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "windows-sys 0.61.2",
+ "wirecatch-addons",
  "wirecatch-engine",
  "wirecatch-files",
  "wirecatch-logging",

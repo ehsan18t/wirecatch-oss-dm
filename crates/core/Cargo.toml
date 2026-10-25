@@ -10,6 +10,7 @@ homepage.workspace = true
 publish = false
 
 [dependencies]
+wirecatch-addons.workspace = true
 wirecatch-engine.workspace = true
 wirecatch-files.workspace = true
 wirecatch-logging.workspace = true
@@ -20,33 +21,24 @@ wirecatch-sites.workspace = true
 wirecatch-streams.workspace = true
 chrono = { workspace = true, features = ["clock"] }
 dirs = "7.0.0"
-# Reading the media add-on's archives: .xz (pure Rust) inside .tar, and .zip.
-lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", "xz", "optimization"] }
 # The user name in a proxy address the computer sets (Copy from system, D71).
 percent-encoding.workspace = true
-# Checking yt-dlp's OpenPGP signature on its checksum list (D21.1), verification
-# only: no compression (signatures are detached), no extra algorithms.
-pgp = { version = "0.21.0", default-features = false }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde.workspace = true
 serde_json.workspace = true
-# Checking the media add-on against its published SHA-256 checksums.
-sha2 = "0.10.9"
-tar = { version = "0.4.44", default-features = false }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "process"] }
 tracing.workspace = true
-zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 anyhow.workspace = true
-# Writing .tar.xz archives for the add-on tests.
+# Building the media add-on releases the manager tests install: .zip and signed .tar.xz.
 lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", "xz", "encoder"] }
-# Making throwaway signing keys for the signature tests (the version pgp uses).
+pgp = { version = "0.21.0", default-features = false }
 rand = "0.8.6"
+sha2 = "0.10.9"
+tar = { version = "0.4.44", default-features = false }
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["io-util", "test-util"] }
 # Logging for the headless example.

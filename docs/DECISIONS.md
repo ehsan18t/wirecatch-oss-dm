@@ -451,7 +451,7 @@ Decided with the maintainer on 2026-10-23, when a CI run took 10 to 16 minutes a
 
 Decided with the maintainer on 2026-10-23, when installing ffmpeg's hundred or so packages from Ubuntu's mirror took 49 minutes of one run (106 MB at 36 kB/s) and minutes of several others.
 
-1. The Linux Rust job no longer installs ffmpeg with apt. It downloads the build the media add-on installs (`BtbN`'s LGPL shared build), from the add-on's pinned address, and checks it against the add-on's pinned SHA-256: `cargo run -p wirecatch-core --example ffmpeg_release` prints both from `crates/core/src/addons/manifest.rs`, so CI holds no second copy. The tests that need a real ffmpeg (`WIRECATCH_TEST_FFMPEG`, required in CI) now run the ffmpeg people get from the app, not Ubuntu's.
+1. The Linux Rust job no longer installs ffmpeg with apt. It downloads the build the media add-on installs (`BtbN`'s LGPL shared build), from the add-on's pinned address, and checks it against the add-on's pinned SHA-256: `cargo run -p wirecatch-core --example ffmpeg_release` prints both from `crates/addons/src/manifest.rs`, so CI holds no second copy. The tests that need a real ffmpeg (`WIRECATCH_TEST_FFMPEG`, required in CI) now run the ffmpeg people get from the app, not Ubuntu's.
 2. `actions/cache` keeps the unpacked build until `manifest.rs` changes, so a run downloads nothing and builds no example unless the pin may have moved. The download comes from GitHub's own release storage, not the Ubuntu mirror.
 3. The WebKitGTK packages the desktop crate links against still come from apt, from the cache or the fastest mirror (D55).
 
@@ -679,6 +679,7 @@ Decided with the maintainer on 2026-10-25. `wirecatch-core` holds 31,000 lines, 
 2. Done: `crates/queues` (D74); `crates/server`, which serves one client connection from the manager's public methods (the protocol tests stay in core's test suite, whose harness they use, and reach the server as a dev-dependency); and `crates/sites`, the Public Suffix List with its built-in snapshot and the local network rules, while core writes a newer list to disk with the rest of its files.
 3. Before the media add-on, the store and media can leave, core's modules depend on each other only one way: the add-on check reports where its programs are and media wraps them in its own `MediaTools`; the notices of a repaired download list live with the manager that opens it; a download's browser headers (`Origin`) live with the code that reads them, in `headers`; and the folders a download keeps beside its file, media's work folders included, are `naming`'s.
 4. Done after that: `crates/files`, the file helpers the add-on, the store and the manager share: writing a file whole, discarding one, keeping one private to its owner (D17) and marking a download with the zone it came from.
+5. Done after that: `crates/addons`, the media add-on's pinned releases, checksums, signatures, archive reading and the check of its installed programs, with every archive and signature library; the manager keeps the install and update work, which drives downloads and the add-on's state.
 
 ### D80. The media add-on's ffmpeg comes from a copy Wirecatch keeps
 
