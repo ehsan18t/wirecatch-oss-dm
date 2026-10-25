@@ -1,0 +1,33 @@
+[package]
+name = "wirecatch-media"
+description = "Video and audio for Wirecatch: the quality choice, yt-dlp pages, ffmpeg conversions and joining, and the progress of a media download"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+wirecatch-addons.workspace = true
+wirecatch-engine.workspace = true
+wirecatch-files.workspace = true
+wirecatch-messages.workspace = true
+wirecatch-protocol = { workspace = true, features = ["tokio"] }
+wirecatch-records.workspace = true
+wirecatch-sites.workspace = true
+wirecatch-streams.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util", "process"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["io-util", "test-util"] }
+wirecatch-test-support = { path = "../test-support" }
+
+[lints]
+workspace = true

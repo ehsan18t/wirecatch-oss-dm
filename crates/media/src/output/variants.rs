@@ -8,13 +8,13 @@ use wirecatch_protocol::app::{OutputFit, OutputFormat, StreamAction};
 use super::codec::{audio_codec, default_kbps, video_codec};
 use super::{AudioAction, VideoAction};
 use super::{AudioCodec, Container, VideoCodec};
-use crate::media::ytdlp::{Format, FormatId};
-use crate::media::{Content, is_media_ext, safe_ext};
+use crate::ytdlp::{Format, FormatId};
+use crate::{Content, is_media_ext, safe_ext};
 
 /// The format and streams one "Save as" choice of one quality uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Variant {
-    /// The format ids, as for [`MediaJob::Page`](crate::media::MediaJob::Page).
+pub struct Variant {
+    /// The format ids, as for [`MediaJob::Page`](crate::MediaJob::Page).
     pub video: Option<FormatId>,
     pub audio: Option<FormatId>,
     pub container: Container,
@@ -410,9 +410,9 @@ fn audio_variant(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::output::test_support::*;
-    use crate::media::output::*;
-    use crate::media::ytdlp::ids;
+    use crate::output::test_support::*;
+    use crate::output::*;
+    use crate::ytdlp::ids;
 
     /// The format ids a variant downloads, as `video+audio`.
     fn sel(variant: &Variant) -> String {

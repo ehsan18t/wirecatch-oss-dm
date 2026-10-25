@@ -5,7 +5,7 @@
 use wirecatch_protocol::app::OutputFormat;
 
 use super::{AudioCodec, VideoCodec};
-use crate::media::ytdlp::Format;
+use crate::ytdlp::Format;
 
 /// The video codec of a yt-dlp format, from its `vcodec` (for example `avc1.640028`) or, when it gave none, from its extension; `None` when it has no video.
 pub(crate) fn video_codec(format: &Format) -> Option<VideoCodec> {
@@ -55,8 +55,8 @@ pub(crate) fn default_kbps(codec: AudioCodec) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::output::test_support::*;
-    use crate::media::output::*;
+    use crate::output::test_support::*;
+    use crate::output::*;
 
     #[test]
     fn codecs_are_read_from_yt_dlp_names() {

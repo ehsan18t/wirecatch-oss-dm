@@ -32,6 +32,7 @@ const COMMIT_SCOPES = [
   'records',
   'store',
   'messages',
+  'media',
   'cli',
   'e2e',
   'test-support',

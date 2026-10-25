@@ -4,7 +4,7 @@
 
 use wirecatch_engine::numeric::f64_to_u64;
 
-use crate::media::ytdlp::Chapter;
+use crate::ytdlp::Chapter;
 
 /// The latest a chapter can start or end, in seconds; later is a mistake in the page.
 const MAX_CHAPTER_SECONDS: f64 = 1e9;
@@ -17,7 +17,7 @@ const MAX_TAG_CHARS: usize = 300;
 /// An ffmpeg metadata file (`;FFMETADATA1`) with the title and artist, when
 /// given, and the chapters that make sense (in order, inside the video, not
 /// empty).
-pub(crate) fn ffmetadata(
+pub fn ffmetadata(
     title: Option<&str>,
     artist: Option<&str>,
     chapters: &[Chapter],
@@ -62,7 +62,8 @@ pub(crate) fn ffmetadata(
 }
 
 /// Whether `chapters` holds any chapter [`ffmetadata`] would write.
-pub(crate) fn has_chapters(chapters: &[Chapter]) -> bool {
+#[must_use]
+pub fn has_chapters(chapters: &[Chapter]) -> bool {
     ffmetadata(None, None, chapters, None).contains("[CHAPTER]")
 }
 

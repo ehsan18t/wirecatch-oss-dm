@@ -4,29 +4,45 @@
 
 #![forbid(unsafe_code)]
 
-pub(crate) mod choice;
-pub(crate) mod convert;
-pub(crate) mod describe;
-pub(crate) mod ffmpeg;
-pub(crate) mod merge;
-pub(crate) mod output;
+pub mod choice;
+pub mod convert;
+pub mod describe;
+pub mod ffmpeg;
+pub mod merge;
+pub mod output;
 mod tools;
-pub(crate) mod ytdlp;
+pub mod ytdlp;
 
-pub(crate) use tools::MediaTools;
+pub use tools::MediaTools;
 
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use wirecatch_engine::Progress;
+use wirecatch_files::with_suffix;
 use wirecatch_protocol::app::{PER_MILLE_DONE, ProcessingProgress, ProcessingStep};
 use wirecatch_streams::{Stage, StreamProgress};
 
-pub(crate) use crate::naming::{stream_dir, work_dir};
-pub(crate) use wirecatch_records::media::{MediaJob, Pick, StoredMedia, unreadable};
+pub use wirecatch_records::media::{MediaJob, Pick, StoredMedia, unreadable};
+
+/// Next to a media download's file while it runs: the folder for its parts
+/// (video, audio, yt-dlp's own files) until they are joined.
+pub const WORK_SUFFIX: &str = ".wcmedia";
+
+#[must_use]
+pub fn work_dir(output: &Path) -> PathBuf {
+    with_suffix(output, WORK_SUFFIX)
+}
+
+/// Where `wirecatch-streams` keeps segments while downloading `output`.
+#[must_use]
+pub fn stream_dir(output: &Path) -> PathBuf {
+    with_suffix(output, wirecatch_streams::DIR_SUFFIX)
+}
 
 /// The progress of a media download, made of the progress of its parts. Updates come a few times a second at most, so one lock over all of it costs nothing and every reading is consistent.
 #[derive(Debug, Default)]
-pub(crate) struct MediaProgress {
+pub struct MediaProgress {
     state: Mutex<State>,
 }
 
@@ -52,7 +68,7 @@ enum Part {
 
 /// One reading of a [`MediaProgress`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) struct Reading {
+pub struct Reading {
     /// Data is arriving (or arrived): the source answered.
     pub answered: bool,
     pub done: u64,
@@ -185,14 +201,15 @@ impl MediaProgress {
 }
 
 /// Whether `ext` (without the dot, any case) is a media extension a file may be saved with (see [`wirecatch_streams::extension`]).
-pub(crate) fn is_media_ext(ext: &str) -> bool {
+#[must_use]
+pub fn is_media_ext(ext: &str) -> bool {
     wirecatch_streams::extension::is_media(ext)
 }
 
 /// What a media file holds, which decides the extension used instead of one
 /// that is not allowed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Content {
+pub enum Content {
     Video,
     Audio,
     /// Not known, or video and audio joined from different containers.
@@ -201,7 +218,8 @@ pub(crate) enum Content {
 
 /// `ext` in lower case if it is a media extension, otherwise `mp4` for video,
 /// `m4a` for audio and `mkv` when unknown.
-pub(crate) fn safe_ext(ext: Option<&str>, content: Content) -> String {
+#[must_use]
+pub fn safe_ext(ext: Option<&str>, content: Content) -> String {
     let lower = ext
         .map(|e| e.trim().to_ascii_lowercase())
         .unwrap_or_default();
@@ -221,7 +239,8 @@ const MAX_TITLE_CHARS: usize = 150;
 
 /// A file name for media called `title`, with extension `ext` (replaced by
 /// `mkv` if it is not a media extension).
-pub(crate) fn file_name(title: &str, ext: &str) -> String {
+#[must_use]
+pub fn file_name(title: &str, ext: &str) -> String {
     let ext = safe_ext(Some(ext), Content::Unknown);
     let title = title.trim();
     let title = if title.is_empty() { "video" } else { title };

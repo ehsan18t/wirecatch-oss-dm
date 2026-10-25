@@ -12,7 +12,6 @@ mod error;
 mod folders;
 mod headers;
 mod manager;
-mod media;
 mod naming;
 mod profile;
 mod proxy;

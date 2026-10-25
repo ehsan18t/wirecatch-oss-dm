@@ -14,11 +14,11 @@ use wirecatch_streams::codec::VideoCodec;
 use wirecatch_streams::process::STALL_TIMEOUT;
 use wirecatch_streams::process::{self, Output, RunError, RunOptions};
 
-use crate::media::MediaTools;
+use crate::MediaTools;
 
 /// How an ffmpeg run that did not fail ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Finished {
+pub enum Finished {
     /// The output file is complete.
     Done,
     /// Cancelled; nothing of the output is left.
@@ -27,7 +27,7 @@ pub(crate) enum Finished {
 
 /// Why ffmpeg did not make its output file.
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum FfmpegError {
+pub enum FfmpegError {
     /// The add-on's ffmpeg could not be started.
     #[error("ffmpeg could not be started")]
     Start(#[source] io::Error),

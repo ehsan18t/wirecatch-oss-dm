@@ -13,13 +13,13 @@ mod metadata;
 mod subtitles;
 mod variants;
 
-pub(crate) use wirecatch_records::media::output::*;
+pub use wirecatch_records::media::output::*;
 
-pub(crate) use arguments::*;
+pub use arguments::*;
 pub(crate) use codec::*;
 pub(crate) use encoders::*;
-pub(crate) use metadata::*;
-pub(crate) use subtitles::*;
+pub use metadata::*;
+pub use subtitles::*;
 pub(crate) use variants::*;
 
 #[cfg(test)]
@@ -29,7 +29,7 @@ pub(super) mod test_support {
     use std::ffi::OsString;
 
     use super::*;
-    use crate::media::ytdlp::{Format, Info};
+    use crate::ytdlp::{Format, Info};
 
     pub(crate) fn format(json: serde_json::Value) -> Format {
         serde_json::from_value(json).unwrap()

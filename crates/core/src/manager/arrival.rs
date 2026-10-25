@@ -6,7 +6,7 @@ use wirecatch_protocol::app::Category;
 
 use super::state::Expectation;
 use crate::headers::Origin;
-use crate::media::StoredMedia;
+use wirecatch_media::StoredMedia;
 use wirecatch_sites::local_network::ChosenBy;
 
 #[derive(Debug, Clone)]

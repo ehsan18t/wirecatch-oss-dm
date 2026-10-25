@@ -12,7 +12,7 @@ use super::choice::format_name;
 use super::ffmpeg::FfmpegError;
 use super::output::{OutputJob, VideoAction};
 use super::ytdlp::YtDlpError;
-use crate::media::MediaTools;
+use crate::MediaTools;
 use wirecatch_sites::local_network::ChosenBy;
 
 fn retry(message: String) -> UserError {
@@ -31,7 +31,7 @@ fn cannot_start(tools: &MediaTools, program: &str, error: &std::io::Error) -> Us
 }
 
 /// Why yt-dlp could not read a page or download from it.
-pub(crate) fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
+pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
     match error {
         YtDlpError::Folder { source, .. } => retry(format!(
             "Wirecatch could not prepare a folder for the media add-on ({source}). Check that the disk has free space, then try again."
@@ -68,7 +68,8 @@ pub(crate) fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
 }
 
 /// Why a stream download or inspection failed, with the fix where one helps. An ffmpeg of the add-on (`tools`) that could not be started marks the add-on for a fresh look. `chosen_by` chose the stream's link, which words a refusal to reach the local network.
-pub(crate) fn stream(
+#[must_use]
+pub fn stream(
     error: &StreamError,
     folder: &Path,
     tools: Option<&MediaTools>,
@@ -128,7 +129,8 @@ fn ffmpeg_common(error: &FfmpegError, tools: &MediaTools) -> Option<UserError> {
 }
 
 /// Why joining separately downloaded video and audio failed.
-pub(crate) fn join(error: &FfmpegError, tools: &MediaTools) -> UserError {
+#[must_use]
+pub fn join(error: &FfmpegError, tools: &MediaTools) -> UserError {
     ffmpeg_common(error, tools).unwrap_or_else(|| match error {
         FfmpegError::Stalled(_) | FfmpegError::TimedOut(_) => {
             retry("ffmpeg stopped joining the video and audio. Try again.".into())
@@ -140,7 +142,8 @@ pub(crate) fn join(error: &FfmpegError, tools: &MediaTools) -> UserError {
 }
 
 /// Why saving a download as `output` says failed: the download is kept, Try again converts again, and Keep the original saves it as it was downloaded.
-pub(crate) fn conversion(error: &FfmpegError, output: &OutputJob, tools: &MediaTools) -> UserError {
+#[must_use]
+pub fn conversion(error: &FfmpegError, output: &OutputJob, tools: &MediaTools) -> UserError {
     if let Some(common) = ffmpeg_common(error, tools) {
         return common;
     }
@@ -238,10 +241,10 @@ mod tests {
             },
             FfmpegError::Path(wirecatch_streams::ffmpeg::file_argument(Path::new("")).unwrap_err()),
         ];
-        let job = crate::media::output::test_support::job(
-            crate::media::output::Container::Mp4,
+        let job = crate::output::test_support::job(
+            crate::output::Container::Mp4,
             VideoAction::Copy,
-            crate::media::output::AudioAction::Copy,
+            crate::output::AudioAction::Copy,
         );
         for error in &ffmpeg_errors {
             let joined = join(error, &tools);
@@ -323,12 +326,12 @@ mod tests {
             StreamError::FfmpegRun(start()),
         ] {
             let tools = tools();
-            stream(&error, folder, Some(&tools), ChosenBy::Website);
+            let _described = stream(&error, folder, Some(&tools), ChosenBy::Website);
             assert!(tools.is_broken(), "{error:?}");
         }
         // ffmpeg that started and then stalled is not a broken add-on.
         let tools = tools();
-        stream(
+        let _described = stream(
             &StreamError::FfmpegRun(RunError::Stalled {
                 quiet: Duration::from_secs(300),
                 stderr: StderrTail::default(),

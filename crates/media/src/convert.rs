@@ -22,14 +22,14 @@ use super::ffmpeg::{self, FfmpegError, Finished};
 use super::output::{
     self, AudioAction, Encoder, Inputs, OutputJob, SubtitleFormat, VideoAction, VideoCodec,
 };
-use crate::media::MediaTools;
+use crate::MediaTools;
 
 /// How long asking ffmpeg for its encoders, or one encoder test, may take.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// What is known about the encoders of one ffmpeg.
 #[derive(Debug, Default)]
-pub(crate) struct EncoderCatalog {
+pub struct EncoderCatalog {
     /// The encoders ffmpeg lists, once it answered.
     listed: OnceCell<Arc<HashSet<String>>>,
     /// The video encoders to use for each codec, in order.
@@ -190,8 +190,8 @@ pub(crate) fn step(job: &OutputJob, inputs: &Inputs) -> ProcessingStep {
     }
 }
 
-/// Saves `inputs` into `output` as `job` says, reporting into `progress`. A video to re-encode goes through the encoders that work here in order (see [`try_encoders`]). Whatever ends, a partial `output` is removed.
-pub(crate) async fn convert(
+/// Saves `inputs` into `output` as `job` says, reporting into `progress`. A video to re-encode goes through the encoders that work here in order. Whatever ends, a partial `output` is removed.
+pub async fn convert(
     tools: &MediaTools,
     job: &OutputJob,
     inputs: &Inputs,
@@ -293,7 +293,7 @@ where
 }
 
 /// Turns subtitle file `input` (in `format`) into a `SubRip` file at `output`.
-pub(crate) async fn to_srt(
+pub async fn to_srt(
     tools: &MediaTools,
     format: SubtitleFormat,
     input: &Path,
@@ -309,9 +309,9 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    use crate::media::ffmpeg::test_support::{make, real_ffmpeg};
-    use crate::media::output::Extras;
-    use crate::media::output::{AudioAction, Container, ImageFormat, SubtitlePick};
+    use crate::ffmpeg::test_support::{make, real_ffmpeg};
+    use crate::output::Extras;
+    use crate::output::{AudioAction, Container, ImageFormat, SubtitlePick};
     use wirecatch_streams::InputFormat;
 
     /// What ffmpeg says about `path` (its streams, chapters and tags).
@@ -403,12 +403,11 @@ mod tests {
         let srt = dir.path().join("sub-1.srt");
         std::fs::write(&srt, "1\n00:00:00,000 --> 00:00:01,500\nBonjour\n").unwrap();
         let metadata = dir.path().join("metadata.txt");
-        let chapters: Vec<crate::media::ytdlp::Chapter> =
-            serde_json::from_value(serde_json::json!([
-                {"start_time": 0, "end_time": 1, "title": "One"},
-                {"start_time": 1, "end_time": 2, "title": "Two; and = more"},
-            ]))
-            .unwrap();
+        let chapters: Vec<crate::ytdlp::Chapter> = serde_json::from_value(serde_json::json!([
+            {"start_time": 0, "end_time": 1, "title": "One"},
+            {"start_time": 1, "end_time": 2, "title": "Two; and = more"},
+        ]))
+        .unwrap();
         std::fs::write(
             &metadata,
             output::ffmetadata(

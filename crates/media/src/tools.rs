@@ -7,7 +7,7 @@ use wirecatch_addons::ToolPaths;
 
 /// The media add-on's programs, as media runs them.
 #[derive(Debug, Clone)]
-pub(crate) struct MediaTools {
+pub struct MediaTools {
     pub ytdlp: PathBuf,
     pub ffmpeg: PathBuf,
     pub deno: PathBuf,
@@ -45,15 +45,18 @@ impl MediaTools {
         self.broken.store(true, Ordering::Relaxed);
     }
 
+    #[must_use]
     pub fn encoders(&self) -> &EncoderCatalog {
         &self.encoders
     }
 
+    #[must_use]
     pub fn is_broken(&self) -> bool {
         self.broken.load(Ordering::Relaxed)
     }
 
     #[cfg(test)]
+    #[must_use]
     pub fn for_test(ffmpeg: &std::path::Path) -> MediaTools {
         ToolPaths {
             ytdlp: PathBuf::from("yt-dlp"),

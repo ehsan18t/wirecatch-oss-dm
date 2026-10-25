@@ -11,7 +11,7 @@ use wirecatch_streams::ffmpeg::{CopyInput, copy_arguments};
 use wirecatch_streams::{InputFormat, Role};
 
 use super::ffmpeg::{self, FfmpegError, Finished};
-use crate::media::MediaTools;
+use crate::MediaTools;
 
 /// The format ffmpeg may read the downloaded `role` as, recognized from its first bytes. A file that is none of the expected formats is refused before ffmpeg starts.
 pub(crate) async fn input_format(path: &Path, role: Role) -> Result<InputFormat, FfmpegError> {
@@ -26,8 +26,8 @@ pub(crate) async fn input_format(path: &Path, role: Role) -> Result<InputFormat,
     }
 }
 
-/// `path` with the format ffmpeg may read it as (see [`input_format`]), when there is a file.
-pub(crate) async fn optional_input(
+/// `path` with the format ffmpeg may read it as, when there is a file.
+pub async fn optional_input(
     path: Option<&PathBuf>,
     role: Role,
 ) -> Result<Option<(InputFormat, PathBuf)>, FfmpegError> {
@@ -38,7 +38,7 @@ pub(crate) async fn optional_input(
 }
 
 /// Joins `video` and `audio` into `output` as `container` with `ffmpeg`, copying the streams.
-pub(crate) async fn join(
+pub async fn join(
     tools: &MediaTools,
     (video, audio): (&Path, &Path),
     output: &Path,
@@ -56,7 +56,7 @@ pub(crate) async fn join(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::ffmpeg::test_support::{make, real_ffmpeg};
+    use crate::ffmpeg::test_support::{make, real_ffmpeg};
 
     fn tools(ffmpeg: &Path) -> MediaTools {
         MediaTools::for_test(ffmpeg)
