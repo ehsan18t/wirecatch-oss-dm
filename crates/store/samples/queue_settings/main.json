@@ -10,6 +10,9 @@
   "connections": {
     "source": "follow_app"
   },
+  "takes": {
+    "kind": "manual"
+  },
   "schedule": null,
   "notify": "each_download"
 }
