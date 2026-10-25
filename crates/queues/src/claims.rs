@@ -25,35 +25,35 @@ pub struct Link<'a> {
     pub category: Category,
 }
 
-/// An auto queue's claims, in sidebar order.
+/// An auto queue's claims, in sidebar order. `K` names the queue: its id, or for Try a link one that also names a queue not made yet.
 #[derive(Debug, Clone, Copy)]
-pub struct ClaimingQueue<'a> {
-    pub id: QueueId,
+pub struct ClaimingQueue<'a, K = QueueId> {
+    pub id: K,
     pub claims: &'a QueueClaims,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Found {
-    pub queue: QueueId,
+pub struct Found<K = QueueId> {
+    pub queue: K,
     pub claim: Claim,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Claimed {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Claimed<K = QueueId> {
     /// The queue whose claim takes the download, among the queues that are on.
-    pub taken: Option<Found>,
+    pub taken: Option<Found<K>>,
     /// A queue that is off and would have taken it from `taken`, for Try a link (D72.5).
-    pub switched_off: Option<Found>,
+    pub switched_off: Option<Found<K>>,
 }
 
 /// Where `link` goes among `queues`; `is_local` says whether a host is on the person's own network (D34).
 #[must_use]
-pub fn claim(
-    queues: &[ClaimingQueue<'_>],
+pub fn claim<K: Copy + PartialEq>(
+    queues: &[ClaimingQueue<'_, K>],
     link: &Link<'_>,
     is_local: &dyn Fn(&Url) -> bool,
-) -> Claimed {
-    let on: Vec<ClaimingQueue<'_>> = queues
+) -> Claimed<K> {
+    let on: Vec<ClaimingQueue<'_, K>> = queues
         .iter()
         .copied()
         .filter(|q| q.claims.enabled)
@@ -71,11 +71,11 @@ pub fn claim(
     }
 }
 
-fn first_claim(
-    queues: &[ClaimingQueue<'_>],
+fn first_claim<K: Copy>(
+    queues: &[ClaimingQueue<'_, K>],
     link: &Link<'_>,
     is_local: &dyn Fn(&Url) -> bool,
-) -> Option<Found> {
+) -> Option<Found<K>> {
     best_site(queues, link.url, is_local)
         .or_else(|| first(queues, |c| file_name_claim(c, link.file_name)))
         .or_else(|| first(queues, |c| file_type_claim(c, link.file_name)))
@@ -96,22 +96,22 @@ fn first_claim(
         })
 }
 
-fn first(
-    queues: &[ClaimingQueue<'_>],
+fn first<K: Copy>(
+    queues: &[ClaimingQueue<'_, K>],
     claim: impl Fn(&QueueClaims) -> Option<Claim>,
-) -> Option<Found> {
+) -> Option<Found<K>> {
     queues
         .iter()
         .find_map(|q| claim(q.claims).map(|claim| Found { queue: q.id, claim }))
 }
 
 /// The most specific site claim that covers the link; between equally specific ones, the queue higher in the sidebar.
-fn best_site(
-    queues: &[ClaimingQueue<'_>],
+fn best_site<K: Copy>(
+    queues: &[ClaimingQueue<'_, K>],
     url: &Url,
     is_local: &dyn Fn(&Url) -> bool,
-) -> Option<Found> {
-    let mut best: Option<(u16, Found)> = None;
+) -> Option<Found<K>> {
+    let mut best: Option<(u16, Found<K>)> = None;
     for q in queues {
         for written in &q.claims.sites {
             let Some(pattern) = SitePattern::read(written) else {

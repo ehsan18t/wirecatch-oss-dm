@@ -26,6 +26,7 @@ import type { ImportPreview } from './ImportPreview';
 import type { ImportSettingsArgs } from './ImportSettingsArgs';
 import type { InstallAddonArgs } from './InstallAddonArgs';
 import type { KeepOriginalArgs } from './KeepOriginalArgs';
+import type { LinkClaims } from './LinkClaims';
 import type { MediaChoice } from './MediaChoice';
 import type { MoveToQueueArgs } from './MoveToQueueArgs';
 import type { OpenFileArgs } from './OpenFileArgs';
@@ -57,6 +58,7 @@ import type { StartupNotice } from './StartupNotice';
 import type { SuffixListInfo } from './SuffixListInfo';
 import type { SystemAppearance } from './SystemAppearance';
 import type { TestProxyArgs } from './TestProxyArgs';
+import type { TryLinkArgs } from './TryLinkArgs';
 import type { UpdateAddonArgs } from './UpdateAddonArgs';
 import type { UpdateQueueArgs } from './UpdateQueueArgs';
 import type { WindowFrame } from './WindowFrame';
@@ -261,6 +263,10 @@ export type CommandMap = {
    * work, changing nothing.
    */
   set_proxy: Command<SetProxyArgs, null>;
+  /**
+   * Where a link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7). Fails with `invalid_url` for a link that is not http, https or FTP.
+   */
+  try_link: Command<TryLinkArgs, LinkClaims>;
   /**
    * Sends one request through a proxy setting before it is saved (D71.5).
    */

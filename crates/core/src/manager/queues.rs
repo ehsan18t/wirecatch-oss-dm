@@ -2,10 +2,11 @@
 
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{Queue, QueueSettings, QueueStatus, UiEvent};
-use wirecatch_protocol::claims::QueueReason;
+use wirecatch_protocol::claims::{LinkClaims, LinkTrial, QueueReason};
 use wirecatch_protocol::wire::{Event, QueueSummary};
 
 use super::Manager;
+use super::downloads::parse_url;
 use super::state::{QueueSlot, State, Stop};
 use crate::error::{CoreError, Result};
 
@@ -20,6 +21,16 @@ impl Manager {
     #[must_use]
     pub fn queue_summaries(&self) -> Vec<QueueSummary> {
         self.lock().queue_summaries()
+    }
+
+    /// Where `trial`'s link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7).
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::InvalidUrl`] for a link that is not http, https or FTP, and [`CoreError::Closed`] once the manager has shut down.
+    pub fn try_link(&self, trial: &LinkTrial) -> Result<LinkClaims> {
+        let url = parse_url(&trial.url)?;
+        Ok(self.lock_open()?.try_link(&url, trial.draft.as_ref()))
     }
 
     /// Adds a running queue, last in the sidebar.

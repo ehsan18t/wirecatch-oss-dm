@@ -17,6 +17,7 @@ use crate::app::{
     CaptureConfirmation, DownloadSummary, ImportPreview, MediaChoice, MediaSelection,
     PendingCapture, Question, Queue, QueueSettings, StartupNotice, SuffixListInfo,
 };
+use crate::claims::{LinkClaims, LinkTrial};
 use crate::proxy::{ProxyChange, ProxySettings, ProxyTest, ProxyTestResult};
 use crate::secret::Link;
 use crate::{DownloadId, QuestionId, QueueId};
@@ -504,6 +505,11 @@ commands! {
         /// The new setting.
         change: ProxyChange,
     } -> ();
+    /// Where a link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7). Fails with `invalid_url` for a link that is not http, https or FTP.
+    try_link: TryLinkArgs {
+        /// The link, and the claims to try it against.
+        trial: LinkTrial,
+    } -> LinkClaims;
     /// Sends one request through a proxy setting before it is saved (D71.5).
     test_proxy: TestProxyArgs {
         /// The setting to try.
