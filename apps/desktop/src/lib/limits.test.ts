@@ -1,5 +1,6 @@
 import {
   FOLLOW_APP,
+  MANUAL_QUEUE,
   MAX_CONCURRENT_DOWNLOADS,
   MAX_CONNECTIONS_PER_DOWNLOAD,
   ownSetting,
@@ -23,6 +24,7 @@ const FOLLOWS: QueueSettings = {
   max_concurrent: FOLLOW_APP,
   speed_limit: FOLLOW_APP,
   connections: FOLLOW_APP,
+  takes: MANUAL_QUEUE,
   schedule: null,
   notify: 'each_download',
 };

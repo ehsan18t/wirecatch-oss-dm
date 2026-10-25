@@ -26,6 +26,7 @@ import type { Category } from './Category';
 import type { CategoryRule } from './CategoryRule';
 import type { ChangeSettingsArgs } from './ChangeSettingsArgs';
 import type { ChooseMediaArgs } from './ChooseMediaArgs';
+import type { Claim } from './Claim';
 import type { ClientKind } from './ClientKind';
 import type { ConfirmCaptureArgs } from './ConfirmCaptureArgs';
 import type { ControlWindowArgs } from './ControlWindowArgs';
@@ -60,6 +61,7 @@ import type { ImportedFolder } from './ImportedFolder';
 import type { InstallAddonArgs } from './InstallAddonArgs';
 import type { KeepOriginalArgs } from './KeepOriginalArgs';
 import type { Link } from './Link';
+import type { LinkProtocol } from './LinkProtocol';
 import type { MediaChoice } from './MediaChoice';
 import type { MediaDefaults } from './MediaDefaults';
 import type { MediaDefaultsPatch } from './MediaDefaultsPatch';
@@ -72,6 +74,7 @@ import type { MediaSubtitle } from './MediaSubtitle';
 import type { MediaSummary } from './MediaSummary';
 import type { Message } from './Message';
 import type { MoveToQueueArgs } from './MoveToQueueArgs';
+import type { NameSyntax } from './NameSyntax';
 import type { NewDownload } from './NewDownload';
 import type { NoteId } from './NoteId';
 import type { NoteKind } from './NoteKind';
@@ -105,12 +108,14 @@ import type { QualityFallback } from './QualityFallback';
 import type { Question } from './Question';
 import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
+import type { QueueClaims } from './QueueClaims';
 import type { QueueId } from './QueueId';
 import type { QueueNotify } from './QueueNotify';
 import type { QueueReport } from './QueueReport';
 import type { QueueSettings } from './QueueSettings';
 import type { QueueStatus } from './QueueStatus';
 import type { QueueSummary } from './QueueSummary';
+import type { QueueTakes } from './QueueTakes';
 import type { RefreshLinkArgs } from './RefreshLinkArgs';
 import type { RejectCaptureArgs } from './RejectCaptureArgs';
 import type { RemoveAddonArgs } from './RemoveAddonArgs';
@@ -481,6 +486,28 @@ export function isChooseMediaArgs(value: unknown): value is ChooseMediaArgs {
     isRecord(value1) && isQuestionId(value1['id']) && isMediaSelection(value1['selection']))(value);
 }
 
+/** Whether `value` has the shape of a {@link Claim}; fields it does not name are not checked. */
+export function isClaim(value: unknown): value is Claim {
+  return (
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'site' && typeof value1['claim'] === 'string')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'file_name' && typeof value1['claim'] === 'string')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'file_type' && typeof value1['claim'] === 'string')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'category' && isCategory(value1['claim']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'protocol' && isLinkProtocol(value1['claim']))(value)
+  );
+}
+
 /** Whether `value` has the shape of a {@link ClientKind}; fields it does not name are not checked. */
 export function isClientKind(value: unknown): value is ClientKind {
   return value === 'extension' || value === 'bridge' || value === 'cli';
@@ -825,6 +852,11 @@ export function isLink(value: unknown): value is Link {
   return typeof value === 'string';
 }
 
+/** Whether `value` has the shape of a {@link LinkProtocol}; fields it does not name are not checked. */
+export function isLinkProtocol(value: unknown): value is LinkProtocol {
+  return value === 'http' || value === 'https' || value === 'ftp';
+}
+
 /** Whether `value` has the shape of a {@link MediaChoice}; fields it does not name are not checked. */
 export function isMediaChoice(value: unknown): value is MediaChoice {
   return ((value1: unknown): boolean =>
@@ -958,6 +990,11 @@ export function isMoveToQueueArgs(value: unknown): value is MoveToQueueArgs {
     isRecord(value1) && isArrayOf(value1['ids'], isDownloadId) && isQueueId(value1['queue']))(
     value,
   );
+}
+
+/** Whether `value` has the shape of a {@link NameSyntax}; fields it does not name are not checked. */
+export function isNameSyntax(value: unknown): value is NameSyntax {
+  return value === 'wildcards' || value === 'regex';
 }
 
 /** Whether `value` has the shape of a {@link NewDownload}; fields it does not name are not checked. */
@@ -1269,6 +1306,19 @@ export function isQueue(value: unknown): value is Queue {
     isQueueStatus(value1['status']))(value);
 }
 
+/** Whether `value` has the shape of a {@link QueueClaims}; fields it does not name are not checked. */
+export function isQueueClaims(value: unknown): value is QueueClaims {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['enabled'] === 'boolean' &&
+    isArrayOf(value1['sites'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['file_names'], (value2: unknown) => typeof value2 === 'string') &&
+    isNameSyntax(value1['file_name_syntax']) &&
+    isArrayOf(value1['file_types'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['categories'], isCategory) &&
+    isArrayOf(value1['protocols'], isLinkProtocol))(value);
+}
+
 /** Whether `value` has the shape of a {@link QueueId}; fields it does not name are not checked. */
 export function isQueueId(value: unknown): value is QueueId {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -1317,6 +1367,7 @@ export function isQueueSettings(value: unknown): value is QueueSettings {
         value1['connections'],
       )) &&
     (isSchedule(value1['schedule']) || value1['schedule'] === null) &&
+    isQueueTakes(value1['takes']) &&
     isQueueNotify(value1['notify']))(value);
 }
 
@@ -1335,6 +1386,15 @@ export function isQueueSummary(value: unknown): value is QueueSummary {
     isQueueId(value1['id']) &&
     typeof value1['name'] === 'string' &&
     typeof value1['is_default'] === 'boolean')(value);
+}
+
+/** Whether `value` has the shape of a {@link QueueTakes}; fields it does not name are not checked. */
+export function isQueueTakes(value: unknown): value is QueueTakes {
+  return (
+    ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'manual')(value) ||
+    (((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'auto')(value) &&
+      isQueueClaims(value))
+  );
 }
 
 /** Whether `value` has the shape of a {@link RefreshLinkArgs}; fields it does not name are not checked. */

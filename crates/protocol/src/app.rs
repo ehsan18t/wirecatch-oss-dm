@@ -3,6 +3,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ts_rs::TS;
 
+use crate::claims::QueueTakes;
 use crate::extension::{ExtensionSettings, ExtensionSettingsPatch};
 use crate::proxy::ProxySettings;
 use crate::secret::Link;
@@ -222,6 +223,8 @@ pub struct QueueSettings {
     pub connections: Setting<u8>,
     /// When set, the queue only runs inside this window.
     pub schedule: Option<Schedule>,
+    /// Manual, or auto with the new downloads it claims (D72.2).
+    pub takes: QueueTakes,
     /// When the person is told its downloads finished (D52).
     #[serde(default, with = "known_or_default")]
     #[ts(as = "QueueNotify")]
@@ -237,6 +240,7 @@ impl QueueSettings {
             max_concurrent: Setting::FollowApp,
             speed_limit: Setting::FollowApp,
             connections: Setting::FollowApp,
+            takes: QueueTakes::Manual,
             schedule: None,
             notify: QueueNotify::EachDownload,
         }

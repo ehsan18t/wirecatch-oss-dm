@@ -614,6 +614,7 @@ mod tests {
             crate::wire::exported_consts(),
             crate::frame::exported_consts(),
             crate::app::exported_consts(),
+            crate::claims::exported_consts(),
             crate::desktop::exported_consts(),
             crate::extension::exported_consts(),
             crate::proxy::exported_consts(),
