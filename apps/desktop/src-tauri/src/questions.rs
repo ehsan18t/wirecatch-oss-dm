@@ -120,6 +120,7 @@ mod tests {
             options: vec![],
             folder: "C:/Videos".into(),
             queue: QueueId(1),
+            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
             subtitles: Vec::new(),
             chapters: false,
             duration_ms: None,
@@ -162,6 +163,7 @@ mod tests {
             category: Category::Archive,
             size: None,
             queue: QueueId(1),
+            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
             page_url: None,
         }
     }
@@ -230,6 +232,7 @@ mod tests {
             file_name: "a.zip".into(),
             path: "C:/Downloads/a.zip".into(),
             queue: QueueId(1),
+            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
             category: Category::Archive,
             status: DownloadStatus::Downloading,
             total: None,

@@ -304,6 +304,7 @@ mod tests {
             file_name: format!("file-{id}"),
             path: String::new(),
             queue: QueueId(1),
+            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
             category: Category::Other,
             status,
             total: None,

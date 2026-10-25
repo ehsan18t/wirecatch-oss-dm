@@ -7,6 +7,7 @@ use std::sync::Arc;
 use chrono::NaiveDateTime;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, Queue};
+use wirecatch_protocol::claims::QueueReason;
 use wirecatch_settings::DEFAULT_QUEUE_ID;
 use wirecatch_sites::public_suffix::SuffixList;
 use wirecatch_store::{Snapshot, StoredDownload};
@@ -170,6 +171,7 @@ fn restore_entry(
     let mut fixed = false;
     if !queues.iter().any(|s| s.queue.id == entry.row.queue) {
         entry.row.queue = default_queue;
+        entry.row.queue_reason = QueueReason::DefaultQueue;
         fixed = true;
     }
     let done_with = matches!(
@@ -257,6 +259,7 @@ mod tests {
                 file_name: "f".into(),
                 path: "f".into(),
                 queue: QueueId(queue),
+                queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
                 category: Category::Other,
                 status,
                 total: Some(10),

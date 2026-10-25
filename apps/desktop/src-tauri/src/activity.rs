@@ -189,6 +189,7 @@ mod tests {
             file_name: format!("file-{id}.zip"),
             path: format!("C:/Downloads/file-{id}.zip"),
             queue: QueueId(1),
+            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
             category: Category::Archive,
             status,
             total: Some(100),

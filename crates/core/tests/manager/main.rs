@@ -2,6 +2,7 @@
 //! module covers part of the WP1 acceptance checklist.
 
 mod addons;
+mod claims;
 mod common;
 mod ftp;
 mod lifecycle;

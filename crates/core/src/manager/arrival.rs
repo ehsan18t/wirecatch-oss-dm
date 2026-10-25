@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use wirecatch_engine::Url;
-use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::Category;
 
+use super::placement::Placed;
 use super::state::Expectation;
 use crate::headers::Origin;
 use wirecatch_media::StoredMedia;
@@ -63,7 +63,7 @@ impl Kind {
 pub(super) struct NewEntry {
     pub fetch: Fetch,
     pub wanted: Wanted,
-    pub queue: QueueId,
+    pub placed: Placed,
     pub start: bool,
     pub kind: Kind,
 }
