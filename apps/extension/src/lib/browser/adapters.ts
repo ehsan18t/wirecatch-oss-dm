@@ -13,6 +13,7 @@ import {
   mergeCookies,
   type CookieContext,
   type CookieQuery,
+  type CookieStore,
   type StoredCookie,
 } from '../cookies';
 import { fallback, log } from '../diag/log';
@@ -78,9 +79,15 @@ export async function helloFromExtension(): Promise<HelloIdentity> {
 /** The cookies the browser would send with the request, read the way this browser supports. */
 export async function cookieHeaderFor(
   url: string,
-  storeId: string | null,
+  store: CookieStore,
   context: CookieContext,
 ): Promise<string | null> {
+  const storeId = await storeToRead(store);
+  if (storeId === undefined) {
+    // The normal window's cookies would sign a private download in as someone else (D82).
+    log.warn('capture', 'Could not find the cookies of the private windows; sending none');
+    return null;
+  }
   const queries = cookieReads(url, storeId, context);
   const reads = await Promise.all(queries.map(firstAccepted));
   const failures = reads.flatMap((read, i) =>
@@ -105,6 +112,23 @@ export async function cookieHeaderFor(
   }
   const cookies = reads.flatMap((read) => ('cookies' in read ? [read.cookies] : []));
   return cookieHeader(cookiesToSend(mergeCookies(cookies), url, context));
+}
+
+/** The store id to read, null for the default store; undefined when a private window's cannot be found. */
+async function storeToRead(store: CookieStore): Promise<string | null | undefined> {
+  if (store.id !== null || !store.private) return store.id;
+  // Chromium names no store on a private tab or download: it is the store holding the private tabs.
+  try {
+    const [stores, tabs] = await Promise.all([
+      browser.cookies.getAllCookieStores(),
+      browser.tabs.query({}),
+    ]);
+    const privateTabs = new Set(tabs.filter((tab) => tab.incognito).map((tab) => tab.id));
+    return stores.find((s) => s.tabIds.some((id) => privateTabs.has(id)))?.id;
+  } catch (error) {
+    log.warn('capture', 'Could not read the cookie stores', error);
+    return undefined;
+  }
 }
 
 /** The cookies of the first query this browser accepts, or why it rejected the last. */
@@ -228,8 +252,8 @@ export function mediaStore(): MediaStore | undefined {
 
 const hasCookieStore = object({ cookieStoreId: isString });
 
-/** The Firefox container or private cookie store of a tab; null in Chromium, whose tabs have none and use the default store. */
-export function cookieStoreOf(tab: unknown): string | null {
+/** The Firefox container or private cookie store of a tab; null in Chromium, whose tabs name none. */
+export function cookieStoreIdOf(tab: unknown): string | null {
   return hasCookieStore(tab) ? tab.cookieStoreId : null;
 }
 
@@ -240,7 +264,7 @@ export async function tabInfo(tabId: number): Promise<TabInfo | null> {
       url: tab.url ?? null,
       title: tab.title ?? null,
       incognito: tab.incognito,
-      cookieStoreId: cookieStoreOf(tab),
+      cookieStoreId: cookieStoreIdOf(tab),
     };
   } catch (error) {
     // The tab closed meanwhile, or is one the extension cannot see.

@@ -44,4 +44,8 @@ export type ExtensionSettings = {
    * before it have none, so the extension reads it as optional.
    */
   video_sites?: Array<string>;
+  /**
+   * Take downloads and media from private windows too (D82). An app from before it sends none, which means on.
+   */
+  private_windows?: boolean;
 };

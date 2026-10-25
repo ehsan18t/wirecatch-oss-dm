@@ -626,7 +626,10 @@ export function isExtensionSettings(value: unknown): value is ExtensionSettings 
     typeof value1['min_capture_size'] === 'number' &&
     isQueueId(value1['default_queue']) &&
     (value1['video_sites'] === undefined ||
-      isArrayOf(value1['video_sites'], (value2: unknown) => typeof value2 === 'string')))(value);
+      isArrayOf(value1['video_sites'], (value2: unknown) => typeof value2 === 'string')) &&
+    (value1['private_windows'] === undefined || typeof value1['private_windows'] === 'boolean'))(
+    value,
+  );
 }
 
 /** Whether `value` has the shape of a {@link ExtensionSettingsPatch}; fields it does not name are not checked. */
@@ -662,7 +665,10 @@ export function isExtensionSettingsPatch(value: unknown): value is ExtensionSett
       value1['default_queue'] === null) &&
     (value1['video_sites'] === undefined ||
       isArrayOf(value1['video_sites'], (value2: unknown) => typeof value2 === 'string') ||
-      value1['video_sites'] === null))(value);
+      value1['video_sites'] === null) &&
+    (value1['private_windows'] === undefined ||
+      typeof value1['private_windows'] === 'boolean' ||
+      value1['private_windows'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link FinishNoteTime}; fields it does not name are not checked. */

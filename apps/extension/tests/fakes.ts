@@ -28,7 +28,7 @@ import { vi } from 'vitest';
 import { browser } from 'wxt/browser';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import type { DownloadItemLike } from '../src/lib/capture/candidate';
-import type { CookieQuery, StoredCookie } from '../src/lib/cookies';
+import type { CookieQuery, CookieStore, StoredCookie } from '../src/lib/cookies';
 import type { DownloadState } from '../src/lib/capture/handover';
 import type {
   BrowserDownloads,
@@ -90,6 +90,18 @@ export function stubGetAll(answer: (query: CookieQuery) => StoredCookie[]): void
     // The fake's typings take the callback form; the extension uses the promise form.
     (query) => new Promise((resolve) => resolve(answer(query as CookieQuery))) as never,
   );
+}
+
+/** The default cookie store: a normal window's in Chromium, which names no store. */
+export const NORMAL_STORE: CookieStore = { id: null, private: false };
+
+/** Chromium's cookie stores, each with the tabs it holds, and whether each tab is private. */
+export function stubCookieStores(
+  stores: { id: string; tabIds: number[] }[],
+  tabs: { id: number; incognito: boolean }[],
+): void {
+  vi.spyOn(browser.cookies, 'getAllCookieStores').mockResolvedValue(stores as never);
+  vi.spyOn(browser.tabs, 'query').mockResolvedValue(tabs as never);
 }
 
 /** Lets pending promise callbacks run (they are queued as microtasks). */

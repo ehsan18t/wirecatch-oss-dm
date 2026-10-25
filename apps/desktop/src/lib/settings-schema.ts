@@ -130,6 +130,12 @@ const DEFS = [
     keywords: 'media video audio overlay button stream',
   },
   {
+    id: 'private_windows',
+    section: 'browser',
+    ...words('private_windows'),
+    keywords: 'private incognito inprivate window tab',
+  },
+  {
     id: 'ignored_sites',
     section: 'browser',
     label: 'Sites to leave to the browser',

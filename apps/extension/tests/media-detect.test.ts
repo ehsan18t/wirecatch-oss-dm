@@ -608,7 +608,11 @@ describe('MediaWatcher', () => {
   const hlsResponse = (overrides: Partial<ObservedResponse> = {}) =>
     response({ contentType: 'application/vnd.apple.mpegurl', ...overrides });
 
-  function setup(isPrivateTab: (tabId: number) => Promise<boolean> = () => Promise.resolve(false)) {
+  /** Private windows are off unless `privateWindows` says otherwise, so the tab is asked. */
+  function setup(
+    isPrivateTab: (tabId: number) => Promise<boolean> = () => Promise.resolve(false),
+    privateWindows = false,
+  ) {
     const registry = new MediaRegistry();
     const lookups: number[] = [];
     const watcher = new MediaWatcher(registry, {
@@ -616,6 +620,7 @@ describe('MediaWatcher', () => {
         lookups.push(tabId);
         return isPrivateTab(tabId);
       },
+      privateWindowsOn: () => Promise.resolve(privateWindows),
     });
     return { registry, watcher, lookups };
   }
@@ -699,7 +704,17 @@ describe('MediaWatcher', () => {
     expect(registry.items(4)).toEqual([]);
   });
 
-  it('ignores private windows: Firefox marks the request, Chromium is asked through the tab', async () => {
+  it("records a private window's media while private windows are on (D82)", async () => {
+    const firefox = setup(() => Promise.resolve(true), true);
+    await firefox.watcher.onResponse(hlsResponse({ incognito: true }));
+    expect(firefox.registry.items(4)).toHaveLength(1);
+    const chromium = setup(() => Promise.resolve(true), true);
+    await chromium.watcher.onResponse(hlsResponse());
+    expect(chromium.registry.items(4)).toHaveLength(1);
+    expect(firefox.lookups).toEqual([]);
+  });
+
+  it('ignores private windows while they are off: Firefox marks the request, Chromium is asked through the tab', async () => {
     const firefox = setup();
     await firefox.watcher.onResponse(hlsResponse({ incognito: true }));
     expect(firefox.registry.items(4)).toEqual([]);

@@ -307,6 +307,10 @@ pub struct NotePressed {
 
 /// The settings that are the extension's own. The app stores them; the extension only edits
 /// them remotely and keeps a copy for the browser session (D61).
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each bool is an independent setting the person switches on its own, as in `AppSettings`; grouping them would change the wire format for no gain"
+)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ExtensionSettings {
@@ -335,6 +339,14 @@ pub struct ExtensionSettings {
     #[serde(default)]
     #[ts(as = "Option<Vec<String>>", optional)]
     pub video_sites: Vec<String>,
+    /// Take downloads and media from private windows too (D82). An app from before it sends none, which means on.
+    #[serde(default = "on")]
+    #[ts(as = "Option<bool>", optional)]
+    pub private_windows: bool,
+}
+
+fn on() -> bool {
+    true
 }
 
 /// The settings of a fresh install, which the extension also judges by until it first hears
@@ -350,6 +362,7 @@ impl Default for ExtensionSettings {
             min_capture_size: 0,
             default_queue: DEFAULT_QUEUE_ID,
             video_sites: Vec::new(),
+            private_windows: true,
         }
     }
 }
@@ -380,6 +393,7 @@ pub struct ExtensionSettingsPatch {
     pub default_queue: Option<QueueId>,
     /// The new [`ExtensionSettings::video_sites`], replacing the whole list.
     pub video_sites: Option<Vec<String>>,
+    pub private_windows: Option<bool>,
 }
 
 impl ExtensionSettings {
@@ -396,6 +410,7 @@ impl ExtensionSettings {
             min_capture_size,
             default_queue,
             video_sites,
+            private_windows,
         } = patch;
         if let Some(v) = capture_enabled {
             self.capture_enabled = v;
@@ -432,6 +447,9 @@ impl ExtensionSettings {
         }
         if let Some(v) = video_sites {
             self.video_sites = normalize_sites(v);
+        }
+        if let Some(v) = private_windows {
+            self.private_windows = v;
         }
     }
 }
@@ -836,6 +854,7 @@ pub(crate) fn apply_cases() -> Vec<(ExtensionSettings, ExtensionSettingsPatch)> 
                 min_capture_size: Some(1024),
                 default_queue: Some(QueueId(3)),
                 video_sites: sites(&["https://Videos.Example.org/watch", "*.clips.test", ""]),
+                private_windows: Some(false),
                 ..ExtensionSettingsPatch::default()
             },
         ),
@@ -1022,6 +1041,18 @@ mod tests {
         });
         assert!(!s.ask_before_download);
         assert!(s.capture_enabled);
+    }
+
+    #[test]
+    fn private_windows_are_taken_unless_turned_off() {
+        assert!(ExtensionSettings::default().private_windows);
+        let mut from_older_app = serde_json::to_value(ExtensionSettings::default()).unwrap();
+        from_older_app
+            .as_object_mut()
+            .unwrap()
+            .remove("private_windows");
+        let read: ExtensionSettings = serde_json::from_value(from_older_app).unwrap();
+        assert!(read.private_windows, "an app from before D82 sends none");
     }
 
     #[test]

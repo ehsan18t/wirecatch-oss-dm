@@ -46,4 +46,5 @@ export type ExtensionSettingsPatch = {
    * The new [`ExtensionSettings::video_sites`], replacing the whole list.
    */
   video_sites?: Array<string> | null;
+  private_windows?: boolean | null;
 };

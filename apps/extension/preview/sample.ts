@@ -45,6 +45,7 @@ const SETTINGS: ExtensionSettings = {
   capture_enabled: true,
   ask_before_download: true,
   show_media_button: true,
+  private_windows: true,
   ignored_sites: ['ads.example.org', 'intranet.example.com'],
   capture_extensions: ['zip', 'exe', 'iso', 'mp4'],
   min_capture_size: 2 * MB,

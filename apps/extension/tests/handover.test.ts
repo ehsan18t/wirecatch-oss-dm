@@ -4,11 +4,11 @@
  */
 import { MAX_FRAME_LEN, type NewDownload } from '@wirecatch/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CookieContext } from '../src/lib/cookies';
+import type { CookieContext, CookieStore } from '../src/lib/cookies';
 import type { DownloadState } from '../src/lib/capture/handover';
 import type { CachedSettings, InFlightEntry, SettingsCache } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
-import { MENU_PRIVATE_WINDOW } from '../src/lib/hub/notices';
+import { MENU_NOT_WEB } from '../src/lib/hub/notices';
 import type { BackgroundMessage, Notice, PopupRequest } from '../src/lib/messages';
 import { NativeClient } from '../src/lib/native/client';
 import {
@@ -42,7 +42,7 @@ interface Setup {
   notice: MemoryNotice;
   /** Every text the toolbar badge was given, in order. */
   badges: string[];
-  cookieCalls: [string, string | null][];
+  cookieCalls: [string, CookieStore][];
   cookieContexts: CookieContext[];
   started: Promise<void>;
 }
@@ -55,7 +55,7 @@ async function setup(options: Options = {}): Promise<Setup> {
   const inFlight = options.inFlight ?? new MemoryInFlight();
   const notice = options.notice ?? new MemoryNotice();
   const badges: string[] = [];
-  const cookieCalls: [string, string | null][] = [];
+  const cookieCalls: [string, CookieStore][] = [];
   const cookieContexts: CookieContext[] = [];
   const client = new NativeClient({
     transport: app,
@@ -72,8 +72,8 @@ async function setup(options: Options = {}): Promise<Setup> {
     client,
     cache: options.cache ?? memory,
     downloads,
-    cookieHeader: (url, storeId, context) => {
-      cookieCalls.push([url, storeId]);
+    cookieHeader: (url, store, context) => {
+      cookieCalls.push([url, store]);
       cookieContexts.push(context);
       return Promise.resolve(url.includes('example.com') ? 'session=abc' : null);
     },
@@ -111,6 +111,10 @@ function addDownloadCalls(app: FakeApp): NewDownload[] {
 }
 
 let s: Setup;
+
+function privateWindowsOff(app: FakeApp): void {
+  app.settings = { ...app.settings, private_windows: false };
+}
 
 function latestNotice(hub: Hub): Notice | null {
   return hub.snapshot().notices[0] ?? null;
@@ -1167,14 +1171,11 @@ describe('downloads left paused by a restarted background', () => {
     ];
     const release = notice.hold();
     s = await setup({ notice, start: false });
-    await s.hub.onMenuClick(
-      { linkUrl: 'https://example.com/a.zip' },
-      { incognito: true, cookieStoreId: null },
-    );
+    await s.hub.onMenuClick({ linkUrl: 'ftp://example.com/a.zip' }, undefined);
     release();
     await s.started;
     expect(s.hub.snapshot().notices.map((n) => n.message)).toEqual([
-      MENU_PRIVATE_WINDOW,
+      MENU_NOT_WEB,
       'An old notice.',
     ]);
   });
@@ -1465,7 +1466,9 @@ describe('context menu', () => {
       source: 'context_menu',
       queue: 1,
     });
-    expect(s.cookieCalls).toEqual([['https://example.com/file.iso', 'firefox-container-2']]);
+    expect(s.cookieCalls).toEqual([
+      ['https://example.com/file.iso', { id: 'firefox-container-2', private: false }],
+    ]);
     expect(s.cookieContexts).toEqual([{ initiator: 'https://example.com/page', navigation: true }]);
   });
 
@@ -1515,11 +1518,31 @@ describe('context menu', () => {
       { linkUrl: 'https://example.com/a.zip' },
       { incognito: false, cookieStoreId: null },
     );
-    expect(s.cookieCalls).toEqual([['https://example.com/a.zip', null]]);
+    expect(s.cookieCalls).toEqual([['https://example.com/a.zip', { id: null, private: false }]]);
   });
 
-  it('skips private windows', async () => {
+  it("takes a private window's link with that window's cookies (D82)", async () => {
     s = await setup();
+    const result = await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/a.zip' },
+      { incognito: true, cookieStoreId: null },
+    );
+    expect(result).toBe('handed_over');
+    expect(s.cookieCalls).toEqual([['https://example.com/a.zip', { id: null, private: true }]]);
+  });
+
+  it('asks the app before taking a private window while the settings are not known yet', async () => {
+    s = await setup({ start: false, configure: privateWindowsOff });
+    const result = await s.hub.onMenuClick(
+      { linkUrl: 'https://example.com/a.zip' },
+      { incognito: true, cookieStoreId: null },
+    );
+    expect(result).toBe('private_window');
+    expect(s.app.calls('add_download')).toHaveLength(0);
+  });
+
+  it('leaves private windows to the browser when they are turned off', async () => {
+    s = await setup({ configure: privateWindowsOff });
     const result = await s.hub.onMenuClick(
       { linkUrl: 'https://example.com/a.zip' },
       { incognito: true, cookieStoreId: null },
@@ -1531,7 +1554,7 @@ describe('context menu', () => {
   });
 
   it('lets the browser download it without site access, after the earlier checks', async () => {
-    s = await setup({ siteAccess: false });
+    s = await setup({ siteAccess: false, configure: privateWindowsOff });
     expect(
       await s.hub.onMenuClick(
         { linkUrl: 'https://example.com/a.zip' },

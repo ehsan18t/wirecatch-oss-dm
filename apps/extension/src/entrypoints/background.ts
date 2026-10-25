@@ -3,7 +3,7 @@ import { defineBackground } from 'wxt/utils/define-background';
 import {
   browserDownloads,
   cookieHeaderFor,
-  cookieStoreOf,
+  cookieStoreIdOf,
   hasSiteAccess,
   helloFromExtension,
   inFlightStore,
@@ -55,7 +55,7 @@ function registerContextMenu(hub: Hub): void {
     const menuTab: MenuTab | undefined =
       tab === undefined
         ? undefined
-        : { incognito: tab.incognito, cookieStoreId: cookieStoreOf(tab) };
+        : { incognito: tab.incognito, cookieStoreId: cookieStoreIdOf(tab) };
     hub
       .onMenuClick(info, menuTab)
       .catch(fallback('hub', 'The context menu download failed', undefined, 'error'));
@@ -108,12 +108,14 @@ export default defineBackground(() => {
     ignoredSites: () => hub.knownSettings()?.ignored_sites ?? [],
     videoSites: () => hub.knownSettings()?.video_sites ?? [],
     mediaButtonOn: () => hub.mediaButtonOn(),
+    privateWindowsOn: () => hub.privateWindowsOn(),
     liveTabs,
   });
   // Started before any listener can fire, so every response waits for the restored lists.
   const restored = media.start();
   const watcher = new MediaWatcher(registry, {
     isPrivateTab: async (tabId) => (await browser.tabs.get(tabId)).incognito,
+    privateWindowsOn: () => hub.privateWindowsOn(),
     ready: restored,
   });
 
@@ -122,6 +124,7 @@ export default defineBackground(() => {
       focusedWebTab({
         lastFocusedWindow: () => browser.windows.getLastFocused(),
         activeTab: async (windowId) => (await browser.tabs.query({ active: true, windowId }))[0],
+        privateWindowsOn: () => hub.privateWindowsOn(),
       }),
     mount: async (tabId) => {
       const answer: unknown = await browser.tabs.sendMessage(

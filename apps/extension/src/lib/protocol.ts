@@ -18,5 +18,6 @@ export function patchOf(changes: SettingsChange): ExtensionSettingsPatch {
     capture_extensions: changes.capture_extensions ?? null,
     min_capture_size: changes.min_capture_size ?? null,
     default_queue: changes.default_queue ?? null,
+    private_windows: changes.private_windows ?? null,
   };
 }

@@ -4,7 +4,7 @@
  */
 import type { NewDownload } from '@wirecatch/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { CookieContext } from '../src/lib/cookies';
+import type { CookieContext, CookieStore } from '../src/lib/cookies';
 import type { CachedSettings } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
 import { MEDIA_UNREACHABLE } from '../src/lib/hub/notices';
@@ -197,7 +197,7 @@ interface Harness {
   registry: MediaRegistry;
   center: MediaCenter;
   tabs: Map<number, TabInfo>;
-  cookieCalls: [string, string | null][];
+  cookieCalls: [string, CookieStore][];
   cookieContexts: CookieContext[];
   saved: SavedMedia[];
   buttonSaves: boolean[];
@@ -275,7 +275,7 @@ async function setup(
   ]);
   const saved: SavedMedia[] = [];
   const buttonSaves: boolean[] = [];
-  const cookieCalls: [string, string | null][] = [];
+  const cookieCalls: [string, CookieStore][] = [];
   const cookieContexts: CookieContext[] = [];
   const center: MediaCenter = new MediaCenter({
     registry,
@@ -292,6 +292,7 @@ async function setup(
     ignoredSites: () => hub.knownSettings()?.ignored_sites ?? [],
     videoSites: () => hub.knownSettings()?.video_sites ?? [],
     mediaButtonOn: () => hub.mediaButtonOn(),
+    privateWindowsOn: () => hub.privateWindowsOn(),
   });
   const hub: Hub = new Hub({
     client,
@@ -407,9 +408,6 @@ describe('media button messages', () => {
     expect(await check(4)).toEqual({ show: true });
     // An element address the browser never loaded as media does not count.
     expect(await check(3, 'https://e.com/a.mp4')).toEqual({ show: false });
-    // Never in private windows, even with a playable address.
-    registry.add(2, HLS);
-    expect(await check(2, 'https://e.com/a.mp4')).toEqual({ show: false });
     expect(
       await center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false }, {}),
     ).toEqual({
@@ -442,7 +440,7 @@ describe('media button messages', () => {
       queue: 1,
       media: { kind: 'hls', title: 'A nice video' },
     });
-    expect(cookieCalls).toEqual([[HLS.url, null]]);
+    expect(cookieCalls).toEqual([[HLS.url, { id: null, private: false }]]);
     // Loaded by the player frame inside the tab's page, not a navigation.
     expect(cookieContexts).toEqual([
       {
@@ -495,7 +493,7 @@ describe('media button messages', () => {
     expect(cookieCalls).toEqual([]);
     // From the page's own site, the cookies are read when sent, so they are the freshest.
     expect((await download({ ...HLS, sentCookies: 'sid=old' })).cookies).toBe('session=1');
-    expect(cookieCalls).toEqual([[HLS.url, null]]);
+    expect(cookieCalls).toEqual([[HLS.url, { id: null, private: false }]]);
   });
 
   it('sends the page itself on a well-known video site, for the media add-on', async () => {
@@ -625,8 +623,29 @@ describe('media button messages', () => {
     ).toEqual({ ok: true, message: 'Sent to Wirecatch. Confirm it there to start.' });
   });
 
-  it('refuses private windows and missing site access without sending anything', async () => {
-    const { app, center, registry, tabs } = await setup();
+  it("takes a private window's media with that window's cookie store, unless private windows are off (D82)", async () => {
+    const { app, center, registry, tabs, cookieCalls } = await setup();
+    const check = () =>
+      center.handleContentMessage({ type: MEDIA_CHECK, src: null, audio: false }, fromTab(2, tabs));
+    registry.add(2, HLS);
+    expect(await check()).toEqual({ show: true });
+    expect((await center.view(2)).page).toBe('web');
+    expect((await center.downloadBest(2)).ok).toBe(true);
+    expect(cookieCalls).toEqual([[HLS.url, { id: 'firefox-private', private: true }]]);
+
+    app.changeSettings({ private_windows: false });
+    await flush();
+    expect(await check()).toEqual({ show: false });
+    expect(await center.view(2)).toEqual({ tabId: 2, page: 'private', entries: [] });
+    expect(await center.downloadBest(2)).toEqual({ ok: false, message: PRIVATE_WINDOW });
+    expect(await center.download(2, 'anything')).toEqual({ ok: false, message: PRIVATE_WINDOW });
+    expect(cookieCalls).toHaveLength(1);
+  });
+
+  it('refuses private windows while they are turned off, and missing site access, without sending anything', async () => {
+    const { app, center, registry, tabs } = await setup({
+      configure: (fake) => (fake.settings = { ...fake.settings, private_windows: false }),
+    });
     registry.add(2, HLS);
     expect(
       await center.handleContentMessage(
@@ -872,14 +891,16 @@ describe('popup media list', () => {
         size: null,
       },
     ]);
-    expect(await center.view(2)).toEqual({ tabId: 2, page: 'private', entries: [] });
     expect(await center.view(3)).toEqual({ tabId: 3, page: 'other', entries: [] });
     expect(await center.view(99)).toEqual({ tabId: 99, page: 'other', entries: [] });
   });
 
   it("lists only the page on YouTube, not YouTube's own interface sounds", async () => {
     const { center, registry } = await setup();
-    const watcher = new MediaWatcher(registry, { isPrivateTab: () => Promise.resolve(false) });
+    const watcher = new MediaWatcher(registry, {
+      isPrivateTab: () => Promise.resolve(false),
+      privateWindowsOn: () => Promise.resolve(true),
+    });
     const sounds: [string, number][] = [
       ['no_input.mp3', 6034],
       ['failure.mp3', 5888],
@@ -927,7 +948,7 @@ describe('popup media list', () => {
     expect(views.map((v) => v.entries.length)).toEqual([0, 1, 0]);
   });
 
-  it('sends a picked item, and explains when it is gone or the tab is private', async () => {
+  it('sends a picked item, and explains when it is gone or the tab is closed', async () => {
     const { app, center, registry } = await setup();
     registry.add(1, FILE, 2, 'https://ads.example.net/slot');
     expect(await center.download(1, `direct:${FILE.url}`)).toEqual({
@@ -943,7 +964,6 @@ describe('popup media list', () => {
       media: { kind: 'direct', title: 'A nice video' },
     });
     expect((await center.download(1, 'direct:https://gone.example.com/x.mp4')).ok).toBe(false);
-    expect(await center.download(2, 'anything')).toEqual({ ok: false, message: PRIVATE_WINDOW });
     expect(await center.download(99, 'anything')).toEqual({
       ok: false,
       message: 'This tab is closed.',
@@ -1060,6 +1080,7 @@ describe('background restart', () => {
     let release: (value: unknown) => void = () => undefined;
     const registry = new MediaRegistry();
     const center = new MediaCenter({
+      privateWindowsOn: () => Promise.resolve(true),
       registry,
       getTab: () => Promise.resolve(null),
       send: () => Promise.resolve({ ok: true, message: '' }),
@@ -1071,6 +1092,7 @@ describe('background restart', () => {
     const restored = center.start();
     const watcher = new MediaWatcher(registry, {
       isPrivateTab: () => Promise.resolve(false),
+      privateWindowsOn: () => Promise.resolve(true),
       ready: restored,
     });
     // Tab 1 moves on to page B while the saved lists (page A) are still loading.
@@ -1099,6 +1121,7 @@ describe('background restart', () => {
     let release: (value: unknown) => void = () => undefined;
     const registry = new MediaRegistry();
     const center = new MediaCenter({
+      privateWindowsOn: () => Promise.resolve(true),
       registry,
       getTab: () => Promise.resolve(null),
       send: () => Promise.resolve({ ok: true, message: '' }),
@@ -1119,6 +1142,7 @@ describe('background restart', () => {
   it('drops the saved lists of tabs that were closed meanwhile', async () => {
     const registry = new MediaRegistry();
     const center = new MediaCenter({
+      privateWindowsOn: () => Promise.resolve(true),
       registry,
       getTab: () => Promise.resolve(null),
       send: () => Promise.resolve({ ok: true, message: '' }),
@@ -1149,6 +1173,7 @@ describe('background restart', () => {
     const saved = JSON.parse(JSON.stringify(before.save())) as SavedMedia;
     const registry = new MediaRegistry();
     const center = new MediaCenter({
+      privateWindowsOn: () => Promise.resolve(true),
       registry,
       getTab: () => Promise.resolve(null),
       send: () => Promise.resolve({ ok: true, message: '' }),

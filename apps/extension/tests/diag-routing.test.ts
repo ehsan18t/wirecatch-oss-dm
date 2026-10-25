@@ -9,7 +9,15 @@ import { MediaCenter } from '../src/lib/media/center';
 import { MediaRegistry } from '../src/lib/media/registry';
 import { NativeClient } from '../src/lib/native/client';
 import { parseUrl } from '../src/lib/url';
-import { DEFAULT_SETTINGS, FakeApp, FakeDownloads, QUEUES, flush, stubGetAll } from './fakes';
+import {
+  DEFAULT_SETTINGS,
+  FakeApp,
+  FakeDownloads,
+  NORMAL_STORE,
+  QUEUES,
+  flush,
+  stubGetAll,
+} from './fakes';
 
 /** The entries made while `run` runs. */
 async function logged(run: () => Promise<void>): Promise<DiagEntry[]> {
@@ -84,6 +92,7 @@ describe('routed errors', () => {
 
   it('logs media lists and tabs that cannot be read, and redacts the address in the error', async () => {
     const center = new MediaCenter({
+      privateWindowsOn: () => Promise.resolve(true),
       registry: new MediaRegistry(),
       getTab: () => Promise.resolve(null),
       send: () => Promise.resolve({ ok: true, message: '' }),
@@ -115,7 +124,7 @@ describe('cookieHeaderFor', () => {
       return [];
     });
     const entries = await logged(async () => {
-      expect(await cookieHeaderFor('https://a.example/f', null, NAVIGATION)).toBeNull();
+      expect(await cookieHeaderFor('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBeNull();
     });
     expect(entries).toEqual([]);
   });
@@ -127,7 +136,7 @@ describe('cookieHeaderFor', () => {
       return [SID];
     });
     const entries = await logged(async () => {
-      expect(await cookieHeaderFor('https://a.example/f', null, NAVIGATION)).toBe('sid=1');
+      expect(await cookieHeaderFor('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBe('sid=1');
     });
     expect(entries).toEqual([]);
   });
@@ -138,7 +147,7 @@ describe('cookieHeaderFor', () => {
       return [{ ...SID, partitionKey: { topLevelSite: 'https://a.example' } }];
     });
     const entries = await logged(async () => {
-      expect(await cookieHeaderFor('https://a.example/f', null, NAVIGATION)).toBe('sid=1');
+      expect(await cookieHeaderFor('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBe('sid=1');
     });
     expect(entries).toEqual([
       expect.objectContaining({ level: 'warn', scope: 'capture', detail: 'Error: store gone' }),
@@ -150,7 +159,7 @@ describe('cookieHeaderFor', () => {
       throw new Error('no cookies here');
     });
     const entries = await logged(async () => {
-      expect(await cookieHeaderFor('https://a.example/f', null, NAVIGATION)).toBeNull();
+      expect(await cookieHeaderFor('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBeNull();
     });
     expect(entries).toEqual([
       expect.objectContaining({

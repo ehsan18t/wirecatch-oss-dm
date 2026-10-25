@@ -591,6 +591,7 @@ export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
   default_queue: DEFAULT_QUEUE_ID,
   ignored_sites: [],
   min_capture_size: 0,
+  private_windows: true,
   show_media_button: true,
   video_sites: [],
 };

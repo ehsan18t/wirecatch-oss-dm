@@ -1,7 +1,7 @@
 <script lang="ts">
   // Browser: what the extension catches and how a caught download is asked about. The extension's
   // popup changes these same settings.
-  import { normalizeSite, type QueueId } from '@wirecatch/protocol';
+  import { normalizeSite, takesPrivateWindows, type QueueId } from '@wirecatch/protocol';
   import { splitKbOrMb, toBytes } from '@wirecatch/units';
   import type { Snippet } from 'svelte';
   import {
@@ -54,6 +54,7 @@
     ask_before_download: askBeforeDownload,
     show_progress_windows: showProgressWindows,
     show_media_button: showMediaButton,
+    private_windows: privateWindows,
     ignored_sites: ignoredSites,
     capture_extensions: captureExtensions,
     min_capture_size: minCaptureSize,
@@ -102,6 +103,15 @@
     label={def.label}
     checked={s.extension.show_media_button}
     onchange={(v: boolean) => save((d) => void (d.extension.show_media_button = v))}
+  />
+{/snippet}
+
+{#snippet privateWindows({ def, s, control }: Row)}
+  <SettingToggle
+    {control}
+    label={def.label}
+    checked={takesPrivateWindows(s.extension)}
+    onchange={(v: boolean) => save((d) => void (d.extension.private_windows = v))}
   />
 {/snippet}
 

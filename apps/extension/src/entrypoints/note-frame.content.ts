@@ -18,7 +18,6 @@ export default defineContentScript({
   runAt: 'document_idle',
   noScriptStartedPostMessage: true,
   main(ctx) {
-    if (browser.extension.inIncognitoContext) return;
     const frame = new NotesFrame({
       container: () => document.fullscreenElement ?? document.documentElement,
       notesUrl: (token) => `${browser.runtime.getURL(NOTES_PAGE)}#${token}`,

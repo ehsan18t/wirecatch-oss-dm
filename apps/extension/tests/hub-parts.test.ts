@@ -87,29 +87,32 @@ describe('planMenuClick', () => {
   const web = 'https://example.com/a.zip';
 
   it('fails without a link or source, before anything else', () => {
-    expect(planMenuClick({}, { incognito: true, cookieStoreId: null })).toEqual({ kind: 'failed' });
-    expect(planMenuClick({ linkUrl: '' }, undefined)).toEqual({ kind: 'failed' });
+    expect(planMenuClick({}, { incognito: true, cookieStoreId: null }, true)).toEqual({
+      kind: 'failed',
+    });
+    expect(planMenuClick({ linkUrl: '' }, undefined, true)).toEqual({ kind: 'failed' });
   });
 
-  it('keeps private windows out, before looking at the link', () => {
-    expect(
-      planMenuClick(
-        { linkUrl: 'blob:https://example.com/1' },
-        { incognito: true, cookieStoreId: null },
-      ),
-    ).toEqual({
+  it('keeps private windows out while they are turned off, before looking at the link', () => {
+    const tab = { incognito: true, cookieStoreId: null };
+    expect(planMenuClick({ linkUrl: 'blob:https://example.com/1' }, tab, false)).toEqual({
       kind: 'private_window',
+    });
+    expect(planMenuClick({ linkUrl: web }, tab, true)).toEqual({
+      kind: 'wirecatch',
+      url: web,
+      name: 'a.zip',
     });
   });
 
   it('lets the browser download links that are not on the web', () => {
-    const plan = planMenuClick({ linkUrl: 'ftp://example.com/setup.exe' }, undefined);
+    const plan = planMenuClick({ linkUrl: 'ftp://example.com/setup.exe' }, undefined, true);
     expect(plan).toMatchObject({ kind: 'browser', url: 'ftp://example.com/setup.exe' });
     expect(plan.kind === 'browser' && plan.message).toContain('only take web links');
   });
 
   it('offers a program to Wirecatch like any other web link (D60)', () => {
-    expect(planMenuClick({ linkUrl: 'https://example.com/setup.exe' }, undefined)).toEqual({
+    expect(planMenuClick({ linkUrl: 'https://example.com/setup.exe' }, undefined, true)).toEqual({
       kind: 'wirecatch',
       url: 'https://example.com/setup.exe',
       name: 'setup.exe',
@@ -117,11 +120,15 @@ describe('planMenuClick', () => {
   });
 
   it('offers a web link to Wirecatch, by its file name, the link before the source', () => {
-    expect(planMenuClick({ linkUrl: web, srcUrl: 'https://example.com/b.mp4' }, undefined)).toEqual(
-      { kind: 'wirecatch', url: web, name: 'a.zip' },
-    );
     expect(
-      planMenuClick({ srcUrl: 'https://example.com/' }, { incognito: false, cookieStoreId: null }),
+      planMenuClick({ linkUrl: web, srcUrl: 'https://example.com/b.mp4' }, undefined, true),
+    ).toEqual({ kind: 'wirecatch', url: web, name: 'a.zip' });
+    expect(
+      planMenuClick(
+        { srcUrl: 'https://example.com/' },
+        { incognito: false, cookieStoreId: null },
+        true,
+      ),
     ).toEqual({
       kind: 'wirecatch',
       url: 'https://example.com/',

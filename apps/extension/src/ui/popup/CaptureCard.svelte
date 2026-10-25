@@ -1,5 +1,5 @@
 <script lang="ts">
-  // What people come to the popup for first: whether downloads go to Wirecatch at all, whether a window asks about each file and each video first (they decide what the next click on a download does, so D4 keeps them in the popup, and turning one back on needs no trip to the app, D61), and whether this site's downloads go.
+  // What people come to the popup for first: whether downloads go to Wirecatch at all, whether a window asks about each file and each video first (they decide what the next click on a download does, so D4 keeps them in the popup, and turning one back on needs no trip to the app, D61), whether private windows' downloads go (D82), and whether this site's downloads go.
   import type { BrowserControls, ExtensionSettings } from '@wirecatch/protocol';
   import { Card, SettingSwitch } from '@wirecatch/ui';
   import type { PopupModel } from '../../lib/popup/model.svelte';
@@ -58,6 +58,17 @@
       disabled={!editable}
       onchange={(checked: boolean) =>
         void model.updateControls({ media: { ask_each_time: checked } })}
+    />
+  {/if}
+  {#if settings.private_windows !== undefined}
+    <!-- An app from before D82 sends no value, and would drop the change. -->
+    <SettingSwitch
+      id="private-windows"
+      label={SETTINGS.privateWindows.label}
+      description={SETTINGS.privateWindows.description}
+      checked={settings.private_windows}
+      disabled={!editable}
+      onchange={(checked: boolean) => void model.update({ private_windows: checked })}
     />
   {/if}
   <SettingSwitch

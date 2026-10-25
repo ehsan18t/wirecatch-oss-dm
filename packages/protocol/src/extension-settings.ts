@@ -105,6 +105,7 @@ export function applyExtensionSettingsPatch(
   settings: ExtensionSettings,
   patch: ExtensionSettingsPatch,
 ): ExtensionSettings {
+  const privateWindows = patch.private_windows ?? settings.private_windows;
   return {
     capture_enabled: patch.capture_enabled ?? settings.capture_enabled,
     ask_before_download: patch.ask_before_download ?? settings.ask_before_download,
@@ -116,7 +117,14 @@ export function applyExtensionSettingsPatch(
     video_sites: patch.video_sites
       ? normalizedSites(patch.video_sites)
       : [...(settings.video_sites ?? [])],
+    // Left out as an app from before D82 leaves it out, so the popup does not offer a switch that app would drop.
+    ...(privateWindows === undefined ? {} : { private_windows: privateWindows }),
   };
+}
+
+/** `ExtensionSettings::private_windows` (D82): an app from before it sends none, which means on. */
+export function takesPrivateWindows(settings: ExtensionSettings): boolean {
+  return settings.private_windows ?? true;
 }
 
 /** `defaults` with `patch` applied: a field left out keeps its value; `audio_kbps: null` goes back to the format's usual quality. */

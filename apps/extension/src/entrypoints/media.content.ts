@@ -27,8 +27,6 @@ export default defineContentScript({
   // Do not announce the script to the page with `window.postMessage`; some pages misread such messages.
   noScriptStartedPostMessage: true,
   main(ctx) {
-    // Like downloads, media from private windows stays out of Wirecatch.
-    if (browser.extension.inIncognitoContext) return;
     // Every question carries the frame's address as it is now: a single-page site changes it without loading a new page, and the browser keeps reporting the address this script started on.
     const ask = (request: ContentRequest): Promise<unknown> => browser.runtime.sendMessage(request);
     const button = new MediaButton({

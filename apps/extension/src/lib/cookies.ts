@@ -39,6 +39,20 @@ export interface CookieContext {
   navigation: boolean;
 }
 
+/** The cookie store a request belongs to: Firefox names it (a container, or its private store); Chromium names none, so `private` says which. */
+export interface CookieStore {
+  id: string | null;
+  private: boolean;
+}
+
+/** The store of a tab or download, from what the browser says about it. */
+export function cookieStoreOf(source: {
+  incognito?: boolean;
+  cookieStoreId?: string | null;
+}): CookieStore {
+  return { id: source.cookieStoreId ?? null, private: source.incognito === true };
+}
+
 /** What to pass to `cookies.getAll`. `firstPartyDomain` is Firefox only (first-party isolation). */
 export interface CookieQuery {
   url: string;
