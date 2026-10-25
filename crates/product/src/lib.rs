@@ -10,6 +10,9 @@ pub const PRODUCT_NAME: &str = "Wirecatch";
 /// The release version of the app and the extension.
 pub const PRODUCT_VERSION: &str = "0.1.0";
 
+/// The repository whose releases hold the media add-on's pinned files (D80).
+pub const ADDON_FILES_URL: &str = "https://github.com/ehsan18t/wirecatch-addons";
+
 /// The desktop app executable, without `.exe`.
 pub const APP_EXECUTABLE: &str = "wirecatch-app";
 
