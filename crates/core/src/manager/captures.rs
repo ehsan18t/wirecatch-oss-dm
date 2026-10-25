@@ -29,7 +29,6 @@ use crate::error::{CoreError, Result};
 use crate::headers::Origin;
 use crate::media::StoredMedia;
 use crate::settings;
-use crate::user_error;
 use crate::{headers, naming};
 use wirecatch_sites::local_network::{self, ChosenBy};
 
@@ -87,7 +86,7 @@ impl Manager {
         // (waiting for the person, or queued), the browser's copy is gone.
         if local_network::refuses(chosen_by, &url).await {
             return Err(CoreError::NotStarted(
-                user_error::CAPTURE_TO_OWN_NETWORK.into(),
+                wirecatch_messages::CAPTURE_TO_OWN_NETWORK.into(),
             ));
         }
         if capture

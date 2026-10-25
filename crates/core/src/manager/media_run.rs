@@ -31,6 +31,7 @@ use super::policy::RunPolicy;
 use super::run::{MediaDone, RunEnd};
 use super::state::{Gauge, State};
 use crate::clock::Clock;
+use crate::headers;
 use crate::headers::Origin;
 use crate::media::MediaTools;
 use crate::media::convert;
@@ -42,7 +43,6 @@ use crate::media::output::{
 };
 use crate::media::ytdlp::{self, Fetched, Format, FormatId, Transport};
 use crate::media::{self, Content, MediaJob, MediaProgress, Pick, safe_ext};
-use crate::{headers, user_error};
 use wirecatch_addons::Check;
 use wirecatch_engine::units::MIB;
 use wirecatch_sites::local_network::{self, ChosenBy};
@@ -89,7 +89,7 @@ impl Manager {
         let url = match Url::parse(&entry.row.url) {
             Ok(url) => url,
             Err(e) => {
-                let error = user_error::describe(
+                let error = wirecatch_messages::describe(
                     &EngineError::InvalidUrl(e.to_string()),
                     Path::new(""),
                     false,
@@ -99,7 +99,7 @@ impl Manager {
             }
         };
         if local_network::refuses_address(entry.chosen_by, &url) {
-            let error = user_error::private_network(entry.chosen_by);
+            let error = wirecatch_messages::private_network(entry.chosen_by);
             self.fail_to_start(state, id, error);
             return;
         }
@@ -969,9 +969,9 @@ async fn fetch_part(
                 // A format address that was refused or has expired: a
                 // fresh one from the page usually works.
                 if let EngineError::PrivateNetwork { .. } = e {
-                    return Err(user_error::private_network(job.chosen_by).into());
+                    return Err(wirecatch_messages::private_network(job.chosen_by).into());
                 }
-                let error = user_error::describe(&e, folder, true);
+                let error = wirecatch_messages::describe(&e, folder, true);
                 if error.fix == Some(FixAction::RefreshLink) {
                     let status = match e {
                         EngineError::HttpStatus { status, .. } => Some(status),
@@ -1222,7 +1222,7 @@ fn format_rule(chosen_by: ChosenBy, found: &[IpAddr]) -> Result<PrivateNetwork, 
         });
     }
     if found.iter().copied().any(local_network::is_local) {
-        return Err(user_error::private_network(chosen_by));
+        return Err(wirecatch_messages::private_network(chosen_by));
     }
     Ok(PrivateNetwork::Block)
 }
@@ -1249,7 +1249,7 @@ fn refresh(message: &str) -> UserError {
 
 fn disk(error: &std::io::Error, near: &Path) -> UserError {
     let folder = near.parent().unwrap_or(near);
-    user_error::disk(error, folder)
+    wirecatch_messages::disk(error, folder)
 }
 
 #[cfg(test)]

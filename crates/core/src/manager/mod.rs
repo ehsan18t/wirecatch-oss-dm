@@ -52,7 +52,6 @@ use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::folders::KnownFolders;
 use crate::naming;
-use crate::user_error;
 pub use downloads::LinkFrom;
 use state::{Entry, State, Stop};
 pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
@@ -311,7 +310,7 @@ impl Manager {
         let on_failure = Box::new(move |reason: String| {
             publish(
                 &failures,
-                UiEvent::StorageFailed(user_error::storage_failed(&reason)),
+                UiEvent::StorageFailed(wirecatch_messages::storage_failed(&reason)),
             );
         });
         let dir = config.data_dir.clone();

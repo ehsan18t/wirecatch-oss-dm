@@ -55,6 +55,7 @@ cargo run --release -p wirecatch-engine --example bench_local
 | `crates/addons` | `wirecatch-addons`: the media add-on's releases, checks and unpacking (D20, D21). |
 | `crates/records` | `wirecatch-records`: the saved types of a download, a queue's batch and the proxy passwords. |
 | `crates/store` | `wirecatch-store`: the download list in SQLite, its migrations and repairs (D17). |
+| `crates/messages` | `wirecatch-messages`: the messages for a failed download and the fix each offers. |
 | `crates/files` | `wirecatch-files`: writing a file whole, discarding, owner-only access and the Mark of the Web. |
 | `crates/sites` | `wirecatch-sites`: the Public Suffix List and the local network rules (D39, D44). |
 | `crates/server` | `wirecatch-server`: the local protocol server (D14) that answers the extension and the CLI from the manager. |

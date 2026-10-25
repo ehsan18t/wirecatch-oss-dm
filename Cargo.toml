@@ -18,6 +18,7 @@ wirecatch-queues = { path = "crates/queues", version = "0.1.0" }
 wirecatch-core = { path = "crates/core", version = "0.1.0" }
 wirecatch-addons = { path = "crates/addons", version = "0.1.0" }
 wirecatch-files = { path = "crates/files", version = "0.1.0" }
+wirecatch-messages = { path = "crates/messages", version = "0.1.0" }
 wirecatch-records = { path = "crates/records", version = "0.1.0" }
 wirecatch-store = { path = "crates/store", version = "0.1.0" }
 wirecatch-server = { path = "crates/server", version = "0.1.0" }

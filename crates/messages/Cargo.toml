@@ -1,0 +1,18 @@
+[package]
+name = "wirecatch-messages"
+description = "What Wirecatch tells a person when a download fails, with the fix to offer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+wirecatch-engine.workspace = true
+wirecatch-protocol.workspace = true
+wirecatch-sites.workspace = true
+
+[lints]
+workspace = true
