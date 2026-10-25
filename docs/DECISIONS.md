@@ -641,6 +641,13 @@ Decided with the maintainer on 2026-10-25, before D72 is built on it. It changes
 2. One place says what a request may use of the network (`manager/policy.rs`): `run_policy` gives a download's connections, the speed limits it shares (the app's, then its queue's) and its proxy, by its queue; its run takes all three, and reading its stream or video page first takes the connections and the proxy, unlimited in speed as before; `app_policy` gives the same for the app's own downloads, such as the media add-on's, and `State::app_proxy` the proxy of the app's own requests (add-on and suffix-list fetches, the updater). D72 makes a queue's values its own or the app's there, and D73 its proxy, without touching a run.
 3. One function picks the queue a new download joins (`State::queue_for`, `manager/placement.rs`): the queue the person picked, which must exist; else for a browser download the queue the extension named or the browser's queue, a queue deleted since the extension last synced giving way to the default queue; else the default queue. Every way a download is added asks it; D72's claims go into it.
 
+### D76. No lint asks for doc comments
+
+Decided with the maintainer on 2026-10-25. It replaces the rule that every public item has a doc comment, in every crate, the published engine included.
+
+1. `missing_docs`, `clippy::missing_errors_doc` and `clippy::missing_panics_doc` are off for the whole workspace. They made a comment on every public field, variant and function, most of them a name read back ("The file's format version." on `found`), each re-read on every pass over the file.
+2. A comment, doc comments included, is written only for what the code cannot say (ENGINEERING section 8). A constant gets a name; a comment says why it has its value only when the name cannot. Comments that only restate a name are deleted when the code around them is edited.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

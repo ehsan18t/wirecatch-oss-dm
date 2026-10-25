@@ -13,7 +13,6 @@
 
 #![expect(
     clippy::expect_used,
-    clippy::missing_panics_doc,
     reason = "test support: a panic here is the failing test's report, as clippy.toml already allows inside tests, and the whole crate is only ever used by tests"
 )]
 

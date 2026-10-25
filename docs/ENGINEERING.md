@@ -29,7 +29,7 @@ Generated files are never edited by hand. Change the source and regenerate.
 
 ## 2. No magic values
 
-Every literal that encodes a decision gets a name and a doc comment saying why it has that value: timeouts, retry counts, sizes, limits, buffer lengths, thresholds, colors, spacing, z-indexes, durations, file names, environment variable names, CLI flags passed to other programs.
+Every literal that encodes a decision gets a name that says what it is, and a comment only when the name cannot say why it has that value (section 8): timeouts, retry counts, sizes, limits, buffer lengths, thresholds, colors, spacing, z-indexes, durations, file names, environment variable names, CLI flags passed to other programs.
 
 - A value used by one module is a `const` at the top of that module.
 - A value two packages need lives in its one home (section 1); it is never copied.
@@ -102,7 +102,7 @@ Enforced by: gate (`undocumented_unsafe_blocks`); review for the wrapper modules
 
 - A module has one responsibility. A file past about 500 lines or a function past about 80 is a signal to split; clippy's `too_many_lines` enforces the function limit.
 - Lower layers never import from higher ones (for example, the engine's HTTP layer never reaches into the download orchestrator).
-- Every public item has a doc comment. Gate (`missing_docs`).
+- A doc comment is written where it says what the signature cannot; no item gets one to satisfy a lint (D76).
 
 ## 5. TypeScript and Svelte
 
@@ -143,7 +143,7 @@ Everything a person reads: UI copy, CLI output, errors, docs, comments and commi
 - Plain language. An error says what happened and how to fix it.
 - No em dashes. Use a comma, colon, parentheses or a new sentence. Gate (`text`).
 - Never hard-wrap a paragraph. One paragraph is one line.
-- A code comment is only for what the code cannot say: a critical path where a change could go wrong, a decision or invariant that is not obvious, a `SAFETY:` proof. Never restate the code, and never narrate history ("now", "no longer", "used to", what a change did): that belongs in the commit message. Review; the existing comments are cleaned up in [AUDIT](AUDIT.md) W15.
+- A comment, doc comments included, is only for what the code cannot say: behaviour of the platform or a dependency the code cannot show, a deliberate choice whose obvious alternative brings back a defect, the decision or invariant the code holds up, code that must not be simplified, a `SAFETY:` proof. One line by default, three at most. Never restate the code or what a name already says, and never narrate history ("now", "no longer", "used to", what a change did): that belongs in the commit message. Review; the existing comments are cleaned up in [AUDIT](AUDIT.md) W15.
 
 ## 9. Commits
 
