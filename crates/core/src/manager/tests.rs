@@ -588,8 +588,6 @@ async fn every_way_a_link_arrives_runs_under_its_own_rule() {
     manager.shutdown().await;
 }
 
-/// A download runs with the app's connections and proxy, under the app's speed limit and its
-/// queue's; one whose queue is gone keeps the app's limit alone, as the app's own downloads do.
 #[tokio::test]
 async fn a_download_runs_under_the_apps_limits_and_its_queues() {
     const CONNECTIONS: u8 = 3;

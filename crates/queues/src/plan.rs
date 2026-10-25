@@ -1,64 +1,41 @@
-//! Which downloads to start and stop so every limit holds. A pure function of a
-//! snapshot, so the rules are tested without running anything.
-
 use std::collections::HashMap;
 
 use wirecatch_protocol::{DownloadId, QueueId};
 
-/// A queue as the planner sees it.
 #[derive(Debug, Clone, Copy)]
 pub struct QueueView {
-    /// The queue.
     pub id: QueueId,
-    /// Most of its downloads that may run at once.
     pub max_concurrent: u32,
-    /// Whether its schedule lets it run now.
     pub open: bool,
 }
 
-/// What a download is doing, as far as limits are concerned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Activity {
-    /// Waiting for a slot.
     Waiting,
-    /// Running.
     Running,
-    /// Told to stop but not finished yet; it still holds its slot.
+    /// Not finished stopping; it still holds its slot.
     Stopping,
 }
 
-/// A download that is waiting or holds a slot.
 #[derive(Debug, Clone, Copy)]
 pub struct DownloadView {
-    /// The download.
     pub id: DownloadId,
-    /// Its queue.
     pub queue: QueueId,
-    /// Its place in its queue; lower runs first.
+    /// Lower runs first.
     pub position: i64,
-    /// Goes before other waiting downloads (it was running before a restart).
+    /// Was running before a restart: goes before other waiting downloads.
     pub first: bool,
-    /// What it is doing.
     pub activity: Activity,
 }
 
-/// The changes needed to honour every limit.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Plan {
-    /// Waiting downloads to start.
     pub start: Vec<DownloadId>,
-    /// Running downloads to send back to waiting.
     pub stop: Vec<DownloadId>,
 }
 
-/// Plans starts and stops.
-///
-/// A closed queue gives up its running downloads. A queue over its limit, and then
-/// all queues together over the global limit, give up the ones furthest back in
-/// line. Free slots are then filled in turn across the open queues (in sidebar
-/// order), so one long queue cannot starve the others. A download that is still
-/// stopping keeps its slot until it has stopped, so a limit is never exceeded even
-/// briefly.
+/// Stops come from the back of each line; free slots fill in turn across open queues, so one
+/// long queue cannot starve the others; a stopping download keeps its slot until it stops.
 #[must_use]
 pub fn plan(queues: &[QueueView], downloads: &[DownloadView], global_max: u32) -> Plan {
     let mut out = Plan::default();

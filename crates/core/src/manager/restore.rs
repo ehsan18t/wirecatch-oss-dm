@@ -198,7 +198,6 @@ fn restore_entry(
     (entry, fixed)
 }
 
-/// The state of a first start, for tests that need one.
 #[cfg(test)]
 pub(super) fn first_start() -> State {
     let surroundings = Surroundings {

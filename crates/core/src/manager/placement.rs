@@ -1,37 +1,26 @@
-//! Which queue a new download joins; every way a download is added asks here.
-
 use wirecatch_protocol::QueueId;
 
 use super::state::State;
 use crate::error::Result;
 
-/// Who names a new download's queue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum QueueRequest {
-    /// The person picked it in the app.
     Picked(QueueId),
-    /// Nobody did, for a download added in the app.
+    /// Added in the app with no queue picked.
     App,
-    /// A download from the browser, with the queue the extension named, if any.
+    /// With the queue the extension named, if any.
     Browser(Option<QueueId>),
 }
 
 impl QueueRequest {
-    /// The request of a download added in the app, which names its queue or not.
     pub fn in_app(picked: Option<QueueId>) -> Self {
         picked.map_or(Self::App, Self::Picked)
     }
 }
 
 impl State {
-    /// The queue a new download joins: the one picked, else for a browser download the one
-    /// the extension named or else the browser's queue, else the default queue.
-    ///
-    /// # Errors
-    ///
-    /// [`CoreError::QueueNotFound`](crate::CoreError::QueueNotFound) for a picked queue that
-    /// is gone. A browser's queue deleted since the extension last synced is no error: the
-    /// download joins the default queue.
+    /// A picked queue that is gone is an error; a browser's queue deleted since the extension
+    /// synced gives way to the default queue.
     pub fn queue_for(&self, request: QueueRequest) -> Result<QueueId> {
         match request {
             QueueRequest::Picked(queue) => Ok(self.slot(queue)?.queue.id),
