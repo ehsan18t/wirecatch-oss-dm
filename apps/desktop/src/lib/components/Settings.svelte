@@ -11,13 +11,12 @@
   import { Button, cn, EmptyState } from '@wirecatch/ui';
   import { findElement } from '$lib/dom';
   import {
-    SECTIONS,
     searchSettings,
     settingAnchor,
-    type SectionId,
     type SettingDef,
     type SettingId,
   } from '$lib/settings-schema';
+  import { SECTIONS, type SectionId } from '$lib/settings-sections';
   import { getApp } from '$lib/state/app.svelte';
   import AddonSettings from './settings/AddonSettings.svelte';
   import AdvancedSettings from './settings/AdvancedSettings.svelte';

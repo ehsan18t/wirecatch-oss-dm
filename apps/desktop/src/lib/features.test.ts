@@ -5,7 +5,8 @@ import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { buildCommands } from './commands';
-import { SECTIONS, SETTINGS, settingAnchor } from './settings-schema';
+import { SETTINGS, settingAnchor } from './settings-schema';
+import { SECTIONS } from './settings-sections';
 import { downloadWindow, renderApp, rowByName, settle } from './testing/setup';
 
 async function setup() {

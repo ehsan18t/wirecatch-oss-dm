@@ -25,7 +25,8 @@
     type SidebarState,
   } from '@wirecatch/ui';
   import { ariaShortcut, shortcutLabel } from '$lib/keymap';
-  import { searchSettings, SECTIONS, type SectionId } from '$lib/settings-schema';
+  import { searchSettings } from '$lib/settings-schema';
+  import { SECTIONS, type SectionId } from '$lib/settings-sections';
   import { getApp } from '$lib/state/app.svelte';
   import {
     sameView,

@@ -5,7 +5,8 @@ import { fireEvent, screen } from '@testing-library/svelte';
 import { MAX_CONCURRENT_DOWNLOADS } from '@wirecatch/protocol';
 import { KB, MB, SPEED_FIELD } from '@wirecatch/units';
 import { describe, expect, it, vi } from 'vitest';
-import { settingAnchor, type SectionId } from '$lib/settings-schema';
+import { settingAnchor } from '$lib/settings-schema';
+import type { SectionId } from '$lib/settings-sections';
 import { renderApp, settle } from '$lib/testing/setup';
 import { FLASH_MS } from './Settings.svelte';
 
