@@ -7282,6 +7282,7 @@ dependencies = [
  "wirecatch-logging",
  "wirecatch-product",
  "wirecatch-protocol",
+ "wirecatch-queues",
  "wirecatch-streams",
  "wirecatch-test-support",
  "zip",
@@ -7408,6 +7409,14 @@ dependencies = [
  "ts-rs",
  "url",
  "wirecatch-test-support",
+]
+
+[[package]]
+name = "wirecatch-queues"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "wirecatch-protocol",
 ]
 
 [[package]]

@@ -84,6 +84,6 @@ impl Manager {
     /// The proxy the app updater uses: the setting's proxy for `https`.
     #[must_use]
     pub fn updater_proxy(&self) -> UpdaterProxy {
-        proxy::updater_proxy(&self.lock().proxy())
+        proxy::updater_proxy(&self.lock().app_proxy())
     }
 }

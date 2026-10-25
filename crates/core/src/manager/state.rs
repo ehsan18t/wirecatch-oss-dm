@@ -26,9 +26,9 @@ use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use crate::naming::Claimed;
 use crate::proxy::{self, Logins};
 use crate::public_suffix::SuffixList;
-use crate::schedule::Gate;
 use crate::speed::SpeedMeter;
 use crate::store::{LastIds, NameChoice, Origin, StoredDownload};
+use wirecatch_queues::schedule::Gate;
 
 pub(super) struct State {
     pub settings: AppSettings,
@@ -263,8 +263,9 @@ pub(super) struct Pending {
 }
 
 impl State {
-    /// The proxies every request the app sends follows (D71).
-    pub fn proxy(&self) -> ProxyChoice {
+    /// The proxies the app's own requests follow (D71): add-on and suffix-list fetches and the
+    /// updater. A download's are in its [`RunPolicy`](super::policy::RunPolicy).
+    pub fn app_proxy(&self) -> ProxyChoice {
         proxy::engine_choice(&self.settings.proxy, &self.proxy_logins)
     }
 

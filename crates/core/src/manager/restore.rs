@@ -193,6 +193,18 @@ fn restore_entry(
     (entry, fixed)
 }
 
+/// The state of a first start, for tests that need one.
+#[cfg(test)]
+pub(super) fn first_start() -> State {
+    let surroundings = Surroundings {
+        now: NaiveDateTime::default(),
+        now_millis: 0,
+        finished_size: &|_| None,
+        suffixes: SuffixList::built_in(),
+    };
+    restore(Snapshot::default(), &surroundings).state
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

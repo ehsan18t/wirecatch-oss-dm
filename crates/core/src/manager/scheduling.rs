@@ -8,8 +8,8 @@ use wirecatch_protocol::app::{DownloadStatus, TimeOfDay, WaitReason};
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use super::Manager;
-use super::plan::{self, Activity, DownloadView, QueueView};
 use super::state::{Entry, State, Stop};
+use wirecatch_queues::plan::{self, Activity, DownloadView, QueueView};
 
 /// Why a queue may not start downloads right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

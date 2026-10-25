@@ -11,7 +11,8 @@ mod handovers;
 mod media;
 
 mod media_run;
-mod plan;
+mod placement;
+mod policy;
 mod preferences;
 mod proxy;
 mod queues;
@@ -616,7 +617,7 @@ async fn run_scheduler(
             let mut state = manager.lock();
             manager.reconcile(&mut state);
             let scheduled = state.queues.iter().any(|s| s.queue.schedule.is_some());
-            scheduled.then(|| crate::schedule::next_minute(state.last_checked))
+            scheduled.then(|| wirecatch_queues::schedule::next_minute(state.last_checked))
         };
         drop(manager);
         let minute = async {

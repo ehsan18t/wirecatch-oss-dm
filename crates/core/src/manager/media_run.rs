@@ -27,7 +27,8 @@ use wirecatch_streams::{Choice, Role, StreamProgress, StreamRequest};
 
 use super::Manager;
 use super::media::{addon_missing, cookie_header, media_options};
-use super::run::{Bandwidth, MediaDone, RunEnd};
+use super::policy::RunPolicy;
+use super::run::{MediaDone, RunEnd};
 use super::state::{Gauge, State};
 use crate::addons::{Check, MediaTools};
 use crate::clock::Clock;
@@ -79,7 +80,7 @@ impl Manager {
         run_id: u64,
         answered: CancellationToken,
         job: MediaJob,
-        bandwidth: Bandwidth,
+        policy: RunPolicy,
     ) {
         let Some(entry) = state.downloads.get(&id) else {
             return;
@@ -104,10 +105,10 @@ impl Manager {
         let mut options = media_options(
             &entry.origin,
             entry.chosen_by.private_network(),
-            state.proxy(),
+            policy.proxy,
         );
-        options.connections = bandwidth.connections.max(1);
-        options.rate_limiters = bandwidth.limiters;
+        options.connections = policy.connections;
+        options.rate_limiters = policy.limiters;
         let tools = state.addon.tools.clone();
         let manager = Arc::downgrade(&self.inner);
         let work = Job {

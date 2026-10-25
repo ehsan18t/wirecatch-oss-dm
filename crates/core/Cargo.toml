@@ -14,8 +14,9 @@ wirecatch-engine.workspace = true
 wirecatch-logging.workspace = true
 wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
+wirecatch-queues.workspace = true
 wirecatch-streams.workspace = true
-chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+chrono = { workspace = true, features = ["clock"] }
 dirs = "7.0.0"
 # Reading the media add-on's archives: .xz (pure Rust) inside .tar, and .zip.
 lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", "xz", "optimization"] }

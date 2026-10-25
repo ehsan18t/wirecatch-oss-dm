@@ -587,3 +587,30 @@ async fn every_way_a_link_arrives_runs_under_its_own_rule() {
     assert_eq!(rules(4).await[3], PrivateNetwork::Auto);
     manager.shutdown().await;
 }
+
+/// A download runs with the app's connections and proxy, under the app's speed limit and its
+/// queue's; one whose queue is gone keeps the app's limit alone, as the app's own downloads do.
+#[tokio::test]
+async fn a_download_runs_under_the_apps_limits_and_its_queues() {
+    const CONNECTIONS: u8 = 3;
+    const GONE: wirecatch_protocol::QueueId = wirecatch_protocol::QueueId(99);
+    let (manager, _dir) = manager_with(deaf, PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
+    let mut settings = manager.get_settings();
+    settings.connections_per_download = CONNECTIONS;
+    manager.update_settings(settings).unwrap();
+    let state = manager.lock();
+    let global = &manager.inner.global_limiter;
+    let queue = &state.slot(DEFAULT_QUEUE_ID).unwrap().limiter;
+
+    let policy = manager.run_policy(&state, DEFAULT_QUEUE_ID);
+    assert_eq!(policy.connections, usize::from(CONNECTIONS));
+    assert_eq!(policy.proxy, state.app_proxy());
+    assert!(
+        matches!(&policy.limiters[..], [a, b] if Arc::ptr_eq(a, global) && Arc::ptr_eq(b, queue))
+    );
+
+    for app_only in [manager.run_policy(&state, GONE), manager.app_policy(&state)] {
+        assert_eq!(app_only.connections, usize::from(CONNECTIONS));
+        assert!(matches!(&app_only.limiters[..], [a] if Arc::ptr_eq(a, global)));
+    }
+}
