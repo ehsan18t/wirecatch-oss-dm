@@ -7283,6 +7283,7 @@ dependencies = [
  "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-queues",
+ "wirecatch-server",
  "wirecatch-streams",
  "wirecatch-test-support",
  "zip",
@@ -7318,6 +7319,7 @@ dependencies = [
  "wirecatch-logging",
  "wirecatch-product",
  "wirecatch-protocol",
+ "wirecatch-server",
  "wirecatch-test-support",
 ]
 
@@ -7332,6 +7334,7 @@ dependencies = [
  "wirecatch-ipc",
  "wirecatch-product",
  "wirecatch-protocol",
+ "wirecatch-server",
  "wirecatch-test-support",
 ]
 
@@ -7416,6 +7419,18 @@ name = "wirecatch-queues"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "wirecatch-protocol",
+]
+
+[[package]]
+name = "wirecatch-server"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tokio",
+ "tracing",
+ "wirecatch-core",
+ "wirecatch-engine",
  "wirecatch-protocol",
 ]
 

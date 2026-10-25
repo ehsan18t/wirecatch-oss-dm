@@ -11,7 +11,8 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
-use wirecatch_core::{LinkFrom, Manager, serve_connection};
+use wirecatch_core::{LinkFrom, Manager};
+use wirecatch_server::serve_connection;
 use wirecatch_protocol::app::{
     CaptureConfirmation, DownloadStatus, MediaDefaultsPatch, QueueSettings, UiEvent, Update,
 };
@@ -1395,7 +1396,7 @@ async fn requests_beyond_the_limit_are_refused() -> TestResult {
     // outcome, whether it runs before the server answers or after.
     let held = capture(server.url("held.pdf").to_string());
     let mut ids = Vec::new();
-    for _ in 0..=wirecatch_core::MAX_REQUESTS_IN_FLIGHT {
+    for _ in 0..=wirecatch_server::MAX_REQUESTS_IN_FLIGHT {
         ids.push(client.request(Call::AddDownload(held.clone())).await?);
     }
     let last = ids.pop().unwrap();

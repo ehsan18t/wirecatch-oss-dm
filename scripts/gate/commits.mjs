@@ -25,6 +25,7 @@ const COMMIT_SCOPES = [
   'bridge',
   'streams',
   'queues',
+  'server',
   'cli',
   'e2e',
   'test-support',

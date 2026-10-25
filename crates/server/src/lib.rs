@@ -31,7 +31,7 @@ use wirecatch_protocol::wire::{
     ProtocolError, Reply, RequestHead, UNKNOWN_REQUEST_ID,
 };
 
-use crate::manager::Manager;
+use wirecatch_core::Manager;
 use wirecatch_engine::units::KIB_USIZE;
 
 /// Most requests from one connection that may be handled at once. A request beyond

@@ -4,8 +4,7 @@
 //! file names and folders, runs the engine within each queue's and the global
 //! limits and schedules, keeps everything in SQLite, and reports changes as
 //! [`UiEvent`](wirecatch_protocol::app::UiEvent)s for the UI and protocol
-//! [`Event`](wirecatch_protocol::wire::Event)s for socket clients.
-//! [`serve_connection`] speaks the local protocol (D14) over any byte stream.
+//! [`Event`](wirecatch_protocol::wire::Event)s for socket clients, which `wirecatch-server` serves.
 
 mod addons;
 mod batches;
@@ -22,7 +21,6 @@ mod owner_only;
 mod profile;
 mod proxy;
 mod public_suffix;
-mod server;
 mod settings;
 mod speed;
 mod store;
@@ -42,6 +40,5 @@ pub use manager::{
     DEFAULT_STOP_TIMEOUT, LinkFrom, Manager, ManagerConfig, PUBLIC_SUFFIX_LIST_URL,
 };
 pub use proxy::{PROXY_TEST_URL, UpdaterProxy, from_system as system_proxy};
-pub use server::{MAX_REQUESTS_IN_FLIGHT, serve_connection};
 pub use settings::{DEFAULT_QUEUE_ID, default_settings};
 pub use store::{DATABASE_FILE, DATABASE_SIDE_FILES};

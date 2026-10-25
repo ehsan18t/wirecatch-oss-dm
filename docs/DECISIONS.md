@@ -671,6 +671,13 @@ Decided with the maintainer on 2026-10-25. It amends D18.1, which had every chan
 2. The full gate runs locally only for a wide change (lint, build or toolchain config, dependencies and lockfiles, `crates/protocol` and its generated types, the gate scripts, several crates and apps at once), once, on the final tree. A tree that passed is not checked again after a split, a regroup, a rebase onto changes it does not touch, or a reworded message.
 3. Every check runs in the pull request's CI, and a pull request is squash-merged only when CI passes.
 
+### D79. The download manager is split into crates by what each part needs
+
+Decided with the maintainer on 2026-10-25. `wirecatch-core` holds 31,000 lines, and a change to any part rebuilds and re-checks all of it; crates build in parallel, rebuild only what changed, and make a lower layer that reaches into a higher one a compile error.
+
+1. Each part that does not need the manager's state leaves core for a crate of its own, one pull request each, cleanest first: the protocol server, site rules (the Public Suffix List and the local network), then, once their cycles are broken, the media add-on, the store, media and settings. What stays in core is the manager: its state and the code that runs downloads, queues and questions.
+2. Done: `crates/queues` (D74) and `crates/server`, which serves one client connection from the manager's public methods. The protocol tests stay in core's test suite, whose harness they use, and reach the server as a dev-dependency.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
