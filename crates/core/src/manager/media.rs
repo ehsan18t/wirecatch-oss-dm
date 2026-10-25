@@ -35,11 +35,11 @@ use super::handovers::{Handover, Target};
 use super::state::State;
 use crate::addons::{Check, MediaTools};
 use crate::error::{CoreError, Result};
-use crate::local_network::ChosenBy;
 use crate::media::choice::{self, Offer, Plan, Resolved};
 use crate::media::{self, MediaJob, Pick, StoredMedia, describe, output, ytdlp};
 use crate::store::Origin;
 use crate::{headers, settings};
+use wirecatch_sites::local_network::ChosenBy;
 
 /// How long a page waits for the media add-on before it becomes a failed
 /// download, so a question is never asked long after the person moved on.

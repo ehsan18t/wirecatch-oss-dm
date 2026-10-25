@@ -18,9 +18,9 @@ use wirecatch_protocol::proxy::ProxySettings;
 
 use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
-use crate::local_network::{self, NotALocalSite};
-use crate::public_suffix::SuffixList;
 use wirecatch_queues::schedule;
+use wirecatch_sites::local_network::{self, NotALocalSite};
+use wirecatch_sites::public_suffix::SuffixList;
 
 pub use wirecatch_protocol::DEFAULT_QUEUE_ID;
 

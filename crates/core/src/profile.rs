@@ -13,9 +13,9 @@ use wirecatch_protocol::app::{
 
 use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
-use crate::public_suffix::SuffixList;
 use crate::settings::{self, DEFAULT_QUEUE_ID};
 use wirecatch_engine::units::MIB;
+use wirecatch_sites::public_suffix::SuffixList;
 
 /// Largest profile file accepted. Real ones are a few kilobytes; the limits on
 /// queues and lists keep even a full one far below this.

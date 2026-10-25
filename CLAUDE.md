@@ -19,6 +19,7 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 | `crates/protocol` | Every type, name and limit crossing a process boundary. TypeScript is generated from it. |
 | `crates/core` | The download manager: queue, persistence, media, add-ons. |
 | `crates/streams` | HLS and DASH downloads. |
+| `crates/sites` | Site rules: the Public Suffix List with its built-in snapshot, and which links may reach the person's own network (D39, D44). |
 | `crates/server` | The local protocol server (D14): one client connection over any byte stream, answered by the manager. |
 | `crates/queues` | Queue rules as pure functions: which downloads start under each queue's limits, and when a scheduled queue runs (D74). |
 | `crates/ipc` | Local app endpoint (named pipe on Windows, Unix socket on Linux). |

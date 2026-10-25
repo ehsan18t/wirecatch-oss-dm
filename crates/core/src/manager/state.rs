@@ -21,14 +21,14 @@ use super::media::MediaPending;
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
 use crate::error::{CoreError, Result};
-use crate::local_network::ChosenBy;
 use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use crate::naming::Claimed;
 use crate::proxy::{self, Logins};
-use crate::public_suffix::SuffixList;
 use crate::speed::SpeedMeter;
 use crate::store::{LastIds, NameChoice, Origin, StoredDownload};
 use wirecatch_queues::schedule::Gate;
+use wirecatch_sites::local_network::ChosenBy;
+use wirecatch_sites::public_suffix::SuffixList;
 
 pub(super) struct State {
     pub settings: AppSettings,

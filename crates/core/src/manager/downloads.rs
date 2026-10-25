@@ -18,10 +18,10 @@ use super::placement::QueueRequest;
 use super::run::{delete_files, mark_cancelled};
 use super::state::{Entry, State, Stop};
 use crate::error::{CoreError, Result};
-use crate::local_network::ChosenBy;
 use crate::naming;
 use crate::store::NameChoice;
 use crate::{headers, settings};
+use wirecatch_sites::local_network::ChosenBy;
 
 fn remember_handover(state: &mut State, handover: &str, row: &DownloadSummary) {
     let action = capture_action(row);

@@ -20,3 +20,19 @@ pub(crate) fn replace(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
     std::fs::File::open(dir)?.sync_all()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wirecatch_test_support::private_dir;
+
+    #[test]
+    fn a_failed_replace_leaves_the_file_as_it_was() {
+        let dir = private_dir("whole-file-fail").unwrap();
+        replace(dir.path(), "kept", b"old").unwrap();
+        // The file a new copy is written to first cannot be made.
+        std::fs::create_dir(dir.path().join("kept.tmp")).unwrap();
+        replace(dir.path(), "kept", b"new").unwrap_err();
+        assert_eq!(std::fs::read(dir.path().join("kept")).unwrap(), b"old");
+    }
+}

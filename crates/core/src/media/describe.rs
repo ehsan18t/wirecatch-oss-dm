@@ -13,8 +13,8 @@ use super::ffmpeg::FfmpegError;
 use super::output::{OutputJob, VideoAction};
 use super::ytdlp::YtDlpError;
 use crate::addons::MediaTools;
-use crate::local_network::ChosenBy;
 use crate::user_error;
+use wirecatch_sites::local_network::ChosenBy;
 
 fn retry(message: String) -> UserError {
     UserError {
