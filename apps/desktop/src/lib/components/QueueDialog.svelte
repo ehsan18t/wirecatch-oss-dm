@@ -16,10 +16,15 @@
 </script>
 
 <script lang="ts">
-  // A queue's name, how many of its downloads run at once, its speed limit, its hours and when it tells you its downloads finished: each limit is a switch that opens its own fields, and the days are a pattern first (every day, weekdays, weekends) with single days only when asked for.
+  // A queue's name and description, its own limits, its hours and when it tells you its downloads finished: each limit is a switch that opens its own fields, and off follows the app (D72.1); the days are a pattern first (every day, weekdays, weekends) with single days only when asked for.
   import {
+    DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+    FOLLOW_APP,
     MAX_CONCURRENT_DOWNLOADS,
-    NEW_QUEUE_MAX_CONCURRENT,
+    MAX_CONNECTIONS_PER_DOWNLOAD,
+    MAX_QUEUE_DESCRIPTION_CHARS,
+    ownSetting,
+    ownValue,
     type QueueId,
     type QueueNotify,
     type QueueSettings,
@@ -36,15 +41,23 @@
     Input,
     NumberInput,
     SegmentedControl,
-    Switch,
+    TextArea,
     ToggleChip,
     type FieldControl,
   } from '@wirecatch/ui';
   import { QUEUE_NOTIFY_OPTIONS } from '$lib/finish-notices';
-  import { dayPattern, daysInPhrase, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
-  import { DAYS_PER_WEEK, WEEKDAYS, WEEKEND, WORKDAYS } from '$lib/time';
-  import { queueConcurrentProblem } from '$lib/limits';
+  import { dayPattern, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
+  import { daysForPattern, pickedDaysHelp, toggledDay } from '$lib/schedule-days';
+  import { DAYS_PER_WEEK, WEEKDAYS } from '$lib/time';
+  import {
+    concurrentLimitHelp,
+    ownConnectionsHelp,
+    queueConcurrentProblem,
+    queueConnectionsProblem,
+    speedLimitHelp,
+  } from '$lib/limits';
   import { getApp } from '$lib/state/app.svelte';
+  import SwitchCard from './SwitchCard.svelte';
   import TimeInput from './TimeInput.svelte';
 
   let { id, deleting = false }: { id: QueueId | null; deleting?: boolean } = $props();
@@ -54,16 +67,23 @@
   const original = (() => (id === null ? undefined : app.queues.byId(id)))();
   const opened = original?.settings;
   // What the form suggests when a limit or schedule is turned on for a queue that has none.
-  // The core makes a new queue without either; these are only where the fields start.
+  // The core makes a new queue that follows the app; these are only where the fields start.
+  const FIRST_MAX_CONCURRENT = 2;
   const FIRST_SPEED_LIMIT = 2 * MB;
   const FIRST_START: TimeOfDay = { hour: 1, minute: 0 };
   const FIRST_STOP: TimeOfDay = { hour: 7, minute: 0 };
   const formId = $props.id();
 
+  const ownConcurrent = opened ? ownValue(opened.max_concurrent) : null;
+  const ownLimit = opened ? ownValue(opened.speed_limit) : null;
+  const ownConnections = opened ? ownValue(opened.connections) : null;
+
   let name = $state(opened?.name ?? '');
-  let maxConcurrent = $state(opened?.max_concurrent ?? NEW_QUEUE_MAX_CONCURRENT);
-  let limitOn = $state(opened !== undefined && opened.speed_limit !== null);
-  const initialLimit = splitKbOrMb(opened?.speed_limit ?? FIRST_SPEED_LIMIT);
+  let description = $state(opened?.description ?? '');
+  let concurrentOn = $state(ownConcurrent !== null);
+  let maxConcurrent = $state(ownConcurrent ?? FIRST_MAX_CONCURRENT);
+  let limitOn = $state(ownLimit !== null);
+  const initialLimit = splitKbOrMb(ownLimit ?? FIRST_SPEED_LIMIT);
   let limitUnit = $state(initialLimit.unit);
   let limitValue = $state<number | null>(initialLimit.value);
   let scheduleOn = $state(opened !== undefined && opened.schedule !== null);
@@ -74,8 +94,23 @@
   // Picking single days is its own choice, kept while the days picked happen to make a pattern.
   let pickingDays = $state(dayPattern(opened?.schedule?.days ?? []) === 'custom');
   let notify = $state<QueueNotify>(opened?.notify ?? 'each_download');
+  let connectionsOn = $state(ownConnections !== null);
+  let connections = $state(
+    ownConnections ?? app.settings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+  );
 
-  /** What the queue's choice of when to tell does, given how Settings says to tell. */
+  const appSettings = $derived(app.settings);
+  const concurrentHelp = $derived(
+    concurrentLimitHelp(concurrentOn, appSettings?.max_concurrent_downloads),
+  );
+  const limitHelp = $derived(speedLimitHelp(limitOn, appSettings?.global_speed_limit ?? null));
+  const connectionsHelp = $derived(
+    ownConnectionsHelp(
+      connectionsOn,
+      appSettings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+    ),
+  );
+
   const notifyHelp = $derived.by(() => {
     if (app.settings?.finish_notice === 'nothing')
       return 'Settings, Notifications, says to tell you nothing, so this applies once you change that.';
@@ -112,37 +147,20 @@
   });
 
   const pattern = $derived<DayPattern>(pickingDays ? 'custom' : dayPattern(days));
-  const DAYS_OF: Record<Exclude<DayPattern, 'custom'>, readonly Weekday[]> = {
-    every: [],
-    weekdays: WORKDAYS,
-    weekends: WEEKEND,
-  };
-
   function choosePattern(next: DayPattern) {
     pickingDays = next === 'custom';
-    // Picking days starts from the days it runs on now: every day is all seven ticked.
-    if (next === 'custom') days = days.length === 0 ? [...WEEKDAYS] : days;
-    else days = [...DAYS_OF[next]];
+    days = daysForPattern(next, days);
   }
 
-  // Picking days limits the queue to those days; picking none means every day.
-  function toggleDay(d: Weekday) {
-    days = days.includes(d) ? days.filter((x) => x !== d) : [...days, d];
-  }
-
-  const daysHelp = $derived.by(() => {
-    if (days.length === 0) return 'Pick at least one day.';
-    if (days.length === DAYS_PER_WEEK) return 'Runs every day.';
-    return `Runs only on ${daysInPhrase(days)}.`;
-  });
+  const daysHelp = $derived(pickedDaysHelp(days));
 
   /** The speed limit the form describes, or why it is not one. */
   function readLimit(): { limit: QueueSettings['speed_limit'] } | string {
-    if (!limitOn) return { limit: null };
+    if (!limitOn) return { limit: FOLLOW_APP };
     const limit = limitValue === null ? null : toBytes(limitValue, limitUnit);
     return limit === null || limit <= 0
       ? 'Enter a speed limit above zero, or turn the limit off.'
-      : { limit };
+      : { limit: ownSetting(limit) };
   }
 
   /** The schedule the form describes, or why it is not one. */
@@ -165,16 +183,20 @@
   /** What the form changes in a queue, or why it cannot. */
   function readForm(): QueueSettings | string {
     if (!name.trim()) return 'Give the queue a name.';
-    const tooMany = queueConcurrentProblem(maxConcurrent);
+    const tooMany = concurrentOn ? queueConcurrentProblem(maxConcurrent) : null;
     if (tooMany !== null) return tooMany;
+    const badConnections = connectionsOn ? queueConnectionsProblem(connections) : null;
+    if (badConnections !== null) return badConnections;
     const limit = readLimit();
     if (typeof limit === 'string') return limit;
     const schedule = readSchedule();
     if (typeof schedule === 'string') return schedule;
     return {
       name: name.trim(),
-      max_concurrent: Math.round(maxConcurrent),
+      description: description.trim(),
+      max_concurrent: concurrentOn ? ownSetting(Math.round(maxConcurrent)) : FOLLOW_APP,
       speed_limit: limit.limit,
+      connections: connectionsOn ? ownSetting(Math.round(connections)) : FOLLOW_APP,
       schedule: schedule.schedule,
       notify,
     };
@@ -209,7 +231,7 @@
   title={original ? `Edit ${original.settings.name}` : 'New queue'}
   description={original
     ? undefined
-    : 'A queue runs its downloads in order, with its own limits and hours.'}
+    : "A queue runs its downloads in order. It follows the app's limits unless you give it its own."}
   onclose={() => app.closeDialog()}
 >
   <form
@@ -220,121 +242,145 @@
       void save();
     }}
   >
-    <div class="flex flex-wrap items-start gap-4">
-      <Field label="Name" class="flex-1 basis-56">
-        {#snippet children(control: FieldControl)}
-          <Input
-            {...control}
-            value={name}
-            onchange={(value: string) => (name = value)}
-            placeholder="For example: Overnight"
-            required
-          />
-        {/snippet}
-      </Field>
-      <Field label="Downloads at the same time" description="The rest wait their turn.">
-        {#snippet children(control: FieldControl)}
-          <NumberInput
-            {...control}
-            class="w-28"
-            value={maxConcurrent}
-            min={1}
-            max={MAX_CONCURRENT_DOWNLOADS}
-            onchange={(value: number | null) => {
-              if (value !== null) maxConcurrent = value;
-            }}
-          />
-        {/snippet}
-      </Field>
-    </div>
+    <Field label="Name">
+      {#snippet children(control: FieldControl)}
+        <Input
+          {...control}
+          value={name}
+          onchange={(value: string) => (name = value)}
+          placeholder="For example: Overnight"
+          required
+        />
+      {/snippet}
+    </Field>
+    <Field label="Description" description="Optional. What this queue is for.">
+      {#snippet children(control: FieldControl)}
+        <TextArea
+          {...control}
+          value={description}
+          rows={2}
+          maxlength={MAX_QUEUE_DESCRIPTION_CHARS}
+          onchange={(value: string) => (description = value)}
+          placeholder="For example: Large files, overnight"
+        />
+      {/snippet}
+    </Field>
 
-    <section class="flex flex-col gap-3 rounded-md border border-line bg-layer p-3">
-      <Switch
-        labelSide="start"
-        label="Limit this queue's speed"
-        description="Shared by everything running in this queue."
-        checked={limitOn}
-        onchange={(on: boolean) => (limitOn = on)}
+    <SwitchCard
+      label="Limit downloads at the same time"
+      description={concurrentHelp}
+      checked={concurrentOn}
+      onchange={(on: boolean) => (concurrentOn = on)}
+    >
+      <NumberInput
+        label="Downloads at the same time"
+        class="w-28"
+        value={maxConcurrent}
+        min={1}
+        max={MAX_CONCURRENT_DOWNLOADS}
+        onchange={(value: number | null) => {
+          if (value !== null) maxConcurrent = value;
+        }}
       />
-      {#if limitOn}
-        <div class="flex items-center gap-2">
-          <NumberInput
-            label="Speed limit"
-            class="w-28"
-            value={limitValue}
-            min={SPEED_FIELD[limitUnit].min}
-            step={SPEED_FIELD[limitUnit].step}
-            onchange={(value: number | null) => (limitValue = value)}
-          />
-          <SegmentedControl
-            label="Unit"
-            size="sm"
-            value={limitUnit}
-            options={UNITS}
-            onchange={(unit: 'KB' | 'MB') => (limitUnit = unit)}
-          />
-        </div>
-      {/if}
-    </section>
+    </SwitchCard>
 
-    <section class="flex flex-col gap-3 rounded-md border border-line bg-layer p-3">
-      <Switch
-        labelSide="start"
-        label="Only run at certain times"
-        description="Outside these hours its downloads wait, unless you start the queue now."
-        checked={scheduleOn}
-        onchange={(on: boolean) => (scheduleOn = on)}
+    <SwitchCard
+      label="Limit this queue's speed"
+      description={limitHelp}
+      checked={limitOn}
+      onchange={(on: boolean) => (limitOn = on)}
+    >
+      <div class="flex items-center gap-2">
+        <NumberInput
+          label="Speed limit"
+          class="w-28"
+          value={limitValue}
+          min={SPEED_FIELD[limitUnit].min}
+          step={SPEED_FIELD[limitUnit].step}
+          onchange={(value: number | null) => (limitValue = value)}
+        />
+        <SegmentedControl
+          label="Unit"
+          size="sm"
+          value={limitUnit}
+          options={UNITS}
+          onchange={(unit: 'KB' | 'MB') => (limitUnit = unit)}
+        />
+      </div>
+    </SwitchCard>
+
+    <SwitchCard
+      label="Use its own connections per download"
+      description={connectionsHelp}
+      checked={connectionsOn}
+      onchange={(on: boolean) => (connectionsOn = on)}
+    >
+      <NumberInput
+        label="Connections per download"
+        class="w-28"
+        value={connections}
+        min={1}
+        max={MAX_CONNECTIONS_PER_DOWNLOAD}
+        onchange={(value: number | null) => {
+          if (value !== null) connections = value;
+        }}
       />
-      {#if scheduleOn}
-        <div class="flex flex-wrap items-end gap-x-4 gap-y-3">
-          <Field label="Starts at">
+    </SwitchCard>
+
+    <SwitchCard
+      label="Only run at certain times"
+      description="Outside these hours its downloads wait, unless you start the queue now."
+      checked={scheduleOn}
+      onchange={(on: boolean) => (scheduleOn = on)}
+    >
+      <div class="flex flex-wrap items-end gap-x-4 gap-y-3">
+        <Field label="Starts at">
+          {#snippet children(control: FieldControl)}
+            <TimeInput {...control} value={start} onchange={(value: string) => (start = value)} />
+          {/snippet}
+        </Field>
+        {#if !untilEmpty}
+          <Field label="Stops at">
             {#snippet children(control: FieldControl)}
-              <TimeInput {...control} value={start} onchange={(value: string) => (start = value)} />
+              <TimeInput {...control} value={stop} onchange={(value: string) => (stop = value)} />
             {/snippet}
           </Field>
-          {#if !untilEmpty}
-            <Field label="Stops at">
-              {#snippet children(control: FieldControl)}
-                <TimeInput {...control} value={stop} onchange={(value: string) => (stop = value)} />
-              {/snippet}
-            </Field>
-          {/if}
-          <Checkbox
-            class="pb-2"
-            label="Run until the queue is empty"
-            checked={untilEmpty}
-            onchange={(on: boolean) => (untilEmpty = on)}
-          />
-        </div>
-        <div class="flex flex-col gap-2">
-          <span class="text-ui font-medium text-ink" aria-hidden="true">Days</span>
-          <SegmentedControl
-            label="Days"
-            size="sm"
-            value={pattern}
-            options={PATTERNS}
-            onchange={choosePattern}
-          />
-          {#if pattern === 'custom'}
-            <div
-              class="flex flex-wrap gap-1"
-              role="group"
-              aria-label="Only on these days"
-              aria-describedby="{formId}-days-help"
-            >
-              {#each WEEKDAYS as d (d)}
-                <ToggleChip
-                  pressed={days.includes(d)}
-                  label={WEEKDAY_SHORT[d]}
-                  onchange={() => toggleDay(d)}
-                />
-              {/each}
-            </div>
-            <p id="{formId}-days-help" class="text-small text-ink-muted">{daysHelp}</p>
-          {/if}
-        </div>
-      {/if}
-    </section>
+        {/if}
+        <Checkbox
+          class="pb-2"
+          label="Run until the queue is empty"
+          checked={untilEmpty}
+          onchange={(on: boolean) => (untilEmpty = on)}
+        />
+      </div>
+      <div class="flex flex-col gap-2">
+        <span class="text-ui font-medium text-ink" aria-hidden="true">Days</span>
+        <SegmentedControl
+          label="Days"
+          size="sm"
+          value={pattern}
+          options={PATTERNS}
+          onchange={choosePattern}
+        />
+        {#if pattern === 'custom'}
+          <div
+            class="flex flex-wrap gap-1"
+            role="group"
+            aria-label="Only on these days"
+            aria-describedby="{formId}-days-help"
+          >
+            {#each WEEKDAYS as d (d)}
+              <ToggleChip
+                pressed={days.includes(d)}
+                label={WEEKDAY_SHORT[d]}
+                onchange={() => (days = toggledDay(days, d))}
+              />
+            {/each}
+          </div>
+          <p id="{formId}-days-help" class="text-small text-ink-muted">{daysHelp}</p>
+        {/if}
+      </div>
+    </SwitchCard>
 
     <section
       class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-layer p-3"

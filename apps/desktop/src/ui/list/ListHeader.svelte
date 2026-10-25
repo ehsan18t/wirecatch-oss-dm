@@ -5,8 +5,8 @@
   import Play from '~icons/lucide/play';
   import Plus from '~icons/lucide/plus';
   import { Button } from '@wirecatch/ui';
-  import { formatRate } from '@wirecatch/units';
   import { CATEGORY_LABEL, formatEta, formatSchedule } from '$lib/format';
+  import { queueLimitFacts } from '$lib/limits';
   import { ariaShortcut, shortcutLabel } from '$lib/keymap';
   import { getApp } from '$lib/state/app.svelte';
   import { groupOf, sectionIds, sectionOf, STATUS_GROUP_LABEL } from '$lib/state/view';
@@ -34,7 +34,7 @@
     if (!queue) return [];
     return [
       queue.status.paused ? 'Paused' : formatSchedule(queue.settings.schedule),
-      queue.settings.speed_limit === null ? '' : `Up to ${formatRate(queue.settings.speed_limit)}`,
+      ...queueLimitFacts(queue.settings),
     ].filter(Boolean);
   });
 

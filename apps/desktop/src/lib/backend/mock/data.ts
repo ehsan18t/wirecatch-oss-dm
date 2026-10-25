@@ -4,7 +4,8 @@ import {
   DEFAULT_CONNECTIONS_PER_DOWNLOAD,
   DEFAULT_MAX_CONCURRENT_DOWNLOADS,
   DEFAULT_QUEUE_ID,
-  DEFAULT_QUEUE_MAX_CONCURRENT,
+  FOLLOW_APP,
+  ownSetting,
   queueId,
   type AddonInfo,
   type AppSettings,
@@ -149,14 +150,21 @@ export function defaultOutput(): AppSettings['media']['video'] {
 
 export const QUEUE_RUNNING: QueueStatus = { paused: false, running_outside_schedule: false };
 
+// Unlike a fresh install, the sample's Main has its own limit: the demo needs it full while the other queues run.
+const MAIN_AT_ONCE = 3;
+const OVERNIGHT_SPEED_LIMIT = 4 * MB;
+const WORK_CONNECTIONS = 4;
+
 const DEFAULT_QUEUES: readonly Queue[] = [
   {
     id: MAIN_QUEUE_ID,
     is_default: true,
     settings: {
       name: 'Main',
-      max_concurrent: DEFAULT_QUEUE_MAX_CONCURRENT,
-      speed_limit: null,
+      description: '',
+      max_concurrent: ownSetting(MAIN_AT_ONCE),
+      speed_limit: FOLLOW_APP,
+      connections: FOLLOW_APP,
       schedule: null,
       notify: 'each_download',
     },
@@ -167,8 +175,10 @@ const DEFAULT_QUEUES: readonly Queue[] = [
     is_default: false,
     settings: {
       name: 'Overnight',
-      max_concurrent: 2,
-      speed_limit: 4 * MB,
+      description: 'Large files, while nobody is using the connection',
+      max_concurrent: ownSetting(2),
+      speed_limit: ownSetting(OVERNIGHT_SPEED_LIMIT),
+      connections: FOLLOW_APP,
       schedule: { start: { hour: 1, minute: 0 }, stop: { hour: 7, minute: 0 }, days: [] },
       notify: 'when_done',
     },
@@ -179,8 +189,10 @@ const DEFAULT_QUEUES: readonly Queue[] = [
     is_default: false,
     settings: {
       name: 'Work files',
-      max_concurrent: 1,
-      speed_limit: 1 * MB,
+      description: '',
+      max_concurrent: ownSetting(1),
+      speed_limit: ownSetting(1 * MB),
+      connections: ownSetting(WORK_CONNECTIONS),
       schedule: null,
       notify: 'each_download',
     },

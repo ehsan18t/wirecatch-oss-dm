@@ -1,6 +1,6 @@
 // The queues: what each is doing right now, and creating, changing, pausing and deleting them.
 
-import type { Queue, QueueId, QueueSettings } from '@wirecatch/protocol';
+import { ownValue, type Queue, type QueueId, type QueueSettings } from '@wirecatch/protocol';
 import type { Backend } from '../backend';
 import { formatTime, scheduleAllows } from '../format';
 import type { Runner } from './runner';
@@ -16,6 +16,13 @@ export interface QueuesHost {
   now: () => Date;
   /** How many downloads of each queue are in each state. */
   counts: () => Counts;
+}
+
+/** How many of a queue's downloads run, out of its own limit when it has one. */
+function runningPhrase(running: number, atOnce: number | null): string {
+  return atOnce === null
+    ? `${String(running)} running`
+    : `${String(running)} of ${String(atOnce)} running`;
 }
 
 export class Queues {
@@ -43,19 +50,20 @@ export class Queues {
     );
   }
 
-  /** A short phrase for the sidebar: what this queue is doing right now, and when idle how many it may run at once. */
+  /** A short phrase for the sidebar: what this queue is doing right now, and when idle how many it may run at once when it has its own limit. */
   describe(queue: Queue): string {
     const c = this.#host.counts().queue.get(queue.id);
-    const { schedule, max_concurrent: atOnce } = queue.settings;
+    const { schedule } = queue.settings;
+    const atOnce = ownValue(queue.settings.max_concurrent);
     if (queue.status.paused) return 'Paused';
     if (schedule && this.isOutsideSchedule(queue)) {
       return `Starts at ${formatTime(schedule.start)}`;
     }
     if (queue.status.running_outside_schedule) return 'Started by hand, outside its hours';
-    if (c && c.running > 0) return `${c.running} of ${atOnce} running`;
+    if (c && c.running > 0) return runningPhrase(c.running, atOnce);
     if (c && c.waiting > 0) return `${c.waiting} waiting`;
     if (c && c.paused > 0) return `${c.paused} paused`;
-    return `Idle, up to ${String(atOnce)} at once`;
+    return atOnce === null ? 'Idle' : `Idle, up to ${String(atOnce)} at once`;
   }
 
   /** `id` `null` makes a new queue; `undefined` when the runner showed the failure. */

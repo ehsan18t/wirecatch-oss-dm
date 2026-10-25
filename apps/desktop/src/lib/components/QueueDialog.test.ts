@@ -1,7 +1,12 @@
-// The queue dialog accepts the limits the core accepts, shows a speed limit in the unit it reads best in, and says its hours in the app's own 24-hour times.
+// The queue dialog follows the app's limits until one is switched on, accepts the limits the core accepts, shows a speed limit in the unit it reads best in, and says its hours in the app's own 24-hour times.
 
 import { fireEvent, screen, within } from '@testing-library/svelte';
-import { MAX_CONCURRENT_DOWNLOADS, NEW_QUEUE_MAX_CONCURRENT } from '@wirecatch/protocol';
+import {
+  FOLLOW_APP,
+  MAX_CONCURRENT_DOWNLOADS,
+  MAX_CONNECTIONS_PER_DOWNLOAD,
+  ownSetting,
+} from '@wirecatch/protocol';
 import { KB, MB } from '@wirecatch/units';
 import { describe, expect, it } from 'vitest';
 import { renderApp, settle } from '$lib/testing/setup';
@@ -10,6 +15,8 @@ import { renderApp, settle } from '$lib/testing/setup';
 const MANY_AT_ONCE = 50;
 /** A queue speed limit below a megabyte, typed in kilobytes. */
 const SLOW_LIMIT_KB = 300;
+/** Connections per download other than the app's default. */
+const OWN_CONNECTIONS = 3;
 
 /** Opens the dialog for the sample queue named `name`, or for a new queue. */
 async function openQueueDialog(name: string | null) {
@@ -34,27 +41,53 @@ async function save() {
 }
 
 describe('the queue dialog', () => {
-  it('starts a new queue where the core does and accepts as many downloads as it allows', async () => {
+  it('makes a queue that follows the app in every limit it leaves off', async () => {
     const { app, dialog } = await openQueueDialog(null);
-    const max = dialog.getByRole('spinbutton', { name: 'Downloads at the same time' });
-    expect(max).toHaveAttribute('aria-valuenow', String(NEW_QUEUE_MAX_CONCURRENT));
-    expect(max).toHaveAttribute('aria-valuemax', String(MAX_CONCURRENT_DOWNLOADS));
+    expect(dialog.queryByRole('spinbutton')).toBeNull();
+    await typeInto(dialog.getByLabelText('Name'), 'Plain');
+    await typeInto(dialog.getByLabelText('Description'), '  Everything else  ');
+    await save();
 
+    const made = app.queues.list.find((q) => q.settings.name === 'Plain');
+    expect(made?.settings).toMatchObject({
+      description: 'Everything else',
+      max_concurrent: FOLLOW_APP,
+      speed_limit: FOLLOW_APP,
+      connections: FOLLOW_APP,
+    });
+  });
+
+  it('gives a queue its own limits once they are switched on, as many as the core allows', async () => {
+    const { app, dialog } = await openQueueDialog(null);
     await typeInto(dialog.getByLabelText('Name'), 'Big batch');
+    await fireEvent.click(dialog.getByRole('switch', { name: 'Limit downloads at the same time' }));
+    await settle();
+    const max = dialog.getByRole('spinbutton', { name: 'Downloads at the same time' });
+    expect(max).toHaveAttribute('aria-valuemax', String(MAX_CONCURRENT_DOWNLOADS));
     await typeInto(max, String(MANY_AT_ONCE));
     await fireEvent.click(dialog.getByRole('switch', { name: "Limit this queue's speed" }));
     await settle();
     await fireEvent.click(dialog.getByRole('radio', { name: 'KB/s' }));
     await typeInto(dialog.getByRole('spinbutton', { name: 'Speed limit' }), String(SLOW_LIMIT_KB));
+    await fireEvent.click(
+      dialog.getByRole('switch', { name: 'Use its own connections per download' }),
+    );
+    await settle();
+    const connections = dialog.getByRole('spinbutton', { name: 'Connections per download' });
+    expect(connections).toHaveAttribute('aria-valuemax', String(MAX_CONNECTIONS_PER_DOWNLOAD));
+    await typeInto(connections, String(OWN_CONNECTIONS));
     await save();
 
     const made = app.queues.list.find((q) => q.settings.name === 'Big batch');
-    expect(made?.settings.max_concurrent).toBe(MANY_AT_ONCE);
-    expect(made?.settings.speed_limit).toBe(SLOW_LIMIT_KB * KB);
+    expect(made?.settings.max_concurrent).toEqual(ownSetting(MANY_AT_ONCE));
+    expect(made?.settings.speed_limit).toEqual(ownSetting(SLOW_LIMIT_KB * KB));
+    expect(made?.settings.connections).toEqual(ownSetting(OWN_CONNECTIONS));
   });
 
   it('keeps downloads at once within what the core allows', async () => {
     const { dialog } = await openQueueDialog(null);
+    await fireEvent.click(dialog.getByRole('switch', { name: 'Limit downloads at the same time' }));
+    await settle();
     const max = dialog.getByRole('spinbutton', { name: 'Downloads at the same time' });
     await typeInto(max, String(MAX_CONCURRENT_DOWNLOADS + 1));
     expect(max).toHaveAttribute('aria-valuenow', String(MAX_CONCURRENT_DOWNLOADS));
@@ -90,7 +123,7 @@ describe('the queue dialog', () => {
     const { app, dialog } = await openQueueDialog('Overnight');
     const limit = app.queues.list.find((q) => q.settings.name === 'Overnight')?.settings
       .speed_limit;
-    expect(limit).toBe(4 * MB);
+    expect(limit).toEqual(ownSetting(4 * MB));
     expect(dialog.getByRole('spinbutton', { name: 'Speed limit' })).toHaveAttribute(
       'aria-valuenow',
       '4',
