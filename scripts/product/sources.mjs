@@ -24,6 +24,12 @@ const CONSTANTS = [
     RUST,
   ],
   ['WEBSITE_URL', 'The product website.', (p) => p.links.website, TS],
+  [
+    'ADDON_FILES_URL',
+    "The repository whose releases hold the media add-on's pinned files (D80).",
+    (p) => p.links.addon_files,
+    RUST,
+  ],
   ['APP_EXECUTABLE', 'The desktop app executable, without `.exe`.', (p) => p.executables.app, RUST],
   [
     'BRIDGE_EXECUTABLE',

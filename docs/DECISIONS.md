@@ -680,6 +680,14 @@ Decided with the maintainer on 2026-10-25. `wirecatch-core` holds 31,000 lines, 
 3. Before the media add-on, the store and media can leave, core's modules depend on each other only one way: the add-on check reports where its programs are and media wraps them in its own `MediaTools`; the notices of a repaired download list live with the manager that opens it; a download's browser headers (`Origin`) live with the code that reads them, in `headers`; and the folders a download keeps beside its file, media's work folders included, are `naming`'s.
 4. Done after that: `crates/files`, the file helpers the add-on, the store and the manager share: writing a file whole, discarding one, keeping one private to its owner (D17) and marking a download with the zone it came from.
 
+### D80. The media add-on's ffmpeg comes from a copy Wirecatch keeps
+
+Decided with the maintainer on 2026-10-25, when the pinned build disappeared. It replaces A8 for ffmpeg.
+
+1. BtbN publishes a dated build every day and deletes each after about two weeks, so a pin to one stops working within weeks, and installing the media add-on then fails for everyone. The builds the add-on pins are copied unchanged, one release per build, to a public repository of their own, `ehsan18t/wirecatch-addons` (`links.addon_files` in `config/product.toml`), so a pin lasts as long as Wirecatch keeps it. The app's own releases stay on its repository's Releases page alone.
+2. Each copy is checked against BtbN's published checksums before it is uploaded, and the add-on checks it again against the SHA-256 it pins. Each release names the build it was copied from and the FFmpeg source commit, as the LGPL asks.
+3. Moving to a newer build is a new release there and a new pin here; old releases stay for the versions of the app that pin them.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
@@ -689,7 +697,7 @@ Decided with the maintainer on 2026-10-25. `wirecatch-core` holds 31,000 lines, 
 - A5. Firefox add-on id is `extension@wirecatch.app`. The Chromium id is `chdgnmpjoipbgfeldicipccjjghmagki` for every build, development and store alike (D22).
 - A6. Saved site passwords are not exported in v1 (D6 encrypted export comes later).
 - A7. HTTP/3 ships as an experimental option, off by default. For bulk downloads, several TCP connections already fill the link and QUIC costs more CPU; it turns on by default once the benchmark shows it winning. Decided by the lead.
-- A8. The ffmpeg part of the media add-on is fetched from the builds the ffmpeg project links to (for example BtbN's GitHub releases for Windows and Linux), verified by checksum; yt-dlp from its official GitHub releases. Decided by the lead; the exact sources are recorded in the add-on manager.
+- A8. Replaced by D80 for ffmpeg. yt-dlp is fetched from its official GitHub releases, verified by checksum and signature.
 
 ## Open questions
 

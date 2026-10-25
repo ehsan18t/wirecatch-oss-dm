@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use wirecatch_engine::Url;
+use wirecatch_product::ADDON_FILES_URL;
 
 pub use super::signature::{Fingerprint, PinnedKey};
 
@@ -430,8 +431,7 @@ impl MediaAddonSources {
 }
 
 const YTDLP_VERSION: &str = "2026.08.19";
-const FFMPEG_TAG: &str = "autobuild-2026-10-10-13-04";
-const FFMPEG_VERSION: &str = "n9.0.2-25-g67b60c310b";
+const FFMPEG_VERSION: &str = "n9.0.2-36-g6882969ce9";
 const DENO_VERSION: &str = "2.9.7";
 
 /// The ffmpeg shared libraries `ffmpeg` links against (`BtbN` LGPL shared build,
@@ -463,9 +463,9 @@ const FFMPEG_LIBRARIES: [(&str, &str); 7] = [
 
 impl MediaAddonSources {
     /// The pinned official releases for this platform (Windows or Linux on
-    /// x86-64): yt-dlp from its GitHub releases, ffmpeg from `BtbN`'s
-    /// FFmpeg-Builds (LGPL, shared libraries) and Deno from its GitHub releases.
-    /// The checksums were copied from each release's published checksum list.
+    /// x86-64): yt-dlp and Deno from their GitHub releases, ffmpeg from the copy of a `BtbN`
+    /// LGPL shared build kept in the add-on files repository (D80), whose builds expire.
+    /// The checksums are each release's published ones.
     #[must_use]
     pub fn official() -> Self {
         Self {
@@ -566,15 +566,15 @@ fn official_ffmpeg() -> AddonComponent {
     #[cfg(windows)]
     const RELEASE: (&str, Sha256Digest, u64, ArchiveKind) = (
         "win64-lgpl-shared-9.0.zip",
-        pinned("a68c86127a4185bcb9035d39d54f8b6873681896b860af999d8987be3c696de4"),
-        77_230_479,
+        pinned("72e3fbaf17f8d5162c3010f9e58872fcb93ba2b03731fd0fff1ca9aabb616ea6"),
+        77_231_366,
         ArchiveKind::Zip,
     );
     #[cfg(not(windows))]
     const RELEASE: (&str, Sha256Digest, u64, ArchiveKind) = (
         "linux64-lgpl-shared-9.0.tar.xz",
-        pinned("7596b51ac2303f596a32b1a4f09f98dc0196415aa16dffd153cfab6d2ea5f4c9"),
-        63_523_780,
+        pinned("a73032b9313945304cb75b8a96015d28e553057265d076157b05b1de1b6d6a3d"),
+        63_528_100,
         ArchiveKind::TarXz,
     );
     let (asset, sha256, size, archive) = RELEASE;
@@ -612,7 +612,7 @@ fn official_ffmpeg() -> AddonComponent {
         FFMPEG_VERSION,
         ReleaseFile {
             url: pinned_address(&format!(
-                "https://github.com/BtbN/FFmpeg-Builds/releases/download/{FFMPEG_TAG}/ffmpeg-{FFMPEG_VERSION}-{asset}"
+                "{ADDON_FILES_URL}/releases/download/ffmpeg-{FFMPEG_VERSION}/ffmpeg-{FFMPEG_VERSION}-{asset}"
             )),
             sha256,
             size,
@@ -715,7 +715,14 @@ mod tests {
             YTDLP_RELEASE_DOWNLOADS
         );
         assert_eq!(sources.ffmpeg.files().len(), 8);
-        assert!(sources.ffmpeg.release().url().as_str().contains(FFMPEG_TAG));
+        assert!(
+            sources
+                .ffmpeg
+                .release()
+                .url()
+                .as_str()
+                .starts_with(ADDON_FILES_URL)
+        );
         assert!(
             sources
                 .ffmpeg
