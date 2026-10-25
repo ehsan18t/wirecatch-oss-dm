@@ -9,22 +9,18 @@
 mod addons;
 mod batches;
 mod clock;
-mod discard;
 mod error;
 mod folders;
 mod headers;
 mod manager;
 mod media;
 mod naming;
-mod owner_only;
 mod profile;
 mod proxy;
 mod settings;
 mod speed;
 mod store;
 mod user_error;
-mod whole_file;
-mod zone;
 
 pub use addons::manifest::{
     AddonComponent, AddonFile, ArchiveKind, ComponentId, Fingerprint, MEDIA_ADDON_FOLDER,

@@ -80,7 +80,7 @@ impl Record {
     /// Writes the record, replacing the old one in one step, on disk before it replaces the old one, so a power cut leaves one or the other whole. Blocks on the disk.
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
         let json = serde_json::to_vec_pretty(self).map_err(std::io::Error::other)?;
-        crate::whole_file::replace(dir, RECORD_FILE, &json)
+        wirecatch_files::whole_file::replace(dir, RECORD_FILE, &json)
     }
 
     pub fn version(&self, id: ComponentId) -> Option<&str> {

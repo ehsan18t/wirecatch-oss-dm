@@ -65,7 +65,7 @@ impl SuffixCheck {
 
     fn save(self, dir: &Path) -> std::io::Result<()> {
         let json = serde_json::to_vec(&self).map_err(std::io::Error::other)?;
-        crate::whole_file::replace(dir, CHECK_FILE, &json)
+        wirecatch_files::whole_file::replace(dir, CHECK_FILE, &json)
     }
 
     /// Whether a check is due at `now` with a list in use published at `published`: a week
@@ -226,7 +226,7 @@ impl Manager {
                 return Ok(Ok(None));
             }
             Ok(
-                match crate::whole_file::replace(&dir, KEPT_FILE, &fetched.body) {
+                match wirecatch_files::whole_file::replace(&dir, KEPT_FILE, &fetched.body) {
                     Ok(()) => Ok(Some(Arc::new(list))),
                     Err(e) => Err(NotTaken::Failed(format!(
                         "the new list could not be saved: {e}"

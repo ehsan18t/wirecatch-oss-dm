@@ -1,0 +1,37 @@
+[package]
+name = "wirecatch-files"
+description = "File helpers for Wirecatch: writing a file whole, discarding one, keeping one private to its owner, and marking a download with the zone it came from"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[features]
+# Lets a test make `restrict` fail.
+testing = []
+
+[dependencies]
+wirecatch-engine.workspace = true
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Wdk_Foundation",
+    "Wdk_Storage_FileSystem",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile.workspace = true
+wirecatch-test-support = { path = "../test-support" }
+
+[lints]
+workspace = true

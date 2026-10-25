@@ -8,13 +8,13 @@ use std::path::Path;
 use tracing::warn;
 
 /// Deletes the file at `path`, if there is one. Blocks on the disk.
-pub(crate) fn file(path: &Path) {
+pub fn file(path: &Path) {
     logged(path, std::fs::remove_file(path));
 }
 
 /// Deletes the folder at `path` with everything in it, if there is one. Blocks
 /// on the disk.
-pub(crate) fn dir(path: &Path) {
+pub fn dir(path: &Path) {
     logged(path, std::fs::remove_dir_all(path));
 }
 

@@ -836,9 +836,9 @@ impl Manager {
                 let refused = matches!(error, PartError::Refused(_));
                 let stage = staged.0.clone();
                 self.blocking(move || {
-                    crate::discard::dir(&stage);
+                    wirecatch_files::discard::dir(&stage);
                     if refused {
-                        crate::discard::file(&release);
+                        wirecatch_files::discard::file(&release);
                     }
                     Ok(())
                 })
@@ -1222,7 +1222,7 @@ fn verify_and_unpack(
     let len = file.metadata().map_err(unreadable)?.len();
     if len > cap {
         drop(file);
-        crate::discard::file(release);
+        wirecatch_files::discard::file(release);
         return Err(format!(
             "The downloaded {} is larger than its release says, so it was not installed. Try again later; if it keeps happening, please report it.",
             component.id()
@@ -1232,7 +1232,7 @@ fn verify_and_unpack(
     if actual != component.release().sha256() {
         warn!(part = component.id().as_str(), expected = %component.release().sha256(), %actual, "checksum mismatch");
         drop(file);
-        crate::discard::file(release);
+        wirecatch_files::discard::file(release);
         return Err(format!(
             "The downloaded {} did not match its published checksum, so it was not installed. Try again later; if it keeps happening, please report it.",
             component.id()
@@ -1250,7 +1250,7 @@ fn verify_and_unpack(
     std::fs::create_dir_all(stage)
         .map_err(|e| format!("The add-on's work folder could not be created ({e})."))?;
     let installed = archive::unpack(component, &mut file, stage).map_err(|e| {
-        crate::discard::dir(stage);
+        wirecatch_files::discard::dir(stage);
         e.to_string()
     })?;
     Ok((stage.to_path_buf(), installed))
@@ -1270,7 +1270,7 @@ fn swap_in(
         let id = component.id();
         let target = dir.join(id.as_str());
         let old = work.join(format!("old-{}", id.as_str()));
-        crate::discard::dir(&old);
+        wirecatch_files::discard::dir(&old);
         let had_old = target.exists();
         if had_old {
             rename(&target, &old).map_err(|e| {
@@ -1301,7 +1301,7 @@ fn swap_in(
             }
             return Err(format!("{id} could not be put in place ({e}).").into());
         }
-        crate::discard::dir(&old);
+        wirecatch_files::discard::dir(&old);
         record.components.insert(
             id,
             addons::InstalledComponent {
@@ -1316,14 +1316,14 @@ fn swap_in(
         record
             .save(dir)
             .map_err(|e| format!("The add-on could not record what it installed ({e})."))?;
-        crate::discard::file(&work.join(format!(
+        wirecatch_files::discard::file(&work.join(format!(
             "{}-{}.download",
             id.as_str(),
             file_safe(component.version())
         )));
         // What another version cached (player code, signatures) is a known cause of failed reads.
         if id == ComponentId::YtDlp {
-            crate::discard::dir(&addons::ytdlp_cache(dir));
+            wirecatch_files::discard::dir(&addons::ytdlp_cache(dir));
         }
     }
     let tools = addons::tools(dir, &record, Check::Sizes).map(MediaTools::from);

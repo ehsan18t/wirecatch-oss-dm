@@ -26,8 +26,8 @@ use crate::error::{CoreError, Result};
 use crate::headers::Origin;
 use crate::media::StoredMedia;
 use crate::naming::with_suffix;
-use crate::owner_only;
 use crate::proxy::Logins;
+use wirecatch_files::owner_only;
 use wirecatch_sites::local_network::ChosenBy;
 
 /// File name of the database inside the data folder (`config/product.toml`).
@@ -1593,7 +1593,7 @@ mod tests {
         let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.not_private, None);
         drop(store);
-        crate::owner_only::refuse_on_this_thread();
+        wirecatch_files::owner_only::refuse_on_this_thread();
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert!(snapshot.not_private.is_some(), "{snapshot:?}");
     }

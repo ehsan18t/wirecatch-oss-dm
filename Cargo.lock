@@ -7278,6 +7278,7 @@ dependencies = [
  "tracing",
  "windows-sys 0.61.2",
  "wirecatch-engine",
+ "wirecatch-files",
  "wirecatch-logging",
  "wirecatch-product",
  "wirecatch-protocol",
@@ -7366,6 +7367,17 @@ dependencies = [
  "url",
  "windows-registry",
  "windows-sys 0.61.2",
+ "wirecatch-test-support",
+]
+
+[[package]]
+name = "wirecatch-files"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "tracing",
+ "windows-sys 0.61.2",
+ "wirecatch-engine",
  "wirecatch-test-support",
 ]
 

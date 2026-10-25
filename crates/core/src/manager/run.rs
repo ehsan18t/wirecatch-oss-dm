@@ -329,9 +329,9 @@ pub(super) fn mark_cancelled(entry: &mut Entry) {
 pub(super) fn delete_files(paths: &[PathBuf]) {
     for path in paths {
         if path.is_dir() {
-            crate::discard::dir(path);
+            wirecatch_files::discard::dir(path);
         } else {
-            crate::discard::file(path);
+            wirecatch_files::discard::file(path);
         }
     }
 }
@@ -407,7 +407,7 @@ async fn download_marked(
     if let Ok(Outcome::Completed { path, .. }) = &result {
         let path = path.clone();
         let marking = tokio::task::spawn_blocking(move || {
-            crate::zone::mark(&path, &mark.url, mark.referrer.as_deref());
+            wirecatch_files::zone::mark(&path, &mark.url, mark.referrer.as_deref());
         });
         if let Err(e) = marking.await {
             warn!(error = %e, "could not mark the finished file as downloaded from the internet");

@@ -55,7 +55,7 @@ impl CookiesFile {
             path,
             deleted: false,
         };
-        crate::owner_only::restrict(&cookies.path)?;
+        wirecatch_files::owner_only::restrict(&cookies.path)?;
         std::io::Write::write_all(&mut file, text.as_bytes())?;
         Ok(cookies)
     }

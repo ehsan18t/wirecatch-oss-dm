@@ -67,7 +67,7 @@ impl Manager {
             // carries the mark from the moment it is renamed into place.
             self.inner.runtime.spawn_blocking(move || {
                 for (part, url, referrer) in to_mark {
-                    crate::zone::mark(&part, &url, referrer.as_deref());
+                    wirecatch_files::zone::mark(&part, &url, referrer.as_deref());
                 }
             });
         }

@@ -24,7 +24,7 @@ const MAX_URL_LEN: usize = 2048;
 /// out.
 // Only Windows writes the mark; the text is built there and in tests on every platform.
 #[cfg(any(windows, test))]
-pub(crate) fn zone_identifier(host_url: &str, referrer: Option<&str>) -> String {
+pub fn zone_identifier(host_url: &str, referrer: Option<&str>) -> String {
     let mut text = String::from("[ZoneTransfer]\r\nZoneId=3\r\n");
     if let Some(referrer) = referrer.and_then(clean_url) {
         text.push_str("ReferrerUrl=");
@@ -66,7 +66,7 @@ fn clean_url(raw: &str) -> Option<String> {
 /// place between deciding to mark it and marking it, and writing the stream by
 /// name would then create an empty file under the old name.
 #[cfg(windows)]
-pub(crate) fn mark(path: &Path, host_url: &str, referrer: Option<&str>) {
+pub fn mark(path: &Path, host_url: &str, referrer: Option<&str>) {
     let marked = open_to_mark(path).and_then(|file| write_mark(&file, host_url, referrer));
     match marked {
         Ok(()) => {}
@@ -166,7 +166,7 @@ fn write_mark(file: &std::fs::File, host_url: &str, referrer: Option<&str>) -> s
 
 /// Does nothing: only Windows marks files downloaded from the internet.
 #[cfg(not(windows))]
-pub(crate) fn mark(_path: &Path, _host_url: &str, _referrer: Option<&str>) {}
+pub fn mark(_path: &Path, _host_url: &str, _referrer: Option<&str>) {}
 
 #[cfg(test)]
 mod tests {

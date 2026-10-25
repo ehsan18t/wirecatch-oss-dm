@@ -7,23 +7,23 @@ use std::io;
 use std::path::Path;
 
 /// Restricts `path` (a folder or a file) to the current user.
-pub(crate) fn restrict(path: &Path) -> io::Result<()> {
-    #[cfg(test)]
+pub fn restrict(path: &Path) -> io::Result<()> {
+    #[cfg(any(test, feature = "testing"))]
     if REFUSED.get() {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
     imp::restrict(path)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 thread_local! {
     static REFUSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// Makes every later [`restrict`] on this thread fail, as on a drive that keeps no
 /// permissions or a folder another account owns.
-#[cfg(test)]
-pub(crate) fn refuse_on_this_thread() {
+#[cfg(any(test, feature = "testing"))]
+pub fn refuse_on_this_thread() {
     REFUSED.set(true);
 }
 
@@ -290,7 +290,7 @@ mod tests {
         let data = dir.path().join("data");
         std::fs::create_dir(&data).unwrap();
         restrict(&data).unwrap();
-        let file = data.join(crate::DATABASE_FILE);
+        let file = data.join("downloads.db");
         std::fs::write(&file, b"x").unwrap();
 
         let user = imp::current_user_sid().unwrap();
@@ -319,7 +319,7 @@ mod tests {
     fn only_the_current_user_can_open_the_folder_and_the_database() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join(crate::DATABASE_FILE);
+        let file = dir.path().join("downloads.db");
         std::fs::write(&file, b"x").unwrap();
         restrict(dir.path()).unwrap();
         restrict(&file).unwrap();
