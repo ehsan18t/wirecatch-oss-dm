@@ -17,12 +17,12 @@ const LINT_EXCEPTIONS = [
   {
     id: 'E5',
     file: 'crates/e2e/src/lib.rs',
-    lints: ['clippy::expect_used', 'clippy::missing_panics_doc'],
+    lints: ['clippy::expect_used'],
   },
   {
     id: 'E6',
     file: 'crates/test-support/src/lib.rs',
-    lints: ['clippy::missing_panics_doc', 'clippy::unwrap_used'],
+    lints: ['clippy::unwrap_used'],
   },
   { id: 'E7', file: 'crates/engine/src/numeric.rs', lints: ['clippy::cast_precision_loss'] },
   {

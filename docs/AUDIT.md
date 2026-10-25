@@ -163,8 +163,8 @@ Done on 2026-10-12: every crate follows the workspace lints, both apps' suppress
 - E2: gone on 2026-10-24. It was `clippy::large_enum_variant` on `Message` in `crates/protocol/src/wire.rs`; the browser controls reply (D61) left the variants close enough in size that the lint no longer fires.
 - E3: `crates/engine/src/transport.rs`, `clippy::large_enum_variant` on `Remote`: one value per download, shared by its connections.
 - E4: `crates/protocol/src/app.rs`, `clippy::struct_excessive_bools` on `AppSettings`: each bool is an independent setting.
-- E5: `crates/e2e/src/lib.rs`, crate level, `clippy::expect_used` and `clippy::missing_panics_doc`: test support, where a panic is the failing test's report.
-- E6: `crates/test-support/src/lib.rs`, crate level, `clippy::unwrap_used` and `clippy::missing_panics_doc`: the same.
+- E5: `crates/e2e/src/lib.rs`, crate level, `clippy::expect_used`: test support, where a panic is the failing test's report.
+- E6: `crates/test-support/src/lib.rs`, crate level, `clippy::unwrap_used`: the same.
 - E7: `crates/engine/src/numeric.rs`, `clippy::cast_precision_loss` on `approx_f64`: exact below 2^53, which byte counts and rates stay far below.
 - E8: `crates/engine/src/numeric.rs`, `clippy::cast_possible_truncation` and `clippy::cast_sign_loss` on `f64_to_u64`: the value is checked to be finite, not negative and in range first.
 - E9: `apps/desktop/src/ui/download/FileQuestion.svelte`, `a11y_no_noninteractive_element_interactions` on the question's form: Enter in any field, radio buttons and checkboxes included, is Download now (`keys.ts`); browsers do not submit those by themselves, so the key is taken on the form.
@@ -182,7 +182,7 @@ Done on 2026-10-12 as its own round: all 72 `let _ =` outside test code (and the
 
 ### W15. Comments only where they earn their place
 
-Added by the maintainer on 2026-10-12, to run after every other workstream. Most files carry comments that restate the code, narrate history or repeat what a commit message says; they add lines and cost every review its reading time. Remove them across every crate and package, keeping the comments that carry what the code cannot: critical paths, decisions and invariants that are not obvious, `SAFETY:` proofs. Then review the rules that ask for comments everywhere: a doc comment on every named constant (ENGINEERING section 2) and `missing_docs` on every public item (section 4), which stays for the published engine API and is reconsidered for internal crates. Propose a gate check, for example one that flags history words such as "now", "no longer", "used to" and "previously" in comments.
+Added by the maintainer on 2026-10-12, to run after every other workstream. Most files carry comments that restate the code, narrate history or repeat what a commit message says; they add lines and cost every review its reading time. Remove them across every crate and package, keeping the comments that carry what the code cannot: critical paths, decisions and invariants that are not obvious, `SAFETY:` proofs. The rules that asked for comments everywhere, a doc comment on every named constant and on every public item, are gone (D76). Propose a gate check, for example one that flags history words such as "now", "no longer", "used to" and "previously" in comments.
 
 ## Status
 
