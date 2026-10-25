@@ -240,29 +240,6 @@ async fn a_proxy_that_cannot_work_is_refused_and_nothing_changes() -> TestResult
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn importing_a_profile_from_before_proxies_keeps_the_saved_passwords() -> TestResult {
-    let socks = socks_with_login().await;
-    let h = Harness::new().await?;
-    h.manager.set_proxy(ProxyChange {
-        settings: through(&socks),
-        passwords: with_password("secret"),
-        restart_running: false,
-    })?;
-    let file = h.root.path().join("old.json");
-    h.manager.export_settings(&file).await?;
-    let mut profile: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&file)?)?;
-    profile["settings"]
-        .as_object_mut()
-        .ok_or("no settings")?
-        .remove("proxy");
-    std::fs::write(&file, serde_json::to_string(&profile)?)?;
-
-    h.manager.import_settings(&file).await?;
-    assert!(h.manager.get_settings().proxy.all.has_password);
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn replacing_every_setting_leaves_the_proxy_to_its_own_change() -> TestResult {
     let socks = socks_with_login().await;
     let h = Harness::new().await?;

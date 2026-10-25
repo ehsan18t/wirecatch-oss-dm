@@ -140,7 +140,7 @@ function moveEntries(app: AppState): MenuAction[] {
     .filter((q) => canMoveTo(rows, q.id))
     .map((q) => ({
       id: `move-${String(q.id)}`,
-      label: `Move to ${q.name}`,
+      label: `Move to ${q.settings.name}`,
       icon: FolderInput,
       onselect: () => void app.actions.moveToQueue(ids, q.id),
     }));

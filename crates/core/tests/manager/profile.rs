@@ -3,7 +3,7 @@
 
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
 use wirecatch_protocol::app::{
-    AddonId, Category, PortablePath, Queue, Schedule, TimeOfDay, UiEvent,
+    AddonId, Category, PortablePath, Queue, QueueSettings, Schedule, TimeOfDay, UiEvent,
 };
 
 use crate::common::{Harness, TestResult, tune};
@@ -16,21 +16,25 @@ fn absolute(path: &std::path::Path) -> PortablePath {
 /// queue for the night that captures go to, folders inside the standard ones
 /// and a speed limit. Returns the night queue.
 fn set_up_first_machine(here: &Harness) -> TestResult<Queue> {
-    let night = here.manager.create_queue("Night")?;
+    let night = here.manager.create_queue(QueueSettings::new("Night"))?;
     let night = Queue {
-        max_concurrent: 4,
-        speed_limit: Some(500_000),
-        schedule: Some(Schedule {
-            start: TimeOfDay { hour: 1, minute: 0 },
-            stop: Some(TimeOfDay {
-                hour: 6,
-                minute: 30,
+        settings: QueueSettings {
+            max_concurrent: 4,
+            speed_limit: Some(500_000),
+            schedule: Some(Schedule {
+                start: TimeOfDay { hour: 1, minute: 0 },
+                stop: Some(TimeOfDay {
+                    hour: 6,
+                    minute: 30,
+                }),
+                days: vec![],
             }),
-            days: vec![],
-        }),
+            ..night.settings
+        },
         ..night
     };
-    here.manager.update_queue(night.clone())?;
+    here.manager
+        .update_queue(night.id, night.settings.clone())?;
     let downloads = here.folders.downloads.clone();
     let videos = here.folders.videos.clone();
     tune(&here.manager, |s| {
@@ -80,15 +84,8 @@ async fn settings_and_queues_move_to_another_machine() -> TestResult {
     assert!(settings.extension.ask_before_download);
     let queues = there.manager.list_queues();
     assert_eq!(queues.len(), 2);
-    let imported = queues.iter().find(|q| q.name == "Night").unwrap();
-    assert_eq!(
-        (
-            imported.max_concurrent,
-            imported.speed_limit,
-            &imported.schedule
-        ),
-        (4, Some(500_000), &night.schedule)
-    );
+    let imported = queues.iter().find(|q| q.settings.name == "Night").unwrap();
+    assert_eq!(imported.settings, night.settings);
     assert_eq!(settings.extension.default_queue, imported.id);
 
     // New downloads land in this machine's folders.
@@ -152,7 +149,7 @@ async fn a_profile_from_a_newer_version_is_refused() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_refused_import_uses_up_no_queue_ids() -> TestResult {
     let here = Harness::new().await?;
-    here.manager.create_queue("Night")?;
+    here.manager.create_queue(QueueSettings::new("Night"))?;
     let file = here.root.path().join("profile.json");
     here.manager.export_settings(&file).await.unwrap();
     let mut profile: serde_json::Value =
@@ -161,10 +158,10 @@ async fn a_refused_import_uses_up_no_queue_ids() -> TestResult {
     std::fs::write(&file, profile.to_string()).unwrap();
 
     let there = Harness::new().await?;
-    let first = there.manager.create_queue("First")?;
+    let first = there.manager.create_queue(QueueSettings::new("First"))?;
     let err = there.manager.import_settings(&file).await.unwrap_err();
     assert!(matches!(err, CoreError::Invalid(_)), "{err}");
-    let second = there.manager.create_queue("Second")?;
+    let second = there.manager.create_queue(QueueSettings::new("Second"))?;
     assert_eq!(second.id.0, first.id.0 + 1, "the refused import took an id");
     Ok(())
 }
@@ -175,7 +172,9 @@ async fn a_refused_import_uses_up_no_queue_ids() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_import_is_previewed_without_changing_anything() -> TestResult {
     let here = Harness::new().await?;
-    here.manager.create_queue("Night").unwrap();
+    here.manager
+        .create_queue(QueueSettings::new("Night"))
+        .unwrap();
     let file = here.root.path().join("profile.json");
     here.manager.export_settings(&file).await.unwrap();
     let there = Harness::new().await?;

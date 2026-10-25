@@ -1,6 +1,6 @@
 // The queues: what each is doing right now, and creating, changing, pausing and deleting them.
 
-import type { Queue, QueueId } from '@wirecatch/protocol';
+import type { Queue, QueueId, QueueSettings } from '@wirecatch/protocol';
 import type { Backend } from '../backend';
 import { formatTime, scheduleAllows } from '../format';
 import type { Runner } from './runner';
@@ -17,16 +17,6 @@ export interface QueuesHost {
   /** How many downloads of each queue are in each state. */
   counts: () => Counts;
 }
-
-/** What the queue form changes in a queue. */
-export type QueueChanges = Pick<
-  Queue,
-  'name' | 'max_concurrent' | 'speed_limit' | 'schedule' | 'notify'
->;
-
-/** What saving the queue form came to (`Queues.save`). */
-export type QueueSave =
-  { kind: 'saved'; queue: Queue } | { kind: 'made'; queue: Queue } | { kind: 'failed' };
 
 export class Queues {
   list = $state<Queue[]>([]);
@@ -45,50 +35,44 @@ export class Queues {
 
   /** True when a scheduled queue is outside its hours and not started by hand. */
   isOutsideSchedule(queue: Queue): boolean {
+    const { schedule } = queue.settings;
     return (
-      queue.schedule !== null &&
-      !queue.running_outside_schedule &&
-      !scheduleAllows(queue.schedule, this.#host.now())
+      schedule !== null &&
+      !queue.status.running_outside_schedule &&
+      !scheduleAllows(schedule, this.#host.now())
     );
   }
 
   /** A short phrase for the sidebar: what this queue is doing right now, and when idle how many it may run at once. */
-  status(queue: Queue): string {
+  describe(queue: Queue): string {
     const c = this.#host.counts().queue.get(queue.id);
-    if (queue.paused) return 'Paused';
-    if (queue.schedule && this.isOutsideSchedule(queue)) {
-      return `Starts at ${formatTime(queue.schedule.start)}`;
+    const { schedule, max_concurrent: atOnce } = queue.settings;
+    if (queue.status.paused) return 'Paused';
+    if (schedule && this.isOutsideSchedule(queue)) {
+      return `Starts at ${formatTime(schedule.start)}`;
     }
-    if (queue.running_outside_schedule) return 'Started by hand, outside its hours';
-    if (c && c.running > 0) return `${c.running} of ${queue.max_concurrent} running`;
+    if (queue.status.running_outside_schedule) return 'Started by hand, outside its hours';
+    if (c && c.running > 0) return `${c.running} of ${atOnce} running`;
     if (c && c.waiting > 0) return `${c.waiting} waiting`;
     if (c && c.paused > 0) return `${c.paused} paused`;
-    return `Idle, up to ${String(queue.max_concurrent)} at once`;
+    return `Idle, up to ${String(atOnce)} at once`;
   }
 
-  async create(name: string): Promise<Queue | undefined> {
-    return this.#host.runner.run(() => this.#host.backend().createQueue(name));
-  }
-
-  update(queue: Queue): Promise<boolean> {
-    return this.#host.runner.succeeds(() => this.#host.backend().updateQueue(queue));
-  }
-
-  /** Saves the queue form's `changes` to `queue`, or to a new queue made first when it is `undefined`. A failure is shown by the runner; a new queue made whose changes were then refused comes back as `made`, for a retry to save to instead of making another. */
-  async save(queue: Queue | undefined, changes: QueueChanges): Promise<QueueSave> {
-    const base = queue ?? (await this.create(changes.name));
-    if (!base) return { kind: 'failed' };
-    if (await this.update({ ...base, ...changes })) return { kind: 'saved', queue: base };
-    return queue ? { kind: 'failed' } : { kind: 'made', queue: base };
+  /** `id` `null` makes a new queue; `undefined` when the runner showed the failure. */
+  async save(id: QueueId | null, settings: QueueSettings): Promise<QueueId | undefined> {
+    const backend = this.#host.backend();
+    if (id === null) return (await this.#host.runner.run(() => backend.createQueue(settings)))?.id;
+    const saved = await this.#host.runner.succeeds(() => backend.updateQueue(id, settings));
+    return saved ? id : undefined;
   }
 
   /** Deletes a queue; its downloads move to the default queue. */
   async remove(id: QueueId): Promise<boolean> {
-    const name = this.byId(id)?.name;
+    const name = this.byId(id)?.settings.name;
     const ok = await this.#host.runner.succeeds(() => this.#host.backend().deleteQueue(id));
     if (ok)
       this.#host.toasts.notify(
-        `Deleted ${name ?? 'the queue'}. Its downloads moved to ${this.defaultQueue?.name ?? 'the default queue'}.`,
+        `Deleted ${name ?? 'the queue'}. Its downloads moved to ${this.defaultQueue?.settings.name ?? 'the default queue'}.`,
       );
     return ok;
   }
@@ -101,7 +85,7 @@ export class Queues {
   /** Runs a scheduled queue now, outside its hours, until it is empty or paused. */
   async startNow(queue: QueueId): Promise<void> {
     const ok = await this.#host.runner.succeeds(() => this.#host.backend().startQueueNow(queue));
-    const name = this.byId(queue)?.name ?? 'The queue';
+    const name = this.byId(queue)?.settings.name ?? 'The queue';
     if (ok)
       this.#host.toasts.notify(
         `${name} is running now. Its schedule applies again once it is empty.`,

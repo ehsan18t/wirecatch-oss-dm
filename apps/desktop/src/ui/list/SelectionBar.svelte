@@ -18,7 +18,7 @@
   const queues = $derived<MenuEntry[]>(
     app.queues.list.map((q) => ({
       id: `queue-${String(q.id)}`,
-      label: q.name,
+      label: q.settings.name,
       onselect: () => void app.actions.moveToQueue(app.selection.list, q.id),
     })),
   );

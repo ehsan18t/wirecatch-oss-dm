@@ -23,7 +23,7 @@
       case 'status':
         return STATUS_GROUP_LABEL[v.group];
       case 'queue':
-        return queue?.name ?? 'Queue';
+        return queue?.settings.name ?? 'Queue';
       case 'category':
         return CATEGORY_LABEL[v.category];
     }
@@ -33,8 +33,8 @@
   const queueFacts = $derived.by(() => {
     if (!queue) return [];
     return [
-      queue.paused ? 'Paused' : formatSchedule(queue.schedule),
-      queue.speed_limit === null ? '' : `Up to ${formatRate(queue.speed_limit)}`,
+      queue.status.paused ? 'Paused' : formatSchedule(queue.settings.schedule),
+      queue.settings.speed_limit === null ? '' : `Up to ${formatRate(queue.settings.speed_limit)}`,
     ].filter(Boolean);
   });
 
@@ -115,7 +115,7 @@
           >Start now</Button
         >
       {/if}
-      {#if queue.paused}
+      {#if queue.status.paused}
         <Button
           size="sm"
           variant="ghost"

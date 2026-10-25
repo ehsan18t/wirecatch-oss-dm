@@ -69,7 +69,7 @@ const ACTIONS: readonly CommandSpec<Selected>[] = [
 
 const MOVE: CommandSpec<Selected & { queue: Queue }> = {
   id: (s) => `sel.move.${s.queue.id}`,
-  title: (s) => `Move ${s.n} to ${s.queue.name}`,
+  title: (s) => `Move ${s.n} to ${s.queue.settings.name}`,
   keywords: 'queue transfer',
   when: (s) => canMoveTo(s.rows, s.queue.id),
   run: (s) => s.app.actions.moveToQueue(s.ids, s.queue.id),

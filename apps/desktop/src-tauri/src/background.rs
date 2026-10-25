@@ -132,7 +132,7 @@ pub struct Teller {
 impl Teller {
     /// Follows the queues' choices.
     pub fn queues(&mut self, queues: &[Queue]) {
-        self.modes = queues.iter().map(|q| (q.id, q.notify)).collect();
+        self.modes = queues.iter().map(|q| (q.id, q.settings.notify)).collect();
     }
 
     fn tells_each(&self, queue: QueueId) -> bool {

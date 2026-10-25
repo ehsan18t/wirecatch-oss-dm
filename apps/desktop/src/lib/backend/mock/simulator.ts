@@ -95,17 +95,18 @@ function schedule(s: Step): Map<QueueId, DownloadSummary[]> {
   const running = new Map<QueueId, DownloadSummary[]>();
   let queuesChanged = false;
   for (const queue of state.queues) {
-    const inWindow = queue.running_outside_schedule || scheduleAllows(queue.schedule, date);
+    const inWindow =
+      queue.status.running_outside_schedule || scheduleAllows(queue.settings.schedule, date);
     const line: Line = {
       queue,
       inWindow,
-      room: !queue.paused && inWindow ? queue.max_concurrent : 0,
+      room: !queue.status.paused && inWindow ? queue.settings.max_concurrent : 0,
       waiting: 0,
     };
     const { list, active } = scheduleLine(s, line, global);
     // "Start now" lasts until the queue runs out of work.
-    if (queue.running_outside_schedule && active === 0) {
-      queue.running_outside_schedule = false;
+    if (queue.status.running_outside_schedule && active === 0) {
+      queue.status.running_outside_schedule = false;
       queuesChanged = true;
     }
     running.set(queue.id, list);
@@ -158,14 +159,14 @@ function hold(s: Step, row: DownloadSummary, line: Line, globalMax: number) {
 }
 
 function waitReason({ queue, inWindow, room, waiting }: Line, globalMax: number): WaitReason {
-  if (queue.paused) return { type: 'queue_paused' };
+  if (queue.status.paused) return { type: 'queue_paused' };
   if (!inWindow)
-    return { type: 'queue_schedule', data: { starts_at: queue.schedule?.start ?? null } };
+    return { type: 'queue_schedule', data: { starts_at: queue.settings.schedule?.start ?? null } };
   if (waiting > 1) return { type: 'in_line', data: { position: waiting } };
   if (room <= 0) {
     return {
       type: 'queue_full',
-      data: { running: queue.max_concurrent, limit: queue.max_concurrent },
+      data: { running: queue.settings.max_concurrent, limit: queue.settings.max_concurrent },
     };
   }
   return { type: 'global_limit', data: { running: globalMax, limit: globalMax } };
@@ -178,7 +179,9 @@ function wantedSpeeds(s: Step, running: Map<QueueId, DownloadSummary[]>): Map<Do
     const list = running.get(q.id) ?? [];
     const downloading = list.filter((r) => r.status === 'downloading');
     const share =
-      q.speed_limit === null ? Infinity : q.speed_limit / Math.max(1, downloading.length);
+      q.settings.speed_limit === null
+        ? Infinity
+        : q.settings.speed_limit / Math.max(1, downloading.length);
     for (const row of list) {
       const sim = s.state.sim.get(row.id);
       if (!sim) continue;

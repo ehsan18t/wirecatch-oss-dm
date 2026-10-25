@@ -20,9 +20,9 @@
   import {
     MAX_CONCURRENT_DOWNLOADS,
     NEW_QUEUE_MAX_CONCURRENT,
-    type Queue,
     type QueueId,
     type QueueNotify,
+    type QueueSettings,
     type TimeOfDay,
     type Weekday,
   } from '@wirecatch/protocol';
@@ -45,7 +45,6 @@
   import { DAYS_PER_WEEK, WEEKDAYS, WEEKEND, WORKDAYS } from '$lib/time';
   import { queueConcurrentProblem } from '$lib/limits';
   import { getApp } from '$lib/state/app.svelte';
-  import type { QueueChanges } from '$lib/state/queues.svelte';
   import TimeInput from './TimeInput.svelte';
 
   let { id, deleting = false }: { id: QueueId | null; deleting?: boolean } = $props();
@@ -53,6 +52,7 @@
 
   // A snapshot of the queue when the dialog opened; the form edits its own copy.
   const original = (() => (id === null ? undefined : app.queues.byId(id)))();
+  const opened = original?.settings;
   // What the form suggests when a limit or schedule is turned on for a queue that has none.
   // The core makes a new queue without either; these are only where the fields start.
   const FIRST_SPEED_LIMIT = 2 * MB;
@@ -60,20 +60,20 @@
   const FIRST_STOP: TimeOfDay = { hour: 7, minute: 0 };
   const formId = $props.id();
 
-  let name = $state(original?.name ?? '');
-  let maxConcurrent = $state(original?.max_concurrent ?? NEW_QUEUE_MAX_CONCURRENT);
-  let limitOn = $state(original !== undefined && original.speed_limit !== null);
-  const initialLimit = splitKbOrMb(original?.speed_limit ?? FIRST_SPEED_LIMIT);
+  let name = $state(opened?.name ?? '');
+  let maxConcurrent = $state(opened?.max_concurrent ?? NEW_QUEUE_MAX_CONCURRENT);
+  let limitOn = $state(opened !== undefined && opened.speed_limit !== null);
+  const initialLimit = splitKbOrMb(opened?.speed_limit ?? FIRST_SPEED_LIMIT);
   let limitUnit = $state(initialLimit.unit);
   let limitValue = $state<number | null>(initialLimit.value);
-  let scheduleOn = $state(original !== undefined && original.schedule !== null);
-  let start = $state(formatTime(original?.schedule?.start ?? FIRST_START));
-  let untilEmpty = $state(original?.schedule ? original.schedule.stop === null : false);
-  let stop = $state(formatTime(original?.schedule?.stop ?? FIRST_STOP));
-  let days = $state<Weekday[]>(original?.schedule?.days ?? []);
+  let scheduleOn = $state(opened !== undefined && opened.schedule !== null);
+  let start = $state(formatTime(opened?.schedule?.start ?? FIRST_START));
+  let untilEmpty = $state(opened?.schedule ? opened.schedule.stop === null : false);
+  let stop = $state(formatTime(opened?.schedule?.stop ?? FIRST_STOP));
+  let days = $state<Weekday[]>(opened?.schedule?.days ?? []);
   // Picking single days is its own choice, kept while the days picked happen to make a pattern.
-  let pickingDays = $state(dayPattern(original?.schedule?.days ?? []) === 'custom');
-  let notify = $state<QueueNotify>(original?.notify ?? 'each_download');
+  let pickingDays = $state(dayPattern(opened?.schedule?.days ?? []) === 'custom');
+  let notify = $state<QueueNotify>(opened?.notify ?? 'each_download');
 
   /** What the queue's choice of when to tell does, given how Settings says to tell. */
   const notifyHelp = $derived.by(() => {
@@ -87,8 +87,6 @@
   // Opened to delete the queue (from the palette), it starts at that question.
   let confirmDelete = $state((() => deleting)());
   let busy = $state(false);
-  /** A queue this dialog already created, so a retried save updates it instead of making another. */
-  let created = $state<Queue>();
 
   // The button pressed goes as the footer changes: the focus moves to the safe answer, and back to Delete queue on Keep it.
   let keepButton = $state<HTMLButtonElement | null>(null);
@@ -106,7 +104,7 @@
   const movingLine = $derived.by(() => {
     if (!original) return '';
     const count = app.downloads.idsInQueue(original.id).length;
-    const to = app.queues.defaultQueue?.name ?? 'the default queue';
+    const to = app.queues.defaultQueue?.settings.name ?? 'the default queue';
     if (count === 0) return 'It holds no downloads.';
     return count === 1
       ? `Its download moves to ${to}.`
@@ -139,7 +137,7 @@
   });
 
   /** The speed limit the form describes, or why it is not one. */
-  function readLimit(): { limit: Queue['speed_limit'] } | string {
+  function readLimit(): { limit: QueueSettings['speed_limit'] } | string {
     if (!limitOn) return { limit: null };
     const limit = limitValue === null ? null : toBytes(limitValue, limitUnit);
     return limit === null || limit <= 0
@@ -148,7 +146,7 @@
   }
 
   /** The schedule the form describes, or why it is not one. */
-  function readSchedule(): { schedule: Queue['schedule'] } | string {
+  function readSchedule(): { schedule: QueueSettings['schedule'] } | string {
     if (!scheduleOn) return { schedule: null };
     const s = parseTime(start);
     const e = untilEmpty ? null : parseTime(stop);
@@ -165,7 +163,7 @@
   }
 
   /** What the form changes in a queue, or why it cannot. */
-  function readForm(): QueueChanges | string {
+  function readForm(): QueueSettings | string {
     if (!name.trim()) return 'Give the queue a name.';
     const tooMany = queueConcurrentProblem(maxConcurrent);
     if (tooMany !== null) return tooMany;
@@ -192,14 +190,10 @@
         error = changes;
         return;
       }
-      const saved = await app.queues.save(original ?? created, changes);
-      if (saved.kind === 'made') created = saved.queue;
-      if (saved.kind === 'saved') {
-        app.closeDialog();
-        if (!original) app.show({ kind: 'queue', id: saved.queue.id });
-      } else if (created) {
-        error = 'The queue was made, but its settings were not saved. Save again to retry.';
-      }
+      const savedId = await app.queues.save(original?.id ?? null, changes);
+      if (savedId === undefined) return;
+      app.closeDialog();
+      if (!original) app.show({ kind: 'queue', id: savedId });
     } finally {
       busy = false;
     }
@@ -212,7 +206,7 @@
 
 <Dialog
   open
-  title={original ? `Edit ${original.name}` : 'New queue'}
+  title={original ? `Edit ${original.settings.name}` : 'New queue'}
   description={original
     ? undefined
     : 'A queue runs its downloads in order, with its own limits and hours.'}
@@ -375,7 +369,7 @@
       <Button bind:ref={keepButton} data-autofocus onclick={() => (confirmDelete = false)}
         >Keep it</Button
       >
-      <Button variant="danger" onclick={remove}>Delete {original.name}</Button>
+      <Button variant="danger" onclick={remove}>Delete {original.settings.name}</Button>
     {:else}
       {#if original && !original.is_default}
         <Button
@@ -387,7 +381,7 @@
       {/if}
       <Button onclick={() => app.closeDialog()}>Cancel</Button>
       <Button type="submit" form={formId} variant="primary" loading={busy}>
-        {original || created ? 'Save' : 'Create queue'}
+        {original ? 'Save' : 'Create queue'}
       </Button>
     {/if}
   {/snippet}

@@ -11,6 +11,7 @@ import {
   type Category,
   type CategoryRule,
   type Queue,
+  type QueueStatus,
   type StartupNotice,
   type SuffixListInfo,
 } from '@wirecatch/protocol';
@@ -145,39 +146,44 @@ export function defaultOutput(): AppSettings['media']['video'] {
   };
 }
 
+export const QUEUE_RUNNING: QueueStatus = { paused: false, running_outside_schedule: false };
+
 const DEFAULT_QUEUES: readonly Queue[] = [
   {
     id: MAIN_QUEUE_ID,
-    name: 'Main',
-    max_concurrent: DEFAULT_QUEUE_MAX_CONCURRENT,
-    speed_limit: null,
-    schedule: null,
     is_default: true,
-    paused: false,
-    running_outside_schedule: false,
-    notify: 'each_download',
+    settings: {
+      name: 'Main',
+      max_concurrent: DEFAULT_QUEUE_MAX_CONCURRENT,
+      speed_limit: null,
+      schedule: null,
+      notify: 'each_download',
+    },
+    status: { ...QUEUE_RUNNING },
   },
   {
     id: OVERNIGHT_QUEUE_ID,
-    name: 'Overnight',
-    max_concurrent: 2,
-    speed_limit: 4 * MB,
-    schedule: { start: { hour: 1, minute: 0 }, stop: { hour: 7, minute: 0 }, days: [] },
     is_default: false,
-    paused: false,
-    running_outside_schedule: false,
-    notify: 'when_done',
+    settings: {
+      name: 'Overnight',
+      max_concurrent: 2,
+      speed_limit: 4 * MB,
+      schedule: { start: { hour: 1, minute: 0 }, stop: { hour: 7, minute: 0 }, days: [] },
+      notify: 'when_done',
+    },
+    status: { ...QUEUE_RUNNING },
   },
   {
     id: WORK_QUEUE_ID,
-    name: 'Work files',
-    max_concurrent: 1,
-    speed_limit: 1 * MB,
-    schedule: null,
     is_default: false,
-    paused: false,
-    running_outside_schedule: false,
-    notify: 'each_download',
+    settings: {
+      name: 'Work files',
+      max_concurrent: 1,
+      speed_limit: 1 * MB,
+      schedule: null,
+      notify: 'each_download',
+    },
+    status: { ...QUEUE_RUNNING },
   },
 ];
 

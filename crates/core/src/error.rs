@@ -98,6 +98,11 @@ pub enum CoreError {
         supported: u32,
     },
 
+    #[error(
+        "This settings file was made by an earlier version of Wirecatch (format {found}), whose settings files this version cannot read. Export the settings again with this version."
+    )]
+    ProfileTooOld { found: u64 },
+
     /// A file that is not a readable settings profile.
     #[error(
         "This file is not a Wirecatch settings file ({0}). Choose a file made with Export settings."
@@ -206,6 +211,7 @@ impl CoreError {
             | CoreError::DefaultQueue
             | CoreError::Path(_)
             | CoreError::ProfileTooNew { .. }
+            | CoreError::ProfileTooOld { .. }
             | CoreError::InvalidProfile(_) => ErrorCode::InvalidRequest,
             CoreError::AddonRequired => ErrorCode::AddonRequired,
             CoreError::DatabaseTooNew { .. }
@@ -290,9 +296,10 @@ mod tests {
             CoreError::Path(PathError::Special(r"\\.\C:".into())),
             CoreError::Path(PathError::Network(r"\\server\share".into())),
             CoreError::ProfileTooNew {
-                found: 2,
-                supported: 1,
+                found: 3,
+                supported: 2,
             },
+            CoreError::ProfileTooOld { found: 1 },
             CoreError::InvalidProfile("it has no format version".into()),
             CoreError::DatabaseTooNew {
                 found: 9,

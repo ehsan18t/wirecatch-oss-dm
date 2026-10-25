@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use wirecatch_core::{LinkFrom, Manager, serve_connection};
 use wirecatch_protocol::app::{
-    CaptureConfirmation, DownloadStatus, MediaDefaultsPatch, UiEvent, Update,
+    CaptureConfirmation, DownloadStatus, MediaDefaultsPatch, QueueSettings, UiEvent, Update,
 };
 use wirecatch_protocol::extension::{
     AddAction, BrowserControlsPatch, CaptureSource, ExtensionSettingsPatch, Header, NewDownload,
@@ -478,7 +478,7 @@ async fn settings_changes_reach_every_client() -> TestResult {
     }
 
     // Queue changes are pushed too.
-    h.manager.create_queue("Later").unwrap();
+    h.manager.create_queue(QueueSettings::new("Later")).unwrap();
     assert!(matches!(
         firefox.next_event().await?,
         Event::QueuesChanged(q) if q.iter().any(|q| q.name == "Later")
@@ -1007,12 +1007,14 @@ async fn withdraw_drops_only_what_the_server_has_not_answered() -> TestResult {
 
     // A capture waiting for its queue's schedule has not reached the server.
     let mut queue = h.manager.list_queues().remove(0);
-    queue.schedule = Some(wirecatch_protocol::app::Schedule {
+    queue.settings.schedule = Some(wirecatch_protocol::app::Schedule {
         start: wirecatch_protocol::app::TimeOfDay { hour: 2, minute: 0 },
         stop: Some(wirecatch_protocol::app::TimeOfDay { hour: 3, minute: 0 }),
         days: vec![],
     });
-    h.manager.update_queue(queue.clone()).unwrap();
+    h.manager
+        .update_queue(queue.id, queue.settings.clone())
+        .unwrap();
     let waiting = capture(server.url("waiting.bin").to_string());
     let added = h.manager.add_capture(waiting.clone()).await.unwrap();
     assert_eq!(added.action, AddAction::Queued);
@@ -1033,8 +1035,8 @@ async fn withdraw_drops_only_what_the_server_has_not_answered() -> TestResult {
     assert_eq!(outcome(reply), WithdrawOutcome::NotFound);
 
     // A finished one is the app's now.
-    queue.schedule = None;
-    h.manager.update_queue(queue).unwrap();
+    queue.settings.schedule = None;
+    h.manager.update_queue(queue.id, queue.settings).unwrap();
     let done = capture(server.url("done.bin").to_string());
     let id = h
         .manager

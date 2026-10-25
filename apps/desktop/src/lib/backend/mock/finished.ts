@@ -47,7 +47,8 @@ export class MockFinished implements FinishedSource {
       const before = this.#seen.get(row.id);
       this.#seen.set(row.id, row.status);
       if (before === row.status) continue;
-      const tellsEach = this.#state.queues.find((q) => q.id === row.queue)?.notify !== 'when_done';
+      const tellsEach =
+        this.#state.queues.find((q) => q.id === row.queue)?.settings.notify !== 'when_done';
       if (row.status === 'failed' || (row.status === 'completed' && tellsEach)) ended.push(row);
     }
     if (ended.length > 0 && this.#state.settings.finish_notice === 'window') this.add(null, ended);
@@ -83,10 +84,16 @@ export class MockFinished implements FinishedSource {
     const rows = [...this.#state.rows.values()];
     const completed = rows.filter((r) => r.status === 'completed').slice(0, SAMPLE_QUEUE_RUN);
     const failed = rows.filter((r) => r.status === 'failed' && retryHelps(r)).slice(0, 1);
-    const queue = this.#state.queues.find((q) => q.notify === 'when_done') ?? this.#state.queues[0];
+    const queue =
+      this.#state.queues.find((q) => q.settings.notify === 'when_done') ?? this.#state.queues[0];
     if (!queue || completed.length + failed.length === 0) return;
     this.add(
-      { id: queue.id, name: queue.name, completed: completed.length, failed: failed.length },
+      {
+        id: queue.id,
+        name: queue.settings.name,
+        completed: completed.length,
+        failed: failed.length,
+      },
       [...completed, ...failed],
     );
   }

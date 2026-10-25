@@ -123,7 +123,7 @@ pub(super) struct QueueSlot {
 impl QueueSlot {
     pub fn new(queue: Queue) -> Self {
         Self {
-            limiter: Arc::new(RateLimiter::new(queue.speed_limit)),
+            limiter: Arc::new(RateLimiter::new(queue.settings.speed_limit)),
             queue,
             gate: Gate::default(),
         }
@@ -321,7 +321,7 @@ impl State {
             .iter()
             .map(|s| QueueSummary {
                 id: s.queue.id,
-                name: s.queue.name.clone(),
+                name: s.queue.settings.name.clone(),
                 is_default: s.queue.is_default,
             })
             .collect()
@@ -397,7 +397,7 @@ impl State {
     pub fn queue_name_taken(&self, name: &str, except: Option<QueueId>) -> bool {
         self.queues
             .iter()
-            .any(|s| Some(s.queue.id) != except && s.queue.name.eq_ignore_ascii_case(name))
+            .any(|s| Some(s.queue.id) != except && s.queue.settings.name.eq_ignore_ascii_case(name))
     }
 
     /// Records that `id` changed, for the next batched event.

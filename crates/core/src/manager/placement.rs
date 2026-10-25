@@ -48,7 +48,7 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use wirecatch_protocol::app::Queue;
+    use wirecatch_protocol::app::{Queue, QueueSettings};
 
     use super::*;
     use crate::error::CoreError;
@@ -61,11 +61,15 @@ mod tests {
 
     fn state_with_browser_queue(browser: QueueId) -> State {
         let mut state = first_start();
+        let main = default_queue();
         state.queues.push(QueueSlot::new(Queue {
             id: OTHER,
-            name: "Other".into(),
             is_default: false,
-            ..default_queue()
+            settings: QueueSettings {
+                name: "Other".into(),
+                ..main.settings
+            },
+            ..main
         }));
         state.settings.extension.default_queue = browser;
         state

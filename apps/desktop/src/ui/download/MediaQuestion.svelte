@@ -88,7 +88,11 @@
 
   /** Where the file goes, in one line: its folder, its queue, and the name typed if any. */
   const whereSummary = $derived(
-    [folderTail(folder), win.queues.find((q) => q.id === queue)?.name ?? '', fileName.trim()]
+    [
+      folderTail(folder),
+      win.queues.find((q) => q.id === queue)?.settings.name ?? '',
+      fileName.trim(),
+    ]
       .filter(Boolean)
       .join(' · '),
   );

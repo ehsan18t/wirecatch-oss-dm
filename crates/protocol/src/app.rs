@@ -178,6 +178,17 @@ pub enum Category {
 pub struct Queue {
     /// Identifies the queue.
     pub id: QueueId,
+    /// Downloads go to this queue when none is named. There is always exactly one, and it
+    /// cannot be deleted.
+    pub is_default: bool,
+    pub settings: QueueSettings,
+    /// Changed only by the queue's own commands.
+    pub status: QueueStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct QueueSettings {
     /// The name the person gave it, unique among the queues.
     pub name: String,
     /// Downloads from this queue that may run at the same time.
@@ -187,9 +198,28 @@ pub struct Queue {
     pub speed_limit: Option<u64>,
     /// When set, the queue only runs inside this window.
     pub schedule: Option<Schedule>,
-    /// Downloads go to this queue when none is named. There is always exactly one, and it
-    /// cannot be deleted.
-    pub is_default: bool,
+    /// When the person is told its downloads finished (D52).
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "QueueNotify")]
+    pub notify: QueueNotify,
+}
+
+impl QueueSettings {
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            max_concurrent: NEW_QUEUE_MAX_CONCURRENT,
+            speed_limit: None,
+            schedule: None,
+            notify: QueueNotify::EachDownload,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct QueueStatus {
     /// A paused queue starts nothing new, including downloads added later, and
     /// its running downloads are paused. Resuming it does not resume downloads
     /// the user paused one by one.
@@ -197,10 +227,15 @@ pub struct Queue {
     /// Set by "start now": the queue runs outside its schedule until it is empty
     /// or paused, then the schedule applies again.
     pub running_outside_schedule: bool,
-    /// When the person is told its downloads finished (D52).
-    #[serde(default, with = "known_or_default")]
-    #[ts(as = "QueueNotify")]
-    pub notify: QueueNotify,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProfileQueue {
+    /// Its id where the profile was written; the profile's settings refer to it.
+    pub id: QueueId,
+    pub is_default: bool,
+    pub settings: QueueSettings,
 }
 
 /// A queue that is done: nothing in it downloads or waits to start (D52). It covers the
@@ -732,7 +767,7 @@ pub enum WaitReason {
     QueueFull {
         /// Downloads of the queue running now.
         running: u32,
-        /// The queue's [`Queue::max_concurrent`].
+        /// The queue's [`QueueSettings::max_concurrent`].
         limit: u32,
     },
     /// The app already runs as many downloads as allowed overall.
@@ -1165,20 +1200,19 @@ crate::exported::exported_consts! {
     /// [`AppSettings::connections_per_download`] on a fresh install.
     pub const DEFAULT_CONNECTIONS_PER_DOWNLOAD: u8 = 8;
     /// Highest accepted value for any limit on downloads running at once: the app-wide
-    /// [`AppSettings::max_concurrent_downloads`] and each [`Queue::max_concurrent`].
+    /// [`AppSettings::max_concurrent_downloads`] and each [`QueueSettings::max_concurrent`].
     pub const MAX_CONCURRENT_DOWNLOADS: u32 = 100;
     /// [`AppSettings::max_concurrent_downloads`] on a fresh install.
     pub const DEFAULT_MAX_CONCURRENT_DOWNLOADS: u32 = 5;
-    /// [`Queue::max_concurrent`] of a newly created queue.
+    /// Where a new queue's editor starts.
     pub const NEW_QUEUE_MAX_CONCURRENT: u32 = 2;
-    /// [`Queue::max_concurrent`] of the default queue on a fresh install.
+    /// The default queue's, on a fresh install.
     pub const DEFAULT_QUEUE_MAX_CONCURRENT: u32 = 3;
     /// [`ProcessingProgress::per_mille`] of a finished step: progress is counted in tenths of
     /// a percent.
     pub const PER_MILLE_DONE: u16 = 1000;
-    /// [`SettingsProfile::format_version`] of the settings files this build writes, and the
-    /// newest it reads.
-    pub const PROFILE_FORMAT_VERSION: u32 = 1;
+    /// The only [`SettingsProfile::format_version`] this build reads and writes (D75).
+    pub const PROFILE_FORMAT_VERSION: u32 = 2;
     /// Most download windows asking a question at once (D23); later questions wait until one
     /// of them closes.
     pub const MAX_QUESTION_WINDOWS: usize = 5;
@@ -1467,8 +1501,8 @@ pub struct SettingsProfile {
     pub exported_at: i64,
     /// Every setting.
     pub settings: AppSettings,
-    /// Every queue, with its limits and schedule.
-    pub queues: Vec<Queue>,
+    /// Every queue, with its limits and schedule, in sidebar order.
+    pub queues: Vec<ProfileQueue>,
     /// The installed add-ons, offered for installing on import.
     pub addons: Vec<AddonId>,
 }

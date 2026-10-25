@@ -12,7 +12,7 @@ use wirecatch_core::{LinkFrom, Manager};
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
     CaptureConfirmation, DownloadStatus, DownloadSummary, ImportPreview, MediaChoice,
-    MediaSelection, PendingCapture, Question, Queue, SuffixListInfo,
+    MediaSelection, PendingCapture, Question, Queue, QueueSettings, SuffixListInfo,
 };
 use wirecatch_protocol::desktop::SAFE_EXTENSIONS;
 use wirecatch_protocol::proxy::{ProxyChange, ProxySettings, ProxyTest, ProxyTestResult};
@@ -185,24 +185,12 @@ pub fn list_queues(m: &Manager) -> Vec<Queue> {
     m.list_queues()
 }
 
-/// Makes a new queue.
-///
-/// # Errors
-///
-/// The name is empty, too long or taken, there are already as many queues as allowed, or the
-/// manager has shut down ([`Manager::create_queue`]).
-pub fn create_queue(m: &Manager, name: &str) -> CommandResult<Queue> {
-    plain(m.create_queue(name))
+pub fn create_queue(m: &Manager, settings: QueueSettings) -> CommandResult<Queue> {
+    plain(m.create_queue(settings))
 }
 
-/// Saves a queue's name, limits and schedule.
-///
-/// # Errors
-///
-/// A name or limit cannot be used, there is no such queue, or the manager has shut down
-/// ([`Manager::update_queue`]).
-pub fn update_queue(m: &Manager, queue: Queue) -> CommandResult<()> {
-    plain(m.update_queue(queue))
+pub fn update_queue(m: &Manager, id: QueueId, settings: QueueSettings) -> CommandResult<()> {
+    plain(m.update_queue(id, settings))
 }
 
 /// Deletes a queue; its downloads move to the default queue.

@@ -70,7 +70,7 @@ export const DEFAULT_CONNECTIONS_PER_DOWNLOAD = 8;
 
 /**
  * Highest accepted value for any limit on downloads running at once: the app-wide
- * [`AppSettings::max_concurrent_downloads`] and each [`Queue::max_concurrent`].
+ * [`AppSettings::max_concurrent_downloads`] and each [`QueueSettings::max_concurrent`].
  */
 export const MAX_CONCURRENT_DOWNLOADS = 100;
 
@@ -80,12 +80,12 @@ export const MAX_CONCURRENT_DOWNLOADS = 100;
 export const DEFAULT_MAX_CONCURRENT_DOWNLOADS = 5;
 
 /**
- * [`Queue::max_concurrent`] of a newly created queue.
+ * Where a new queue's editor starts.
  */
 export const NEW_QUEUE_MAX_CONCURRENT = 2;
 
 /**
- * [`Queue::max_concurrent`] of the default queue on a fresh install.
+ * The default queue's, on a fresh install.
  */
 export const DEFAULT_QUEUE_MAX_CONCURRENT = 3;
 
@@ -96,10 +96,9 @@ export const DEFAULT_QUEUE_MAX_CONCURRENT = 3;
 export const PER_MILLE_DONE = 1000;
 
 /**
- * [`SettingsProfile::format_version`] of the settings files this build writes, and the
- * newest it reads.
+ * The only [`SettingsProfile::format_version`] this build reads and writes (D75).
  */
-export const PROFILE_FORMAT_VERSION = 1;
+export const PROFILE_FORMAT_VERSION = 2;
 
 /**
  * Most download windows asking a question at once (D23); later questions wait until one

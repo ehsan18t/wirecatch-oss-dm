@@ -164,7 +164,8 @@ impl Manager {
     ///
     /// [`CoreError::File`] when `path` cannot be read, [`CoreError::InvalidProfile`]
     /// when it is not a settings profile, [`CoreError::ProfileTooNew`] when a newer
-    /// Wirecatch made it, [`CoreError::Invalid`] when its settings or queues are out of
+    /// Wirecatch made it, [`CoreError::ProfileTooOld`] when an earlier one did in a format this
+    /// version does not read, [`CoreError::Invalid`] when its settings or queues are out of
     /// range, and [`CoreError::Closed`] once the manager has shut down. Nothing changes
     /// on an error.
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
@@ -180,7 +181,6 @@ impl Manager {
             let mut imported = profile::merge_localized(
                 localized,
                 &current,
-                &state.settings,
                 &self.inner.folders,
                 &state.suffixes,
                 || ids.queue(),
@@ -189,7 +189,7 @@ impl Manager {
             self.inner.store.save_last_ids(state.ids.last());
             for queue in imported.queues {
                 match state.slot_mut(queue.id) {
-                    Ok(slot) => apply_to_slot(slot, queue),
+                    Ok(slot) => apply_to_slot(slot, queue.settings),
                     Err(_) => state.queues.push(QueueSlot::new(queue)),
                 }
             }
@@ -240,7 +240,6 @@ impl Manager {
         let imported = profile::merge_localized(
             localized,
             &current,
-            &state.settings,
             &self.inner.folders,
             &state.suffixes,
             || {

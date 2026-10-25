@@ -18,6 +18,7 @@ import { version } from '../../../../package.json';
 import { defaultProxySettings, emptyServer, sameProxy } from '../../proxy';
 import { applyPatch } from '../../state/settings-changes.svelte';
 import { BackendError } from '../types';
+import { QUEUE_RUNNING } from './data';
 import type { MockState } from './state';
 
 export function changeSettings(state: MockState, patch: AppSettingsPatch): void {
@@ -119,7 +120,11 @@ export function exportSettings(state: MockState, path: string): void {
       // Passwords stay on this computer, as in the core.
       proxy: withoutPasswords(state.settings.proxy),
     },
-    queues: structuredClone(state.queues),
+    queues: state.queues.map(({ id, is_default, settings }) => ({
+      id,
+      is_default,
+      settings: structuredClone(settings),
+    })),
     addons: state.addons.filter((a) => a.state.type !== 'not_installed').map((a) => a.id),
   });
 }
@@ -172,8 +177,8 @@ export function previewImport(state: MockState, path: string): ImportPreview {
   const known = new Set(state.queues.map((q) => q.id));
   return {
     folders: [importedFolder(profile)],
-    queues_added: profile.queues.filter((q) => !known.has(q.id)).map((q) => q.name),
-    queues_updated: profile.queues.filter((q) => known.has(q.id)).map((q) => q.name),
+    queues_added: profile.queues.filter((q) => !known.has(q.id)).map((q) => q.settings.name),
+    queues_updated: profile.queues.filter((q) => known.has(q.id)).map((q) => q.settings.name),
     addons_to_offer: addonsToOffer(state, profile),
   };
 }
@@ -185,7 +190,13 @@ export function importSettings(state: MockState, path: string): void {
   const folder = importedFolder(profile);
   state.settings = structuredClone(profile.settings);
   state.settings.default_folder = folder.used;
-  state.queues = structuredClone(profile.queues);
+  // The mock matches a profile's queues by id, where the core matches them by name.
+  state.queues = profile.queues.map(({ id, is_default, settings }) => ({
+    id,
+    is_default,
+    settings: structuredClone(settings),
+    status: state.queues.find((q) => q.id === id)?.status ?? { ...QUEUE_RUNNING },
+  }));
   state.settingsChanged();
   state.queuesChanged();
   state.emit({

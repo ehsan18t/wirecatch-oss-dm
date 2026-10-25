@@ -155,7 +155,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     );
     await click(within(d).getByRole('button', { name: 'Delete queue' }));
     await click(within(d).getByRole('button', { name: 'Delete Overnight' }));
-    expect(app.queues.list.some((q) => q.name === 'Overnight')).toBe(false);
+    expect(app.queues.list.some((q) => q.settings.name === 'Overnight')).toBe(false);
     await click(button('New queue'));
     expect(within(dialog()).getByText('New queue')).toBeInTheDocument();
     for (const id of [

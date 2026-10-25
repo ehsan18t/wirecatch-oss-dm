@@ -30,7 +30,7 @@ use wirecatch_desktop_lib::window::MAIN_WINDOW;
 use wirecatch_desktop_lib::{RESYNC_EVENT, UI_EVENT, tray};
 use wirecatch_protocol::app::{
     Category, DownloadStatus, DownloadSummary, FinishNotice, PendingCapture, Queue, QueueNotify,
-    QueueReport, UiEvent, UserError,
+    QueueReport, QueueSettings, QueueStatus, UiEvent, UserError,
 };
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use wirecatch_test_support::{PATIENCE, TestResult};
@@ -518,14 +518,12 @@ fn ended_row(id: i64, queue: i64, status: DownloadStatus) -> DownloadSummary {
 fn queue_telling(id: i64, notify: QueueNotify) -> Queue {
     Queue {
         id: QueueId(id),
-        name: format!("Queue {id}"),
-        max_concurrent: 1,
-        speed_limit: None,
-        schedule: None,
         is_default: id == 1,
-        paused: false,
-        running_outside_schedule: false,
-        notify,
+        settings: QueueSettings {
+            notify,
+            ..QueueSettings::new(format!("Queue {id}"))
+        },
+        status: QueueStatus::default(),
     }
 }
 

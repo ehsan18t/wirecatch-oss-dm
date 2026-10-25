@@ -46,7 +46,7 @@
       case 'status':
         return STATUS_GROUP_LABEL[v.group];
       case 'queue':
-        return app.queues.byId(v.id)?.name ?? 'Queue';
+        return app.queues.byId(v.id)?.settings.name ?? 'Queue';
       case 'category':
         return CATEGORY_LABEL[v.category];
     }

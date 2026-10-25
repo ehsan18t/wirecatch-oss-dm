@@ -62,7 +62,7 @@
   const active = $derived(app.selection.active === id);
   const group = $derived(row ? groupOf(row.status) : null);
   const position = $derived(app.places.position.get(id));
-  const queueName = $derived(row ? (app.queues.byId(row.queue)?.name ?? 'its queue') : '');
+  const queueName = $derived(row ? (app.queues.byId(row.queue)?.settings.name ?? 'its queue') : '');
   const progress = $derived(row && row.status !== 'cancelled' ? rowProgress(row) : null);
   const percent = $derived(row ? formatPercent(row.done, row.total) : '');
   const size = $derived(row ? formatSize(row.done, row.total, row.status) : '');

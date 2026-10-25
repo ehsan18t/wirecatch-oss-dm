@@ -7,8 +7,8 @@ use std::path::Path;
 use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
-    AppSettings, Category, FinishNotice, ImportSummary, ImportedFolder, PROFILE_FORMAT_VERSION,
-    PortablePath, Queue, SettingsProfile,
+    AppSettings, Category, ImportSummary, ImportedFolder, PROFILE_FORMAT_VERSION, PortablePath,
+    ProfileQueue, Queue, QueueStatus, SettingsProfile,
 };
 
 use crate::error::{CoreError, Result};
@@ -41,62 +41,21 @@ pub(crate) fn export(
         app_version: env!("CARGO_PKG_VERSION").to_string(),
         exported_at,
         settings,
-        queues: queues.to_vec(),
+        queues: queues
+            .iter()
+            .map(|q| ProfileQueue {
+                id: q.id,
+                is_default: q.is_default,
+                settings: q.settings.clone(),
+            })
+            .collect(),
         addons: Vec::new(),
     }
 }
 
-/// A profile as its file holds it.
-#[derive(Debug)]
-pub(crate) struct Parsed {
-    pub profile: SettingsProfile,
-    /// The settings it names of those an older profile may not.
-    pub names: Names,
-}
-
-/// Which of the settings added after profiles were first written a profile names. One written
-/// before a setting existed does not, and then the choice made here stays, since the person
-/// made it and the profile knew nothing of it.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Names {
-    /// Whether the Public Suffix List is kept current (D44.2): turning the refresh off is a
-    /// privacy choice an import must not undo.
-    pub suffix_list_updates: bool,
-    /// Whether notifications show during Do Not Disturb (D64).
-    pub do_not_disturb: bool,
-    /// The proxy (D71).
-    pub proxy: bool,
-}
-
-impl Names {
-    /// What the settings of a profile's `value` name.
-    fn read(value: &serde_json::Value) -> Self {
-        let names = |setting: &str| value.pointer(&format!("/settings/{setting}")).is_some();
-        Self {
-            suffix_list_updates: names("update_suffix_list"),
-            do_not_disturb: names("notify_during_do_not_disturb"),
-            proxy: names("proxy"),
-        }
-    }
-
-    /// Gives `settings` the choices made `here` for the settings this profile does not name.
-    fn keep_here(self, settings: &mut AppSettings, here: &AppSettings) {
-        if !self.suffix_list_updates {
-            settings.update_suffix_list = here.update_suffix_list;
-        }
-        if !self.do_not_disturb {
-            settings.notify_during_do_not_disturb = here.notify_during_do_not_disturb;
-        }
-        if !self.proxy {
-            settings.proxy = here.proxy.clone();
-        }
-    }
-}
-
-/// Reads a profile file. The version is checked before anything else, so a file
-/// from a newer Wirecatch gets a clear message instead of a parse error.
-pub(crate) fn parse(bytes: &[u8]) -> Result<Parsed> {
-    let mut value: serde_json::Value =
+/// Checks the format version first, so another version's file gets its own error.
+pub(crate) fn parse(bytes: &[u8]) -> Result<SettingsProfile> {
+    let value: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|e| CoreError::InvalidProfile(e.to_string()))?;
     let version = value
         .get("format_version")
@@ -108,45 +67,10 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Parsed> {
             supported: PROFILE_FORMAT_VERSION,
         });
     }
-    if version == 0 {
-        return Err(CoreError::InvalidProfile("its format version is 0".into()));
+    if version < u64::from(PROFILE_FORMAT_VERSION) {
+        return Err(CoreError::ProfileTooOld { found: version });
     }
-    let names = Names::read(&value);
-    upgrade_finish_notice(&mut value);
-    let profile =
-        serde_json::from_value(value).map_err(|e| CoreError::InvalidProfile(e.to_string()))?;
-    Ok(Parsed { profile, names })
-}
-
-/// A profile written before D52 says whether finished downloads notify with a switch,
-/// `notify_on_complete`, whose off meant no notice at all; the database's migration reads it
-/// the same way.
-fn upgrade_finish_notice(value: &mut serde_json::Value) {
-    const OLD_SWITCH: &str = "notify_on_complete";
-    const NOTICE: &str = "finish_notice";
-    let Some(settings) = value
-        .get_mut("settings")
-        .and_then(serde_json::Value::as_object_mut)
-    else {
-        return;
-    };
-    let Some(on) = settings
-        .remove(OLD_SWITCH)
-        .and_then(|switch| switch.as_bool())
-    else {
-        return;
-    };
-    if settings.contains_key(NOTICE) {
-        return;
-    }
-    let notice = if on {
-        FinishNotice::Notification
-    } else {
-        FinishNotice::Nothing
-    };
-    if let Ok(notice) = serde_json::to_value(notice) {
-        settings.insert(NOTICE.into(), notice);
-    }
+    serde_json::from_value(value).map_err(|e| CoreError::InvalidProfile(e.to_string()))
 }
 
 /// Settings and queues after applying an imported profile, and what changed.
@@ -168,19 +92,15 @@ pub(crate) struct Imported {
 pub(crate) struct Localized {
     pub profile: SettingsProfile,
     pub folders: Vec<ImportedFolder>,
-    /// See [`Parsed::names`].
-    pub names: Names,
 }
 
 /// Resolves the profile's folders on this machine; see [`Localized`]. Blocks on
 /// the disk.
-pub(crate) fn localize(parsed: Parsed, folders: &KnownFolders) -> Localized {
-    let Parsed { mut profile, names } = parsed;
+pub(crate) fn localize(mut profile: SettingsProfile, folders: &KnownFolders) -> Localized {
     let report = localize_folders(&mut profile.settings, folders);
     Localized {
         profile,
         folders: report,
-        names,
     }
 }
 
@@ -213,19 +133,9 @@ pub(crate) fn merge(
     folders: &KnownFolders,
     next_queue_id: impl FnMut() -> QueueId,
 ) -> Result<Imported> {
-    let here = profile.settings.clone();
-    let parsed = Parsed {
-        profile,
-        names: Names {
-            suffix_list_updates: true,
-            do_not_disturb: true,
-            proxy: true,
-        },
-    };
     merge_localized(
-        localize(parsed, folders),
+        localize(profile, folders),
         current,
-        &here,
         folders,
         &SuffixList::built_in(),
         next_queue_id,
@@ -240,13 +150,10 @@ pub(crate) fn merge(
 /// known name updates that queue, and the rest are added. Queues missing from the
 /// profile are kept, because downloads may still be in them. A folder that does not
 /// exist on this machine (an absolute path from another system), or that is a
-/// startup or system folder, falls back to the default folder. A setting the profile
-/// is too old to carry and that must not change unasked keeps its value in `here`,
-/// the settings in use.
+/// startup or system folder, falls back to the default folder.
 pub(crate) fn merge_localized(
     localized: Localized,
     current: &[Queue],
-    here: &AppSettings,
     folders: &KnownFolders,
     suffixes: &SuffixList,
     mut next_queue_id: impl FnMut() -> QueueId,
@@ -254,7 +161,6 @@ pub(crate) fn merge_localized(
     let Localized {
         profile,
         folders: folder_report,
-        names,
     } = localized;
     // Checked before the merge so a huge file costs nothing.
     settings::check_queue_count(profile.queues.len())?;
@@ -262,34 +168,23 @@ pub(crate) fn merge_localized(
     let mut ids = HashMap::new();
     let (mut added, mut updated) = (Vec::new(), Vec::new());
     for incoming in profile.queues {
-        let incoming = settings::validate_queue(incoming)?;
-        let target = if incoming.is_default {
-            queues.iter().position(|q| q.is_default)
-        } else {
-            queues
-                .iter()
-                .position(|q| !q.is_default && q.name.eq_ignore_ascii_case(&incoming.name))
-        };
-        let local_id = if let Some(i) = target {
-            let existing = &mut queues[i];
-            updated.push(existing.name.clone());
-            *existing = Queue {
-                id: existing.id,
-                is_default: existing.is_default,
-                paused: existing.paused,
-                running_outside_schedule: existing.running_outside_schedule,
-                ..incoming.clone()
-            };
+        let settings = settings::validate_queue(incoming.settings)?;
+        let target = queues.iter_mut().find(|q| {
+            q.is_default == incoming.is_default
+                && (incoming.is_default || q.settings.name.eq_ignore_ascii_case(&settings.name))
+        });
+        let local_id = if let Some(existing) = target {
+            updated.push(existing.settings.name.clone());
+            existing.settings = settings;
             existing.id
         } else {
-            added.push(incoming.name.clone());
+            added.push(settings.name.clone());
             let id = next_queue_id();
             queues.push(Queue {
                 id,
                 is_default: false,
-                paused: false,
-                running_outside_schedule: false,
-                ..incoming.clone()
+                settings,
+                status: QueueStatus::default(),
             });
             id
         };
@@ -297,8 +192,7 @@ pub(crate) fn merge_localized(
     }
 
     let mut settings = profile.settings;
-    names.keep_here(&mut settings, here);
-    // A profile is stored data, possibly from an older version: its sites are read as a stored list is.
+    // A file edited by hand may hold sites no host matches.
     settings.extension.ignored_sites = settings::stored_sites(settings.extension.ignored_sites);
     settings.extension.default_queue = ids
         .get(&settings.extension.default_queue)
@@ -382,7 +276,7 @@ fn category_folder_name(category: Category) -> &'static str {
 mod tests {
     use super::*;
     use crate::settings::{default_queue, default_settings};
-    use wirecatch_protocol::app::{MediaDefaults, QueueNotify};
+    use wirecatch_protocol::app::{MediaDefaults, QueueNotify, QueueSettings};
 
     fn folders() -> KnownFolders {
         KnownFolders::under_home(std::env::temp_dir().join("wc-profile-home"))
@@ -391,27 +285,37 @@ mod tests {
     fn queue(id: i64, name: &str) -> Queue {
         Queue {
             id: QueueId(id),
-            name: name.into(),
-            max_concurrent: 1,
-            speed_limit: None,
-            schedule: None,
             is_default: false,
-            paused: false,
-            running_outside_schedule: false,
-            notify: QueueNotify::EachDownload,
+            settings: QueueSettings {
+                name: name.into(),
+                max_concurrent: 1,
+                speed_limit: None,
+                schedule: None,
+                notify: QueueNotify::EachDownload,
+            },
+            status: QueueStatus::default(),
+        }
+    }
+
+    fn in_profile(queue: Queue) -> ProfileQueue {
+        ProfileQueue {
+            id: queue.id,
+            is_default: queue.is_default,
+            settings: queue.settings,
         }
     }
 
     #[test]
     fn newer_profiles_are_refused_before_parsing() {
-        let future = br#"{"format_version": 2, "something_new": true}"#;
-        let err = parse(future).unwrap_err();
+        let next = PROFILE_FORMAT_VERSION + 1;
+        let future = format!(r#"{{"format_version": {next}, "something_new": true}}"#);
+        let err = parse(future.as_bytes()).unwrap_err();
         assert!(matches!(
             err,
             CoreError::ProfileTooNew {
-                found: 2,
-                supported: 1
-            }
+                found,
+                supported: PROFILE_FORMAT_VERSION
+            } if found == u64::from(next)
         ));
         assert!(err.to_string().contains("Update Wirecatch"));
         // A version past what 32 bits hold is reported as written.
@@ -428,7 +332,7 @@ mod tests {
         ));
         assert!(matches!(parse(b"{}"), Err(CoreError::InvalidProfile(_))));
         assert!(matches!(
-            parse(br#"{"format_version": 1}"#),
+            parse(format!(r#"{{"format_version": {PROFILE_FORMAT_VERSION}}}"#).as_bytes()),
             Err(CoreError::InvalidProfile(_))
         ));
     }
@@ -444,12 +348,9 @@ mod tests {
             PortablePath("{Downloads}/Stuff".into())
         );
         let bytes = serde_json::to_vec(&profile).unwrap();
-        assert_eq!(parse(&bytes).unwrap().profile, profile);
+        assert_eq!(parse(&bytes).unwrap(), profile);
     }
 
-    /// The media defaults travel with the profile (D24), and a profile written
-    /// before they existed reads with the original format, without a new
-    /// format version.
     #[test]
     fn media_defaults_are_in_the_profile() {
         let f = folders();
@@ -460,57 +361,45 @@ mod tests {
         s.media.audio.audio_kbps = Some(256);
         let profile = export(&s, &[default_queue()], &f, 42);
         let bytes = serde_json::to_vec(&profile).unwrap();
-        assert_eq!(parse(&bytes).unwrap().profile.settings.media, s.media);
+        assert_eq!(parse(&bytes).unwrap().settings.media, s.media);
 
         let mut old = serde_json::to_value(&profile).unwrap();
         old["settings"].as_object_mut().unwrap().remove("media");
-        let read = parse(&serde_json::to_vec(&old).unwrap()).unwrap().profile;
-        assert_eq!(read.format_version, 1);
+        let read = parse(&serde_json::to_vec(&old).unwrap()).unwrap();
+        assert_eq!(read.format_version, PROFILE_FORMAT_VERSION);
         assert_eq!(read.settings.media, MediaDefaults::default());
     }
 
     #[test]
-    fn a_profile_from_before_finish_notices_keeps_its_notification_switch() {
-        let profile = export(&default_settings(), &[default_queue()], &folders(), 42);
-        for (on, told) in [
-            (true, FinishNotice::Notification),
-            (false, FinishNotice::Nothing),
-        ] {
-            let mut old = serde_json::to_value(&profile).unwrap();
-            let settings = old["settings"].as_object_mut().unwrap();
-            settings.remove("finish_notice");
-            settings.insert("notify_on_complete".into(), on.into());
-            for queue in old["queues"].as_array_mut().unwrap() {
-                queue.as_object_mut().unwrap().remove("notify");
-            }
-            let read = parse(&serde_json::to_vec(&old).unwrap()).unwrap().profile;
-            assert_eq!(read.settings.finish_notice, told, "switch {on}");
-            assert_eq!(read.queues[0].notify, QueueNotify::EachDownload);
-        }
+    fn a_profile_of_an_earlier_format_is_refused() {
+        let mut old = serde_json::to_value(export(
+            &default_settings(),
+            &[default_queue()],
+            &folders(),
+            42,
+        ))
+        .unwrap();
+        old["format_version"] = (PROFILE_FORMAT_VERSION - 1).into();
+        let err = parse(&serde_json::to_vec(&old).unwrap()).unwrap_err();
+        assert!(
+            matches!(err, CoreError::ProfileTooOld { found } if found == u64::from(PROFILE_FORMAT_VERSION - 1))
+        );
+        assert!(
+            err.to_string().contains("Export the settings again"),
+            "{err}"
+        );
     }
 
-    /// D64: a profile from before the Do Not Disturb switch leaves the choice made here.
     #[test]
-    fn a_profile_from_before_the_do_not_disturb_switch_keeps_the_choice_made_here() {
-        let profile = export(&default_settings(), &[default_queue()], &folders(), 42);
-        let mut old = serde_json::to_value(&profile).unwrap();
-        old["settings"]
-            .as_object_mut()
-            .unwrap()
-            .remove("notify_during_do_not_disturb");
-        let parsed = parse(&serde_json::to_vec(&old).unwrap()).unwrap();
-        let mut here = default_settings();
-        here.notify_during_do_not_disturb = false;
-        let merged = merge_localized(
-            localize(parsed, &folders()),
-            &[default_queue()],
-            &here,
-            &folders(),
-            &SuffixList::built_in(),
-            || QueueId(99),
-        )
-        .unwrap();
-        assert!(!merged.settings.notify_during_do_not_disturb);
+    fn a_profile_carries_queue_settings_without_their_status() {
+        let mut paused = default_queue();
+        paused.status.paused = true;
+        let profile =
+            serde_json::to_value(export(&default_settings(), &[paused], &folders(), 42)).unwrap();
+        let queue = profile["queues"][0].as_object().unwrap();
+        let mut keys: Vec<_> = queue.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["id", "is_default", "settings"]);
     }
 
     #[test]
@@ -518,17 +407,20 @@ mod tests {
         let current = vec![default_queue(), queue(2, "Night")];
         let mut incoming_default = default_queue();
         incoming_default.id = QueueId(10);
-        incoming_default.max_concurrent = 7;
+        incoming_default.settings.max_concurrent = 7;
         let mut night = queue(11, "night");
-        night.max_concurrent = 4;
+        night.settings.max_concurrent = 4;
         let mut settings = default_settings();
         settings.extension.default_queue = QueueId(12);
         let profile = SettingsProfile {
-            format_version: 1,
+            format_version: PROFILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
             exported_at: 0,
             settings,
-            queues: vec![incoming_default, night, queue(12, "Videos")],
+            queues: [incoming_default, night, queue(12, "Videos")]
+                .into_iter()
+                .map(in_profile)
+                .collect(),
             addons: vec![],
         };
         let mut next = 3;
@@ -541,12 +433,12 @@ mod tests {
         let q = &imported.queues;
         assert_eq!(q.len(), 3);
         assert_eq!(
-            (q[0].id, q[0].max_concurrent, q[0].is_default),
+            (q[0].id, q[0].settings.max_concurrent, q[0].is_default),
             (QueueId(1), 7, true)
         );
-        assert_eq!((q[1].id, q[1].max_concurrent), (QueueId(2), 4));
+        assert_eq!((q[1].id, q[1].settings.max_concurrent), (QueueId(2), 4));
         assert_eq!(
-            (q[2].id, q[2].name.as_str(), q[2].is_default),
+            (q[2].id, q[2].settings.name.as_str(), q[2].is_default),
             (QueueId(3), "Videos", false)
         );
         assert_eq!(imported.settings.extension.default_queue, QueueId(3));
@@ -571,12 +463,12 @@ mod tests {
     #[test]
     fn a_profile_with_too_many_queues_is_refused() {
         let profile = SettingsProfile {
-            format_version: 1,
+            format_version: PROFILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
             exported_at: 0,
             settings: default_settings(),
             queues: (0..=i64::try_from(settings::MAX_QUEUES).unwrap())
-                .map(|i| queue(i + 10, &format!("Q{i}")))
+                .map(|i| in_profile(queue(i + 10, &format!("Q{i}"))))
                 .collect(),
             addons: vec![],
         };
@@ -584,12 +476,8 @@ mod tests {
         assert!(err.to_string().contains("at most 100 queues"), "{err}");
     }
 
-    /// A settings file may come from anywhere: it must not point downloads at a
-    /// device, or quietly at a network share. Those fall back like a missing
-    /// folder, and the import summary says so.
-    /// Versions before sites were read as hosts kept them as typed, so their profiles may hold sites no host matches; they are read the way a stored list is, not refused with the whole file.
     #[test]
-    fn a_profile_from_an_older_version_imports_without_its_sites_that_name_no_host() {
+    fn a_profile_imports_without_its_sites_that_name_no_host() {
         let mut settings = default_settings();
         settings.extension.ignored_sites = vec![
             "Example.com".into(),
@@ -597,7 +485,7 @@ mod tests {
             "localhost:abc".into(),
         ];
         let profile = SettingsProfile {
-            format_version: 1,
+            format_version: PROFILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
             exported_at: 0,
             settings,
@@ -608,6 +496,9 @@ mod tests {
         assert_eq!(imported.settings.extension.ignored_sites, ["example.com"]);
     }
 
+    /// A settings file may come from anywhere: it must not point downloads at a
+    /// device, or quietly at a network share. Those fall back like a missing
+    /// folder, and the import summary says so.
     #[test]
     fn device_and_network_folders_from_a_file_fall_back() {
         let mut settings = default_settings();
@@ -622,7 +513,7 @@ mod tests {
             rule.folder = PortablePath(folder.into());
         }
         let profile = SettingsProfile {
-            format_version: 1,
+            format_version: PROFILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
             exported_at: 0,
             settings,
@@ -658,7 +549,7 @@ mod tests {
         settings.default_folder = PortablePath(foreign.into());
         settings.categories[0].folder = PortablePath(foreign.into());
         let profile = SettingsProfile {
-            format_version: 1,
+            format_version: PROFILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
             exported_at: 0,
             settings,
@@ -703,7 +594,7 @@ mod tests {
         settings.categories[0].folder = PortablePath(system.into());
         settings.categories[1].folder = PortablePath(outside.to_string_lossy().into_owned());
         let profile = SettingsProfile {
-            format_version: 1,
+            format_version: PROFILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
             exported_at: 0,
             settings,

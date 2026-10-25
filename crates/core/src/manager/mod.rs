@@ -616,7 +616,10 @@ async fn run_scheduler(
         let wake_at = {
             let mut state = manager.lock();
             manager.reconcile(&mut state);
-            let scheduled = state.queues.iter().any(|s| s.queue.schedule.is_some());
+            let scheduled = state
+                .queues
+                .iter()
+                .any(|s| s.queue.settings.schedule.is_some());
             scheduled.then(|| wirecatch_queues::schedule::next_minute(state.last_checked))
         };
         drop(manager);

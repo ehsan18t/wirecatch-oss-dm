@@ -222,7 +222,7 @@ export class DownloadActions {
   async moveToQueue(ids: DownloadId[], queue: QueueId): Promise<void> {
     if (ids.length === 0) return;
     const ok = await this.#host.runner.succeeds(() => this.#host.backend().moveToQueue(ids, queue));
-    const name = this.#host.queues.byId(queue)?.name ?? 'the queue';
+    const name = this.#host.queues.byId(queue)?.settings.name ?? 'the queue';
     if (ok)
       this.#host.toasts.notify(
         ids.length === 1 ? `Moved to ${name}.` : `${ids.length} downloads moved to ${name}.`,

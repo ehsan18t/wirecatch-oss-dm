@@ -367,7 +367,10 @@ fn popup_controls_reach_the_app() {
         assert_eq!(queues.len(), app_queues.len());
         assert!(queues.iter().any(|q| q.is_default));
         for (summary, queue) in queues.iter().zip(&app_queues) {
-            assert_eq!((summary.id, &summary.name), (queue.id, &queue.name));
+            assert_eq!(
+                (summary.id, &summary.name),
+                (queue.id, &queue.settings.name)
+            );
         }
 
         let server = serve_held(test_data(FILE_LEN)).await;

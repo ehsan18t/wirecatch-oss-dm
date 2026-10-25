@@ -14,7 +14,8 @@ const SLOW_LIMIT_KB = 300;
 /** Opens the dialog for the sample queue named `name`, or for a new queue. */
 async function openQueueDialog(name: string | null) {
   const r = await renderApp();
-  const id = name === null ? null : (r.app.queues.list.find((q) => q.name === name)?.id ?? null);
+  const id =
+    name === null ? null : (r.app.queues.list.find((q) => q.settings.name === name)?.id ?? null);
   r.app.openDialog({ kind: 'queue', id });
   await settle();
   return { ...r, dialog: within(screen.getByRole('dialog')) };
@@ -47,9 +48,9 @@ describe('the queue dialog', () => {
     await typeInto(dialog.getByRole('spinbutton', { name: 'Speed limit' }), String(SLOW_LIMIT_KB));
     await save();
 
-    const made = app.queues.list.find((q) => q.name === 'Big batch');
-    expect(made?.max_concurrent).toBe(MANY_AT_ONCE);
-    expect(made?.speed_limit).toBe(SLOW_LIMIT_KB * KB);
+    const made = app.queues.list.find((q) => q.settings.name === 'Big batch');
+    expect(made?.settings.max_concurrent).toBe(MANY_AT_ONCE);
+    expect(made?.settings.speed_limit).toBe(SLOW_LIMIT_KB * KB);
   });
 
   it('keeps downloads at once within what the core allows', async () => {
@@ -73,7 +74,7 @@ describe('the queue dialog', () => {
         .getAllByRole('alert')
         .some((a) => a.textContent.includes('The start and stop times are the same')),
     ).toBe(true);
-    expect(app.queues.list.some((q) => q.name === 'Never runs')).toBe(false);
+    expect(app.queues.list.some((q) => q.settings.name === 'Never runs')).toBe(false);
   });
 
   it('says its hours in 24-hour times and steps them by a quarter hour', async () => {
@@ -87,7 +88,8 @@ describe('the queue dialog', () => {
 
   it('shows a queue speed limit in megabytes from 1 MB on', async () => {
     const { app, dialog } = await openQueueDialog('Overnight');
-    const limit = app.queues.list.find((q) => q.name === 'Overnight')?.speed_limit;
+    const limit = app.queues.list.find((q) => q.settings.name === 'Overnight')?.settings
+      .speed_limit;
     expect(limit).toBe(4 * MB);
     expect(dialog.getByRole('spinbutton', { name: 'Speed limit' })).toHaveAttribute(
       'aria-valuenow',
@@ -103,7 +105,9 @@ describe('the queue dialog', () => {
     await settle();
     expect(dialog.getByText(/You still hear about a failed download right away\.$/)).toBeVisible();
     await save();
-    expect(app.queues.list.find((q) => q.name === 'Main')?.notify).toBe('when_done');
+    expect(app.queues.list.find((q) => q.settings.name === 'Main')?.settings.notify).toBe(
+      'when_done',
+    );
   });
 
   it('asks before deleting, saying where the downloads go', async () => {
@@ -118,9 +122,9 @@ describe('the queue dialog', () => {
     expect(dialog.getByRole('button', { name: 'Delete queue' })).toHaveFocus();
     await fireEvent.click(dialog.getByRole('button', { name: 'Delete queue' }));
     await settle();
-    expect(app.queues.list.some((q) => q.name === 'Overnight')).toBe(true);
+    expect(app.queues.list.some((q) => q.settings.name === 'Overnight')).toBe(true);
     await fireEvent.click(dialog.getByRole('button', { name: 'Delete Overnight' }));
     await settle();
-    expect(app.queues.list.some((q) => q.name === 'Overnight')).toBe(false);
+    expect(app.queues.list.some((q) => q.settings.name === 'Overnight')).toBe(false);
   });
 });

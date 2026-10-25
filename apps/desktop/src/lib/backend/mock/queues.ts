@@ -1,13 +1,9 @@
 // What the mock core does to queues: create, edit, pause, start now and delete them.
 
-import {
-  NEW_QUEUE_MAX_CONCURRENT,
-  type DownloadSummary,
-  type Queue,
-  type QueueId,
-} from '@wirecatch/protocol';
+import type { DownloadSummary, Queue, QueueId, QueueSettings } from '@wirecatch/protocol';
 import { scheduleAllows } from '../../format';
 import { BackendError } from '../types';
+import { QUEUE_RUNNING } from './data';
 import type { MockState } from './state';
 
 const NO_QUEUE_NAME = 'Give the queue a name.';
@@ -16,51 +12,43 @@ export function listQueues(state: MockState): Queue[] {
   return state.queues.map((q) => structuredClone(q));
 }
 
-export function createQueue(state: MockState, name: string): Queue {
-  const trimmed = name.trim();
-  if (!trimmed) throw new BackendError(NO_QUEUE_NAME);
+function trimmedName(settings: QueueSettings): QueueSettings {
+  const name = settings.name.trim();
+  if (!name) throw new BackendError(NO_QUEUE_NAME);
+  return { ...structuredClone(settings), name };
+}
+
+export function createQueue(state: MockState, settings: QueueSettings): Queue {
   const q: Queue = {
     id: state.newQueueId(),
-    name: trimmed,
-    max_concurrent: NEW_QUEUE_MAX_CONCURRENT,
-    speed_limit: null,
-    schedule: null,
     is_default: false,
-    paused: false,
-    running_outside_schedule: false,
-    notify: 'each_download',
+    settings: trimmedName(settings),
+    status: { ...QUEUE_RUNNING },
   };
   state.queues.push(q);
   state.queuesChanged();
   return structuredClone(q);
 }
 
-export function updateQueue(state: MockState, queue: Queue): void {
-  const i = state.queues.findIndex((q) => q.id === queue.id);
-  if (i === -1) throw new BackendError('That queue no longer exists.');
-  if (!queue.name.trim()) throw new BackendError(NO_QUEUE_NAME);
-  const old = state.queues[i];
-  // Pausing and "start now" have their own commands; an edit keeps the queue's current state.
-  state.queues[i] = {
-    ...structuredClone(queue),
-    is_default: old?.is_default ?? false,
-    paused: old?.paused ?? false,
-    running_outside_schedule: old?.running_outside_schedule ?? false,
-  };
+export function updateQueue(state: MockState, id: QueueId, settings: QueueSettings): void {
+  const q = state.queues.find((x) => x.id === id);
+  if (!q) throw new BackendError('That queue no longer exists.');
+  q.settings = trimmedName(settings);
   state.queuesChanged();
 }
 
 export function setQueuePaused(state: MockState, id: QueueId, paused: boolean): void {
-  const q = state.queue(id);
-  q.paused = paused;
-  if (paused) q.running_outside_schedule = false;
+  const status = state.queue(id).status;
+  status.paused = paused;
+  if (paused) status.running_outside_schedule = false;
   state.queuesChanged();
 }
 
 export function startQueueNow(state: MockState, id: QueueId): void {
   const q = state.queue(id);
-  q.paused = false;
-  if (!scheduleAllows(q.schedule, new Date(state.now()))) q.running_outside_schedule = true;
+  q.status.paused = false;
+  if (!scheduleAllows(q.settings.schedule, new Date(state.now())))
+    q.status.running_outside_schedule = true;
   state.queuesChanged();
 }
 

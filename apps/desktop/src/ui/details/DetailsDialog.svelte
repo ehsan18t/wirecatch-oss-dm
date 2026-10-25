@@ -111,7 +111,7 @@
   {const live = $derived(group === 'active')}
   {const progress = $derived(rowProgress(r))}
   {const percent = $derived(formatPercent(r.done, r.total))}
-  {const queueName = $derived(app.queues.byId(r.queue)?.name ?? 'Its queue')}
+  {const queueName = $derived(app.queues.byId(r.queue)?.settings.name ?? 'Its queue')}
   {const detail = $derived(statusDetail(r, queueName))}
   {const can = $derived(applicable([r]))}
   {const fix = $derived(r.status === 'failed' ? r.error?.fix : undefined)}
@@ -204,7 +204,7 @@
           <dd class="min-w-0">
             <Select
               value={r.queue}
-              options={app.queues.list.map((q) => ({ value: q.id, label: q.name }))}
+              options={app.queues.list.map((q) => ({ value: q.id, label: q.settings.name }))}
               label="Queue"
               size="sm"
               class="-ml-2.5 w-full max-w-48 border-transparent bg-transparent shadow-none"

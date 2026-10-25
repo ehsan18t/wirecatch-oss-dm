@@ -32,11 +32,11 @@ describe('the sidebar', () => {
     const { app } = await renderApp();
     const user = userEvent.setup();
     const overnight = within(nav()).getByRole('button', { name: /^Overnight/ });
-    expect(overnight).toHaveTextContent(app.queues.status(app.queues.byId(queueId(2))!));
+    expect(overnight).toHaveTextContent(app.queues.describe(app.queues.byId(queueId(2))!));
     await user.click(within(nav()).getByRole('button', { name: 'Actions for Overnight' }));
     await user.click(screen.getByRole('menuitem', { name: 'Pause the queue' }));
     await settle();
-    expect(app.queues.byId(queueId(2))?.paused).toBe(true);
+    expect(app.queues.byId(queueId(2))?.status.paused).toBe(true);
     expect(within(nav()).getByRole('button', { name: /^Overnight/ })).toHaveTextContent('Paused');
     await user.click(within(nav()).getByRole('button', { name: 'Actions for Overnight' }));
     await user.click(screen.getByRole('menuitem', { name: 'Edit name, hours and limits' }));
@@ -118,7 +118,7 @@ describe('the sidebar', () => {
       ...[10, 11].map((n) => ({
         ...first!,
         id: queueId(n),
-        name: `Extra ${String(n)}`,
+        settings: { ...first!.settings, name: `Extra ${String(n)}` },
         is_default: false,
       })),
     ];
