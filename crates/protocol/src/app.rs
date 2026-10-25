@@ -186,16 +186,42 @@ pub struct Queue {
     pub status: QueueStatus,
 }
 
+/// A queue setting that follows the app's or is the queue's own (D72.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "source", content = "value", rename_all = "snake_case")]
+#[ts(export)]
+pub enum Setting<T> {
+    FollowApp,
+    Own(T),
+}
+
+impl<T> Setting<T> {
+    /// The queue's own value, `None` when it follows the app.
+    #[must_use]
+    pub fn own(self) -> Option<T> {
+        match self {
+            Self::FollowApp => None,
+            Self::Own(value) => Some(value),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct QueueSettings {
     /// The name the person gave it, unique among the queues.
     pub name: String,
-    /// Downloads from this queue that may run at the same time.
-    pub max_concurrent: u32,
-    /// Bytes per second shared by the whole queue; `None` is unlimited.
-    #[ts(type = "number | null")]
-    pub speed_limit: Option<u64>,
+    /// What the queue is for, in the person's words; may be empty.
+    pub description: String,
+    /// Downloads from this queue that may run at the same time. Following the app sets no
+    /// limit of the queue's own; [`AppSettings::max_concurrent_downloads`] caps every queue.
+    pub max_concurrent: Setting<u32>,
+    /// Bytes per second shared by the whole queue. Following the app sets no limit of the
+    /// queue's own; [`AppSettings::global_speed_limit`] caps every queue.
+    #[ts(type = "Setting<number>")]
+    pub speed_limit: Setting<u64>,
+    /// Connections per download; following the app uses [`AppSettings::connections_per_download`].
+    pub connections: Setting<u8>,
     /// When set, the queue only runs inside this window.
     pub schedule: Option<Schedule>,
     /// When the person is told its downloads finished (D52).
@@ -209,8 +235,10 @@ impl QueueSettings {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            max_concurrent: NEW_QUEUE_MAX_CONCURRENT,
-            speed_limit: None,
+            description: String::new(),
+            max_concurrent: Setting::FollowApp,
+            speed_limit: Setting::FollowApp,
+            connections: Setting::FollowApp,
             schedule: None,
             notify: QueueNotify::EachDownload,
         }
@@ -1204,10 +1232,8 @@ crate::exported::exported_consts! {
     pub const MAX_CONCURRENT_DOWNLOADS: u32 = 100;
     /// [`AppSettings::max_concurrent_downloads`] on a fresh install.
     pub const DEFAULT_MAX_CONCURRENT_DOWNLOADS: u32 = 5;
-    /// Where a new queue's editor starts.
-    pub const NEW_QUEUE_MAX_CONCURRENT: u32 = 2;
-    /// The default queue's, on a fresh install.
-    pub const DEFAULT_QUEUE_MAX_CONCURRENT: u32 = 3;
+    /// Most characters in [`QueueSettings::description`].
+    pub const MAX_QUEUE_DESCRIPTION_CHARS: usize = 500;
     /// [`ProcessingProgress::per_mille`] of a finished step: progress is counted in tenths of
     /// a percent.
     pub const PER_MILLE_DONE: u16 = 1000;

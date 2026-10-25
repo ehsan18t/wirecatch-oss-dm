@@ -136,6 +136,7 @@ export type { SetDownloadFolderArgs } from './generated/SetDownloadFolderArgs';
 export type { SetMaximizeButtonArgs } from './generated/SetMaximizeButtonArgs';
 export type { SetProxyArgs } from './generated/SetProxyArgs';
 export type { SetQueuePausedArgs } from './generated/SetQueuePausedArgs';
+export type { Setting } from './generated/Setting';
 export type { SettingsProfile } from './generated/SettingsProfile';
 export type { ShowProgressWindowArgs } from './generated/ShowProgressWindowArgs';
 export type { StartNoteTime } from './generated/StartNoteTime';
