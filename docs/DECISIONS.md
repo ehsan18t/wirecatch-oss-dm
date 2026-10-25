@@ -681,6 +681,7 @@ Decided with the maintainer on 2026-10-25. `wirecatch-core` holds 31,000 lines, 
 4. Done after that: `crates/files`, the file helpers the add-on, the store and the manager share: writing a file whole, discarding one, keeping one private to its owner (D17) and marking a download with the zone it came from.
 5. Done after that: `crates/addons`, the media add-on's pinned releases, checksums, signatures, archive reading and the check of its installed programs, with every archive and signature library; the manager keeps the install and update work, which drives downloads and the add-on's state.
 6. Done after that: `crates/records`, the types saved with a download, a queue's batch and the proxy passwords, which the store and core both use (D81); and `crates/store`, the SQLite database with its own error, `StoreError`, which core passes on as `CoreError::Store`. The store knows records and protocol types, never the manager.
+7. Done after that: `crates/messages`, what a person is told when a download fails and the fix each message offers, which media and the manager both use.
 
 ### D80. The media add-on's ffmpeg comes from a copy Wirecatch keeps
 

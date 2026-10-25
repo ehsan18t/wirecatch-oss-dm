@@ -18,7 +18,6 @@ mod profile;
 mod proxy;
 mod settings;
 mod speed;
-mod user_error;
 
 pub use clock::{Clock, ManualClock, Sleep, SystemClock};
 pub use error::{CoreError, Result};

@@ -5,7 +5,6 @@ use std::path::Path;
 
 use wirecatch_engine::{Error as EngineError, ProxySetting};
 use wirecatch_protocol::app::{FixAction, UserError};
-
 use wirecatch_sites::local_network::ChosenBy;
 
 /// Raw OS codes for a full disk, in case the standard library does not classify them.
@@ -20,7 +19,8 @@ const DISK_FULL_CODES: &[i32] = &[];
 ///
 /// `folder` is where the file is saved; `previously_worked` tells whether the link
 /// delivered data before, which turns a refusal into an expired link.
-pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bool) -> UserError {
+#[must_use]
+pub fn describe(error: &EngineError, folder: &Path, previously_worked: bool) -> UserError {
     match error {
         EngineError::HttpStatus { status, .. } => http_status(*status, previously_worked),
         EngineError::InvalidUrl(_) => fix(
@@ -112,7 +112,8 @@ pub(crate) fn describe(error: &EngineError, folder: &Path, previously_worked: bo
 
 /// Why a link was refused for leading to a device on the person's own network,
 /// in the words for whoever chose it (D34.5, D39).
-pub(crate) fn private_network(chosen_by: ChosenBy) -> UserError {
+#[must_use]
+pub fn private_network(chosen_by: ChosenBy) -> UserError {
     match chosen_by {
         // Pasting the same link in the main window makes it the person's own, which
         // may reach their network: the one way out, and it does not loop. A link
@@ -131,7 +132,8 @@ pub(crate) fn private_network(chosen_by: ChosenBy) -> UserError {
 }
 
 /// [`describe`] for a download's own run, whose link `chosen_by` chose.
-pub(crate) fn describe_run(
+#[must_use]
+pub fn describe_run(
     error: &EngineError,
     folder: &Path,
     previously_worked: bool,
@@ -145,10 +147,11 @@ pub(crate) fn describe_run(
 
 /// Why a website's link to the local network is not taken over, for the
 /// browser's notice: there is no download in the app to act on.
-pub(crate) const CAPTURE_TO_OWN_NETWORK: &str = "It leads to a device on your own network, which Wirecatch does not reach for a link a website gave.";
+pub const CAPTURE_TO_OWN_NETWORK: &str = "It leads to a device on your own network, which Wirecatch does not reach for a link a website gave.";
 
 /// The message shown when saving to the download list keeps failing.
-pub(crate) fn storage_failed(reason: &str) -> UserError {
+#[must_use]
+pub fn storage_failed(reason: &str) -> UserError {
     fix(
         format!(
             "Wirecatch could not save changes to the download list ({reason}). Recent changes may be lost when it closes. Make sure the disk has free space."
@@ -158,7 +161,8 @@ pub(crate) fn storage_failed(reason: &str) -> UserError {
 }
 
 /// The message for a download whose run ended without a result (a bug).
-pub(crate) fn stopped_unexpectedly() -> UserError {
+#[must_use]
+pub fn stopped_unexpectedly() -> UserError {
     fix(
         "The download stopped unexpectedly. Try again; the part already downloaded is kept.",
         FixAction::Retry,
@@ -314,7 +318,8 @@ fn how_long(span: std::time::Duration) -> String {
 }
 
 /// Describes a file operation that failed while saving into `folder`.
-pub(crate) fn disk(error: &io::Error, folder: &Path) -> UserError {
+#[must_use]
+pub fn disk(error: &io::Error, folder: &Path) -> UserError {
     disk_failure(
         error,
         folder,

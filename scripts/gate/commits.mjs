@@ -31,6 +31,7 @@ const COMMIT_SCOPES = [
   'addons',
   'records',
   'store',
+  'messages',
   'cli',
   'e2e',
   'test-support',

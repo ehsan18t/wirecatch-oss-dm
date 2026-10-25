@@ -7301,6 +7301,7 @@ dependencies = [
  "wirecatch-engine",
  "wirecatch-files",
  "wirecatch-logging",
+ "wirecatch-messages",
  "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-queues",
@@ -7430,6 +7431,15 @@ dependencies = [
  "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-test-support",
+]
+
+[[package]]
+name = "wirecatch-messages"
+version = "0.1.0"
+dependencies = [
+ "wirecatch-engine",
+ "wirecatch-protocol",
+ "wirecatch-sites",
 ]
 
 [[package]]

@@ -22,7 +22,6 @@ use super::{Inner, Manager};
 use crate::headers;
 use crate::headers::Origin;
 use crate::speed::SpeedMeter;
-use crate::user_error;
 use wirecatch_sites::local_network::{self, ChosenBy};
 
 /// How a run ended.
@@ -75,7 +74,7 @@ impl Ended {
             RunEnd::Engine(Ok(_)) | RunEnd::Media(Ok(MediaDone::Paused)) => Ended::Stopped,
             RunEnd::Engine(Err(error)) => {
                 warn!(id = id.0, %error, "download failed");
-                Ended::Failed(user_error::describe_run(
+                Ended::Failed(wirecatch_messages::describe_run(
                     &error,
                     folder,
                     worked_before,
@@ -293,7 +292,7 @@ impl Manager {
             (Ended::Vanished, None) => {
                 warn!(id = id.0, "download task ended without a result");
                 entry.row.status = DownloadStatus::Failed;
-                entry.row.error = Some(user_error::stopped_unexpectedly());
+                entry.row.error = Some(wirecatch_messages::stopped_unexpectedly());
             }
         }
         self.save(state, id);
@@ -424,14 +423,14 @@ fn engine_request(
     target: Target,
 ) -> Result<DownloadRequest, UserError> {
     let url = Url::parse(&entry.row.url).map_err(|e| {
-        user_error::describe(
+        wirecatch_messages::describe(
             &EngineError::InvalidUrl(e.to_string()),
             Path::new(""),
             false,
         )
     })?;
     if local_network::refuses_address(entry.chosen_by, &url) {
-        return Err(user_error::private_network(entry.chosen_by));
+        return Err(wirecatch_messages::private_network(entry.chosen_by));
     }
     let path = PathBuf::from(&entry.row.path);
     let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
@@ -476,7 +475,10 @@ mod tests {
             )
         };
         let refused = run("http://192.168.1.1/f", ChosenBy::Website).unwrap_err();
-        assert_eq!(refused, user_error::private_network(ChosenBy::Website));
+        assert_eq!(
+            refused,
+            wirecatch_messages::private_network(ChosenBy::Website)
+        );
         for (chosen_by, rule) in [
             (ChosenBy::Website, PrivateNetwork::Block),
             (ChosenBy::LocalPage, PrivateNetwork::Auto),
@@ -566,6 +568,9 @@ mod tests {
         assert!(entry.run.is_none(), "the slot is still taken");
         state.assert_consistent();
         assert_eq!(entry.row.status, DownloadStatus::Failed);
-        assert_eq!(entry.row.error, Some(user_error::stopped_unexpectedly()));
+        assert_eq!(
+            entry.row.error,
+            Some(wirecatch_messages::stopped_unexpectedly())
+        );
     }
 }

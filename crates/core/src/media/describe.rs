@@ -13,7 +13,6 @@ use super::ffmpeg::FfmpegError;
 use super::output::{OutputJob, VideoAction};
 use super::ytdlp::YtDlpError;
 use crate::media::MediaTools;
-use crate::user_error;
 use wirecatch_sites::local_network::ChosenBy;
 
 fn retry(message: String) -> UserError {
@@ -86,11 +85,11 @@ pub(crate) fn stream(
         fix,
     };
     match error {
-        E::Request(e) => user_error::describe(e, folder, false),
-        E::Io(e) => user_error::disk(e, folder),
+        E::Request(e) => wirecatch_messages::describe(e, folder, false),
+        E::Io(e) => wirecatch_messages::disk(e, folder),
         // A track that is not a real video or audio file: the link most likely does not point at the video any more.
         E::UnknownFormat { role } => unknown_format(*role),
-        E::PrivateNetwork => user_error::private_network(chosen_by),
+        E::PrivateNetwork => wirecatch_messages::private_network(chosen_by),
         // A fresh link lists as many segments, as long.
         E::Live
         | E::Drm(_)

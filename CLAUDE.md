@@ -22,6 +22,7 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 | `crates/addons` | The media add-on: pinned releases, checksums, signatures, safe unpacking, and finding the installed programs (D20, D21). |
 | `crates/records` | What is saved of a download, a queue's batch and the proxy passwords: the types the store keeps and core uses. |
 | `crates/store` | The download list on disk: the SQLite database, its migrations and the repair of a damaged one (D17). |
+| `crates/messages` | What a person is told when a download fails, with the fix to offer (D3). |
 | `crates/files` | File helpers: writing a file whole, discarding one, keeping one private to its owner, and the Mark of the Web. |
 | `crates/sites` | Site rules: the Public Suffix List with its built-in snapshot, and which links may reach the person's own network (D39, D44). |
 | `crates/server` | The local protocol server (D14): one client connection over any byte stream, answered by the manager. |

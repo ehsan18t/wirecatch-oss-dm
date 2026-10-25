@@ -24,7 +24,6 @@ use super::Manager;
 use crate::error::{CoreError, Result};
 use crate::media::MediaTools;
 use crate::media::ytdlp;
-use crate::user_error;
 use wirecatch_addons::manifest::{self, AddonComponent, ComponentId, ReleaseFile};
 use wirecatch_addons::{self as addons, Check, Record, archive, signature};
 use wirecatch_engine::units::{KIB, MIB};
@@ -816,7 +815,7 @@ impl Manager {
                 Err(e) => {
                     return Err(format!(
                         "{id} could not be downloaded: {}",
-                        user_error::describe(&e, work, false).message
+                        wirecatch_messages::describe(&e, work, false).message
                     )
                     .into());
                 }
