@@ -630,7 +630,7 @@ impl Manager {
 
     /// Reads a stream or page and offers its qualities.
     async fn analyse(&self, id: QuestionId, token: CancellationToken) {
-        let (source, tools, connections, quiet) = {
+        let (source, tools, policy, quiet) = {
             let state = self.lock();
             let Some(pending) = state.media.get(&id) else {
                 return;
@@ -638,7 +638,7 @@ impl Manager {
             (
                 pending.source.clone(),
                 state.addon.tools.clone(),
-                usize::from(state.settings.connections_per_download),
+                self.run_policy(&state, pending.queue),
                 pending.quiet,
             )
         };
@@ -651,7 +651,7 @@ impl Manager {
         let found = match source.kind {
             MediaKind::Page => match &tools {
                 Some(tools) => {
-                    let found = self.read_page(&source, tools, &token).await;
+                    let found = self.read_page(&source, tools, policy.proxy, &token).await;
                     if tools.is_broken() {
                         self.rescan_addon(Check::Hashes).await;
                     }
@@ -660,8 +660,14 @@ impl Manager {
                 None => Err(addon_missing()),
             },
             _ => {
-                self.read_stream(&source, tools.is_some(), connections, &token)
-                    .await
+                self.read_stream(
+                    &source,
+                    tools.is_some(),
+                    policy.connections,
+                    policy.proxy,
+                    &token,
+                )
+                .await
             }
         };
         if token.is_cancelled() {
@@ -771,11 +777,11 @@ impl Manager {
         source: &MediaSource,
         ffmpeg: bool,
         connections: usize,
+        proxy: ProxyChoice,
         token: &CancellationToken,
     ) -> std::result::Result<Found, UserError> {
-        let proxy = self.lock().proxy();
         let mut options = media_options(&source.origin, source.chosen_by.private_network(), proxy);
-        options.connections = connections.max(1);
+        options.connections = connections;
         let info = wirecatch_streams::inspect(
             &source.url,
             &options,
@@ -805,10 +811,11 @@ impl Manager {
         &self,
         source: &MediaSource,
         tools: &MediaTools,
+        proxy: ProxyChoice,
         token: &CancellationToken,
     ) -> std::result::Result<Found, UserError> {
         let cookies = cookie_header(&source.origin);
-        let proxy = crate::proxy::ytdlp_proxy(&self.lock().proxy());
+        let proxy = crate::proxy::ytdlp_proxy(&proxy);
         let ctx = ytdlp::Context {
             tools,
             page: &source.url,

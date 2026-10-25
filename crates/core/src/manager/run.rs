@@ -9,13 +9,13 @@ use tokio::runtime::Handle;
 use tracing::{debug, warn};
 
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error as EngineError, Outcome, PathResolver, Progress,
-    ProxyChoice, RateLimiter, Url,
+    CancellationToken, DownloadRequest, Error as EngineError, Outcome, PathResolver, Progress, Url,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
 
 use super::added_pages::AnsweredPage;
+use super::policy::RunPolicy;
 use super::settle::path_resolver;
 use super::state::{Entry, Gauge, Run, State, Stop};
 use super::{Inner, Manager};
@@ -95,14 +95,6 @@ impl Ended {
     }
 }
 
-/// What a run may use of the network.
-pub(super) struct Bandwidth {
-    /// Connections per download.
-    pub connections: usize,
-    /// The speed limits the run shares: the global one, then its queue's.
-    pub limiters: Vec<Arc<RateLimiter>>,
-}
-
 impl Manager {
     /// Starts the engine on `id`. The caller has already checked every limit.
     pub(super) fn start_run(&self, state: &mut State, id: DownloadId) {
@@ -116,24 +108,12 @@ impl Manager {
         }
         let run_id = state.ids.run();
         let answered = CancellationToken::new();
-        let connections = usize::from(state.settings.connections_per_download);
         let Some(entry) = state.downloads.get(&id) else {
             return;
         };
-        let queue_limiter = state
-            .queues
-            .iter()
-            .find(|s| s.queue.id == entry.row.queue)
-            .map(|s| s.limiter.clone());
-        let bandwidth = Bandwidth {
-            connections,
-            limiters: [Some(self.inner.global_limiter.clone()), queue_limiter]
-                .into_iter()
-                .flatten()
-                .collect(),
-        };
+        let policy = self.run_policy(state, entry.row.queue);
         if let Some(job) = entry.media_job.clone() {
-            self.start_media_run(state, id, run_id, answered, job, bandwidth);
+            self.start_media_run(state, id, run_id, answered, job, policy);
             return;
         }
         // Until the server has answered once, the path is only a guess: let the
@@ -147,7 +127,7 @@ impl Manager {
             url: entry.row.url.clone(),
             referrer: headers::referrer(&entry.origin.headers).map(str::to_string),
         };
-        match engine_request(entry, bandwidth, target, state.proxy()) {
+        match engine_request(entry, policy, target) {
             #[cfg(test)]
             Ok(request) if self.fake_engine().is_some() => {
                 let fake = self.fake_engine();
@@ -436,13 +416,12 @@ async fn download_marked(
     result
 }
 
-/// The engine request for a download, through `proxy`. The manager always decides the
+/// The engine request for a download, run as `policy` says. The manager always decides the
 /// path, either up front or through its resolver.
 fn engine_request(
     entry: &Entry,
-    bandwidth: Bandwidth,
+    policy: RunPolicy,
     target: Target,
-    proxy: ProxyChoice,
 ) -> Result<DownloadRequest, UserError> {
     let url = Url::parse(&entry.row.url).map_err(|e| {
         user_error::describe(
@@ -461,10 +440,10 @@ fn engine_request(
         Target::Exact => request.exact_path = Some(path),
         Target::Resolve(resolver) => request.resolve_path = Some(resolver),
     }
-    request.options = headers::download_options(entry.chosen_by.private_network(), proxy);
+    request.options = headers::download_options(entry.chosen_by.private_network(), policy.proxy);
     let options = &mut request.options;
-    options.connections = bandwidth.connections;
-    options.rate_limiters = bandwidth.limiters;
+    options.connections = policy.connections;
+    options.rate_limiters = policy.limiters;
     options.headers = headers::to_map(&entry.origin.headers);
     if let Some(agent) = &entry.origin.user_agent {
         options.user_agent.clone_from(agent);
@@ -476,7 +455,7 @@ fn engine_request(
 mod tests {
     use super::*;
     use crate::{KnownFolders, ManagerConfig};
-    use wirecatch_engine::PrivateNetwork;
+    use wirecatch_engine::{PrivateNetwork, ProxyChoice};
     use wirecatch_protocol::app::AddRequest;
 
     /// A website's link written as a local address is refused before it
@@ -484,16 +463,16 @@ mod tests {
     /// for its caller to classify (D39). Every other link runs under its rule.
     #[test]
     fn a_download_runs_under_the_rule_of_whoever_chose_its_link() {
-        let bandwidth = || Bandwidth {
+        let policy = || RunPolicy {
             connections: 1,
             limiters: Vec::new(),
+            proxy: ProxyChoice::System,
         };
         let run = |url: &str, chosen_by| {
             engine_request(
                 &super::super::state::idle_entry(url, chosen_by),
-                bandwidth(),
+                policy(),
                 Target::Exact,
-                ProxyChoice::System,
             )
         };
         let refused = run("http://192.168.1.1/f", ChosenBy::Website).unwrap_err();
