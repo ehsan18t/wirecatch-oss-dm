@@ -28,8 +28,9 @@ use wirecatch_protocol::extension::{AddAction, AddedDownload, MediaKind, NewDown
 use wirecatch_protocol::{QuestionId, QueueId};
 
 use super::Manager;
+use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::captures::origin_of;
-use super::downloads::{NewEntry, parse_web_url};
+use super::downloads::parse_web_url;
 use super::handovers::{Handover, Target};
 use super::state::State;
 use crate::addons::{Check, MediaTools};
@@ -52,13 +53,10 @@ const MAX_HANDOVERS: usize = 32;
 #[derive(Debug, Clone)]
 pub(super) struct MediaSource {
     /// The playlist or manifest, or the page.
-    pub url: Url,
+    pub fetch: Fetch,
     pub kind: MediaKind,
     pub title: Option<String>,
     pub page_url: Option<String>,
-    pub origin: Origin,
-    /// Who chose the link: a website, or a page on the person's network.
-    pub chosen_by: ChosenBy,
 }
 
 /// A media capture that is not a download yet.
@@ -152,26 +150,25 @@ pub(super) fn video_key(extractor: Option<&str>, id: Option<&str>) -> Option<Str
 }
 
 impl MediaSource {
-    /// A video page that `chosen_by` chose, read with the browser's `origin`.
-    pub(super) fn page(url: Url, origin: Origin, chosen_by: ChosenBy) -> Self {
+    pub(super) fn page(fetch: Fetch) -> Self {
         Self {
-            url,
+            fetch,
             kind: MediaKind::Page,
             title: None,
             page_url: None,
-            origin,
-            chosen_by,
         }
     }
 
     fn of(capture: &NewDownload, url: Url, kind: MediaKind, chosen_by: ChosenBy) -> Self {
         Self {
-            url,
+            fetch: Fetch {
+                url,
+                origin: origin_of(capture),
+                chosen_by,
+            },
             kind,
             title: capture.media.as_ref().and_then(|m| m.title.clone()),
             page_url: capture.page_url.clone(),
-            origin: origin_of(capture),
-            chosen_by,
         }
     }
 }
@@ -211,7 +208,7 @@ impl Manager {
         if let Some((&id, existing)) = state
             .media
             .iter_mut()
-            .find(|(_, m)| m.source.url == url && m.source.kind == kind)
+            .find(|(_, m)| m.source.fetch.url == url && m.source.kind == kind)
         {
             if existing.handovers.len() >= MAX_HANDOVERS {
                 return Err(CoreError::LimitReached(
@@ -233,7 +230,9 @@ impl Manager {
             .media
             .as_ref()
             .and_then(|m| m.title.clone())
-            .unwrap_or_else(|| wirecatch_logging::redact::url_for_display(source.url.as_str()));
+            .unwrap_or_else(|| {
+                wirecatch_logging::redact::url_for_display(source.fetch.url.as_str())
+            });
         let held = Held::capture(capture.handover_id.clone());
         let id = self.hold_media(&mut state, source, queue, held);
         // Read without a window: the person hears it was added now, not seconds later when its
@@ -272,7 +271,7 @@ impl Manager {
         } else {
             MediaStage::Analysing(token.clone())
         };
-        let shown = wirecatch_logging::redact::url_for_display(source.url.as_str());
+        let shown = wirecatch_logging::redact::url_for_display(source.fetch.url.as_str());
         state.media.insert(
             id,
             MediaPending {
@@ -328,7 +327,7 @@ impl Manager {
             .filter(|(_, m)| !m.quiet && matches!(m.stage, MediaStage::Analysing(_)))
             .map(|(id, m)| MediaReading {
                 id: *id,
-                url: wirecatch_logging::redact::url_for_display(m.source.url.as_str()),
+                url: wirecatch_logging::redact::url_for_display(m.source.fetch.url.as_str()),
             })
             .collect()
     }
@@ -439,7 +438,8 @@ impl Manager {
                 .resolve(choice, &selection)
                 .map_err(|e| CoreError::Invalid(e.to_string()))?;
             if resolved.needs_ffmpeg && state.addon.tools.is_none() {
-                let (choice_url, addon) = (source.url.to_string(), self.addon_info(&state.addon));
+                let (choice_url, addon) =
+                    (source.fetch.url.to_string(), self.addon_info(&state.addon));
                 self.emit(UiEvent::AddonRequired {
                     addon,
                     url: wirecatch_logging::redact::url_for_display(&choice_url),
@@ -575,7 +575,7 @@ impl Manager {
             .map(|(id, m)| AddonRequestItem {
                 id: *id,
                 addon: addon.clone(),
-                url: wirecatch_logging::redact::url_for_display(m.source.url.as_str()),
+                url: wirecatch_logging::redact::url_for_display(m.source.fetch.url.as_str()),
             })
             .collect()
     }
@@ -645,7 +645,7 @@ impl Manager {
         if !quiet {
             self.emit(UiEvent::MediaAnalysing {
                 id,
-                url: wirecatch_logging::redact::url_for_display(source.url.as_str()),
+                url: wirecatch_logging::redact::url_for_display(source.fetch.url.as_str()),
             });
         }
         let found = match source.kind {
@@ -717,7 +717,7 @@ impl Manager {
                 let title = title
                     .or_else(|| pending.source.title.clone())
                     .filter(|t| !t.trim().is_empty())
-                    .unwrap_or_else(|| title_from_url(&pending.source.url));
+                    .unwrap_or_else(|| title_from_url(&pending.source.fetch.url));
                 let audio_only = offers.iter().all(|(o, _)| o.audio_only);
                 let category = if audio_only {
                     Category::Audio
@@ -727,7 +727,8 @@ impl Manager {
                 let folder = self.folder_for(&state, pending, category);
                 let later = pending.later;
                 let page_url = pending.source.page_url.clone().or_else(|| {
-                    (pending.source.kind == MediaKind::Page).then(|| pending.source.url.to_string())
+                    (pending.source.kind == MediaKind::Page)
+                        .then(|| pending.source.fetch.url.to_string())
                 });
                 let options: Vec<_> = offers.iter().map(|(o, _)| o.clone()).collect();
                 let start = state.settings.media.start(&options, &subtitles, chapters);
@@ -780,16 +781,27 @@ impl Manager {
         proxy: ProxyChoice,
         token: &CancellationToken,
     ) -> std::result::Result<Found, UserError> {
-        let mut options = media_options(&source.origin, source.chosen_by.private_network(), proxy);
+        let mut options = media_options(
+            &source.fetch.origin,
+            source.fetch.chosen_by.private_network(),
+            proxy,
+        );
         options.connections = connections;
         let info = wirecatch_streams::inspect(
-            &source.url,
+            &source.fetch.url,
             &options,
-            source.chosen_by.private_network(),
+            source.fetch.chosen_by.private_network(),
             token.clone(),
         )
         .await
-        .map_err(|e| describe::stream(&e, &self.inner.folders.downloads, None, source.chosen_by))?;
+        .map_err(|e| {
+            describe::stream(
+                &e,
+                &self.inner.folders.downloads,
+                None,
+                source.fetch.chosen_by,
+            )
+        })?;
         Ok(Found {
             title: None,
             offers: choice::from_stream(
@@ -814,13 +826,13 @@ impl Manager {
         proxy: ProxyChoice,
         token: &CancellationToken,
     ) -> std::result::Result<Found, UserError> {
-        let cookies = cookie_header(&source.origin);
+        let cookies = cookie_header(&source.fetch.origin);
         let proxy = crate::proxy::ytdlp_proxy(&proxy);
         let ctx = ytdlp::Context {
             tools,
-            page: &source.url,
+            page: &source.fetch.url,
             cookies: cookies.as_deref(),
-            user_agent: source.origin.user_agent.as_deref(),
+            user_agent: source.fetch.origin.user_agent.as_deref(),
             temp_dir: &self.inner.temp_dir,
             timeout: self.inner.media_timeout,
             proxy: proxy.as_deref(),
@@ -892,7 +904,7 @@ impl Manager {
         let title = source
             .title
             .clone()
-            .unwrap_or_else(|| title_from_url(&source.url));
+            .unwrap_or_else(|| title_from_url(&source.fetch.url));
         let job = match source.kind {
             MediaKind::Page => MediaJob::Page {
                 video: None,
@@ -907,17 +919,15 @@ impl Manager {
         };
         let added = self
             .insert(NewEntry {
-                url: source.url.clone(),
-                file_name: Some(media::file_name(&title, "mp4")),
-                hint_name: None,
-                folder: None,
+                fetch: source.fetch.clone(),
+                wanted: Wanted {
+                    file_name: Some(media::file_name(&title, "mp4")),
+                    category: Some(Category::Video),
+                    ..Wanted::default()
+                },
                 queue: pending.queue,
                 start: false,
-                origin: source.origin.clone(),
-                chosen_by: source.chosen_by,
-                handover: None,
-                expect: None,
-                media: Some(StoredMedia {
+                kind: Kind::Media(StoredMedia {
                     summary: MediaSummary {
                         quality: "Best available".into(),
                         source: source.kind,
@@ -926,8 +936,6 @@ impl Manager {
                     },
                     job: Some(job),
                 }),
-                video_check: false,
-                category: Some(Category::Video),
             })
             .await;
         let row = match added {
@@ -973,17 +981,20 @@ impl Manager {
             .unwrap_or_else(|| media::file_name(&choice.title, &resolved.ext));
         let added = self
             .insert(NewEntry {
-                url: pending.source.url.clone(),
-                file_name: Some(name),
-                hint_name: None,
-                folder: Some(folder),
+                fetch: pending.source.fetch.clone(),
+                wanted: Wanted {
+                    file_name: Some(name),
+                    folder: Some(folder),
+                    category: Some(if plan.audio_only {
+                        Category::Audio
+                    } else {
+                        Category::Video
+                    }),
+                    hint_name: None,
+                },
                 queue: selection.queue.unwrap_or(choice.queue),
                 start: !selection.later,
-                origin: pending.source.origin.clone(),
-                chosen_by: pending.source.chosen_by,
-                handover: None,
-                expect: None,
-                media: Some(StoredMedia {
+                kind: Kind::Media(StoredMedia {
                     summary: MediaSummary {
                         quality: plan.quality.clone(),
                         source: pending.source.kind,
@@ -991,12 +1002,6 @@ impl Manager {
                         instead_of,
                     },
                     job: Some(resolved.job.clone()),
-                }),
-                video_check: false,
-                category: Some(if plan.audio_only {
-                    Category::Audio
-                } else {
-                    Category::Video
                 }),
             })
             .await?;

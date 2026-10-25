@@ -20,7 +20,8 @@ use wirecatch_protocol::extension::{
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId, Secret};
 
 use super::Manager;
-use super::downloads::{NewEntry, capture_action, parse_url};
+use super::arrival::{Fetch, Kind, NewEntry, Wanted};
+use super::downloads::{capture_action, parse_url};
 use super::handovers::{self, Handover, Target};
 use super::placement::QueueRequest;
 use super::state::{Expectation, Pending};
@@ -102,22 +103,15 @@ impl Manager {
 
         let added = self
             .insert(NewEntry {
-                file_name: None,
-                hint_name: capture.suggested_name.clone(),
-                folder: None,
+                fetch: Fetch {
+                    url,
+                    origin: origin_of(&capture),
+                    chosen_by,
+                },
+                wanted: wanted_by(&capture),
                 queue,
                 start: true,
-                origin: origin_of(&capture),
-                chosen_by,
-                handover: Some(capture.handover_id.clone()),
-                expect: Some(Expectation {
-                    size: capture.size_hint,
-                    name: capture.suggested_name.clone(),
-                }),
-                media: direct_media(&capture),
-                video_check: false,
-                category: direct_category(&capture),
-                url,
+                kind: captured(&capture, Some(capture.handover_id.clone())),
             })
             .await?;
         let Some(row) = added else {
@@ -366,7 +360,7 @@ impl Manager {
             (vec![waiting.capture.url.clone()], None)
         } else {
             let media = state.media.get(&id)?;
-            let mut links = vec![media.source.url.to_string()];
+            let mut links = vec![media.source.fetch.url.to_string()];
             links.extend(media.source.page_url.clone());
             (links, media.video.clone())
         };
@@ -486,22 +480,20 @@ impl Manager {
         let request = &pending.request;
         let added = self
             .insert(NewEntry {
-                url: parse_url(&proposal.url)?,
-                file_name: answer.file_name,
-                hint_name: Some(proposal.file_name.clone()),
-                folder,
+                fetch: Fetch {
+                    url: parse_url(&proposal.url)?,
+                    origin: origin_of(request),
+                    chosen_by: pending.chosen_by,
+                },
+                wanted: Wanted {
+                    file_name: answer.file_name,
+                    hint_name: Some(proposal.file_name.clone()),
+                    folder,
+                    ..wanted_by(request)
+                },
                 queue: answer.queue.unwrap_or(proposal.queue),
                 start: !answer.later,
-                origin: origin_of(request),
-                chosen_by: pending.chosen_by,
-                handover: None,
-                expect: Some(Expectation {
-                    size: request.size_hint,
-                    name: request.suggested_name.clone(),
-                }),
-                media: direct_media(request),
-                video_check: false,
-                category: direct_category(request),
+                kind: captured(request, None),
             })
             .await?;
         match added {
@@ -526,6 +518,26 @@ fn same_address(a: &str, b: &str) -> bool {
         }
     };
     strip(a) == strip(b)
+}
+
+fn wanted_by(capture: &NewDownload) -> Wanted {
+    Wanted {
+        hint_name: capture.suggested_name.clone(),
+        category: direct_category(capture),
+        ..Wanted::default()
+    }
+}
+
+/// `handover`: set while the extension waits for the answer.
+fn captured(capture: &NewDownload, handover: Option<String>) -> Kind {
+    Kind::Captured {
+        handover,
+        expect: Expectation {
+            size: capture.size_hint,
+            name: capture.suggested_name.clone(),
+        },
+        media: direct_media(capture),
+    }
 }
 
 /// The row's media details for a direct video or audio file.

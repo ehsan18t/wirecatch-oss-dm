@@ -12,43 +12,31 @@ use wirecatch_protocol::extension::{AddAction, AddedDownload};
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use super::Manager;
+use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::handovers::{Handover, Target};
 use super::placement::QueueRequest;
 use super::run::{delete_files, mark_cancelled};
-use super::state::{Entry, Expectation, State, Stop};
+use super::state::{Entry, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::local_network::ChosenBy;
-use crate::media::StoredMedia;
 use crate::naming;
-use crate::store::{NameChoice, Origin};
+use crate::store::NameChoice;
 use crate::{headers, settings};
 
-/// Everything needed to add a download, whichever way it arrived.
-pub(super) struct NewEntry {
-    pub url: Url,
-    /// A name the user chose; it wins over the server's.
-    pub file_name: Option<String>,
-    /// A name the browser suggested, shown until the server answers.
-    pub hint_name: Option<String>,
-    /// Folder to save in; the category rule decides if absent.
-    pub folder: Option<PathBuf>,
-    pub queue: QueueId,
-    /// `false` adds it paused.
-    pub start: bool,
-    pub origin: Origin,
-    /// Who chose the link: the person, or a website through a capture.
-    pub chosen_by: ChosenBy,
-    /// The extension's handover id, for captures.
-    pub handover: Option<String>,
-    /// What the browser saw of a captured file.
-    pub expect: Option<Expectation>,
-    /// Video or audio: what the row shows and, for streams and pages, what to
-    /// download. A media job's path is final from the start.
-    pub media: Option<StoredMedia>,
-    /// See [`Entry::video_check`](super::state::Entry::video_check).
-    pub video_check: bool,
-    /// The category, when the caller knows better than the file name.
-    pub category: Option<Category>,
+fn remember_handover(state: &mut State, handover: &str, row: &DownloadSummary) {
+    let action = capture_action(row);
+    // A started capture is only taken over once the server answers;
+    // until then a duplicate add waits for that outcome.
+    let deciding = (action == AddAction::Started).then(CancellationToken::new);
+    let record = Handover {
+        reply: AddedDownload {
+            id: Some(row.id),
+            action,
+        },
+        target: Target::Download(row.id),
+        deciding,
+    };
+    state.handovers.insert(handover, record);
 }
 
 /// How a captured download stands right after it was added: started if it is
@@ -123,19 +111,15 @@ impl Manager {
             .queue_for(QueueRequest::in_app(request.queue))?;
         let added = self
             .insert(NewEntry {
-                url,
-                file_name: request.file_name,
-                hint_name: None,
-                folder,
+                fetch: Fetch::typed(url),
+                wanted: Wanted {
+                    file_name: request.file_name,
+                    folder,
+                    ..Wanted::default()
+                },
                 queue,
                 start: request.start,
-                origin: Origin::default(),
-                chosen_by: ChosenBy::Person,
-                handover: None,
-                expect: None,
-                media: None,
-                video_check: true,
-                category: None,
+                kind: Kind::File { video_check: true },
             })
             .await?;
         match added {
@@ -523,8 +507,8 @@ impl Manager {
 
             let mut state = self.lock_open()?;
             if new
-                .handover
-                .as_deref()
+                .kind
+                .handover()
                 .is_some_and(|h| state.handovers.get(h).is_some())
             {
                 return Ok(None);
@@ -541,14 +525,15 @@ impl Manager {
     fn destination(&self, new: &NewEntry) -> Result<(PathBuf, String, Category)> {
         let state = self.lock_open()?;
         state.slot(new.queue)?;
+        let wanted = &new.wanted;
         let name = naming::file_name(
-            new.file_name.as_deref().or(new.hint_name.as_deref()),
-            &new.url,
+            wanted.file_name.as_deref().or(wanted.hint_name.as_deref()),
+            &new.fetch.url,
         )?;
-        let category = new
+        let category = wanted
             .category
             .unwrap_or_else(|| settings::category_of(&state.settings, &name));
-        let dir = match &new.folder {
+        let dir = match &wanted.folder {
             Some(folder) => folder.clone(),
             None => settings::folder_for(&state.settings, category, &self.inner.folders)?,
         };
@@ -564,20 +549,36 @@ impl Manager {
         path: &Path,
         category: Category,
     ) -> Result<DownloadSummary> {
+        let NewEntry {
+            fetch,
+            wanted,
+            queue,
+            start,
+            kind,
+        } = new;
+        let (handover, expect, media, video_check) = match kind {
+            Kind::File { video_check } => (None, None, None, video_check),
+            Kind::Captured {
+                handover,
+                expect,
+                media,
+            } => (handover, Some(expect), media, false),
+            Kind::Media(media) => (None, None, Some(media), false),
+        };
         let id = state.ids.download();
         self.inner.store.save_last_ids(state.ids.last());
         let position = state.ids.position();
         let row = DownloadSummary {
             id,
-            url: new.url.to_string(),
+            url: fetch.url.to_string(),
             file_name: path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default(),
             path: path.to_string_lossy().into_owned(),
-            queue: new.queue,
+            queue,
             category,
-            status: if new.start {
+            status: if start {
                 DownloadStatus::Queued
             } else {
                 DownloadStatus::Paused
@@ -591,24 +592,24 @@ impl Manager {
             added_at: self.inner.clock.unix_millis(),
             completed_at: None,
             waiting: None,
-            media: new.media.as_ref().map(|m| m.summary.clone()),
+            media: media.as_ref().map(|m| m.summary.clone()),
             processing: None,
         };
-        let media_job = new.media.and_then(|m| m.job);
+        let media_job = media.and_then(|m| m.job);
         // The path is a guess until the server answers with its own name; a
         // media job's is final.
         let naming = NameChoice {
             settled: media_job.is_some(),
-            name: new.file_name,
-            folder: new.folder.map(|f| f.to_string_lossy().into_owned()),
+            name: wanted.file_name,
+            folder: wanted.folder.map(|f| f.to_string_lossy().into_owned()),
         };
         state.insert_entry(Entry {
             row,
             position,
-            origin: new.origin,
-            chosen_by: new.chosen_by,
+            origin: fetch.origin,
+            chosen_by: fetch.chosen_by,
             naming,
-            expect: new.expect,
+            expect,
             run: None,
             resume_first: false,
             cleanup: None,
@@ -616,26 +617,13 @@ impl Manager {
             moving: None,
             stranded: None,
             media_job,
-            video_check: new.video_check,
+            video_check,
         });
         self.save(state, id);
         self.reconcile(state);
         let row = state.entry(id)?.summary();
-        if let Some(handover) = &new.handover {
-            let action = capture_action(&row);
-            // A started capture is only taken over once the server answers;
-            // until then a duplicate add waits for that outcome.
-            let deciding = (action == AddAction::Started).then(CancellationToken::new);
-            let reply = AddedDownload {
-                id: Some(id),
-                action,
-            };
-            let record = Handover {
-                reply,
-                target: Target::Download(id),
-                deciding,
-            };
-            state.handovers.insert(handover, record);
+        if let Some(handover) = &handover {
+            remember_handover(state, handover, &row);
         }
         Ok(row)
     }

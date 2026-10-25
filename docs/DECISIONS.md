@@ -656,6 +656,13 @@ Decided with the maintainer on 2026-10-25. It replaces the rule that every publi
 1. `missing_docs`, `clippy::missing_errors_doc` and `clippy::missing_panics_doc` are off for the whole workspace. They made a comment on every public field, variant and function, most of them a name read back ("The file's format version." on `found`), each re-read on every pass over the file.
 2. A comment, doc comments included, is written only for what the code cannot say (ENGINEERING section 8). A constant gets a name; a comment says why it has its value only when the name cannot. Comments that only restate a name are deleted when the code around them is edited.
 
+### D77. A download being added says what kind it is
+
+Decided with the maintainer on 2026-10-25, before D72 picks a queue from what a download is. It changes no behaviour.
+
+1. A download being added (`manager/arrival.rs`) is what to fetch and as whom (`Fetch`: the link, the browser's headers and cookies, who chose it), what was asked of it (`Wanted`: a name, a folder, a category), its queue, and its kind: a file, a file the browser handed over (with what the browser saw and its handover), or video or audio with what to download. A detail one kind has cannot be set on another.
+2. A media source and a page read for its video carry a `Fetch`, and both ways a browser file is added build its details in one place.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
