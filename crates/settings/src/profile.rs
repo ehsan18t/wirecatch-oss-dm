@@ -277,7 +277,7 @@ fn category_folder_name(category: Category) -> &'static str {
 mod tests {
     use super::*;
     use crate::{default_queue, default_settings};
-    use wirecatch_protocol::app::{MediaDefaults, QueueNotify, QueueSettings};
+    use wirecatch_protocol::app::{MediaDefaults, QueueSettings, Setting};
 
     fn folders() -> KnownFolders {
         KnownFolders::under_home(std::env::temp_dir().join("wc-profile-home"))
@@ -288,11 +288,8 @@ mod tests {
             id: QueueId(id),
             is_default: false,
             settings: QueueSettings {
-                name: name.into(),
-                max_concurrent: 1,
-                speed_limit: None,
-                schedule: None,
-                notify: QueueNotify::EachDownload,
+                max_concurrent: Setting::Own(1),
+                ..QueueSettings::new(name)
             },
             status: QueueStatus::default(),
         }
@@ -405,9 +402,9 @@ mod tests {
         let current = vec![default_queue(), queue(2, "Night")];
         let mut incoming_default = default_queue();
         incoming_default.id = QueueId(10);
-        incoming_default.settings.max_concurrent = 7;
+        incoming_default.settings.max_concurrent = Setting::Own(7);
         let mut night = queue(11, "night");
-        night.settings.max_concurrent = 4;
+        night.settings.max_concurrent = Setting::Own(4);
         let mut settings = default_settings();
         settings.extension.default_queue = QueueId(12);
         let profile = SettingsProfile {
@@ -432,9 +429,12 @@ mod tests {
         assert_eq!(q.len(), 3);
         assert_eq!(
             (q[0].id, q[0].settings.max_concurrent, q[0].is_default),
-            (QueueId(1), 7, true)
+            (QueueId(1), Setting::Own(7), true)
         );
-        assert_eq!((q[1].id, q[1].settings.max_concurrent), (QueueId(2), 4));
+        assert_eq!(
+            (q[1].id, q[1].settings.max_concurrent),
+            (QueueId(2), Setting::Own(4))
+        );
         assert_eq!(
             (q[2].id, q[2].settings.name.as_str(), q[2].is_default),
             (QueueId(3), "Videos", false)

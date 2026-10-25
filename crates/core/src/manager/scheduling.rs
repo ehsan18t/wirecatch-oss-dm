@@ -23,7 +23,8 @@ enum Closed {
 #[derive(Debug, Clone, Copy)]
 struct GateView {
     id: QueueId,
-    max_concurrent: u32,
+    /// `None`: no limit of the queue's own.
+    max_concurrent: Option<u32>,
     closed: Option<Closed>,
 }
 
@@ -95,7 +96,7 @@ impl Manager {
                 };
                 GateView {
                     id,
-                    max_concurrent: settings.max_concurrent,
+                    max_concurrent: settings.max_concurrent.own(),
                     closed,
                 }
             })
@@ -174,7 +175,7 @@ fn wait_reason(
     let Some(gate) = gate else {
         return in_line;
     };
-    let queue_full = in_queue >= gate.max_concurrent;
+    let queue_limit = gate.max_concurrent.filter(|&max| in_queue >= max);
     match gate.closed {
         Some(Closed::Paused) => WaitReason::QueuePaused,
         Some(Closed::Schedule(starts_at)) => WaitReason::QueueSchedule { starts_at },
@@ -182,9 +183,9 @@ fn wait_reason(
             running: running_total,
             limit: global_limit,
         },
-        None if queue_full => WaitReason::QueueFull {
+        None if let Some(limit) = queue_limit => WaitReason::QueueFull {
             running: in_queue,
-            limit: gate.max_concurrent,
+            limit,
         },
         None => in_line,
     }
@@ -222,7 +223,7 @@ mod tests {
     fn gate(closed: Option<Closed>, max: u32) -> GateView {
         GateView {
             id: QueueId(1),
-            max_concurrent: max,
+            max_concurrent: Some(max),
             closed,
         }
     }

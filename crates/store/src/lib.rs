@@ -134,6 +134,18 @@ const MIGRATIONS: &[&str] = &[
     FROM queues_before_settings;
     DROP TABLE queues_before_settings;
 ",
+    // D72.11: every queue follows the app in downloads at once, speed limit and connections.
+    r#"
+    UPDATE queues
+    SET settings = json_set(
+        settings,
+        '$.description', '',
+        '$.max_concurrent', json('{"source":"follow_app"}'),
+        '$.speed_limit', json('{"source":"follow_app"}'),
+        '$.connections', json('{"source":"follow_app"}')
+    )
+    WHERE json_valid(settings);
+"#,
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -1321,7 +1333,7 @@ mod tests {
     use super::*;
     use wirecatch_protocol::app::{
         Accent, Category, DownloadStatus, FinishNotice, FixAction, QueueNotify, QueueSettings,
-        Schedule, Theme, TimeOfDay, UserError,
+        Schedule, Setting, Theme, TimeOfDay, UserError,
     };
 
     fn sample_settings() -> AppSettings {
@@ -1695,8 +1707,10 @@ mod tests {
             is_default: false,
             settings: QueueSettings {
                 name: "Night".into(),
-                max_concurrent: 2,
-                speed_limit: Some(1000),
+                description: "Large files overnight".into(),
+                max_concurrent: Setting::Own(2),
+                speed_limit: Setting::Own(1000),
+                connections: Setting::Own(4),
                 schedule: Some(Schedule {
                     start: TimeOfDay {
                         hour: 1,
@@ -2228,10 +2242,7 @@ mod tests {
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         let main = &snapshot.queues[0];
-        assert_eq!(
-            (main.settings.name.as_str(), main.settings.max_concurrent),
-            ("Main", 3)
-        );
+        assert_eq!(main.settings, QueueSettings::new("Main"));
         assert_eq!(main.status, QueueStatus::default());
         assert_old_download_upgraded(&snapshot);
     }
@@ -2272,21 +2283,11 @@ mod tests {
         assert_eq!(
             snapshot.queues,
             vec![
-                queue(
-                    1,
-                    true,
-                    QueueSettings {
-                        max_concurrent: 3,
-                        ..QueueSettings::new("Main")
-                    },
-                    running
-                ),
+                queue(1, true, QueueSettings::new("Main"), running),
                 queue(
                     4,
                     false,
                     QueueSettings {
-                        max_concurrent: 2,
-                        speed_limit: Some(1000),
                         schedule: Some(night),
                         notify: QueueNotify::WhenDone,
                         ..QueueSettings::new("Night")
@@ -2296,15 +2297,7 @@ mod tests {
                         running_outside_schedule: true,
                     }
                 ),
-                queue(
-                    5,
-                    false,
-                    QueueSettings {
-                        max_concurrent: 1,
-                        ..QueueSettings::new("Broken")
-                    },
-                    running
-                ),
+                queue(5, false, QueueSettings::new("Broken"), running),
             ]
         );
     }

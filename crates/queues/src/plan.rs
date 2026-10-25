@@ -52,8 +52,8 @@ pub fn plan(queues: &[QueueView], downloads: &[DownloadView], global_max: u32) -
     running.sort_by_key(|d| (d.activity != Activity::Stopping, d.position));
     for d in running {
         let queue = queues.iter().find(|q| q.id == d.queue);
-        let queue_room = queue
-            .is_some_and(|q| q.open && has_room(q, held.get(&q.id).copied().unwrap_or(0)));
+        let queue_room =
+            queue.is_some_and(|q| q.open && has_room(q, held.get(&q.id).copied().unwrap_or(0)));
         let over = d.activity == Activity::Running && (!queue_room || running_total >= global_max);
         if over {
             out.stop.push(d.id);

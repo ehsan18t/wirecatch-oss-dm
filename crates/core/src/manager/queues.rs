@@ -154,7 +154,7 @@ pub(super) fn apply_to_slot(slot: &mut QueueSlot, settings: QueueSettings) {
         slot.gate.reset();
     }
     if old.speed_limit != settings.speed_limit {
-        slot.limiter.set_limit(settings.speed_limit);
+        slot.limiter.set_limit(settings.speed_limit.own());
     }
     slot.queue.settings = settings;
 }
