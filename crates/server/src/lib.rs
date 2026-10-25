@@ -1,19 +1,7 @@
-//! The protocol server (D14): serves one client connection over any byte stream.
-//!
-//! The first call must be `hello`, naming protocol versions this app speaks too;
-//! otherwise the client gets a clear error and the connection closes. The connection
-//! then speaks the newest version both sides have (D32), and the app sends it only
-//! the events and error codes that version has. After that every request gets a
-//! response with its id, and events are pushed as they happen. A malformed or
-//! oversized frame gets an error response, a call the connection's version does not
-//! have gets `UnsupportedCall`, and either way the connection carries on. An error
-//! that cannot be tied to a request (the frame was unreadable) uses id 0.
-//!
-//! Requests are handled side by side, each in its own task, so a slow one (a
-//! capture waiting up to the capture timeout for its server) never holds up the
-//! others, such as the extension withdrawing that very capture. Responses are
-//! matched to requests by id only and may arrive in any order. One task writes
-//! every response and event, so frames never interleave.
+//! Serves one client connection (D14). The first call must be `hello`; the connection then
+//! speaks the newest version both sides have (D32) and gets only that version's events and
+//! error codes. Requests run side by side, so a slow capture never holds up a withdrawal;
+//! responses match requests by id only, and one task writes every frame.
 
 use std::io;
 use std::sync::Arc;
@@ -34,21 +22,12 @@ use wirecatch_protocol::wire::{
 use wirecatch_core::Manager;
 use wirecatch_engine::units::KIB_USIZE;
 
-/// Most requests from one connection that may be handled at once. A request beyond
-/// this gets an error at once, so a client cannot pile up unbounded work.
+/// A request beyond this gets an error at once, so a client cannot pile up work.
 pub const MAX_REQUESTS_IN_FLIGHT: usize = 64;
 
-/// How much to read from the stream at a time.
 const READ_CHUNK: usize = 16 * KIB_USIZE;
 
-/// Serves one client until it disconnects, refuses the handshake, or the stream fails.
-///
-/// Returns `Ok(())` when the client goes away or is refused, and an error only when
-/// reading from or writing to the stream fails.
-///
-/// # Errors
-///
-/// The error reading from or writing to `stream`, which ends the connection.
+/// `Ok` when the client goes away or is refused; an error only when the stream fails.
 pub async fn serve_connection<S>(manager: Manager, mut stream: S) -> io::Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send,
@@ -111,9 +90,7 @@ where
     Ok(())
 }
 
-/// Starts handling a request in its own task, which sends the response to
-/// `responder`. Returns the error response to send instead when the connection
-/// already has the most requests in flight it may have.
+/// The error response to send instead when the connection has its most requests in flight.
 fn start_request(
     manager: &Manager,
     slots: &Arc<Semaphore>,
@@ -144,9 +121,7 @@ fn start_request(
     None
 }
 
-/// Reads the first frame and checks it is a `hello` naming protocol versions this app
-/// speaks too. Returns its request id, the hello and the version the connection speaks,
-/// for the caller to answer, or `None` after telling the client why it is refused.
+/// `None` after telling the client why its first frame is refused.
 async fn handshake<S>(
     frames: &mut FrameReader,
     stream: &mut S,
@@ -173,8 +148,7 @@ where
     Ok(None)
 }
 
-/// The hello in the first frame body, or the refusal to send instead: any other request,
-/// whether the app has its call or not, is told that hello comes first.
+/// Any other first request, known to the app or not, is told that hello comes first.
 fn parse_hello(body: &[u8]) -> Result<(u64, Hello), Box<Message>> {
     let first_must_be_hello = |id| {
         Box::new(error(
@@ -201,7 +175,6 @@ fn parse_hello(body: &[u8]) -> Result<(u64, Hello), Box<Message>> {
     }
 }
 
-/// Carries out a call, answering in the connection's protocol `version`.
 async fn handle(manager: &Manager, version: u32, call: Call) -> Outcome {
     let result = match call {
         // A connection keeps the version its first hello agreed on.
@@ -251,8 +224,6 @@ fn hello_reply(version: u32) -> Reply {
     })
 }
 
-/// The request in a frame body, when the connection's protocol `version` has its call, or
-/// the error response to send instead.
 fn parse_request(body: &[u8], version: u32) -> Result<(u64, Call), Box<Message>> {
     match frame::decode::<Message>(body) {
         Ok(Message::Request { id, call }) if call.method().is_in(version) => Ok((id, call)),
@@ -295,7 +266,6 @@ fn not_understood(id: u64, e: &FrameError) -> Message {
     )
 }
 
-/// The id of a message that is not a readable request, when at least that much is readable.
 fn readable_id(body: &[u8]) -> u64 {
     serde_json::from_slice::<Value>(body)
         .ok()
@@ -303,9 +273,8 @@ fn readable_id(body: &[u8]) -> u64 {
         .unwrap_or(UNKNOWN_REQUEST_ID)
 }
 
-/// The answer to a call the connection does not have: one this app lacks, which a newer
-/// app may have, or one newer than the version the client agreed to, which it should not
-/// have sent.
+/// A call this app lacks may come from a newer app; one newer than the agreed version should
+/// not have been sent. The answer says which.
 fn unsupported_call(id: u64, method: CallMethod) -> Message {
     let message = if method == CallMethod::Unknown {
         "This version of the Wirecatch app cannot do what was asked, so it did nothing. Everything else still works, and updating the Wirecatch app may add it."
@@ -323,8 +292,7 @@ fn snapshot(manager: &Manager) -> [Event; 3] {
     ]
 }
 
-/// The answer to a hello whose protocol versions the app cannot agree to, saying which
-/// side to update.
+/// Says which side to update.
 fn version_refusal(id: u64, hello: &Hello, refused: VersionError) -> Message {
     let client = match hello.client {
         ClientKind::Extension => "browser extension",
@@ -408,7 +376,6 @@ async fn send<S: AsyncWrite + Unpin>(
         })
 }
 
-/// What one frame turned out to be.
 #[derive(Debug, PartialEq, Eq)]
 enum Frame {
     Body(Vec<u8>),
@@ -416,11 +383,8 @@ enum Frame {
     TooLarge(usize),
 }
 
-/// Splits a byte stream into frames. Its only await point is a cancel-safe read,
-/// so it can sit in a `select!` next to the event stream without losing data.
-///
-/// Frames are taken from the buffer by moving a cursor; the unread rest (at most
-/// one partial frame) is moved to the front only when more data must be read.
+/// Its only await point is a cancel-safe read, so it can sit in a `select!` without losing
+/// data. The unread rest (at most one partial frame) moves to the front only before a read.
 #[derive(Debug, Default)]
 struct FrameReader {
     buf: Vec<u8>,
@@ -431,7 +395,6 @@ struct FrameReader {
 }
 
 impl FrameReader {
-    /// The next frame, or `None` at the end of the stream.
     async fn next<R: AsyncRead + Unpin>(&mut self, reader: &mut R) -> io::Result<Option<Frame>> {
         loop {
             if let Some(frame) = self.take_frame() {
@@ -475,7 +438,6 @@ impl FrameReader {
         }
     }
 
-    /// Moves the unread bytes to the front of the buffer.
     fn compact(&mut self) {
         if self.start > 0 {
             self.buf.drain(..self.start);
