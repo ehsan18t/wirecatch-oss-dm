@@ -103,6 +103,7 @@ test('every command in the command map gets a guard for its answer', async () =>
     Row: '{ id: number }',
     CommandMap: '{ list: Command<null, Array<Row>>, find: Command<Row, Row | null> }',
   });
+  assert.equal(guards.isCommandMap, undefined, 'the map is checked one answer at a time');
   const outputs = guards.COMMAND_OUTPUTS;
   assert.equal(outputs.list([{ id: 1 }]), true);
   assert.equal(outputs.list([{ id: 'x' }]), false);

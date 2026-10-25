@@ -179,8 +179,12 @@ function rootContext(found, known) {
 }
 
 /** A guard for each declaration that can have one; a type that names one without a guard gets none either. A generic type has none of its own: it is checked where it is used, with its type arguments. */
-function guards(found) {
-  const known = new Set([...found.keys()].filter((name) => !found.get(name).typeParameters));
+function guards(found, withoutGuard) {
+  const known = new Set(
+    [...found.keys()].filter(
+      (name) => !found.get(name).typeParameters && !withoutGuard.includes(name),
+    ),
+  );
   const written = new Map();
   let changed = true;
   while (changed) {
@@ -234,7 +238,7 @@ const WITHOUT_GUARD = [COMMAND_MAP];
 /** The text of validators.ts for the generated types in `folder`. Fails when a type other than those in `withoutGuard` gets no guard, so a type the generator cannot check (a map, a generic) is never left unchecked without anyone noticing. */
 export function validatorsSource(folder, { withoutGuard = WITHOUT_GUARD } = {}) {
   const found = declarations(folder);
-  const written = guards(found);
+  const written = guards(found, withoutGuard);
   const unguarded = [...found.keys()].filter(
     (name) => !written.has(name) && !withoutGuard.includes(name) && !found.get(name).typeParameters,
   );
