@@ -85,6 +85,17 @@ export class Queues {
     return ok;
   }
 
+  /** Moves a queue to `index` in the sidebar, whose order also settles ties between claims; the default queue stays first (D72.9). */
+  async moveTo(queue: QueueId, index: number): Promise<void> {
+    const order = this.list.map((q) => q.id);
+    const from = order.indexOf(queue);
+    const to = Math.min(Math.max(index, 1), order.length - 1);
+    if (from < 1 || from === to) return;
+    order.splice(from, 1);
+    order.splice(to, 0, queue);
+    await this.#host.runner.run(() => this.#host.backend().setQueueOrder(order));
+  }
+
   /** Pauses or resumes a whole queue. Downloads paused one by one stay paused either way. */
   async setPaused(queue: QueueId, paused: boolean): Promise<void> {
     await this.#host.runner.run(() => this.#host.backend().setQueuePaused(queue, paused));
