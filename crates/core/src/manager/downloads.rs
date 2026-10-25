@@ -10,6 +10,8 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::{AddAction, AddedDownload};
 use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_sites::local_network::ChosenBy;
+use wirecatch_store::NameChoice;
 
 use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
@@ -18,10 +20,8 @@ use super::placement::QueueRequest;
 use super::run::{delete_files, mark_cancelled};
 use super::state::{Entry, State, Stop};
 use crate::error::{CoreError, Result};
-use crate::local_network::ChosenBy;
+use crate::headers;
 use crate::naming;
-use crate::store::NameChoice;
-use crate::{headers, settings};
 
 fn remember_handover(state: &mut State, handover: &str, row: &DownloadSummary) {
     let action = capture_action(row);
@@ -532,10 +532,10 @@ impl Manager {
         )?;
         let category = wanted
             .category
-            .unwrap_or_else(|| settings::category_of(&state.settings, &name));
+            .unwrap_or_else(|| wirecatch_settings::category_of(&state.settings, &name));
         let dir = match &wanted.folder {
             Some(folder) => folder.clone(),
-            None => settings::folder_for(&state.settings, category, &self.inner.folders)?,
+            None => wirecatch_settings::folder_for(&state.settings, category, &self.inner.folders)?,
         };
         Ok((dir, name, category))
     }

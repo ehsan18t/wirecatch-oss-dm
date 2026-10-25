@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 use wirecatch_engine::{CancellationToken, Url};
+use wirecatch_media::StoredMedia;
 use wirecatch_protocol::app::{
     CaptureConfirmation, Category, DownloadSummary, MediaSummary, PendingCapture, PortablePath,
     UiEvent,
@@ -18,6 +19,7 @@ use wirecatch_protocol::extension::{
     AddAction, AddedDownload, MediaKind, NewDownload, WithdrawOutcome,
 };
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId, Secret};
+use wirecatch_sites::local_network::{self, ChosenBy};
 
 use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
@@ -26,11 +28,7 @@ use super::handovers::{self, Handover, Target};
 use super::placement::QueueRequest;
 use super::state::{Expectation, Pending};
 use crate::error::{CoreError, Result};
-use crate::local_network::{self, ChosenBy};
-use crate::media::StoredMedia;
-use crate::settings;
-use crate::store::Origin;
-use crate::user_error;
+use crate::headers::Origin;
 use crate::{headers, naming};
 
 /// Most captures that can wait for confirmation at once.
@@ -87,7 +85,7 @@ impl Manager {
         // (waiting for the person, or queued), the browser's copy is gone.
         if local_network::refuses(chosen_by, &url).await {
             return Err(CoreError::NotStarted(
-                user_error::CAPTURE_TO_OWN_NETWORK.into(),
+                wirecatch_messages::CAPTURE_TO_OWN_NETWORK.into(),
             ));
         }
         if capture
@@ -429,8 +427,9 @@ impl Manager {
             )));
         }
         let file_name = naming::file_name(capture.suggested_name.as_deref(), url)?;
-        let category = settings::category_of(&state.settings, &file_name);
-        let folder = settings::folder_for(&state.settings, category, &self.inner.folders)?;
+        let category = wirecatch_settings::category_of(&state.settings, &file_name);
+        let folder =
+            wirecatch_settings::folder_for(&state.settings, category, &self.inner.folders)?;
         let id = state.ids.pending();
         let proposal = PendingCapture {
             id,

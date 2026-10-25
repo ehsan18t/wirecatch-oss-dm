@@ -18,15 +18,16 @@ use wirecatch_engine::{
     Progress, RemoteFile, Url,
     header::{ACCEPT, HeaderValue},
 };
+use wirecatch_files::FileError;
 use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
 
 use super::Manager;
-use crate::addons::manifest::{self, AddonComponent, ComponentId, ReleaseFile};
-use crate::addons::{self, Check, MediaTools, Record, archive, signature};
 use crate::error::{CoreError, Result};
-use crate::media::ytdlp;
-use crate::user_error;
+use wirecatch_addons::manifest::{self, AddonComponent, ComponentId, ReleaseFile};
+use wirecatch_addons::{self as addons, Check, Record, archive, signature};
 use wirecatch_engine::units::{KIB, MIB};
+use wirecatch_media::MediaTools;
+use wirecatch_media::ytdlp;
 use wirecatch_streams::process::{self, RunError, RunOptions};
 
 /// How often the progress of an install is reported.
@@ -200,7 +201,7 @@ impl AddonSlot {
     pub fn load(dir: &Path) -> Self {
         match Record::load(dir) {
             Ok(record) => {
-                let tools = addons::tools(dir, &record, Check::Sizes);
+                let tools = addons::tools(dir, &record, Check::Sizes).map(MediaTools::from);
                 Self {
                     record,
                     tools,
@@ -339,11 +340,10 @@ impl Manager {
         let dir = self.inner.addon_dir.clone();
         let scanned = self
             .blocking(move || {
-                let record = Record::load(&dir).map_err(|source| CoreError::File {
-                    path: dir.join(addons::RECORD_FILE).display().to_string(),
-                    source,
+                let record = Record::load(&dir).map_err(|source| {
+                    CoreError::File(FileError::new(&dir.join(addons::RECORD_FILE), source))
                 })?;
-                let tools = addons::tools(&dir, &record, check);
+                let tools = addons::tools(&dir, &record, check).map(MediaTools::from);
                 Ok((record, tools))
             })
             .await;
@@ -698,10 +698,7 @@ impl Manager {
         let work = dir.join(".work");
         let made = work.clone();
         self.blocking(move || {
-            std::fs::create_dir_all(&made).map_err(|e| CoreError::File {
-                path: made.display().to_string(),
-                source: e,
-            })
+            std::fs::create_dir_all(&made).map_err(|e| CoreError::File(FileError::new(&made, e)))
         })
         .await
         .map_err(|e| e.to_string())?;
@@ -815,7 +812,7 @@ impl Manager {
                 Err(e) => {
                     return Err(format!(
                         "{id} could not be downloaded: {}",
-                        user_error::describe(&e, work, false).message
+                        wirecatch_messages::describe(&e, work, false).message
                     )
                     .into());
                 }
@@ -835,9 +832,9 @@ impl Manager {
                 let refused = matches!(error, PartError::Refused(_));
                 let stage = staged.0.clone();
                 self.blocking(move || {
-                    crate::discard::dir(&stage);
+                    wirecatch_files::discard::dir(&stage);
                     if refused {
-                        crate::discard::file(&release);
+                        wirecatch_files::discard::file(&release);
                     }
                     Ok(())
                 })
@@ -1221,7 +1218,7 @@ fn verify_and_unpack(
     let len = file.metadata().map_err(unreadable)?.len();
     if len > cap {
         drop(file);
-        crate::discard::file(release);
+        wirecatch_files::discard::file(release);
         return Err(format!(
             "The downloaded {} is larger than its release says, so it was not installed. Try again later; if it keeps happening, please report it.",
             component.id()
@@ -1231,7 +1228,7 @@ fn verify_and_unpack(
     if actual != component.release().sha256() {
         warn!(part = component.id().as_str(), expected = %component.release().sha256(), %actual, "checksum mismatch");
         drop(file);
-        crate::discard::file(release);
+        wirecatch_files::discard::file(release);
         return Err(format!(
             "The downloaded {} did not match its published checksum, so it was not installed. Try again later; if it keeps happening, please report it.",
             component.id()
@@ -1249,7 +1246,7 @@ fn verify_and_unpack(
     std::fs::create_dir_all(stage)
         .map_err(|e| format!("The add-on's work folder could not be created ({e})."))?;
     let installed = archive::unpack(component, &mut file, stage).map_err(|e| {
-        crate::discard::dir(stage);
+        wirecatch_files::discard::dir(stage);
         e.to_string()
     })?;
     Ok((stage.to_path_buf(), installed))
@@ -1269,7 +1266,7 @@ fn swap_in(
         let id = component.id();
         let target = dir.join(id.as_str());
         let old = work.join(format!("old-{}", id.as_str()));
-        crate::discard::dir(&old);
+        wirecatch_files::discard::dir(&old);
         let had_old = target.exists();
         if had_old {
             rename(&target, &old).map_err(|e| {
@@ -1300,7 +1297,7 @@ fn swap_in(
             }
             return Err(format!("{id} could not be put in place ({e}).").into());
         }
-        crate::discard::dir(&old);
+        wirecatch_files::discard::dir(&old);
         record.components.insert(
             id,
             addons::InstalledComponent {
@@ -1315,25 +1312,25 @@ fn swap_in(
         record
             .save(dir)
             .map_err(|e| format!("The add-on could not record what it installed ({e})."))?;
-        crate::discard::file(&work.join(format!(
+        wirecatch_files::discard::file(&work.join(format!(
             "{}-{}.download",
             id.as_str(),
             file_safe(component.version())
         )));
         // What another version cached (player code, signatures) is a known cause of failed reads.
         if id == ComponentId::YtDlp {
-            crate::discard::dir(&addons::ytdlp_cache(dir));
+            wirecatch_files::discard::dir(&addons::ytdlp_cache(dir));
         }
     }
-    let tools = addons::tools(dir, &record, Check::Sizes);
+    let tools = addons::tools(dir, &record, Check::Sizes).map(MediaTools::from);
     Ok((record, tools))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::addons::InstalledComponent;
-    use crate::addons::manifest::{ArchiveKind, Sha256Digest};
+    use wirecatch_addons::InstalledComponent;
+    use wirecatch_addons::manifest::{ArchiveKind, Sha256Digest};
 
     /// Add-on downloads name the app, never the engine library's default.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -2,11 +2,11 @@
 
 use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_protocol::proxy::{ProxyChange, ProxyTest, ProxyTestResult};
+use wirecatch_settings::proxy::UpdaterProxy;
 
 use super::Manager;
 use super::state::Stop;
 use crate::error::Result;
-use crate::proxy::{self, UpdaterProxy};
 
 impl Manager {
     /// Saves a new proxy setting with its passwords, and, when `change` asks, restarts the
@@ -25,15 +25,15 @@ impl Manager {
             passwords,
             restart_running,
         } = change;
-        let mut settings = proxy::validate(settings)?;
+        let mut settings = wirecatch_settings::proxy::validate(settings)?;
         let mut state = self.lock_open()?;
-        let logins = proxy::merge_passwords(
+        let logins = wirecatch_settings::proxy::merge_passwords(
             &state.proxy_logins,
             &passwords,
             &state.settings.proxy,
             &settings,
         )?;
-        proxy::mark_passwords(&mut settings, &logins);
+        wirecatch_settings::proxy::mark_passwords(&mut settings, &logins);
         if logins != state.proxy_logins {
             self.inner.store.save_proxy_logins(logins.clone());
             state.proxy_logins = logins;
@@ -66,24 +66,25 @@ impl Manager {
     ///
     /// [`CoreError::Invalid`](crate::CoreError::Invalid) for a proxy that cannot work.
     pub async fn test_proxy(&self, test: ProxyTest) -> Result<ProxyTestResult> {
-        let settings = proxy::validate(test.settings)?;
+        let settings = wirecatch_settings::proxy::validate(test.settings)?;
         let (saved, was) = {
             let state = self.lock();
             (state.proxy_logins.clone(), state.settings.proxy.clone())
         };
-        let logins = proxy::merge_passwords(&saved, &test.passwords, &was, &settings)?;
-        let choice = proxy::engine_choice(&settings, &logins);
+        let logins =
+            wirecatch_settings::proxy::merge_passwords(&saved, &test.passwords, &was, &settings)?;
+        let choice = wirecatch_settings::proxy::engine_choice(&settings, &logins);
         let Some(url) = self.inner.proxy_test_url.clone() else {
             return Ok(ProxyTestResult::Unreachable {
                 reason: "this build has no address to test the proxy with".into(),
             });
         };
-        Ok(proxy::test(choice, &url, self.inner.stopped.child_token()).await)
+        Ok(crate::proxy::test(choice, &url, self.inner.stopped.child_token()).await)
     }
 
     /// The proxy the app updater uses: the setting's proxy for `https`.
     #[must_use]
     pub fn updater_proxy(&self) -> UpdaterProxy {
-        proxy::updater_proxy(&self.lock().app_proxy())
+        wirecatch_settings::proxy::updater_proxy(&self.lock().app_proxy())
     }
 }

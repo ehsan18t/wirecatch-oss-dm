@@ -15,11 +15,18 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tracing::warn;
+use wirecatch_addons::Check;
 use wirecatch_engine::numeric::saturating_cast;
+use wirecatch_engine::units::MIB;
 use wirecatch_engine::{
     CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, Outcome,
     PrivateNetwork, Progress, Url,
 };
+use wirecatch_media::MediaTools;
+use wirecatch_media::convert;
+use wirecatch_media::describe;
+use wirecatch_media::ffmpeg::{FfmpegError, Finished};
+use wirecatch_media::merge;
 use wirecatch_protocol::app::{FixAction, ProcessingStep, UserError};
 use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::{DownloadId, Secret};
@@ -30,21 +37,15 @@ use super::media::{addon_missing, cookie_header, media_options};
 use super::policy::RunPolicy;
 use super::run::{MediaDone, RunEnd};
 use super::state::{Gauge, State};
-use crate::addons::{Check, MediaTools};
 use crate::clock::Clock;
-use crate::local_network::{self, ChosenBy};
-use crate::media::convert;
-use crate::media::describe;
-use crate::media::ffmpeg::{FfmpegError, Finished};
-use crate::media::merge;
-use crate::media::output::{
+use crate::headers;
+use crate::headers::Origin;
+use wirecatch_media::output::{
     self, Container, ImageFormat, Inputs, OutputJob, SubtitleFormat, SubtitlePick, VideoAction,
 };
-use crate::media::ytdlp::{self, Fetched, Format, FormatId, Transport};
-use crate::media::{self, Content, MediaJob, MediaProgress, Pick, safe_ext};
-use crate::store::Origin;
-use crate::{headers, user_error};
-use wirecatch_engine::units::MIB;
+use wirecatch_media::ytdlp::{self, Fetched, Format, FormatId, Transport};
+use wirecatch_media::{Content, MediaJob, MediaProgress, Pick, safe_ext};
+use wirecatch_sites::local_network::{self, ChosenBy};
 
 /// Everything a media run needs, copied out of the manager's state.
 struct Job {
@@ -88,7 +89,7 @@ impl Manager {
         let url = match Url::parse(&entry.row.url) {
             Ok(url) => url,
             Err(e) => {
-                let error = user_error::describe(
+                let error = wirecatch_messages::describe(
                     &EngineError::InvalidUrl(e.to_string()),
                     Path::new(""),
                     false,
@@ -98,7 +99,7 @@ impl Manager {
             }
         };
         if local_network::refuses_address(entry.chosen_by, &url) {
-            let error = user_error::private_network(entry.chosen_by);
+            let error = wirecatch_messages::private_network(entry.chosen_by);
             self.fail_to_start(state, id, error);
             return;
         }
@@ -179,7 +180,7 @@ async fn run(
             };
             run_page(&job, &page, progress, cancel).await
         }
-        MediaJob::Unreadable => return Err(media::unreadable()),
+        MediaJob::Unreadable => return Err(wirecatch_media::unreadable()),
     };
     match result {
         Err(_) if cancel.is_cancelled() => Ok(MediaDone::Paused),
@@ -205,7 +206,7 @@ async fn run_stream(
     // The stream is saved in the work folder first and put in place by
     // `finish`, which marks it as downloaded from the internet before it is
     // ever at its final name.
-    let work = media::work_dir(&job.output);
+    let work = wirecatch_media::work_dir(&job.output);
     tokio::fs::create_dir_all(&work)
         .await
         .map_err(|e| disk(&e, &job.output))?;
@@ -313,7 +314,7 @@ async fn page_attempt(
     cancel: &CancellationToken,
 ) -> Result<MediaDone, PageError> {
     let tools = job.tools.as_ref().ok_or_else(addon_missing)?;
-    let work = media::work_dir(&job.output);
+    let work = wirecatch_media::work_dir(&job.output);
     tokio::fs::create_dir_all(&work)
         .await
         .map_err(|e| disk(&e, &job.output))?;
@@ -325,7 +326,7 @@ async fn page_attempt(
     let (video, audio) = (&page.video, &page.audio);
     let format = &ytdlp::selection(video.as_ref(), audio.as_ref());
     let cookies = cookie_header(&job.origin);
-    let proxy = crate::proxy::ytdlp_proxy(&job.options.proxy);
+    let proxy = wirecatch_settings::proxy::ytdlp_proxy(&job.options.proxy);
     let ctx = ytdlp::Context {
         tools,
         page: &job.url,
@@ -968,9 +969,9 @@ async fn fetch_part(
                 // A format address that was refused or has expired: a
                 // fresh one from the page usually works.
                 if let EngineError::PrivateNetwork { .. } = e {
-                    return Err(user_error::private_network(job.chosen_by).into());
+                    return Err(wirecatch_messages::private_network(job.chosen_by).into());
                 }
-                let error = user_error::describe(&e, folder, true);
+                let error = wirecatch_messages::describe(&e, folder, true);
                 if error.fix == Some(FixAction::RefreshLink) {
                     let status = match e {
                         EngineError::HttpStatus { status, .. } => Some(status),
@@ -1013,18 +1014,18 @@ async fn finish(
     let sidecars = sidecars.to_vec();
     let moved = tokio::task::spawn_blocking(move || -> std::io::Result<(PathBuf, u64)> {
         // Marked before it is put in place, so it is never there unmarked.
-        crate::zone::mark(&file, &url, referrer.as_deref());
+        wirecatch_files::zone::mark(&file, &url, referrer.as_deref());
         let target = place(&file, &planned, &reserve)?;
         let bytes = std::fs::metadata(&target)?.len();
         let anywhere: Reserve = Arc::new(|_: &Path, _| true);
         for (subtitle, language) in &sidecars {
-            crate::zone::mark(subtitle, &url, referrer.as_deref());
+            wirecatch_files::zone::mark(subtitle, &url, referrer.as_deref());
             let beside = sidecar_path(&target, language);
             if let Err(e) = place(subtitle, &beside, &anywhere) {
                 warn!(error = %e, "could not put a subtitle file next to the video");
             }
         }
-        crate::discard::dir(&work);
+        wirecatch_files::discard::dir(&work);
         Ok((target, bytes))
     })
     .await
@@ -1103,7 +1104,7 @@ fn final_path(file: &Path, planned: &Path) -> PathBuf {
     let own = file
         .extension()
         .and_then(|e| e.to_str())
-        .filter(|e| media::is_media_ext(e))
+        .filter(|e| wirecatch_media::is_media_ext(e))
         .map(str::to_ascii_lowercase);
     match own {
         Some(ext)
@@ -1144,7 +1145,7 @@ fn place(file: &Path, planned: &Path, reserve: &Reserve) -> std::io::Result<Path
         // since the check is left alone.
         let moved = match std::fs::hard_link(file, &candidate) {
             Ok(()) => {
-                crate::discard::file(file);
+                wirecatch_files::discard::file(file);
                 Ok(true)
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
@@ -1221,7 +1222,7 @@ fn format_rule(chosen_by: ChosenBy, found: &[IpAddr]) -> Result<PrivateNetwork, 
         });
     }
     if found.iter().copied().any(local_network::is_local) {
-        return Err(user_error::private_network(chosen_by));
+        return Err(wirecatch_messages::private_network(chosen_by));
     }
     Ok(PrivateNetwork::Block)
 }
@@ -1248,7 +1249,7 @@ fn refresh(message: &str) -> UserError {
 
 fn disk(error: &std::io::Error, near: &Path) -> UserError {
     let folder = near.parent().unwrap_or(near);
-    user_error::disk(error, folder)
+    wirecatch_messages::disk(error, folder)
 }
 
 #[cfg(test)]
@@ -1500,7 +1501,7 @@ mod tests {
             &CancellationToken::new(),
         )
         .await;
-        assert_eq!(ended, Err(media::unreadable()));
+        assert_eq!(ended, Err(wirecatch_media::unreadable()));
     }
 
     /// A stream (here one HLS segment, joined without ffmpeg) is saved in the
@@ -1558,7 +1559,7 @@ mod tests {
             .expect("the stream was put in place without the mark");
         assert!(mark.contains("ZoneId=3"), "{mark}");
         assert!(
-            !media::work_dir(&output).exists(),
+            !wirecatch_media::work_dir(&output).exists(),
             "the work folder was left"
         );
     }

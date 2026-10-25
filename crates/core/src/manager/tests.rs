@@ -26,7 +26,7 @@ use wirecatch_engine::{PrivateNetwork, ProxyChoice};
 /// library's default; with one, it is the browser's.
 #[test]
 fn media_requests_name_the_app_or_the_browser() {
-    let mut origin = crate::store::Origin::default();
+    let mut origin = crate::headers::Origin::default();
     let agent =
         super::media::media_options(&origin, PrivateNetwork::Block, ProxyChoice::System).user_agent;
     assert_eq!(

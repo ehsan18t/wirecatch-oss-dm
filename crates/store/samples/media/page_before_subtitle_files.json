@@ -1,0 +1,24 @@
+{
+  "summary": {
+    "quality": "1080p",
+    "source": "page",
+    "video_key": null,
+    "instead_of": null
+  },
+  "job": {
+    "type": "page",
+    "format": "313+140",
+    "video": "313",
+    "audio": "140",
+    "output": {
+      "container": "mp4",
+      "video": {
+        "type": "copy"
+      },
+      "audio": {
+        "type": "copy"
+      },
+      "original_ext": "webm"
+    }
+  }
+}

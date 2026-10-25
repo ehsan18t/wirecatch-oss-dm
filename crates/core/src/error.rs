@@ -2,10 +2,12 @@
 
 use std::io;
 
+use wirecatch_files::FileError;
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
-
-use crate::folders::PathError;
+use wirecatch_settings::folders::PathError;
+use wirecatch_settings::{ProfileError, SettingsError};
+use wirecatch_store::StoreError;
 
 /// Why a manager operation failed. The `Display` text is plain language and says
 /// how to fix the problem, so the UI can show it as is.
@@ -87,65 +89,17 @@ pub enum CoreError {
     #[error(transparent)]
     Path(#[from] PathError),
 
-    /// A settings file written by a newer Wirecatch.
-    #[error(
-        "This settings file was made by a newer version of Wirecatch (format {found}, this version reads up to {supported}). Update Wirecatch, then import it again."
-    )]
-    ProfileTooNew {
-        /// Format version found in the file, as written there.
-        found: u64,
-        /// Newest format version this build reads.
-        supported: u32,
-    },
+    /// A settings file that could not be imported.
+    #[error(transparent)]
+    Profile(#[from] ProfileError),
 
-    #[error(
-        "This settings file was made by an earlier version of Wirecatch (format {found}), whose settings files this version cannot read. Export the settings again with this version."
-    )]
-    ProfileTooOld { found: u64 },
-
-    /// A file that is not a readable settings profile.
-    #[error(
-        "This file is not a Wirecatch settings file ({0}). Choose a file made with Export settings."
-    )]
-    InvalidProfile(String),
-
-    /// Another manager has the download list open: another copy of Wirecatch, which may run
-    /// with other rights than this one.
-    #[error(
-        "Another copy of Wirecatch has the download list in {path} open. Close it, or keep using that copy."
-    )]
-    AlreadyOpen {
-        /// The folder that holds the list.
-        path: String,
-    },
-
-    /// The database was written by a newer Wirecatch.
-    #[error(
-        "The download list was saved by a newer version of Wirecatch (database version {found}, this version reads up to {supported}). Update Wirecatch to open it."
-    )]
-    DatabaseTooNew {
-        /// Schema version found in the database.
-        found: u32,
-        /// Newest schema version this build reads.
-        supported: u32,
-    },
-
-    /// The database could not be read or written.
-    #[error(
-        "The download list could not be read or saved ({0}). Check that Wirecatch's data folder can be written to and the disk is not full, then restart Wirecatch."
-    )]
-    Database(#[from] rusqlite::Error),
+    /// The download list could not be opened or saved.
+    #[error(transparent)]
+    Store(#[from] StoreError),
 
     /// A file the user named could not be read or written.
-    #[error(
-        "Could not use {path} ({source}). Check that the folder exists and that you are allowed to write there."
-    )]
-    File {
-        /// The file involved.
-        path: String,
-        /// What the operating system reported.
-        source: io::Error,
-    },
+    #[error(transparent)]
+    File(#[from] FileError),
 
     /// Moving a download's files to another folder failed, and some of the files
     /// already moved could not be put back, so they are split between the two
@@ -179,6 +133,18 @@ pub enum CoreError {
     Internal(String),
 }
 
+impl From<SettingsError> for CoreError {
+    fn from(error: SettingsError) -> Self {
+        match error {
+            SettingsError::Invalid(message) => CoreError::Invalid(message),
+            SettingsError::LimitReached(message) => CoreError::LimitReached(message),
+            SettingsError::Path(error) => CoreError::Path(error),
+            SettingsError::File(error) => CoreError::File(error),
+            SettingsError::Profile(error) => CoreError::Profile(error),
+        }
+    }
+}
+
 /// Result of a manager operation.
 pub type Result<T, E = CoreError> = std::result::Result<T, E>;
 
@@ -210,14 +176,10 @@ impl CoreError {
             CoreError::Invalid(_)
             | CoreError::DefaultQueue
             | CoreError::Path(_)
-            | CoreError::ProfileTooNew { .. }
-            | CoreError::ProfileTooOld { .. }
-            | CoreError::InvalidProfile(_) => ErrorCode::InvalidRequest,
+            | CoreError::Profile(_) => ErrorCode::InvalidRequest,
             CoreError::AddonRequired => ErrorCode::AddonRequired,
-            CoreError::DatabaseTooNew { .. }
-            | CoreError::AlreadyOpen { .. }
-            | CoreError::Database(_)
-            | CoreError::File { .. }
+            CoreError::Store(_)
+            | CoreError::File(_)
             | CoreError::FilesSplit { .. }
             | CoreError::AddonFilesLeft { .. }
             | CoreError::AddonNotRemoved { .. }
@@ -295,21 +257,16 @@ mod tests {
             CoreError::DefaultQueue,
             CoreError::Path(PathError::Special(r"\\.\C:".into())),
             CoreError::Path(PathError::Network(r"\\server\share".into())),
-            CoreError::ProfileTooNew {
+            CoreError::Profile(ProfileError::TooNew {
                 found: 3,
                 supported: 2,
-            },
-            CoreError::ProfileTooOld { found: 1 },
-            CoreError::InvalidProfile("it has no format version".into()),
-            CoreError::DatabaseTooNew {
-                found: 9,
-                supported: 3,
-            },
-            CoreError::AlreadyOpen { path: "/x".into() },
-            CoreError::File {
+            }),
+            CoreError::Profile(ProfileError::TooOld { found: 1 }),
+            CoreError::Profile(ProfileError::Invalid("it has no format version".into())),
+            CoreError::File(FileError {
                 path: "/x".into(),
                 source: io(),
-            },
+            }),
             CoreError::FilesSplit {
                 path: "/x".into(),
                 source: io(),

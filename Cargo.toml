@@ -16,6 +16,15 @@ wirecatch-engine = { path = "crates/engine", version = "0.1.0" }
 wirecatch-protocol = { path = "crates/protocol", version = "0.1.0" }
 wirecatch-queues = { path = "crates/queues", version = "0.1.0" }
 wirecatch-core = { path = "crates/core", version = "0.1.0" }
+wirecatch-addons = { path = "crates/addons", version = "0.1.0" }
+wirecatch-files = { path = "crates/files", version = "0.1.0" }
+wirecatch-messages = { path = "crates/messages", version = "0.1.0" }
+wirecatch-media = { path = "crates/media", version = "0.1.0" }
+wirecatch-records = { path = "crates/records", version = "0.1.0" }
+wirecatch-store = { path = "crates/store", version = "0.1.0" }
+wirecatch-server = { path = "crates/server", version = "0.1.0" }
+wirecatch-settings = { path = "crates/settings", version = "0.1.0" }
+wirecatch-sites = { path = "crates/sites", version = "0.1.0" }
 wirecatch-ipc = { path = "crates/ipc", version = "0.1.0" }
 wirecatch-streams = { path = "crates/streams", version = "0.1.0" }
 wirecatch-product = { path = "crates/product", version = "0.1.0" }
@@ -40,6 +49,7 @@ url = "2"
 # Only the naive date and time types; core turns on the clock.
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 tempfile = "3.27.0"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_IO", "Win32_System_Ioctl"] }
 axum = "0.8"
 

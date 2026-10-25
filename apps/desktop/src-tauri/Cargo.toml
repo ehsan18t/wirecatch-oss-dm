@@ -37,6 +37,7 @@ tauri-plugin-single-instance = "2.5.4"
 # `createUpdaterArtifacts: true` publishes the installers themselves.
 tauri-plugin-updater = { version = "2.14.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
 wirecatch-core.workspace = true
+wirecatch-server.workspace = true
 # Its checked conversions between whole numbers and floating point (`numeric`).
 wirecatch-engine.workspace = true
 wirecatch-ipc.workspace = true

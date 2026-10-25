@@ -1,0 +1,191 @@
+{
+  "default_folder": "{Downloads}",
+  "categories": [
+    {
+      "category": "video",
+      "extensions": [
+        "mp4",
+        "mkv",
+        "webm",
+        "avi",
+        "mov",
+        "wmv",
+        "flv",
+        "m4v",
+        "mpg",
+        "mpeg",
+        "3gp"
+      ],
+      "folder": "{Downloads}/Video"
+    },
+    {
+      "category": "audio",
+      "extensions": [
+        "mp3",
+        "m4a",
+        "aac",
+        "flac",
+        "wav",
+        "ogg",
+        "opus",
+        "wma"
+      ],
+      "folder": "{Downloads}/Music"
+    },
+    {
+      "category": "archive",
+      "extensions": [
+        "zip",
+        "rar",
+        "7z",
+        "tar",
+        "gz",
+        "tgz",
+        "bz2",
+        "xz",
+        "zst",
+        "iso"
+      ],
+      "folder": "{Downloads}/Compressed"
+    },
+    {
+      "category": "document",
+      "extensions": [
+        "pdf",
+        "doc",
+        "docx",
+        "xls",
+        "xlsx",
+        "ppt",
+        "pptx",
+        "odt",
+        "ods",
+        "odp",
+        "rtf",
+        "txt",
+        "csv",
+        "epub"
+      ],
+      "folder": "{Downloads}/Documents"
+    },
+    {
+      "category": "program",
+      "extensions": [
+        "exe",
+        "msi",
+        "msix",
+        "appimage",
+        "deb",
+        "rpm",
+        "flatpak",
+        "apk",
+        "dmg"
+      ],
+      "folder": "{Downloads}/Programs"
+    },
+    {
+      "category": "image",
+      "extensions": [
+        "jpg",
+        "jpeg",
+        "png",
+        "gif",
+        "webp",
+        "avif",
+        "heic",
+        "bmp",
+        "svg",
+        "tiff"
+      ],
+      "folder": "{Downloads}/Images"
+    }
+  ],
+  "connections_per_download": 8,
+  "max_concurrent_downloads": 5,
+  "global_speed_limit": null,
+  "extension": {
+    "capture_enabled": true,
+    "ask_before_download": true,
+    "show_media_button": true,
+    "ignored_sites": [],
+    "capture_extensions": [],
+    "min_capture_size": 0,
+    "default_queue": 1,
+    "video_sites": []
+  },
+  "theme": "system",
+  "accent": "cyan",
+  "start_with_system": false,
+  "close_to_tray": true,
+  "finish_notice": "browser",
+  "finish_note_time": "eight_seconds",
+  "start_notice": "browser",
+  "start_note_time": "three_seconds",
+  "notify_during_do_not_disturb": true,
+  "auto_update_addons": true,
+  "show_progress_windows": true,
+  "media": {
+    "video": {
+      "format": "original",
+      "audio_kbps": null,
+      "subtitle_languages": [],
+      "auto_subtitles": true,
+      "subtitle_files": false,
+      "chapters": false
+    },
+    "audio": {
+      "format": "original",
+      "audio_kbps": null,
+      "subtitle_languages": [],
+      "auto_subtitles": true,
+      "subtitle_files": false,
+      "chapters": false
+    },
+    "ask_each_time": true,
+    "quality": "best",
+    "fallback": "lower"
+  },
+  "local_sites": [],
+  "update_suffix_list": true,
+  "proxy": {
+    "mode": "system",
+    "per_protocol": false,
+    "all": {
+      "kind": "http",
+      "host": "",
+      "port": 0,
+      "user": "",
+      "has_password": false
+    },
+    "http": {
+      "kind": "http",
+      "host": "",
+      "port": 0,
+      "user": "",
+      "has_password": false
+    },
+    "https": {
+      "kind": "http",
+      "host": "",
+      "port": 0,
+      "user": "",
+      "has_password": false
+    },
+    "ftp": {
+      "kind": "http",
+      "host": "",
+      "port": 0,
+      "user": "",
+      "has_password": false
+    },
+    "socks": {
+      "kind": "http",
+      "host": "",
+      "port": 0,
+      "user": "",
+      "has_password": false
+    },
+    "exceptions": [],
+    "ftp_direct": false
+  }
+}

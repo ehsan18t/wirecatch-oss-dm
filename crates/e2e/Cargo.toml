@@ -19,6 +19,7 @@ test = false
 
 [dependencies]
 wirecatch-core.workspace = true
+wirecatch-server.workspace = true
 wirecatch-ipc.workspace = true
 wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }

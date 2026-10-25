@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use wirecatch_files::FileError;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AddonId, AppSettings, AppSettingsPatch, ImportPreview, UiEvent};
 use wirecatch_protocol::extension::{
@@ -15,7 +16,6 @@ use super::Manager;
 use super::queues::apply_to_slot;
 use super::state::{QueueSlot, State};
 use crate::error::{CoreError, Result};
-use crate::{profile, settings};
 
 impl Manager {
     /// The current settings.
@@ -42,7 +42,7 @@ impl Manager {
     pub fn update_settings(&self, mut new: AppSettings) -> Result<()> {
         let mut state = self.lock_open()?;
         new.proxy = state.settings.proxy.clone();
-        let new = settings::validate(
+        let new = wirecatch_settings::validate(
             new,
             &state.queue_list(),
             &self.inner.folders,
@@ -59,12 +59,12 @@ impl Manager {
     /// The errors of [`update_settings`](Self::update_settings).
     pub fn change_settings(&self, patch: AppSettingsPatch) -> Result<()> {
         if let Some(extension) = &patch.extension {
-            settings::check_site_patch(extension)?;
+            wirecatch_settings::check_site_patch(extension)?;
         }
         let mut state = self.lock_open()?;
         let mut new = state.settings.clone();
         new.apply(patch);
-        let new = settings::validate(
+        let new = wirecatch_settings::validate(
             new,
             &state.queue_list(),
             &self.inner.folders,
@@ -105,11 +105,11 @@ impl Manager {
         &self,
         patch: ExtensionSettingsPatch,
     ) -> Result<ExtensionSettings> {
-        settings::check_site_patch(&patch)?;
+        wirecatch_settings::check_site_patch(&patch)?;
         let mut state = self.lock_open()?;
         let mut new = state.settings.clone();
         new.extension.apply(patch);
-        let new = settings::validate(
+        let new = wirecatch_settings::validate(
             new,
             &state.queue_list(),
             &self.inner.folders,
@@ -130,7 +130,7 @@ impl Manager {
     pub async fn export_settings(&self, path: &Path) -> Result<()> {
         let profile = {
             let state = self.lock();
-            let mut profile = profile::export(
+            let mut profile = wirecatch_settings::profile::export(
                 &state.settings,
                 &state.queue_list(),
                 &self.inner.folders,
@@ -145,10 +145,8 @@ impl Manager {
             serde_json::to_vec_pretty(&profile).map_err(|e| CoreError::Internal(e.to_string()))?;
         let path = path.to_path_buf();
         self.blocking(move || {
-            std::fs::write(&path, json).map_err(|source| CoreError::File {
-                path: path.display().to_string(),
-                source,
-            })
+            std::fs::write(&path, json)
+                .map_err(|source| CoreError::File(FileError::new(&path, source)))
         })
         .await
     }
@@ -162,10 +160,9 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// [`CoreError::File`] when `path` cannot be read, [`CoreError::InvalidProfile`]
-    /// when it is not a settings profile, [`CoreError::ProfileTooNew`] when a newer
-    /// Wirecatch made it, [`CoreError::ProfileTooOld`] when an earlier one did in a format this
-    /// version does not read, [`CoreError::Invalid`] when its settings or queues are out of
+    /// [`CoreError::File`] when `path` cannot be read, [`CoreError::Profile`] when it is not a
+    /// settings profile or was made by a version whose format this one does not read,
+    /// [`CoreError::Invalid`] when its settings or queues are out of
     /// range, and [`CoreError::Closed`] once the manager has shut down. Nothing changes
     /// on an error.
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
@@ -178,7 +175,7 @@ impl Manager {
             // Ids for added queues come from a copy of the counters, kept only
             // once the profile is accepted, so a refused one uses up none.
             let mut ids = state.ids.clone();
-            let mut imported = profile::merge_localized(
+            let mut imported = wirecatch_settings::profile::merge_localized(
                 localized,
                 &current,
                 &self.inner.folders,
@@ -199,7 +196,10 @@ impl Manager {
             // here, so they go when the profile brings others.
             let unmarked = |proxy: &ProxySettings| {
                 let mut proxy = proxy.clone();
-                crate::proxy::mark_passwords(&mut proxy, &crate::proxy::Logins::new());
+                wirecatch_settings::proxy::mark_passwords(
+                    &mut proxy,
+                    &wirecatch_settings::proxy::Logins::new(),
+                );
                 proxy
             };
             if unmarked(&imported.settings.proxy) != unmarked(&state.settings.proxy)
@@ -208,9 +208,12 @@ impl Manager {
                 state.proxy_logins.clear();
                 self.inner
                     .store
-                    .save_proxy_logins(crate::proxy::Logins::new());
+                    .save_proxy_logins(wirecatch_settings::proxy::Logins::new());
             }
-            crate::proxy::mark_passwords(&mut imported.settings.proxy, &state.proxy_logins);
+            wirecatch_settings::proxy::mark_passwords(
+                &mut imported.settings.proxy,
+                &state.proxy_logins,
+            );
             self.apply_settings(&mut state, imported.settings);
             if wants_media && state.addon.tools.is_none() {
                 imported.summary.addons_to_offer.push(AddonId::Media);
@@ -237,7 +240,7 @@ impl Manager {
         let current = state.queue_list();
         // Ids for queues that would be added; they are never used.
         let mut next = current.iter().map(|q| q.id.0).max().unwrap_or(0);
-        let imported = profile::merge_localized(
+        let imported = wirecatch_settings::profile::merge_localized(
             localized,
             &current,
             &self.inner.folders,
@@ -261,12 +264,15 @@ impl Manager {
 
     /// Reads and checks the profile at `path` and resolves its folders here,
     /// off the async threads.
-    async fn read_profile(&self, path: &Path) -> Result<profile::Localized> {
+    async fn read_profile(&self, path: &Path) -> Result<wirecatch_settings::profile::Localized> {
         let path = path.to_path_buf();
         let folders = self.inner.folders.clone();
         self.blocking(move || {
-            let bytes = profile::read_file(&path)?;
-            Ok(profile::localize(profile::parse(&bytes)?, &folders))
+            let bytes = wirecatch_settings::profile::read_file(&path)?;
+            Ok(wirecatch_settings::profile::localize(
+                wirecatch_settings::profile::parse(&bytes)?,
+                &folders,
+            ))
         })
         .await
     }

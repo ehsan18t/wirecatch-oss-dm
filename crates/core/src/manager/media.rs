@@ -19,13 +19,18 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use tracing::warn;
+use wirecatch_addons::Check;
 use wirecatch_engine::{CancellationToken, DownloadOptions, PrivateNetwork, ProxyChoice, Url};
+use wirecatch_media::MediaTools;
+use wirecatch_media::choice::{self, Offer, Plan, Resolved};
+use wirecatch_media::{MediaJob, Pick, StoredMedia, describe, output, ytdlp};
 use wirecatch_protocol::app::{
     AddonRequestItem, Category, MediaChoice, MediaReading, MediaSelection, MediaSubtitle,
     MediaSummary, OutputFormat, PortablePath, UiEvent, UserError, VideoQuality,
 };
 use wirecatch_protocol::extension::{AddAction, AddedDownload, MediaKind, NewDownload};
 use wirecatch_protocol::{QuestionId, QueueId};
+use wirecatch_sites::local_network::ChosenBy;
 
 use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
@@ -33,13 +38,9 @@ use super::captures::origin_of;
 use super::downloads::parse_web_url;
 use super::handovers::{Handover, Target};
 use super::state::State;
-use crate::addons::{Check, MediaTools};
 use crate::error::{CoreError, Result};
-use crate::local_network::ChosenBy;
-use crate::media::choice::{self, Offer, Plan, Resolved};
-use crate::media::{self, MediaJob, Pick, StoredMedia, describe, output, ytdlp};
-use crate::store::Origin;
-use crate::{headers, settings};
+use crate::headers;
+use crate::headers::Origin;
 
 /// How long a page waits for the media add-on before it becomes a failed
 /// download, so a question is never asked long after the person moved on.
@@ -827,7 +828,7 @@ impl Manager {
         token: &CancellationToken,
     ) -> std::result::Result<Found, UserError> {
         let cookies = cookie_header(&source.fetch.origin);
-        let proxy = crate::proxy::ytdlp_proxy(&proxy);
+        let proxy = wirecatch_settings::proxy::ytdlp_proxy(&proxy);
         let ctx = ytdlp::Context {
             tools,
             page: &source.fetch.url,
@@ -892,7 +893,7 @@ impl Manager {
     /// was added, else the folder for `category`.
     fn folder_for(&self, state: &State, pending: &MediaPending, category: Category) -> PathBuf {
         pending.folder.clone().unwrap_or_else(|| {
-            settings::folder_for(&state.settings, category, &self.inner.folders)
+            wirecatch_settings::folder_for(&state.settings, category, &self.inner.folders)
                 .unwrap_or_else(|_| self.inner.folders.downloads.clone())
         })
     }
@@ -921,7 +922,7 @@ impl Manager {
             .insert(NewEntry {
                 fetch: source.fetch.clone(),
                 wanted: Wanted {
-                    file_name: Some(media::file_name(&title, "mp4")),
+                    file_name: Some(wirecatch_media::file_name(&title, "mp4")),
                     category: Some(Category::Video),
                     ..Wanted::default()
                 },
@@ -978,7 +979,7 @@ impl Manager {
         let name = selection
             .file_name
             .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| media::file_name(&choice.title, &resolved.ext));
+            .unwrap_or_else(|| wirecatch_media::file_name(&choice.title, &resolved.ext));
         let added = self
             .insert(NewEntry {
                 fetch: pending.source.fetch.clone(),
@@ -1072,7 +1073,7 @@ impl Manager {
         if option.outputs.len() > 1 {
             remember_output(choice, selection, &mut new.media, option.audio_only);
         }
-        match settings::validate(
+        match wirecatch_settings::validate(
             new,
             &state.queue_list(),
             &self.inner.folders,

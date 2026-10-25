@@ -23,6 +23,7 @@ mod run;
 mod scheduling;
 mod settle;
 mod sign_in;
+mod startup;
 mod state;
 mod suffix_list;
 #[cfg(test)]
@@ -38,20 +39,19 @@ use tokio::runtime::Handle;
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 use tracing::warn;
+use wirecatch_addons::manifest::MediaAddonSources;
 use wirecatch_engine::{CancellationToken, RateLimiter, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{StartupNotice, UiEvent};
 use wirecatch_protocol::extension::{BrowserNote, NoteId, NotePressed};
 use wirecatch_protocol::wire::Event;
+use wirecatch_settings::folders::KnownFolders;
+use wirecatch_sites::public_suffix::SuffixList;
+use wirecatch_store::{Recovery, Store};
 
-use crate::addons::manifest::MediaAddonSources;
 use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
-use crate::folders::KnownFolders;
 use crate::naming;
-use crate::public_suffix::SuffixList;
-use crate::store::{Recovery, Store};
-use crate::user_error;
 pub use downloads::LinkFrom;
 use state::{Entry, State, Stop};
 pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
@@ -300,9 +300,8 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// [`CoreError::DatabaseTooNew`] when the download list was saved by a newer
-    /// Wirecatch, [`CoreError::Database`] or [`CoreError::File`] when it cannot be
-    /// opened or created in `config.data_dir`. A damaged list is not an error: it is
+    /// [`CoreError::Store`] when the download list was saved by a newer Wirecatch,
+    /// another copy has it open, or it cannot be opened or created in `config.data_dir`. A damaged list is not an error: it is
     /// set aside and a new one started.
     pub async fn open(config: ManagerConfig) -> Result<Self> {
         let runtime = Handle::current();
@@ -311,11 +310,11 @@ impl Manager {
         let on_failure = Box::new(move |reason: String| {
             publish(
                 &failures,
-                UiEvent::StorageFailed(user_error::storage_failed(&reason)),
+                UiEvent::StorageFailed(wirecatch_messages::storage_failed(&reason)),
             );
         });
         let dir = config.data_dir.clone();
-        let addon_dir = crate::addons::media_dir(&config.data_dir);
+        let addon_dir = wirecatch_addons::media_dir(&config.data_dir);
         let temp_dir = config.data_dir.join("tmp");
         let (now, now_millis) = (config.clock.local_now(), config.clock.unix_millis());
         let (addons_at, temp_at) = (addon_dir.clone(), temp_dir.clone());
@@ -335,7 +334,7 @@ impl Manager {
             restored.state.addon = addons::AddonSlot::load(&addons_at);
             restored.state.suffix_check = suffix_list::SuffixCheck::load(&dir);
             // Cookies files left by a crash: nothing may keep them.
-            crate::discard::dir(&temp_at);
+            wirecatch_files::discard::dir(&temp_at);
             Ok((store, restored, recoveries, not_private))
         })
         .await?;
@@ -371,9 +370,9 @@ impl Manager {
             rows_changed: Arc::new(Notify::new()),
             queues_changed: Arc::new(Notify::new()),
             stopped: CancellationToken::new(),
-            startup_notices: user_error::list_recovered(&recoveries)
+            startup_notices: startup::list_recovered(&recoveries)
                 .into_iter()
-                .chain(not_private.map(|reason| user_error::not_private(&notices_dir, &reason)))
+                .chain(not_private.map(|reason| startup::not_private(&notices_dir, &reason)))
                 .collect(),
             set_aside_list: recoveries.iter().find_map(|r| match r {
                 Recovery::Damaged { kept_at } => Some(kept_at.clone()),

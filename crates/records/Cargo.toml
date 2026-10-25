@@ -1,0 +1,22 @@
+[package]
+name = "wirecatch-records"
+description = "What Wirecatch saves of a download, a queue's batch and the proxy passwords, as the store keeps them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+wirecatch-protocol.workspace = true
+wirecatch-streams.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -8,12 +8,18 @@ use std::sync::Arc;
 use chrono::NaiveDateTime;
 use tokio::task::AbortHandle;
 use wirecatch_engine::{CancellationToken, Progress, ProxyChoice, RateLimiter};
+use wirecatch_media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use wirecatch_protocol::app::{
     AppSettings, DownloadStatus, DownloadSummary, PendingCapture, Queue,
 };
 use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
+use wirecatch_queues::schedule::Gate;
+use wirecatch_settings::proxy::Logins;
+use wirecatch_sites::local_network::ChosenBy;
+use wirecatch_sites::public_suffix::SuffixList;
+use wirecatch_store::{LastIds, NameChoice, StoredDownload};
 
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
@@ -21,14 +27,9 @@ use super::media::MediaPending;
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
 use crate::error::{CoreError, Result};
-use crate::local_network::ChosenBy;
-use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
+use crate::headers::Origin;
 use crate::naming::Claimed;
-use crate::proxy::{self, Logins};
-use crate::public_suffix::SuffixList;
 use crate::speed::SpeedMeter;
-use crate::store::{LastIds, NameChoice, Origin, StoredDownload};
-use wirecatch_queues::schedule::Gate;
 
 pub(super) struct State {
     pub settings: AppSettings,
@@ -266,7 +267,7 @@ impl State {
     /// The proxies the app's own requests follow (D71): add-on and suffix-list fetches and the
     /// updater. A download's are in its [`RunPolicy`](super::policy::RunPolicy).
     pub fn app_proxy(&self) -> ProxyChoice {
-        proxy::engine_choice(&self.settings.proxy, &self.proxy_logins)
+        wirecatch_settings::proxy::engine_choice(&self.settings.proxy, &self.proxy_logins)
     }
 
     /// A download that exists and is not being removed.
@@ -309,7 +310,7 @@ impl State {
         self.queues
             .iter()
             .find(|s| s.queue.is_default)
-            .map_or(crate::settings::DEFAULT_QUEUE_ID, |s| s.queue.id)
+            .map_or(wirecatch_settings::DEFAULT_QUEUE_ID, |s| s.queue.id)
     }
 
     pub fn queue_list(&self) -> Vec<Queue> {
@@ -463,8 +464,8 @@ impl Entry {
     pub fn partial_paths(&self) -> Vec<std::path::PathBuf> {
         let mut paths = crate::naming::partial_files(self.path()).to_vec();
         if self.media_job.is_some() {
-            paths.push(crate::media::work_dir(self.path()));
-            paths.push(crate::media::stream_dir(self.path()));
+            paths.push(wirecatch_media::work_dir(self.path()));
+            paths.push(wirecatch_media::stream_dir(self.path()));
         }
         paths
     }

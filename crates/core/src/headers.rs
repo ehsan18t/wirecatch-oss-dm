@@ -9,6 +9,7 @@ use wirecatch_engine::header::{HeaderMap, HeaderName, HeaderValue};
 use wirecatch_engine::{DownloadOptions, PrivateNetwork, ProxyChoice};
 use wirecatch_product::{PRODUCT_NAME, PRODUCT_VERSION};
 use wirecatch_protocol::extension::Header;
+pub(crate) use wirecatch_records::origin::{Origin, without_sign_in};
 
 /// The engine's request options as the app sends them when no browser handed over its own
 /// user agent: the app's name and version (`<name>/<version>`), never the engine library's
@@ -64,16 +65,6 @@ pub(crate) fn referrer(headers: &[Header]) -> Option<&str> {
         .iter()
         .find(|h| h.name.trim().eq_ignore_ascii_case("referer"))
         .map(|h| h.value.expose())
-}
-
-/// `headers` without the sign-in they carry, or `None` when they carry none: cookies, `Authorization` and any other header that may hold a token are dropped (see [`Header::may_carry_sign_in`]); the referring page and the harmless headers of [`HEADERS_SAFE_FOR_ANY_SITE`](wirecatch_protocol::extension::HEADERS_SAFE_FOR_ANY_SITE) stay.
-pub(crate) fn without_sign_in(headers: &[Header]) -> Option<Vec<Header>> {
-    let kept: Vec<Header> = headers
-        .iter()
-        .filter(|h| !h.may_carry_sign_in())
-        .cloned()
-        .collect();
-    (kept.len() != headers.len()).then_some(kept)
 }
 
 /// The headers a download keeps when its link moves to another site (another

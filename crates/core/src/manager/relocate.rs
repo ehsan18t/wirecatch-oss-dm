@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use tracing::warn;
 use wirecatch_engine::CancellationToken;
+use wirecatch_files::FileError;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, PortablePath, UserError};
 
@@ -195,10 +196,7 @@ type Mover = Arc<dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync>;
 
 /// Creates `dir` if needed and proves it can be written to.
 fn prepare_folder(dir: &Path) -> Result<()> {
-    let unusable = |source: io::Error| CoreError::File {
-        path: dir.display().to_string(),
-        source,
-    };
+    let unusable = |source: io::Error| CoreError::File(FileError::new(dir, source));
     std::fs::create_dir_all(dir).map_err(unusable)?;
     if !dir.is_dir() {
         return Err(unusable(io::ErrorKind::NotADirectory.into()));
@@ -220,10 +218,7 @@ fn move_download_files(
     move_one: &(dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync),
 ) -> Result<()> {
     if completed {
-        return move_one(from, to).map_err(|source| CoreError::File {
-            path: from.display().to_string(),
-            source,
-        });
+        return move_one(from, to).map_err(|source| CoreError::File(FileError::new(from, source)));
     }
     let pairs: Vec<(PathBuf, PathBuf)> = partial_files(from)
         .into_iter()
@@ -255,10 +250,7 @@ fn move_together(
                 }
             }
             return Err(if stuck.is_empty() {
-                CoreError::File {
-                    path: new.display().to_string(),
-                    source,
-                }
+                CoreError::File(FileError::new(new, source))
             } else {
                 CoreError::FilesSplit {
                     path: old.display().to_string(),

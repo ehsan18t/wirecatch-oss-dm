@@ -7,17 +7,17 @@ use std::sync::Arc;
 use chrono::NaiveDateTime;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, Queue};
+use wirecatch_settings::DEFAULT_QUEUE_ID;
+use wirecatch_sites::public_suffix::SuffixList;
+use wirecatch_store::{Snapshot, StoredDownload};
 
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::state::{Counters, Entry, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
+use crate::headers::Origin;
 use crate::naming::Claimed;
-use crate::proxy;
-use crate::public_suffix::SuffixList;
-use crate::settings::{self, DEFAULT_QUEUE_ID};
-use crate::store::{Origin, Snapshot, StoredDownload};
 
 fn mark_completed(entry: &mut Entry, size: u64, now_millis: i64) {
     entry.row.status = DownloadStatus::Completed;
@@ -58,9 +58,9 @@ pub(super) struct Surroundings<'a> {
 /// its partial files are gone) is marked completed instead of downloaded again.
 pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored {
     let (settings, settings_changed) = match snapshot.settings {
-        None => (settings::default_settings(), true),
+        None => (wirecatch_settings::default_settings(), true),
         Some(stored) => {
-            let kept = settings::within_limits(stored.clone(), &around.suffixes);
+            let kept = wirecatch_settings::within_limits(stored.clone(), &around.suffixes);
             let changed = kept != stored;
             (kept, changed)
         }
@@ -92,7 +92,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
     }
 
     let mut settings = settings;
-    proxy::mark_passwords(&mut settings.proxy, &snapshot.proxy_logins);
+    wirecatch_settings::proxy::mark_passwords(&mut settings.proxy, &snapshot.proxy_logins);
     let mut state = State {
         settings,
         queues,
@@ -130,13 +130,13 @@ fn restore_queues(stored: Vec<Queue>) -> Vec<QueueSlot> {
         .into_iter()
         .map(|queue| {
             QueueSlot::new(Queue {
-                settings: settings::queue_within_limits(queue.settings),
+                settings: wirecatch_settings::queue_within_limits(queue.settings),
                 ..queue
             })
         })
         .collect();
     if !queues.iter().any(|s| s.queue.is_default) {
-        queues.insert(0, QueueSlot::new(settings::default_queue()));
+        queues.insert(0, QueueSlot::new(wirecatch_settings::default_queue()));
     }
     queues
 }
@@ -212,10 +212,10 @@ pub(super) fn first_start() -> State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::local_network::ChosenBy;
-    use crate::store::{LastIds, NameChoice};
     use wirecatch_protocol::app::{Category, DownloadSummary};
     use wirecatch_protocol::{DownloadId, QueueId};
+    use wirecatch_sites::local_network::ChosenBy;
+    use wirecatch_store::{LastIds, NameChoice};
 
     fn nowhere(finished_size: &dyn Fn(&Path) -> Option<u64>) -> Surroundings<'_> {
         Surroundings {
@@ -284,8 +284,14 @@ mod tests {
     fn first_start_gets_defaults() {
         let restored = restore(Snapshot::default(), &nowhere(&|_| None));
 
-        assert_eq!(restored.state.queue_list(), vec![settings::default_queue()]);
-        assert_eq!(restored.state.settings, settings::default_settings());
+        assert_eq!(
+            restored.state.queue_list(),
+            vec![wirecatch_settings::default_queue()]
+        );
+        assert_eq!(
+            restored.state.settings,
+            wirecatch_settings::default_settings()
+        );
         assert!(
             restored.settings_changed,
             "a first start saves its defaults"
@@ -295,7 +301,7 @@ mod tests {
     #[test]
     fn settings_already_in_range_are_not_saved_again() {
         let snapshot = Snapshot {
-            settings: Some(settings::default_settings()),
+            settings: Some(wirecatch_settings::default_settings()),
             ..Snapshot::default()
         };
         assert!(!restore(snapshot, &nowhere(&|_| None)).settings_changed);
@@ -305,11 +311,11 @@ mod tests {
     // until the engine began refusing it; then every download failed with advice to try again.
     #[test]
     fn stored_numbers_out_of_range_are_brought_into_range() {
-        let mut stored_settings = settings::default_settings();
+        let mut stored_settings = wirecatch_settings::default_settings();
         stored_settings.connections_per_download = 0;
         stored_settings.max_concurrent_downloads = 0;
         stored_settings.global_speed_limit = Some(0);
-        let mut queue = settings::default_queue();
+        let mut queue = wirecatch_settings::default_queue();
         queue.settings.max_concurrent = 0;
         queue.settings.speed_limit = Some(0);
         let snapshot = Snapshot {
@@ -333,7 +339,7 @@ mod tests {
     // the browser reports for the same site.
     #[test]
     fn stored_ignored_sites_are_kept_the_way_the_list_keeps_them() {
-        let mut stored_settings = settings::default_settings();
+        let mut stored_settings = wirecatch_settings::default_settings();
         stored_settings.extension.ignored_sites = vec![
             "bücher.de".into(),
             "https://Example.com/page".into(),
@@ -343,7 +349,7 @@ mod tests {
         ];
         let snapshot = Snapshot {
             settings: Some(stored_settings),
-            queues: vec![settings::default_queue()],
+            queues: vec![wirecatch_settings::default_queue()],
             ..Snapshot::default()
         };
 
@@ -360,14 +366,14 @@ mod tests {
         let snapshot = Snapshot {
             settings: None,
             last_ids: LastIds::default(),
-            queues: vec![settings::default_queue()],
+            queues: vec![wirecatch_settings::default_queue()],
             downloads: vec![
                 stored(1, 1, DownloadStatus::Queued),
                 stored(2, 1, DownloadStatus::Downloading),
                 stored(3, 9, DownloadStatus::Paused),
             ],
             batches: Vec::new(),
-            proxy_logins: crate::proxy::Logins::new(),
+            proxy_logins: wirecatch_settings::proxy::Logins::new(),
             recoveries: Vec::new(),
             not_private: None,
         };

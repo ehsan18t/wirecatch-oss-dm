@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use wirecatch_engine::{PART_EXT, STATE_EXT, Url, naming};
+use wirecatch_media::{stream_dir, work_dir};
 
 use crate::error::{CoreError, Result};
 
@@ -158,7 +159,7 @@ pub(crate) fn finished_size(path: &Path) -> Option<u64> {
         return None;
     }
     // A media download still has its work folders until its file is complete.
-    if [crate::media::work_dir(path), crate::media::stream_dir(path)]
+    if [work_dir(path), stream_dir(path)]
         .iter()
         .any(|p| p.exists())
     {
