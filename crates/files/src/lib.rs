@@ -1,9 +1,12 @@
 use std::path::{Path, PathBuf};
 
 pub mod discard;
+mod error;
 pub mod owner_only;
 pub mod whole_file;
 pub mod zone;
+
+pub use error::FileError;
 
 /// `path` with `suffix` added to its file name, past any extension: `a.mp4` and `.part` give `a.mp4.part`.
 #[must_use]

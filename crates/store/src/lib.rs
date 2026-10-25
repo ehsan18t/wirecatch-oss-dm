@@ -21,7 +21,7 @@ use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::{DownloadId, QueueId};
 
-use wirecatch_files::{owner_only, with_suffix};
+use wirecatch_files::{FileError, owner_only, with_suffix};
 use wirecatch_records::batch::StoredBatch;
 use wirecatch_records::media::{MediaJob, StoredMedia, unreadable};
 use wirecatch_records::origin::{Origin, without_sign_in};
@@ -321,10 +321,8 @@ impl Store {
         on_failure: FailureHandler,
         #[cfg(test)] backing_off: Option<BackOffHook>,
     ) -> Result<(Store, Snapshot)> {
-        std::fs::create_dir_all(dir).map_err(|source| StoreError::File {
-            path: dir.display().to_string(),
-            source,
-        })?;
+        std::fs::create_dir_all(dir)
+            .map_err(|source| StoreError::File(FileError::new(dir, source)))?;
         // The folder first, so the database and its journal files inherit its access. It is
         // what keeps other accounts out of every file in it, so the person is told when it
         // stays open.
@@ -369,10 +367,7 @@ impl Store {
                 // list complete.
                 drop(lock);
             })
-            .map_err(|source| StoreError::File {
-                path: path.display().to_string(),
-                source,
-            })?;
+            .map_err(|source| StoreError::File(FileError::new(&path, source)))?;
         Ok((Store { ops }, snapshot))
     }
 
@@ -756,10 +751,7 @@ fn lock_path(database: &Path) -> PathBuf {
 /// browser endpoint does not.
 fn lock_list(dir: &Path, database: &Path) -> Result<File> {
     let path = lock_path(database);
-    let file_error = |source| StoreError::File {
-        path: path.display().to_string(),
-        source,
-    };
+    let file_error = |source| StoreError::File(FileError::new(&path, source));
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -851,10 +843,7 @@ fn set_aside(path: &Path) -> Result<PathBuf> {
                     error!(error = %e, file = %back_to.display(), "could not move a file of the damaged list back");
                 }
             }
-            return Err(StoreError::File {
-                path: from.display().to_string(),
-                source,
-            });
+            return Err(StoreError::File(FileError::new(from, source)));
         }
     }
     Ok(kept_at)

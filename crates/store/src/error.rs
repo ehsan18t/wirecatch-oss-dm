@@ -1,4 +1,4 @@
-use std::io;
+use wirecatch_files::FileError;
 
 /// Why the download list could not be opened or saved. The `Display` text is plain language and
 /// says how to fix the problem, so the UI can show it as is.
@@ -32,21 +32,16 @@ pub enum StoreError {
     Database(#[from] rusqlite::Error),
 
     /// A file of the download list could not be read, written or moved.
-    #[error(
-        "Could not use {path} ({source}). Check that the folder exists and that you are allowed to write there."
-    )]
-    File {
-        /// The file involved.
-        path: String,
-        /// What the operating system reported.
-        source: io::Error,
-    },
+    #[error(transparent)]
+    File(#[from] FileError),
 }
 
 pub type Result<T, E = StoreError> = std::result::Result<T, E>;
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+
     use super::*;
 
     #[test]
@@ -58,10 +53,10 @@ mod tests {
                 supported: 3,
             },
             StoreError::Database(rusqlite::Error::InvalidQuery),
-            StoreError::File {
+            StoreError::File(FileError {
                 path: "/x".into(),
                 source: io::Error::from(io::ErrorKind::PermissionDenied),
-            },
+            }),
         ];
         for error in &errors {
             let message = error.to_string();

@@ -2,6 +2,7 @@
 
 use std::io;
 
+use wirecatch_files::FileError;
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use wirecatch_store::StoreError;
@@ -115,15 +116,8 @@ pub enum CoreError {
     Store(#[from] StoreError),
 
     /// A file the user named could not be read or written.
-    #[error(
-        "Could not use {path} ({source}). Check that the folder exists and that you are allowed to write there."
-    )]
-    File {
-        /// The file involved.
-        path: String,
-        /// What the operating system reported.
-        source: io::Error,
-    },
+    #[error(transparent)]
+    File(#[from] FileError),
 
     /// Moving a download's files to another folder failed, and some of the files
     /// already moved could not be put back, so they are split between the two
@@ -193,7 +187,7 @@ impl CoreError {
             | CoreError::InvalidProfile(_) => ErrorCode::InvalidRequest,
             CoreError::AddonRequired => ErrorCode::AddonRequired,
             CoreError::Store(_)
-            | CoreError::File { .. }
+            | CoreError::File(_)
             | CoreError::FilesSplit { .. }
             | CoreError::AddonFilesLeft { .. }
             | CoreError::AddonNotRemoved { .. }
@@ -277,10 +271,10 @@ mod tests {
             },
             CoreError::ProfileTooOld { found: 1 },
             CoreError::InvalidProfile("it has no format version".into()),
-            CoreError::File {
+            CoreError::File(FileError {
                 path: "/x".into(),
                 source: io(),
-            },
+            }),
             CoreError::FilesSplit {
                 path: "/x".into(),
                 source: io(),

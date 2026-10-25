@@ -5,6 +5,7 @@ use std::io::Read;
 use std::path::Path;
 
 use wirecatch_engine::numeric::saturating_cast;
+use wirecatch_files::FileError;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
     AppSettings, Category, ImportSummary, ImportedFolder, PROFILE_FORMAT_VERSION, PortablePath,
@@ -107,10 +108,7 @@ pub(crate) fn localize(mut profile: SettingsProfile, folders: &KnownFolders) -> 
 /// Reads a profile file, refusing one larger than any real profile could be
 /// before reading it whole. Blocks on the disk.
 pub(crate) fn read_file(path: &Path) -> Result<Vec<u8>> {
-    let file_error = |source| CoreError::File {
-        path: path.display().to_string(),
-        source,
-    };
+    let file_error = |source| CoreError::File(FileError::new(path, source));
     let file = std::fs::File::open(path).map_err(file_error)?;
     let mut bytes = Vec::new();
     file.take(MAX_PROFILE_BYTES + 1)
