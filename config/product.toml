@@ -29,6 +29,8 @@ legal_name = "TODO-PRODUCT-PUBLISHER-LEGAL-NAME"
 [links]
 repository = "https://github.com/ehsan18t/wirecatch-oss-dm"
 website = "https://TODO-PRODUCT-WEBSITE.invalid/"
+# Where the media add-on's pinned files are kept, one release per build (D80).
+addon_files = "https://github.com/ehsan18t/wirecatch-addons"
 
 [contacts]
 support_email = "TODO-PRODUCT-SUPPORT-EMAIL@placeholder.invalid"

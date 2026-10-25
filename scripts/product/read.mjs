@@ -59,7 +59,7 @@ const SCHEMA = {
     description: TEXT,
   },
   publisher: { legal_name: TEXT },
-  links: { repository: 'url', website: 'url' },
+  links: { repository: 'url', website: 'url', addon_files: 'url' },
   contacts: { support_email: EMAIL, security_email: EMAIL },
   executables: { app: SLUG, bridge: SLUG, cli: SLUG },
   files: { database: FILE_NAME },

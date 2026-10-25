@@ -671,6 +671,14 @@ Decided with the maintainer on 2026-10-25. It amends D18.1, which had every chan
 2. The full gate runs locally only for a wide change (lint, build or toolchain config, dependencies and lockfiles, `crates/protocol` and its generated types, the gate scripts, several crates and apps at once), once, on the final tree. A tree that passed is not checked again after a split, a regroup, a rebase onto changes it does not touch, or a reworded message.
 3. Every check runs in the pull request's CI, and a pull request is squash-merged only when CI passes.
 
+### D80. The media add-on's ffmpeg comes from a copy Wirecatch keeps
+
+Decided with the maintainer on 2026-10-25, when the pinned build disappeared. It replaces A8 for ffmpeg.
+
+1. BtbN publishes a dated build every day and deletes each after about two weeks, so a pin to one stops working within weeks, and installing the media add-on then fails for everyone. The builds the add-on pins are copied unchanged, one release per build, to a public repository of their own, `ehsan18t/wirecatch-addons` (`links.addon_files` in `config/product.toml`), so a pin lasts as long as Wirecatch keeps it. The app's own releases stay on its repository's Releases page alone.
+2. Each copy is checked against BtbN's published checksums before it is uploaded, and the add-on checks it again against the SHA-256 it pins. Each release names the build it was copied from and the FFmpeg source commit, as the LGPL asks.
+3. Moving to a newer build is a new release there and a new pin here; old releases stay for the versions of the app that pin them.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
@@ -680,7 +688,7 @@ Decided with the maintainer on 2026-10-25. It amends D18.1, which had every chan
 - A5. Firefox add-on id is `extension@wirecatch.app`. The Chromium id is `chdgnmpjoipbgfeldicipccjjghmagki` for every build, development and store alike (D22).
 - A6. Saved site passwords are not exported in v1 (D6 encrypted export comes later).
 - A7. HTTP/3 ships as an experimental option, off by default. For bulk downloads, several TCP connections already fill the link and QUIC costs more CPU; it turns on by default once the benchmark shows it winning. Decided by the lead.
-- A8. The ffmpeg part of the media add-on is fetched from the builds the ffmpeg project links to (for example BtbN's GitHub releases for Windows and Linux), verified by checksum; yt-dlp from its official GitHub releases. Decided by the lead; the exact sources are recorded in the add-on manager.
+- A8. Replaced by D80 for ffmpeg. yt-dlp is fetched from its official GitHub releases, verified by checksum and signature.
 
 ## Open questions
 
