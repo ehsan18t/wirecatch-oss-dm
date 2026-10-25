@@ -116,6 +116,7 @@ export function simulateCapture(state: MockState, index: number): void {
       category,
       size,
       queue,
+      queue_reason: { kind: 'browser_queue' },
       page_url: `https://${new URL(url).host}/`,
     };
     state.pending.push(pending);

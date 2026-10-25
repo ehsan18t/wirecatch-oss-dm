@@ -3,7 +3,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ts_rs::TS;
 
-use crate::claims::QueueTakes;
+use crate::claims::{QueueReason, QueueTakes};
 use crate::extension::{ExtensionSettings, ExtensionSettingsPatch};
 use crate::proxy::ProxySettings;
 use crate::secret::Link;
@@ -23,6 +23,8 @@ pub struct DownloadSummary {
     pub path: String,
     /// The queue it belongs to.
     pub queue: QueueId,
+    /// Why it is in that queue (D72.8).
+    pub queue_reason: QueueReason,
     /// The kind of file, which picked its folder.
     pub category: Category,
     /// Where it is in its life.
@@ -318,6 +320,8 @@ pub struct MediaChoice {
     pub folder: String,
     /// The queue it goes to if the user just confirms.
     pub queue: QueueId,
+    /// Why it goes to that queue (D72.8).
+    pub queue_reason: QueueReason,
     /// The subtitles the video has, human-written ones first, then auto-generated ones (D24).
     /// Empty for streams and for videos without subtitles.
     #[serde(default)]
@@ -1570,6 +1574,8 @@ pub struct PendingCapture {
     pub size: Option<u64>,
     /// The queue it goes to if the user just confirms.
     pub queue: QueueId,
+    /// Why it goes to that queue (D72.8).
+    pub queue_reason: QueueReason,
     /// The page it came from, shown so the user knows what they are confirming.
     pub page_url: Option<String>,
 }

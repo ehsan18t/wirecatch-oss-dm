@@ -2,6 +2,7 @@
 
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{Queue, QueueSettings, QueueStatus, UiEvent};
+use wirecatch_protocol::claims::QueueReason;
 use wirecatch_protocol::wire::{Event, QueueSummary};
 
 use super::Manager;
@@ -112,6 +113,7 @@ impl Manager {
             let position = state.ids.position();
             if let Some(entry) = state.downloads.get_mut(&download) {
                 entry.row.queue = fallback;
+                entry.row.queue_reason = QueueReason::DefaultQueue;
                 entry.position = position;
                 self.stop_run(entry, Stop::Requeue);
             }
@@ -121,6 +123,7 @@ impl Manager {
         for waiting in state.pending.values_mut() {
             if waiting.capture.queue == id {
                 waiting.capture.queue = fallback;
+                waiting.capture.queue_reason = QueueReason::DefaultQueue;
             }
         }
         if state.settings.extension.default_queue == id {

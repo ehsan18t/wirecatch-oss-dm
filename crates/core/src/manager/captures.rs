@@ -18,15 +18,15 @@ use wirecatch_protocol::app::{
 use wirecatch_protocol::extension::{
     AddAction, AddedDownload, MediaKind, NewDownload, WithdrawOutcome,
 };
-use wirecatch_protocol::{DownloadId, QuestionId, QueueId, Secret};
+use wirecatch_protocol::{DownloadId, QuestionId, Secret};
 use wirecatch_sites::local_network::{self, ChosenBy};
 
 use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::downloads::{capture_action, parse_url};
 use super::handovers::{self, Handover, Target};
-use super::placement::QueueRequest;
-use super::state::{Expectation, Pending};
+use super::placement::{Candidate, Placed, QueueRequest};
+use super::state::{Expectation, Pending, State};
 use crate::error::{CoreError, Result};
 use crate::headers::Origin;
 use crate::{headers, naming};
@@ -75,9 +75,9 @@ impl Manager {
         let Arrival {
             known,
             ask,
-            queue,
+            placed,
             chosen_by,
-        } = self.arrival(&capture)?;
+        } = self.arrival(&capture, &url)?;
         if known {
             return self.known_handover(&capture.handover_id).await;
         }
@@ -93,10 +93,10 @@ impl Manager {
             .as_ref()
             .is_some_and(|m| m.kind != MediaKind::Direct)
         {
-            return self.add_media_capture(&capture, queue, chosen_by);
+            return self.add_media_capture(&capture, placed, chosen_by);
         }
         if ask {
-            return self.hold_for_confirmation(capture, &url, queue, chosen_by);
+            return self.hold_for_confirmation(capture, &url, placed, chosen_by);
         }
 
         let added = self
@@ -107,7 +107,7 @@ impl Manager {
                     chosen_by,
                 },
                 wanted: wanted_by(&capture),
-                queue,
+                placed,
                 start: true,
                 kind: captured(&capture, Some(capture.handover_id.clone())),
             })
@@ -375,12 +375,13 @@ impl Manager {
     }
 
     /// How a capture arrives, read from the state in one go.
-    fn arrival(&self, capture: &NewDownload) -> Result<Arrival> {
+    fn arrival(&self, capture: &NewDownload, url: &Url) -> Result<Arrival> {
         let state = self.lock_open()?;
+        let placed = placed_capture(&state, capture, url)?;
         Ok(Arrival {
             known: state.handovers.get(&capture.handover_id).is_some(),
             ask: state.settings.extension.ask_before_download,
-            queue: state.queue_for(QueueRequest::Browser(capture.queue))?,
+            placed,
             chosen_by: ChosenBy::of_capture(capture, &state.settings.local_sites, &state.suffixes),
         })
     }
@@ -389,7 +390,7 @@ impl Manager {
         &self,
         capture: NewDownload,
         url: &Url,
-        queue: QueueId,
+        placed: Placed,
         chosen_by: ChosenBy,
     ) -> Result<AddedDownload> {
         let mut state = self.lock_open()?;
@@ -438,7 +439,8 @@ impl Manager {
             folder: folder.to_string_lossy().into_owned(),
             category,
             size: capture.size_hint,
-            queue,
+            queue: placed.queue,
+            queue_reason: placed.reason,
             page_url: capture.page_url.clone(),
         };
         state.handovers.insert(
@@ -490,7 +492,13 @@ impl Manager {
                     folder,
                     ..wanted_by(request)
                 },
-                queue: answer.queue.unwrap_or(proposal.queue),
+                placed: Placed::answered(
+                    Placed {
+                        queue: proposal.queue,
+                        reason: proposal.queue_reason.clone(),
+                    },
+                    answer.queue,
+                ),
                 start: !answer.later,
                 kind: captured(request, None),
             })
@@ -583,12 +591,37 @@ fn capture_for_display(capture: &PendingCapture) -> PendingCapture {
     }
 }
 
+/// Where a capture goes (D72.3): a file by the browser's name for it, a stream or video page by its page's address and title (D72.11).
+fn placed_capture(state: &State, capture: &NewDownload, url: &Url) -> Result<Placed> {
+    let request = QueueRequest::Browser(capture.queue);
+    if let Some(media) = capture
+        .media
+        .as_ref()
+        .filter(|m| m.kind != MediaKind::Direct)
+    {
+        let page = capture.page_url.as_deref().and_then(|p| Url::parse(p).ok());
+        let title = media.title.as_deref().unwrap_or_default();
+        let name = wirecatch_media::file_name(title, "mp4");
+        return state.place(
+            request,
+            &Candidate::video(page.as_ref().unwrap_or(url), &name),
+        );
+    }
+    let name = naming::file_name(capture.suggested_name.as_deref(), url).unwrap_or_default();
+    let candidate = Candidate {
+        url,
+        file_name: &name,
+        category: None,
+    };
+    state.place(request, &candidate)
+}
+
 /// How a capture arrives: whether its handover is known already, whether the
-/// person is asked first, the queue it goes to, and who chose its link.
+/// person is asked first, the queue it goes to and why, and who chose its link.
 struct Arrival {
     known: bool,
     ask: bool,
-    queue: QueueId,
+    placed: Placed,
     chosen_by: ChosenBy,
 }
 
