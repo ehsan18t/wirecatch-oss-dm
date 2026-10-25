@@ -2,6 +2,7 @@
 import type { Category } from './Category';
 import type { QuestionId } from './QuestionId';
 import type { QueueId } from './QueueId';
+import type { QueueReason } from './QueueReason';
 
 /**
  * A captured download waiting for the user because `ask_before_download` is on.
@@ -35,6 +36,10 @@ export type PendingCapture = {
    * The queue it goes to if the user just confirms.
    */
   queue: QueueId;
+  /**
+   * Why it goes to that queue (D72.8).
+   */
+  queue_reason: QueueReason;
   /**
    * The page it came from, shown so the user knows what they are confirming.
    */

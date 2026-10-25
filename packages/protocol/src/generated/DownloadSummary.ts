@@ -5,6 +5,7 @@ import type { DownloadStatus } from './DownloadStatus';
 import type { MediaSummary } from './MediaSummary';
 import type { ProcessingProgress } from './ProcessingProgress';
 import type { QueueId } from './QueueId';
+import type { QueueReason } from './QueueReason';
 import type { UserError } from './UserError';
 import type { WaitReason } from './WaitReason';
 
@@ -32,6 +33,10 @@ export type DownloadSummary = {
    * The queue it belongs to.
    */
   queue: QueueId;
+  /**
+   * Why it is in that queue (D72.8).
+   */
+  queue_reason: QueueReason;
   /**
    * The kind of file, which picked its folder.
    */

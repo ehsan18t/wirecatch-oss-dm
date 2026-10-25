@@ -98,6 +98,7 @@ const choice: MediaChoice = {
   options: [uhd, audio],
   folder: 'C:/Videos',
   queue: queueId(1),
+  queue_reason: { kind: 'default_queue' },
   subtitles: [
     { id: 'sub:en-GB', language: 'en-GB', name: 'English', auto: false },
     { id: 'sub:fr', language: 'fr', name: 'French', auto: false },

@@ -61,6 +61,21 @@ pub enum LinkProtocol {
     Ftp,
 }
 
+/// Why a download is in its queue (D72.3, D72.8).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", content = "claim", rename_all = "snake_case")]
+#[ts(export)]
+pub enum QueueReason {
+    /// The person picked the queue, when adding the download or by moving it.
+    Picked,
+    Claimed(Claim),
+    /// No queue claimed it, and it came from the browser, whose downloads go to this queue.
+    BrowserQueue,
+    /// No queue claimed it, it came from no browser, or its queue was deleted.
+    #[default]
+    DefaultQueue,
+}
+
 /// The one claim that sent a download to its queue, as the person wrote it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", content = "claim", rename_all = "snake_case")]

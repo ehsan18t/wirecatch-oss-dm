@@ -63,6 +63,7 @@ export function simulateMediaChoice(
     options,
     folder: folderFor('video', state.settings),
     queue: state.settings.extension.default_queue,
+    queue_reason: { kind: 'browser_queue' },
     subtitles,
     chapters: isPage,
     duration_ms: SAMPLE_DURATION_MS,

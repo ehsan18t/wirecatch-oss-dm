@@ -122,6 +122,7 @@ export type { Queue } from './generated/Queue';
 export type { QueueClaims } from './generated/QueueClaims';
 export type { QueueId } from './generated/QueueId';
 export type { QueueNotify } from './generated/QueueNotify';
+export type { QueueReason } from './generated/QueueReason';
 export type { QueueReport } from './generated/QueueReport';
 export type { QueueSettings } from './generated/QueueSettings';
 export type { QueueStatus } from './generated/QueueStatus';
