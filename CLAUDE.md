@@ -24,6 +24,7 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 | `crates/store` | The download list on disk: the SQLite database, its migrations and the repair of a damaged one (D17). |
 | `crates/messages` | What a person is told when a download fails, with the fix to offer (D3). |
 | `crates/media` | Video and audio: the quality choice, reading pages with yt-dlp, ffmpeg conversions and joining, a media download's progress (D24, D31). |
+| `crates/settings` | The settings: defaults and checks, the category rules that pick a folder, the proxy setting, and settings files (D71). |
 | `crates/files` | File helpers: writing a file whole, discarding one, keeping one private to its owner, and the Mark of the Web. |
 | `crates/sites` | Site rules: the Public Suffix List with its built-in snapshot, and which links may reach the person's own network (D39, D44). |
 | `crates/server` | The local protocol server (D14): one client connection over any byte stream, answered by the manager. |

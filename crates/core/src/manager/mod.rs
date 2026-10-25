@@ -45,12 +45,12 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{StartupNotice, UiEvent};
 use wirecatch_protocol::extension::{BrowserNote, NoteId, NotePressed};
 use wirecatch_protocol::wire::Event;
+use wirecatch_settings::folders::KnownFolders;
 use wirecatch_sites::public_suffix::SuffixList;
 use wirecatch_store::{Recovery, Store};
 
 use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
-use crate::folders::KnownFolders;
 use crate::naming;
 pub use downloads::LinkFrom;
 use state::{Entry, State, Stop};

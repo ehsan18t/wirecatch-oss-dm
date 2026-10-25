@@ -20,8 +20,8 @@ use super::placement::QueueRequest;
 use super::run::{delete_files, mark_cancelled};
 use super::state::{Entry, State, Stop};
 use crate::error::{CoreError, Result};
+use crate::headers;
 use crate::naming;
-use crate::{headers, settings};
 
 fn remember_handover(state: &mut State, handover: &str, row: &DownloadSummary) {
     let action = capture_action(row);
@@ -532,10 +532,10 @@ impl Manager {
         )?;
         let category = wanted
             .category
-            .unwrap_or_else(|| settings::category_of(&state.settings, &name));
+            .unwrap_or_else(|| wirecatch_settings::category_of(&state.settings, &name));
         let dir = match &wanted.folder {
             Some(folder) => folder.clone(),
-            None => settings::folder_for(&state.settings, category, &self.inner.folders)?,
+            None => wirecatch_settings::folder_for(&state.settings, category, &self.inner.folders)?,
         };
         Ok((dir, name, category))
     }

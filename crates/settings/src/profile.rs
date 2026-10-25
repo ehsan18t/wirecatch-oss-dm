@@ -12,9 +12,9 @@ use wirecatch_protocol::app::{
     ProfileQueue, Queue, QueueStatus, SettingsProfile,
 };
 
-use crate::error::{CoreError, Result};
+use crate::DEFAULT_QUEUE_ID;
+use crate::error::{ProfileError, Result};
 use crate::folders::KnownFolders;
-use crate::settings::{self, DEFAULT_QUEUE_ID};
 use wirecatch_engine::units::MIB;
 use wirecatch_sites::public_suffix::SuffixList;
 
@@ -24,7 +24,8 @@ const MAX_PROFILE_BYTES: u64 = MIB;
 
 /// A profile of the current settings and queues, with every folder written
 /// relative to the user's standard folders where possible.
-pub(crate) fn export(
+#[must_use]
+pub fn export(
     settings: &AppSettings,
     queues: &[Queue],
     folders: &KnownFolders,
@@ -55,28 +56,28 @@ pub(crate) fn export(
 }
 
 /// Checks the format version first, so another version's file gets its own error.
-pub(crate) fn parse(bytes: &[u8]) -> Result<SettingsProfile> {
+pub fn parse(bytes: &[u8]) -> Result<SettingsProfile, ProfileError> {
     let value: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|e| CoreError::InvalidProfile(e.to_string()))?;
+        serde_json::from_slice(bytes).map_err(|e| ProfileError::Invalid(e.to_string()))?;
     let version = value
         .get("format_version")
         .and_then(serde_json::Value::as_u64)
-        .ok_or_else(|| CoreError::InvalidProfile("it has no format version".into()))?;
+        .ok_or_else(|| ProfileError::Invalid("it has no format version".into()))?;
     if version > u64::from(PROFILE_FORMAT_VERSION) {
-        return Err(CoreError::ProfileTooNew {
+        return Err(ProfileError::TooNew {
             found: version,
             supported: PROFILE_FORMAT_VERSION,
         });
     }
     if version < u64::from(PROFILE_FORMAT_VERSION) {
-        return Err(CoreError::ProfileTooOld { found: version });
+        return Err(ProfileError::TooOld { found: version });
     }
-    serde_json::from_value(value).map_err(|e| CoreError::InvalidProfile(e.to_string()))
+    serde_json::from_value(value).map_err(|e| ProfileError::Invalid(e.to_string()))
 }
 
 /// Settings and queues after applying an imported profile, and what changed.
 #[derive(Debug)]
-pub(crate) struct Imported {
+pub struct Imported {
     pub settings: AppSettings,
     pub queues: Vec<Queue>,
     pub summary: ImportSummary,
@@ -90,14 +91,15 @@ pub(crate) struct Imported {
 /// system folders whatever they are called), so it is done off the async
 /// threads, before the merge.
 #[derive(Debug)]
-pub(crate) struct Localized {
+pub struct Localized {
     pub profile: SettingsProfile,
     pub folders: Vec<ImportedFolder>,
 }
 
 /// Resolves the profile's folders on this machine; see [`Localized`]. Blocks on
 /// the disk.
-pub(crate) fn localize(mut profile: SettingsProfile, folders: &KnownFolders) -> Localized {
+#[must_use]
+pub fn localize(mut profile: SettingsProfile, folders: &KnownFolders) -> Localized {
     let report = localize_folders(&mut profile.settings, folders);
     Localized {
         profile,
@@ -107,18 +109,19 @@ pub(crate) fn localize(mut profile: SettingsProfile, folders: &KnownFolders) -> 
 
 /// Reads a profile file, refusing one larger than any real profile could be
 /// before reading it whole. Blocks on the disk.
-pub(crate) fn read_file(path: &Path) -> Result<Vec<u8>> {
-    let file_error = |source| CoreError::File(FileError::new(path, source));
+pub fn read_file(path: &Path) -> Result<Vec<u8>> {
+    let file_error = |source| FileError::new(path, source);
     let file = std::fs::File::open(path).map_err(file_error)?;
     let mut bytes = Vec::new();
     file.take(MAX_PROFILE_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(file_error)?;
     if bytes.len() as u64 > MAX_PROFILE_BYTES {
-        return Err(CoreError::InvalidProfile(format!(
+        return Err(ProfileError::Invalid(format!(
             "it is larger than {} MB",
             MAX_PROFILE_BYTES / MIB
-        )));
+        ))
+        .into());
     }
     Ok(bytes)
 }
@@ -149,7 +152,7 @@ pub(crate) fn merge(
 /// profile are kept, because downloads may still be in them. A folder that does not
 /// exist on this machine (an absolute path from another system), or that is a
 /// startup or system folder, falls back to the default folder.
-pub(crate) fn merge_localized(
+pub fn merge_localized(
     localized: Localized,
     current: &[Queue],
     folders: &KnownFolders,
@@ -161,12 +164,12 @@ pub(crate) fn merge_localized(
         folders: folder_report,
     } = localized;
     // Checked before the merge so a huge file costs nothing.
-    settings::check_queue_count(profile.queues.len())?;
+    crate::check_queue_count(profile.queues.len())?;
     let mut queues = current.to_vec();
     let mut ids = HashMap::new();
     let (mut added, mut updated) = (Vec::new(), Vec::new());
     for incoming in profile.queues {
-        let settings = settings::validate_queue(incoming.settings)?;
+        let settings = crate::validate_queue(incoming.settings)?;
         let target = queues.iter_mut().find(|q| {
             q.is_default == incoming.is_default
                 && (incoming.is_default || q.settings.name.eq_ignore_ascii_case(&settings.name))
@@ -191,13 +194,13 @@ pub(crate) fn merge_localized(
 
     let mut settings = profile.settings;
     // A file edited by hand may hold sites no host matches.
-    settings.extension.ignored_sites = settings::stored_sites(settings.extension.ignored_sites);
+    settings.extension.ignored_sites = crate::stored_sites(settings.extension.ignored_sites);
     settings.extension.default_queue = ids
         .get(&settings.extension.default_queue)
         .copied()
         .unwrap_or(DEFAULT_QUEUE_ID);
-    settings::check_queue_count(queues.len())?;
-    let settings = settings::validate(settings, &queues, folders, suffixes)?;
+    crate::check_queue_count(queues.len())?;
+    let settings = crate::validate(settings, &queues, folders, suffixes)?;
     let count = |names: &[String]| saturating_cast::<u32, _>(names.len());
     Ok(Imported {
         settings,
@@ -273,7 +276,7 @@ fn category_folder_name(category: Category) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::{default_queue, default_settings};
+    use crate::{default_queue, default_settings};
     use wirecatch_protocol::app::{MediaDefaults, QueueNotify, QueueSettings};
 
     fn folders() -> KnownFolders {
@@ -310,7 +313,7 @@ mod tests {
         let err = parse(future.as_bytes()).unwrap_err();
         assert!(matches!(
             err,
-            CoreError::ProfileTooNew {
+            ProfileError::TooNew {
                 found,
                 supported: PROFILE_FORMAT_VERSION
             } if found == u64::from(next)
@@ -324,14 +327,11 @@ mod tests {
 
     #[test]
     fn junk_is_not_a_profile() {
-        assert!(matches!(
-            parse(b"not json"),
-            Err(CoreError::InvalidProfile(_))
-        ));
-        assert!(matches!(parse(b"{}"), Err(CoreError::InvalidProfile(_))));
+        assert!(matches!(parse(b"not json"), Err(ProfileError::Invalid(_))));
+        assert!(matches!(parse(b"{}"), Err(ProfileError::Invalid(_))));
         assert!(matches!(
             parse(format!(r#"{{"format_version": {PROFILE_FORMAT_VERSION}}}"#).as_bytes()),
-            Err(CoreError::InvalidProfile(_))
+            Err(ProfileError::Invalid(_))
         ));
     }
 
@@ -380,7 +380,7 @@ mod tests {
         old["format_version"] = (PROFILE_FORMAT_VERSION - 1).into();
         let err = parse(&serde_json::to_vec(&old).unwrap()).unwrap_err();
         assert!(
-            matches!(err, CoreError::ProfileTooOld { found } if found == u64::from(PROFILE_FORMAT_VERSION - 1))
+            matches!(err, ProfileError::TooOld { found } if found == u64::from(PROFILE_FORMAT_VERSION - 1))
         );
         assert!(
             err.to_string().contains("Export the settings again"),
@@ -465,7 +465,7 @@ mod tests {
             app_version: "0.1.0".into(),
             exported_at: 0,
             settings: default_settings(),
-            queues: (0..=i64::try_from(settings::MAX_QUEUES).unwrap())
+            queues: (0..=i64::try_from(crate::MAX_QUEUES).unwrap())
                 .map(|i| in_profile(queue(i + 10, &format!("Q{i}"))))
                 .collect(),
             addons: vec![],

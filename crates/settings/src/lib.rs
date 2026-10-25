@@ -1,5 +1,10 @@
 //! Default settings, validation, and the category rules that pick a folder.
 
+mod error;
+pub mod folders;
+pub mod profile;
+pub mod proxy;
+
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -16,11 +21,12 @@ use wirecatch_protocol::extension::{
 };
 use wirecatch_protocol::proxy::ProxySettings;
 
-use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
 use wirecatch_queues::schedule;
 use wirecatch_sites::local_network::{self, NotALocalSite};
 use wirecatch_sites::public_suffix::SuffixList;
+
+pub use error::{ProfileError, Result, SettingsError};
 
 pub use wirecatch_protocol::DEFAULT_QUEUE_ID;
 
@@ -120,7 +126,8 @@ pub fn default_settings() -> AppSettings {
 }
 
 /// The default queue as it is created on first start.
-pub(crate) fn default_queue() -> Queue {
+#[must_use]
+pub fn default_queue() -> Queue {
     Queue {
         id: DEFAULT_QUEUE_ID,
         is_default: true,
@@ -136,7 +143,8 @@ pub(crate) fn default_queue() -> Queue {
 }
 
 /// Brings the numbers downloads depend on into the range [`validate`] keeps them in, and keeps the ignored sites the way the list keeps them. Stored settings and queues are read back without the checks a change goes through, and an older version or an edit by hand may have stored a value out of range: a stored 0 connections used to run as one connection, and the engine now refuses it.
-pub(crate) fn within_limits(mut settings: AppSettings, suffixes: &SuffixList) -> AppSettings {
+#[must_use]
+pub fn within_limits(mut settings: AppSettings, suffixes: &SuffixList) -> AppSettings {
     settings.connections_per_download = settings
         .connections_per_download
         .clamp(1, MAX_CONNECTIONS_PER_DOWNLOAD);
@@ -183,7 +191,7 @@ pub(crate) fn stored_sites(stored: Vec<String>) -> Vec<String> {
 }
 
 /// The stored sites on the person's network that [`validate`] would keep with `suffixes`, without duplicates. One a change would refuse is dropped, since one that covers the sites of many owners must never count; each one dropped is logged by its place in the list. A start reads the stored list through it, and so does a newer suffix list taken while the app runs.
-pub(crate) fn stored_local_sites(stored: &[String], suffixes: &SuffixList) -> Vec<String> {
+pub fn stored_local_sites(stored: &[String], suffixes: &SuffixList) -> Vec<String> {
     let mut kept: Vec<String> = Vec::with_capacity(stored.len());
     for (entry, site) in stored.iter().enumerate() {
         match local_network::local_site(site, suffixes) {
@@ -204,31 +212,32 @@ pub(crate) fn stored_local_sites(stored: &[String], suffixes: &SuffixList) -> Ve
 }
 
 /// Checks the sites a patch from the browser or a window names, before the manager's lock is taken (see [`ExtensionSettingsPatch::check_sites`]).
-pub(crate) fn check_site_patch(patch: &ExtensionSettingsPatch) -> Result<()> {
+pub fn check_site_patch(patch: &ExtensionSettingsPatch) -> Result<()> {
     patch.check_sites().map_err(|refused| match refused {
         SitesRefused::TooMany => too_many(&IGNORED_SITES),
         SitesRefused::NotASite(not) => not_a_site(&not),
     })
 }
 
-fn not_a_site(NotASite(entry): &NotASite) -> CoreError {
-    CoreError::Invalid(format!(
+fn not_a_site(NotASite(entry): &NotASite) -> SettingsError {
+    SettingsError::Invalid(format!(
         "\"{}\" is not a site. Type a host name such as example.com, or a web address.",
         entry.trim()
     ))
 }
 
-fn too_many(rules: &ListRules) -> CoreError {
+fn too_many(rules: &ListRules) -> SettingsError {
     let ListRules {
         what, max_items, ..
     } = rules;
-    CoreError::Invalid(format!(
+    SettingsError::Invalid(format!(
         "The list of {what} can hold at most {max_items} entries. Remove some first."
     ))
 }
 
 /// [`within_limits`] for a queue.
-pub(crate) fn queue_within_limits(mut settings: QueueSettings) -> QueueSettings {
+#[must_use]
+pub fn queue_within_limits(mut settings: QueueSettings) -> QueueSettings {
     settings.max_concurrent = settings.max_concurrent.clamp(1, MAX_CONCURRENT_DOWNLOADS);
     settings.speed_limit = speed_limit_within_limits(settings.speed_limit);
     settings
@@ -243,7 +252,7 @@ fn speed_limit_within_limits(limit: Option<u64>) -> Option<u64> {
 
 /// Checks `settings` against the current queues and folders and returns them with
 /// lists cleaned up (lower case, no dots, no duplicates).
-pub(crate) fn validate(
+pub fn validate(
     mut settings: AppSettings,
     queues: &[Queue],
     folders: &KnownFolders,
@@ -251,7 +260,7 @@ pub(crate) fn validate(
 ) -> Result<AppSettings> {
     check_folder(&settings.default_folder, folders)?;
     if settings.categories.len() > MAX_CATEGORY_RULES {
-        return Err(CoreError::Invalid(format!(
+        return Err(SettingsError::Invalid(format!(
             "There can be at most {MAX_CATEGORY_RULES} category rules. Remove some first."
         )));
     }
@@ -260,7 +269,7 @@ pub(crate) fn validate(
         rule.extensions = clean_extensions(&rule.extensions)?;
     }
     if !(1..=MAX_CONNECTIONS_PER_DOWNLOAD).contains(&settings.connections_per_download) {
-        return Err(CoreError::Invalid(format!(
+        return Err(SettingsError::Invalid(format!(
             "Connections per download must be between 1 and {MAX_CONNECTIONS_PER_DOWNLOAD}."
         )));
     }
@@ -269,7 +278,7 @@ pub(crate) fn validate(
 
     let ext = &mut settings.extension;
     if !queues.iter().any(|q| q.id == ext.default_queue) {
-        return Err(CoreError::Invalid(
+        return Err(SettingsError::Invalid(
             "The default queue for the browser no longer exists. Pick another queue.".into(),
         ));
     }
@@ -295,7 +304,7 @@ pub(crate) fn validate(
     check_media_defaults(&mut settings.media.video, false)?;
     check_media_defaults(&mut settings.media.audio, true)?;
     if settings.media.quality == VideoQuality::Height(0) {
-        return Err(CoreError::Invalid(
+        return Err(SettingsError::Invalid(
             "The resolution must be a height in pixels, such as 1080.".into(),
         ));
     }
@@ -330,8 +339,8 @@ fn clean_local_sites(list: &[String], suffixes: &SuffixList) -> Result<Vec<Strin
     )
 }
 
-fn not_a_local_site(entry: &str, why: NotALocalSite) -> CoreError {
-    CoreError::Invalid(match why {
+fn not_a_local_site(entry: &str, why: NotALocalSite) -> SettingsError {
+    SettingsError::Invalid(match why {
         NotALocalSite::Unreadable => format!(
             "\"{entry}\" is not a site. Type a host name such as wiki.example.com, or a web address."
         ),
@@ -358,7 +367,7 @@ fn check_media_defaults(defaults: &mut OutputDefaults, audio: bool) -> Result<()
         defaults.format.saves_video()
     };
     if !fits {
-        return Err(CoreError::Invalid(if audio {
+        return Err(SettingsError::Invalid(if audio {
             "Audio downloads can be saved as Original, MP3, M4A, Opus, FLAC or WAV.".into()
         } else {
             "Videos can be saved as Original, MP4, MKV or WebM.".into()
@@ -368,7 +377,7 @@ fn check_media_defaults(defaults: &mut OutputDefaults, audio: bool) -> Result<()
         .audio_kbps
         .is_some_and(|k| !(32..=512).contains(&k))
     {
-        return Err(CoreError::Invalid(
+        return Err(SettingsError::Invalid(
             "The audio quality must be between 32 and 512 kbps.".into(),
         ));
     }
@@ -383,7 +392,7 @@ fn check_media_defaults(defaults: &mut OutputDefaults, audio: bool) -> Result<()
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
         if !plain {
-            return Err(CoreError::Invalid(format!(
+            return Err(SettingsError::Invalid(format!(
                 "\"{language}\" is not a language code. Use codes such as en, fr or pt-BR."
             )));
         }
@@ -392,7 +401,7 @@ fn check_media_defaults(defaults: &mut OutputDefaults, audio: bool) -> Result<()
         }
     }
     if languages.len() > MAX_SUBTITLE_LANGUAGES {
-        return Err(CoreError::Invalid(format!(
+        return Err(SettingsError::Invalid(format!(
             "At most {MAX_SUBTITLE_LANGUAGES} subtitle languages can be remembered. Remove some."
         )));
     }
@@ -401,9 +410,9 @@ fn check_media_defaults(defaults: &mut OutputDefaults, audio: bool) -> Result<()
 }
 
 /// Checks that `count` queues are allowed.
-pub(crate) fn check_queue_count(count: usize) -> Result<()> {
+pub fn check_queue_count(count: usize) -> Result<()> {
     if count > MAX_QUEUES {
-        return Err(CoreError::LimitReached(format!(
+        return Err(SettingsError::LimitReached(format!(
             "There can be at most {MAX_QUEUES} queues. Delete one first."
         )));
     }
@@ -411,13 +420,13 @@ pub(crate) fn check_queue_count(count: usize) -> Result<()> {
 }
 
 /// Checks a queue's name, limits and schedule, trimming the name.
-pub(crate) fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> {
+pub fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> {
     queue.name = queue.name.trim().to_string();
     if queue.name.is_empty() {
-        return Err(CoreError::Invalid("Give the queue a name.".into()));
+        return Err(SettingsError::Invalid("Give the queue a name.".into()));
     }
     if queue.name.chars().count() > MAX_QUEUE_NAME_CHARS {
-        return Err(CoreError::Invalid(format!(
+        return Err(SettingsError::Invalid(format!(
             "Queue names can be at most {MAX_QUEUE_NAME_CHARS} characters."
         )));
     }
@@ -427,7 +436,7 @@ pub(crate) fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> 
         let times_valid =
             schedule::is_valid_time(s.start) && s.stop.is_none_or(schedule::is_valid_time);
         if !times_valid {
-            return Err(CoreError::Invalid(
+            return Err(SettingsError::Invalid(
                 "Schedule times must be between 00:00 and 23:59.".into(),
             ));
         }
@@ -437,7 +446,8 @@ pub(crate) fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> 
 
 /// A category from a `Content-Type`, for a file whose name says nothing (no
 /// extension, or one no rule lists).
-pub(crate) fn category_from_mime(content_type: &str) -> Category {
+#[must_use]
+pub fn category_from_mime(content_type: &str) -> Category {
     let mime = content_type
         .split(';')
         .next()
@@ -479,7 +489,8 @@ pub(crate) fn category_from_mime(content_type: &str) -> Category {
 }
 
 /// The category whose rule lists the extension of `file_name`.
-pub(crate) fn category_of(settings: &AppSettings, file_name: &str) -> Category {
+#[must_use]
+pub fn category_of(settings: &AppSettings, file_name: &str) -> Category {
     let Some((_, ext)) = file_name.rsplit_once('.') else {
         return Category::Other;
     };
@@ -492,7 +503,7 @@ pub(crate) fn category_of(settings: &AppSettings, file_name: &str) -> Category {
 }
 
 /// The folder new downloads of `category` go to.
-pub(crate) fn folder_for(
+pub fn folder_for(
     settings: &AppSettings,
     category: Category,
     folders: &KnownFolders,
@@ -509,7 +520,7 @@ fn check_concurrency(value: u32, what: &str) -> Result<()> {
     if (1..=MAX_CONCURRENT_DOWNLOADS).contains(&value) {
         Ok(())
     } else {
-        Err(CoreError::Invalid(format!(
+        Err(SettingsError::Invalid(format!(
             "{what} must be between 1 and {MAX_CONCURRENT_DOWNLOADS}."
         )))
     }
@@ -517,11 +528,11 @@ fn check_concurrency(value: u32, what: &str) -> Result<()> {
 
 fn check_speed_limit(limit: Option<u64>) -> Result<()> {
     match limit {
-        Some(0) => Err(CoreError::Invalid(
+        Some(0) => Err(SettingsError::Invalid(
             "A speed limit must be above zero. Turn the limit off instead to download at full speed."
                 .into(),
         )),
-        Some(l) if l > MAX_SPEED_LIMIT => Err(CoreError::Invalid(
+        Some(l) if l > MAX_SPEED_LIMIT => Err(SettingsError::Invalid(
             "That speed limit is too large. Turn the limit off instead.".into(),
         )),
         _ => Ok(()),
@@ -530,7 +541,7 @@ fn check_speed_limit(limit: Option<u64>) -> Result<()> {
 
 fn check_folder(folder: &PortablePath, folders: &KnownFolders) -> Result<()> {
     if folder.0.chars().count() > MAX_FOLDER_CHARS {
-        return Err(CoreError::Invalid(format!(
+        return Err(SettingsError::Invalid(format!(
             "Folder paths can be at most {MAX_FOLDER_CHARS} characters long. Choose a shorter folder."
         )));
     }
@@ -591,7 +602,7 @@ fn clean_list(
     for item in list.iter().map(|s| normalize(s)) {
         let item = item?;
         if item.chars().count() > *max_chars {
-            return Err(CoreError::Invalid(format!(
+            return Err(SettingsError::Invalid(format!(
                 "An entry in the list of {what} is longer than {max_chars} characters. Shorten or remove it."
             )));
         }
@@ -721,7 +732,7 @@ mod tests {
             assert!(
                 matches!(
                     validate(settings, &queues, &folders(), &SuffixList::built_in()),
-                    Err(CoreError::Invalid(_))
+                    Err(SettingsError::Invalid(_))
                 ),
                 "{site}"
             );
@@ -778,7 +789,7 @@ mod tests {
                         &folders(),
                         &SuffixList::built_in()
                     ),
-                    Err(CoreError::Invalid(_))
+                    Err(SettingsError::Invalid(_))
                 ),
                 "{refused}"
             );

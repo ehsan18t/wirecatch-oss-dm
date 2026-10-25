@@ -23,6 +23,7 @@ wirecatch-media = { path = "crates/media", version = "0.1.0" }
 wirecatch-records = { path = "crates/records", version = "0.1.0" }
 wirecatch-store = { path = "crates/store", version = "0.1.0" }
 wirecatch-server = { path = "crates/server", version = "0.1.0" }
+wirecatch-settings = { path = "crates/settings", version = "0.1.0" }
 wirecatch-sites = { path = "crates/sites", version = "0.1.0" }
 wirecatch-ipc = { path = "crates/ipc", version = "0.1.0" }
 wirecatch-streams = { path = "crates/streams", version = "0.1.0" }

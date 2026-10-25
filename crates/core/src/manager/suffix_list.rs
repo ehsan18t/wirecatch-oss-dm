@@ -12,12 +12,11 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 use wirecatch_engine::{CancellationToken, Fetcher, PrivateNetwork, Url};
 use wirecatch_protocol::app::{SuffixListInfo, UiEvent};
+use wirecatch_sites::public_suffix::{KEPT_FILE, MAX_LIST_BYTES, Refused, SuffixList};
 
 use super::Manager;
 use super::state::State;
 use crate::error::{CoreError, Result};
-use crate::settings;
-use wirecatch_sites::public_suffix::{KEPT_FILE, MAX_LIST_BYTES, Refused, SuffixList};
 
 /// Where publicsuffix.org publishes the list (D44).
 pub const PUBLIC_SUFFIX_LIST_URL: &str = "https://publicsuffix.org/list/public_suffix_list.dat";
@@ -188,7 +187,8 @@ impl Manager {
     /// as a start does, so the settings pass their own checks again and any other
     /// setting can still change.
     fn drop_sites_made_public(&self, state: &mut State) {
-        let kept = settings::stored_local_sites(&state.settings.local_sites, &state.suffixes);
+        let kept =
+            wirecatch_settings::stored_local_sites(&state.settings.local_sites, &state.suffixes);
         if kept != state.settings.local_sites {
             let mut new = state.settings.clone();
             new.local_sites = kept;
@@ -286,7 +286,7 @@ mod tests {
     use super::*;
     use crate::ManagerConfig;
     use crate::clock::{Clock, ManualClock};
-    use crate::folders::KnownFolders;
+    use wirecatch_settings::folders::KnownFolders;
     use wirecatch_sites::public_suffix::testing;
     use wirecatch_test_support::files::FileServer;
 

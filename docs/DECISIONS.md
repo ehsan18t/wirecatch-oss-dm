@@ -683,6 +683,7 @@ Decided with the maintainer on 2026-10-25. `wirecatch-core` holds 31,000 lines, 
 6. Done after that: `crates/records`, the types saved with a download, a queue's batch and the proxy passwords, which the store and core both use (D81); and `crates/store`, the SQLite database with its own error, `StoreError`, which core passes on as `CoreError::Store`. The store knows records and protocol types, never the manager.
 7. Done after that: `crates/messages`, what a person is told when a download fails and the fix each message offers, which media and the manager both use.
 8. Done after that: `crates/media`, the quality choice, reading pages with yt-dlp, ffmpeg conversions and joining, and a media download's progress, with the folders a media download keeps beside its file, which `naming` takes from it. Running a media download stays in core with the manager's other runs; only what core calls is public.
+9. Done last: `crates/settings`, the settings' defaults and checks, the category rules that pick a folder, the known folders, the proxy setting and settings files, with its own `SettingsError`, whose cases core turns into its own (`Invalid`, `LimitReached`, `Path`, `File`, `Profile`). The Test connection button's request stays in core. The file error both crates and the store report is `wirecatch-files`' `FileError`.
 
 ### D80. The media add-on's ffmpeg comes from a copy Wirecatch keeps
 
