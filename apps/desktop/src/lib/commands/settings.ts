@@ -3,7 +3,8 @@
 
 import type { AddonInfo, Theme } from '@wirecatch/protocol';
 import { addonAction, isInstalled } from '../addons';
-import { SECTIONS, SETTINGS, type SettingDef } from '../settings-schema';
+import { SETTINGS, type SettingDef } from '../settings-schema';
+import { SECTIONS } from '../settings-sections';
 import type { AppState } from '../state/app.svelte';
 import { commandsFrom, type Command, type CommandSpec } from './table';
 

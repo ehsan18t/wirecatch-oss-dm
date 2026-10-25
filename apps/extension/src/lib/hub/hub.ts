@@ -1,5 +1,6 @@
 import {
   DEFAULT_EXTENSION_SETTINGS,
+  takesPrivateWindows,
   type Call,
   type Event,
   type ExtensionSettings,
@@ -14,17 +15,23 @@ import {
   type JudgingSettings,
 } from '../capture/handover';
 import { shouldCapture } from '../capture/should-capture';
-import { isCrossSite, type CookieContext } from '../cookies';
+import { cookieStoreOf, isCrossSite, type CookieContext } from '../cookies';
 import { fallback, log } from '../diag/log';
 import { fileNameFromUrl } from '../file-types';
 import type { MediaRequest, MediaSendResult } from '../media/center';
 import type { Notice, PopupCommand, Snapshot } from '../messages';
 import type { NativeClient } from '../native/client';
 import type { ConnectionStatus } from '../native/status';
-import { REQUEST_TIMEOUT_MS, START_WAIT_MS, WITHDRAW_TIMEOUT_MS } from '../native/timing';
 import { refererFor } from '../referrer';
 import { AppCalls, isLocalCommand } from './app';
-import type { HubDeps, HubTiming, InFlightEntry, MenuClick, MenuResult, MenuTab } from './deps';
+import {
+  hubTiming,
+  type HubDeps,
+  type InFlightEntry,
+  type MenuClick,
+  type MenuResult,
+  type MenuTab,
+} from './deps';
 import { planMenuClick } from './menu';
 import { NoticeBoard } from './notice-board';
 import {
@@ -39,29 +46,6 @@ import {
 import { Popups, type PopupChannel } from './popups';
 import { recoverHandover } from './recovery';
 import { KnownSettings } from './settings';
-
-/**
- * The waits used unless `HubDeps.timing` says otherwise. A paused download waits less
- * than a call does, so the browser resumes it soon when the app cannot be reached; a
- * withdraw only runs after a call already took too long, so it waits the least.
- */
-const DEFAULT_TIMING: HubTiming = {
-  connectWaitMs: START_WAIT_MS,
-  requestTimeoutMs: REQUEST_TIMEOUT_MS,
-  withdrawTimeoutMs: WITHDRAW_TIMEOUT_MS,
-};
-
-/**
- * The waits to use: each one given, or its `DEFAULT_TIMING` value. Field by field, so
- * one given as `undefined` still gets its default (a spread would copy the undefined).
- */
-export function hubTiming(given: Partial<HubTiming> = {}): HubTiming {
-  return {
-    connectWaitMs: given.connectWaitMs ?? DEFAULT_TIMING.connectWaitMs,
-    requestTimeoutMs: given.requestTimeoutMs ?? DEFAULT_TIMING.requestTimeoutMs,
-    withdrawTimeoutMs: given.withdrawTimeoutMs ?? DEFAULT_TIMING.withdrawTimeoutMs,
-  };
-}
 
 /**
  * The background script's state: the connection, the app's settings and queues,
@@ -182,13 +166,13 @@ export class Hub {
       await this.#persistInFlight();
       persisted = true;
       const result = await handOver(
-        { downloadId: item.id, handoverId, candidate, cookieStoreId: item.cookieStoreId ?? null },
+        { downloadId: item.id, handoverId, candidate, cookieStore: cookieStoreOf(item) },
         {
           downloads: this.#deps.downloads,
           liveSettings: () => this.#judgingSettings(),
           addDownload: (download) => this.#app.addDownload(download),
           withdraw: (handoverId) => this.#app.withdraw(handoverId),
-          cookieHeader: (url, storeId, context) => this.#deps.cookieHeader(url, storeId, context),
+          cookieHeader: (url, store, context) => this.#deps.cookieHeader(url, store, context),
           userAgent: this.#deps.userAgent,
         },
       );
@@ -205,7 +189,8 @@ export class Hub {
    * link, the browser downloads it instead, so the click is never lost.
    */
   async onMenuClick(click: MenuClick, tab: MenuTab | undefined): Promise<MenuResult> {
-    const plan = planMenuClick(click, tab);
+    const privateWindows = tab?.incognito === true && (await this.privateWindowsOn());
+    const plan = planMenuClick(click, tab, privateWindows);
     switch (plan.kind) {
       case 'failed':
         return 'failed';
@@ -245,7 +230,7 @@ export class Hub {
       mime: null,
       size_hint: null,
       // Like following the link: a top-level navigation started by the frame it is in.
-      cookies: await this.#deps.cookieHeader(url, tab?.cookieStoreId ?? null, {
+      cookies: await this.#deps.cookieHeader(url, cookieStoreOf(tab ?? {}), {
         initiator: page,
         navigation: true,
       }),
@@ -299,7 +284,7 @@ export class Hub {
       cookies:
         target.sentCookies !== undefined && isCrossSite(target.url, context)
           ? target.sentCookies
-          : await this.#deps.cookieHeader(target.url, request.cookieStoreId, context),
+          : await this.#deps.cookieHeader(target.url, request.cookieStore, context),
       source: 'media_button',
       media: { kind: target.kind, title: request.title },
     });
@@ -475,6 +460,13 @@ export class Hub {
   async mediaButtonOn(): Promise<boolean> {
     await this.#ready;
     return this.#settings.mediaButtonOn();
+  }
+
+  /** "Work in private windows" (D82). Unknown settings are asked of the app: taken as on, they would let through a private window the person turned off. */
+  async privateWindowsOn(): Promise<boolean> {
+    await this.#ready;
+    const settings = this.#settings.known() ?? (await this.#judgingSettings())?.settings;
+    return settings === undefined || takesPrivateWindows(settings);
   }
 
   /** The browser reports a download running or finished, so a notice asking to resume it is done. */

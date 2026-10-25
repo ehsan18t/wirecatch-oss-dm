@@ -70,6 +70,7 @@ async function openPopup(
     registry,
     getTab: (id) => Promise.resolve(TABS.get(id) ?? null),
     send: (request) => hub.sendMedia(request),
+    privateWindowsOn: () => hub.privateWindowsOn(),
   });
   const hub: Hub = new Hub({
     client,
@@ -229,11 +230,13 @@ describe('Media on this page', () => {
     expect(app.calls('add_download')).toEqual([]);
   });
 
-  it('offers the page on a well-known video site, and shows nothing in a private window', async () => {
+  it('offers the page on a well-known video site, and shows nothing in a private window while those are off', async () => {
     await openPopup(4);
     expect(await within(section()).findByText('This YouTube page')).toBeTruthy();
     cleanup();
-    const { model } = await openPopup(2);
+    const { model } = await openPopup(2, {
+      configure: (app) => (app.settings = { ...app.settings, private_windows: false }),
+    });
     await waitFor(() => expect(model.media?.page).toBe('private'));
     expect(screen.queryByRole('region', { name: 'Media on this page' })).toBeNull();
   });

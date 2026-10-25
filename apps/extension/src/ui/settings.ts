@@ -30,6 +30,7 @@ export const SETTINGS = {
   speedLimit: shared('global_speed_limit'),
   concurrent: shared('max_concurrent_downloads'),
   mediaButton: shared('show_media_button'),
+  privateWindows: shared('private_windows'),
   shortcut: {
     label: 'Keyboard shortcut',
     description: "Sends a page's video or audio to Wirecatch.",

@@ -5,7 +5,7 @@ import type {
   NewDownload,
   WithdrawOutcome,
 } from '@wirecatch/protocol';
-import type { CookieContext } from '../cookies';
+import type { CookieContext, CookieStore } from '../cookies';
 import { RequestError, type RequestErrorKind } from '../native/client';
 import { fallback, log } from '../diag/log';
 import { nonEmpty } from '../text';
@@ -103,11 +103,7 @@ export interface HandoverDeps extends SubmitDeps {
    */
   liveSettings: () => Promise<JudgingSettings | null>;
   /** The `Cookie` header the browser would send to a URL in this context, or null. Never rejects. */
-  cookieHeader: (
-    url: string,
-    storeId: string | null,
-    context: CookieContext,
-  ) => Promise<string | null>;
+  cookieHeader: (url: string, store: CookieStore, context: CookieContext) => Promise<string | null>;
   userAgent: string | null;
 }
 
@@ -160,8 +156,7 @@ export interface HandoverInput {
   /** The id the download is offered to the app under, recorded before pausing so a restarted background can withdraw it. */
   handoverId: string;
   candidate: CaptureCandidate;
-  /** Firefox container or private cookie store the download belongs to. */
-  cookieStoreId: string | null;
+  cookieStore: CookieStore;
 }
 
 /**
@@ -227,7 +222,7 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
     mime: candidate.mime,
     size_hint: candidate.size,
     // A browser download is a top-level navigation started by the page it came from.
-    cookies: await deps.cookieHeader(candidate.url, input.cookieStoreId, {
+    cookies: await deps.cookieHeader(candidate.url, input.cookieStore, {
       initiator: candidate.referrer,
       originalUrl: candidate.originalUrl,
       navigation: true,

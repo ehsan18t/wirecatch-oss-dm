@@ -10,6 +10,7 @@ import {
   type ElementRequest,
   type DownloadAnswer,
 } from './messages';
+import { cookieStoreOf, type CookieStore } from '../cookies';
 import { fallback } from '../diag/log';
 import { matchingSite } from '../sites';
 import { parseUrl } from '../url';
@@ -53,7 +54,7 @@ export interface MediaRequest {
    * browser would send as `Referer` (`refererFor`) before it leaves the extension.
    */
   referrer: string | null;
-  cookieStoreId: string | null;
+  cookieStore: CookieStore;
 }
 
 /** The outcome of sending media, with a sentence for the person. */
@@ -74,7 +75,7 @@ export interface MediaEntry {
 /** The popup's list for one tab, and why it may be empty. */
 export interface MediaView {
   tabId: number;
-  /** `private`: a private window, where nothing is offered. `other`: not a web page. */
+  /** `private`: a private window while "Work in private windows" is off, where nothing is offered. `other`: not a web page. */
   page: 'web' | 'private' | 'other';
   entries: MediaEntry[];
 }
@@ -98,6 +99,8 @@ export interface MediaCenterDeps {
   videoSites?: () => readonly string[];
   /** "Show download button on videos", for a button asking as its page loads; on when missing. */
   mediaButtonOn?: () => Promise<boolean>;
+  /** "Work in private windows" (D82). */
+  privateWindowsOn: () => Promise<boolean>;
   /**
    * The tabs open now with the address each shows (null when it cannot be read), so saved lists of closed tabs, or of a page a tab has since left, are not restored.
    */
@@ -109,7 +112,8 @@ export interface MediaCenterDeps {
 /** How long changes are gathered before the lists are saved, so a burst of detections is written once. */
 const SAVE_DELAY_MS = 250;
 
-export const PRIVATE_WINDOW = 'Wirecatch does not take media from private windows.';
+export const PRIVATE_WINDOW =
+  'Wirecatch is set to leave private windows to the browser. Turn on "Work in private windows" in the Wirecatch popup to download here.';
 export const IGNORED_SITE =
   'This site is on your list of sites to ignore. Remove it from that list in the Wirecatch popup to download from it.';
 const NOTHING_FOUND =
@@ -249,16 +253,24 @@ export class MediaCenter {
     );
   }
 
-  #check(request: ElementRequest, sender: ContentSender): Promise<CheckAnswer> {
-    if (sender.tab?.incognito === true || this.#ignored(sender))
-      return Promise.resolve({ show: false });
+  async #privateWindowsOff(): Promise<boolean> {
+    return !(await this.#deps.privateWindowsOn());
+  }
+
+  async #check(request: ElementRequest, sender: ContentSender): Promise<CheckAnswer> {
+    if (
+      (sender.tab?.incognito === true && (await this.#privateWindowsOff())) ||
+      this.#ignored(sender)
+    )
+      return { show: false };
     const frameUrl = currentFrameUrl(sender, request.location);
-    return Promise.resolve({ show: this.#targetFor(request, sender, frameUrl) !== null });
+    return { show: this.#targetFor(request, sender, frameUrl) !== null };
   }
 
   async #download(request: ElementRequest, sender: ContentSender): Promise<DownloadAnswer> {
     const tab = sender.tab;
-    if (tab?.incognito === true) return { ok: false, message: PRIVATE_WINDOW };
+    if (tab?.incognito === true && (await this.#privateWindowsOff()))
+      return { ok: false, message: PRIVATE_WINDOW };
     if (this.#ignored(sender)) return { ok: false, message: IGNORED_SITE };
     const frameUrl = currentFrameUrl(sender, request.location);
     const target = this.#targetFor(request, sender, frameUrl);
@@ -269,7 +281,7 @@ export class MediaCenter {
       title: cleanTitle(title) ?? cleanTitle(tab.title),
       pageUrl: tab.url ?? null,
       referrer: frameUrl ?? tab.url ?? null,
-      cookieStoreId: tab.cookieStoreId ?? null,
+      cookieStore: cookieStoreOf(tab),
     });
   }
 
@@ -280,7 +292,8 @@ export class MediaCenter {
     if (!tab?.url || !/^https?:/i.test(tab.url)) {
       return { tabId, page: 'other', entries: [] };
     }
-    if (tab.incognito) return { tabId, page: 'private', entries: [] };
+    if (tab.incognito && (await this.#privateWindowsOff()))
+      return { tabId, page: 'private', entries: [] };
     const entries = popupTargets(
       this.#deps.registry.itemsOn(tabId, tab.url),
       tab.url,
@@ -318,7 +331,8 @@ export class MediaCenter {
     await this.#ready;
     const tab = await this.#deps.getTab(tabId).catch(fallback('media', TAB_UNREADABLE, null));
     if (tab === null) return { ok: false, message: TAB_GONE };
-    if (tab.incognito) return { ok: false, message: PRIVATE_WINDOW };
+    if (tab.incognito && (await this.#privateWindowsOff()))
+      return { ok: false, message: PRIVATE_WINDOW };
     const sender: ContentSender = { tab: { id: tabId, url: tab.url ?? undefined }, frameId: 0 };
     if (this.#ignored(sender)) return { ok: false, message: IGNORED_SITE };
     const target = chooseTarget(this.#deps.registry.itemsOn(tabId, tab.url), {
@@ -335,7 +349,7 @@ export class MediaCenter {
       title: cleanTitle(tab.title),
       pageUrl: tab.url,
       referrer: tab.url,
-      cookieStoreId: tab.cookieStoreId,
+      cookieStore: cookieStoreOf(tab),
     });
   }
 
@@ -344,7 +358,8 @@ export class MediaCenter {
     await this.#ready;
     const tab = await this.#deps.getTab(tabId).catch(fallback('media', TAB_UNREADABLE, null));
     if (tab === null) return { ok: false, message: TAB_GONE };
-    if (tab.incognito) return { ok: false, message: PRIVATE_WINDOW };
+    if (tab.incognito && (await this.#privateWindowsOff()))
+      return { ok: false, message: PRIVATE_WINDOW };
     const target = popupTargets(
       this.#deps.registry.itemsOn(tabId, tab.url),
       tab.url,
@@ -356,7 +371,7 @@ export class MediaCenter {
       title: cleanTitle(tab.title),
       pageUrl: tab.url,
       referrer: tab.url,
-      cookieStoreId: tab.cookieStoreId,
+      cookieStore: cookieStoreOf(tab),
     });
   }
 

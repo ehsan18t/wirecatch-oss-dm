@@ -18,6 +18,8 @@ export const MAX_UNANSWERED_REQUESTS = 256;
 export interface WatchDeps {
   /** True when the tab is in a private window. Rejects or resolves true when that cannot be told. */
   isPrivateTab: (tabId: number) => Promise<boolean>;
+  /** "Work in private windows" (D82). */
+  privateWindowsOn: () => Promise<boolean>;
   /**
    * Settles once the lists saved by a previous run are restored (`MediaCenter.start`).
    * Responses wait for it, in order, so a navigation that woke the background clears
@@ -28,8 +30,8 @@ export interface WatchDeps {
 
 /**
  * Feeds `webRequest` responses into the registry: a new page in a tab clears its
- * list, media is recorded, and anything from a private window or outside a tab is
- * ignored, the same as downloads from private windows stay out of Wirecatch.
+ * list, media is recorded, and anything outside a tab is ignored, as is anything from a
+ * private window while "Work in private windows" is off.
  *
  * Chromium and Firefox differences handled here and in the background script:
  *
@@ -90,7 +92,7 @@ export class MediaWatcher {
       this.#urls.set(tabId, page);
     }
     const detection = classifyResponse(response);
-    if (detection === null || (await this.#fromPrivateWindow(response))) return;
+    if (detection === null || (await this.#leftOut(response))) return;
     this.#registry.add(
       tabId,
       cookies === undefined ? detection : { ...detection, sentCookies: cookies },
@@ -106,14 +108,19 @@ export class MediaWatcher {
     return cookies;
   }
 
-  /** True when the response is from a private window, or its tab moved to a new page while that was being asked. */
+  /** True when the response is from a private window left to the browser, or its tab moved to a new page while that was being asked. */
+  async #leftOut(response: ObservedResponse): Promise<boolean> {
+    const { tabId } = response;
+    const generation = this.#generation.get(tabId) ?? 0;
+    if ((await this.#fromPrivateWindow(response)) && !(await this.#deps.privateWindowsOn()))
+      return true;
+    return (this.#generation.get(tabId) ?? 0) !== generation;
+  }
+
   async #fromPrivateWindow(response: ObservedResponse): Promise<boolean> {
     // Firefox says on each request; Chromium does not, so the tab is asked once.
     if (response.incognito !== undefined) return response.incognito;
-    const { tabId } = response;
-    const generation = this.#generation.get(tabId) ?? 0;
-    if (await this.#isPrivate(tabId)) return true;
-    return (this.#generation.get(tabId) ?? 0) !== generation;
+    return this.#isPrivate(response.tabId);
   }
 
   /**

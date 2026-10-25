@@ -614,8 +614,29 @@ describe('popup accessibility', () => {
     await user.tab();
     await user.tab();
     await user.tab();
+    expect(document.activeElement).toBe(siteSwitch());
     await user.keyboard('{Enter}');
     await waitFor(() => expect(app.settings.ignored_sites).toEqual(['example.com']));
+  });
+
+  it('turns private windows off and on, and hides the switch from an app that does not know it (D82)', async () => {
+    const { app } = await openPopup({
+      configure: (fake) => (fake.settings = { ...fake.settings, private_windows: true }),
+    });
+    const privateSwitch = () => screen.getByRole('switch', { name: 'Work in private windows' });
+    expect(privateSwitch().getAttribute('aria-checked')).toBe('true');
+    await userEvent.click(privateSwitch());
+    await waitFor(() => expect(app.settings.private_windows).toBe(false));
+    expect(privateSwitch().getAttribute('aria-checked')).toBe('false');
+    cleanup();
+
+    const old = await openPopup();
+    const noSwitch = () => screen.queryByRole('switch', { name: 'Work in private windows' });
+    expect(noSwitch()).toBeNull();
+    await userEvent.click(captureSwitch());
+    expect(noSwitch()).toBeNull();
+    await waitFor(() => expect(old.app.settings.capture_enabled).toBe(false));
+    expect(noSwitch()).toBeNull();
   });
 
   it('announces results in the footer live region', async () => {

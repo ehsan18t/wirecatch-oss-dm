@@ -15,6 +15,11 @@ const LINT_EXCEPTIONS = [
   { id: 'E3', file: 'crates/engine/src/transport.rs', lints: ['clippy::large_enum_variant'] },
   { id: 'E4', file: 'crates/protocol/src/app.rs', lints: ['clippy::struct_excessive_bools'] },
   {
+    id: 'E15',
+    file: 'crates/protocol/src/extension.rs',
+    lints: ['clippy::struct_excessive_bools'],
+  },
+  {
     id: 'E5',
     file: 'crates/e2e/src/lib.rs',
     lints: ['clippy::expect_used'],

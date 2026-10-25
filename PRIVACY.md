@@ -10,7 +10,7 @@ The extension reads only what it needs to hand a download to the Wirecatch app:
 - **The cookies** your browser would send with that download or that media, and the `Cookie` header it did send with the media, so Wirecatch can download what needs your sign-in.
 - **The settings** the Wirecatch app sends it.
 
-All of it goes to one place: the Wirecatch app on the same computer, through the browser's native messaging. The extension sends nothing to any server and takes nothing from private windows.
+All of it goes to one place: the Wirecatch app on the same computer, through the browser's native messaging. The extension sends nothing to any server. It treats private windows like any other, if the browser lets it run there; turn off "Work in private windows" to leave them to the browser.
 
 While the browser is open, the extension keeps some of this in the browser's session storage, so it can pick up where it was after the browser pauses it: the settings the app sent, the downloads being handed over, each tab's list of media with the `Cookie` header sent for it, its messages to you, and its own error log, which leaves out cookies, passwords and tokens. The browser clears all of it when it closes, and web pages cannot read it.
 

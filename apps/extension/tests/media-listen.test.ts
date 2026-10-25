@@ -67,10 +67,14 @@ function fakeApi(firefox = false) {
 function setup(firefox = false) {
   const fake = fakeApi(firefox);
   const registry = new MediaRegistry();
-  const watcher = new MediaWatcher(registry, { isPrivateTab: () => Promise.resolve(false) });
+  const watcher = new MediaWatcher(registry, {
+    isPrivateTab: () => Promise.resolve(false),
+    privateWindowsOn: () => Promise.resolve(true),
+  });
   const sent: string[] = [];
   const announced: [number, MediaSendResult][] = [];
   const media = new MediaCenter({
+    privateWindowsOn: () => Promise.resolve(true),
     registry,
     getTab: (id) =>
       Promise.resolve(

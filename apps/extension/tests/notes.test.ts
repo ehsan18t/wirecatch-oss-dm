@@ -222,11 +222,13 @@ describe('the tab a note goes to', () => {
   function api(
     window: Partial<Awaited<ReturnType<FocusApi['lastFocusedWindow']>>>,
     url = 'https://example.com/',
+    privateWindows = true,
   ) {
     return {
       lastFocusedWindow: () =>
         Promise.resolve({ id: 1, focused: true, state: 'normal', incognito: false, ...window }),
       activeTab: () => Promise.resolve(tab(url)),
+      privateWindowsOn: () => Promise.resolve(privateWindows),
     } satisfies FocusApi;
   }
 
@@ -234,10 +236,15 @@ describe('the tab a note goes to', () => {
     expect(await focusedWebTab(api({}))).toBe(5);
   });
 
-  it('is none behind another program, minimized, in a private window, or on a page that is not a website', async () => {
+  it('is in a private window too, unless private windows are off (D82)', async () => {
+    expect(await focusedWebTab(api({ incognito: true }))).toBe(5);
+    expect(await focusedWebTab(api({ incognito: true }, 'https://example.com/', false))).toBeNull();
+    expect(await focusedWebTab(api({}, 'https://example.com/', false))).toBe(5);
+  });
+
+  it('is none behind another program, minimized, or on a page that is not a website', async () => {
     expect(await focusedWebTab(api({ focused: false }))).toBeNull();
     expect(await focusedWebTab(api({ state: 'minimized' }))).toBeNull();
-    expect(await focusedWebTab(api({ incognito: true }))).toBeNull();
     expect(await focusedWebTab(api({}, 'chrome://newtab/'))).toBeNull();
     expect(await focusedWebTab(api({}, 'file:///C:/report.pdf'))).toBeNull();
   });

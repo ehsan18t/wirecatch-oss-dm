@@ -43,7 +43,7 @@ The developer dashboard's Privacy tab asks for a single purpose, a reason for ea
 
 **Remote code.** None: every script ships in the package.
 
-**Data use.** Declare _Authentication information_ (the cookies of a download's or a video's site) and _Web history_ (the addresses of downloads, of the pages they come from, and of media on a page). Both go only to the Wirecatch app on the same computer, to download what the person asked for, and are kept in the browser's session storage until it closes. Certify that the data is not sold, not used or transferred for purposes unrelated to the single purpose, and not used to determine creditworthiness or for lending. Nothing is collected from private windows.
+**Data use.** Declare _Authentication information_ (the cookies of a download's or a video's site) and _Web history_ (the addresses of downloads, of the pages they come from, and of media on a page). Both go only to the Wirecatch app on the same computer, to download what the person asked for, and are kept in the browser's session storage until it closes. Certify that the data is not sold, not used or transferred for purposes unrelated to the single purpose, and not used to determine creditworthiness or for lending. Private windows are treated like any other while the person keeps "Work in private windows" on, and the browser lets the extension run there.
 
 **Privacy policy.** Give the public address of `PRIVACY.md` at the root of the repository (on the website once it exists, or in the GitHub repository until then).
 

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { detectBrowser } from '../src/lib/browser-info';
 import {
-  cookieStoreOf,
+  cookieStoreIdOf,
   inFlightStore,
   noticeStore,
   toolbarBadge,
@@ -95,6 +95,7 @@ describe('protocol helpers', () => {
       capture_extensions: null,
       min_capture_size: null,
       default_queue: null,
+      private_windows: null,
     });
     expect(patchOf({ capture_enabled: false, min_capture_size: 0 }).capture_enabled).toBe(false);
     expect(patchOf({ min_capture_size: 0 }).min_capture_size).toBe(0);
@@ -334,14 +335,14 @@ describe('popup messages', () => {
   });
 });
 
-describe('cookieStoreOf', () => {
+describe('cookieStoreIdOf', () => {
   it("reads a Firefox tab's cookie store, and null for a Chromium tab or anything else", () => {
-    expect(cookieStoreOf({ id: 1, cookieStoreId: 'firefox-container-1' })).toBe(
+    expect(cookieStoreIdOf({ id: 1, cookieStoreId: 'firefox-container-1' })).toBe(
       'firefox-container-1',
     );
-    expect(cookieStoreOf({ id: 1, incognito: false })).toBeNull();
-    expect(cookieStoreOf({ cookieStoreId: 7 })).toBeNull();
-    expect(cookieStoreOf(undefined)).toBeNull();
+    expect(cookieStoreIdOf({ id: 1, incognito: false })).toBeNull();
+    expect(cookieStoreIdOf({ cookieStoreId: 7 })).toBeNull();
+    expect(cookieStoreIdOf(undefined)).toBeNull();
   });
 });
 

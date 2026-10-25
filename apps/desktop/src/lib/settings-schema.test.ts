@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from './backend/mock';
-import { SECTIONS, SETTINGS, searchSettings } from './settings-schema';
+import { SETTINGS, searchSettings } from './settings-schema';
+import { SECTIONS } from './settings-sections';
 
 describe('settings schema', () => {
   it('covers every AppSettings and ExtensionSettings field', () => {

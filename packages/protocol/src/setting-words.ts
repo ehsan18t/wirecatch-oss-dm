@@ -11,6 +11,11 @@ export const SETTING_WORDS = {
     label: 'Show a download button on videos',
     help: 'Adds a small button over video and audio on web pages.',
   },
+  private_windows: {
+    label: 'Work in private windows',
+    help: 'Takes downloads and videos from private windows too. The browser must also allow Wirecatch there, in its extension settings.',
+    brief: 'The browser must also allow Wirecatch there.',
+  },
   default_queue: {
     label: 'Queue for browser downloads',
     help: 'Downloads caught from the browser join this queue.',

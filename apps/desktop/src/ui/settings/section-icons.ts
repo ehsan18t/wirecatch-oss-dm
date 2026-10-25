@@ -12,7 +12,7 @@ import Package from '~icons/lucide/package';
 import Video from '~icons/lucide/video';
 import Wrench from '~icons/lucide/wrench';
 import type { IconComponent } from '@wirecatch/ui';
-import type { SectionId } from '$lib/settings-schema';
+import type { SectionId } from '$lib/settings-sections';
 
 export const SECTION_ICON: Record<SectionId, IconComponent> = {
   general: Monitor,

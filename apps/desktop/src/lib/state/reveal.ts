@@ -5,7 +5,7 @@
 
 import type { DownloadId, DownloadSummary, Queue, QueueId, Reveal } from '@wirecatch/protocol';
 import type { SvelteSet } from 'svelte/reactivity';
-import type { SectionId } from '../settings-schema';
+import type { SectionId } from '../settings-sections';
 import type { Selection } from './selection.svelte';
 import { groupOf, isGrouped, type StatusGroup, type View } from './view';
 

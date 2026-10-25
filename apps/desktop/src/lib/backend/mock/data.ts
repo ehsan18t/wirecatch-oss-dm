@@ -105,6 +105,7 @@ export function defaultSettings(): AppSettings {
       capture_enabled: true,
       ask_before_download: true,
       show_media_button: true,
+      private_windows: true,
       ignored_sites: ['mail.example.com'],
       capture_extensions: [],
       min_capture_size: 0,

@@ -1,10 +1,11 @@
 /** What the hub is given: the connection, browser APIs and stores, and the shapes it hands back. */
 import type { BrowserNote, ExtensionSettings } from '@wirecatch/protocol';
 import type { DownloadControl } from '../capture/handover';
-import type { CookieContext } from '../cookies';
+import type { CookieContext, CookieStore } from '../cookies';
 import type { MediaSendResult, MediaView } from '../media/center';
 import type { Notice } from '../messages';
 import type { NativeClient } from '../native/client';
+import { REQUEST_TIMEOUT_MS, START_WAIT_MS, WITHDRAW_TIMEOUT_MS } from '../native/timing';
 
 /**
  * The copy of the app's settings the extension keeps for the browser session (D61): read from
@@ -63,11 +64,7 @@ export interface HubDeps {
   cache: SettingsCache;
   downloads: BrowserDownloads;
   /** The `Cookie` header the browser would send to a URL in this context, or null. Never rejects. */
-  cookieHeader: (
-    url: string,
-    storeId: string | null,
-    context: CookieContext,
-  ) => Promise<string | null>;
+  cookieHeader: (url: string, store: CookieStore, context: CookieContext) => Promise<string | null>;
   /** True when the extension may read cookies for this address (the person can revoke site access in Firefox). */
   hasSiteAccess: (url: string) => Promise<boolean>;
   userAgent: string | null;
@@ -116,4 +113,27 @@ export interface HubTiming {
   requestTimeoutMs: number;
   /** How long to wait for the answer to `withdraw_download`. */
   withdrawTimeoutMs: number;
+}
+
+/**
+ * The waits used unless `HubDeps.timing` says otherwise. A paused download waits less
+ * than a call does, so the browser resumes it soon when the app cannot be reached; a
+ * withdraw only runs after a call already took too long, so it waits the least.
+ */
+const DEFAULT_TIMING: HubTiming = {
+  connectWaitMs: START_WAIT_MS,
+  requestTimeoutMs: REQUEST_TIMEOUT_MS,
+  withdrawTimeoutMs: WITHDRAW_TIMEOUT_MS,
+};
+
+/**
+ * The waits to use: each one given, or its `DEFAULT_TIMING` value. Field by field, so
+ * one given as `undefined` still gets its default (a spread would copy the undefined).
+ */
+export function hubTiming(given: Partial<HubTiming> = {}): HubTiming {
+  return {
+    connectWaitMs: given.connectWaitMs ?? DEFAULT_TIMING.connectWaitMs,
+    requestTimeoutMs: given.requestTimeoutMs ?? DEFAULT_TIMING.requestTimeoutMs,
+    withdrawTimeoutMs: given.withdrawTimeoutMs ?? DEFAULT_TIMING.withdrawTimeoutMs,
+  };
 }

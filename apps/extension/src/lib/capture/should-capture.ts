@@ -1,4 +1,4 @@
-import type { ExtensionSettings } from '@wirecatch/protocol';
+import { takesPrivateWindows, type ExtensionSettings } from '@wirecatch/protocol';
 import { fileNameFromUrl, matchesFileTypes } from '../file-types';
 import { matchingSite } from '../sites';
 
@@ -90,7 +90,7 @@ function isInternal(url: string | null): boolean {
  *
  * Rules, in order:
  * 1. Capture switched off: keep.
- * 2. Finished, failed or cancelled already, started by an extension, or in a private window: keep.
+ * 2. Finished, failed or cancelled already, started by an extension, or in a private window while "Work in private windows" is off (D82): keep.
  * 3. The browser flagged it (any `danger` other than `safe` or `accepted`): keep, so the browser's warning applies.
  * 4. `blob:` and `data:` addresses only exist inside the browser: keep.
  * 5. Downloads from the browser's own pages, or with any other non-web address: keep.
@@ -119,7 +119,10 @@ const KEEP_RULES: readonly KeepRule[] = [
   { reason: 'capture_off', keeps: (_, settings) => !settings.capture_enabled },
   { reason: 'not_in_progress', keeps: (item) => !item.inProgress },
   { reason: 'started_by_extension', keeps: (item) => item.startedByExtension },
-  { reason: 'private_window', keeps: (item) => item.incognito },
+  {
+    reason: 'private_window',
+    keeps: (item, settings) => item.incognito && !takesPrivateWindows(settings),
+  },
   {
     reason: 'browser_flagged',
     keeps: (item) => item.danger !== null && !NOT_DANGEROUS.has(item.danger),

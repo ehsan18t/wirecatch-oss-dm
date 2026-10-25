@@ -63,10 +63,18 @@ describe('shouldCapture', () => {
       });
     });
 
-    it('leaves private window downloads in the browser', () => {
-      expect(shouldCapture(candidate({ incognito: true }), settings())).toEqual({
+    it('takes private window downloads unless private windows are turned off (D82)', () => {
+      const fromPrivate = candidate({ incognito: true });
+      expect(shouldCapture(fromPrivate, settings())).toEqual({ capture: true });
+      expect(shouldCapture(fromPrivate, settings({ private_windows: true }))).toEqual({
+        capture: true,
+      });
+      expect(shouldCapture(fromPrivate, settings({ private_windows: false }))).toEqual({
         capture: false,
         reason: 'private_window',
+      });
+      expect(shouldCapture(candidate(), settings({ private_windows: false }))).toEqual({
+        capture: true,
       });
     });
   });
