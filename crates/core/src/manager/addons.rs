@@ -18,6 +18,7 @@ use wirecatch_engine::{
     Progress, RemoteFile, Url,
     header::{ACCEPT, HeaderValue},
 };
+use wirecatch_files::FileError;
 use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
 
 use super::Manager;
@@ -339,9 +340,8 @@ impl Manager {
         let dir = self.inner.addon_dir.clone();
         let scanned = self
             .blocking(move || {
-                let record = Record::load(&dir).map_err(|source| CoreError::File {
-                    path: dir.join(addons::RECORD_FILE).display().to_string(),
-                    source,
+                let record = Record::load(&dir).map_err(|source| {
+                    CoreError::File(FileError::new(&dir.join(addons::RECORD_FILE), source))
                 })?;
                 let tools = addons::tools(&dir, &record, check).map(MediaTools::from);
                 Ok((record, tools))
@@ -698,10 +698,7 @@ impl Manager {
         let work = dir.join(".work");
         let made = work.clone();
         self.blocking(move || {
-            std::fs::create_dir_all(&made).map_err(|e| CoreError::File {
-                path: made.display().to_string(),
-                source: e,
-            })
+            std::fs::create_dir_all(&made).map_err(|e| CoreError::File(FileError::new(&made, e)))
         })
         .await
         .map_err(|e| e.to_string())?;

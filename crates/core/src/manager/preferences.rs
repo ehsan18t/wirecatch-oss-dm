@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use wirecatch_files::FileError;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AddonId, AppSettings, AppSettingsPatch, ImportPreview, UiEvent};
 use wirecatch_protocol::extension::{
@@ -145,10 +146,8 @@ impl Manager {
             serde_json::to_vec_pretty(&profile).map_err(|e| CoreError::Internal(e.to_string()))?;
         let path = path.to_path_buf();
         self.blocking(move || {
-            std::fs::write(&path, json).map_err(|source| CoreError::File {
-                path: path.display().to_string(),
-                source,
-            })
+            std::fs::write(&path, json)
+                .map_err(|source| CoreError::File(FileError::new(&path, source)))
         })
         .await
     }
