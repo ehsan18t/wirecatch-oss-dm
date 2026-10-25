@@ -1,0 +1,13 @@
+{
+  "user_agent": "Mozilla/5.0",
+  "headers": [
+    {
+      "name": "Referer",
+      "value": "https://example.com/page"
+    },
+    {
+      "name": "Cookie",
+      "value": "session=example"
+    }
+  ]
+}

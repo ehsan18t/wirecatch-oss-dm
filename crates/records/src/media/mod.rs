@@ -122,41 +122,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_conversion_stored_by_the_previous_build_is_read_as_it_was() {
-        let read = |json: &str| -> output::OutputJob {
-            let job: MediaJob = serde_json::from_str(json).unwrap();
-            let MediaJob::Page {
-                output: Some(output),
-                ..
-            } = job
-            else {
-                panic!("not a page with an output: {job:?}");
-            };
-            *output
-        };
-        // As the build before `Extras` wrote it: chapters and tags are fields of
-        // the job itself.
-        let stored = read(
-            r#"{"type":"page","format":"313+140","video":"313","audio":"140","output":{"container":"mp4","video":{"type":"encode","codec":"h264","kbps":8000},"audio":{"type":"copy"},"subtitles":[],"subtitle_files":false,"chapters":true,"tags":true,"duration_ms":1000,"original_ext":"webm","original":false}}"#,
-        );
-        assert_eq!(
-            stored.extras,
-            output::Extras {
-                chapters: true,
-                tags: true,
-            }
-        );
-        assert_eq!(stored.container, output::Container::Mp4);
-        assert_eq!(stored.duration_ms, Some(1000));
-        // Without them (both are optional when read): neither is added.
-        let older = read(
-            r#"{"type":"page","format":"313+140","video":"313","audio":"140","output":{"container":"mp4","video":{"type":"copy"},"audio":{"type":"copy"},"original_ext":"webm"}}"#,
-        );
-        assert_eq!(older.extras, output::Extras::default());
-        assert!(!older.subtitle_files && !older.original);
-    }
-
-    #[test]
     fn the_job_is_stored_as_plain_json() {
         let id = |id: &str| FormatId::try_from(id.to_string()).unwrap();
         let job = MediaJob::Page {
@@ -169,9 +134,6 @@ mod tests {
         // The selection is made from the ids, never stored.
         assert_eq!(json, r#"{"type":"page","video":"137","audio":"140"}"#);
         assert_eq!(serde_json::from_str::<MediaJob>(&json).unwrap(), job);
-        // As earlier builds stored it: the selection is read past.
-        let stored = r#"{"type":"page","format":"137+140","video":"137","audio":"140"}"#;
-        assert_eq!(serde_json::from_str::<MediaJob>(stored).unwrap(), job);
         let converting = MediaJob::Page {
             video: Some(id("313")),
             audio: Some(id("140")),

@@ -1,0 +1,7 @@
+{
+  "name": "Main",
+  "max_concurrent": 3,
+  "speed_limit": null,
+  "schedule": null,
+  "notify": "each_download"
+}

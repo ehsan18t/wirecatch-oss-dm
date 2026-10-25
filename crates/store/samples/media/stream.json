@@ -1,0 +1,18 @@
+{
+  "summary": {
+    "quality": "1080p",
+    "source": "hls",
+    "video_key": null,
+    "instead_of": null
+  },
+  "job": {
+    "type": "stream",
+    "video": {
+      "type": "track",
+      "id": "v1"
+    },
+    "audio": {
+      "type": "auto"
+    }
+  }
+}

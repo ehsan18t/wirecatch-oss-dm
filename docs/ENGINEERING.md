@@ -89,6 +89,7 @@ Enforced by: gate (`undocumented_unsafe_blocks`); review for the wrapper modules
 - A closed set of options is an enum, never a string or a boolean pair. A function never takes two booleans in a row; use an enum or an options struct.
 - Validate at construction: a value that exists is valid (parse, do not validate later). Public option structs validate before use.
 - Public enums and structs that may grow are `#[non_exhaustive]`.
+- What the store saves (the types in `wirecatch-records`, the settings, the queue settings) is read back by every later build. A change to how one is saved adds a sample to `crates/store/samples` and never edits an existing one; a change an old sample cannot load with needs a serde `alias` or `default`, or a migration. A saved field or variant whose meaning changes gets a new name, so the samples test sees the change (D81).
 
 ### Async and concurrency
 
