@@ -22,6 +22,7 @@ import type {
   UiEvent,
   WindowAction,
   WindowFrame,
+  LinkTrial,
 } from '@wirecatch/protocol';
 import { folderOf } from '../../format';
 import { WindowRegistry } from '../../sample-windows';
@@ -399,6 +400,10 @@ export class MockBackend implements Backend {
 
   setProxy(change: ProxyChange) {
     return this.#call(() => settings.setProxy(this.#state, change));
+  }
+
+  tryLink(trial: LinkTrial) {
+    return this.#call(() => queues.tryLink(this.#state, trial));
   }
 
   testProxy(test: ProxyTest) {

@@ -15,7 +15,7 @@ use wirecatch_protocol::desktop::{
     RejectCaptureArgs, RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs,
     ResumeArgs, RetryArgs, SetDownloadFolderArgs, SetMaximizeButtonArgs, SetProxyArgs,
     SetQueuePausedArgs, ShowProgressWindowArgs, StartQueueNowArgs, SystemAppearance, TestProxyArgs,
-    UpdateAddonArgs, UpdateQueueArgs,
+    TryLinkArgs, UpdateAddonArgs, UpdateQueueArgs,
 };
 
 use crate::api::{self, CommandResult};
@@ -578,6 +578,15 @@ pub async fn set_proxy(
 }
 
 #[tauri::command]
+pub async fn try_link(
+    core: CoreState<'_>,
+    args: contract::try_link::Args,
+) -> CommandResult<contract::try_link::Output> {
+    let TryLinkArgs { trial } = args;
+    api::try_link(core.manager().await?, &trial)
+}
+
+#[tauri::command]
 pub async fn test_proxy(
     core: CoreState<'_>,
     args: contract::test_proxy::Args,
@@ -743,6 +752,7 @@ handler![
     suffix_list,
     check_suffix_list,
     set_proxy,
+    try_link,
     test_proxy,
     system_proxy,
     show_proxy_settings,

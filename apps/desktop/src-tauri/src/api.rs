@@ -14,6 +14,7 @@ use wirecatch_protocol::app::{
     CaptureConfirmation, DownloadStatus, DownloadSummary, ImportPreview, MediaChoice,
     MediaSelection, PendingCapture, Question, Queue, QueueSettings, SuffixListInfo,
 };
+use wirecatch_protocol::claims::{LinkClaims, LinkTrial};
 use wirecatch_protocol::desktop::SAFE_EXTENSIONS;
 use wirecatch_protocol::proxy::{ProxyChange, ProxySettings, ProxyTest, ProxyTestResult};
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
@@ -652,6 +653,15 @@ pub async fn check_suffix_list(m: &Manager) -> CommandResult<SuffixListInfo> {
 /// ([`Manager::set_proxy`]).
 pub fn set_proxy(m: &Manager, change: ProxyChange) -> CommandResult<()> {
     plain(m.set_proxy(change))
+}
+
+/// Where a link would go by the claims, saved or as one queue's editor has them.
+///
+/// # Errors
+///
+/// The link is not http, https or FTP ([`Manager::try_link`]).
+pub fn try_link(m: &Manager, trial: &LinkTrial) -> CommandResult<LinkClaims> {
+    plain(m.try_link(trial))
 }
 
 /// Tries a proxy setting before it is saved.
