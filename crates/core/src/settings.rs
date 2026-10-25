@@ -19,7 +19,7 @@ use crate::error::{CoreError, Result};
 use crate::folders::KnownFolders;
 use crate::local_network::{self, NotALocalSite};
 use crate::public_suffix::SuffixList;
-use crate::schedule;
+use wirecatch_queues::schedule;
 
 pub use wirecatch_protocol::DEFAULT_QUEUE_ID;
 

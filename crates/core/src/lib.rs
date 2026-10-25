@@ -22,7 +22,6 @@ mod owner_only;
 mod profile;
 mod proxy;
 mod public_suffix;
-mod schedule;
 mod server;
 mod settings;
 mod speed;

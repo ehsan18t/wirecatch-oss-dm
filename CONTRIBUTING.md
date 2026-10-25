@@ -50,6 +50,7 @@ cargo run --release -p wirecatch-engine --example bench_local
 |---|---|
 | `crates/engine` | `wirecatch-engine`: the download engine library (HTTP, FTP, segmented, resumable), for crates.io. Its public API is documented and kept stable. |
 | `crates/streams` | `wirecatch-streams`: HLS and DASH download and joining. |
+| `crates/queues` | `wirecatch-queues`: queue rules as pure functions, such as which downloads start under each queue's limits and when a scheduled queue runs (D74). |
 | `crates/core` | `wirecatch-core`: the download manager (queues, schedules, persistence, settings, media, add-ons, protocol server). |
 | `crates/protocol` | Every type, name and limit that crosses a process boundary; TypeScript is generated from it. |
 | `crates/ipc` | The per-user local connection between the app and the bridge (named pipe on Windows, Unix socket on Linux). |

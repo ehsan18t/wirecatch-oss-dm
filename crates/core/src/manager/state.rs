@@ -26,9 +26,9 @@ use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use crate::naming::Claimed;
 use crate::proxy::{self, Logins};
 use crate::public_suffix::SuffixList;
-use crate::schedule::Gate;
 use crate::speed::SpeedMeter;
 use crate::store::{LastIds, NameChoice, Origin, StoredDownload};
+use wirecatch_queues::schedule::Gate;
 
 pub(super) struct State {
     pub settings: AppSettings,
