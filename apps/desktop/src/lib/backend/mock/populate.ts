@@ -1,5 +1,6 @@
 // Fills a new mock with sample downloads: the hand-written ones, then generated ones for load testing.
 
+import { ownSetting, ownValue } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { MS_PER_HOUR, MS_PER_MINUTE } from '../../time';
 import { MAIN_QUEUE_ID, OVERNIGHT_QUEUE_ID, WORK_QUEUE_ID } from './data';
@@ -91,9 +92,7 @@ function makeRoomFor(state: MockState, active: number) {
     active + LOAD_TEST_GLOBAL_ROOM,
   );
   const main = state.queues.find((q) => q.is_default);
-  if (main)
-    main.settings.max_concurrent = Math.max(
-      main.settings.max_concurrent,
-      active + LOAD_TEST_QUEUE_ROOM,
-    );
+  const own = main ? ownValue(main.settings.max_concurrent) : null;
+  if (main && own !== null)
+    main.settings.max_concurrent = ownSetting(Math.max(own, active + LOAD_TEST_QUEUE_ROOM));
 }

@@ -1,0 +1,25 @@
+{
+  "name": "Night",
+  "description": "Large files overnight",
+  "max_concurrent": {
+    "source": "own",
+    "value": 2
+  },
+  "speed_limit": {
+    "source": "own",
+    "value": 1048576
+  },
+  "connections": {
+    "source": "own",
+    "value": 4
+  },
+  "schedule": {
+    "start": {
+      "hour": 1,
+      "minute": 30
+    },
+    "stop": null,
+    "days": []
+  },
+  "notify": "when_done"
+}

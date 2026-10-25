@@ -1,11 +1,11 @@
 <script lang="ts">
-  // Queues: every queue in one list, with when it runs, how many of its downloads run at once, its speed limit and whether it tells you only once it is done, so ten queues stay manageable. Edit opens the queue's own dialog; New queue makes one.
+  // Queues: every queue in one list, with when it runs, its own limits and whether it tells you only once it is done, so ten queues stay manageable. Edit opens the queue's own dialog; New queue makes one.
   import Pencil from '~icons/lucide/pencil';
   import Plus from '~icons/lucide/plus';
   import type { Snippet } from 'svelte';
   import { Badge, Button } from '@wirecatch/ui';
-  import { formatRate } from '@wirecatch/units';
   import { formatSchedule } from '$lib/format';
+  import { queueLimitFacts } from '$lib/limits';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
   import type { Row, SectionProps } from './row';
@@ -30,11 +30,8 @@
       {#each app.queues.list as queue (queue.id)}
         {const facts = $derived([
           queue.status.paused ? 'Paused' : formatSchedule(queue.settings.schedule),
-          `${String(queue.settings.max_concurrent)} at once`,
-          queue.settings.speed_limit === null
-            ? 'No speed limit'
-            : `Up to ${formatRate(queue.settings.speed_limit)}`,
           ...(queue.settings.notify === 'when_done' ? ['Tells you once the queue is done'] : []),
+          ...queueLimitFacts(queue.settings),
         ])}
         <li class="flex items-center gap-3 py-2 pr-2 pl-3">
           <span class="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -42,6 +39,9 @@
               <span class="truncate">{queue.settings.name}</span>
               {#if queue.is_default}<Badge size="sm">Default</Badge>{/if}
             </span>
+            {#if queue.settings.description}
+              <span class="truncate text-small text-ink">{queue.settings.description}</span>
+            {/if}
             <span class="truncate text-small text-ink-muted">{facts.join(' · ')}</span>
           </span>
           <Button

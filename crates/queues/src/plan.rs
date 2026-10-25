@@ -5,7 +5,8 @@ use wirecatch_protocol::{DownloadId, QueueId};
 #[derive(Debug, Clone, Copy)]
 pub struct QueueView {
     pub id: QueueId,
-    pub max_concurrent: u32,
+    /// `None`: no limit of the queue's own, only the app's.
+    pub max_concurrent: Option<u32>,
     pub open: bool,
 }
 
@@ -51,8 +52,8 @@ pub fn plan(queues: &[QueueView], downloads: &[DownloadView], global_max: u32) -
     running.sort_by_key(|d| (d.activity != Activity::Stopping, d.position));
     for d in running {
         let queue = queues.iter().find(|q| q.id == d.queue);
-        let queue_room = queue
-            .is_some_and(|q| q.open && held.get(&q.id).copied().unwrap_or(0) < q.max_concurrent);
+        let queue_room =
+            queue.is_some_and(|q| q.open && has_room(q, held.get(&q.id).copied().unwrap_or(0)));
         let over = d.activity == Activity::Running && (!queue_room || running_total >= global_max);
         if over {
             out.stop.push(d.id);
@@ -78,7 +79,7 @@ pub fn plan(queues: &[QueueView], downloads: &[DownloadView], global_max: u32) -
                 return out;
             }
             let count = held.entry(q.id).or_default();
-            if *count >= q.max_concurrent {
+            if !has_room(q, *count) {
                 continue;
             }
             if let Some(next) = waiting.get_mut(&q.id).and_then(Vec::pop) {
@@ -94,6 +95,10 @@ pub fn plan(queues: &[QueueView], downloads: &[DownloadView], global_max: u32) -
     }
 }
 
+fn has_room(queue: &QueueView, held: u32) -> bool {
+    queue.max_concurrent.is_none_or(|max| held < max)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,7 +106,7 @@ mod tests {
     fn queue(id: i64, max: u32) -> QueueView {
         QueueView {
             id: QueueId(id),
-            max_concurrent: max,
+            max_concurrent: Some(max),
             open: true,
         }
     }
@@ -127,6 +132,17 @@ mod tests {
         let plan = plan(&queues, &downloads, 10);
         assert_eq!(ids(&plan.start), vec![1, 2]);
         assert_eq!(plan.stop, [] as [wirecatch_protocol::DownloadId; 0]);
+    }
+
+    #[test]
+    fn a_queue_without_its_own_limit_runs_up_to_the_apps() {
+        let queues = [QueueView {
+            max_concurrent: None,
+            ..queue(1, 0)
+        }];
+        let downloads: Vec<_> = (1..=5).map(|i| dl(i, 1, Activity::Waiting)).collect();
+        let plan = plan(&queues, &downloads, 3);
+        assert_eq!(ids(&plan.start), vec![1, 2, 3]);
     }
 
     #[test]

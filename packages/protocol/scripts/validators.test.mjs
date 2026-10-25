@@ -59,21 +59,38 @@ test('a union is one of its members, told apart by the tag', async () => {
   assert.equal(isEvent({ type: 'other' }), false);
 });
 
-test('a type with type parameters gets no guard, nor does a type that uses one', async () => {
+test('a generic type is checked where it is used, with its type arguments', async () => {
   writeFileSync(join(folder, 'Pair.ts'), 'export type Pair<A, B> = { first: A, second: B };\n');
-  const { source, guards } = await guardsFor(
-    { Uses: '{ pair: Pair<string, number> }', Plain: '{ n: number }' },
-    { withoutGuard: ['Pair', 'Uses'] },
+  writeFileSync(
+    join(folder, 'Setting.ts'),
+    'export type Setting<T> = { "source": "follow_app" } | { "source": "own", value: T };\n',
   );
-  assert.doesNotMatch(source, /isPair|isUses/);
-  assert.equal(guards.isPlain({ n: 1 }), true);
+  const { source, guards } = await guardsFor({
+    Uses: '{ pair: Pair<string, number>, limit: Setting<number>, rows: Array<Setting<string>> }',
+  });
+  assert.doesNotMatch(source, /isPair|isSetting/);
+  const { isUses } = guards;
+  const uses = { pair: { first: 'a', second: 1 }, limit: { source: 'own', value: 3 }, rows: [] };
+  assert.equal(isUses(uses), true);
+  assert.equal(isUses({ ...uses, limit: { source: 'follow_app' } }), true);
+  assert.equal(isUses({ ...uses, rows: [{ source: 'own', value: 's' }] }), true);
+  assert.equal(isUses({ ...uses, pair: { first: 1, second: 1 } }), false, 'a wrong first argument');
+  assert.equal(
+    isUses({ ...uses, limit: { source: 'own', value: '3' } }),
+    false,
+    'a wrong own value',
+  );
+  assert.equal(
+    isUses({ ...uses, rows: [{ source: 'own', value: 1 }] }),
+    false,
+    'a wrong list item',
+  );
 });
 
 test('a type left without a guard that is not listed as one fails the generation', async () => {
-  writeFileSync(join(folder, 'Pair.ts'), 'export type Pair<A, B> = { first: A, second: B };\n');
   await assert.rejects(
-    guardsFor({ Message: '{ pair: Pair<string, number> }' }, { withoutGuard: ['Pair'] }),
-    /Message/,
+    guardsFor({ Counts: '{ [key: string]: number }', Message: '{ counts: Counts }' }),
+    /Counts, Message/,
   );
 });
 
@@ -86,6 +103,7 @@ test('every command in the command map gets a guard for its answer', async () =>
     Row: '{ id: number }',
     CommandMap: '{ list: Command<null, Array<Row>>, find: Command<Row, Row | null> }',
   });
+  assert.equal(guards.isCommandMap, undefined, 'the map is checked one answer at a time');
   const outputs = guards.COMMAND_OUTPUTS;
   assert.equal(outputs.list([{ id: 1 }]), true);
   assert.equal(outputs.list([{ id: 'x' }]), false);

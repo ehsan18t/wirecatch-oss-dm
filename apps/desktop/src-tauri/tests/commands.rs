@@ -17,7 +17,7 @@ use wirecatch_engine::units::{KIB, KIB_USIZE, MIB_USIZE};
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus,
     DownloadSummary, FinishNotice, MediaSelection, Question, Queue, QueueNotify, QueueSettings,
-    Theme,
+    Setting, Theme,
 };
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 use wirecatch_protocol::wire::ErrorCode;
@@ -120,7 +120,7 @@ fn change_settings_and_make_a_queue(manager: &Manager) -> TestResult<Queue> {
     let night = api::create_queue(
         manager,
         QueueSettings {
-            max_concurrent: 1,
+            max_concurrent: Setting::Own(1),
             notify: QueueNotify::WhenDone,
             ..QueueSettings::new("Night")
         },
@@ -261,7 +261,7 @@ async fn commands_drive_the_core_and_state_survives_a_restart() -> TestResult {
         .iter()
         .find(|q| q.settings.name == "Night")
         .ok_or("the queue is missing after restart")?;
-    assert_eq!(night_again.settings.max_concurrent, 1);
+    assert_eq!(night_again.settings.max_concurrent, Setting::Own(1));
     assert_eq!(night_again.settings.notify, QueueNotify::WhenDone);
     let ids: Vec<_> = api::list_downloads(&manager)
         .into_iter()
