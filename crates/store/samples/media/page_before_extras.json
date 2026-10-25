@@ -1,0 +1,32 @@
+{
+  "summary": {
+    "quality": "1080p",
+    "source": "page",
+    "video_key": null,
+    "instead_of": null
+  },
+  "job": {
+    "type": "page",
+    "format": "313+140",
+    "video": "313",
+    "audio": "140",
+    "output": {
+      "container": "mp4",
+      "video": {
+        "type": "encode",
+        "codec": "h264",
+        "kbps": 8000
+      },
+      "audio": {
+        "type": "copy"
+      },
+      "subtitles": [],
+      "subtitle_files": false,
+      "chapters": true,
+      "tags": true,
+      "duration_ms": 1000,
+      "original_ext": "webm",
+      "original": false
+    }
+  }
+}

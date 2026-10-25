@@ -1326,6 +1326,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use wirecatch_protocol::DEFAULT_QUEUE_ID;
     use wirecatch_test_support::PATIENCE;
 
     use super::*;
@@ -1335,11 +1336,17 @@ mod tests {
     };
 
     fn sample_settings() -> AppSettings {
-        serde_json::from_str(include_str!("../samples/settings.json")).unwrap()
+        serde_json::from_str(include_str!("../samples/settings/defaults.json")).unwrap()
     }
 
     fn sample_queue() -> Queue {
-        serde_json::from_str(include_str!("../samples/queue.json")).unwrap()
+        Queue {
+            id: DEFAULT_QUEUE_ID,
+            is_default: true,
+            settings: serde_json::from_str(include_str!("../samples/queue_settings/main.json"))
+                .unwrap(),
+            status: QueueStatus::default(),
+        }
     }
 
     fn download(id: i64) -> StoredDownload {
