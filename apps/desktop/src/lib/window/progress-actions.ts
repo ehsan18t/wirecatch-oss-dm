@@ -97,6 +97,9 @@ export class ProgressActions {
       case 'keep_original':
         await this.#onRow((id) => this.#host.backend().keepOriginal(id));
         break;
+      case 'proxy_settings':
+        await this.#host.runner.run(() => this.#host.backend().showProxySettings());
+        break;
     }
   }
 }

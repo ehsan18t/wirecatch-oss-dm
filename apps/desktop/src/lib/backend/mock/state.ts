@@ -10,6 +10,7 @@ import {
   type MediaReading,
   type PendingCapture,
   type ProcessingStep,
+  type ProxyRole,
   type Queue,
   type QuestionId,
   type QueueId,
@@ -113,6 +114,8 @@ export class MockState {
   mediaChoices: MediaChoice[] = [];
   addons: AddonInfo[] = [mediaAddon()];
   suffixList: SuffixListInfo = builtInSuffixList();
+  /** The manual proxies with a password saved, which the mock, like the core, never shows. */
+  readonly proxyPasswords = new Set<ProxyRole>();
   /** Pages being read for their qualities. */
   reading: MediaReading[] = [];
   /** Pages that asked for the media add-on; they continue once it is installed. */

@@ -19,6 +19,8 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock", "s
 dirs = "7.0.0"
 # Reading the media add-on's archives: .xz (pure Rust) inside .tar, and .zip.
 lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", "xz", "optimization"] }
+# The user name in a proxy address the computer sets (Copy from system, D71).
+percent-encoding.workspace = true
 # Checking yt-dlp's OpenPGP signature on its checksum list (D21.1), verification
 # only: no compression (signatures are detached), no extra algorithms.
 pgp = { version = "0.21.0", default-features = false }

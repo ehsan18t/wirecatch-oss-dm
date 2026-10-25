@@ -305,7 +305,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
                             if new.start_with_system != settings.start_with_system {
                                 sync_autostart(&app, &manager, new.start_with_system, new.start_with_system);
                             }
-                            settings = new;
+                            settings = *new;
                         }
                         UiEvent::QueuesChanged(queues) => teller.queues(&queues),
                         UiEvent::QueueFinished(report) => {

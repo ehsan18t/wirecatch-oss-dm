@@ -46,6 +46,7 @@ const DOWNLOAD_WINDOW: &[(&str, ActsOn)] = &[
     ("retry", ActsOn::Download),
     ("refresh_link", ActsOn::Download),
     ("keep_original", ActsOn::Download),
+    ("show_proxy_settings", ActsOn::Neither),
     ("open_file", ActsOn::Download),
     ("open_folder", ActsOn::Download),
     ("set_download_folder", ActsOn::Download),
@@ -82,6 +83,7 @@ const DOWNLOAD_WINDOW_ONLY: &[&str] = &[
     "close_download_window",
     "fit_download_window",
     "finished_list",
+    "show_proxy_settings",
 ];
 
 fn download_window_may(command: &str) -> bool {

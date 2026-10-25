@@ -76,7 +76,8 @@ async fn download_once(
         work,
         RunOptions::lines()
             .with_idle_timeout(STALL_TIMEOUT)
-            .watching(work.to_path_buf()),
+            .watching(work.to_path_buf())
+            .with_environment(super::proxy_environment(ctx)),
         cancel,
         |output, line| {
             if let Some(report) = line

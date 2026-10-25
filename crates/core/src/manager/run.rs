@@ -10,7 +10,7 @@ use tracing::{debug, warn};
 
 use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error as EngineError, Outcome, PathResolver, Progress,
-    RateLimiter, Url,
+    ProxyChoice, RateLimiter, Url,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
@@ -147,7 +147,7 @@ impl Manager {
             url: entry.row.url.clone(),
             referrer: headers::referrer(&entry.origin.headers).map(str::to_string),
         };
-        match engine_request(entry, bandwidth, target) {
+        match engine_request(entry, bandwidth, target, state.proxy()) {
             #[cfg(test)]
             Ok(request) if self.fake_engine().is_some() => {
                 let fake = self.fake_engine();
@@ -436,12 +436,13 @@ async fn download_marked(
     result
 }
 
-/// The engine request for a download. The manager always decides the path, either
-/// up front or through its resolver.
+/// The engine request for a download, through `proxy`. The manager always decides the
+/// path, either up front or through its resolver.
 fn engine_request(
     entry: &Entry,
     bandwidth: Bandwidth,
     target: Target,
+    proxy: ProxyChoice,
 ) -> Result<DownloadRequest, UserError> {
     let url = Url::parse(&entry.row.url).map_err(|e| {
         user_error::describe(
@@ -460,7 +461,7 @@ fn engine_request(
         Target::Exact => request.exact_path = Some(path),
         Target::Resolve(resolver) => request.resolve_path = Some(resolver),
     }
-    request.options = headers::download_options(entry.chosen_by.private_network());
+    request.options = headers::download_options(entry.chosen_by.private_network(), proxy);
     let options = &mut request.options;
     options.connections = bandwidth.connections;
     options.rate_limiters = bandwidth.limiters;
@@ -492,6 +493,7 @@ mod tests {
                 &super::super::state::idle_entry(url, chosen_by),
                 bandwidth(),
                 Target::Exact,
+                ProxyChoice::System,
             )
         };
         let refused = run("http://192.168.1.1/f", ChosenBy::Website).unwrap_err();

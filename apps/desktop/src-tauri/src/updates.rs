@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager as _, Runtime};
 use tauri_plugin_updater::{Update, UpdaterExt as _};
+use wirecatch_core::UpdaterProxy;
 
 use crate::notices::Notice;
 
@@ -44,7 +45,18 @@ impl PendingUpdate {
 /// that is not an update manifest, or the update cannot be downloaded or does not match its
 /// signature.
 pub async fn check_and_download<R: Runtime>(app: &AppHandle<R>) -> Result<Option<String>, String> {
-    let updater = app.updater().map_err(|e| e.to_string())?;
+    let mut builder = app.updater_builder();
+    // The app's proxy setting covers the updater too (D71.3).
+    if let Some(core) = app.try_state::<crate::host::Core>()
+        && let Ok(manager) = core.manager().await
+    {
+        builder = match manager.updater_proxy() {
+            UpdaterProxy::System => builder,
+            UpdaterProxy::Direct => builder.no_proxy(),
+            UpdaterProxy::Url(url) => builder.proxy(url),
+        };
+    }
+    let updater = builder.build().map_err(|e| e.to_string())?;
     let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
         return Ok(None);
     };

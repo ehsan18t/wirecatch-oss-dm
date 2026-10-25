@@ -13,6 +13,7 @@ mod media;
 mod media_run;
 mod plan;
 mod preferences;
+mod proxy;
 mod queues;
 mod relocate;
 mod restore;
@@ -93,6 +94,11 @@ pub struct ManagerConfig {
     /// built in, as [`new`](Self::new) does so no test reaches the internet. The app
     /// fetches it from publicsuffix.org ([`with_official_suffix_list`](Self::with_official_suffix_list)).
     pub suffix_list_source: Option<Url>,
+    /// Where the proxy's Test connection sends its request (D71.5), or `None`, as
+    /// [`new`](Self::new) does so no test reaches the internet: a test then finds nothing to
+    /// reach. The app sends it to [`PROXY_TEST_URL`](crate::PROXY_TEST_URL)
+    /// ([`with_official_proxy_test`](Self::with_official_proxy_test)).
+    pub proxy_test_url: Option<Url>,
 }
 
 /// The default [`ManagerConfig::capture_timeout`].
@@ -136,7 +142,25 @@ impl ManagerConfig {
             media_timeout: DEFAULT_MEDIA_TIMEOUT,
             media_refresh_delays: DEFAULT_MEDIA_REFRESH_DELAYS.to_vec(),
             suffix_list_source: None,
+            proxy_test_url: None,
         }
+    }
+
+    /// Tests a proxy setting with a request to `url`; see
+    /// [`proxy_test_url`](Self::proxy_test_url).
+    #[must_use]
+    pub fn with_proxy_test_url(mut self, url: Url) -> Self {
+        self.proxy_test_url = Some(url);
+        self
+    }
+
+    /// Tests a proxy setting with a request to [`PROXY_TEST_URL`](crate::PROXY_TEST_URL), as
+    /// the app does.
+    #[must_use]
+    pub fn with_official_proxy_test(mut self) -> Self {
+        // A constant a test reads, so it always parses.
+        self.proxy_test_url = Url::parse(crate::PROXY_TEST_URL).ok();
+        self
     }
 
     /// Fetches a newer Public Suffix List from `source`; see
@@ -232,6 +256,7 @@ struct Inner {
     /// The data folder, where a newer Public Suffix List is kept.
     data_dir: PathBuf,
     suffix_list_source: Option<Url>,
+    proxy_test_url: Option<Url>,
     /// Held by a check of the Public Suffix List, so two never overlap.
     suffix_checking: tokio::sync::Mutex<()>,
     media_timeout: Duration,
@@ -334,6 +359,7 @@ impl Manager {
             temp_dir,
             data_dir: config.data_dir,
             suffix_list_source: config.suffix_list_source,
+            proxy_test_url: config.proxy_test_url,
             suffix_checking: tokio::sync::Mutex::new(()),
             media_timeout: config.media_timeout,
             media_refresh_delays: config.media_refresh_delays.into(),

@@ -21,6 +21,8 @@ export interface MainWindowEventsHost {
   readonly queues: Pick<Queues, 'list'>;
   view: View;
   settings: AppSettings | null;
+  /** Takes the settings the core sent. */
+  settingsArrived: (settings: AppSettings) => void;
   readonly questions: Pick<
     Questions,
     'confirmationRequested' | 'mediaChoiceRequested' | 'analysing' | 'addonRequired' | 'closed'
@@ -47,9 +49,7 @@ export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
         app.view = { kind: 'all' };
       }
     },
-    settings_changed: (e) => {
-      app.settings = e.data;
-    },
+    settings_changed: (e) => app.settingsArrived(e.data),
     // The shell tells the person in a brief notification (D63); the list shows the download.
     captured: (e) => app.downloads.apply([e.data]),
     confirmation_requested: (e) => app.questions.confirmationRequested(e.data),

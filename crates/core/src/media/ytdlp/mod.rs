@@ -34,6 +34,9 @@ pub(crate) struct Context<'a> {
     /// A private folder for the cookies file.
     pub temp_dir: &'a Path,
     pub timeout: Duration,
+    /// The proxy yt-dlp goes through (D71.3): a proxy URL, `""` for none, or `None` to let it
+    /// read the computer's proxy itself.
+    pub proxy: Option<&'a str>,
 }
 
 /// Whether the browser's cookies go to yt-dlp from the first try for `page`.
@@ -218,7 +221,9 @@ async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<I
         &ctx.tools.ytdlp,
         &args,
         ctx.temp_dir,
-        RunOptions::collect().with_timeout(ctx.timeout),
+        RunOptions::collect()
+            .with_timeout(ctx.timeout)
+            .with_environment(proxy_environment(ctx)),
         cancel,
         |_, _| {},
     )
@@ -272,6 +277,12 @@ fn common_args(ctx: &Context<'_>, cookies: Option<&CookiesFile>) -> Vec<OsString
     args.push(ctx.tools.ffmpeg.clone().into_os_string());
     args.push("--cache-dir".into());
     args.push(ctx.tools.ytdlp_cache.clone().into_os_string());
+    // No proxy is said on the command line; a proxy, which may carry a login, goes in the
+    // environment ([`proxy_environment`]).
+    if ctx.proxy == Some("") {
+        args.push("--proxy".into());
+        args.push("".into());
+    }
     if let Some(cookies) = cookies {
         args.push("--cookies".into());
         args.push(cookies.path.clone().into_os_string());
@@ -284,6 +295,30 @@ fn common_args(ctx: &Context<'_>, cookies: Option<&CookiesFile>) -> Vec<OsString
         args.push(format!("User-Agent:{agent}").into());
     }
     args
+}
+
+/// The proxy variables yt-dlp reads when it is given no `--proxy`, set to `ctx`'s proxy and
+/// with no exceptions, so the computer's own neither add to it nor go around it. A proxy's login
+/// may be in its URL: the environment is readable only by the user who started yt-dlp, where a
+/// command line is readable by every user of the computer.
+pub(crate) fn proxy_environment(ctx: &Context<'_>) -> Vec<(OsString, Option<OsString>)> {
+    let Some(proxy) = ctx.proxy.filter(|p| !p.is_empty()) else {
+        return Vec::new();
+    };
+    let set = [
+        "ALL_PROXY",
+        "all_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+    ]
+    .into_iter()
+    .map(|name| (name.into(), Some(proxy.into())));
+    let unset = ["NO_PROXY", "no_proxy"]
+        .into_iter()
+        .map(|name| (name.into(), None));
+    set.chain(unset).collect()
 }
 
 #[cfg(test)]
@@ -325,6 +360,7 @@ mod tests {
             user_agent: None,
             temp_dir: Path::new("temp"),
             timeout: Duration::from_secs(1),
+            proxy: None,
         };
         let args = common_args(&ctx, None);
         let at = args.iter().position(|a| a == "--cache-dir");
@@ -335,6 +371,67 @@ mod tests {
             "{args:?}"
         );
         assert!(!args.iter().any(|a| a == "--no-cache-dir"));
+    }
+
+    /// yt-dlp follows the app's proxy, or no proxy, and reads the computer's only when the app does (D71.3).
+    #[test]
+    fn yt_dlp_is_given_the_apps_proxy() {
+        let tools = MediaTools::for_test(Path::new("ffmpeg"));
+        let page = Url::parse("https://example.com/v").unwrap();
+        let proxy_arg = |proxy: Option<&str>| {
+            let ctx = Context {
+                tools: &tools,
+                page: &page,
+                cookies: None,
+                user_agent: None,
+                temp_dir: Path::new("temp"),
+                timeout: Duration::from_secs(1),
+                proxy,
+            };
+            let args = common_args(&ctx, None);
+            args.iter()
+                .position(|a| a == "--proxy")
+                .map(|at| args[at + 1].clone())
+        };
+        assert_eq!(proxy_arg(None), None);
+        assert_eq!(proxy_arg(Some("")), Some(OsString::new()));
+        assert_eq!(proxy_arg(Some("socks5h://alice:secret@proxy:1080")), None);
+    }
+
+    /// A proxy, login included, reaches yt-dlp only through its environment, which other users
+    /// of the computer cannot read, with the computer's exceptions taken away.
+    #[test]
+    fn a_proxy_goes_to_yt_dlp_in_its_environment() {
+        let tools = MediaTools::for_test(Path::new("ffmpeg"));
+        let page = Url::parse("https://example.com/v").unwrap();
+        let environment = |proxy: Option<&str>| {
+            proxy_environment(&Context {
+                tools: &tools,
+                page: &page,
+                cookies: None,
+                user_agent: None,
+                temp_dir: Path::new("temp"),
+                timeout: Duration::from_secs(1),
+                proxy,
+            })
+        };
+        assert_eq!(environment(None), Vec::new());
+        assert_eq!(environment(Some("")), Vec::new());
+        let given = environment(Some("socks5h://alice:secret@proxy:1080"));
+        let value = |name: &str| {
+            given
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.clone())
+        };
+        for name in ["ALL_PROXY", "HTTPS_PROXY", "http_proxy"] {
+            assert_eq!(
+                value(name),
+                Some(Some("socks5h://alice:secret@proxy:1080".into())),
+                "{name}"
+            );
+        }
+        assert_eq!(value("NO_PROXY"), Some(None));
     }
 
     /// The version check of a new yt-dlp is isolated like every other run.
@@ -349,6 +446,7 @@ mod tests {
             user_agent: None,
             temp_dir: Path::new("temp"),
             timeout: Duration::from_secs(1),
+            proxy: None,
         };
         for args in [common_args(&ctx, None), version_args()] {
             for flag in ["--ignore-config", "--no-plugin-dirs"] {

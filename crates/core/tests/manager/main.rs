@@ -11,6 +11,7 @@ mod media_output;
 mod media_support;
 mod profile;
 mod protocol;
+mod proxy;
 mod queues;
 mod restart;
 mod schedule;

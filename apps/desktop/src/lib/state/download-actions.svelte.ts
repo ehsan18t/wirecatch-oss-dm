@@ -11,6 +11,7 @@ import {
 } from '@wirecatch/protocol';
 import type { Backend } from '../backend';
 import { linkForDisplay } from '../format';
+import type { SettingId } from '../settings-schema';
 import type { DownloadStore } from './downloads.svelte';
 import { nudged, placed } from './order';
 import { canPause, canResume, canRetry } from './row-actions';
@@ -30,6 +31,8 @@ export interface DownloadActionsHost {
   selection: Selection;
   queues: Queues;
   openDialog: (dialog: Dialog) => void;
+  /** Opens the settings on one setting, for a fix that is a setting to change. */
+  openSettings: (focus: SettingId) => void;
   /** What the list shows and how it is sorted: nudging works in one queue, in its order. */
   /** The list's sort: a queue's order changes only while the list shows it. */
   sort: () => Sort;
@@ -209,6 +212,9 @@ export class DownloadActions {
         break;
       case 'keep_original':
         await this.#host.runner.run(() => this.#host.backend().keepOriginal(id));
+        break;
+      case 'proxy_settings':
+        this.#host.openSettings('proxy');
         break;
     }
   }

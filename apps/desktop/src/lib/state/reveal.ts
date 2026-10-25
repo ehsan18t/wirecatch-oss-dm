@@ -1,6 +1,7 @@
 // What the main window does when it comes to the front for someone: for a notification about
 // downloads the person clicked (D52), it shows them selected, the first in view, in their queue
-// for a queue's summary; for the extension's settings button (D61), the browser settings.
+// for a queue's summary; for the extension's settings button (D61), the browser settings; for a
+// progress window's fix of a proxy error (D71), the proxy settings.
 
 import type { DownloadId, DownloadSummary, Queue, QueueId, Reveal } from '@wirecatch/protocol';
 import type { SvelteSet } from 'svelte/reactivity';
@@ -19,10 +20,14 @@ export interface RevealTarget {
   openSettingsSection: (section: SectionId) => void;
 }
 
-/** Shows the browser settings, or the downloads `reveal` names that are still in the list; none left changes nothing. */
+/** Shows the browser or proxy settings, or the downloads `reveal` names that are still in the list; none left changes nothing. */
 export function revealDownloads(app: RevealTarget, reveal: Reveal): void {
   if (reveal.browser_settings === true) {
     app.openSettingsSection('browser');
+    return;
+  }
+  if (reveal.proxy_settings === true) {
+    app.openSettingsSection('network');
     return;
   }
   const rows = reveal.ids.flatMap((id) => app.downloads.get(id) ?? []);

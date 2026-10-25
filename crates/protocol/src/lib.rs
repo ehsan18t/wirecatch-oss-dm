@@ -19,6 +19,7 @@ pub mod desktop;
 pub mod extension;
 pub mod frame;
 pub mod media_start;
+pub mod proxy;
 pub mod secret;
 pub mod secrets;
 pub mod version;

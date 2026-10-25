@@ -14,6 +14,7 @@ use super::state::{Counters, Entry, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
 use crate::naming::Claimed;
+use crate::proxy;
 use crate::public_suffix::SuffixList;
 use crate::settings::{self, DEFAULT_QUEUE_ID};
 use crate::store::{Origin, Snapshot, StoredDownload};
@@ -90,6 +91,8 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         downloads.push(entry);
     }
 
+    let mut settings = settings;
+    proxy::mark_passwords(&mut settings.proxy, &snapshot.proxy_logins);
     let mut state = State {
         settings,
         queues,
@@ -104,6 +107,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         handovers: Handovers::default(),
         dirty: BTreeSet::default(),
         batches: Batches::default(),
+        proxy_logins: snapshot.proxy_logins,
         last_checked: around.now,
         ids,
         closed: false,
@@ -347,6 +351,7 @@ mod tests {
                 stored(3, 9, DownloadStatus::Paused),
             ],
             batches: Vec::new(),
+            proxy_logins: crate::proxy::Logins::new(),
             recoveries: Vec::new(),
             not_private: None,
         };

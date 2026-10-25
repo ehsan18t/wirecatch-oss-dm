@@ -15,6 +15,7 @@ use wirecatch_protocol::app::{
     MediaSelection, PendingCapture, Question, Queue, SuffixListInfo,
 };
 use wirecatch_protocol::desktop::SAFE_EXTENSIONS;
+use wirecatch_protocol::proxy::{ProxyChange, ProxySettings, ProxyTest, ProxyTestResult};
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 
@@ -653,6 +654,31 @@ pub fn suffix_list(m: &Manager) -> SuffixListInfo {
 /// use, or the manager has shut down ([`Manager::check_suffix_list`]).
 pub async fn check_suffix_list(m: &Manager) -> CommandResult<SuffixListInfo> {
     plain(m.check_suffix_list().await)
+}
+
+/// Saves a new proxy setting (D71), restarting running downloads when `change` asks.
+///
+/// # Errors
+///
+/// The proxy cannot work, or the manager has shut down; nothing changes then
+/// ([`Manager::set_proxy`]).
+pub fn set_proxy(m: &Manager, change: ProxyChange) -> CommandResult<()> {
+    plain(m.set_proxy(change))
+}
+
+/// Tries a proxy setting before it is saved.
+///
+/// # Errors
+///
+/// The proxy cannot work ([`Manager::test_proxy`]).
+pub async fn test_proxy(m: &Manager, test: ProxyTest) -> CommandResult<ProxyTestResult> {
+    plain(m.test_proxy(test).await)
+}
+
+/// The computer's proxy as a manual setting, for Copy from system.
+#[must_use]
+pub fn system_proxy() -> Option<ProxySettings> {
+    wirecatch_core::system_proxy()
 }
 
 /// Stops an install or update in progress. An update keeps the installed version working; a

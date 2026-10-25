@@ -16,9 +16,19 @@ import {
 } from '@wirecatch/protocol';
 import { PRODUCT_NAME, PRODUCT_SLUG } from '@wirecatch/product';
 import { MB } from '@wirecatch/units';
+import { defaultProxySettings } from '../../proxy';
 
 export const HOME = String.raw`C:\Users\you`;
 export const DOWNLOADS = String.raw`${HOME}\Downloads`;
+
+/** What the folder picker offers, one after another. The last is long, for the layout checks; later picks reach it. */
+export const PICKED_FOLDERS: readonly string[] = [
+  String.raw`${HOME}\Videos`,
+  String.raw`${DOWNLOADS}\Later`,
+  String.raw`D:\Media`,
+  String.raw`${HOME}\Desktop`,
+  String.raw`D:\Projects\Customer deliveries\2026\October\Raw footage from the second shoot, unedited and not yet sorted`,
+];
 
 const MEDIA_ADDON: AddonInfo = {
   id: 'media',
@@ -119,6 +129,7 @@ export function defaultSettings(): AppSettings {
     },
     local_sites: [],
     update_suffix_list: true,
+    proxy: defaultProxySettings(),
   };
 }
 

@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use tracing::warn;
-use wirecatch_engine::{CancellationToken, DownloadOptions, PrivateNetwork, Url};
+use wirecatch_engine::{CancellationToken, DownloadOptions, PrivateNetwork, ProxyChoice, Url};
 use wirecatch_protocol::app::{
     AddonRequestItem, Category, MediaChoice, MediaReading, MediaSelection, MediaSubtitle,
     MediaSummary, OutputFormat, PortablePath, UiEvent, UserError, VideoQuality,
@@ -773,7 +773,8 @@ impl Manager {
         connections: usize,
         token: &CancellationToken,
     ) -> std::result::Result<Found, UserError> {
-        let mut options = media_options(&source.origin, source.chosen_by.private_network());
+        let proxy = self.lock().proxy();
+        let mut options = media_options(&source.origin, source.chosen_by.private_network(), proxy);
         options.connections = connections.max(1);
         let info = wirecatch_streams::inspect(
             &source.url,
@@ -807,6 +808,7 @@ impl Manager {
         token: &CancellationToken,
     ) -> std::result::Result<Found, UserError> {
         let cookies = cookie_header(&source.origin);
+        let proxy = crate::proxy::ytdlp_proxy(&self.lock().proxy());
         let ctx = ytdlp::Context {
             tools,
             page: &source.url,
@@ -814,6 +816,7 @@ impl Manager {
             user_agent: source.origin.user_agent.as_deref(),
             temp_dir: &self.inner.temp_dir,
             timeout: self.inner.media_timeout,
+            proxy: proxy.as_deref(),
         };
         let info = ytdlp::extract(&ctx, token)
             .await
@@ -1109,9 +1112,13 @@ fn choice_for_display(choice: &MediaChoice) -> MediaChoice {
 }
 
 /// Request options carrying the browser's headers for the stream or page,
-/// under `private_network`.
-pub(super) fn media_options(origin: &Origin, private_network: PrivateNetwork) -> DownloadOptions {
-    let mut options = headers::download_options(private_network);
+/// under `private_network`, through `proxy`.
+pub(super) fn media_options(
+    origin: &Origin,
+    private_network: PrivateNetwork,
+    proxy: ProxyChoice,
+) -> DownloadOptions {
+    let mut options = headers::download_options(private_network, proxy);
     options.headers = headers::to_map(&origin.headers);
     if let Some(agent) = &origin.user_agent {
         options.user_agent.clone_from(agent);

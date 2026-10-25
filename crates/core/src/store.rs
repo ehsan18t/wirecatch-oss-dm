@@ -24,6 +24,7 @@ use crate::error::{CoreError, Result};
 use crate::local_network::ChosenBy;
 use crate::media::StoredMedia;
 use crate::owner_only;
+use crate::proxy::Logins;
 
 /// File name of the database inside the data folder (`config/product.toml`).
 pub use wirecatch_product::DATABASE_FILE;
@@ -108,6 +109,7 @@ const MIGRATIONS: &[&str] = &[
 const SETTINGS_KEY: &str = "app";
 const LAST_IDS_KEY: &str = "last_ids";
 const BATCHES_KEY: &str = "queue_batches";
+const PROXY_LOGINS_KEY: &str = "proxy_passwords";
 
 /// The highest download and queue ids ever handed out. Kept so an id is never
 /// reused, even after the newest download or queue was deleted.
@@ -178,6 +180,8 @@ pub(crate) struct Snapshot {
     pub downloads: Vec<StoredDownload>,
     /// What each queue at work had finished or failed so far (D52).
     pub batches: Vec<StoredBatch>,
+    /// The passwords of the manual proxies (D71.2).
+    pub proxy_logins: Logins,
     /// What had to be repaired to open the list, for the person to be told.
     pub recoveries: Vec<Recovery>,
     /// Why the data folder could not be made private to the current user, when it could
@@ -236,6 +240,7 @@ enum Op {
     SaveSettings(Box<AppSettings>),
     SaveLastIds(LastIds),
     SaveBatches(Vec<StoredBatch>),
+    SaveProxyLogins(Logins),
     /// Answers once every write sent before it is on disk; only tests wait
     /// for that.
     #[cfg(test)]
@@ -259,6 +264,7 @@ impl std::fmt::Debug for Op {
             Op::SaveSettings(_) => "SaveSettings",
             Op::SaveLastIds(_) => "SaveLastIds",
             Op::SaveBatches(_) => "SaveBatches",
+            Op::SaveProxyLogins(_) => "SaveProxyLogins",
             #[cfg(test)]
             Op::Flush(_) => "Flush",
             Op::Close(_) => "Close",
@@ -386,6 +392,11 @@ impl Store {
     /// Replaces the saved batches of the queues at work.
     pub fn save_batches(&self, batches: Vec<StoredBatch>) {
         self.send(Op::SaveBatches(batches));
+    }
+
+    /// Replaces the saved proxy passwords.
+    pub fn save_proxy_logins(&self, logins: Logins) {
+        self.send(Op::SaveProxyLogins(logins));
     }
 
     /// Waits until every write sent so far is on disk.
@@ -580,6 +591,7 @@ enum Target {
     Settings,
     LastIds,
     Batches,
+    ProxyLogins,
     Nothing,
 }
 
@@ -591,6 +603,7 @@ fn target_of(op: &Op) -> Target {
         Op::SaveSettings(_) => Target::Settings,
         Op::SaveLastIds(_) => Target::LastIds,
         Op::SaveBatches(_) => Target::Batches,
+        Op::SaveProxyLogins(_) => Target::ProxyLogins,
         #[cfg(test)]
         Op::Flush(_) => Target::Nothing,
         Op::Close(_) => Target::Nothing,
@@ -690,6 +703,7 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
             Op::SaveSettings(settings) => write_value(&tx, SETTINGS_KEY, &**settings)?,
             Op::SaveLastIds(ids) => write_value(&tx, LAST_IDS_KEY, ids)?,
             Op::SaveBatches(batches) => write_value(&tx, BATCHES_KEY, batches)?,
+            Op::SaveProxyLogins(logins) => write_value(&tx, PROXY_LOGINS_KEY, logins)?,
             #[cfg(test)]
             Op::Flush(_) => {}
             Op::Close(_) => {}
@@ -974,6 +988,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     let settings = read_value(conn, SETTINGS_KEY, "settings")?;
     let last_ids = read_value(conn, LAST_IDS_KEY, "id counters")?.unwrap_or_default();
     let batches = read_value(conn, BATCHES_KEY, "queue batches")?.unwrap_or_default();
+    let proxy_logins = read_value(conn, PROXY_LOGINS_KEY, "proxy passwords")?.unwrap_or_default();
 
     let (queues, queues_reset) = load_queues(conn)?;
     let mut downloads_reset = 0;
@@ -1033,6 +1048,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
         queues,
         downloads,
         batches,
+        proxy_logins,
         recoveries: [
             (newly_unreadable > 0).then_some(Recovery::UnreadableKept(newly_unreadable)),
             (downloads_reset + queues_reset > 0).then_some(Recovery::ValuesReset {

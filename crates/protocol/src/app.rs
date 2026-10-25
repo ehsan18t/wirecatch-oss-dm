@@ -4,6 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ts_rs::TS;
 
 use crate::extension::{ExtensionSettings, ExtensionSettingsPatch};
+use crate::proxy::ProxySettings;
 use crate::secret::Link;
 use crate::{DownloadId, QuestionId, QueueId};
 
@@ -146,6 +147,8 @@ pub enum FixAction {
     FreeDiskSpace,
     /// Converting a downloaded video failed: save it as it was downloaded instead (D24).
     KeepOriginal,
+    /// The proxy refused the login, or cannot carry the download: open the proxy settings (D71).
+    ProxySettings,
 }
 
 /// The kind of file a download is; each has its own folder ([`CategoryRule`]).
@@ -981,7 +984,7 @@ pub enum QueueNotify {
 /// A setting a newer Wirecatch may have saved with a value this build does not know (a theme
 /// or accent added later, say): it reads as the setting's default, so the rest of the settings
 /// still read. A missing field takes the default through `#[serde(default)]`.
-mod known_or_default {
+pub(crate) mod known_or_default {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S: Serializer, T: Serialize>(
@@ -1304,6 +1307,11 @@ pub struct AppSettings {
     /// downloads are idle (D44). Off: the list in use stays until the person checks.
     #[serde(default = "default_true")]
     pub update_suffix_list: bool,
+    /// Which proxy everything the app sends goes through (D71), without its passwords. It
+    /// changes as a whole, with a [`ProxyChange`](crate::proxy::ProxyChange), never in a
+    /// patch.
+    #[serde(default)]
+    pub proxy: ProxySettings,
 }
 
 fn default_true() -> bool {
@@ -1334,6 +1342,8 @@ impl AppSettings {
             media,
             local_sites,
             update_suffix_list,
+            // Changes only as a whole, through a `ProxyChange` (D71).
+            proxy: _,
         } = self;
         let AppSettingsPatch {
             default_folder: new_default_folder,
@@ -1529,8 +1539,8 @@ pub enum UiEvent {
     DownloadsRemoved(Vec<DownloadId>),
     /// Every queue, in sidebar order, after any queue changed.
     QueuesChanged(Vec<Queue>),
-    /// Every setting, after any changed.
-    SettingsChanged(AppSettings),
+    /// Every setting, after any changed. Boxed: the settings are far larger than any other event.
+    SettingsChanged(Box<AppSettings>),
     /// A browser capture started; the UI shows the toast with Change and Open folder (D4).
     Captured(DownloadSummary),
     /// A capture needs the user's confirmation (`ask_before_download`).
