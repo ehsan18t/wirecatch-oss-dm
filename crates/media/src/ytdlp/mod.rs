@@ -9,8 +9,8 @@ mod cookies;
 mod download;
 mod info;
 
-pub(crate) use download::{Fetched, download};
-pub(crate) use info::{Chapter, Format, FormatId, Info, SubtitleFile, Transport, ids, selection};
+pub use download::{Fetched, download};
+pub use info::{Chapter, Format, FormatId, Info, SubtitleFile, Transport, ids, selection};
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -20,12 +20,12 @@ use tracing::debug;
 use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_streams::process::{self, Ran, RunError, RunOptions};
 
-use crate::media::MediaTools;
+use crate::MediaTools;
 use cookies::CookiesFile;
 
 /// Where and how yt-dlp runs.
 #[derive(Clone, Copy)]
-pub(crate) struct Context<'a> {
+pub struct Context<'a> {
     pub tools: &'a MediaTools,
     pub page: &'a Url,
     /// The browser's `Cookie` header for the page, if any.
@@ -70,10 +70,7 @@ fn without_cookies<'a>(ctx: &Context<'a>) -> Option<Context<'a>> {
 
 /// Reads a page's formats with `yt-dlp -J`: on YouTube without the browser's
 /// cookies first, then with them if yt-dlp could not read the page that way.
-pub(crate) async fn extract(
-    ctx: &Context<'_>,
-    cancel: &CancellationToken,
-) -> Result<Info, YtDlpError> {
+pub async fn extract(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<Info, YtDlpError> {
     if let Some(anonymous) = without_cookies(ctx) {
         match extract_once(&anonymous, cancel).await {
             Ok(info) => return Ok(info),
@@ -88,7 +85,7 @@ pub(crate) async fn extract(
 
 /// Why yt-dlp did not do what it was asked.
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum YtDlpError {
+pub enum YtDlpError {
     /// The folder yt-dlp runs in could not be made.
     #[error("could not make the folder {} for the media add-on", .path.display())]
     Folder {
@@ -253,7 +250,7 @@ async fn make_dir(path: &Path) -> Result<(), YtDlpError> {
 const ISOLATION: [&str; 2] = ["--ignore-config", "--no-plugin-dirs"];
 
 /// The arguments that make yt-dlp print its version and nothing else, read the same isolated way as every other run.
-pub(crate) fn version_args() -> Vec<OsString> {
+pub fn version_args() -> Vec<OsString> {
     ISOLATION
         .iter()
         .chain(&["--version"])

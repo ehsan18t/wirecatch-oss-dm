@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use wirecatch_engine::{PART_EXT, STATE_EXT, Url, naming};
-use wirecatch_files::with_suffix;
+use wirecatch_media::{stream_dir, work_dir};
 
 use crate::error::{CoreError, Result};
 
@@ -221,19 +221,6 @@ fn key(path: &Path) -> String {
     } else {
         s.into_owned()
     }
-}
-
-/// Next to a media download's file while it runs: the folder for its parts
-/// (video, audio, yt-dlp's own files) until they are joined.
-pub(crate) const WORK_SUFFIX: &str = ".wcmedia";
-
-pub(crate) fn work_dir(output: &Path) -> PathBuf {
-    with_suffix(output, WORK_SUFFIX)
-}
-
-/// Where `wirecatch-streams` keeps segments while downloading `output`.
-pub(crate) fn stream_dir(output: &Path) -> PathBuf {
-    with_suffix(output, wirecatch_streams::DIR_SUFFIX)
 }
 
 #[cfg(test)]

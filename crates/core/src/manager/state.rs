@@ -26,10 +26,10 @@ use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
 use crate::error::{CoreError, Result};
 use crate::headers::Origin;
-use crate::media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use crate::naming::Claimed;
 use crate::proxy::{self, Logins};
 use crate::speed::SpeedMeter;
+use wirecatch_media::{MediaJob, MediaProgress, Reading, StoredMedia};
 
 pub(super) struct State {
     pub settings: AppSettings,
@@ -464,8 +464,8 @@ impl Entry {
     pub fn partial_paths(&self) -> Vec<std::path::PathBuf> {
         let mut paths = crate::naming::partial_files(self.path()).to_vec();
         if self.media_job.is_some() {
-            paths.push(crate::media::work_dir(self.path()));
-            paths.push(crate::media::stream_dir(self.path()));
+            paths.push(wirecatch_media::work_dir(self.path()));
+            paths.push(wirecatch_media::stream_dir(self.path()));
         }
         paths
     }

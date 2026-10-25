@@ -27,9 +27,9 @@ use super::placement::QueueRequest;
 use super::state::{Expectation, Pending};
 use crate::error::{CoreError, Result};
 use crate::headers::Origin;
-use crate::media::StoredMedia;
 use crate::settings;
 use crate::{headers, naming};
+use wirecatch_media::StoredMedia;
 use wirecatch_sites::local_network::{self, ChosenBy};
 
 /// Most captures that can wait for confirmation at once.

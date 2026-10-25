@@ -24,7 +24,7 @@ pub(crate) const MAX_PICKED_SUBTITLES: usize = 30;
 
 /// What choosing an option means.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Plan {
+pub struct Plan {
     /// What the Original choice downloads.
     pub job: MediaJob,
     /// The extension the file will most likely get.
@@ -39,7 +39,7 @@ pub(crate) struct Plan {
 }
 
 /// One offered option and what it means.
-pub(crate) type Offer = (MediaOption, Plan);
+pub type Offer = (MediaOption, Plan);
 
 /// A file format by its name for a person, as Save as names it ("WebM", "Opus"), so a quality's
 /// label and the format menu never spell one format two ways; an extension the app has no name for
@@ -89,7 +89,7 @@ fn offer(id: String, label: String, height: Option<u32>, size: Option<u64>, plan
 
 /// Why a selection cannot be downloaded: it asks for something that was not offered. Each message says what to choose instead.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub(crate) enum ResolveError {
+pub enum ResolveError {
     /// The quality has no such "Save as" format.
     #[error(
         "This quality cannot be saved in that format. Choose one of the formats listed for it."
@@ -117,7 +117,7 @@ pub(crate) enum ResolveError {
 
 /// What a chosen option, saved as the person chose, downloads.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Resolved {
+pub struct Resolved {
     pub job: MediaJob,
     /// The file's extension.
     pub ext: String,
@@ -253,13 +253,13 @@ fn key_of(id: &str) -> &str {
 
 /// Whether the media add-on's ffmpeg is there to join and remux a stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Ffmpeg {
+pub enum Ffmpeg {
     Installed,
     Missing,
 }
 
 /// The options of an HLS or DASH stream. `ffmpeg` decides the container a single track is saved in.
-pub(crate) fn from_stream(info: &StreamInfo, ffmpeg: Ffmpeg) -> Result<Vec<Offer>, UserError> {
+pub fn from_stream(info: &StreamInfo, ffmpeg: Ffmpeg) -> Result<Vec<Offer>, UserError> {
     if info.live {
         return Err(live());
     }
@@ -377,7 +377,7 @@ fn estimate(seconds: Option<f64>, bandwidths: [Option<u64>; 2]) -> Option<u64> {
 }
 
 /// The options of a page read by yt-dlp.
-pub(crate) fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
+pub fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
     if info.is_live() {
         return Err(live());
     }
@@ -562,7 +562,8 @@ fn audio_offer(audios: &[&Format], duration_ms: Option<u64>) -> Option<Offer> {
 const MAX_DURATION_SECONDS: f64 = 1e8;
 
 /// A page's length in milliseconds, when yt-dlp gave a sensible one.
-pub(crate) fn duration_ms(info: &Info) -> Option<u64> {
+#[must_use]
+pub fn duration_ms(info: &Info) -> Option<u64> {
     info.duration
         .filter(|d| d.is_finite() && *d > 0.0 && *d < MAX_DURATION_SECONDS)
         .and_then(|d| f64_to_u64((d * 1000.0).round()))

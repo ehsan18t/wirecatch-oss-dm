@@ -22,11 +22,11 @@ use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
 
 use super::Manager;
 use crate::error::{CoreError, Result};
-use crate::media::MediaTools;
-use crate::media::ytdlp;
 use wirecatch_addons::manifest::{self, AddonComponent, ComponentId, ReleaseFile};
 use wirecatch_addons::{self as addons, Check, Record, archive, signature};
 use wirecatch_engine::units::{KIB, MIB};
+use wirecatch_media::MediaTools;
+use wirecatch_media::ytdlp;
 use wirecatch_streams::process::{self, RunError, RunOptions};
 
 /// How often the progress of an install is reported.

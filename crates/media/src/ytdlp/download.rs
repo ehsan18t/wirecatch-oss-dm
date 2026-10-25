@@ -12,15 +12,15 @@ use wirecatch_streams::process::{self, Output, RunError, RunOptions, STALL_TIMEO
 
 use super::cookies::CookiesFile;
 use super::{Attempt, Context, YtDlpError, common_args, refused, without_cookies};
-use crate::media::MediaProgress;
-use crate::media::output::Container;
+use crate::MediaProgress;
+use crate::output::Container;
 
 /// The longest extension a finished file of yt-dlp's may have.
 const MAX_RESULT_EXT: usize = 10;
 
 /// How a download by yt-dlp itself ended without failing.
 #[derive(Debug)]
-pub(crate) enum Fetched {
+pub enum Fetched {
     Done(PathBuf),
     Cancelled,
 }
@@ -35,9 +35,9 @@ const PROGRESS_MARK: &str = "wcprogress";
 /// Lets yt-dlp download format selection `format` into `work` (for streams
 /// Wirecatch cannot download itself), reporting progress into `progress`.
 ///
-/// On YouTube it runs without the browser's cookies first, like [`extract`],
+/// On YouTube it runs without the browser's cookies first, like [`extract`](super::extract),
 /// and with them only if yt-dlp failed that way; the parts it saved are kept.
-pub(crate) async fn download(
+pub async fn download(
     ctx: &Context<'_>,
     format: &str,
     merge_into: Option<Container>,

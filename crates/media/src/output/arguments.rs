@@ -30,7 +30,7 @@ const FFMETADATA: &str = "ffmetadata";
 
 /// The files a conversion reads, all in the download's work folder.
 #[derive(Debug, Clone)]
-pub(crate) struct Inputs {
+pub struct Inputs {
     /// The video (or the one file holding video and audio) and its format.
     pub video: Option<(InputFormat, PathBuf)>,
     /// Separate audio, if any.
@@ -321,8 +321,8 @@ pub(crate) fn per_mille(done_ms: u64, total_ms: Option<u64>) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::output::test_support::*;
-    use crate::media::output::*;
+    use crate::output::test_support::*;
+    use crate::output::*;
 
     #[test]
     fn progress_is_read_from_ffmpeg_reports() {

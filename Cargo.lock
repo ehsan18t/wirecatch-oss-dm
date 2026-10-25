@@ -7301,6 +7301,7 @@ dependencies = [
  "wirecatch-engine",
  "wirecatch-files",
  "wirecatch-logging",
+ "wirecatch-media",
  "wirecatch-messages",
  "wirecatch-product",
  "wirecatch-protocol",
@@ -7430,6 +7431,27 @@ dependencies = [
  "url",
  "wirecatch-product",
  "wirecatch-protocol",
+ "wirecatch-test-support",
+]
+
+[[package]]
+name = "wirecatch-media"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "wirecatch-addons",
+ "wirecatch-engine",
+ "wirecatch-files",
+ "wirecatch-messages",
+ "wirecatch-protocol",
+ "wirecatch-records",
+ "wirecatch-sites",
+ "wirecatch-streams",
  "wirecatch-test-support",
 ]
 

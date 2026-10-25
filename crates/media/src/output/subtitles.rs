@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use wirecatch_protocol::app::MediaSubtitle;
 
 use super::SubtitlePick;
-use crate::media::ytdlp::{Info, SubtitleFile};
+use crate::ytdlp::{Info, SubtitleFile};
 
 /// The longest subtitle key read as a language (`en`, `pt-BR`, `zh-Hans-orig`).
 const MAX_KEY_LEN: usize = 35;
@@ -19,7 +19,8 @@ pub(super) const MAX_NAME_CHARS: usize = 60;
 const SUBTITLE_EXTS: [&str; 4] = ["vtt", "srt", "ass", "ssa"];
 
 /// The subtitles a page offers: human-written ones first (by name), then auto-generated ones in the video's own language only (a site may list a machine translation into every language; those are left out). Lists without a file Wirecatch can read (live chat, for example) are left out too.
-pub(crate) fn subtitles(info: &Info) -> Vec<(MediaSubtitle, SubtitlePick)> {
+#[must_use]
+pub fn subtitles(info: &Info) -> Vec<(MediaSubtitle, SubtitlePick)> {
     let mut found = Vec::new();
     for (auto, list) in [(false, &info.subtitles), (true, &info.automatic_captions)] {
         let mut part: Vec<(MediaSubtitle, SubtitlePick)> = list
@@ -105,7 +106,8 @@ pub(crate) fn pick_file(files: &[SubtitleFile]) -> Option<&SubtitleFile> {
 }
 
 /// The subtitle files of a page for `pick`, found again after reading it.
-pub(crate) fn subtitle_files<'a>(info: &'a Info, pick: &SubtitlePick) -> Option<&'a SubtitleFile> {
+#[must_use]
+pub fn subtitle_files<'a>(info: &'a Info, pick: &SubtitlePick) -> Option<&'a SubtitleFile> {
     let list = if pick.auto {
         &info.automatic_captions
     } else {
@@ -117,7 +119,7 @@ pub(crate) fn subtitle_files<'a>(info: &'a Info, pick: &SubtitlePick) -> Option<
 /// A subtitle file format ffmpeg reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum SubtitleFormat {
+pub enum SubtitleFormat {
     WebVtt,
     Srt,
     Ass,
@@ -125,6 +127,7 @@ pub(crate) enum SubtitleFormat {
 
 impl SubtitleFormat {
     /// ffmpeg's demuxer for it.
+    #[must_use]
     pub fn demuxer(self) -> &'static str {
         match self {
             SubtitleFormat::WebVtt => "webvtt",
@@ -154,7 +157,7 @@ impl SubtitleFormat {
 /// A picture format ffmpeg reads for a cover.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ImageFormat {
+pub enum ImageFormat {
     Jpeg,
     Png,
     Webp,
@@ -162,6 +165,7 @@ pub(crate) enum ImageFormat {
 
 impl ImageFormat {
     /// ffmpeg's demuxer for it.
+    #[must_use]
     pub fn demuxer(self) -> &'static str {
         match self {
             ImageFormat::Jpeg => "jpeg_pipe",
@@ -171,6 +175,7 @@ impl ImageFormat {
     }
 
     /// Recognizes a picture from its first bytes.
+    #[must_use]
     pub fn detect(head: &[u8]) -> Option<ImageFormat> {
         if head.starts_with(&[0xFF, 0xD8, 0xFF]) {
             Some(ImageFormat::Jpeg)
@@ -247,7 +252,8 @@ pub(crate) fn iso639_2(language: &str) -> String {
 }
 
 /// Subtitle languages remembered for next time from the subtitles picked, and whether an auto-generated one was ticked, which makes them wanted. Leaving them unticked never makes them unwanted (D50): a person who ticks the subtitles written by people still wants a language's auto-generated ones when it has none. `None` when the video had no subtitles to pick from, so the last choice stays.
-pub(crate) fn remembered_subtitles(
+#[must_use]
+pub fn remembered_subtitles(
     offered: &[MediaSubtitle],
     picked: &[String],
 ) -> Option<(Vec<String>, bool)> {
@@ -269,7 +275,7 @@ pub(crate) fn remembered_subtitles(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::output::test_support::*;
+    use crate::output::test_support::*;
 
     /// Human-written subtitles first, then the auto-generated ones in the video's own language only; live chat and unreadable formats are left out.
     #[test]

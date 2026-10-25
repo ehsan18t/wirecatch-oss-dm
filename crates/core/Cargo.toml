@@ -1,6 +1,6 @@
 [package]
 name = "wirecatch-core"
-description = "Download manager for Wirecatch: queues, scheduling, settings and media"
+description = "Download manager for Wirecatch: queues, scheduling, settings, and running downloads and media downloads"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,6 +14,7 @@ wirecatch-addons.workspace = true
 wirecatch-engine.workspace = true
 wirecatch-files.workspace = true
 wirecatch-logging.workspace = true
+wirecatch-media.workspace = true
 wirecatch-messages.workspace = true
 wirecatch-product.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }

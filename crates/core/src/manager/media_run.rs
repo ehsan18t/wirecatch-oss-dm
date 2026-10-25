@@ -33,18 +33,18 @@ use super::state::{Gauge, State};
 use crate::clock::Clock;
 use crate::headers;
 use crate::headers::Origin;
-use crate::media::MediaTools;
-use crate::media::convert;
-use crate::media::describe;
-use crate::media::ffmpeg::{FfmpegError, Finished};
-use crate::media::merge;
-use crate::media::output::{
-    self, Container, ImageFormat, Inputs, OutputJob, SubtitleFormat, SubtitlePick, VideoAction,
-};
-use crate::media::ytdlp::{self, Fetched, Format, FormatId, Transport};
-use crate::media::{self, Content, MediaJob, MediaProgress, Pick, safe_ext};
 use wirecatch_addons::Check;
 use wirecatch_engine::units::MIB;
+use wirecatch_media::MediaTools;
+use wirecatch_media::convert;
+use wirecatch_media::describe;
+use wirecatch_media::ffmpeg::{FfmpegError, Finished};
+use wirecatch_media::merge;
+use wirecatch_media::output::{
+    self, Container, ImageFormat, Inputs, OutputJob, SubtitleFormat, SubtitlePick, VideoAction,
+};
+use wirecatch_media::ytdlp::{self, Fetched, Format, FormatId, Transport};
+use wirecatch_media::{Content, MediaJob, MediaProgress, Pick, safe_ext};
 use wirecatch_sites::local_network::{self, ChosenBy};
 
 /// Everything a media run needs, copied out of the manager's state.
@@ -180,7 +180,7 @@ async fn run(
             };
             run_page(&job, &page, progress, cancel).await
         }
-        MediaJob::Unreadable => return Err(media::unreadable()),
+        MediaJob::Unreadable => return Err(wirecatch_media::unreadable()),
     };
     match result {
         Err(_) if cancel.is_cancelled() => Ok(MediaDone::Paused),
@@ -206,7 +206,7 @@ async fn run_stream(
     // The stream is saved in the work folder first and put in place by
     // `finish`, which marks it as downloaded from the internet before it is
     // ever at its final name.
-    let work = media::work_dir(&job.output);
+    let work = wirecatch_media::work_dir(&job.output);
     tokio::fs::create_dir_all(&work)
         .await
         .map_err(|e| disk(&e, &job.output))?;
@@ -314,7 +314,7 @@ async fn page_attempt(
     cancel: &CancellationToken,
 ) -> Result<MediaDone, PageError> {
     let tools = job.tools.as_ref().ok_or_else(addon_missing)?;
-    let work = media::work_dir(&job.output);
+    let work = wirecatch_media::work_dir(&job.output);
     tokio::fs::create_dir_all(&work)
         .await
         .map_err(|e| disk(&e, &job.output))?;
@@ -1104,7 +1104,7 @@ fn final_path(file: &Path, planned: &Path) -> PathBuf {
     let own = file
         .extension()
         .and_then(|e| e.to_str())
-        .filter(|e| media::is_media_ext(e))
+        .filter(|e| wirecatch_media::is_media_ext(e))
         .map(str::to_ascii_lowercase);
     match own {
         Some(ext)
@@ -1501,7 +1501,7 @@ mod tests {
             &CancellationToken::new(),
         )
         .await;
-        assert_eq!(ended, Err(media::unreadable()));
+        assert_eq!(ended, Err(wirecatch_media::unreadable()));
     }
 
     /// A stream (here one HLS segment, joined without ffmpeg) is saved in the
@@ -1559,7 +1559,7 @@ mod tests {
             .expect("the stream was put in place without the mark");
         assert!(mark.contains("ZoneId=3"), "{mark}");
         assert!(
-            !media::work_dir(&output).exists(),
+            !wirecatch_media::work_dir(&output).exists(),
             "the work folder was left"
         );
     }

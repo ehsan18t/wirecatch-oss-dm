@@ -10,11 +10,11 @@ use tracing::debug;
 use wirecatch_engine::numeric::f64_to_u64;
 use wirecatch_engine::units::{GIB, KIB};
 use wirecatch_protocol::Secret;
-pub(crate) use wirecatch_records::media::FormatId;
+pub use wirecatch_records::media::FormatId;
 
 /// What yt-dlp says about a page (the fields Wirecatch reads).
 #[derive(Debug, Clone, Default, Deserialize)]
-pub(crate) struct Info {
+pub struct Info {
     #[serde(default)]
     pub title: Option<String>,
     /// The video's id on its site, so two links to one video are known to be the same.
@@ -131,7 +131,7 @@ where
 
 /// One file of a subtitle language, in one of the formats the site offers.
 #[derive(Debug, Clone, Default, Deserialize)]
-pub(crate) struct SubtitleFile {
+pub struct SubtitleFile {
     #[serde(default, deserialize_with = "lenient")]
     pub ext: Option<String>,
     #[serde(default, deserialize_with = "lenient")]
@@ -145,7 +145,7 @@ pub(crate) struct SubtitleFile {
 
 /// One chapter of a video.
 #[derive(Debug, Clone, Default, Deserialize)]
-pub(crate) struct Chapter {
+pub struct Chapter {
     #[serde(default, deserialize_with = "lenient")]
     pub start_time: Option<f64>,
     #[serde(default, deserialize_with = "lenient")]
@@ -158,7 +158,8 @@ pub(crate) struct Chapter {
 const BEST_SELECTION: &str = "bv*+ba/b";
 
 /// yt-dlp's `-f` selection for `video` and `audio`: both joined (`137` and `140` as `b*[format_id="137"]+b*[format_id="140"]`), either alone, or the best there is when neither is named.
-pub(crate) fn selection(video: Option<&FormatId>, audio: Option<&FormatId>) -> String {
+#[must_use]
+pub fn selection(video: Option<&FormatId>, audio: Option<&FormatId>) -> String {
     match (video, audio) {
         (Some(v), Some(a)) => format!("{}+{}", v.selector(), a.selector()),
         (Some(one), None) | (None, Some(one)) => one.selector(),
@@ -167,7 +168,8 @@ pub(crate) fn selection(video: Option<&FormatId>, audio: Option<&FormatId>) -> S
 }
 
 /// The ids of `video` and `audio` as people and yt-dlp's own lists write them, `137+140`: a name for the pair, never a selection.
-pub(crate) fn ids(video: Option<&FormatId>, audio: Option<&FormatId>) -> String {
+#[must_use]
+pub fn ids(video: Option<&FormatId>, audio: Option<&FormatId>) -> String {
     match (video, audio) {
         (Some(v), Some(a)) => format!("{v}+{a}"),
         (Some(one), None) | (None, Some(one)) => one.to_string(),
@@ -177,7 +179,7 @@ pub(crate) fn ids(video: Option<&FormatId>, audio: Option<&FormatId>) -> String 
 
 /// One format of a page.
 #[derive(Debug, Clone, Default, Deserialize)]
-pub(crate) struct Format {
+pub struct Format {
     /// yt-dlp's `format_id`, which names the format in a `-f` selection.
     #[serde(rename = "format_id")]
     pub id: FormatId,
@@ -219,7 +221,7 @@ pub(crate) struct Format {
 
 /// The part of yt-dlp's `downloader_options` Wirecatch reads.
 #[derive(Debug, Clone, Default, Deserialize)]
-pub(crate) struct DownloaderOptions {
+pub struct DownloaderOptions {
     /// Kept as any JSON value, so an odd one is ignored instead of making the
     /// whole page unreadable.
     #[serde(default)]
@@ -235,20 +237,24 @@ const MIN_REQUEST_LIMIT: u64 = 64 * KIB;
 const MAX_REQUEST_LIMIT: u64 = GIB;
 
 impl Format {
+    #[must_use]
     pub fn has_video(&self) -> bool {
         self.vcodec.as_deref().is_none_or(|c| c != "none")
             && !matches!(self.ext.as_deref(), Some("mhtml"))
     }
 
+    #[must_use]
     pub fn has_audio(&self) -> bool {
         self.acodec.as_deref().is_none_or(|c| c != "none")
     }
 
+    #[must_use]
     pub fn drm(&self) -> bool {
         matches!(self.has_drm, Some(serde_json::Value::Bool(true)))
     }
 
     /// The size in bytes, exact or estimated, when known.
+    #[must_use]
     pub fn size(&self) -> Option<u64> {
         self.filesize.or_else(|| {
             self.filesize_approx
@@ -262,6 +268,7 @@ impl Format {
     /// request for more, which is why yt-dlp itself downloads them in pieces.
     /// `None` when yt-dlp gave none, or a value that is not a whole number of
     /// at least 64 KiB; values above 1 GiB are cut to 1 GiB.
+    #[must_use]
     pub fn request_limit(&self) -> Option<u64> {
         let value = self.downloader_options.as_ref()?.http_chunk_size.as_ref()?;
         let bytes = value.as_u64().or_else(|| {
@@ -276,6 +283,7 @@ impl Format {
 
     /// Whether Wirecatch downloads this format itself: plain web addresses with
     /// the engine, HLS playlists with `wirecatch-streams`.
+    #[must_use]
     pub fn transport(&self) -> Transport {
         match self.protocol.as_deref().unwrap_or("https") {
             "http" | "https" => Transport::File,
@@ -287,19 +295,21 @@ impl Format {
 
 /// Who downloads a format's bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Transport {
+pub enum Transport {
     File,
     Hls,
     YtDlp,
 }
 
 impl Info {
+    #[must_use]
     pub fn is_live(&self) -> bool {
         self.is_live == Some(true)
             || matches!(self.live_status.as_deref(), Some("is_live" | "is_upcoming"))
     }
 
     /// The formats, including a single top-level one.
+    #[must_use]
     pub fn all_formats(&self) -> Cow<'_, [Format]> {
         if !self.formats.is_empty() {
             return Cow::Borrowed(&self.formats);

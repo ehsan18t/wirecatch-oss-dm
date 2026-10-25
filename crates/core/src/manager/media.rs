@@ -35,11 +35,11 @@ use super::handovers::{Handover, Target};
 use super::state::State;
 use crate::error::{CoreError, Result};
 use crate::headers::Origin;
-use crate::media::MediaTools;
-use crate::media::choice::{self, Offer, Plan, Resolved};
-use crate::media::{self, MediaJob, Pick, StoredMedia, describe, output, ytdlp};
 use crate::{headers, settings};
 use wirecatch_addons::Check;
+use wirecatch_media::MediaTools;
+use wirecatch_media::choice::{self, Offer, Plan, Resolved};
+use wirecatch_media::{MediaJob, Pick, StoredMedia, describe, output, ytdlp};
 use wirecatch_sites::local_network::ChosenBy;
 
 /// How long a page waits for the media add-on before it becomes a failed
@@ -922,7 +922,7 @@ impl Manager {
             .insert(NewEntry {
                 fetch: source.fetch.clone(),
                 wanted: Wanted {
-                    file_name: Some(media::file_name(&title, "mp4")),
+                    file_name: Some(wirecatch_media::file_name(&title, "mp4")),
                     category: Some(Category::Video),
                     ..Wanted::default()
                 },
@@ -979,7 +979,7 @@ impl Manager {
         let name = selection
             .file_name
             .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| media::file_name(&choice.title, &resolved.ext));
+            .unwrap_or_else(|| wirecatch_media::file_name(&choice.title, &resolved.ext));
         let added = self
             .insert(NewEntry {
                 fetch: pending.source.fetch.clone(),

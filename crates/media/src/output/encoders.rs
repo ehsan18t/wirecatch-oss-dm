@@ -283,8 +283,8 @@ impl AudioEncoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::media::output::test_support::*;
-    use crate::media::output::*;
+    use crate::output::test_support::*;
+    use crate::output::*;
 
     /// Hardware first in a fixed order, then software; libx264 is preferred to `OpenH264` when the build has it; an ffmpeg that cannot be asked gets the add-on's software encoder only.
     #[test]
