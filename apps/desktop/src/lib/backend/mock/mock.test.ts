@@ -1,6 +1,7 @@
 import {
   downloadId,
   FOLLOW_APP,
+  MANUAL_QUEUE,
   ownSetting,
   ownValue,
   questionId,
@@ -165,6 +166,7 @@ describe('MockBackend', () => {
       max_concurrent: ownSetting(2),
       speed_limit: FOLLOW_APP,
       connections: FOLLOW_APP,
+      takes: MANUAL_QUEUE,
       schedule: null,
       notify: 'each_download',
     } as const;

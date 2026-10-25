@@ -177,6 +177,16 @@ export const ACCENTS: readonly Accent[] = [
 ];
 
 /**
+ * Most claims of one kind in one queue.
+ */
+export const MAX_CLAIMS_PER_KIND = 200;
+
+/**
+ * Most characters in one claim as the person writes it.
+ */
+export const MAX_CLAIM_CHARS = 256;
+
+/**
  * The Tauri event that carries every [`UiEvent`](crate::app::UiEvent), in order.
  */
 export const UI_EVENT = 'wirecatch://event';

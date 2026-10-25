@@ -21,6 +21,7 @@
     DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS,
     FOLLOW_APP,
+    MANUAL_QUEUE,
     MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD,
     MAX_QUEUE_DESCRIPTION_CHARS,
@@ -192,6 +193,7 @@
       max_concurrent: concurrentOn ? ownSetting(Math.round(maxConcurrent)) : FOLLOW_APP,
       speed_limit: limit.limit,
       connections: connectionsOn ? ownSetting(Math.round(connections)) : FOLLOW_APP,
+      takes: opened ? $state.snapshot(opened.takes) : MANUAL_QUEUE,
       schedule: schedule.schedule,
       notify,
     };
