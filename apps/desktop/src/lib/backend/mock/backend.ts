@@ -6,7 +6,6 @@ import { PRODUCT_NAME, PRODUCT_SLUG } from '@wirecatch/product';
 import type {
   AddRequest,
   AppSettingsPatch,
-  ButtonArea,
   CaptureConfirmation,
   DownloadId,
   MediaSelection,
@@ -15,18 +14,14 @@ import type {
   QuestionId,
   QueueId,
   QueueSettings,
-  Reveal,
   SettingsProfile,
   StartupNotice,
-  SystemAppearance,
   UiEvent,
-  WindowAction,
-  WindowFrame,
   LinkTrial,
 } from '@wirecatch/protocol';
 import { folderOf } from '../../format';
 import { WindowRegistry } from '../../sample-windows';
-import type { Backend, SampleData, ShellSignal, Unsubscribe } from '../types';
+import type { Backend, SampleData, Unsubscribe } from '../types';
 import * as addons from './addons';
 import * as captures from './captures';
 import { MockFinished } from './finished';
@@ -37,6 +32,7 @@ import * as media from './media';
 import { populate } from './populate';
 import * as queues from './queues';
 import { mulberry32 } from './rng';
+import { MockShell } from './shell';
 import { sampleCommands } from './sample-commands';
 import { SEEDS } from './seeds';
 import * as settings from './settings';
@@ -47,7 +43,7 @@ import { MockState } from './state';
 /** What a call to the mock core came to: its value, or the error it failed with. */
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
-export class MockBackend implements Backend {
+export class MockBackend extends MockShell implements Backend {
   readonly kind = 'mock';
 
   appName() {
@@ -86,6 +82,7 @@ export class MockBackend implements Backend {
   #folderPick = 0;
 
   constructor(options: MockOptions = {}) {
+    super();
     const now = options.now ?? (() => Date.now());
     this.#state = new MockState(this.windows, mulberry32(options.seed ?? data.DEFAULT_SEED), now);
     this.#latencyMs = options.latencyMs ?? 0;
@@ -136,6 +133,10 @@ export class MockBackend implements Backend {
    * the returned promise straight away; with `latencyMs` it comes back that much later, as from
    * the real core over IPC.
    */
+  protected answer<T>(work: () => T): Promise<T> {
+    return this.#call(work);
+  }
+
   async #call<T>(work: () => T): Promise<T> {
     let outcome: Outcome<T>;
     try {
@@ -437,55 +438,6 @@ export class MockBackend implements Backend {
 
   startupNotices() {
     return this.#call((): StartupNotice[] => [...this.#startupNotices]);
-  }
-
-  showSetAsideList() {
-    // The sample app has no folder to show; the call answers as the shell's would.
-    return this.#call(() => undefined);
-  }
-
-  takeReveal() {
-    // A browser tab gets no system notifications to click.
-    return this.#call((): Reveal | null => null);
-  }
-  onReveal(_listener: (reveal: Reveal) => void) {
-    return this.#call((): Unsubscribe => () => undefined);
-  }
-
-  onShellSignal(_listener: (signal: ShellSignal) => void) {
-    // A browser tab has no desktop shell to signal anything.
-    return this.#call((): Unsubscribe => () => undefined);
-  }
-
-  systemAppearance() {
-    return this.#call((): SystemAppearance => ({ accent: data.SAMPLE_SYSTEM_ACCENT }));
-  }
-
-  onSystemAppearance(_listener: (appearance: SystemAppearance) => void) {
-    // The sample system never changes its accent colour.
-    return this.#call((): Unsubscribe => () => undefined);
-  }
-
-  controlWindow(_action: WindowAction) {
-    // A browser tab cannot minimize, maximize or close itself.
-    return this.#call(() => undefined);
-  }
-
-  windowFrame() {
-    return this.#call((): WindowFrame => ({
-      maximized: false,
-      focused: true,
-      maximize_hovered: false,
-    }));
-  }
-
-  onWindowFrame(_listener: (frame: WindowFrame) => void) {
-    return this.#call((): Unsubscribe => () => undefined);
-  }
-
-  setMaximizeButton(_area: ButtonArea | null) {
-    // The page keeps the pointer over its own button: there are no snap layouts to offer.
-    return this.#call(() => undefined);
   }
 
   /** Its events are always readable, so it never asks for a reload. */
