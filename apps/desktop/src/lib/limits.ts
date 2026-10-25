@@ -38,30 +38,34 @@ export function queueLimitFacts(settings: QueueSettings): string[] {
       ? ''
       : `${String(connections)} ${connections === 1 ? 'connection' : 'connections'} each`,
   ].filter(Boolean);
-  return facts.length > 0 ? facts : ["Follows the app's limits"];
+  if (facts.length === 0) return ["Follows the app's limits"];
+  const follows = [concurrent, limit, connections].some((own) => own === null);
+  return follows ? [...facts, 'Other limits follow the app'] : facts;
 }
 
-/** What a queue's switch for downloads at the same time does, on and off, given the app's limit. */
+/** What a queue's downloads at the same time are, its own or the app's; the app's limit still caps every download. */
 export function concurrentLimitHelp(own: boolean, app: number | undefined): string {
-  const appWide = app === undefined ? "the app's limit" : `the app's limit of ${String(app)}`;
+  if (app === undefined)
+    return own ? 'Others in this queue wait their turn.' : "Uses the app's limit.";
   return own
-    ? `The rest wait their turn; ${appWide} still applies.`
-    : `Off, only ${appWide} applies.`;
+    ? `Others in this queue wait their turn. The app's limit of ${String(app)} still applies to all downloads.`
+    : `Uses the app's limit: ${String(app)} at once.`;
 }
 
-/** What a queue's speed limit switch does, on and off, given the app's limit. */
+/** What a queue's speed limit is, its own or the app's; the app's limit still caps every download. */
 export function speedLimitHelp(own: boolean, app: number | null): string {
-  const appWide = app === null ? null : `the app's limit of ${formatRate(app)}`;
   if (own)
-    return appWide === null
+    return app === null
       ? 'Shared by everything running in this queue.'
-      : `Shared by everything running in this queue; ${appWide} still applies.`;
-  return appWide === null ? 'Off, it downloads at full speed.' : `Off, only ${appWide} applies.`;
+      : `Shared by everything running in this queue. The app's limit of ${formatRate(app)} still applies.`;
+  return app === null
+    ? "Uses the app's speed limit, which is off."
+    : `Uses the app's speed limit: ${formatRate(app)}.`;
 }
 
-/** What a queue's switch for its own connections per download does, on and off. */
+/** What a queue's connections per download are: its own replace the app's. */
 export function ownConnectionsHelp(own: boolean, app: number): string {
   return own
-    ? 'Each download in this queue opens up to this many.'
-    : `Off, it uses the app's ${String(app)}.`;
+    ? `Each download in this queue opens up to this many, instead of the app's ${String(app)}.`
+    : `Uses the app's ${String(app)}.`;
 }

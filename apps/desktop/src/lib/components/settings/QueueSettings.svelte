@@ -39,6 +39,9 @@
               <span class="truncate">{queue.settings.name}</span>
               {#if queue.is_default}<Badge size="sm">Default</Badge>{/if}
             </span>
+            {#if queue.settings.description}
+              <span class="truncate text-small text-ink">{queue.settings.description}</span>
+            {/if}
             <span class="truncate text-small text-ink-muted">{facts.join(' · ')}</span>
           </span>
           <Button

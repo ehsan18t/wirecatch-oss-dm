@@ -56,17 +56,24 @@ describe('download limits', () => {
         connections: ownSetting(1),
       }),
     ).toEqual(['2 at once', 'Up to 4 MB/s', '1 connection each']);
+    expect(queueLimitFacts({ ...FOLLOWS, max_concurrent: ownSetting(2) })).toEqual([
+      '2 at once',
+      'Other limits follow the app',
+    ]);
   });
 
   it('says what the app still limits, whether a queue has its own limit or not', () => {
-    expect(concurrentLimitHelp(false, 5)).toBe("Off, only the app's limit of 5 applies.");
+    expect(concurrentLimitHelp(false, 5)).toBe("Uses the app's limit: 5 at once.");
     expect(concurrentLimitHelp(true, 5)).toBe(
-      "The rest wait their turn; the app's limit of 5 still applies.",
+      "Others in this queue wait their turn. The app's limit of 5 still applies to all downloads.",
     );
-    expect(speedLimitHelp(false, null)).toBe('Off, it downloads at full speed.');
+    expect(speedLimitHelp(false, null)).toBe("Uses the app's speed limit, which is off.");
     expect(speedLimitHelp(true, 2 * MB)).toBe(
-      "Shared by everything running in this queue; the app's limit of 2 MB/s still applies.",
+      "Shared by everything running in this queue. The app's limit of 2 MB/s still applies.",
     );
-    expect(ownConnectionsHelp(false, 8)).toBe("Off, it uses the app's 8.");
+    expect(ownConnectionsHelp(false, 8)).toBe("Uses the app's 8.");
+    expect(ownConnectionsHelp(true, 8)).toBe(
+      "Each download in this queue opens up to this many, instead of the app's 8.",
+    );
   });
 });

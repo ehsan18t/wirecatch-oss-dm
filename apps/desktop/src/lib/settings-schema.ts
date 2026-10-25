@@ -331,7 +331,7 @@ const DEFS = [
     id: 'queues',
     section: 'queues',
     label: 'Your queues',
-    help: 'Edit a queue to change its name, hours, limits and when it tells you its downloads finished.',
+    help: 'Edit a queue to change its name, description, hours, limits and when it tells you its downloads finished.',
     keywords:
       'queue queues schedule overnight limit at once concurrent notify notification all done finished batch',
   },

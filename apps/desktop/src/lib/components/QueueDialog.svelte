@@ -19,6 +19,7 @@
   // A queue's name and description, its own limits, its hours and when it tells you its downloads finished: each limit is a switch that opens its own fields, and off follows the app (D72.1); the days are a pattern first (every day, weekdays, weekends) with single days only when asked for.
   import {
     DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+    DEFAULT_MAX_CONCURRENT_DOWNLOADS,
     FOLLOW_APP,
     MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD,
@@ -41,11 +42,10 @@
     Input,
     NumberInput,
     SegmentedControl,
-    TextArea,
     ToggleChip,
     type FieldControl,
   } from '@wirecatch/ui';
-  import { QUEUE_NOTIFY_OPTIONS } from '$lib/finish-notices';
+  import { QUEUE_NOTIFY_OPTIONS, queueNotifyHelp } from '$lib/finish-notices';
   import { dayPattern, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
   import { daysForPattern, pickedDaysHelp, toggledDay } from '$lib/schedule-days';
   import { DAYS_PER_WEEK, WEEKDAYS } from '$lib/time';
@@ -67,8 +67,7 @@
   const original = (() => (id === null ? undefined : app.queues.byId(id)))();
   const opened = original?.settings;
   // What the form suggests when a limit or schedule is turned on for a queue that has none.
-  // The core makes a new queue that follows the app; these are only where the fields start.
-  const FIRST_MAX_CONCURRENT = 2;
+  // The core makes a new queue that follows the app; a limit switched on starts at the app's value.
   const FIRST_SPEED_LIMIT = 2 * MB;
   const FIRST_START: TimeOfDay = { hour: 1, minute: 0 };
   const FIRST_STOP: TimeOfDay = { hour: 7, minute: 0 };
@@ -81,9 +80,13 @@
   let name = $state(opened?.name ?? '');
   let description = $state(opened?.description ?? '');
   let concurrentOn = $state(ownConcurrent !== null);
-  let maxConcurrent = $state(ownConcurrent ?? FIRST_MAX_CONCURRENT);
+  let maxConcurrent = $state(
+    ownConcurrent ?? app.settings?.max_concurrent_downloads ?? DEFAULT_MAX_CONCURRENT_DOWNLOADS,
+  );
   let limitOn = $state(ownLimit !== null);
-  const initialLimit = splitKbOrMb(ownLimit ?? FIRST_SPEED_LIMIT);
+  const initialLimit = splitKbOrMb(
+    ownLimit ?? app.settings?.global_speed_limit ?? FIRST_SPEED_LIMIT,
+  );
   let limitUnit = $state(initialLimit.unit);
   let limitValue = $state<number | null>(initialLimit.value);
   let scheduleOn = $state(opened !== undefined && opened.schedule !== null);
@@ -111,13 +114,7 @@
     ),
   );
 
-  const notifyHelp = $derived.by(() => {
-    if (app.settings?.finish_notice === 'nothing')
-      return 'Settings, Notifications, says to tell you nothing, so this applies once you change that.';
-    return notify === 'each_download'
-      ? 'Downloads that finish a few seconds apart are grouped together.'
-      : 'Tells you once, when nothing in it downloads or waits to start. You still hear about a failed download right away.';
-  });
+  const notifyHelp = $derived(queueNotifyHelp(notify, app.settings?.finish_notice));
   let error = $state('');
   // Opened to delete the queue (from the palette), it starts at that question.
   let confirmDelete = $state((() => deleting)());
@@ -231,7 +228,7 @@
   title={original ? `Edit ${original.settings.name}` : 'New queue'}
   description={original
     ? undefined
-    : "A queue runs its downloads in order. It follows the app's limits unless you give it its own."}
+    : "A queue runs its downloads in order. It uses the app's limits unless you set its own."}
   onclose={() => app.closeDialog()}
 >
   <form
@@ -253,12 +250,11 @@
         />
       {/snippet}
     </Field>
-    <Field label="Description" description="Optional. What this queue is for.">
+    <Field label="Description (optional)">
       {#snippet children(control: FieldControl)}
-        <TextArea
+        <Input
           {...control}
           value={description}
-          rows={2}
           maxlength={MAX_QUEUE_DESCRIPTION_CHARS}
           onchange={(value: string) => (description = value)}
           placeholder="For example: Large files, overnight"
@@ -266,66 +262,74 @@
       {/snippet}
     </Field>
 
-    <SwitchCard
-      label="Limit downloads at the same time"
-      description={concurrentHelp}
-      checked={concurrentOn}
-      onchange={(on: boolean) => (concurrentOn = on)}
+    <section
+      aria-label="Limits"
+      class="flex flex-col divide-y divide-line rounded-md border border-line bg-layer"
     >
-      <NumberInput
+      <SwitchCard
+        flush
         label="Downloads at the same time"
-        class="w-28"
-        value={maxConcurrent}
-        min={1}
-        max={MAX_CONCURRENT_DOWNLOADS}
-        onchange={(value: number | null) => {
-          if (value !== null) maxConcurrent = value;
-        }}
-      />
-    </SwitchCard>
-
-    <SwitchCard
-      label="Limit this queue's speed"
-      description={limitHelp}
-      checked={limitOn}
-      onchange={(on: boolean) => (limitOn = on)}
-    >
-      <div class="flex items-center gap-2">
+        description={concurrentHelp}
+        checked={concurrentOn}
+        onchange={(on: boolean) => (concurrentOn = on)}
+      >
         <NumberInput
-          label="Speed limit"
+          label="Downloads at the same time"
           class="w-28"
-          value={limitValue}
-          min={SPEED_FIELD[limitUnit].min}
-          step={SPEED_FIELD[limitUnit].step}
-          onchange={(value: number | null) => (limitValue = value)}
+          value={maxConcurrent}
+          min={1}
+          max={MAX_CONCURRENT_DOWNLOADS}
+          onchange={(value: number | null) => {
+            if (value !== null) maxConcurrent = value;
+          }}
         />
-        <SegmentedControl
-          label="Unit"
-          size="sm"
-          value={limitUnit}
-          options={UNITS}
-          onchange={(unit: 'KB' | 'MB') => (limitUnit = unit)}
-        />
-      </div>
-    </SwitchCard>
+      </SwitchCard>
 
-    <SwitchCard
-      label="Use its own connections per download"
-      description={connectionsHelp}
-      checked={connectionsOn}
-      onchange={(on: boolean) => (connectionsOn = on)}
-    >
-      <NumberInput
+      <SwitchCard
+        flush
+        label="Speed limit"
+        description={limitHelp}
+        checked={limitOn}
+        onchange={(on: boolean) => (limitOn = on)}
+      >
+        <div class="flex items-center gap-2">
+          <NumberInput
+            label="Speed limit"
+            class="w-28"
+            value={limitValue}
+            min={SPEED_FIELD[limitUnit].min}
+            step={SPEED_FIELD[limitUnit].step}
+            onchange={(value: number | null) => (limitValue = value)}
+          />
+          <SegmentedControl
+            label="Unit"
+            size="sm"
+            value={limitUnit}
+            options={UNITS}
+            onchange={(unit: 'KB' | 'MB') => (limitUnit = unit)}
+          />
+        </div>
+      </SwitchCard>
+
+      <SwitchCard
+        flush
         label="Connections per download"
-        class="w-28"
-        value={connections}
-        min={1}
-        max={MAX_CONNECTIONS_PER_DOWNLOAD}
-        onchange={(value: number | null) => {
-          if (value !== null) connections = value;
-        }}
-      />
-    </SwitchCard>
+        description={connectionsHelp}
+        checked={connectionsOn}
+        onchange={(on: boolean) => (connectionsOn = on)}
+      >
+        <NumberInput
+          label="Connections per download"
+          class="w-28"
+          value={connections}
+          min={1}
+          max={MAX_CONNECTIONS_PER_DOWNLOAD}
+          onchange={(value: number | null) => {
+            if (value !== null) connections = value;
+          }}
+        />
+      </SwitchCard>
+    </section>
 
     <SwitchCard
       label="Only run at certain times"

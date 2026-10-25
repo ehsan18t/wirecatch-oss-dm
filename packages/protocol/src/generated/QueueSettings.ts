@@ -13,13 +13,11 @@ export type QueueSettings = {
    */
   description: string;
   /**
-   * Downloads from this queue that may run at the same time. Following the app sets no
-   * limit of the queue's own; [`AppSettings::max_concurrent_downloads`] caps every queue.
+   * Downloads from this queue that may run at the same time. Following the app sets no limit of the queue's own; [`AppSettings::max_concurrent_downloads`] caps every queue.
    */
   max_concurrent: Setting<number>;
   /**
-   * Bytes per second shared by the whole queue. Following the app sets no limit of the
-   * queue's own; [`AppSettings::global_speed_limit`] caps every queue.
+   * Bytes per second shared by the whole queue. Following the app sets no limit of the queue's own; [`AppSettings::global_speed_limit`] caps every queue.
    */
   speed_limit: Setting<number>;
   /**

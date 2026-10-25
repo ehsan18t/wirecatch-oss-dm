@@ -45,7 +45,7 @@ describe('the queue dialog', () => {
     const { app, dialog } = await openQueueDialog(null);
     expect(dialog.queryByRole('spinbutton')).toBeNull();
     await typeInto(dialog.getByLabelText('Name'), 'Plain');
-    await typeInto(dialog.getByLabelText('Description'), '  Everything else  ');
+    await typeInto(dialog.getByLabelText('Description (optional)'), '  Everything else  ');
     await save();
 
     const made = app.queues.list.find((q) => q.settings.name === 'Plain');
@@ -60,18 +60,16 @@ describe('the queue dialog', () => {
   it('gives a queue its own limits once they are switched on, as many as the core allows', async () => {
     const { app, dialog } = await openQueueDialog(null);
     await typeInto(dialog.getByLabelText('Name'), 'Big batch');
-    await fireEvent.click(dialog.getByRole('switch', { name: 'Limit downloads at the same time' }));
+    await fireEvent.click(dialog.getByRole('switch', { name: 'Downloads at the same time' }));
     await settle();
     const max = dialog.getByRole('spinbutton', { name: 'Downloads at the same time' });
     expect(max).toHaveAttribute('aria-valuemax', String(MAX_CONCURRENT_DOWNLOADS));
     await typeInto(max, String(MANY_AT_ONCE));
-    await fireEvent.click(dialog.getByRole('switch', { name: "Limit this queue's speed" }));
+    await fireEvent.click(dialog.getByRole('switch', { name: 'Speed limit' }));
     await settle();
     await fireEvent.click(dialog.getByRole('radio', { name: 'KB/s' }));
     await typeInto(dialog.getByRole('spinbutton', { name: 'Speed limit' }), String(SLOW_LIMIT_KB));
-    await fireEvent.click(
-      dialog.getByRole('switch', { name: 'Use its own connections per download' }),
-    );
+    await fireEvent.click(dialog.getByRole('switch', { name: 'Connections per download' }));
     await settle();
     const connections = dialog.getByRole('spinbutton', { name: 'Connections per download' });
     expect(connections).toHaveAttribute('aria-valuemax', String(MAX_CONNECTIONS_PER_DOWNLOAD));
@@ -86,7 +84,7 @@ describe('the queue dialog', () => {
 
   it('keeps downloads at once within what the core allows', async () => {
     const { dialog } = await openQueueDialog(null);
-    await fireEvent.click(dialog.getByRole('switch', { name: 'Limit downloads at the same time' }));
+    await fireEvent.click(dialog.getByRole('switch', { name: 'Downloads at the same time' }));
     await settle();
     const max = dialog.getByRole('spinbutton', { name: 'Downloads at the same time' });
     await typeInto(max, String(MAX_CONCURRENT_DOWNLOADS + 1));

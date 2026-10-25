@@ -20,7 +20,6 @@ export function toggledDay(days: readonly Weekday[], day: Weekday): Weekday[] {
   return days.includes(day) ? days.filter((d) => d !== day) : [...days, day];
 }
 
-/** What the days picked by hand mean. */
 export function pickedDaysHelp(days: readonly Weekday[]): string {
   if (days.length === 0) return 'Pick at least one day.';
   if (days.length === DAYS_PER_WEEK) return 'Runs every day.';
