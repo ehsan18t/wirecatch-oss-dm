@@ -13,6 +13,7 @@ use wirecatch_protocol::{DownloadId, QueueId};
 
 use super::Manager;
 use super::handovers::{Handover, Target};
+use super::placement::QueueRequest;
 use super::run::{delete_files, mark_cancelled};
 use super::state::{Entry, Expectation, State, Stop};
 use crate::error::{CoreError, Result};
@@ -113,14 +114,13 @@ impl Manager {
     /// used; and [`CoreError::Closed`] once the manager has shut down.
     pub async fn add_download(&self, request: AddRequest) -> Result<DownloadId> {
         let url = parse_url(request.url.as_str())?;
-        let queue = match request.queue {
-            Some(queue) => queue,
-            None => self.lock_open()?.default_queue(),
-        };
         let folder = request
             .folder
             .map(|f| self.inner.folders.resolve(&PortablePath(f)))
             .transpose()?;
+        let queue = self
+            .lock_open()?
+            .queue_for(QueueRequest::in_app(request.queue))?;
         let added = self
             .insert(NewEntry {
                 url,

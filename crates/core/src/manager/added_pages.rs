@@ -16,6 +16,7 @@ use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use super::Manager;
 use super::downloads::{NewEntry, parse_web_url};
 use super::media::{Held, MediaPending, MediaSource, check_room};
+use super::placement::QueueRequest;
 use super::state::Entry;
 use crate::error::Result;
 use crate::local_network::ChosenBy;
@@ -68,10 +69,7 @@ impl Manager {
             .map(|f| self.inner.folders.resolve(&PortablePath(f)))
             .transpose()?;
         let mut state = self.lock_open()?;
-        let queue = match request.queue {
-            Some(queue) => state.slot(queue)?.queue.id,
-            None => state.default_queue(),
-        };
+        let queue = state.queue_for(QueueRequest::in_app(request.queue))?;
         if let Some((&id, _)) = state
             .media
             .iter()

@@ -22,6 +22,7 @@ use wirecatch_protocol::{DownloadId, QuestionId, QueueId, Secret};
 use super::Manager;
 use super::downloads::{NewEntry, capture_action, parse_url};
 use super::handovers::{self, Handover, Target};
+use super::placement::QueueRequest;
 use super::state::{Expectation, Pending};
 use crate::error::{CoreError, Result};
 use crate::local_network::{self, ChosenBy};
@@ -384,16 +385,10 @@ impl Manager {
     /// How a capture arrives, read from the state in one go.
     fn arrival(&self, capture: &NewDownload) -> Result<Arrival> {
         let state = self.lock_open()?;
-        let wanted = capture
-            .queue
-            .unwrap_or(state.settings.extension.default_queue);
         Ok(Arrival {
             known: state.handovers.get(&capture.handover_id).is_some(),
             ask: state.settings.extension.ask_before_download,
-            // A queue deleted since the extension last synced falls back to the default.
-            queue: state
-                .slot(wanted)
-                .map_or_else(|_| state.default_queue(), |s| s.queue.id),
+            queue: state.queue_for(QueueRequest::Browser(capture.queue))?,
             chosen_by: ChosenBy::of_capture(capture, &state.settings.local_sites, &state.suffixes),
         })
     }
