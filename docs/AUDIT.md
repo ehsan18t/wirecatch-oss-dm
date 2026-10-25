@@ -219,6 +219,16 @@ Parts of the interface revamp's phase 1 carried into later work:
 - A link that failed after its add dialog was closed with Escape has nowhere to show the failure (`apps/desktop/src/ui/add`; phase 2, with the dialogs).
 - The add spec's check that nothing sits past the dialog's sides (`apps/desktop/e2e/add.spec.ts:174`) did not fire when the folder row's wrapping was removed; the sideways-scroll check caught it instead. Show the check failing on some break of its own, or drop it (W12).
 
+Found while reviewing the queue editor of D72 (2026-10-25), in shared parts it did not change (W12, or phase 2 of the revamp):
+
+- In the dark theme, white text on the cyan primary buttons ("Create queue", "Save", "New download") has a contrast near 2:1; give the primary button dark text or a darker fill in that theme (`packages/ui`).
+- An off switch looks heavier than an on one in the light theme (its knob is dark); an off switch wants a muted knob and an outlined track.
+- The selected option of a segmented control (KB/s or MB/s, the day patterns) is hard to tell apart in both themes, and the control is slightly shorter than a number field beside it.
+- A dialog whose content scrolls shows no sign of it at the footer; add a shadow or fade at the edge that has more content.
+- A queue's header line puts its settings and what it is doing now in one line (`apps/desktop/src/ui/list/ListHeader.svelte`); split them, or show the live part as a chip.
+- The sidebar's "1 of 1 running" reads as one download of one (`apps/desktop/src/lib/state/queues.svelte.ts`).
+- The edit dialog of a queue has no intro line where New queue has one.
+
 Parts of W4 carried into later work:
 
 - ENG-11 in core: the app still hands the engine the exact path it picked when the download was added, with the default `ExistingFile::Replace`, so a file another program saves under the name meanwhile is replaced in the app. Carried to W9, as the item under "Parts of W7 carried" describes.
