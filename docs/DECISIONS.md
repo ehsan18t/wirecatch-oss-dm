@@ -102,10 +102,10 @@ SQLite (`rusqlite`, bundled) in the per-user app data folder, with versioned mig
 
 ### D18. Quality bar (definition of done)
 A change is done only when all of these hold:
-1. `pnpm gate` passes: every check, from `scripts/gate.mjs`, the same checks CI runs.
+1. Every check from `scripts/gate.mjs` passes in the pull request's CI (D78).
 2. The change follows [ENGINEERING.md](ENGINEERING.md), including the rules only a reviewer can check.
 3. New behavior has tests that would fail without it; bug fixes add a regression test.
-4. Every public Rust item has a doc comment. No `unwrap()` on input that comes from outside the process.
+4. No `unwrap()` on input that comes from outside the process.
 5. User-facing text follows the house style (no em dashes, plain language, errors say how to fix them).
 6. An independent reviewer, not the author, has checked the work against its acceptance checklist.
 
@@ -662,6 +662,14 @@ Decided with the maintainer on 2026-10-25, before D72 picks a queue from what a 
 
 1. A download being added (`manager/arrival.rs`) is what to fetch and as whom (`Fetch`: the link, the browser's headers and cookies, who chose it), what was asked of it (`Wanted`: a name, a folder, a category), its queue, and its kind: a file, a file the browser handed over (with what the browser saw and its handover), or video or audio with what to download. A detail one kind has cannot be set on another.
 2. A media source and a page read for its video carry a `Fetch`, and both ways a browser file is added build its details in one place.
+
+### D78. Local checks are sized to the change, and CI runs them all
+
+Decided with the maintainer on 2026-10-25. It amends D18.1, which had every change run the full `pnpm gate` locally, and D18.4, whose doc comment on every public item D76 removed.
+
+1. The full gate takes about 25 minutes and much of the machine. Locally, a change runs the checks it can break: the lint, tests and type check of the crates and packages it touches, or the `text`, `docs` and `commits` groups for prose.
+2. The full gate runs locally only for a wide change (lint, build or toolchain config, dependencies and lockfiles, `crates/protocol` and its generated types, the gate scripts, several crates and apps at once), once, on the final tree. A tree that passed is not checked again after a split, a regroup, a rebase onto changes it does not touch, or a reworded message.
+3. Every check runs in the pull request's CI, and a pull request is squash-merged only when CI passes.
 
 ## Assumptions (not yet confirmed)
 
