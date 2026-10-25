@@ -39,23 +39,23 @@ use tokio::runtime::Handle;
 use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 use tracing::warn;
+use wirecatch_addons::manifest::MediaAddonSources;
 use wirecatch_engine::{CancellationToken, RateLimiter, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{StartupNotice, UiEvent};
 use wirecatch_protocol::extension::{BrowserNote, NoteId, NotePressed};
 use wirecatch_protocol::wire::Event;
+use wirecatch_sites::public_suffix::SuffixList;
+use wirecatch_store::{Recovery, Store};
 
 use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::folders::KnownFolders;
 use crate::naming;
-use crate::store::{Recovery, Store};
 use crate::user_error;
 pub use downloads::LinkFrom;
 use state::{Entry, State, Stop};
 pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
-use wirecatch_addons::manifest::MediaAddonSources;
-use wirecatch_sites::public_suffix::SuffixList;
 
 /// How many UI events may wait for a slow subscriber before it starts missing some.
 const UI_EVENT_BUFFER: usize = 1024;
@@ -301,9 +301,8 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// [`CoreError::DatabaseTooNew`] when the download list was saved by a newer
-    /// Wirecatch, [`CoreError::Database`] or [`CoreError::File`] when it cannot be
-    /// opened or created in `config.data_dir`. A damaged list is not an error: it is
+    /// [`CoreError::Store`] when the download list was saved by a newer Wirecatch,
+    /// another copy has it open, or it cannot be opened or created in `config.data_dir`. A damaged list is not an error: it is
     /// set aside and a new one started.
     pub async fn open(config: ManagerConfig) -> Result<Self> {
         let runtime = Handle::current();

@@ -13,8 +13,8 @@ use wirecatch_streams::ffmpeg::{
 
 use super::Container;
 use super::encoders::{AudioEncoder, Encoder, encode_filter};
-use super::job::{AudioAction, OutputJob, SubtitlePick, VideoAction};
 use super::subtitles::{ImageFormat, MAX_NAME_CHARS, SubtitleFormat, iso639_2};
+use super::{AudioAction, OutputJob, SubtitlePick, VideoAction};
 
 /// A text for an ffmpeg option value (a track's name or language): no control characters, a sensible length.
 fn plain(value: &str, max: usize) -> String {

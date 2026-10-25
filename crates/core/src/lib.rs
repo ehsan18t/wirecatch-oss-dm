@@ -18,7 +18,6 @@ mod profile;
 mod proxy;
 mod settings;
 mod speed;
-mod store;
 mod user_error;
 
 pub use clock::{Clock, ManualClock, Sleep, SystemClock};
@@ -30,8 +29,8 @@ pub use manager::{
 };
 pub use proxy::{PROXY_TEST_URL, UpdaterProxy, from_system as system_proxy};
 pub use settings::{DEFAULT_QUEUE_ID, default_settings};
-pub use store::{DATABASE_FILE, DATABASE_SIDE_FILES};
 pub use wirecatch_addons::manifest::{
     AddonComponent, AddonFile, ArchiveKind, ComponentId, Fingerprint, MEDIA_ADDON_FOLDER,
     ManifestError, MediaAddonSources, PinnedKey, ReleaseFile, Sha256Digest,
 };
+pub use wirecatch_store::{DATABASE_FILE, DATABASE_SIDE_FILES, StoreError};

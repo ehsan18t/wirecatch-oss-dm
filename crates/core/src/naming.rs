@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use wirecatch_engine::{PART_EXT, STATE_EXT, Url, naming};
+use wirecatch_files::with_suffix;
 
 use crate::error::{CoreError, Result};
 
@@ -233,12 +234,6 @@ pub(crate) fn work_dir(output: &Path) -> PathBuf {
 /// Where `wirecatch-streams` keeps segments while downloading `output`.
 pub(crate) fn stream_dir(output: &Path) -> PathBuf {
     with_suffix(output, wirecatch_streams::DIR_SUFFIX)
-}
-
-pub(crate) fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
-    let mut name = path.as_os_str().to_owned();
-    name.push(suffix);
-    PathBuf::from(name)
 }
 
 #[cfg(test)]

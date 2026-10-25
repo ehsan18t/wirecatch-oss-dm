@@ -21,14 +21,16 @@ use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::{DownloadId, QueueId};
 
-use crate::batches::StoredBatch;
-use crate::error::{CoreError, Result};
-use crate::headers::Origin;
-use crate::media::StoredMedia;
-use crate::naming::with_suffix;
-use crate::proxy::Logins;
-use wirecatch_files::owner_only;
+use wirecatch_files::{owner_only, with_suffix};
+use wirecatch_records::batch::StoredBatch;
+use wirecatch_records::media::{MediaJob, StoredMedia, unreadable};
+use wirecatch_records::origin::{Origin, without_sign_in};
+use wirecatch_records::proxy::Logins;
 use wirecatch_sites::local_network::ChosenBy;
+
+mod error;
+
+pub use error::{Result, StoreError};
 
 /// File name of the database inside the data folder (`config/product.toml`).
 pub use wirecatch_product::DATABASE_FILE;
@@ -142,14 +144,14 @@ const PROXY_LOGINS_KEY: &str = "proxy_passwords";
 /// The highest download and queue ids ever handed out. Kept so an id is never
 /// reused, even after the newest download or queue was deleted.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct LastIds {
+pub struct LastIds {
     pub download: i64,
     pub queue: i64,
 }
 
 /// One download as stored.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct StoredDownload {
+pub struct StoredDownload {
     pub summary: DownloadSummary,
     /// Order within its queue; lower runs first.
     pub position: i64,
@@ -165,7 +167,7 @@ pub(crate) struct StoredDownload {
 
 /// How a download's final name and folder get decided.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct NameChoice {
+pub struct NameChoice {
     /// The final path is fixed: the server has answered with the file. Until then
     /// the download's path is a provisional guess made when it was added.
     pub settled: bool,
@@ -177,7 +179,7 @@ pub(crate) struct NameChoice {
 
 impl NameChoice {
     /// A download whose path is already final.
-    #[cfg(test)]
+    #[must_use]
     pub fn settled() -> Self {
         Self {
             settled: true,
@@ -189,7 +191,7 @@ impl NameChoice {
 
 /// Everything loaded at startup.
 #[derive(Debug, Default)]
-pub(crate) struct Snapshot {
+pub struct Snapshot {
     pub settings: Option<AppSettings>,
     pub last_ids: LastIds,
     pub queues: Vec<Queue>,
@@ -207,7 +209,7 @@ pub(crate) struct Snapshot {
 
 /// A repair made while opening the download list.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Recovery {
+pub enum Recovery {
     /// The database file was damaged. It was moved to `kept_at`, with its journal files next to it under the names SQLite pairs with it, and a new, empty list was started.
     Damaged {
         /// Where the damaged file now is.
@@ -232,7 +234,7 @@ pub const DATABASE_SIDE_FILES: [&str; 2] = ["-wal", "-shm"];
 const KEEP_COPIES_FOR: Duration = Duration::from_hours(720);
 
 /// Told why saving failed after every retry.
-pub(crate) type FailureHandler = Box<dyn Fn(String) + Send>;
+pub type FailureHandler = Box<dyn Fn(String) + Send>;
 
 /// How long a write waits for a lock held by someone else (a backup tool, say).
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -265,7 +267,7 @@ enum Op {
 
 /// Handle to the database thread. Writes are applied in the order they are sent.
 #[derive(Debug, Clone)]
-pub(crate) struct Store {
+pub struct Store {
     ops: mpsc::Sender<Op>,
 }
 
@@ -319,7 +321,7 @@ impl Store {
         on_failure: FailureHandler,
         #[cfg(test)] backing_off: Option<BackOffHook>,
     ) -> Result<(Store, Snapshot)> {
-        std::fs::create_dir_all(dir).map_err(|source| CoreError::File {
+        std::fs::create_dir_all(dir).map_err(|source| StoreError::File {
             path: dir.display().to_string(),
             source,
         })?;
@@ -339,7 +341,7 @@ impl Store {
         let opened = open_database(&path).and_then(|conn| Ok((load(&conn)?, conn)));
         let (mut snapshot, conn, damaged) = match opened {
             Ok((snapshot, conn)) => (snapshot, conn, None),
-            Err(CoreError::Database(e)) if is_damage(&e) => {
+            Err(StoreError::Database(e)) if is_damage(&e) => {
                 error!(error = %e, "the download list is damaged; setting it aside and starting a new one");
                 let kept_at = set_aside(&path)?;
                 let conn = open_database(&path)?;
@@ -367,7 +369,7 @@ impl Store {
                 // list complete.
                 drop(lock);
             })
-            .map_err(|source| CoreError::File {
+            .map_err(|source| StoreError::File {
                 path: path.display().to_string(),
                 source,
             })?;
@@ -754,7 +756,7 @@ fn lock_path(database: &Path) -> PathBuf {
 /// browser endpoint does not.
 fn lock_list(dir: &Path, database: &Path) -> Result<File> {
     let path = lock_path(database);
-    let file_error = |source| CoreError::File {
+    let file_error = |source| StoreError::File {
         path: path.display().to_string(),
         source,
     };
@@ -788,7 +790,7 @@ fn lock_list(dir: &Path, database: &Path) -> Result<File> {
     match waiting.recv_timeout(LOCK_WAIT) {
         Ok(Ok(file)) => Ok(file),
         Ok(Err(source)) => Err(file_error(source)),
-        Err(_) => Err(CoreError::AlreadyOpen {
+        Err(_) => Err(StoreError::AlreadyOpen {
             path: dir.display().to_string(),
         }),
     }
@@ -849,7 +851,7 @@ fn set_aside(path: &Path) -> Result<PathBuf> {
                     error!(error = %e, file = %back_to.display(), "could not move a file of the damaged list back");
                 }
             }
-            return Err(CoreError::File {
+            return Err(StoreError::File {
                 path: from.display().to_string(),
                 source,
             });
@@ -931,7 +933,7 @@ fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
     let supported = schema_version();
     let found: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     if found > supported {
-        return Err(CoreError::DatabaseTooNew { found, supported });
+        return Err(StoreError::TooNew { found, supported });
     }
     // A new, empty database has nothing worth a copy.
     if found > 0 && found < supported {
@@ -1026,7 +1028,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
                 downloads.push(*download);
             }
             StoredRow::Unreadable { id, origin } => {
-                let (kept, first_seen) = without_sign_in(&origin);
+                let (kept, first_seen) = stored_without_sign_in(&origin);
                 conn.execute(
                     "UPDATE downloads SET origin = ?2 WHERE id = ?1",
                     params![id.0, kept],
@@ -1059,7 +1061,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
 }
 
 /// The stored origin of a row this build cannot read, without its sign-in, and whether this is the first start that found the row. Such a row is kept for a version that can read it (after going back to an older version, say), but nothing here can resume it or forget its sign-in after a week (D17), so it must not keep one. It is marked as having forgotten its sign-in, which also tells a later start it was already counted.
-fn without_sign_in(origin: &str) -> (String, bool) {
+fn stored_without_sign_in(origin: &str) -> (String, bool) {
     let Ok(mut value @ serde_json::Value::Object(_)) =
         serde_json::from_str::<serde_json::Value>(origin)
     else {
@@ -1069,7 +1071,7 @@ fn without_sign_in(origin: &str) -> (String, bool) {
     let headers = value
         .get("headers")
         .and_then(|h| serde_json::from_value::<Vec<Header>>(h.clone()).ok())
-        .map(|h| crate::headers::without_sign_in(&h).unwrap_or(h))
+        .map(|h| without_sign_in(&h).unwrap_or(h))
         .unwrap_or_default();
     value["headers"] = serde_json::to_value(headers).unwrap_or_default();
     value["forgot_sign_in"] = serde_json::Value::Bool(true);
@@ -1226,7 +1228,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
                 DownloadStatus::Completed | DownloadStatus::Cancelled
             ) {
                 status = DownloadStatus::Failed;
-                error = Some(crate::media::unreadable());
+                error = Some(unreadable());
             }
             StoredMedia {
                 summary: MediaSummary {
@@ -1235,7 +1237,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
                     video_key: None,
                     instead_of: None,
                 },
-                job: Some(crate::media::MediaJob::Unreadable),
+                job: Some(MediaJob::Unreadable),
             }
         })
     });
@@ -1331,6 +1333,14 @@ mod tests {
         Accent, Category, DownloadStatus, FinishNotice, FixAction, QueueNotify, QueueSettings,
         Schedule, Theme, TimeOfDay, UserError,
     };
+
+    fn sample_settings() -> AppSettings {
+        serde_json::from_str(include_str!("../samples/settings.json")).unwrap()
+    }
+
+    fn sample_queue() -> Queue {
+        serde_json::from_str(include_str!("../samples/queue.json")).unwrap()
+    }
 
     fn download(id: i64) -> StoredDownload {
         StoredDownload {
@@ -1569,7 +1579,7 @@ mod tests {
                 video_key: None,
                 instead_of: None,
             },
-            job: Some(crate::media::MediaJob::Page {
+            job: Some(MediaJob::Page {
                 video: "137".to_string().try_into().ok(),
                 audio: "140".to_string().try_into().ok(),
                 output: None,
@@ -1626,10 +1636,10 @@ mod tests {
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         let loaded = &snapshot.downloads[0];
         assert_eq!(loaded.summary.status, DownloadStatus::Failed);
-        assert_eq!(loaded.summary.error, Some(crate::media::unreadable()));
+        assert_eq!(loaded.summary.error, Some(unreadable()));
         assert_eq!(
             loaded.media.as_ref().and_then(|m| m.job.clone()),
-            Some(crate::media::MediaJob::Unreadable)
+            Some(MediaJob::Unreadable)
         );
     }
 
@@ -1638,7 +1648,7 @@ mod tests {
     async fn a_stored_format_id_this_build_refuses_reads_as_unreadable() {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
-        let id = |id: &str| crate::media::ytdlp::FormatId::try_from(id.to_string()).unwrap();
+        let id = |id: &str| wirecatch_records::media::FormatId::try_from(id.to_string()).unwrap();
         let mut row = download(1);
         row.summary.status = DownloadStatus::Paused;
         row.summary.error = None;
@@ -1649,7 +1659,7 @@ mod tests {
                 video_key: None,
                 instead_of: None,
             },
-            job: Some(crate::media::MediaJob::Page {
+            job: Some(MediaJob::Page {
                 video: Some(id("137")),
                 audio: Some(id("140")),
                 output: None,
@@ -1671,10 +1681,10 @@ mod tests {
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         let loaded = &snapshot.downloads[0];
         assert_eq!(loaded.summary.status, DownloadStatus::Failed);
-        assert_eq!(loaded.summary.error, Some(crate::media::unreadable()));
+        assert_eq!(loaded.summary.error, Some(unreadable()));
         assert_eq!(
             loaded.media.as_ref().and_then(|m| m.job.clone()),
-            Some(crate::media::MediaJob::Unreadable)
+            Some(MediaJob::Unreadable)
         );
     }
 
@@ -1706,7 +1716,7 @@ mod tests {
                 running_outside_schedule: false,
             },
         };
-        let settings = crate::settings::default_settings();
+        let settings = sample_settings();
         store.save_queues(vec![queue.clone()]);
         store.save_settings(settings.clone());
         store.save_downloads(vec![download(1), download(2)]);
@@ -1763,7 +1773,7 @@ mod tests {
         store.save_downloads(vec![download(1)]);
         let second = Store::open(dir.path(), ignore_failures());
         assert!(
-            matches!(second, Err(CoreError::AlreadyOpen { .. })),
+            matches!(second, Err(StoreError::AlreadyOpen { .. })),
             "a second store opened the same list"
         );
         drop(store);
@@ -1788,8 +1798,7 @@ mod tests {
         use std::io::{BufRead, BufReader};
         use std::process::{Command, Stdio};
 
-        const NAME: &str =
-            "store::tests::a_list_another_process_has_open_is_refused_until_it_closes";
+        const NAME: &str = "tests::a_list_another_process_has_open_is_refused_until_it_closes";
         if let Some(dir) = std::env::var_os(HOLD_LIST_VAR) {
             let (_store, _) = Store::open(Path::new(&dir), ignore_failures()).unwrap();
             println!("{HELD}");
@@ -1814,7 +1823,7 @@ mod tests {
 
         let refused = Store::open(dir.path(), ignore_failures());
         assert!(
-            matches!(refused, Err(CoreError::AlreadyOpen { .. })),
+            matches!(refused, Err(StoreError::AlreadyOpen { .. })),
             "opened a list another process has open"
         );
         drop(holder.stdin.take());
@@ -2202,7 +2211,7 @@ mod tests {
         conn.pragma_update(None, "user_version", 99).unwrap();
         drop(conn);
         let err = Store::open(dir.path(), ignore_failures()).unwrap_err();
-        assert!(matches!(err, CoreError::DatabaseTooNew { found: 99, .. }));
+        assert!(matches!(err, StoreError::TooNew { found: 99, .. }));
         assert!(err.to_string().contains("Update Wirecatch"));
     }
 
@@ -2368,7 +2377,7 @@ mod tests {
         }
         conn.pragma_update(None, "user_version", u32::try_from(version).unwrap())
             .unwrap();
-        let mut settings = crate::settings::default_settings();
+        let mut settings = sample_settings();
         settings.extension.ask_before_download = ask;
         settings.finish_notice = FinishNotice::Window;
         conn.execute(
@@ -2418,7 +2427,7 @@ mod tests {
     }
 
     fn stored_defaults() -> serde_json::Value {
-        let mut settings = crate::settings::default_settings();
+        let mut settings = sample_settings();
         settings.finish_notice = FinishNotice::Window;
         serde_json::to_value(settings).unwrap()
     }
@@ -2468,7 +2477,7 @@ mod tests {
     async fn the_theme_and_accent_are_saved() {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
-        let mut settings = crate::settings::default_settings();
+        let mut settings = sample_settings();
         settings.theme = Theme::Dark;
         settings.accent = Accent::System;
         store.save_settings(settings.clone());
@@ -2536,12 +2545,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.batches, Vec::new());
-        let mut queue = crate::settings::default_queue();
+        let mut queue = sample_queue();
         queue.settings.notify = QueueNotify::WhenDone;
         store.save_queues(vec![queue.clone()]);
         let batches = vec![StoredBatch {
             queue: queue.id,
-            outcomes: crate::batches::Outcomes {
+            outcomes: wirecatch_records::batch::Outcomes {
                 completed: vec![DownloadId(3), DownloadId(1)],
                 failed: vec![DownloadId(2)],
             },
@@ -2559,11 +2568,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert!(snapshot.settings.is_none());
-        assert!(
-            crate::settings::default_settings()
-                .extension
-                .ask_before_download
-        );
+        assert!(sample_settings().extension.ask_before_download);
     }
 
     #[test]

@@ -10,6 +10,8 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::{AddAction, AddedDownload};
 use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_sites::local_network::ChosenBy;
+use wirecatch_store::NameChoice;
 
 use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
@@ -19,9 +21,7 @@ use super::run::{delete_files, mark_cancelled};
 use super::state::{Entry, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::naming;
-use crate::store::NameChoice;
 use crate::{headers, settings};
-use wirecatch_sites::local_network::ChosenBy;
 
 fn remember_handover(state: &mut State, handover: &str, row: &DownloadSummary) {
     let action = capture_action(row);

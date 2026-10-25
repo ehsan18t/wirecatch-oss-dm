@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use tokio::sync::OnceCell;
 use wirecatch_core::{
-    CoreError, DATABASE_FILE, DATABASE_SIDE_FILES, KnownFolders, Manager, ManagerConfig,
+    CoreError, DATABASE_FILE, DATABASE_SIDE_FILES, KnownFolders, Manager, ManagerConfig, StoreError,
 };
 use wirecatch_ipc::{Endpoint, IpcError};
 use wirecatch_product::Channel;
@@ -51,7 +51,7 @@ impl Unopened {
     fn from_core(error: &CoreError) -> Self {
         Self {
             reason: error.to_protocol(),
-            another_copy: matches!(error, CoreError::AlreadyOpen { .. }),
+            another_copy: matches!(error, CoreError::Store(StoreError::AlreadyOpen { .. })),
         }
     }
 }

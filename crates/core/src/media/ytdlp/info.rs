@@ -5,11 +5,12 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tracing::debug;
 use wirecatch_engine::numeric::f64_to_u64;
 use wirecatch_engine::units::{GIB, KIB};
 use wirecatch_protocol::Secret;
+pub(crate) use wirecatch_records::media::FormatId;
 
 /// What yt-dlp says about a page (the fields Wirecatch reads).
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -151,55 +152,6 @@ pub(crate) struct Chapter {
     pub end_time: Option<f64>,
     #[serde(default, deserialize_with = "lenient")]
     pub title: Option<String>,
-}
-
-/// The id of a page's format, which a `-f` selection names it by. Sites choose these ids, so only letters, digits and `_ . - =` are accepted: a format with any other id is left out. A selection names an id in an exact, quoted filter ([`selector`](Self::selector)), since yt-dlp reads a bare `b`, `ba`, `best.2`, `mp4` and the like as a keyword or an extension before a format id.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub(crate) struct FormatId(String);
-
-/// The longest format id accepted; yt-dlp's are a few dozen characters at most.
-const MAX_FORMAT_ID: usize = 100;
-
-/// A format id with a character yt-dlp's selections give a meaning to, or none at all.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{0:?} is not a format id Wirecatch passes to yt-dlp")]
-pub(crate) struct InvalidFormatId(String);
-
-impl TryFrom<String> for FormatId {
-    type Error = InvalidFormatId;
-
-    fn try_from(id: String) -> Result<Self, Self::Error> {
-        let plain = !id.is_empty()
-            && id.len() <= MAX_FORMAT_ID
-            && id
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-' | b'='));
-        if plain {
-            Ok(FormatId(id))
-        } else {
-            Err(InvalidFormatId(id))
-        }
-    }
-}
-
-impl From<FormatId> for String {
-    fn from(id: FormatId) -> Self {
-        id.0
-    }
-}
-
-impl FormatId {
-    /// The selection of exactly this format: `b*` picks the one format the filter leaves, video, audio or both. The id holds no quote or backslash, so it cannot end the quoted value.
-    fn selector(&self) -> String {
-        format!(r#"b*[format_id="{}"]"#, self.0)
-    }
-}
-
-impl std::fmt::Display for FormatId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
 }
 
 /// yt-dlp's selection when no format is named: the best video with the best audio, else the best file with both.
@@ -358,7 +310,9 @@ impl Info {
                     .format_id
                     .clone()
                     .and_then(|id| FormatId::try_from(id).ok())
-                    .unwrap_or_else(|| FormatId(TOP_LEVEL_FORMAT_ID.into())),
+                    .unwrap_or_else(|| {
+                        FormatId::try_from(TOP_LEVEL_FORMAT_ID.to_owned()).unwrap_or_default()
+                    }),
                 url: Some(url.clone()),
                 ext: self.ext.clone(),
                 ..Format::default()
@@ -506,23 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn format_ids_that_mean_something_in_a_selection_are_refused() {
-        for id in ["137", "hls-1080p", "dash-video=4000000", "en_US.0"] {
-            assert!(FormatId::try_from(id.to_string()).is_ok(), "{id}");
-        }
-        for id in [
-            "",
-            "137+140",
-            "best/worst",
-            "a,b",
-            "bv[height<=720]",
-            "x y",
-            "(a)",
-            "a*",
-        ] {
-            assert!(FormatId::try_from(id.to_string()).is_err(), "{id}");
-        }
-        // A page whose format ids a site made hostile keeps the formats it can name.
+    fn a_page_keeps_the_formats_it_can_name() {
         let info: Info = serde_json::from_str(
             r#"{"formats":[{"format_id":"137"},{"format_id":"137+bestaudio"},{"format_id":"best/b"}]}"#,
         )

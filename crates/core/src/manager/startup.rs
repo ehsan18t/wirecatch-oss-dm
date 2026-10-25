@@ -1,8 +1,7 @@
 use std::path::Path;
 
 use wirecatch_protocol::app::StartupNotice;
-
-use crate::store::Recovery;
+use wirecatch_store::Recovery;
 
 /// The notice for a download list that had to be repaired while opening, if it
 /// had to be: one notice, saying everything that was repaired.
