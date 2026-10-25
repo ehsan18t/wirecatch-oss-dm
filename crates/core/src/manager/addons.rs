@@ -22,8 +22,9 @@ use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
 
 use super::Manager;
 use crate::addons::manifest::{self, AddonComponent, ComponentId, ReleaseFile};
-use crate::addons::{self, Check, MediaTools, Record, archive, signature};
+use crate::addons::{self, Check, Record, archive, signature};
 use crate::error::{CoreError, Result};
+use crate::media::MediaTools;
 use crate::media::ytdlp;
 use crate::user_error;
 use wirecatch_engine::units::{KIB, MIB};
@@ -200,7 +201,7 @@ impl AddonSlot {
     pub fn load(dir: &Path) -> Self {
         match Record::load(dir) {
             Ok(record) => {
-                let tools = addons::tools(dir, &record, Check::Sizes);
+                let tools = addons::tools(dir, &record, Check::Sizes).map(MediaTools::from);
                 Self {
                     record,
                     tools,
@@ -343,7 +344,7 @@ impl Manager {
                     path: dir.join(addons::RECORD_FILE).display().to_string(),
                     source,
                 })?;
-                let tools = addons::tools(&dir, &record, check);
+                let tools = addons::tools(&dir, &record, check).map(MediaTools::from);
                 Ok((record, tools))
             })
             .await;
@@ -1325,7 +1326,7 @@ fn swap_in(
             crate::discard::dir(&addons::ytdlp_cache(dir));
         }
     }
-    let tools = addons::tools(dir, &record, Check::Sizes);
+    let tools = addons::tools(dir, &record, Check::Sizes).map(MediaTools::from);
     Ok((record, tools))
 }
 

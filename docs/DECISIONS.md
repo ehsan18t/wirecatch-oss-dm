@@ -677,6 +677,7 @@ Decided with the maintainer on 2026-10-25. `wirecatch-core` holds 31,000 lines, 
 
 1. Each part that does not need the manager's state leaves core for a crate of its own, one pull request each, cleanest first: the protocol server, site rules (the Public Suffix List and the local network), then, once their cycles are broken, the media add-on, the store, media and settings. What stays in core is the manager: its state and the code that runs downloads, queues and questions.
 2. Done: `crates/queues` (D74); `crates/server`, which serves one client connection from the manager's public methods (the protocol tests stay in core's test suite, whose harness they use, and reach the server as a dev-dependency); and `crates/sites`, the Public Suffix List with its built-in snapshot and the local network rules, while core writes a newer list to disk with the rest of its files.
+3. Before the media add-on, the store and media can leave, core's modules depend on each other only one way: the add-on check reports where its programs are and media wraps them in its own `MediaTools`; the notices of a repaired download list live with the manager that opens it; a download's browser headers (`Origin`) live with the code that reads them, in `headers`; and the folders a download keeps beside its file, media's work folders included, are `naming`'s.
 
 ## Assumptions (not yet confirmed)
 

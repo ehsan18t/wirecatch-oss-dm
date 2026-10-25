@@ -23,6 +23,7 @@ mod run;
 mod scheduling;
 mod settle;
 mod sign_in;
+mod startup;
 mod state;
 mod suffix_list;
 #[cfg(test)]
@@ -371,9 +372,9 @@ impl Manager {
             rows_changed: Arc::new(Notify::new()),
             queues_changed: Arc::new(Notify::new()),
             stopped: CancellationToken::new(),
-            startup_notices: user_error::list_recovered(&recoveries)
+            startup_notices: startup::list_recovered(&recoveries)
                 .into_iter()
-                .chain(not_private.map(|reason| user_error::not_private(&notices_dir, &reason)))
+                .chain(not_private.map(|reason| startup::not_private(&notices_dir, &reason)))
                 .collect(),
             set_aside_list: recoveries.iter().find_map(|r| match r {
                 Recovery::Damaged { kept_at } => Some(kept_at.clone()),

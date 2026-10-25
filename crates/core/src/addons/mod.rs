@@ -16,13 +16,9 @@ pub(crate) mod signature;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 use tracing::warn;
-
-use crate::media::convert::EncoderCatalog;
 
 use manifest::{AddonComponent, ComponentId, Sha256Digest};
 
@@ -102,57 +98,13 @@ pub(crate) enum Check {
 }
 
 /// The programs of an installed, intact media add-on.
-#[derive(Debug, Clone)]
-pub(crate) struct MediaTools {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ToolPaths {
     pub ytdlp: PathBuf,
     pub ffmpeg: PathBuf,
     pub deno: PathBuf,
     /// yt-dlp's own cache (player code, signatures), in the add-on folder: never the one another yt-dlp on the machine writes, and emptied when yt-dlp is replaced.
     pub ytdlp_cache: PathBuf,
-    /// Set (for every clone) when one of the programs could not be started, for
-    /// example because an antivirus took it away: the manager then looks at the
-    /// files again instead of trusting what it found earlier.
-    broken: Arc<AtomicBool>,
-    /// What is known about this ffmpeg's encoders, shared by every clone and asked again when the add-on is looked at again.
-    encoders: Arc<EncoderCatalog>,
-}
-
-impl PartialEq for MediaTools {
-    fn eq(&self, other: &Self) -> bool {
-        (&self.ytdlp, &self.ffmpeg, &self.deno) == (&other.ytdlp, &other.ffmpeg, &other.deno)
-    }
-}
-
-impl Eq for MediaTools {}
-
-impl MediaTools {
-    /// Records that a program could not be started.
-    pub fn mark_broken(&self) {
-        self.broken.store(true, Ordering::Relaxed);
-    }
-
-    /// What is known about this ffmpeg's encoders.
-    pub fn encoders(&self) -> &EncoderCatalog {
-        &self.encoders
-    }
-
-    /// Whether a program could not be started since these were found.
-    pub fn is_broken(&self) -> bool {
-        self.broken.load(Ordering::Relaxed)
-    }
-
-    /// Tools whose ffmpeg is `ffmpeg`, for tests of code that runs it.
-    #[cfg(test)]
-    pub fn for_test(ffmpeg: &Path) -> MediaTools {
-        MediaTools {
-            ytdlp: PathBuf::from("yt-dlp"),
-            ffmpeg: ffmpeg.to_path_buf(),
-            deno: PathBuf::from("deno"),
-            ytdlp_cache: PathBuf::from("yt-dlp-cache"),
-            broken: Arc::default(),
-            encoders: Arc::default(),
-        }
-    }
 }
 
 /// yt-dlp's cache folder in the add-on folder `dir`.
@@ -161,7 +113,7 @@ pub(crate) fn ytdlp_cache(dir: &Path) -> PathBuf {
 }
 
 /// The add-on's programs if every recorded file is there with its recorded size, so nothing half-installed or damaged is ever run, and with [`Check::Hashes`] its SHA-256. Each program must be one of those files: a record naming any other (written by hand, or by a bug) runs nothing. Blocks on the disk.
-pub(crate) fn tools(dir: &Path, record: &Record, check: Check) -> Option<MediaTools> {
+pub(crate) fn tools(dir: &Path, record: &Record, check: Check) -> Option<ToolPaths> {
     let program = |id: ComponentId| -> Option<PathBuf> {
         let component = record.components.get(&id)?;
         if !component.files.iter().any(|f| f.path == component.program) {
@@ -183,13 +135,11 @@ pub(crate) fn tools(dir: &Path, record: &Record, check: Check) -> Option<MediaTo
         }
         archive::safe_join(&folder, &component.program).ok()
     };
-    Some(MediaTools {
+    Some(ToolPaths {
         ytdlp: program(ComponentId::YtDlp)?,
         ffmpeg: program(ComponentId::Ffmpeg)?,
         deno: program(ComponentId::Deno)?,
         ytdlp_cache: ytdlp_cache(dir),
-        broken: Arc::default(),
-        encoders: Arc::default(),
     })
 }
 

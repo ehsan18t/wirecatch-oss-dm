@@ -158,7 +158,7 @@ pub(crate) fn finished_size(path: &Path) -> Option<u64> {
         return None;
     }
     // A media download still has its work folders until its file is complete.
-    if [crate::media::work_dir(path), crate::media::stream_dir(path)]
+    if [work_dir(path), stream_dir(path)]
         .iter()
         .any(|p| p.exists())
     {
@@ -220,6 +220,25 @@ fn key(path: &Path) -> String {
     } else {
         s.into_owned()
     }
+}
+
+/// Next to a media download's file while it runs: the folder for its parts
+/// (video, audio, yt-dlp's own files) until they are joined.
+pub(crate) const WORK_SUFFIX: &str = ".wcmedia";
+
+pub(crate) fn work_dir(output: &Path) -> PathBuf {
+    with_suffix(output, WORK_SUFFIX)
+}
+
+/// Where `wirecatch-streams` keeps segments while downloading `output`.
+pub(crate) fn stream_dir(output: &Path) -> PathBuf {
+    with_suffix(output, wirecatch_streams::DIR_SUFFIX)
+}
+
+pub(crate) fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    PathBuf::from(name)
 }
 
 #[cfg(test)]
