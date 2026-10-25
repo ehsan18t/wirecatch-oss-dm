@@ -7264,6 +7264,7 @@ dependencies = [
  "chrono",
  "dirs 7.0.0",
  "lzma-rust2",
+ "percent-encoding",
  "pgp",
  "publicsuffix",
  "rand 0.8.8",

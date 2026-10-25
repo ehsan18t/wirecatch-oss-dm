@@ -214,12 +214,13 @@ pub enum Error {
         host: String,
     },
 
-    /// A proxy is set for FTP (in the environment, for example `ALL_PROXY` or
-    /// `FTP_PROXY`, or in the system's proxy setting) and its exceptions do not
-    /// name the server, but FTP downloads cannot go through a proxy yet, and
-    /// going around it without asking could expose what it is there to hide.
+    /// A proxy that cannot carry FTP (anything but SOCKS5) is set for FTP (in
+    /// the environment, for example `ALL_PROXY` or `FTP_PROXY`, in the
+    /// system's proxy setting, or in [`DownloadOptions::proxy`](crate::DownloadOptions::proxy))
+    /// and its exceptions do not name the server. Going around it without
+    /// asking could expose what it is there to hide.
     #[error(
-        "FTP downloads cannot go through a proxy yet, and {setting} asks for one. To download this link directly instead, {}",
+        "FTP downloads can only go through a SOCKS5 proxy, and {setting} asks for another kind. To download this link directly instead, {}",
         setting.remedy()
     )]
     #[non_exhaustive]
@@ -227,6 +228,14 @@ pub enum Error {
         /// Where the proxy is set.
         setting: ProxySetting,
     },
+
+    /// The proxy asked for a user name and password it was not given, or
+    /// refused the ones it was given: an HTTP proxy's `407` answer, or a
+    /// SOCKS proxy's refusal.
+    #[error(
+        "the proxy asked for a user name and password, or did not accept the ones it was given"
+    )]
+    ProxyLoginRefused,
 
     /// Something inside the engine failed that should not, such as a task that
     /// panicked. This is a bug in this crate; please report it with the text.
@@ -251,6 +260,9 @@ impl Error {
     }
 
     pub(crate) fn network(error: reqwest::Error) -> Self {
+        if refused_by_proxy(&error) {
+            return Error::ProxyLoginRefused;
+        }
         Error::Network(NetworkError(Inner::Http(error)))
     }
 
@@ -283,6 +295,27 @@ impl Error {
     pub(crate) fn task(error: &tokio::task::JoinError) -> Self {
         Error::Internal(format!("a background task failed: {error}"))
     }
+}
+
+/// Whether a proxy refused `error`'s request for want of a login. The
+/// `hyper-util` errors that say so are not public types, so their text is
+/// matched: a tunnel's `407` and a SOCKS5 proxy's refusals. The engine's tests
+/// against a proxy that asks for a login catch a dependency that rewords them.
+fn refused_by_proxy(error: &reqwest::Error) -> bool {
+    const REFUSALS: [&str; 3] = [
+        "proxy authorization required",
+        "credentials not accepted",
+        "server does not support user/pass authentication",
+    ];
+    let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(c) = cause {
+        let text = c.to_string();
+        if REFUSALS.iter().any(|refusal| text.contains(refusal)) {
+            return true;
+        }
+        cause = c.source();
+    }
+    false
 }
 
 /// What the engine was doing with a file when [`Error::Io`] happened.

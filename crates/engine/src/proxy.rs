@@ -24,6 +24,11 @@
 //! turned on: on Windows, the manual proxy in the network settings, for every
 //! protocol or per protocol, with its exceptions (unless `NO_PROXY` is set).
 //! Other systems have no setting the engine reads.
+//!
+//! All of that is [`ProxyChoice::System`], the default. An application with a
+//! proxy setting of its own gives [`ProxyChoice::Direct`] or
+//! [`ProxyChoice::Manual`] instead, and then neither the environment nor the
+//! system's setting is read.
 
 use std::ffi::OsString;
 use std::fmt;
@@ -31,6 +36,8 @@ use std::sync::Arc;
 
 use hyper_util::client::proxy::matcher::Matcher;
 use url::{Host, Url};
+
+use crate::socks::Socks5;
 
 /// Reads an environment variable; tests pass their own.
 pub(crate) type Env<'a> = &'a (dyn Fn(&str) -> Option<OsString> + Sync);
@@ -52,6 +59,8 @@ pub enum ProxySetting {
     /// The system's proxy setting (on Windows, the manual proxy in the network
     /// settings).
     System,
+    /// The proxy given in [`DownloadOptions::proxy`](crate::DownloadOptions::proxy).
+    Given,
 }
 
 impl ProxySetting {
@@ -60,6 +69,7 @@ impl ProxySetting {
         match self {
             Self::Variable(name) => format!("remove {name} from the environment"),
             Self::System => "turn the proxy off in the system's network settings, or add this server to its exceptions".to_string(),
+            Self::Given => "add this server to the proxy's exceptions, or let FTP links go directly".to_string(),
         }
     }
 }
@@ -69,7 +79,111 @@ impl fmt::Display for ProxySetting {
         match self {
             Self::Variable(name) => write!(f, "the {name} environment variable"),
             Self::System => f.write_str("the system's proxy setting"),
+            Self::Given => f.write_str("the download's proxy option"),
         }
+    }
+}
+
+/// Which proxies a download's requests go through ([`DownloadOptions::proxy`](crate::DownloadOptions::proxy)).
+///
+/// New variants may be added in minor releases, so a `match` needs a `_` arm.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ProxyChoice {
+    /// The proxy variables of the environment, or else the system's proxy
+    /// setting (see the [crate documentation](crate#proxies)).
+    #[default]
+    System,
+    /// No proxy: every request goes directly, whatever the environment or the
+    /// system sets.
+    Direct,
+    /// The proxies given, and neither the environment nor the system's setting.
+    Manual(ManualProxies),
+}
+
+/// Proxies an application sets itself ([`ProxyChoice::Manual`]).
+///
+/// Each proxy is a URL, as in the proxy variables: `http://`, `https://`,
+/// `socks4://`, `socks5://` (names resolved here) or `socks5h://` (names
+/// resolved by the proxy), with a login as `user:password@` when the proxy
+/// asks for one. A value without a scheme is an `http` proxy. An empty value
+/// is no proxy.
+///
+/// New fields may be added in minor releases: start from
+/// [`ManualProxies::default`].
+#[derive(Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ManualProxies {
+    /// For every protocol without a proxy of its own below.
+    pub all: Option<String>,
+    /// For `http` links.
+    pub http: Option<String>,
+    /// For `https` links.
+    pub https: Option<String>,
+    /// For `ftp`, `ftps` and `ftpes` links. Only a SOCKS5 proxy can carry FTP.
+    pub ftp: Option<String>,
+    /// The hosts reached directly, separated by commas or semicolons: names
+    /// (each covers its subdomains, written `example.com`, `.example.com` or
+    /// `*.example.com`), addresses, networks (`10.0.0.0/8` or `10.*`), `*`
+    /// for every name, and `<local>` for every name without a dot.
+    pub exceptions: String,
+    /// An FTP link whose proxy cannot carry FTP (anything but SOCKS5) goes
+    /// directly instead of failing with
+    /// [`Error::FtpProxyUnsupported`](crate::Error::FtpProxyUnsupported).
+    pub ftp_direct: bool,
+}
+
+/// Shows the proxies without the logins their values may carry.
+impl fmt::Debug for ManualProxies {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let shown = |value: &Option<String>| value.as_deref().map(without_login);
+        f.debug_struct("ManualProxies")
+            .field("all", &shown(&self.all))
+            .field("http", &shown(&self.http))
+            .field("https", &shown(&self.https))
+            .field("ftp", &shown(&self.ftp))
+            .field("exceptions", &self.exceptions)
+            .field("ftp_direct", &self.ftp_direct)
+            .finish()
+    }
+}
+
+impl ProxyChoice {
+    /// Whether every proxy given can be read. The HTTP client goes directly
+    /// around one it cannot read, which an application's own setting must
+    /// never do; a value from the environment keeps D62's behaviour.
+    pub(crate) fn readable(&self) -> bool {
+        match self {
+            Self::Manual(manual) => {
+                let proxies = Proxies::manual(manual);
+                [&proxies.http, &proxies.https, &proxies.ftp, &proxies.all]
+                    .into_iter()
+                    .flatten()
+                    .all(|proxy| proxy.url().is_some())
+            }
+            _ => true,
+        }
+    }
+}
+
+impl ManualProxies {
+    /// What [`ProxyChoice::System`] reads now, as manual proxies, or `None` when
+    /// it finds no proxy: for an application that offers to copy the system's
+    /// setting into its own.
+    #[must_use]
+    pub fn from_system() -> Option<Self> {
+        Proxies::of(&ProxyChoice::System).as_manual()
+    }
+}
+
+/// A proxy value with its login, if any, shown as `***`.
+fn without_login(value: &str) -> String {
+    match value.rsplit_once('@') {
+        Some((before, host)) => match before.split_once("://") {
+            Some((scheme, _)) => format!("{scheme}://***@{host}"),
+            None => format!("***@{host}"),
+        },
+        None => value.to_string(),
     }
 }
 
@@ -102,12 +216,8 @@ pub(crate) struct Proxy {
 /// Shows the proxy without the user name and password its value may carry.
 impl fmt::Debug for Proxy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let shown = match self.value.rsplit_once('@') {
-            Some((_, host)) => format!("***@{host}"),
-            None => self.value.clone(),
-        };
         f.debug_struct("Proxy")
-            .field("value", &shown)
+            .field("value", &without_login(&self.value))
             .field("setting", &self.setting)
             .finish()
     }
@@ -179,13 +289,39 @@ pub(crate) struct Proxies {
     no: String,
     /// Names without a dot are reached directly (the system's `<local>`).
     plain_names_direct: bool,
+    /// An FTP link whose proxy cannot carry FTP goes directly.
+    ftp_direct: bool,
 }
 
 impl Proxies {
-    /// The settings in effect now: the process's environment, or else the
-    /// system's setting.
-    pub(crate) fn current() -> Self {
-        Self::read(&process_env, system_proxy)
+    /// The settings `choice` asks for, read now.
+    pub(crate) fn of(choice: &ProxyChoice) -> Self {
+        match choice {
+            ProxyChoice::System => Self::read(&process_env, system_proxy),
+            ProxyChoice::Direct => Self::default(),
+            ProxyChoice::Manual(manual) => Self::manual(manual),
+        }
+    }
+
+    /// The proxies an application set.
+    fn manual(manual: &ManualProxies) -> Self {
+        let proxy = |value: &Option<String>| {
+            let value = value.as_deref()?.trim();
+            (!value.is_empty()).then(|| Proxy {
+                value: value.to_string(),
+                setting: ProxySetting::Given,
+            })
+        };
+        let (no, plain_names_direct) = exceptions(&manual.exceptions);
+        Self {
+            http: proxy(&manual.http),
+            https: proxy(&manual.https),
+            ftp: proxy(&manual.ftp),
+            all: proxy(&manual.all),
+            no,
+            plain_names_direct,
+            ftp_direct: manual.ftp_direct,
+        }
     }
 
     /// The settings `env` gives, or else those `system` reads.
@@ -209,6 +345,7 @@ impl Proxies {
                 .map(|(_, value)| value)
                 .unwrap_or_default(),
             plain_names_direct: false,
+            ftp_direct: false,
         };
         let none_set = [&proxies.http, &proxies.https, &proxies.ftp, &proxies.all]
             .iter()
@@ -238,8 +375,7 @@ impl Proxies {
                     "https" => self.https = proxy(server),
                     "ftp" => self.ftp = proxy(server),
                     // As the system uses it: for every protocol without its
-                    // own entry. The HTTP client cannot go through SOCKS, so
-                    // those requests fail rather than go around it.
+                    // own entry, and SOCKS4, the only version it speaks.
                     "socks" => self.all = proxy(&format!("socks4://{}", server.trim())),
                     _ => {}
                 }
@@ -250,6 +386,30 @@ impl Proxies {
         if self.no.trim().is_empty() {
             (self.no, self.plain_names_direct) = exceptions(&system.exceptions);
         }
+    }
+
+    /// These settings as manual proxies, or `None` when they hold no proxy.
+    fn as_manual(&self) -> Option<ManualProxies> {
+        let value = |proxy: &Option<Proxy>| proxy.as_ref().map(|proxy| proxy.value.clone());
+        let mut exceptions = self.no.clone();
+        if self.plain_names_direct {
+            if !exceptions.trim().is_empty() {
+                exceptions.push(',');
+            }
+            exceptions.push_str("<local>");
+        }
+        let manual = ManualProxies {
+            all: value(&self.all),
+            http: value(&self.http),
+            https: value(&self.https),
+            ftp: value(&self.ftp),
+            exceptions,
+            ftp_direct: self.ftp_direct,
+        };
+        [&manual.all, &manual.http, &manual.https, &manual.ftp]
+            .iter()
+            .any(|proxy| proxy.is_some())
+            .then_some(manual)
     }
 
     /// The proxy a request with `scheme` to `host` goes through, or `None`
@@ -279,6 +439,20 @@ impl Proxies {
     fn client_target(&self, url: &Url) -> Option<Url> {
         let scheme = Scheme::of(url).filter(|scheme| *scheme != Scheme::Ftp)?;
         self.proxy_for(scheme, url.host_str()?)?.url()
+    }
+
+    /// How an FTP connection to `host` goes: directly (`Ok(None)`), through
+    /// a SOCKS5 proxy, or not at all, when its proxy cannot carry FTP and
+    /// going around it was not allowed (`Err`, naming where it is set).
+    pub(crate) fn ftp_route(&self, host: &str) -> Result<Option<Socks5>, ProxySetting> {
+        let Some(proxy) = self.proxy_for(Scheme::Ftp, host) else {
+            return Ok(None);
+        };
+        match proxy.url().as_ref().and_then(Socks5::from_url) {
+            Some(socks) => Ok(Some(socks)),
+            None if self.ftp_direct => Ok(None),
+            None => Err(proxy.setting.clone()),
+        }
     }
 
     /// These settings as the HTTP client's only proxy, so it reads none of
@@ -319,15 +493,20 @@ fn first_set(names: &[&'static str], env: Env<'_>) -> Option<(&'static str, Stri
         .find_map(|&name| env(name)?.into_string().ok().map(|value| (name, value)))
 }
 
-/// The system's exceptions in `NO_PROXY` form, and whether they hold
-/// `<local>`. `*.corp.example` becomes `corp.example`, which covers its
+/// Exceptions as the system writes them (separated by semicolons) or as an
+/// application gives them (by commas, as in `NO_PROXY`), in `NO_PROXY` form,
+/// and whether they hold `<local>`. `*.corp.example` becomes `corp.example`, which covers its
 /// subdomains (and the name itself), an IPv4 wildcard becomes the network it
 /// covers, and `*` (or `*.*`) covers every name, as in `NO_PROXY`; any other
 /// pattern stays as it is and matches nothing, so its hosts keep the proxy.
 fn exceptions(list: &str) -> (String, bool) {
     let mut local = false;
     let mut entries = Vec::new();
-    for entry in list.split(';').map(str::trim).filter(|e| !e.is_empty()) {
+    for entry in list
+        .split([';', ','])
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+    {
         if entry.eq_ignore_ascii_case("<local>") {
             local = true;
         } else if let Some(network) = ipv4_wildcard(entry) {
