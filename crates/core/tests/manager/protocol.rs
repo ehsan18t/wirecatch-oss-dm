@@ -12,7 +12,6 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use wirecatch_core::{LinkFrom, Manager};
-use wirecatch_server::serve_connection;
 use wirecatch_protocol::app::{
     CaptureConfirmation, DownloadStatus, MediaDefaultsPatch, QueueSettings, UiEvent, Update,
 };
@@ -26,6 +25,7 @@ use wirecatch_protocol::wire::{
     UNKNOWN_REQUEST_ID,
 };
 use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION, QuestionId};
+use wirecatch_server::serve_connection;
 
 use crate::common::{
     Config, Harness, PATIENCE, SilentServer, TestResult, TestServer, fast_server, test_data, tune,

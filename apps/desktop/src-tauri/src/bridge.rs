@@ -6,8 +6,8 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use wirecatch_core::Manager;
-use wirecatch_server::serve_connection;
 use wirecatch_ipc::{IpcError, Listener};
+use wirecatch_server::serve_connection;
 
 /// File name of the bridge, installed next to the app. The bridge starts the app from its own
 /// folder, so both must sit side by side (D19).
