@@ -1,4 +1,6 @@
-//! Creating, editing and deleting queues.
+//! Creating, editing, ordering and deleting queues.
+
+use std::collections::BTreeSet;
 
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{Queue, QueueSettings, QueueStatus, UiEvent};
@@ -143,6 +145,32 @@ impl Manager {
             self.apply_settings(&mut state, settings);
         }
         self.queues_changed(&mut state);
+        Ok(())
+    }
+
+    /// Puts the queues in `order`, the sidebar's, which also settles ties between claims (D72.9). The default queue stays first.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Invalid`] when `order` does not name every queue once, with the default queue first, and [`CoreError::Closed`] once the manager has shut down.
+    pub fn set_queue_order(&self, order: &[QueueId]) -> Result<()> {
+        let mut state = self.lock_open()?;
+        if order.first() != Some(&state.default_queue()) {
+            return Err(CoreError::Invalid(
+                "The default queue stays first in the list.".into(),
+            ));
+        }
+        let current: BTreeSet<QueueId> = state.queues.iter().map(|s| s.queue.id).collect();
+        let named: BTreeSet<QueueId> = order.iter().copied().collect();
+        if named != current || named.len() != order.len() {
+            return Err(CoreError::Invalid(
+                "The queues changed while you were moving them. Try again.".into(),
+            ));
+        }
+        let mut slots = std::mem::take(&mut state.queues);
+        slots.sort_by_key(|s| order.iter().position(|id| *id == s.queue.id));
+        state.queues = slots;
+        self.publish_queues(&state);
         Ok(())
     }
 

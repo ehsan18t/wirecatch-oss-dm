@@ -403,6 +403,10 @@ export class MockBackend extends MockShell implements Backend {
     return this.#call(() => settings.setProxy(this.#state, change));
   }
 
+  setQueueOrder(order: QueueId[]) {
+    return this.#call(() => queues.setQueueOrder(this.#state, order));
+  }
+
   tryLink(trial: LinkTrial) {
     return this.#call(() => queues.tryLink(this.#state, trial));
   }

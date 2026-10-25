@@ -14,8 +14,8 @@ use wirecatch_protocol::desktop::{
     MoveToQueueArgs, OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs,
     RejectCaptureArgs, RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs,
     ResumeArgs, RetryArgs, SetDownloadFolderArgs, SetMaximizeButtonArgs, SetProxyArgs,
-    SetQueuePausedArgs, ShowProgressWindowArgs, StartQueueNowArgs, SystemAppearance, TestProxyArgs,
-    TryLinkArgs, UpdateAddonArgs, UpdateQueueArgs,
+    SetQueueOrderArgs, SetQueuePausedArgs, ShowProgressWindowArgs, StartQueueNowArgs,
+    SystemAppearance, TestProxyArgs, TryLinkArgs, UpdateAddonArgs, UpdateQueueArgs,
 };
 
 use crate::api::{self, CommandResult};
@@ -578,6 +578,15 @@ pub async fn set_proxy(
 }
 
 #[tauri::command]
+pub async fn set_queue_order(
+    core: CoreState<'_>,
+    args: contract::set_queue_order::Args,
+) -> CommandResult<contract::set_queue_order::Output> {
+    let SetQueueOrderArgs { order } = args;
+    api::set_queue_order(core.manager().await?, &order)
+}
+
+#[tauri::command]
 pub async fn try_link(
     core: CoreState<'_>,
     args: contract::try_link::Args,
@@ -752,6 +761,7 @@ handler![
     suffix_list,
     check_suffix_list,
     set_proxy,
+    set_queue_order,
     try_link,
     test_proxy,
     system_proxy,

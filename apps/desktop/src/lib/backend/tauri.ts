@@ -297,6 +297,10 @@ export class TauriBackend implements DownloadWindowBackend {
   setProxy(change: ProxyChange) {
     return this.#exec('set_proxy', { change });
   }
+  setQueueOrder(order: QueueId[]) {
+    return this.#exec('set_queue_order', { order });
+  }
+
   tryLink(trial: LinkTrial) {
     return this.#call('try_link', { trial });
   }
