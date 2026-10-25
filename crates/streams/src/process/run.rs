@@ -36,7 +36,7 @@ pub enum StdoutMode {
 }
 
 /// How a program is run. Made with [`RunOptions::lines`] or [`RunOptions::collect`] and the `with_` methods.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub struct RunOptions {
     /// What happens to standard output.
@@ -47,6 +47,22 @@ pub struct RunOptions {
     pub idle_timeout: Option<Duration>,
     /// A file or folder the program writes its result into. While it changes (grows, or is written over) the program is working, even when it writes nothing to its outputs (ffmpeg moving an MP4 index to the front, yt-dlp's merge).
     pub watch: Option<PathBuf>,
+    /// Variables the program gets (`Some`) or does not inherit (`None`), on top of the app's own environment without Python's. A value may be a secret, such as a proxy's login, which the environment keeps from other users where a command line would not; `Debug` shows only the names.
+    pub environment: Vec<(OsString, Option<OsString>)>,
+}
+
+/// Shows the environment's names only: its values may be secrets.
+impl std::fmt::Debug for RunOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let names: Vec<_> = self.environment.iter().map(|(name, _)| name).collect();
+        f.debug_struct("RunOptions")
+            .field("stdout", &self.stdout)
+            .field("timeout", &self.timeout)
+            .field("idle_timeout", &self.idle_timeout)
+            .field("watch", &self.watch)
+            .field("environment", &names)
+            .finish()
+    }
 }
 
 impl RunOptions {
@@ -58,6 +74,7 @@ impl RunOptions {
             timeout: None,
             idle_timeout: None,
             watch: None,
+            environment: Vec::new(),
         }
     }
 
@@ -84,6 +101,15 @@ impl RunOptions {
     pub fn with_idle_timeout(self, quiet: Duration) -> Self {
         Self {
             idle_timeout: Some(quiet),
+            ..self
+        }
+    }
+
+    /// The same, with `environment` set for the program; see [`RunOptions::environment`].
+    #[must_use]
+    pub fn with_environment(self, environment: Vec<(OsString, Option<OsString>)>) -> Self {
+        Self {
+            environment,
             ..self
         }
     }
@@ -201,7 +227,8 @@ pub async fn run(
         program: program.to_path_buf(),
         source,
     };
-    let (mut child, mut tree) = tree::spawn(command(program, args, dir)).map_err(start)?;
+    let (mut child, mut tree) =
+        tree::spawn(command(program, args, dir, &options.environment)).map_err(start)?;
     let mut readers = read_outputs(&mut child, options.stdout);
     let deadline = sleep_for(options.timeout);
     tokio::pin!(deadline);
@@ -409,8 +436,13 @@ async fn kill(child: &mut Child) {
     }
 }
 
-/// The command that runs `program` with `args` in `dir`, its outputs piped, no input, without Python's environment variables.
-fn command(program: &Path, args: &[OsString], dir: &Path) -> Command {
+/// The command that runs `program` with `args` in `dir`, its outputs piped, no input, without Python's environment variables and with `environment` (see [`RunOptions::environment`]).
+fn command(
+    program: &Path,
+    args: &[OsString],
+    dir: &Path,
+    environment: &[(OsString, Option<OsString>)],
+) -> Command {
     let mut command = Command::new(program);
     command
         .args(args)
@@ -421,6 +453,12 @@ fn command(program: &Path, args: &[OsString], dir: &Path) -> Command {
         .kill_on_drop(true);
     for name in python_variables(std::env::vars_os().map(|(name, _)| name)) {
         command.env_remove(name);
+    }
+    for (name, value) in environment {
+        match value {
+            Some(value) => command.env(name, value),
+            None => command.env_remove(name),
+        };
     }
     command
 }
