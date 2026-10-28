@@ -178,23 +178,15 @@
     icon={ListOrdered}
     active={shown}
     count={speed > 0 ? undefined : count}
-    description={app.queues.describe(queue)}
+    description={doing}
     onclick={() => app.show({ kind: 'queue', id: queue.id })}
   >
     {#snippet trailing()}
-      <span class="flex items-center gap-1.5">
-        {#if takes.kind === 'auto'}
-          <Badge size="sm" tone={takes.enabled ? 'accent' : 'neutral'}
-            >{takes.enabled ? 'Auto' : 'Auto off'}</Badge
-          >
-        {/if}
-        {#if proxied}<Badge size="sm">Proxy</Badge>{/if}
-        {#if speed > 0}
-          <span class="text-small text-accent tabular-nums">{formatSpeed(speed)}</span>
-        {:else if count > 0}
-          <span class="text-small text-ink-muted tabular-nums">{count}</span>
-        {/if}
-      </span>
+      {#if speed > 0}
+        <span class="text-small text-accent tabular-nums">{formatSpeed(speed)}</span>
+      {:else if count > 0}
+        <span class="text-small text-ink-muted tabular-nums">{count}</span>
+      {/if}
     {/snippet}
     {#snippet actions()}
       <Menu {entries} label="{queue.settings.name} queue" align="start">
@@ -210,3 +202,15 @@
     {/snippet}
   </SidebarItem>
 </div>
+
+{#snippet doing()}
+  <span class="flex min-w-0 items-center gap-1">
+    {#if takes.kind === 'auto'}
+      <Badge size="sm" tone={takes.enabled ? 'accent' : 'neutral'}
+        >{takes.enabled ? 'Auto' : 'Auto off'}</Badge
+      >
+    {/if}
+    {#if proxied}<Badge size="sm">Proxy</Badge>{/if}
+    <span class="truncate">{app.queues.describe(queue)}</span>
+  </span>
+{/snippet}

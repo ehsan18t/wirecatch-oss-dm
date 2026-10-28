@@ -18,7 +18,7 @@
     /** The count's colour, such as `danger` for failures. */
     countTone?: Tone;
     /** A second line under the label, with labels showing: what this place is doing. It is part of the item's name. */
-    description?: string | undefined;
+    description?: string | Snippet | undefined;
     /** Something else after the label, in place of a count. */
     trailing?: Snippet;
     /** Buttons beside the item (never inside it, so each keeps its own name), with labels showing. */
@@ -76,7 +76,9 @@
         >{label}{#if !sidebar.showLabels && count !== undefined && count > 0}, {count}{/if}</span
       >
       {#if described}
-        <span class="truncate text-small font-normal text-ink-subtle">{description}</span>
+        <span class="truncate text-small font-normal text-ink-subtle"
+          >{#if typeof description === 'string'}{description}{:else if description}{@render description()}{/if}</span
+        >
       {/if}
     </span>
     {#if sidebar.showLabels}
