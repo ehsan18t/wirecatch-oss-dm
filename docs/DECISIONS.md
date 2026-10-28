@@ -632,6 +632,13 @@ Settled with the maintainer while building it, the same day:
 10. A site claim is a name, which covers the names under it (`example.com`), `*.` and a name, which covers only the names under it, an IPv4 address with trailing `*` parts (`10.*`), an address range (`10.0.0.0/8`, `fd00::/8`), or `<local>`, any host on the person's own network by its name or address (D34). The most specific is a longer name before a shorter one, a name before a `*.` pattern of the same length, a longer address prefix before a shorter one, and `<local>` last. A protocol claim of FTP covers FTPS.
 11. A video read from its page is claimed by the page's address and the file name the window proposes, in the category of what it saves (Video, or Audio for sound only). Until D73 a queue has no proxy of its own: it follows the app's, and the sidebar marks every queue as using a proxy while the app's is Manual. Nobody runs a released build yet, so the database changes in place: existing queues follow the app in everything.
 
+Settled while building the windows, on 2026-10-25 and 2026-10-29:
+
+12. A queue picked in a download window is the person's pick only when it differs from the one the core proposed; answering with the proposed queue keeps the core's reason. Every window that places a download, the Add dialog included, puts Queue after Save to, with its line under it. Opened while a queue is shown, the Add dialog says so ("It is the queue you had open"); a queue picked there reads "You picked it. For this add only."
+13. Try a link checks drafted claims as saving does, so a site pattern or regular expression it cannot read is reported, not left unmatched. In the editor it shows for Auto only. Not done: checking a regular expression as it is typed (AUDIT, W12).
+14. The sidebar shows Auto and Auto off before what the queue is doing, on its second line, and the proxy mark as the network icon beside the speed or count, so the name keeps its width. Each speed and limit setting names the queues with their own value, each name opening its editor. Settings, Queues lists what each auto queue takes.
+15. The sample backend stands in for the core so the windows can be built: it matches site claims by name only, checks drafted regular expressions with JavaScript's reader, and places links and answers as the core does. The core alone decides in the app.
+
 ### D73. Proxies are profiles the person saves, and each queue chooses one
 
 Decided with the maintainer on 2026-10-25, to build after D72. It replaces D71's manual form; what D71 records about FTP, HTTP/3, passwords at rest and the engine stays.

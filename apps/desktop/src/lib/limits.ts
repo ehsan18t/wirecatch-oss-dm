@@ -4,6 +4,7 @@ import {
   MAX_CONCURRENT_DOWNLOADS,
   MAX_CONNECTIONS_PER_DOWNLOAD,
   ownValue,
+  type Queue,
   type QueueSettings,
 } from '@wirecatch/protocol';
 import { formatRate } from '@wirecatch/units';
@@ -75,4 +76,12 @@ export function ownConnectionsHelp(own: boolean, app: number): string {
   return own
     ? `Each download in this queue opens up to this many, instead of the app's ${String(app)}.`
     : `Uses the app's setting: ${String(app)} per download.`;
+}
+
+/** The queue settings that may follow an app setting or have their own value (D72.1). */
+export type QueueLimit = 'max_concurrent' | 'speed_limit' | 'connections';
+
+/** The queues with their own value for `limit`, in sidebar order. */
+export function queuesWithOwn(queues: readonly Queue[], limit: QueueLimit): Queue[] {
+  return queues.filter((q) => q.settings[limit].source === 'own');
 }

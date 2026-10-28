@@ -32,6 +32,27 @@ async function change(field: HTMLElement, value: string) {
 const spin = (name: string) => screen.getByRole('spinbutton', { name });
 
 describe('the settings screen', () => {
+  it('says which queues use their own value for each limit, and opens one', async () => {
+    const { app } = await openSettings('speed');
+    const note = (id: Parameters<typeof settingAnchor>[0]) =>
+      document.getElementById(settingAnchor(id));
+    expect(note('global_speed_limit')).toHaveTextContent(
+      /2 queues use their own value: Overnight\s*,\s*Work files\s*\./,
+    );
+    expect(note('max_concurrent_downloads')).toHaveTextContent('3 queues use their own value');
+    expect(note('connections_per_download')).toHaveTextContent(
+      /1 queue uses its own value: Work files\s*\./,
+    );
+    await fireEvent.click(
+      screen.getAllByRole('button', { name: 'Work files' })[0] ?? document.body,
+    );
+    await settle();
+    expect(app.dialog).toEqual({
+      kind: 'queue',
+      id: app.queues.list.find((q) => q.settings.name === 'Work files')?.id,
+    });
+  });
+
   it('runs as many downloads at once as the core allows', async () => {
     const { app } = await openSettings('speed');
     const field = spin('Downloads at the same time');

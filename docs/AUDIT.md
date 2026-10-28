@@ -229,6 +229,16 @@ Found while reviewing the queue editor of D72 (2026-10-25), in shared parts it d
 - The sidebar's "1 of 1 running" reads as one download of one (`apps/desktop/src/lib/state/queues.svelte.ts`).
 - The edit dialog of a queue has no intro line where New queue has one.
 
+Found while building the rest of D72's windows (2026-10-29), outside what they change:
+
+- The queue editor is long once Auto is on: the claims push the hours and the notices far down. Tabs or folded sections for its cards would shorten it (phase 2 of the revamp).
+- A switched-on limit's number field reads as disabled in the queue editor's light theme (its value is grey).
+- The three queues in the icon rail share one icon and cannot be told apart; give each its initial or a colour (`apps/desktop/src/ui/sidebar`).
+- The "Sample data" badge in the title bar competes with the total speed beside it.
+- "Across all queues. A queue can run fewer, set in the queue." under Downloads at the same time reads clumsily (`apps/desktop/src/lib/settings-schema.ts`).
+- A regular expression in a queue's file name claims is checked only when a link is tried or the queue saved, not as it is typed; checking it as typed needs a core command that checks claims alone (W12).
+- Core's public methods still carry `# Errors` doc sections that restate the error type (`crates/core/src/manager/*.rs`, about 40); the comment rules allow one line where the signature is unclear.
+
 Parts of W4 carried into later work:
 
 - ENG-11 in core: the app still hands the engine the exact path it picked when the download was added, with the default `ExistingFile::Replace`, so a file another program saves under the name meanwhile is replaced in the app. Carried to W9, as the item under "Parts of W7 carried" describes.

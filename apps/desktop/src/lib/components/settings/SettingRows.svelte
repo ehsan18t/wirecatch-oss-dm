@@ -12,6 +12,7 @@
     controls,
     stacked = [],
     unlabelled = [],
+    notes = {},
   }: Omit<SectionProps, 'save'> & {
     /** Each setting's control. */
     controls: Partial<Record<SettingId, Snippet<[Row]>>>;
@@ -19,6 +20,8 @@
     stacked?: readonly SettingId[];
     /** The settings whose end is a button with its own name (Change, Export settings…), which the setting's name must not replace. */
     unlabelled?: readonly SettingId[];
+    /** A line under a setting's row, across it. */
+    notes?: Partial<Record<SettingId, Snippet>>;
   } = $props();
 
   /** The settings in runs that share a group, in order. */
@@ -61,6 +64,7 @@
                 {#if control}{@render control({ def, s: settings, control: field })}{/if}
               {/snippet}
             </SettingRow>
+            {@render notes[def.id]?.()}
           </div>
         {/each}
       </div>
