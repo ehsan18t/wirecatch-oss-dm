@@ -244,6 +244,11 @@ Found while building D73 (2026-10-29), outside what it changes:
 - Toasts sit over the controls at the bottom right of a page, Saved proxies' Test, Edit and Delete among them, and info toasts stay until closed (`apps/desktop/src/lib/state/toasts.svelte.ts`, the shared toaster).
 - A toast breaks a host name at its hyphen (`backup-` / `proxy.example`), which reads as two names.
 - A dialog is centred on its height, so it moves when a line appears in it, such as a proxy's test result.
+- A tooltip always opens above what it describes, so a queue's proxy mark in the sidebar covers the queue's own name (`packages/ui/src/attachments/tooltip.svelte.ts`); a placement option would let it open beside the mark.
+- The sidebar's icon rail shows nothing of a queue's second line (Auto, Auto off, the proxy mark), and its tooltip is only the name.
+- A dialog opened over another, such as New proxy over the queue editor, is the same width and lines up with it, so the one below shows round its edges.
+- A select has no groups or dividers, so following the app, the fixed choices and the saved proxies run together in the queue's proxy list.
+- "<local> for names without a dot" in the help of the hosts to go directly to is jargon.
 - A run's proxy is read under the manager's lock, and with the computer's proxy and something added that reads the environment and on Windows the registry (`crates/core/src/manager/policy.rs`, `crates/settings/src/proxy.rs`); fast, but a blocking call on an async thread (W9).
 
 Parts of W4 carried into later work:

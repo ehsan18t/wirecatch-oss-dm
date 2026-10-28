@@ -34,16 +34,14 @@ describe('the sidebar', () => {
     expect(item('Work files')).toHaveTextContent('Auto off');
     expect(item('Work files')).toHaveClass('opacity-quiet');
     // The sample's Work files has the Office profile of its own; the others follow the app's.
-    expect(item('Work files')).toHaveTextContent('Uses the proxy Office');
-    expect(within(nav()).getAllByText(/^Uses the proxy/)).toHaveLength(1);
+    expect(item('Work files')).toHaveTextContent('Proxy: Office');
+    expect(within(nav()).getAllByText(/^Proxy: /)).toHaveLength(1);
     if (!app.settings) throw new Error('no settings');
     const office = app.proxies.list[0];
     if (!office) throw new Error('no sample proxy');
     app.settings.proxy.proxy = { kind: 'profile', id: office.id };
     await settle();
-    expect(within(nav()).getAllByText('Uses the proxy Office')).toHaveLength(
-      app.queues.list.length,
-    );
+    expect(within(nav()).getAllByText('Proxy: Office')).toHaveLength(app.queues.list.length);
   });
 
   it('shows each view with how many it holds, and marks the one shown', async () => {

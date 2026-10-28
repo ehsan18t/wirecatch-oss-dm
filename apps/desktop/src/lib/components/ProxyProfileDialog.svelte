@@ -29,8 +29,18 @@
   } from '$lib/proxy';
   import { getApp } from '$lib/state/app.svelte';
 
-  let { id }: { id: ProxyProfileId | null } = $props();
   const app = getApp();
+  let {
+    id,
+    forQueue,
+    onclose = () => app.closeDialog(),
+  }: {
+    id: ProxyProfileId | null;
+    /** The queue a new proxy is made for from its editor, which then uses it. */
+    forQueue?: string;
+    /** Called when it closes, with the profile's id once saved; it closes the app's dialog unless given. */
+    onclose?: (saved?: ProxyProfileId) => void;
+  } = $props();
   const formId = $props.id();
 
   // A snapshot of the profile when the dialog opened; the form edits its own copy.
@@ -104,7 +114,8 @@
     if (busy) return;
     busy = true;
     try {
-      if ((await app.proxies.save(original?.id ?? null, draft())) !== undefined) app.closeDialog();
+      const saved = await app.proxies.save(original?.id ?? null, draft());
+      if (saved !== undefined) onclose(saved);
     } finally {
       busy = false;
     }
@@ -116,14 +127,18 @@
   title={opened ? `Edit ${name.trim() || proxyAddress(opened)}` : 'New proxy'}
   description={opened
     ? 'Downloads already running keep the proxy they started with.'
-    : 'Save a proxy server once; the app and each queue can then choose it.'}
-  onclose={() => app.closeDialog()}
+    : forQueue
+      ? `Saved for the whole app, and used by ${forQueue}.`
+      : 'Save a proxy server once; the app and each queue can then choose it.'}
+  onclose={() => onclose()}
 >
   <form
     id={formId}
     class="flex flex-col gap-5 pb-1"
     onsubmit={(e) => {
       e.preventDefault();
+      // Opened from the queue editor, this form sits inside the editor's, which must not save.
+      e.stopPropagation();
       void save();
     }}
   >
@@ -250,7 +265,9 @@
     <Button class="mr-auto" variant="secondary" loading={testing} onclick={() => void test()}
       >Test connection</Button
     >
-    <Button onclick={() => app.closeDialog()}>Cancel</Button>
-    <Button type="submit" form={formId} variant="primary" loading={busy}>Save</Button>
+    <Button onclick={() => onclose()}>Cancel</Button>
+    <Button type="submit" form={formId} variant="primary" loading={busy}
+      >{forQueue ? 'Save and use' : 'Save'}</Button
+    >
   {/snippet}
 </Dialog>

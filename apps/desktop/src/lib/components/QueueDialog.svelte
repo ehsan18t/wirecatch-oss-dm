@@ -32,7 +32,7 @@
     type QueueSettings,
     type Weekday,
   } from '@wirecatch/protocol';
-  import { MB, SPEED_FIELD, splitKbOrMb, toBytes } from '@wirecatch/units';
+  import { MB, SPEED_FIELD, splitKbOrMb } from '@wirecatch/units';
   import {
     Button,
     Callout,
@@ -57,13 +57,14 @@
     queueConcurrentProblem,
     queueConnectionsProblem,
     queueDeletionNote,
+    readQueueLimit,
     speedLimitHelp,
   } from '$lib/limits';
-  import { FOLLOWS_APP_PROXY } from '$lib/proxy';
   import { claimsOf, takesOf } from '$lib/queue-claims';
   import { getApp } from '$lib/state/app.svelte';
   import ChoiceCard from './ChoiceCard.svelte';
   import QueueClaimsCard from './QueueClaimsCard.svelte';
+  import QueueProxyCard from './QueueProxyCard.svelte';
   import SwitchCard from './SwitchCard.svelte';
   import TimeInput from './TimeInput.svelte';
 
@@ -73,8 +74,6 @@
   // A snapshot of the queue when the dialog opened; the form edits its own copy.
   const original = (() => (id === null ? undefined : app.queues.byId(id)))();
   const opened = original?.settings;
-  // The editor does not change these yet; a new queue follows the app's (D73).
-  const kept = $state.snapshot(opened) ?? FOLLOWS_APP_PROXY;
   // What the form suggests when a limit or schedule is turned on for a queue that has none.
   // The core makes a new queue that follows the app; a limit switched on starts near the app's value.
   const FIRST_SPEED_LIMIT = 2 * MB;
@@ -108,6 +107,10 @@
   // Kept while the form is switched to Manual, so switching back loses nothing.
   let claims = $state<QueueClaims>(claimsOf(opened?.takes));
   let notify = $state<QueueNotify>(opened?.notify ?? 'each_download');
+  let proxy = $state<QueueSettings['proxy']>($state.snapshot(opened?.proxy) ?? FOLLOW_APP);
+  let exceptions = $state<QueueSettings['exceptions']>(
+    $state.snapshot(opened?.exceptions) ?? FOLLOW_APP,
+  );
   const appConnections = app.settings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD;
   let connectionsOn = $state(ownConnections !== null);
   let connections = $state(ownConnections ?? appConnections);
@@ -156,15 +159,6 @@
 
   const daysHelp = $derived(pickedDaysHelp(days));
 
-  /** The speed limit the form describes, or why it is not one. */
-  function readLimit(): { limit: QueueSettings['speed_limit'] } | string {
-    if (!limitOn) return { limit: FOLLOW_APP };
-    const limit = limitValue === null ? null : toBytes(limitValue, limitUnit);
-    return limit === null || limit <= 0
-      ? 'Enter a speed limit above zero, or turn the limit off.'
-      : { limit: ownSetting(limit) };
-  }
-
   /** What the form changes in a queue, or why it cannot. */
   function readForm(): QueueSettings | string {
     if (!name.trim()) return 'Give the queue a name.';
@@ -172,7 +166,7 @@
     if (tooMany !== null) return tooMany;
     const badConnections = connectionsOn ? queueConnectionsProblem(connections) : null;
     if (badConnections !== null) return badConnections;
-    const limit = readLimit();
+    const limit = readQueueLimit(limitOn, limitValue, limitUnit);
     if (typeof limit === 'string') return limit;
     const schedule = readSchedule({
       on: scheduleOn,
@@ -184,12 +178,13 @@
     });
     if (typeof schedule === 'string') return schedule;
     return {
-      ...kept,
       name: name.trim(),
       description: description.trim(),
       max_concurrent: concurrentOn ? ownSetting(Math.round(maxConcurrent)) : FOLLOW_APP,
       speed_limit: limit.limit,
       connections: connectionsOn ? ownSetting(Math.round(connections)) : FOLLOW_APP,
+      proxy: $state.snapshot(proxy),
+      exceptions: $state.snapshot(exceptions),
       takes: takesOf(auto, $state.snapshot(claims)),
       schedule: schedule.schedule,
       notify,
@@ -335,6 +330,14 @@
       {auto}
       {claims}
       onchange={(on: boolean, next: QueueClaims) => ([auto, claims] = [on, next])}
+    />
+
+    <QueueProxyCard
+      queueName={name}
+      {proxy}
+      {exceptions}
+      onchange={(p: QueueSettings['proxy'], e: QueueSettings['exceptions']) =>
+        ([proxy, exceptions] = [p, e])}
     />
 
     <SwitchCard
