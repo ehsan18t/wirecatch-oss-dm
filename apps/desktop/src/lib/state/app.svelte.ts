@@ -90,7 +90,13 @@ export class AppState {
     runner: this.#runner,
     toasts: this.toasts,
   });
-  readonly proxies = new ProxyProfiles();
+  readonly proxies = new ProxyProfiles({
+    backend: () => this.#backend,
+    runner: this.#runner,
+    toasts: this.toasts,
+    app: () => this.settings?.proxy,
+    queues: () => this.queues.list,
+  });
   readonly queues = new Queues({
     backend: () => this.#backend,
     runner: this.#runner,
