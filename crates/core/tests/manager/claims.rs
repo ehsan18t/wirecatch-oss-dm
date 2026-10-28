@@ -3,7 +3,9 @@
 use wirecatch_core::DEFAULT_QUEUE_ID;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AddRequest, QueueSettings};
-use wirecatch_protocol::claims::{Claim, QueueClaims, QueueReason, QueueTakes};
+use wirecatch_protocol::claims::{
+    Claim, DraftClaims, LinkTrial, NameSyntax, QueueClaims, QueueReason, QueueTakes,
+};
 
 use crate::common::{Harness, TestResult, fast_server};
 
@@ -132,5 +134,38 @@ async fn the_sidebar_order_settles_a_tie_and_keeps_the_default_queue_first() -> 
     }
     let unchanged: Vec<QueueId> = h.manager.list_queues().iter().map(|q| q.id).collect();
     assert_eq!(unchanged, order);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn trying_a_link_checks_the_drafted_claims_as_saving_does() -> TestResult {
+    let h = Harness::new().await?;
+    let trial = |claims: QueueClaims| LinkTrial {
+        url: "https://files.example.com/a-final.zip".into(),
+        draft: Some(DraftClaims {
+            queue: None,
+            takes: QueueTakes::Auto(QueueClaims {
+                enabled: true,
+                ..claims
+            }),
+        }),
+    };
+
+    let bad = h.manager.try_link(&trial(QueueClaims {
+        file_names: vec!["*-final.*".into()],
+        file_name_syntax: NameSyntax::Regex,
+        ..QueueClaims::default()
+    }));
+    let message = bad.err().map(|e| e.to_string()).unwrap_or_default();
+    assert!(message.contains("not a regular expression"), "{message}");
+
+    let found = h.manager.try_link(&trial(QueueClaims {
+        sites: vec!["  example.com ".into()],
+        ..QueueClaims::default()
+    }))?;
+    assert_eq!(
+        found.taken.map(|t| t.claim),
+        Some(Claim::Site("example.com".into()))
+    );
     Ok(())
 }
