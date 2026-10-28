@@ -3,8 +3,8 @@
 //! so those tests live inside the crate (`src/ftp/tests.rs`).
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use wirecatch_engine::units::{MIB, MIB_USIZE};
