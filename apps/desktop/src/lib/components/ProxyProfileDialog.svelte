@@ -139,16 +139,19 @@
       {/snippet}
     </Field>
 
-    <SegmentedControl
-      label="Type"
-      value={kind}
-      options={KIND_OPTIONS}
-      onchange={(next: ProxyKind) =>
-        edit(() => {
-          if (port === usualPort(kind)) port = usualPort(next);
-          kind = next;
-        })}
-    />
+    <div class="flex flex-col gap-1.5">
+      <span class="text-ui font-medium text-ink" aria-hidden="true">Type</span>
+      <SegmentedControl
+        label="Type"
+        value={kind}
+        options={KIND_OPTIONS}
+        onchange={(next: ProxyKind) =>
+          edit(() => {
+            if (port === usualPort(kind)) port = usualPort(next);
+            kind = next;
+          })}
+      />
+    </div>
 
     <div class="flex flex-wrap items-start gap-3">
       <Field
@@ -174,6 +177,7 @@
           <NumberInput
             {...control}
             value={port}
+            placeholder={String(usualPort(kind))}
             min={1}
             max={MAX_PORT}
             optional
