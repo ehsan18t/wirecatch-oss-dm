@@ -133,6 +133,14 @@
   }
 </script>
 
+<!-- A drop anywhere ends the drag too: the source row may never get its dragend. -->
+<svelte:window
+  ondrop={() => {
+    dragging = false;
+    landing = null;
+  }}
+/>
+
 <div
   role="presentation"
   class={cn(

@@ -130,6 +130,15 @@ describe('the sidebar', () => {
     await fireEvent.dragEnd(item('Work files'), { dataTransfer });
     expect(item('Work files')).not.toHaveClass('opacity-40');
 
+    // A drop ends the fade even when the moved row never gets its dragend.
+    await fireEvent.dragStart(item('Work files'), { dataTransfer });
+    await fireEvent.dragOver(item('Overnight'), { dataTransfer });
+    await fireEvent.drop(item('Overnight'), { dataTransfer });
+    await settle();
+    expect(item('Work files')).not.toHaveClass('opacity-40');
+    expect(order()).toEqual(['Main', 'Work files', 'Overnight']);
+    await drag('Work files', 'Overnight');
+
     await drag('Work files', 'Main');
     expect(order()).toEqual(['Main', 'Work files', 'Overnight']);
     await drag('Work files', 'Overnight');
