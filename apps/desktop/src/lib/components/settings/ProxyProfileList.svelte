@@ -24,7 +24,8 @@
     if (user !== '') {
       login = `user ${user}, ${profile.has_password ? 'password saved' : 'no password saved'}`;
     }
-    return name.trim() === '' ? login : `${proxyAddress(profile.settings)} · ${login}`;
+    if (name.trim() !== '') return `${proxyAddress(profile.settings)} · ${login}`;
+    return `${login.charAt(0).toUpperCase()}${login.slice(1)}`;
   }
 
   async function test(profile: ProxyProfile) {
@@ -65,10 +66,10 @@
         <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
           <div class="flex min-w-0 flex-1 flex-col gap-0.5">
             <div class="flex min-w-0 items-center gap-2">
-              <span class="truncate text-ui font-medium text-ink">{name}</span>
+              <span class="min-w-0 text-ui font-medium wrap-anywhere text-ink">{name}</span>
               <Badge size="sm">{kindLabel(profile)}</Badge>
             </div>
-            <span class="truncate text-small text-ink-muted">{detailLine(profile)}</span>
+            <span class="text-small wrap-anywhere text-ink-muted">{detailLine(profile)}</span>
             <span class="flex flex-wrap items-center gap-x-2 text-small">
               <Badge size="sm" dot tone={status.tone}>{status.text}</Badge>
               <span class="text-ink-muted">{usersLine(app.proxies.usersOf(profile.id))}</span>

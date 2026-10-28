@@ -93,7 +93,7 @@ export class ProxyProfiles {
     const ok = await this.#host.runner.succeeds(() =>
       this.#host.backend().deleteProxyProfile(id, replacement),
     );
-    if (ok) this.#host.toasts.notify(`Deleted the proxy ${name ? shownName(name.settings) : ''}.`);
+    if (ok) this.#host.toasts.notify(`Deleted “${name ? shownName(name.settings) : 'the proxy'}”.`);
     return ok;
   }
 
@@ -103,9 +103,13 @@ export class ProxyProfiles {
     const ids = await this.#host.runner.run(() => this.#host.backend().copySystemProxy());
     if (ids === undefined) return;
     const added = ids.filter((id) => !before.includes(id));
-    if (ids.length === 0) { this.#host.toasts.notify('This computer sets no proxy to copy.'); return; }
+    if (ids.length === 0) {
+      this.#host.toasts.notify('This computer sets no proxy to copy.');
+      return;
+    }
     if (added.length === 0) {
-      this.#host.toasts.notify('The computer’s proxy is already saved.'); return;
+      this.#host.toasts.notify('The computer’s proxy is already saved.');
+      return;
     }
     // A user name comes along; its password stays with the computer's setting.
     const login = added.some((id) => (this.byId(id)?.settings.user ?? '') !== '');

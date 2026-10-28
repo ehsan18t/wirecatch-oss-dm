@@ -67,7 +67,7 @@
   const resultText = $derived(result ? testResultText(result, loginEntered) : null);
 
   const passwordHelp = $derived.by(() => {
-    if (password.change === 'remove') return 'The saved password is removed when you save.';
+    if (password.change === 'remove') return 'It goes from this app when you save.';
     if (password.change === 'set') return 'Kept in this app only; it is never shown again.';
     if (keepsSaved) return 'A password is saved. Type a new one to replace it.';
     if (savedPassword) {
@@ -200,15 +200,24 @@
       </Field>
       <Field label="Password (optional)" class="min-w-40 flex-1" description={passwordHelp}>
         {#snippet children(control: FieldControl)}
-          <Input
-            {...control}
-            type="password"
-            autocomplete="new-password"
-            value={password.change === 'set' ? password.text : ''}
-            placeholder={keepsSaved ? '••••••••' : ''}
-            onchange={(text: string) =>
-              edit(() => (password = text === '' ? { change: 'keep' } : { change: 'set', text }))}
-          />
+          {#if password.change === 'remove'}
+            <p
+              id={control.id}
+              class="flex h-8 items-center rounded-md border border-dashed border-line px-2.5 text-ui text-ink-muted"
+            >
+              Removed when you save
+            </p>
+          {:else}
+            <Input
+              {...control}
+              type="password"
+              autocomplete="new-password"
+              value={password.change === 'set' ? password.text : ''}
+              placeholder={keepsSaved ? '••••••••' : ''}
+              onchange={(text: string) =>
+                edit(() => (password = text === '' ? { change: 'keep' } : { change: 'set', text }))}
+            />
+          {/if}
         {/snippet}
       </Field>
     </div>

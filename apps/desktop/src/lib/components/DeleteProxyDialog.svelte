@@ -43,7 +43,7 @@
 <Dialog open role="alertdialog" title={`Delete “${label}”?`} onclose={() => app.closeDialog()}>
   <div class="flex flex-col gap-4">
     <p class="text-ui text-ink-muted">
-      {usersLine(users)}. Downloads running through it finish on it.
+      {used ? `${usersLine(users)}.` : 'Nothing uses it.'} Downloads running through it finish on it.
     </p>
     {#if used}
       <Field label="Switch what uses it to">

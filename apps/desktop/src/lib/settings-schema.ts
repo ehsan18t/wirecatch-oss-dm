@@ -309,7 +309,7 @@ const DEFS = [
     id: 'proxy',
     section: 'network',
     label: 'Proxy',
-    help: 'Queues that follow the app use it. The app’s own requests (updates, add-ons) use the Main queue’s proxy. A change applies to downloads that start after it.',
+    help: 'Queues that follow the app use it; updates and add-ons use the Main queue’s. Changes apply to downloads that start after them.',
     keywords: 'proxy socks socks5 http https firewall vpn corporate office no proxy direct system',
   },
   {
@@ -330,7 +330,7 @@ const DEFS = [
     id: 'ftp_direct',
     section: 'network',
     label: 'Download FTP links directly',
-    help: 'Only a SOCKS5 proxy can carry FTP. When off, FTP links fail unless their proxy is SOCKS5.',
+    help: 'On: FTP links go around any proxy that is not SOCKS5, the only kind that carries FTP. Off: those links fail.',
     keywords: 'ftp ftps proxy direct',
   },
   {
