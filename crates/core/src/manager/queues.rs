@@ -4,8 +4,9 @@ use std::collections::BTreeSet;
 
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{Queue, QueueSettings, QueueStatus, UiEvent};
-use wirecatch_protocol::claims::{LinkClaims, LinkTrial, QueueReason};
+use wirecatch_protocol::claims::{DraftClaims, LinkClaims, LinkTrial, QueueReason, QueueTakes};
 use wirecatch_protocol::wire::{Event, QueueSummary};
+use wirecatch_queues::claims;
 
 use super::Manager;
 use super::downloads::parse_url;
@@ -25,14 +26,11 @@ impl Manager {
         self.lock().queue_summaries()
     }
 
-    /// Where `trial`'s link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7).
-    ///
-    /// # Errors
-    ///
-    /// [`CoreError::InvalidUrl`] for a link that is not http, https or FTP, and [`CoreError::Closed`] once the manager has shut down.
+    /// Where `trial`'s link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7); drafted claims are checked as saving checks them.
     pub fn try_link(&self, trial: &LinkTrial) -> Result<LinkClaims> {
         let url = parse_url(&trial.url)?;
-        Ok(self.lock_open()?.try_link(&url, trial.draft.as_ref()))
+        let draft = trial.draft.clone().map(checked_draft).transpose()?;
+        Ok(self.lock_open()?.try_link(&url, draft.as_ref()))
     }
 
     /// Adds a running queue, last in the sidebar.
@@ -204,4 +202,12 @@ fn ensure_name_free(state: &State, name: &str, except: Option<QueueId>) -> Resul
         )));
     }
     Ok(())
+}
+
+/// `draft` with its claims as saving keeps them, or why they cannot be kept.
+fn checked_draft(mut draft: DraftClaims) -> Result<DraftClaims> {
+    if let QueueTakes::Auto(written) = draft.takes {
+        draft.takes = QueueTakes::Auto(claims::checked(written).map_err(CoreError::Invalid)?);
+    }
+    Ok(draft)
 }

@@ -331,9 +331,9 @@ const DEFS = [
     id: 'queues',
     section: 'queues',
     label: 'Your queues',
-    help: 'Edit a queue to change its name, description, hours, limits or notifications.',
+    help: 'Try a link to see which queue takes it. Edit a queue to change its name, limits, claims, hours or notifications.',
     keywords:
-      'queue queues schedule overnight limit at once concurrent notify notification all done finished batch',
+      'queue queues schedule overnight limit at once concurrent notify notification all done finished batch auto claim claims site try link',
   },
 ] as const satisfies readonly SettingText[];
 

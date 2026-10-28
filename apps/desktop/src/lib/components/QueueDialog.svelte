@@ -21,13 +21,13 @@
     DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS,
     FOLLOW_APP,
-    MANUAL_QUEUE,
     MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD,
     MAX_QUEUE_DESCRIPTION_CHARS,
     ownSetting,
     ownValue,
     type QueueId,
+    type QueueClaims,
     type QueueNotify,
     type QueueSettings,
     type TimeOfDay,
@@ -58,7 +58,10 @@
     queueConnectionsProblem,
     speedLimitHelp,
   } from '$lib/limits';
+  import { claimsOf, takesOf } from '$lib/queue-claims';
   import { getApp } from '$lib/state/app.svelte';
+  import ChoiceCard from './ChoiceCard.svelte';
+  import QueueClaimsCard from './QueueClaimsCard.svelte';
   import SwitchCard from './SwitchCard.svelte';
   import TimeInput from './TimeInput.svelte';
 
@@ -99,6 +102,9 @@
   let days = $state<Weekday[]>(opened?.schedule?.days ?? []);
   // Picking single days is its own choice, kept while the days picked happen to make a pattern.
   let pickingDays = $state(dayPattern(opened?.schedule?.days ?? []) === 'custom');
+  let auto = $state(opened?.takes.kind === 'auto');
+  // Kept while the form is switched to Manual, so switching back loses nothing.
+  let claims = $state<QueueClaims>(claimsOf(opened?.takes));
   let notify = $state<QueueNotify>(opened?.notify ?? 'each_download');
   const appConnections = app.settings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD;
   let connectionsOn = $state(ownConnections !== null);
@@ -193,7 +199,7 @@
       max_concurrent: concurrentOn ? ownSetting(Math.round(maxConcurrent)) : FOLLOW_APP,
       speed_limit: limit.limit,
       connections: connectionsOn ? ownSetting(Math.round(connections)) : FOLLOW_APP,
-      takes: opened ? $state.snapshot(opened.takes) : MANUAL_QUEUE,
+      takes: takesOf(auto, $state.snapshot(claims)),
       schedule: schedule.schedule,
       notify,
     };
@@ -332,6 +338,14 @@
       </SwitchCard>
     </section>
 
+    <QueueClaimsCard
+      queue={original?.id ?? null}
+      {name}
+      {auto}
+      {claims}
+      onchange={(on: boolean, next: QueueClaims) => ([auto, claims] = [on, next])}
+    />
+
     <SwitchCard
       label="Only run at certain times"
       description="Outside these hours its downloads wait, unless you start the queue now."
@@ -387,25 +401,13 @@
       </div>
     </SwitchCard>
 
-    <section
-      class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-layer p-3"
-      aria-labelledby="{formId}-notify"
-      aria-describedby="{formId}-notify-help"
-    >
-      <div class="flex min-w-0 flex-1 basis-56 flex-col gap-0.5">
-        <span id="{formId}-notify" class="text-ui font-medium text-ink"
-          >Tell me when downloads finish</span
-        >
-        <span id="{formId}-notify-help" class="text-small text-ink-muted">{notifyHelp}</span>
-      </div>
-      <SegmentedControl
-        label="Tell me when downloads finish"
-        size="sm"
-        value={notify}
-        options={QUEUE_NOTIFY_OPTIONS}
-        onchange={(next: QueueNotify) => (notify = next)}
-      />
-    </section>
+    <ChoiceCard
+      label="Tell me when downloads finish"
+      description={notifyHelp}
+      value={notify}
+      options={QUEUE_NOTIFY_OPTIONS}
+      onchange={(next: QueueNotify) => (notify = next)}
+    />
 
     {#if error}
       <Callout tone="danger" live="assertive">{error}</Callout>

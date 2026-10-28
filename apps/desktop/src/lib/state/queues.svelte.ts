@@ -1,9 +1,16 @@
 // The queues: what each is doing right now, and creating, changing, pausing and deleting them.
 
-import { ownValue, type Queue, type QueueId, type QueueSettings } from '@wirecatch/protocol';
-import type { Backend } from '../backend';
+import {
+  ownValue,
+  type LinkClaims,
+  type LinkTrial,
+  type Queue,
+  type QueueId,
+  type QueueSettings,
+} from '@wirecatch/protocol';
+import { BackendError, type Backend } from '../backend';
 import { formatTime, scheduleAllows } from '../format';
-import type { Runner } from './runner';
+import { errorMessage, type Runner } from './runner';
 import type { Toasts } from './toasts.svelte';
 import type { Counts } from './view';
 
@@ -23,6 +30,13 @@ function runningPhrase(running: number, atOnce: number | null): string {
   return atOnce === null
     ? `${String(running)} running`
     : `${String(running)} of ${String(atOnce)} running`;
+}
+
+/** Why Try a link could not answer. */
+export interface TrialProblem {
+  problem: string;
+  /** The link is at fault, not the claims. */
+  inLink: boolean;
 }
 
 export class Queues {
@@ -98,6 +112,16 @@ export class Queues {
     const name = this.byId(queue)?.settings.name ?? 'The queue';
     if (await this.#host.runner.succeeds(() => this.#host.backend().setQueueOrder(order))) {
       this.moved = `${name} is now ${String(to + 1)} of ${String(order.length)} queues.`;
+    }
+  }
+
+  /** Where the claims send `trial`'s link, or why it cannot be tried: the link, or the drafted claims (`inLink` false). */
+  async tryLink(trial: LinkTrial): Promise<LinkClaims | TrialProblem> {
+    try {
+      return await this.#host.backend().tryLink(trial);
+    } catch (error) {
+      const inLink = error instanceof BackendError && error.code === 'invalid_url';
+      return { problem: errorMessage(error), inLink };
     }
   }
 
