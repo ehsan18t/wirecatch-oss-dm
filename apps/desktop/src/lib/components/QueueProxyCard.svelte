@@ -54,10 +54,10 @@
       creating = true;
       return;
     }
-    if (key === FOLLOW) return onchange(FOLLOW_APP, exceptions);
-    if (key === SYSTEM || key === DIRECT) return onchange(ownSetting({ kind: key }), exceptions);
     const profile = app.proxies.list.find((p) => String(p.id) === key);
-    if (profile) onchange(ownSetting({ kind: 'profile', id: profile.id }), exceptions);
+    if (key === FOLLOW) onchange(FOLLOW_APP, exceptions);
+    else if (key === SYSTEM || key === DIRECT) onchange(ownSetting({ kind: key }), exceptions);
+    else if (profile) onchange(ownSetting({ kind: 'profile', id: profile.id }), exceptions);
   }
 
   function created(id?: ProxyProfileId) {
@@ -91,10 +91,7 @@
 
 <div class="flex flex-col divide-y divide-line rounded-md border border-line bg-layer">
   <div class="flex flex-col gap-1.5 p-3">
-    <Field
-      label="Proxy"
-      description="Downloads already running keep the proxy they started with."
-    >
+    <Field label="Proxy" description="Downloads already running keep the proxy they started with.">
       {#snippet children(control: FieldControl)}
         <Select {...control} value={keyOf(proxy)} {options} onchange={choose} />
       {/snippet}
