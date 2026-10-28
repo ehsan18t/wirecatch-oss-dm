@@ -1,9 +1,16 @@
 // The queues: what each is doing right now, and creating, changing, pausing and deleting them.
 
-import { ownValue, type Queue, type QueueId, type QueueSettings } from '@wirecatch/protocol';
+import {
+  ownValue,
+  type LinkClaims,
+  type LinkTrial,
+  type Queue,
+  type QueueId,
+  type QueueSettings,
+} from '@wirecatch/protocol';
 import type { Backend } from '../backend';
 import { formatTime, scheduleAllows } from '../format';
-import type { Runner } from './runner';
+import { errorMessage, type Runner } from './runner';
 import type { Toasts } from './toasts.svelte';
 import type { Counts } from './view';
 
@@ -98,6 +105,15 @@ export class Queues {
     const name = this.byId(queue)?.settings.name ?? 'The queue';
     if (await this.#host.runner.succeeds(() => this.#host.backend().setQueueOrder(order))) {
       this.moved = `${name} is now ${String(to + 1)} of ${String(order.length)} queues.`;
+    }
+  }
+
+  /** Where the claims send `trial`'s link, or why it cannot be tried, in words for the form that asked. */
+  async tryLink(trial: LinkTrial): Promise<LinkClaims | string> {
+    try {
+      return await this.#host.backend().tryLink(trial);
+    } catch (error) {
+      return errorMessage(error);
     }
   }
 

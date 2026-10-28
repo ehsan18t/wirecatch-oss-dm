@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Queues: every queue in one list, with when it runs, its own limits and whether it tells you only once it is done, so ten queues stay manageable. Edit opens the queue's own dialog; New queue makes one.
+  // Queues: Try a link, then every queue in one list, with when it runs, its own limits and whether it tells you only once it is done, so ten queues stay manageable. Edit opens the queue's own dialog; New queue makes one.
   import Pencil from '~icons/lucide/pencil';
   import Plus from '~icons/lucide/plus';
   import type { Snippet } from 'svelte';
@@ -8,6 +8,7 @@
   import { queueLimitFacts } from '$lib/limits';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
+  import TryLink from '../TryLink.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
@@ -22,6 +23,9 @@
 
 {#snippet queues({ control }: Row)}
   <div class="flex w-full flex-col items-start gap-3">
+    <div class="w-full rounded-md border border-line p-3">
+      <TryLink />
+    </div>
     <ul
       aria-label="Your queues"
       aria-describedby={control['aria-describedby']}
