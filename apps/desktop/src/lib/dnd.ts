@@ -19,6 +19,12 @@ export function isDownloadDrag(e: DragEvent): boolean {
   return e.dataTransfer?.types.includes(DRAG_TYPE) ?? false;
 }
 
+/** A drag the app started (downloads or a queue), as opposed to a link from outside: both carry `text/plain` too. */
+export function isOwnDrag(e: DragEvent): boolean {
+  const types = e.dataTransfer?.types ?? [];
+  return types.includes(DRAG_TYPE) || types.includes(QUEUE_DRAG_TYPE);
+}
+
 export function getDragIds(e: DragEvent): DownloadId[] {
   const raw = e.dataTransfer?.getData(DRAG_TYPE);
   if (!raw) return [];
