@@ -41,7 +41,9 @@ describe('the sidebar', () => {
     if (!office) throw new Error('no sample proxy');
     app.settings.proxy.proxy = { kind: 'profile', id: office.id };
     await settle();
-    expect(within(nav()).getAllByText('Uses the proxy Office')).toHaveLength(app.queues.list.length);
+    expect(within(nav()).getAllByText('Uses the proxy Office')).toHaveLength(
+      app.queues.list.length,
+    );
   });
 
   it('shows each view with how many it holds, and marks the one shown', async () => {

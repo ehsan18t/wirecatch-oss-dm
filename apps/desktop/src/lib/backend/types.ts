@@ -183,7 +183,10 @@ export interface Backend {
   /** Deletes a profile; the app and the queues that use it use `replacement` instead. */
   deleteProxyProfile: (id: ProxyProfileId, replacement: ProxyUse) => Promise<void>;
   /** Sends one request through a profile as `draft` has it; for a saved `id`, a kept password is the saved one. */
-  testProxyProfile: (id: ProxyProfileId | null, draft: ProxyProfileDraft) => Promise<ProxyTestResult>;
+  testProxyProfile: (
+    id: ProxyProfileId | null,
+    draft: ProxyProfileDraft,
+  ) => Promise<ProxyTestResult>;
   /** Saves a profile for each server of the computer's proxy; their ids, those saved before included. */
   copySystemProxy: () => Promise<ProxyProfileId[]>;
   /** Brings the main window forward on the proxy settings, for a progress window's fix. */
