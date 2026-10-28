@@ -1545,7 +1545,7 @@ pub struct SettingsProfile {
 pub struct AddRequest {
     /// The address to download.
     pub url: Link,
-    /// Default queue if absent.
+    /// The queue picked; absent, the claims place it, else it joins the default queue (D72.3).
     pub queue: Option<QueueId>,
     /// Absolute folder; the category rule decides if absent.
     pub folder: Option<String>,
