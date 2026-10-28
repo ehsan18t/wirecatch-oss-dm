@@ -127,6 +127,7 @@
         </Field>
         <SegmentedControl
           label="File names are written as"
+          class="self-start"
           size="sm"
           value={claims.file_name_syntax}
           options={SYNTAX}
