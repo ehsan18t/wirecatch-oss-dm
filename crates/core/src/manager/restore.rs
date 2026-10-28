@@ -96,10 +96,14 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
 
     let mut settings = settings;
     let profiles = snapshot.proxy_profiles;
+    // A password stays only with its profile; its id stays used, so no new profile takes it.
     ids.proxy_profile = profiles
         .iter()
         .map(|p| p.id.0)
+        .chain(snapshot.proxy_logins.keys().map(|id| id.0))
         .fold(snapshot.last_ids.proxy_profile, i64::max);
+    let mut proxy_logins = snapshot.proxy_logins;
+    proxy_logins.retain(|id, _| profiles.iter().any(|p| p.id == *id));
     let settings_changed =
         forget_missing_profiles(&mut settings, &mut queues, &profiles) || settings_changed;
     let mut state = State {
@@ -116,7 +120,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         handovers: Handovers::default(),
         dirty: BTreeSet::default(),
         batches: Batches::default(),
-        proxy_logins: snapshot.proxy_logins,
+        proxy_logins,
         proxy_profiles: profiles,
         last_checked: around.now,
         ids,
@@ -133,8 +137,6 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
     }
 }
 
-/// The stored queues within today's limits, with the default queue first when
-/// none of them is the default.
 /// A profile that cannot be read was dropped with its settings, so what used it falls back:
 /// the app to the computer's proxy, a queue to the app's. Says whether the app's changed.
 fn forget_missing_profiles(
@@ -155,6 +157,8 @@ fn forget_missing_profiles(
     true
 }
 
+/// The stored queues within today's limits, with the default queue first when
+/// none of them is the default.
 fn restore_queues(stored: Vec<Queue>) -> Vec<QueueSlot> {
     let mut queues: Vec<QueueSlot> = stored
         .into_iter()

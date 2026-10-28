@@ -340,3 +340,34 @@ fn a_proxy_the_computer_sets_reads_as_a_profile_without_its_password() {
         profile(ProxyKind::Socks5, "::1", 1080)
     );
 }
+
+#[test]
+fn a_copy_of_the_computers_proxy_skips_saved_servers_and_takes_a_free_name() {
+    let saved_server = ProxyProfileSettings {
+        user: "alice".into(),
+        ..profile(ProxyKind::Http, "proxy.corp", 3128)
+    };
+    let saved_profiles = [saved(1, saved_server.clone())];
+    let found = vec![
+        saved_server,
+        // The same address without the login: another proxy whose address is a saved name.
+        profile(ProxyKind::Http, "proxy.corp", 3128),
+        profile(ProxyKind::Socks5, "socks.corp", 1080),
+    ];
+    let copied = copies(found, &saved_profiles).unwrap();
+    let names: Vec<_> = copied
+        .iter()
+        .map(ProxyProfileSettings::shown_name)
+        .collect();
+    assert_eq!(names, ["proxy.corp:3128 (2)", "socks.corp:1080"]);
+
+    let full: Vec<_> = (0..MAX_PROXY_PROFILES)
+        .map(|n| {
+            saved(
+                i64::try_from(n).unwrap(),
+                profile(ProxyKind::Http, &format!("p{n}"), 1),
+            )
+        })
+        .collect();
+    assert!(copies(vec![profile(ProxyKind::Http, "new", 1)], &full).is_err());
+}

@@ -258,6 +258,11 @@ async fn an_export_has_no_password_and_an_import_of_another_server_forgets_it() 
         (id, other.port)
     );
     assert!(!profiles[0].has_password);
+    // Another server is tested again, as if it had been edited.
+    wait_until("the imported profile's test", || {
+        here.manager.list_proxy_profiles()[0].last_test.clone()
+    })
+    .await;
     Ok(())
 }
 

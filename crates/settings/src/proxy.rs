@@ -269,6 +269,7 @@ pub fn engine_choice(
         ProxyUse::System if exceptions.system && exceptions.hosts.is_empty() && !ftp_direct => {
             ProxyChoice::System
         }
+        // None only when the computer sets no proxy, so System would go directly too.
         ProxyUse::System => ManualProxies::from_system().map_or(ProxyChoice::Direct, manual),
         ProxyUse::Profile(id) => {
             let Some(profile) = profiles.iter().find(|p| p.id == id) else {
@@ -359,6 +360,39 @@ pub fn updater_proxy(choice: &ProxyChoice) -> UpdaterProxy {
         ProxyChoice::Direct => UpdaterProxy::Direct,
         _ => UpdaterProxy::System,
     }
+}
+
+/// `found` as profiles to save beside `saved`: none for a server already saved, and a name of
+/// its own for one whose address another profile's name already shows. Checked whole, so
+/// saving them cannot fail halfway.
+///
+/// # Errors
+///
+/// [`SettingsError::LimitReached`] when they would be too many.
+pub fn copies(
+    found: Vec<ProxyProfileSettings>,
+    saved: &[SavedProfile],
+) -> Result<Vec<ProxyProfileSettings>> {
+    let mut taken: Vec<ProxyProfileSettings> = saved.iter().map(|p| p.settings.clone()).collect();
+    let mut copies = Vec::new();
+    for mut profile in found {
+        if taken.iter().any(|p| same_proxy(p, &profile)) {
+            continue;
+        }
+        let address = profile.address();
+        let mut n = 1;
+        while taken
+            .iter()
+            .any(|p| p.shown_name().eq_ignore_ascii_case(&profile.shown_name()))
+        {
+            n += 1;
+            profile.name = format!("{address} ({n})");
+        }
+        taken.push(profile.clone());
+        copies.push(profile);
+    }
+    check_count(taken.len())?;
+    Ok(copies)
 }
 
 /// A profile for each server the computer's proxy names (D73.9): the environment's proxy

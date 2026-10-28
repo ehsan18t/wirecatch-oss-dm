@@ -171,7 +171,7 @@ impl Manager {
         let localized = self.read_profile(path).await?;
         let wants_media = localized.profile.addons.contains(&AddonId::Media);
 
-        {
+        let retest: Vec<_> = {
             let mut state = self.lock_open()?;
             let current = state.queue_list();
             // Ids for added queues and proxies come from a copy of the counters, kept only
@@ -209,6 +209,7 @@ impl Manager {
                         if wirecatch_settings::proxy::same_proxy(&was.settings, &now.settings))
                 })
                 .collect();
+            let mut retest = Vec::new();
             for profile in &mut imported.proxies {
                 let unchanged = state
                     .proxy_profiles
@@ -216,6 +217,7 @@ impl Manager {
                     .any(|p| p.id == profile.id && p.settings == profile.settings);
                 if !unchanged {
                     profile.last_test = None;
+                    retest.push(profile.id);
                 }
             }
             self.inner.store.save_proxy_logins(kept.clone());
@@ -229,6 +231,10 @@ impl Manager {
                 imported.summary.addons_to_offer.push(AddonId::Media);
             }
             self.emit(UiEvent::SettingsImported(imported.summary));
+            retest
+        };
+        for id in retest {
+            self.test_in_background(id);
         }
         Ok(())
     }

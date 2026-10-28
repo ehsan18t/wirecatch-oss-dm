@@ -273,9 +273,8 @@ pub(super) struct Pending {
 }
 
 impl State {
-    /// The proxies the app's own requests follow (D71): add-on and suffix-list fetches and the
-    /// updater. A download's are in its [`RunPolicy`](super::policy::RunPolicy).
-    /// The proxy of the app's own requests: Main's (D73.2).
+    /// The proxy of the app's own requests (add-on and suffix-list fetches, the updater): Main's
+    /// (D73.2). A download's is in its [`RunPolicy`](super::policy::RunPolicy).
     pub fn app_proxy(&self) -> ProxyChoice {
         self.queue_proxy(self.slot(self.default_queue()).ok().map(|s| &s.queue))
     }

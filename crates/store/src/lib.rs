@@ -1008,6 +1008,21 @@ fn write_value<T: Serialize>(tx: &Transaction<'_>, key: &str, value: &T) -> rusq
     Ok(())
 }
 
+/// One by one, so a profile that cannot be read loses only itself.
+fn load_proxy_profiles(conn: &Connection) -> rusqlite::Result<Vec<SavedProfile>> {
+    Ok(
+        read_value::<Vec<serde_json::Value>>(conn, PROXY_PROFILES_KEY, "proxy profiles")?
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|profile| {
+                serde_json::from_value(profile)
+                    .inspect_err(|e| warn!(error = %e, "a stored proxy profile is unreadable"))
+                    .ok()
+            })
+            .collect(),
+    )
+}
+
 /// In sidebar order, without queues whose settings cannot be read.
 fn load_queues(conn: &Connection) -> Result<Vec<Queue>> {
     let mut stmt = conn.prepare(
@@ -1026,8 +1041,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     let last_ids = read_value(conn, LAST_IDS_KEY, "id counters")?.unwrap_or_default();
     let batches = read_value(conn, BATCHES_KEY, "queue batches")?.unwrap_or_default();
     let proxy_logins = read_value(conn, PROXY_LOGINS_KEY, "proxy passwords")?.unwrap_or_default();
-    let proxy_profiles =
-        read_value(conn, PROXY_PROFILES_KEY, "proxy profiles")?.unwrap_or_default();
+    let proxy_profiles = load_proxy_profiles(conn)?;
 
     let queues = load_queues(conn)?;
     let mut downloads_reset = 0;
@@ -2324,6 +2338,29 @@ mod tests {
         assert_eq!(main.settings, QueueSettings::new("Main"));
         assert_eq!(main.status, QueueStatus::default());
         assert_old_download_upgraded(&snapshot);
+    }
+
+    #[tokio::test]
+    async fn a_proxy_profile_that_cannot_be_read_loses_only_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let profiles: Vec<SavedProfile> =
+            serde_json::from_str(include_str!("../samples/proxy_profiles/example.json")).unwrap();
+        store.save_proxy_profiles(profiles.clone());
+        store.flush().await;
+        drop(store);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute(
+            r"UPDATE settings SET value = json_set(value, '$[1].last_test.result.outcome', 'from_a_later_build')
+               WHERE key = 'proxy_profiles'",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let ids: Vec<_> = snapshot.proxy_profiles.iter().map(|p| p.id).collect();
+        assert_eq!(ids, [profiles[0].id, profiles[2].id]);
     }
 
     #[test]

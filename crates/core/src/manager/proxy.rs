@@ -1,10 +1,10 @@
 //! Proxy profiles (D73): saving, testing and deleting them, and Copy from system.
 
-use wirecatch_protocol::ProxyProfileId;
-use wirecatch_protocol::app::{Setting, UiEvent, Update};
+use wirecatch_protocol::app::{Setting, UiEvent};
 use wirecatch_protocol::proxy::{
     ProxyProfile, ProxyProfileDraft, ProxyProfileSettings, ProxyTestResult, ProxyTestRun, ProxyUse,
 };
+use wirecatch_protocol::{ProxyProfileId, Secret};
 use wirecatch_settings::proxy::{SavedProfile, UpdaterProxy};
 
 use super::Manager;
@@ -184,7 +184,7 @@ impl Manager {
             && draft.password.is_keep()
             && saved.as_ref() == Some(&settings)
         {
-            self.keep_test(id, &settings, result.clone());
+            self.keep_test(id, &settings, password.as_ref(), result.clone());
         }
         Ok(result)
     }
@@ -200,27 +200,27 @@ impl Manager {
             .blocking(|| Ok(wirecatch_settings::proxy::from_system()))
             .await?;
         let mut state = self.lock_open()?;
-        let mut ids = Vec::with_capacity(found.len());
-        let mut added = Vec::new();
-        for settings in found {
-            if let Some(saved) = state
-                .proxy_profiles
-                .iter()
-                .find(|p| wirecatch_settings::proxy::same_proxy(&p.settings, &settings))
-            {
-                ids.push(saved.id);
-                continue;
-            }
-            let id = self.add_profile(
-                &mut state,
-                ProxyProfileDraft {
-                    settings,
-                    password: Update::Keep,
-                },
-            )?;
-            ids.push(id);
+        let copies = wirecatch_settings::proxy::copies(found.clone(), &state.proxy_profiles)?;
+        let mut added = Vec::with_capacity(copies.len());
+        for settings in copies {
+            let id = state.ids.proxy_profile();
+            state.proxy_profiles.push(SavedProfile {
+                id,
+                settings,
+                last_test: None,
+            });
             added.push(id);
         }
+        let ids = found
+            .iter()
+            .filter_map(|server| {
+                state
+                    .proxy_profiles
+                    .iter()
+                    .find(|p| wirecatch_settings::proxy::same_proxy(&p.settings, server))
+                    .map(|p| p.id)
+            })
+            .collect();
         if !added.is_empty() {
             self.inner.store.save_last_ids(state.ids.last());
             self.proxy_profiles_changed(&state);
@@ -247,7 +247,7 @@ impl Manager {
     }
 
     /// Tests saved profile `id` once, keeping the result as its last test.
-    fn test_in_background(&self, id: ProxyProfileId) {
+    pub(super) fn test_in_background(&self, id: ProxyProfileId) {
         let manager = self.clone();
         self.spawn(async move {
             let (settings, password) = {
@@ -261,14 +261,14 @@ impl Manager {
                 )
             };
             let result = manager.run_test(&settings, password.as_ref()).await;
-            manager.keep_test(id, &settings, result);
+            manager.keep_test(id, &settings, password.as_ref(), result);
         });
     }
 
     async fn run_test(
         &self,
         settings: &ProxyProfileSettings,
-        password: Option<&wirecatch_protocol::Secret>,
+        password: Option<&Secret>,
     ) -> ProxyTestResult {
         let Some(url) = self.inner.proxy_test_url.clone() else {
             return ProxyTestResult::Unreachable {
@@ -285,11 +285,13 @@ impl Manager {
         .await
     }
 
-    /// Keeps `result` as profile `id`'s last test while it is still the proxy `tested`.
+    /// Keeps `result` as profile `id`'s last test while it is still the proxy and password tested,
+    /// so a test that ends after a newer one never replaces its result.
     fn keep_test(
         &self,
         id: ProxyProfileId,
         tested: &ProxyProfileSettings,
+        password: Option<&Secret>,
         result: ProxyTestResult,
     ) {
         let at = self.inner.clock.unix_millis();
@@ -297,8 +299,9 @@ impl Manager {
         let Ok(index) = profile_index(&state, id) else {
             return;
         };
+        let current = state.proxy_logins.get(&id) == password;
         let profile = &mut state.proxy_profiles[index];
-        if !wirecatch_settings::proxy::same_proxy(&profile.settings, tested) {
+        if !current || !wirecatch_settings::proxy::same_proxy(&profile.settings, tested) {
             return;
         }
         profile.last_test = Some(ProxyTestRun { at, result });
