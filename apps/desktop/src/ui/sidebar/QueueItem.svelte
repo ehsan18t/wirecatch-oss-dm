@@ -146,7 +146,7 @@
   class={cn(
     'rounded-sm',
     dropping && 'bg-accent-soft outline-2 -outline-offset-2 outline-accent',
-    dragging && 'opacity-40',
+    dragging && 'opacity-dragged',
     // Centred on the edge, so "below one row" and "above the next" draw the same line.
     landing !== null &&
       'relative after:absolute after:inset-x-1 after:h-0.5 after:rounded-full after:bg-accent',

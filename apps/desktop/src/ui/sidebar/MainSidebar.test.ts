@@ -116,7 +116,7 @@ describe('the sidebar', () => {
     // While dragged, the queue fades; the line stays while the pointer crosses into the row's own button.
     data.clear();
     await fireEvent.dragStart(item('Work files'), { dataTransfer });
-    expect(item('Work files')).toHaveClass('opacity-40');
+    expect(item('Work files')).toHaveClass('opacity-dragged');
     await fireEvent.dragOver(item('Overnight'), { dataTransfer });
     const inside = within(nav()).getByRole('button', { name: 'Actions for Overnight' });
     // jsdom has no DragEvent, and its stand-in drops `relatedTarget`.
@@ -128,14 +128,14 @@ describe('the sidebar', () => {
     await fireEvent.dragLeave(item('Overnight'), { dataTransfer, relatedTarget: null });
     expect(item('Overnight')).not.toHaveClass('after:-top-px');
     await fireEvent.dragEnd(item('Work files'), { dataTransfer });
-    expect(item('Work files')).not.toHaveClass('opacity-40');
+    expect(item('Work files')).not.toHaveClass('opacity-dragged');
 
     // A drop ends the fade even when the moved row never gets its dragend.
     await fireEvent.dragStart(item('Work files'), { dataTransfer });
     await fireEvent.dragOver(item('Overnight'), { dataTransfer });
     await fireEvent.drop(item('Overnight'), { dataTransfer });
     await settle();
-    expect(item('Work files')).not.toHaveClass('opacity-40');
+    expect(item('Work files')).not.toHaveClass('opacity-dragged');
     expect(order()).toEqual(['Main', 'Work files', 'Overnight']);
     await drag('Work files', 'Overnight');
 
