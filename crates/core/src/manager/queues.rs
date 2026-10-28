@@ -148,11 +148,7 @@ impl Manager {
         Ok(())
     }
 
-    /// Puts the queues in `order`, the sidebar's, which also settles ties between claims (D72.9). The default queue stays first.
-    ///
-    /// # Errors
-    ///
-    /// [`CoreError::Invalid`] when `order` does not name every queue once, with the default queue first, and [`CoreError::Closed`] once the manager has shut down.
+    /// Puts the queues in `order`, the sidebar's, which also settles ties between claims (D72.9); `order` names every queue once, the default queue first.
     pub fn set_queue_order(&self, order: &[QueueId]) -> Result<()> {
         let mut state = self.lock_open()?;
         if order.first() != Some(&state.default_queue()) {

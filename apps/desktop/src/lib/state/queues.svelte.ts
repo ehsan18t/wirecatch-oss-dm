@@ -27,6 +27,8 @@ function runningPhrase(running: number, atOnce: number | null): string {
 
 export class Queues {
   list = $state<Queue[]>([]);
+  /** Where the last queue moved, for screen readers: the sidebar shows it only by its order. */
+  moved = $state('');
   readonly #host: QueuesHost;
 
   constructor(host: QueuesHost) {
@@ -93,7 +95,10 @@ export class Queues {
     if (from < 1 || from === to) return;
     order.splice(from, 1);
     order.splice(to, 0, queue);
-    await this.#host.runner.run(() => this.#host.backend().setQueueOrder(order));
+    const name = this.byId(queue)?.settings.name ?? 'The queue';
+    if (await this.#host.runner.succeeds(() => this.#host.backend().setQueueOrder(order))) {
+      this.moved = `${name} is now ${String(to + 1)} of ${String(order.length)} queues.`;
+    }
   }
 
   /** Pauses or resumes a whole queue. Downloads paused one by one stay paused either way. */

@@ -31,6 +31,7 @@
   const app = getApp();
 
   let dropping = $state(false);
+  let dragging = $state(false);
   /** Where a dragged queue would land: above this one or below it. */
   let landing = $state<'above' | 'below' | null>(null);
   const index = $derived(app.queues.list.findIndex((q) => q.id === queue.id));
@@ -66,6 +67,7 @@
       icon: Pencil,
       onselect: () => app.openDialog({ kind: 'queue', id: queue.id }),
     },
+    ...(index > 0 && last > 1 ? [{ kind: 'separator' as const, id: 'order' }] : []),
     ...(index > 1
       ? [
           {
@@ -105,6 +107,15 @@
     dropping = true;
   }
 
+  /** Leaving the row, not crossing from it into its own button or text, which fires dragleave too. */
+  function ondragleave(e: DragEvent) {
+    const into = e.relatedTarget;
+    if (into instanceof Node && e.currentTarget instanceof Node && e.currentTarget.contains(into))
+      return;
+    dropping = false;
+    landing = null;
+  }
+
   function ondrop(e: DragEvent) {
     const dragged = getDraggedQueue(e);
     if (dragged !== null) {
@@ -127,24 +138,26 @@
   class={cn(
     'rounded-sm',
     dropping && 'bg-accent-soft outline-2 -outline-offset-2 outline-accent',
+    dragging && 'opacity-40',
+    // Centred on the edge, so "below one row" and "above the next" draw the same line.
     landing !== null &&
       'relative after:absolute after:inset-x-1 after:h-0.5 after:rounded-full after:bg-accent',
-    landing === 'above' && 'after:top-0',
-    landing === 'below' && 'after:bottom-0',
+    landing === 'above' && 'after:-top-px',
+    landing === 'below' && 'after:-bottom-px',
   )}
   draggable={!queue.is_default}
   ondragstart={(e) => {
-    if (!queue.is_default) startQueueDrag(e, queue.id, queue.settings.name);
+    if (queue.is_default) return;
+    startQueueDrag(e, queue.id, queue.settings.name);
+    dragging = true;
   }}
   ondragend={() => {
     endQueueDrag();
+    dragging = false;
     landing = null;
   }}
   {ondragover}
-  ondragleave={() => {
-    dropping = false;
-    landing = null;
-  }}
+  {ondragleave}
   {ondrop}
 >
   <SidebarItem
