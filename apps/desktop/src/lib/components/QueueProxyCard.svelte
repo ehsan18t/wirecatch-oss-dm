@@ -96,19 +96,18 @@
 </script>
 
 <div class="flex flex-col divide-y divide-line rounded-md border border-line bg-layer">
-  <div class="flex flex-wrap items-end gap-2 p-3">
-    <Field
-      label="Proxy"
-      class="min-w-56 flex-1"
-      description={proxy.source === 'follow_app'
-        ? 'Changes when you change the app’s proxy.'
-        : undefined}
-    >
-      {#snippet children(control: FieldControl)}
-        <Select {...control} value={keyOf(proxy)} {options} onchange={choose} />
-      {/snippet}
-    </Field>
-    <Button icon={Plus} onclick={() => (creating = true)}>New proxy</Button>
+  <div class="flex flex-col gap-1.5 p-3">
+    <div class="flex flex-wrap items-end gap-2">
+      <Field label="Proxy" class="min-w-56 flex-1">
+        {#snippet children(control: FieldControl)}
+          <Select {...control} value={keyOf(proxy)} {options} onchange={choose} />
+        {/snippet}
+      </Field>
+      <Button icon={Plus} onclick={() => (creating = true)}>New proxy</Button>
+    </div>
+    {#if proxy.source === 'follow_app'}
+      <p class="text-small text-ink-muted">Changes when you change the app’s proxy.</p>
+    {/if}
   </div>
 
   {#if resulting.kind !== 'direct'}
@@ -117,7 +116,7 @@
       label="Go directly to"
       description={own
         ? 'Hosts this queue reaches without its proxy.'
-        : 'The hosts the app goes directly to, as they change.'}
+        : 'Hosts this queue reaches without its proxy. Follows the app’s list as it changes.'}
       value={own ? 'own' : 'app'}
       options={[
         { value: 'app', label: 'Same as the app' },
@@ -135,10 +134,9 @@
         />
         <Checkbox
           label={appHostCount === 0
-            ? 'The app’s hosts: none yet, add them in Settings, Network'
+            ? 'The app’s hosts (none yet: add them in Settings > Network)'
             : `The app’s hosts (${String(appHostCount)})`}
-          disabled={appHostCount === 0}
-          checked={own.app_hosts && appHostCount > 0}
+          checked={own.app_hosts}
           onchange={(on: boolean) => change({ app_hosts: on })}
         />
         <Checkbox

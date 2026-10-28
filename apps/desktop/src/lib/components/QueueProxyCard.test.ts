@@ -53,8 +53,7 @@ describe('a queue’s proxy', () => {
     expect(
       screen.getByRole('checkbox', { name: 'The hosts the computer’s proxy skips' }),
     ).toBeChecked();
-    // The app lists no hosts of its own in the sample, so there is nothing to take from it.
-    expect(screen.getByRole('checkbox', { name: /^The app’s hosts: none yet/ })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /^The app’s hosts \(none yet/ })).toBeChecked();
     await click(screen.getByRole('checkbox', { name: 'This queue’s hosts' }));
     const hosts = screen.getByPlaceholderText('Add a host, like intranet.example.com');
     await fireEvent.input(hosts, { target: { value: 'intranet.example' } });
@@ -81,7 +80,9 @@ describe('a queue’s proxy', () => {
     const created = within(screen.getAllByRole('dialog').at(-1) ?? document.body);
     await type(created.getByLabelText('Name (optional)'), 'Night proxy');
     await type(created.getByLabelText('Server'), 'night.example');
-    expect(created.getByText('Saved for the whole app, and used by Overnight.')).toBeInTheDocument();
+    expect(
+      created.getByText('Saved for the whole app, and used by Overnight.'),
+    ).toBeInTheDocument();
     await click(created.getByRole('button', { name: 'Save and use' }));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
     expect(screen.getByRole('combobox', { name: 'Proxy' })).toHaveTextContent('Night proxy');

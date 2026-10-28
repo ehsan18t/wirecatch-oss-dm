@@ -53,7 +53,7 @@
   const profile = $derived(
     app.settings ? profileOf(queueProxy(queue, app.settings.proxy), app.proxies.list) : undefined,
   );
-  const proxyNote = $derived(profile ? `Uses the proxy ${shownName(profile.settings)}` : '');
+  const proxyNote = $derived(profile ? `Proxy: ${shownName(profile.settings)}` : '');
   const status = $derived(app.queues.describe(queue));
   const outside = $derived(app.queues.isOutsideSchedule(queue) && !queue.status.paused);
 
