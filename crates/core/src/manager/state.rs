@@ -10,13 +10,14 @@ use tokio::task::AbortHandle;
 use wirecatch_engine::{CancellationToken, Progress, ProxyChoice, RateLimiter};
 use wirecatch_media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use wirecatch_protocol::app::{
-    AppSettings, DownloadStatus, DownloadSummary, PendingCapture, Queue,
+    AppSettings, DownloadStatus, DownloadSummary, PendingCapture, Queue, Setting,
 };
 use wirecatch_protocol::extension::NewDownload;
+use wirecatch_protocol::proxy::ProxyProfile;
 use wirecatch_protocol::wire::QueueSummary;
-use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
+use wirecatch_protocol::{DownloadId, ProxyProfileId, QuestionId, QueueId};
 use wirecatch_queues::schedule::Gate;
-use wirecatch_settings::proxy::Logins;
+use wirecatch_settings::proxy::{Logins, SavedProfile};
 use wirecatch_sites::local_network::ChosenBy;
 use wirecatch_sites::public_suffix::SuffixList;
 use wirecatch_store::{LastIds, NameChoice, StoredDownload};
@@ -58,8 +59,9 @@ pub(super) struct State {
     pub dirty: BTreeSet<DownloadId>,
     /// What each queue at work has finished or failed so far (D52).
     pub batches: Batches,
-    /// The passwords of the manual proxies, which never leave the app (D71.2).
+    /// The passwords of the proxy profiles, which never leave the app (D71.2).
     pub proxy_logins: Logins,
+    pub proxy_profiles: Vec<SavedProfile>,
     /// When schedules were last evaluated, so a start time crossed since then is seen.
     pub last_checked: NaiveDateTime,
     pub ids: Counters,
@@ -72,6 +74,7 @@ pub(super) struct State {
 pub(super) struct Counters {
     pub download: i64,
     pub queue: i64,
+    pub proxy_profile: i64,
     pub pending: u64,
     pub run: u64,
     pub position: i64,
@@ -86,6 +89,11 @@ impl Counters {
     pub fn queue(&mut self) -> QueueId {
         self.queue += 1;
         QueueId(self.queue)
+    }
+
+    pub fn proxy_profile(&mut self) -> ProxyProfileId {
+        self.proxy_profile += 1;
+        ProxyProfileId(self.proxy_profile)
     }
 
     /// A fresh question id, shared by pending captures and media.
@@ -104,11 +112,12 @@ impl Counters {
         self.position
     }
 
-    /// The highest download and queue ids handed out so far.
+    /// The highest download, queue and proxy profile ids handed out so far.
     pub fn last(&self) -> LastIds {
         LastIds {
             download: self.download,
             queue: self.queue,
+            proxy_profile: self.proxy_profile,
         }
     }
 }
@@ -264,10 +273,45 @@ pub(super) struct Pending {
 }
 
 impl State {
-    /// The proxies the app's own requests follow (D71): add-on and suffix-list fetches and the
-    /// updater. A download's are in its [`RunPolicy`](super::policy::RunPolicy).
+    /// The proxy of the app's own requests (add-on and suffix-list fetches, the updater): Main's
+    /// (D73.2). A download's is in its [`RunPolicy`](super::policy::RunPolicy).
     pub fn app_proxy(&self) -> ProxyChoice {
-        wirecatch_settings::proxy::engine_choice(&self.settings.proxy, &self.proxy_logins)
+        self.queue_proxy(self.slot(self.default_queue()).ok().map(|s| &s.queue))
+    }
+
+    /// The proxy `queue`'s downloads go through, its own or the app's; the app's with no queue.
+    pub fn queue_proxy(&self, queue: Option<&Queue>) -> ProxyChoice {
+        let app = &self.settings.proxy;
+        let (proxy, exceptions) = match queue {
+            Some(queue) => (
+                queue.settings.proxy.own().unwrap_or(app.proxy),
+                wirecatch_settings::proxy::exceptions(app, &queue.settings.exceptions),
+            ),
+            None => (
+                app.proxy,
+                wirecatch_settings::proxy::exceptions(app, &Setting::FollowApp),
+            ),
+        };
+        wirecatch_settings::proxy::engine_choice(
+            proxy,
+            &exceptions,
+            app.ftp_direct,
+            &self.proxy_profiles,
+            &self.proxy_logins,
+        )
+    }
+
+    /// The proxy profiles as the windows see them, without their passwords.
+    pub fn proxy_profile_list(&self) -> Vec<ProxyProfile> {
+        self.proxy_profiles
+            .iter()
+            .map(|p| ProxyProfile {
+                id: p.id,
+                settings: p.settings.clone(),
+                has_password: self.proxy_logins.contains_key(&p.id),
+                last_test: p.last_test.clone(),
+            })
+            .collect()
     }
 
     /// A download that exists and is not being removed.

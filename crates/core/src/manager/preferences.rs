@@ -4,13 +4,13 @@
 use std::path::Path;
 
 use wirecatch_files::FileError;
-use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AddonId, AppSettings, AppSettingsPatch, ImportPreview, UiEvent};
 use wirecatch_protocol::extension::{
     BrowserControls, BrowserControlsPatch, ExtensionSettings, ExtensionSettingsPatch,
 };
-use wirecatch_protocol::proxy::ProxySettings;
 use wirecatch_protocol::wire::Event;
+
+use wirecatch_settings::profile::{Current, NewIds};
 
 use super::Manager;
 use super::queues::apply_to_slot;
@@ -24,10 +24,10 @@ impl Manager {
         self.lock().settings.clone()
     }
 
-    /// Replaces every setting after checking them, but the proxy, which changes only with its
-    /// passwords through [`set_proxy`](Self::set_proxy). Lists are cleaned up (lower case,
+    /// Replaces every setting after checking them. Lists are cleaned up (lower case,
     /// no duplicates), and the stored result arrives as `SettingsChanged`. New
-    /// limits apply to running downloads at once.
+    /// limits apply to running downloads at once, and a new proxy to downloads that start later
+    /// (D73.3).
     ///
     /// Settings someone else changed in the meantime are overwritten, so the windows and
     /// the shell change settings with [`change_settings`](Self::change_settings); this is
@@ -35,13 +35,13 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// [`CoreError::Invalid`] for a value out of range or a queue that does not exist,
+    /// [`CoreError::Invalid`] for a value out of range or a queue or proxy profile that does not exist,
     /// [`CoreError::Path`] for a folder that does not resolve, and
     /// [`CoreError::Closed`] once the manager has shut down. Nothing changes on an
     /// error.
-    pub fn update_settings(&self, mut new: AppSettings) -> Result<()> {
+    pub fn update_settings(&self, new: AppSettings) -> Result<()> {
         let mut state = self.lock_open()?;
-        new.proxy = state.settings.proxy.clone();
+        wirecatch_settings::proxy::check_use(new.proxy.proxy, &state.proxy_profiles)?;
         let new = wirecatch_settings::validate(
             new,
             &state.queue_list(),
@@ -64,6 +64,7 @@ impl Manager {
         let mut state = self.lock_open()?;
         let mut new = state.settings.clone();
         new.apply(patch);
+        wirecatch_settings::proxy::check_use(new.proxy.proxy, &state.proxy_profiles)?;
         let new = wirecatch_settings::validate(
             new,
             &state.queue_list(),
@@ -133,6 +134,7 @@ impl Manager {
             let mut profile = wirecatch_settings::profile::export(
                 &state.settings,
                 &state.queue_list(),
+                &state.proxy_profiles,
                 &self.inner.folders,
                 self.inner.clock.unix_millis(),
             );
@@ -169,20 +171,27 @@ impl Manager {
         let localized = self.read_profile(path).await?;
         let wants_media = localized.profile.addons.contains(&AddonId::Media);
 
-        {
+        let retest: Vec<_> = {
             let mut state = self.lock_open()?;
             let current = state.queue_list();
-            // Ids for added queues come from a copy of the counters, kept only
+            // Ids for added queues and proxies come from a copy of the counters, kept only
             // once the profile is accepted, so a refused one uses up none.
-            let mut ids = state.ids.clone();
-            let mut imported = wirecatch_settings::profile::merge_localized(
+            let ids = std::cell::RefCell::new(state.ids.clone());
+            let imported = wirecatch_settings::profile::merge_localized(
                 localized,
-                &current,
+                Current {
+                    queues: &current,
+                    proxies: &state.proxy_profiles,
+                },
                 &self.inner.folders,
                 &state.suffixes,
-                || ids.queue(),
+                NewIds {
+                    queue: || ids.borrow_mut().queue(),
+                    proxy: || ids.borrow_mut().proxy_profile(),
+                },
             )?;
-            state.ids = ids;
+            let mut imported = imported;
+            state.ids = ids.into_inner();
             self.inner.store.save_last_ids(state.ids.last());
             for queue in imported.queues {
                 match state.slot_mut(queue.id) {
@@ -190,35 +199,42 @@ impl Manager {
                     Err(_) => state.queues.push(QueueSlot::new(queue)),
                 }
             }
+            // A profile has no proxy passwords (A6): a saved one stays only with its proxy.
+            let kept: wirecatch_settings::proxy::Logins = std::mem::take(&mut state.proxy_logins)
+                .into_iter()
+                .filter(|(id, _)| {
+                    let was = state.proxy_profiles.iter().find(|p| p.id == *id);
+                    let now = imported.proxies.iter().find(|p| p.id == *id);
+                    matches!((was, now), (Some(was), Some(now))
+                        if wirecatch_settings::proxy::same_proxy(&was.settings, &now.settings))
+                })
+                .collect();
+            let mut retest = Vec::new();
+            for profile in &mut imported.proxies {
+                let unchanged = state
+                    .proxy_profiles
+                    .iter()
+                    .any(|p| p.id == profile.id && p.settings == profile.settings);
+                if !unchanged {
+                    profile.last_test = None;
+                    retest.push(profile.id);
+                }
+            }
+            self.inner.store.save_proxy_logins(kept.clone());
+            state.proxy_logins = kept;
+            state.proxy_profiles = imported.proxies;
+            self.proxy_profiles_changed(&state);
             // Queues first: the new settings may name a queue that was just added.
             self.queues_changed(&mut state);
-            // A profile has no proxy passwords (A6). The saved ones belong to the proxies set
-            // here, so they go when the profile brings others.
-            let unmarked = |proxy: &ProxySettings| {
-                let mut proxy = proxy.clone();
-                wirecatch_settings::proxy::mark_passwords(
-                    &mut proxy,
-                    &wirecatch_settings::proxy::Logins::new(),
-                );
-                proxy
-            };
-            if unmarked(&imported.settings.proxy) != unmarked(&state.settings.proxy)
-                && !state.proxy_logins.is_empty()
-            {
-                state.proxy_logins.clear();
-                self.inner
-                    .store
-                    .save_proxy_logins(wirecatch_settings::proxy::Logins::new());
-            }
-            wirecatch_settings::proxy::mark_passwords(
-                &mut imported.settings.proxy,
-                &state.proxy_logins,
-            );
             self.apply_settings(&mut state, imported.settings);
             if wants_media && state.addon.tools.is_none() {
                 imported.summary.addons_to_offer.push(AddonId::Media);
             }
             self.emit(UiEvent::SettingsImported(imported.summary));
+            retest
+        };
+        for id in retest {
+            self.test_in_background(id);
         }
         Ok(())
     }
@@ -238,16 +254,20 @@ impl Manager {
         let wants_media = localized.profile.addons.contains(&AddonId::Media);
         let state = self.lock_open()?;
         let current = state.queue_list();
-        // Ids for queues that would be added; they are never used.
-        let mut next = current.iter().map(|q| q.id.0).max().unwrap_or(0);
+        // Ids for queues and proxies that would be added; they are never used.
+        let mut ids = state.ids.clone();
+        let mut proxy_ids = state.ids.clone();
         let imported = wirecatch_settings::profile::merge_localized(
             localized,
-            &current,
+            Current {
+                queues: &current,
+                proxies: &state.proxy_profiles,
+            },
             &self.inner.folders,
             &state.suffixes,
-            || {
-                next += 1;
-                QueueId(next)
+            NewIds {
+                queue: || ids.queue(),
+                proxy: || proxy_ids.proxy_profile(),
             },
         )?;
         let mut addons_to_offer = Vec::new();

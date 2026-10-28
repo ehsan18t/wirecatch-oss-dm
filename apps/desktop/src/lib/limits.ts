@@ -85,3 +85,11 @@ export type QueueLimit = 'max_concurrent' | 'speed_limit' | 'connections';
 export function queuesWithOwn(queues: readonly Queue[], limit: QueueLimit): Queue[] {
   return queues.filter((q) => q.settings[limit].source === 'own');
 }
+
+/** What deleting a queue does with its `count` downloads, which move to the queue named `to`. */
+export function queueDeletionNote(count: number, to: string): string {
+  if (count === 0) return 'It holds no downloads.';
+  return count === 1
+    ? `Its download moves to ${to}.`
+    : `Its ${String(count)} downloads move to ${to}.`;
+}

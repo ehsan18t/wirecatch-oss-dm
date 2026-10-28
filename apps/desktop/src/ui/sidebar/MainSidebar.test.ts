@@ -10,7 +10,7 @@ import { sidebarCollapsed } from '$lib/state/sidebar-preference';
 const nav = () => screen.getByRole('navigation', { name: 'Views and queues' });
 
 describe('the sidebar', () => {
-  it('marks auto queues, dims one whose claims are off, and marks a proxy set by hand', async () => {
+  it('marks auto queues, dims one whose claims are off, and marks the queues that use a proxy profile', async () => {
     const { app } = await renderApp();
     const item = (name: string) =>
       within(nav())
@@ -33,11 +33,17 @@ describe('the sidebar', () => {
     expect(item('Overnight')).not.toHaveClass('opacity-quiet');
     expect(item('Work files')).toHaveTextContent('Auto off');
     expect(item('Work files')).toHaveClass('opacity-quiet');
-    expect(within(nav()).queryAllByText('Uses a proxy')).toHaveLength(0);
+    // The sample's Work files has the Office profile of its own; the others follow the app's.
+    expect(item('Work files')).toHaveTextContent('Uses the proxy Office');
+    expect(within(nav()).getAllByText(/^Uses the proxy/)).toHaveLength(1);
     if (!app.settings) throw new Error('no settings');
-    app.settings.proxy.mode = 'manual';
+    const office = app.proxies.list[0];
+    if (!office) throw new Error('no sample proxy');
+    app.settings.proxy.proxy = { kind: 'profile', id: office.id };
     await settle();
-    expect(within(nav()).getAllByText('Uses a proxy')).toHaveLength(app.queues.list.length);
+    expect(within(nav()).getAllByText('Uses the proxy Office')).toHaveLength(
+      app.queues.list.length,
+    );
   });
 
   it('shows each view with how many it holds, and marks the one shown', async () => {

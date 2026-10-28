@@ -104,9 +104,7 @@ export type AppSettings = {
    */
   update_suffix_list: boolean;
   /**
-   * Which proxy everything the app sends goes through (D71), without its passwords. It
-   * changes as a whole, with a [`ProxyChange`](crate::proxy::ProxyChange), never in a
-   * patch.
+   * The proxy and exceptions of every queue that follows the app's (D73).
    */
   proxy: ProxySettings;
 };

@@ -7,11 +7,13 @@ import {
   FOLLOW_APP,
   MANUAL_QUEUE,
   ownSetting,
+  proxyProfileId,
   queueId,
   type AddonInfo,
   type AppSettings,
   type Category,
   type CategoryRule,
+  type ProxyProfile,
   type Queue,
   type QueueStatus,
   type StartupNotice,
@@ -165,6 +167,36 @@ const MAIN_AT_ONCE = 3;
 const OVERNIGHT_SPEED_LIMIT = 4 * MB;
 const WORK_CONNECTIONS = 4;
 
+/** The sample's proxy profiles: one that works, with a password, and one that cannot be reached. */
+export const OFFICE_PROXY_ID = proxyProfileId(1);
+const BACKUP_PROXY_ID = proxyProfileId(2);
+const SAMPLE_TESTED_AT = Date.parse('2026-10-28T09:30:00Z');
+const SAMPLE_PROXIES: readonly ProxyProfile[] = [
+  {
+    id: OFFICE_PROXY_ID,
+    settings: { name: 'Office', kind: 'socks5', host: '10.0.0.5', port: 1080, user: 'alice' },
+    has_password: true,
+    last_test: { at: SAMPLE_TESTED_AT, result: { outcome: 'works' } },
+  },
+  {
+    id: BACKUP_PROXY_ID,
+    settings: { name: '', kind: 'https', host: 'backup-proxy.example', port: 443, user: '' },
+    has_password: false,
+    last_test: {
+      at: SAMPLE_TESTED_AT,
+      result: {
+        outcome: 'unreachable',
+        reason: 'could not connect to backup-proxy.example: connection refused',
+      },
+    },
+  },
+];
+
+/** The sample proxy profiles, as a fresh copy the mock may change. */
+export function defaultProxies(): ProxyProfile[] {
+  return SAMPLE_PROXIES.map((p) => structuredClone(p));
+}
+
 const DEFAULT_QUEUES: readonly Queue[] = [
   {
     id: MAIN_QUEUE_ID,
@@ -175,6 +207,8 @@ const DEFAULT_QUEUES: readonly Queue[] = [
       max_concurrent: ownSetting(MAIN_AT_ONCE),
       speed_limit: FOLLOW_APP,
       connections: FOLLOW_APP,
+      proxy: FOLLOW_APP,
+      exceptions: FOLLOW_APP,
       takes: MANUAL_QUEUE,
       schedule: null,
       notify: 'each_download',
@@ -190,6 +224,8 @@ const DEFAULT_QUEUES: readonly Queue[] = [
       max_concurrent: ownSetting(2),
       speed_limit: ownSetting(OVERNIGHT_SPEED_LIMIT),
       connections: FOLLOW_APP,
+      proxy: FOLLOW_APP,
+      exceptions: FOLLOW_APP,
       takes: MANUAL_QUEUE,
       schedule: { start: { hour: 1, minute: 0 }, stop: { hour: 7, minute: 0 }, days: [] },
       notify: 'when_done',
@@ -205,6 +241,8 @@ const DEFAULT_QUEUES: readonly Queue[] = [
       max_concurrent: ownSetting(1),
       speed_limit: ownSetting(1 * MB),
       connections: ownSetting(WORK_CONNECTIONS),
+      proxy: ownSetting({ kind: 'profile', id: OFFICE_PROXY_ID }),
+      exceptions: FOLLOW_APP,
       takes: MANUAL_QUEUE,
       schedule: null,
       notify: 'each_download',

@@ -309,7 +309,7 @@ const DEFS = [
     id: 'proxy',
     section: 'network',
     label: 'Proxy',
-    help: 'Everything Wirecatch sends goes through it: downloads, videos, add-ons and updates. Changes take effect when you save them.',
+    help: 'Every queue that follows the app uses it, and Main’s proxy carries the app’s own requests. A change applies to downloads that start after it.',
     keywords:
       'proxy socks socks5 http https firewall vpn corporate office no proxy direct system exceptions bypass login password',
   },

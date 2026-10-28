@@ -4,6 +4,7 @@ import type { AppSettings, DownloadId } from '@wirecatch/protocol';
 import type { Addons } from './addons.svelte';
 import type { DownloadStore } from './downloads.svelte';
 import { ignore, type UiEventHandlers } from './events';
+import type { ProxyProfiles } from './proxy-profiles.svelte';
 import type { Questions } from './questions.svelte';
 import type { Queues } from './queues.svelte';
 import type { Selection } from './selection.svelte';
@@ -19,6 +20,7 @@ export interface MainWindowEventsHost {
   readonly details: DownloadId | null;
   closeDetails: () => void;
   readonly queues: Pick<Queues, 'list'>;
+  readonly proxies: Pick<ProxyProfiles, 'list'>;
   view: View;
   settings: AppSettings | null;
   /** Takes the settings the core sent. */
@@ -48,6 +50,9 @@ export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
       if (view.kind === 'queue' && e.data.every((q) => q.id !== view.id)) {
         app.view = { kind: 'all' };
       }
+    },
+    proxy_profiles_changed: (e) => {
+      app.proxies.list = e.data;
     },
     settings_changed: (e) => app.settingsArrived(e.data),
     // The shell tells the person in a brief notification (D63); the list shows the download.

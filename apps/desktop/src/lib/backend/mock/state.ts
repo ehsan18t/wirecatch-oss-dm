@@ -10,7 +10,8 @@ import {
   type MediaReading,
   type PendingCapture,
   type ProcessingStep,
-  type ProxyRole,
+  type ProxyProfile,
+  type ProxyProfileId,
   type Queue,
   type QuestionId,
   type QueueId,
@@ -19,6 +20,7 @@ import {
   type UiEvent,
   type UserError,
   downloadId,
+  proxyProfileId,
   questionId,
   queueId,
   type QueueReason,
@@ -30,6 +32,7 @@ import { BackendError } from '../types';
 import {
   builtInSuffixList,
   categoryFor,
+  defaultProxies,
   defaultQueues,
   defaultSettings,
   folderFor,
@@ -118,8 +121,7 @@ export class MockState {
   mediaChoices: MediaChoice[] = [];
   addons: AddonInfo[] = [mediaAddon()];
   suffixList: SuffixListInfo = builtInSuffixList();
-  /** The manual proxies with a password saved, which the mock, like the core, never shows. */
-  readonly proxyPasswords = new Set<ProxyRole>();
+  proxyProfiles: ProxyProfile[] = defaultProxies();
   /** Pages being read for their qualities. */
   reading: MediaReading[] = [];
   /** Pages that asked for the media add-on; they continue once it is installed. */
@@ -131,6 +133,7 @@ export class MockState {
   readonly listeners = new Set<(e: UiEvent) => void>();
   #nextDownload = 1;
   #nextQueue = Math.max(...this.queues.map((q) => q.id)) + 1;
+  #nextProxy = Math.max(0, ...this.proxyProfiles.map((p) => p.id)) + 1;
   /** Confirmations and media choices share one id space, as in the core. */
   #nextQuestion = 1;
 
@@ -148,6 +151,11 @@ export class MockState {
   /** The id of the next queue made. */
   newQueueId(): QueueId {
     return queueId(this.#nextQueue++);
+  }
+
+  /** The id of the next proxy profile saved. */
+  newProxyId(): ProxyProfileId {
+    return proxyProfileId(this.#nextProxy++);
   }
 
   /** The id of the next question asked: a file to confirm, a page being read or a quality to pick. */
@@ -178,6 +186,13 @@ export class MockState {
 
   queuesChanged(): void {
     this.emit({ type: 'queues_changed', data: this.queues.map((q) => structuredClone(q)) });
+  }
+
+  proxyProfilesChanged(): void {
+    this.emit({
+      type: 'proxy_profiles_changed',
+      data: this.proxyProfiles.map((p) => structuredClone(p)),
+    });
   }
 
   settingsChanged(): void {

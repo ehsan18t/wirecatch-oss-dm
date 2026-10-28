@@ -1,0 +1,46 @@
+[
+  {
+    "id": 1,
+    "settings": {
+      "name": "",
+      "kind": "http",
+      "host": "proxy.example",
+      "port": 8080,
+      "user": ""
+    },
+    "last_test": null
+  },
+  {
+    "id": 2,
+    "settings": {
+      "name": "Office",
+      "kind": "socks5",
+      "host": "10.0.0.5",
+      "port": 1080,
+      "user": "alice"
+    },
+    "last_test": {
+      "at": 1761700000000,
+      "result": {
+        "outcome": "works"
+      }
+    }
+  },
+  {
+    "id": 3,
+    "settings": {
+      "name": "Backup",
+      "kind": "https",
+      "host": "backup.example",
+      "port": 443,
+      "user": ""
+    },
+    "last_test": {
+      "at": 1761700000000,
+      "result": {
+        "outcome": "unreachable",
+        "reason": "connection refused"
+      }
+    }
+  }
+]

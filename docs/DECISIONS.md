@@ -656,6 +656,11 @@ Settled with the maintainer before building it, on 2026-10-29:
 8. An entry is written as in D71.1 (a name covering the names under it, `*.` and a name, an address, a network as `10.0.0.0/8` or `10.*`, and `<local>`) and matched by the same matcher.
 9. Profiles are managed in Settings, Network; their names are unique, and a queue's proxy list also offers New profile. A profile's settings are kept apart from its last test (D75's split), which is saved with it. Copy from system makes one profile for each server the computer names. A settings export carries the profiles without their passwords. The sidebar's network icon marks a queue whose proxy, its own or the app's, is a profile, and names it. A finished download's label is the proxy its link used when it started, "No proxy (exception)" included. Nobody runs a released build, so D71's manual proxies are not converted: the database changes in place and the app's proxy starts as System.
 
+Settled while building it, on 2026-10-29:
+
+10. Profiles have their own commands (`create_proxy_profile`, `update_proxy_profile`, `delete_proxy_profile`, `test_proxy_profile`, `copy_system_proxy`) and event (`ProxyProfilesChanged`); the app's proxy and exceptions are an ordinary setting (`AppSettings::proxy`), changed like any other, and a queue's are `Setting`s of its own (`QueueSettings::proxy`, `QueueSettings::exceptions`). A profile is re-tested in the background when its server, port, type, user name or password changes. Settings files are format 3 and carry the profiles, matched by name on import.
+11. The computer's proxy with nothing added (its own bypass list ticked, no hosts, FTP not sent directly) is D62's System as it was. With anything added it is read when a download starts and handed to the engine as given proxies, so "Download FTP links directly" covers it too. A stored proxy that names a profile no longer saved leaves the app on the computer's proxy and a queue following the app's.
+
 ### D74. Queue rules live in their own crate, and core decides a download's queue and how it runs in one place each
 
 Decided with the maintainer on 2026-10-25, before D72 is built on it. It changes no behaviour.
