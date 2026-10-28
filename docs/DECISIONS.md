@@ -649,6 +649,13 @@ Decided with the maintainer on 2026-10-25, to build after D72. It replaces D71's
 4. Deleting a profile that queues use asks what those queues use instead. Running downloads finish on the proxy they started with. A download that failed because of its proxy (unreachable, or a refused login) offers Change queue, and the tray menu and the command palette switch the app's proxy.
 5. Not covered: automatic configuration (PAC or WPAD), following the proxy of the browser a download came from, proxy lists that rotate, and the desktop proxy settings of Linux desktops (GNOME, KDE).
 
+Settled with the maintainer before building it, on 2026-10-29:
+
+6. Hosts reached directly (exceptions) come from three lists: the computer's bypass list (`NO_PROXY`, else on Windows the system's "Don't use the proxy server for" list), the app's hosts, and a queue's hosts. A host on a list in use never goes through a proxy, the System proxy and a profile alike; No proxy has nothing to bypass. Exceptions belong to the app and the queues, never to a profile, which amends D75.3. An auto queue that claims a site and uses No proxy is the other way to send it directly.
+7. The app ticks the lists it uses: the computer's bypass list, and its own hosts with their list (both ticked, the list empty, by default). A queue's exceptions are "Same as the app", the default, which follows the app's ticks as they change, or "Choose", with three ticks: the computer's list, the app's hosts, and the queue's own hosts with their list. Neither shows while the proxy is No proxy. The app's own requests use Main's exceptions with Main's proxy.
+8. An entry is written as in D71.1 (a name covering the names under it, `*.` and a name, an address, a network as `10.0.0.0/8` or `10.*`, and `<local>`) and matched by the same matcher.
+9. Profiles are managed in Settings, Network; their names are unique, and a queue's proxy list also offers New profile. A profile's settings are kept apart from its last test (D75's split), which is saved with it. Copy from system makes one profile for each server the computer names. A settings export carries the profiles without their passwords. The sidebar's network icon marks a queue whose proxy, its own or the app's, is a profile, and names it. A finished download's label is the proxy its link used when it started, "No proxy (exception)" included. Nobody runs a released build, so D71's manual proxies are not converted: the database changes in place and the app's proxy starts as System.
+
 ### D74. Queue rules live in their own crate, and core decides a download's queue and how it runs in one place each
 
 Decided with the maintainer on 2026-10-25, before D72 is built on it. It changes no behaviour.
