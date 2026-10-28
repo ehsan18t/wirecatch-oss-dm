@@ -8,7 +8,7 @@ import {
   type QueueId,
   type QueueSettings,
 } from '@wirecatch/protocol';
-import type { Backend } from '../backend';
+import { BackendError, type Backend } from '../backend';
 import { formatTime, scheduleAllows } from '../format';
 import { errorMessage, type Runner } from './runner';
 import type { Toasts } from './toasts.svelte';
@@ -30,6 +30,13 @@ function runningPhrase(running: number, atOnce: number | null): string {
   return atOnce === null
     ? `${String(running)} running`
     : `${String(running)} of ${String(atOnce)} running`;
+}
+
+/** Why Try a link could not answer. */
+export interface TrialProblem {
+  problem: string;
+  /** The link is at fault, not the claims. */
+  inLink: boolean;
 }
 
 export class Queues {
@@ -108,12 +115,13 @@ export class Queues {
     }
   }
 
-  /** Where the claims send `trial`'s link, or why it cannot be tried, in words for the form that asked. */
-  async tryLink(trial: LinkTrial): Promise<LinkClaims | string> {
+  /** Where the claims send `trial`'s link, or why it cannot be tried: the link, or the drafted claims (`inLink` false). */
+  async tryLink(trial: LinkTrial): Promise<LinkClaims | TrialProblem> {
     try {
       return await this.#host.backend().tryLink(trial);
     } catch (error) {
-      return errorMessage(error);
+      const inLink = error instanceof BackendError && error.code === 'invalid_url';
+      return { problem: errorMessage(error), inLink };
     }
   }
 

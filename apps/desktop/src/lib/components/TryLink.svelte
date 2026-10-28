@@ -22,6 +22,8 @@
   let url = $state('');
   let lines = $state<string[]>([]);
   let problem = $state('');
+  /** The problem is the link's, not the claims'. */
+  let linkWrong = $state(false);
   let busy = $state(false);
   let result = $state<HTMLElement | null>(null);
 
@@ -48,8 +50,9 @@
     busy = true;
     try {
       const found = await app.queues.tryLink({ url: link, draft: draft?.() ?? null });
-      if (typeof found === 'string') {
-        problem = found;
+      if ('problem' in found) {
+        ({ problem } = found);
+        linkWrong = found.inLink;
         lines = [];
       } else {
         problem = '';
@@ -64,7 +67,7 @@
   }
 </script>
 
-<div class="flex max-w-2xl flex-col gap-2">
+<div class="flex max-w-prose flex-col gap-2">
   <div class="flex items-end gap-2">
     <Field label="Try a link" class="min-w-0 flex-1">
       {#snippet children(control: FieldControl)}
@@ -72,7 +75,7 @@
           {...control}
           type="url"
           value={url}
-          invalid={problem !== ''}
+          invalid={linkWrong && problem !== ''}
           aria-describedby="{formId}-result"
           placeholder="https://example.com/file.zip"
           onchange={(value: string) => {

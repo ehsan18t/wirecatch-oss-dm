@@ -46,7 +46,7 @@ describe('the claims card', () => {
     await typeInto(dialog.getByLabelText('File names'), String.raw`^clip-\d+$`);
     await click(dialog.getByRole('radio', { name: 'Regular expression' }));
     await click(dialog.getByRole('button', { name: 'Video' }));
-    await click(dialog.getByRole('button', { name: 'FTP' }));
+    await click(dialog.getByRole('button', { name: 'FTP and FTPS' }));
     await save();
 
     const made = app.queues.list.find((q) => q.settings.name === 'Videos');
@@ -83,7 +83,7 @@ describe('the claims card', () => {
     await typeInto(dialog.getByLabelText('Sites'), 'example.org');
     await click(dialog.getByRole('switch', { name: /^Claim new downloads/ }));
     expect(
-      dialog.getByText('Only the downloads you put in it, while its claims are off.'),
+      dialog.getByText('Only what you put in it, while its claims are off.'),
     ).toBeInTheDocument();
     await save();
     expect(
@@ -116,7 +116,7 @@ describe('Try a link', () => {
     expect(result).toHaveTextContent('Work files would take example.com, but its claims are off.');
   });
 
-  it('says why a link cannot be tried, until the link changes', async () => {
+  it('marks the link when it is the link that is wrong, and says why until it changes', async () => {
     const { dialog } = await openQueueDialog(null);
     expect(dialog.queryByLabelText('Try a link')).toBeNull();
     await click(dialog.getByRole('radio', { name: 'Auto' }));
@@ -127,6 +127,16 @@ describe('Try a link', () => {
     await fireEvent.input(dialog.getByLabelText('Try a link'), { target: { value: 'https://' } });
     await settle();
     expect(dialog.queryByText(/is not a valid link/)).toBeNull();
+  });
+
+  it('says a claim it cannot read without marking the link', async () => {
+    const { dialog } = await openQueueDialog(null);
+    await click(dialog.getByRole('radio', { name: 'Auto' }));
+    await typeInto(dialog.getByRole('textbox', { name: 'File names' }), '*-final.*');
+    await click(dialog.getByRole('radio', { name: 'Regular expression' }));
+    await tryLink(screen.getByRole('dialog'), 'https://example.org/a-final.zip');
+    expect(dialog.getByText(/is not a regular expression/)).toBeInTheDocument();
+    expect(dialog.getByLabelText('Try a link')).not.toHaveAttribute('aria-invalid', 'true');
   });
 
   it('tries the saved claims in Settings', async () => {

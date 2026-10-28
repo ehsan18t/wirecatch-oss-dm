@@ -15,7 +15,7 @@
   const PROTOCOLS: readonly { value: LinkProtocol; label: string }[] = [
     { value: 'http', label: 'HTTP' },
     { value: 'https', label: 'HTTPS' },
-    { value: 'ftp', label: 'FTP' },
+    { value: 'ftp', label: 'FTP and FTPS' },
   ];
 </script>
 
@@ -68,9 +68,9 @@
     label="Takes new downloads"
     description={auto
       ? claims.enabled
-        ? 'The downloads you put in it, and new ones its claims match.'
-        : 'Only the downloads you put in it, while its claims are off.'
-      : 'Only the downloads you put in it.'}
+        ? 'What you put in it, and new downloads it claims.'
+        : 'Only what you put in it, while its claims are off.'
+      : 'Only what you put in it.'}
     value={auto ? 'auto' : 'manual'}
     options={TAKES}
     onchange={(next: 'manual' | 'auto') => onchange(next === 'auto', claims)}

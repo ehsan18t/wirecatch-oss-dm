@@ -97,7 +97,7 @@ export function setQueueOrder(state: MockState, order: QueueId[]): void {
   state.queuesChanged();
 }
 
-/** Try a link in the mock, by site claims alone: a name covers itself and the names under it. The app matches every kind and pattern in `wirecatch-queues`; this stands in for it so the windows can be built against sample data. */
+/** Try a link in the mock, by site claims alone: a name covers itself and the names under it; drafted regular expressions are checked by JavaScript's reader. The app matches every kind and pattern in `wirecatch-queues`; this stands in for it so the windows can be built against sample data. */
 export function tryLink(state: MockState, trial: LinkTrial): LinkClaims {
   let host: string;
   try {
@@ -105,9 +105,15 @@ export function tryLink(state: MockState, trial: LinkTrial): LinkClaims {
   } catch {
     throw new BackendError(
       `"${trial.url}" is not a valid link. Check that it starts with http://, https://, ftp:// or ftps://.`,
+      'invalid_url',
     );
   }
   const { draft } = trial;
+  if (draft?.takes.kind === 'auto' && draft.takes.file_name_syntax === 'regex') {
+    const unreadable = draft.takes.file_names.find((name) => !readsAsRegex(name));
+    if (unreadable !== undefined)
+      throw new BackendError(`"${unreadable}" is not a regular expression Wirecatch can use.`);
+  }
   const queues: { id: QueueId | null; takes: QueueTakes }[] = state.queues.map((q) => ({
     id: q.id,
     takes: draft?.queue === q.id ? draft.takes : q.settings.takes,
@@ -122,4 +128,12 @@ export function tryLink(state: MockState, trial: LinkTrial): LinkClaims {
     return null;
   };
   return { taken: claimOf(true), switched_off: claimOf(false) };
+}
+
+function readsAsRegex(pattern: string): boolean {
+  try {
+    return new RegExp(pattern).source !== '';
+  } catch {
+    return false;
+  }
 }
