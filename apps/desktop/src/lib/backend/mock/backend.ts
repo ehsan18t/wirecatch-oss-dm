@@ -437,6 +437,10 @@ export class MockBackend extends MockShell implements Backend {
     return this.#call(() => undefined);
   }
 
+  showDownloadDetails() {
+    return this.#call(() => undefined);
+  }
+
   /** Set by tests: the core's weekly check of the Public Suffix List runs, finding `finds`. */
   simulateWeeklySuffixCheck(finds: suffixList.SuffixCheck): void {
     suffixList.weeklyCheck(this.#state, finds);

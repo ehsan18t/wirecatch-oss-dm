@@ -59,6 +59,10 @@ pub struct DownloadSummary {
     /// `None` at any other time.
     #[serde(default)]
     pub processing: Option<ProcessingProgress>,
+    /// The proxy its last run started through, in words: a profile's name and address, the
+    /// computer's proxy, or no proxy (D73.3). `None` before its first run.
+    #[serde(default)]
+    pub proxy: Option<String>,
 }
 
 /// What ffmpeg is doing to a downloaded video or audio, and how far it is (D24).
@@ -150,8 +154,11 @@ pub enum FixAction {
     FreeDiskSpace,
     /// Converting a downloaded video failed: save it as it was downloaded instead (D24).
     KeepOriginal,
-    /// The proxy refused the login, or cannot carry the download: open the proxy settings (D71).
+    /// An FTP link a proxy cannot carry: open the proxy settings (D71).
     ProxySettings,
+    /// The proxy could not be reached or refused the login: move the download to a queue with
+    /// another proxy (D73.4).
+    ChangeQueue,
 }
 
 /// The kind of file a download is; each has its own folder ([`CategoryRule`]).

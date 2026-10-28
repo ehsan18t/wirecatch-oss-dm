@@ -148,6 +148,10 @@ pub struct Reveal {
     #[serde(default)]
     #[ts(optional, as = "Option<bool>")]
     pub proxy_settings: bool,
+    /// Open the details of the first download, where its queue is chosen (D73.4).
+    #[serde(default)]
+    #[ts(optional, as = "Option<bool>")]
+    pub details: bool,
 }
 
 impl Reveal {
@@ -159,6 +163,19 @@ impl Reveal {
             ids: Vec::new(),
             browser_settings: true,
             proxy_settings: false,
+            details: false,
+        }
+    }
+
+    /// Download `id` with its details open, for a progress window's Change queue (D73.4).
+    #[must_use]
+    pub fn details(id: DownloadId) -> Self {
+        Self {
+            queue: None,
+            ids: vec![id],
+            browser_settings: false,
+            proxy_settings: false,
+            details: true,
         }
     }
 
@@ -170,6 +187,7 @@ impl Reveal {
             ids: Vec::new(),
             browser_settings: false,
             proxy_settings: true,
+            details: false,
         }
     }
 }
@@ -550,6 +568,12 @@ commands! {
     /// Brings the main window to the front on the proxy settings, for a progress window's fix
     /// of a proxy error.
     show_proxy_settings -> ();
+    /// Brings the main window to the front with a download's details open, for a progress
+    /// window's Change queue (D73.4).
+    show_download_details: ShowDownloadDetailsArgs {
+        /// The download.
+        id: DownloadId,
+    } -> ();
     /// The open question a download window shows, or `null` once it is answered, dismissed or
     /// taken back by the browser.
     get_question: GetQuestionArgs {

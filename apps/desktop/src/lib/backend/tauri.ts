@@ -324,6 +324,9 @@ export class TauriBackend implements DownloadWindowBackend {
   showProxySettings() {
     return this.#exec('show_proxy_settings');
   }
+  showDownloadDetails(id: DownloadId) {
+    return this.#exec('show_download_details', { id });
+  }
 
   /** Passes on every event with the contract's shape. One without it is a bug on one side: it is dropped, reported to the shell's log, and `reload` is called to load everything again from the commands, whose answers are checked; for a kind that keeps failing, at most once every `UNREADABLE_RELOAD_MS`. */
   async subscribe(listener: (event: UiEvent) => void, reload: () => void): Promise<Unsubscribe> {

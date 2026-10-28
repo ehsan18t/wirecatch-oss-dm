@@ -318,6 +318,7 @@ mod tests {
             added_at: 0,
             completed_at: None,
             processing: None,
+            proxy: None,
         }
     }
 

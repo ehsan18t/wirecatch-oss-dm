@@ -604,6 +604,7 @@ impl Manager {
             waiting: None,
             media: media.as_ref().map(|m| m.summary.clone()),
             processing: None,
+            proxy: None,
         };
         let media_job = media.and_then(|m| m.job);
         // The path is a guess until the server answers with its own name; a
@@ -622,6 +623,7 @@ impl Manager {
             expect,
             run: None,
             resume_first: false,
+            through_proxy: None,
             cleanup: None,
             removing: false,
             moving: None,

@@ -153,6 +153,7 @@ export type { SetQueueOrderArgs } from './generated/SetQueueOrderArgs';
 export type { SetQueuePausedArgs } from './generated/SetQueuePausedArgs';
 export type { Setting } from './generated/Setting';
 export type { SettingsProfile } from './generated/SettingsProfile';
+export type { ShowDownloadDetailsArgs } from './generated/ShowDownloadDetailsArgs';
 export type { ShowProgressWindowArgs } from './generated/ShowProgressWindowArgs';
 export type { StartNoteTime } from './generated/StartNoteTime';
 export type { StartNotice } from './generated/StartNotice';

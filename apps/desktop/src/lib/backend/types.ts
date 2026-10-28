@@ -191,6 +191,8 @@ export interface Backend {
   copySystemProxy: () => Promise<ProxyProfileId[]>;
   /** Brings the main window forward on the proxy settings, for a progress window's fix. */
   showProxySettings: () => Promise<void>;
+  /** Brings the main window forward with a download's details open, for a progress window's Change queue. */
+  showDownloadDetails: (id: DownloadId) => Promise<void>;
 
   /** Every change the core pushes, in order; `reload` when one could not be read, so the caller loads what it shows again. */
   subscribe: (listener: (event: UiEvent) => void, reload: () => void) => Promise<Unsubscribe>;

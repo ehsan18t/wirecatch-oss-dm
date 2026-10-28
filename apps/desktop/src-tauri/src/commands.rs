@@ -15,8 +15,8 @@ use wirecatch_protocol::desktop::{
     OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs, RejectCaptureArgs,
     RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs, ResumeArgs, RetryArgs,
     SetDownloadFolderArgs, SetMaximizeButtonArgs, SetQueueOrderArgs, SetQueuePausedArgs,
-    ShowProgressWindowArgs, StartQueueNowArgs, SystemAppearance, TestProxyProfileArgs, TryLinkArgs,
-    UpdateAddonArgs, UpdateProxyProfileArgs, UpdateQueueArgs,
+    ShowDownloadDetailsArgs, ShowProgressWindowArgs, StartQueueNowArgs, SystemAppearance,
+    TestProxyProfileArgs, TryLinkArgs, UpdateAddonArgs, UpdateProxyProfileArgs, UpdateQueueArgs,
 };
 
 use crate::api::{self, CommandResult};
@@ -646,6 +646,20 @@ pub async fn show_proxy_settings<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn show_download_details<R: Runtime>(
+    window: WebviewWindow<R>,
+    args: contract::show_download_details::Args,
+) -> CommandResult<contract::show_download_details::Output> {
+    let ShowDownloadDetailsArgs { id } = args;
+    its_own(&window, Shows::Download(id))?;
+    crate::window::reveal(
+        window.app_handle(),
+        &wirecatch_protocol::desktop::Reveal::details(id),
+    );
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn control_window<R: Runtime>(
     window: WebviewWindow<R>,
     args: contract::control_window::Args,
@@ -797,6 +811,7 @@ handler![
     test_proxy_profile,
     copy_system_proxy,
     show_proxy_settings,
+    show_download_details,
     get_question,
     get_download,
     earlier_download,

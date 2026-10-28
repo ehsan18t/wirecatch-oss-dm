@@ -27,6 +27,7 @@ import {
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { fileNameFromUrl } from '../../format';
+import { proxyAddress } from '../../proxy';
 import type { WindowRegistry } from '../../sample-windows';
 import { BackendError } from '../types';
 import {
@@ -242,6 +243,19 @@ export class MockState {
     return ids.filter((id, i) => ids.indexOf(id) === i).sort((a, b) => a - b);
   }
 
+  /** The proxy a run in `queue` goes through, in the core's words. */
+  proxyLabel(queue: QueueId): string {
+    const own = this.queues.find((q) => q.id === queue)?.settings.proxy;
+    const proxy = own?.source === 'own' ? own.value : this.settings.proxy.proxy;
+    // The sample computer sets no proxy, so the computer's goes directly too.
+    if (proxy.kind !== 'profile') return 'No proxy';
+    const profile = this.proxyProfiles.find((p) => p.id === proxy.id);
+    if (!profile) return 'No proxy';
+    const address = proxyAddress(profile.settings);
+    const name = profile.settings.name.trim();
+    return name === '' ? address : `${name} (${address})`;
+  }
+
   /** Adds a download at the end of the list; `rate` is how fast it can go. */
   insert(fields: NewRow, rate: number): DownloadSummary {
     const category = categoryFor(fields.file_name, this.settings.categories);
@@ -264,6 +278,11 @@ export class MockState {
       waiting: null,
       media: null,
       processing: null,
+      // The mock names the proxy when a download is added; the core, when each run starts.
+      proxy:
+        fields.status === 'queued' || fields.status === 'paused'
+          ? null
+          : this.proxyLabel(fields.queue),
       added_at: fields.added_at,
       completed_at: fields.completed_at ?? null,
     };

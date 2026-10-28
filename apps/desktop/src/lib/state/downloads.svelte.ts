@@ -28,6 +28,7 @@ const ROW_FIELDS: Readonly<Record<RowField, true>> = {
   path: true,
   queue: true,
   queue_reason: true,
+  proxy: true,
   category: true,
   status: true,
   total: true,

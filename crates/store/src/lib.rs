@@ -170,6 +170,10 @@ const MIGRATIONS: &[&str] = &[
     )
     WHERE json_valid(settings);
 "#,
+    // D73.3: the proxy a download's last run started through, as text.
+    r"
+    ALTER TABLE downloads ADD COLUMN proxy_label TEXT;
+",
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -1049,7 +1053,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     let mut stmt = conn.prepare(
         "SELECT id, url, path, queue_id, position, category, status, total, done, error,
                 added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-                stranded, chosen_by, queue_reason
+                stranded, chosen_by, queue_reason, proxy_label
          FROM downloads ORDER BY position",
     )?;
     let mut downloads = Vec::new();
@@ -1189,9 +1193,9 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         "INSERT OR REPLACE INTO downloads
             (id, url, path, queue_id, position, category, status, total, done, error,
              added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-             stranded, chosen_by, queue_reason)
+             stranded, chosen_by, queue_reason, proxy_label)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                 ?18, ?19, ?20)",
+                 ?18, ?19, ?20, ?21)",
     )?
     .execute(params![
         d.id.0,
@@ -1216,6 +1220,7 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
             .map(|path| path.to_string_lossy().into_owned()),
         enum_text(&row.chosen_by),
         to_json(&d.queue_reason),
+        d.proxy,
     ])?;
     Ok(())
 }
@@ -1312,6 +1317,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
                 waiting: None,
                 media: media.as_ref().map(|m| m.summary.clone()),
                 processing: None,
+                proxy: row.get(20)?,
             },
             position: row.get(4)?,
             origin,
@@ -1449,6 +1455,7 @@ mod tests {
                 waiting: None,
                 media: None,
                 processing: None,
+                proxy: Some("Office (10.0.0.5:1080)".into()),
             },
             position: 3,
             origin: Origin {

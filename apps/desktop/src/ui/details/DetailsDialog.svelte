@@ -68,6 +68,7 @@
         : []),
       ['Kind', fileKind(r.file_name, CATEGORY_LABEL[r.category])],
       ['Added', formatDate(r.added_at, app.clock.now)],
+      ...(r.proxy === null ? [] : [['Proxy', r.proxy] as [string, string]]),
     ];
   }
 
@@ -217,7 +218,7 @@
             class="flex min-w-0 flex-1 basis-28 flex-col gap-0.5 border-l border-line px-4 py-2.5"
           >
             <dt class="text-caption text-ink-subtle">{label}</dt>
-            <dd class="truncate text-small font-medium text-ink tabular-nums">{value}</dd>
+            <dd class="text-small font-medium wrap-anywhere text-ink tabular-nums">{value}</dd>
           </div>
         {/each}
       </dl>

@@ -47,6 +47,7 @@ const DOWNLOAD_WINDOW: &[(&str, ActsOn)] = &[
     ("refresh_link", ActsOn::Download),
     ("keep_original", ActsOn::Download),
     ("show_proxy_settings", ActsOn::Neither),
+    ("show_download_details", ActsOn::Download),
     ("open_file", ActsOn::Download),
     ("open_folder", ActsOn::Download),
     ("set_download_folder", ActsOn::Download),
@@ -84,6 +85,7 @@ const DOWNLOAD_WINDOW_ONLY: &[&str] = &[
     "fit_download_window",
     "finished_list",
     "show_proxy_settings",
+    "show_download_details",
 ];
 
 fn download_window_may(command: &str) -> bool {
@@ -241,7 +243,8 @@ fn aimed_at(command: &str, id: &Value) -> TestResult<Value> {
         | "reject_capture"
         | "dismiss_media_choice"
         | "get_question"
-        | "earlier_download" => json!({ "id": id }),
+        | "earlier_download"
+        | "show_download_details" => json!({ "id": id }),
         _ => return Err(format!("say how {command} names what it acts on").into()),
     };
     Ok(json!({ "args": args }))

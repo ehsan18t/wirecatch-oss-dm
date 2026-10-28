@@ -69,6 +69,7 @@ fn show(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Act {
         ids: rows.iter().map(|r| r.id).collect(),
         browser_settings: false,
         proxy_settings: false,
+        details: false,
     })
 }
 
@@ -298,6 +299,7 @@ mod tests {
             added_at: 0,
             completed_at: None,
             processing: None,
+            proxy: None,
         }
     }
 
@@ -320,6 +322,7 @@ mod tests {
             ids: ids.iter().copied().map(DownloadId).collect(),
             browser_settings: false,
             proxy_settings: false,
+            details: false,
         })
     }
 

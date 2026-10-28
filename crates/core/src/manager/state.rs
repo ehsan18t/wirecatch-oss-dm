@@ -7,13 +7,13 @@ use std::sync::Arc;
 
 use chrono::NaiveDateTime;
 use tokio::task::AbortHandle;
-use wirecatch_engine::{CancellationToken, Progress, ProxyChoice, RateLimiter};
+use wirecatch_engine::{CancellationToken, Progress, ProxyChoice, ProxyRoute, RateLimiter, Url};
 use wirecatch_media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use wirecatch_protocol::app::{
     AppSettings, DownloadStatus, DownloadSummary, PendingCapture, Queue, Setting,
 };
 use wirecatch_protocol::extension::NewDownload;
-use wirecatch_protocol::proxy::ProxyProfile;
+use wirecatch_protocol::proxy::{ProxyProfile, ProxyUse};
 use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, ProxyProfileId, QuestionId, QueueId};
 use wirecatch_queues::schedule::Gate;
@@ -156,6 +156,9 @@ pub(super) struct Entry {
     pub run: Option<Run>,
     /// Was running when the app last stopped, so it gets the first free slot.
     pub resume_first: bool,
+    /// The proxy its run went through, in words, while it is running and after it failed:
+    /// `None` when the run went directly.
+    pub through_proxy: Option<String>,
     /// Set while its partial files are being deleted; a new run waits for it.
     pub cleanup: Option<CancellationToken>,
     /// Being removed: hidden from the list and from every operation, and never started.
@@ -281,6 +284,10 @@ impl State {
 
     /// The proxy `queue`'s downloads go through, its own or the app's; the app's with no queue.
     pub fn queue_proxy(&self, queue: Option<&Queue>) -> ProxyChoice {
+        self.queue_proxy_with_use(queue).1
+    }
+
+    fn queue_proxy_with_use(&self, queue: Option<&Queue>) -> (ProxyUse, ProxyChoice) {
         let app = &self.settings.proxy;
         let (proxy, exceptions) = match queue {
             Some(queue) => (
@@ -292,13 +299,42 @@ impl State {
                 wirecatch_settings::proxy::exceptions(app, &Setting::FollowApp),
             ),
         };
-        wirecatch_settings::proxy::engine_choice(
+        let choice = wirecatch_settings::proxy::engine_choice(
             proxy,
             &exceptions,
             app.ftp_direct,
             &self.proxy_profiles,
             &self.proxy_logins,
-        )
+        );
+        (proxy, choice)
+    }
+
+    /// How a run in `queue` reaches `url`, in words, and the proxy it goes through when it goes
+    /// through one (D73.3).
+    pub fn proxy_route(&self, queue: QueueId, url: &str) -> (String, Option<String>) {
+        let (proxy, choice) = self.queue_proxy_with_use(self.slot(queue).ok().map(|s| &s.queue));
+        let route = Url::parse(url).map_or(ProxyRoute::Direct, |url| choice.route(&url));
+        match route {
+            ProxyRoute::Through(address) => {
+                let address = address
+                    .split_once("://")
+                    .map_or(address.as_str(), |(_, a)| a);
+                let profile = match proxy {
+                    ProxyUse::Profile(id) => self.proxy_profiles.iter().find(|p| p.id == id),
+                    _ => None,
+                };
+                let label = match profile {
+                    Some(p) if !p.settings.name.trim().is_empty() => {
+                        format!("{} ({})", p.settings.name.trim(), p.settings.address())
+                    }
+                    Some(p) => p.settings.address(),
+                    None => format!("The computer's proxy ({address})"),
+                };
+                (label.clone(), Some(label))
+            }
+            ProxyRoute::Excepted => ("No proxy (an exception)".into(), None),
+            _ => ("No proxy".into(), None),
+        }
     }
 
     /// The proxy profiles as the windows see them, without their passwords.
@@ -582,6 +618,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
             waiting: None,
             media: None,
             processing: None,
+            proxy: None,
         },
         position: 1,
         origin: Origin::default(),
@@ -590,6 +627,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         expect: None,
         run: None,
         resume_first: false,
+        through_proxy: None,
         cleanup: None,
         removing: false,
         moving: None,
@@ -626,6 +664,7 @@ mod tests {
                 waiting: None,
                 media: None,
                 processing: None,
+                proxy: None,
             },
             position: 1,
             origin: Origin::default(),
@@ -644,6 +683,7 @@ mod tests {
                 task: idle_task(),
             }),
             resume_first: false,
+            through_proxy: None,
             cleanup: None,
             removing: false,
             moving: None,

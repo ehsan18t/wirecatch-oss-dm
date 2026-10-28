@@ -22,7 +22,7 @@ use super::{Inner, Manager};
 use crate::headers;
 use crate::headers::Origin;
 use crate::speed::SpeedMeter;
-use wirecatch_sites::local_network::{self, ChosenBy};
+use wirecatch_sites::local_network;
 
 /// How a run ended.
 pub(super) enum RunEnd {
@@ -59,14 +59,8 @@ enum Ended {
 impl Ended {
     /// How run `end` of download `id`, saving into `folder`, ended. A failure
     /// is described for the person, in words that depend on whether anything
-    /// had arrived before it (`worked_before`) and on who chose the link.
-    fn of(
-        end: RunEnd,
-        id: DownloadId,
-        folder: &Path,
-        worked_before: bool,
-        chosen_by: ChosenBy,
-    ) -> Self {
+    /// had arrived before it (`worked_before`), on who chose the link and on the proxy it went through.
+    fn of(end: RunEnd, id: DownloadId, folder: &Path, worked_before: bool, entry: &Entry) -> Self {
         match end {
             RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })) => {
                 Ended::Completed { bytes, path: None }
@@ -78,7 +72,8 @@ impl Ended {
                     &error,
                     folder,
                     worked_before,
-                    chosen_by,
+                    entry.chosen_by,
+                    entry.through_proxy.as_deref(),
                 ))
             }
             RunEnd::Media(Ok(MediaDone::Completed { path, bytes })) => Ended::Completed {
@@ -107,6 +102,18 @@ impl Manager {
         }
         let run_id = state.ids.run();
         let answered = CancellationToken::new();
+        let Some((queue, url)) = state
+            .downloads
+            .get(&id)
+            .map(|e| (e.row.queue, e.row.url.clone()))
+        else {
+            return;
+        };
+        let (label, through) = state.proxy_route(queue, &url);
+        if let Some(entry) = state.downloads.get_mut(&id) {
+            entry.row.proxy = Some(label);
+            entry.through_proxy = through;
+        }
         let Some(entry) = state.downloads.get(&id) else {
             return;
         };
@@ -236,7 +243,7 @@ impl Manager {
         entry.clear_live_fields();
 
         let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
-        let ended = Ended::of(end, id, &folder, worked_before, entry.chosen_by);
+        let ended = Ended::of(end, id, &folder, worked_before, entry);
         let mut answered_page = None;
         match (ended, run.stop) {
             (Ended::Completed { bytes, path }, _) => {
@@ -456,6 +463,7 @@ mod tests {
     use crate::{KnownFolders, ManagerConfig};
     use wirecatch_engine::{PrivateNetwork, ProxyChoice};
     use wirecatch_protocol::app::AddRequest;
+    use wirecatch_sites::local_network::ChosenBy;
 
     /// A website's link written as a local address is refused before it
     /// starts: the engine's `Block` lets a starting address through (D34.4),
