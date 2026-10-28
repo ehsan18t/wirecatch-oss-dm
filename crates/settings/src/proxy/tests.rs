@@ -1,20 +1,22 @@
+use wirecatch_protocol::ProxyProfileId;
+use wirecatch_protocol::proxy::AppExceptions;
+
 use super::*;
 
-fn server(kind: ProxyKind, host: &str, port: u16) -> ProxyServer {
-    ProxyServer {
+fn profile(kind: ProxyKind, host: &str, port: u16) -> ProxyProfileSettings {
+    ProxyProfileSettings {
         kind,
         host: host.into(),
         port,
-        ..ProxyServer::default()
+        ..ProxyProfileSettings::default()
     }
 }
 
-/// A manual setting with one proxy for every protocol.
-fn manual(all: ProxyServer) -> ProxySettings {
-    ProxySettings {
-        mode: ProxyMode::Manual,
-        all,
-        ..ProxySettings::default()
+fn saved(id: i64, settings: ProxyProfileSettings) -> SavedProfile {
+    SavedProfile {
+        id: ProxyProfileId(id),
+        settings,
+        last_test: None,
     }
 }
 
@@ -25,37 +27,69 @@ fn manual_proxies(choice: ProxyChoice) -> ManualProxies {
     }
 }
 
+/// No computer's list, so a test never reads this machine's.
+fn only(hosts: &[&str]) -> Exceptions {
+    Exceptions {
+        system: false,
+        hosts: hosts.iter().map(ToString::to_string).collect(),
+    }
+}
+
 #[test]
-fn a_manual_setting_needs_a_server_and_each_server_a_name_and_port() {
-    let nothing = ProxySettings {
-        mode: ProxyMode::Manual,
-        ..ProxySettings::default()
-    };
-    assert!(validate(nothing).is_err());
+fn a_profile_needs_a_server_name_and_port() {
     for (host, port) in [
+        ("", 8080),
         ("http://proxy", 8080),
         ("proxy:8080", 8080),
         ("pro xy", 8080),
         ("user@proxy", 8080),
         ("proxy", 0),
+        ("999.1.1.1", 8080),
+        ("proxy.10", 8080),
     ] {
         assert!(
-            validate(manual(server(ProxyKind::Http, host, port))).is_err(),
+            validate_profile(profile(ProxyKind::Http, host, port), &[]).is_err(),
             "{host}:{port}"
         );
     }
     for host in ["proxy.corp", "10.0.0.5", "::1", " proxy "] {
-        let kept = validate(manual(server(ProxyKind::Http, host, 3128))).unwrap();
-        assert_eq!(kept.all.host, host.trim());
+        let kept = validate_profile(profile(ProxyKind::Http, host, 3128), &[]).unwrap();
+        assert_eq!(kept.host, host.trim());
     }
-    // System and no proxy need nothing entered.
-    assert!(validate(ProxySettings::default()).is_ok());
+}
+
+#[test]
+fn profile_names_are_unique_and_an_empty_one_shows_the_address() {
+    let office = ProxyProfileSettings {
+        name: "Office".into(),
+        ..profile(ProxyKind::Http, "proxy.corp", 3128)
+    };
+    let unnamed = profile(ProxyKind::Http, "other.corp", 8080);
+    assert_eq!(unnamed.shown_name(), "other.corp:8080");
+    assert_eq!(profile(ProxyKind::Http, "::1", 1).shown_name(), "[::1]:1");
+    let others = [&office, &unnamed];
+    let same_name = ProxyProfileSettings {
+        name: " office ".into(),
+        ..profile(ProxyKind::Socks5, "socks", 1080)
+    };
+    assert!(validate_profile(same_name, &others).is_err());
+    assert!(validate_profile(unnamed.clone(), &others).is_err());
+    let named = ProxyProfileSettings {
+        name: "Home".into(),
+        ..unnamed.clone()
+    };
+    assert!(validate_profile(named, &others).is_ok());
+    let long = ProxyProfileSettings {
+        name: "n".repeat(MAX_PROXY_NAME_CHARS + 1),
+        ..profile(ProxyKind::Http, "proxy", 1)
+    };
+    assert!(validate_profile(long, &[]).is_err());
 }
 
 #[test]
 fn exceptions_are_cleaned_and_bounded() {
-    let mut proxy = manual(server(ProxyKind::Http, "proxy", 3128));
-    proxy.exceptions = vec![
+    let mut proxy = ProxySettings::default();
+    proxy.exceptions.hosts = vec![
         " Files.Example ".into(),
         "files.example".into(),
         String::new(),
@@ -63,98 +97,155 @@ fn exceptions_are_cleaned_and_bounded() {
         "<local>".into(),
     ];
     let kept = validate(proxy.clone()).unwrap();
-    assert_eq!(kept.exceptions, ["files.example", "*.corp", "<local>"]);
+    assert_eq!(
+        kept.exceptions.hosts,
+        ["files.example", "*.corp", "<local>"]
+    );
 
-    proxy.exceptions = vec!["a b".into()];
+    proxy.exceptions.hosts = vec!["a b".into()];
     assert!(validate(proxy.clone()).is_err());
-    proxy.exceptions = (0..=MAX_PROXY_EXCEPTIONS)
+    proxy.exceptions.hosts = (0..=MAX_PROXY_EXCEPTIONS)
         .map(|n| format!("h{n}.example"))
         .collect();
     assert!(validate(proxy).is_err());
+
+    let own = Setting::Own(QueueExceptions {
+        hosts: vec!["A.example".into(), "a.example".into()],
+        ..QueueExceptions::default()
+    });
+    let Setting::Own(kept) = validate_queue_exceptions(own).unwrap() else {
+        panic!("a queue's own exceptions stay its own");
+    };
+    assert_eq!(kept.hosts, ["a.example"]);
+}
+
+#[test]
+fn a_queue_follows_the_apps_exceptions_or_picks_its_lists() {
+    let app = ProxySettings {
+        exceptions: AppExceptions {
+            system: true,
+            use_hosts: true,
+            hosts: vec!["app.example".into()],
+        },
+        ..ProxySettings::default()
+    };
+    assert_eq!(
+        exceptions(&app, &Setting::FollowApp),
+        Exceptions {
+            system: true,
+            hosts: vec!["app.example".into()],
+        }
+    );
+    let own = |app_hosts, use_hosts| {
+        Setting::Own(QueueExceptions {
+            system: false,
+            app_hosts,
+            use_hosts,
+            hosts: vec!["queue.example".into()],
+        })
+    };
+    assert_eq!(
+        exceptions(&app, &own(true, true)).hosts,
+        ["app.example", "queue.example"]
+    );
+    assert_eq!(exceptions(&app, &own(false, true)).hosts, ["queue.example"]);
+    assert_eq!(
+        exceptions(&app, &own(false, false)).hosts,
+        Vec::<String>::new()
+    );
+    assert!(!exceptions(&app, &own(true, true)).system);
+
+    let mut unticked = app.clone();
+    unticked.exceptions.use_hosts = false;
+    assert_eq!(
+        exceptions(&unticked, &Setting::FollowApp).hosts,
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        exceptions(&unticked, &own(true, true)).hosts,
+        ["queue.example"]
+    );
 }
 
 #[test]
 fn passwords_are_kept_replaced_or_removed() {
-    let saved = Logins::from([(ProxyRole::All, Secret::new("old"))]);
-    let mut same = manual(ProxyServer {
+    let was = ProxyProfileSettings {
         user: "alice".into(),
-        ..server(ProxyKind::Http, "proxy", 3128)
-    });
-    same.socks = ProxyServer {
-        user: "bob".into(),
-        ..server(ProxyKind::Socks5, "socks", 1080)
+        ..profile(ProxyKind::Http, "proxy", 3128)
     };
-    let keep = merge_passwords(&saved, &ProxyPasswords::default(), &same, &same).unwrap();
-    assert_eq!(keep, saved);
-
-    let changed = merge_passwords(
-        &saved,
-        &ProxyPasswords {
-            all: Update::Set(None),
-            socks: Update::Set(Some(Secret::new("new"))),
-            ..ProxyPasswords::default()
-        },
-        &same,
-        &same,
-    )
-    .unwrap();
+    let old = Secret::new("old");
+    let keep = Update::Keep;
     assert_eq!(
-        changed,
-        Logins::from([(ProxyRole::Socks, Secret::new("new"))])
+        merge_password(Some(&old), &keep, Some(&was), &was).unwrap(),
+        Some(old.clone())
     );
-
-    let empty = ProxyPasswords {
-        all: Update::Set(Some(Secret::new(""))),
-        ..ProxyPasswords::default()
-    };
+    let new = Update::Set(Some(Secret::new("new")));
     assert_eq!(
-        merge_passwords(&saved, &empty, &same, &same).unwrap(),
-        Logins::new()
+        merge_password(Some(&old), &new, Some(&was), &was).unwrap(),
+        Some(Secret::new("new"))
     );
-
-    let broken = ProxyPasswords {
-        all: Update::Set(Some(Secret::new("a\nb"))),
-        ..ProxyPasswords::default()
-    };
-    assert!(merge_passwords(&saved, &broken, &same, &same).is_err());
+    for removed in [Update::Set(None), Update::Set(Some(Secret::new("")))] {
+        assert_eq!(
+            merge_password(Some(&old), &removed, Some(&was), &was).unwrap(),
+            None
+        );
+    }
+    let broken = Update::Set(Some(Secret::new("a\nb")));
+    assert!(merge_password(Some(&old), &broken, Some(&was), &was).is_err());
+    let nobody = profile(ProxyKind::Http, "proxy", 3128);
+    assert!(merge_password(None, &new, None, &nobody).is_err());
 }
 
 #[test]
 fn a_kept_password_never_goes_to_another_proxy() {
-    let saved = Logins::from([(ProxyRole::All, Secret::new("secret"))]);
-    let was = manual(ProxyServer {
+    let was = ProxyProfileSettings {
+        name: "Office".into(),
         user: "alice".into(),
-        ..server(ProxyKind::Http, "proxy.corp", 3128)
-    });
-    let keep = ProxyPasswords::default();
-    let mut now = was.clone();
-    now.all.host = " PROXY.corp ".into();
-    assert_eq!(merge_passwords(&saved, &keep, &was, &now).unwrap(), saved);
+        ..profile(ProxyKind::Http, "proxy.corp", 3128)
+    };
+    let saved = Secret::new("secret");
+    let keep = Update::Keep;
+    let mut renamed = was.clone();
+    renamed.name = "Work".into();
+    renamed.host = "PROXY.corp".into();
+    assert_eq!(
+        merge_password(Some(&saved), &keep, Some(&was), &renamed).unwrap(),
+        Some(saved.clone())
+    );
     for change in [
-        |p: &mut ProxySettings| p.all.host = "elsewhere.example".into(),
-        |p: &mut ProxySettings| p.all.port = 8080,
-        |p: &mut ProxySettings| p.all.kind = ProxyKind::Https,
-        |p: &mut ProxySettings| p.all.user = "bob".into(),
+        |p: &mut ProxyProfileSettings| p.host = "elsewhere.example".into(),
+        |p: &mut ProxyProfileSettings| p.port = 8080,
+        |p: &mut ProxyProfileSettings| p.kind = ProxyKind::Https,
+        |p: &mut ProxyProfileSettings| p.user = "bob".into(),
     ] {
         let mut now = was.clone();
         change(&mut now);
         assert_eq!(
-            merge_passwords(&saved, &keep, &was, &now).unwrap(),
-            Logins::new()
+            merge_password(Some(&saved), &keep, Some(&was), &now).unwrap(),
+            None
         );
     }
+    assert_eq!(
+        merge_password(Some(&saved), &keep, None, &was).unwrap(),
+        None
+    );
 }
 
 #[test]
-fn the_engine_gets_each_proxy_as_a_url_with_its_login() {
-    let mut proxy = manual(ProxyServer {
+fn a_profile_reaches_the_engine_as_a_url_with_its_login_and_exceptions() {
+    let socks = ProxyProfileSettings {
         user: "al ice".into(),
-        ..server(ProxyKind::Socks5, "::1", 1080)
-    });
-    proxy.exceptions = vec!["files.example".into(), "10.*".into()];
-    proxy.ftp_direct = true;
-    let logins = Logins::from([(ProxyRole::All, Secret::new("p@ss:word"))]);
-    let manual = manual_proxies(engine_choice(&proxy, &logins));
+        ..profile(ProxyKind::Socks5, "::1", 1080)
+    };
+    let profiles = [saved(2, socks)];
+    let logins = Logins::from([(ProxyProfileId(2), Secret::new("p@ss:word"))]);
+    let manual = manual_proxies(engine_choice(
+        ProxyUse::Profile(ProxyProfileId(2)),
+        &only(&["files.example", "10.*"]),
+        true,
+        &profiles,
+        &logins,
+    ));
     assert_eq!(
         manual.all.as_deref(),
         Some("socks5h://al%20ice:p%40ss%3Aword@[::1]:1080")
@@ -162,37 +253,45 @@ fn the_engine_gets_each_proxy_as_a_url_with_its_login() {
     assert_eq!(manual.exceptions, "files.example,10.*");
     assert!(manual.ftp_direct);
     assert_eq!(manual.http, None);
-}
-
-#[test]
-fn per_protocol_proxies_go_to_their_protocols_and_socks_to_every_other() {
-    let proxy = ProxySettings {
-        mode: ProxyMode::Manual,
-        per_protocol: true,
-        // The one for every protocol is kept but not used.
-        all: server(ProxyKind::Http, "unused", 1),
-        http: server(ProxyKind::Http, "web", 80),
-        https: server(ProxyKind::Https, "secure", 443),
-        // The SOCKS proxy is SOCKS5 whatever its kind says.
-        socks: server(ProxyKind::Http, "socks", 1080),
-        ..ProxySettings::default()
-    };
-    let manual = manual_proxies(engine_choice(&proxy, &Logins::new()));
-    assert_eq!(manual.http.as_deref(), Some("http://web/"));
-    assert_eq!(manual.https.as_deref(), Some("https://secure/"));
-    assert_eq!(manual.ftp, None);
-    assert_eq!(manual.all.as_deref(), Some("socks5h://socks:1080"));
-}
-
-#[test]
-fn system_and_no_proxy_pass_through() {
-    let direct = ProxySettings {
-        mode: ProxyMode::Direct,
-        ..manual(server(ProxyKind::Http, "proxy", 3128))
-    };
-    assert_eq!(engine_choice(&direct, &Logins::new()), ProxyChoice::Direct);
     assert_eq!(
-        engine_choice(&ProxySettings::default(), &Logins::new()),
+        profile_url(&profile(ProxyKind::Https, "secure", 443), None).as_deref(),
+        Some("https://secure/")
+    );
+}
+
+#[test]
+fn a_profile_that_is_gone_falls_back_to_the_computers_proxy() {
+    assert_eq!(
+        engine_choice(
+            ProxyUse::Profile(ProxyProfileId(9)),
+            &only(&[]),
+            false,
+            &[],
+            &Logins::new()
+        ),
+        ProxyChoice::System
+    );
+    assert!(check_use(ProxyUse::Profile(ProxyProfileId(9)), &[]).is_err());
+    assert!(check_use(ProxyUse::System, &[]).is_ok());
+}
+
+#[test]
+fn the_computers_proxy_is_left_to_the_engine_unless_something_is_added() {
+    let plain = Exceptions {
+        system: true,
+        hosts: Vec::new(),
+    };
+    let none = Logins::new();
+    assert_eq!(
+        engine_choice(ProxyUse::System, &plain, false, &[], &none),
+        ProxyChoice::System
+    );
+    assert_eq!(
+        engine_choice(ProxyUse::Direct, &plain, true, &[], &none),
+        ProxyChoice::Direct
+    );
+    assert_ne!(
+        engine_choice(ProxyUse::System, &only(&["a.example"]), false, &[], &none),
         ProxyChoice::System
     );
 }
@@ -222,13 +321,13 @@ fn yt_dlp_and_the_updater_take_the_proxy_for_https() {
 }
 
 #[test]
-fn a_proxy_the_computer_sets_reads_as_a_server_without_its_password() {
+fn a_proxy_the_computer_sets_reads_as_a_profile_without_its_password() {
     let read = parse_server("http://al%20ice:secret@proxy.corp:3128").unwrap();
     assert_eq!(
         read,
-        ProxyServer {
+        ProxyProfileSettings {
             user: "al ice".into(),
-            ..server(ProxyKind::Http, "proxy.corp", 3128)
+            ..profile(ProxyKind::Http, "proxy.corp", 3128)
         }
     );
     assert_eq!(parse_server("proxy:8080").unwrap().kind, ProxyKind::Http);
@@ -238,31 +337,37 @@ fn a_proxy_the_computer_sets_reads_as_a_server_without_its_password() {
     );
     assert_eq!(
         parse_server("socks5://[::1]").unwrap(),
-        server(ProxyKind::Socks5, "::1", 1080)
+        profile(ProxyKind::Socks5, "::1", 1080)
     );
 }
 
 #[test]
-fn a_server_name_no_url_can_hold_is_refused_rather_than_dropped() {
-    for host in ["999.1.1.1", "proxy.10", "1.2.3.4.5"] {
-        assert!(
-            validate(manual(server(ProxyKind::Http, host, 8080))).is_err(),
-            "{host}"
-        );
-    }
-}
-
-#[test]
-fn a_password_needs_a_user_name() {
-    let proxy = manual(server(ProxyKind::Socks5, "proxy", 1080));
-    let passwords = ProxyPasswords {
-        all: Update::Set(Some(Secret::new("secret"))),
-        ..ProxyPasswords::default()
-    };
-    assert!(merge_passwords(&Logins::new(), &passwords, &proxy, &proxy).is_err());
-    let with_user = manual(ProxyServer {
+fn a_copy_of_the_computers_proxy_skips_saved_servers_and_takes_a_free_name() {
+    let saved_server = ProxyProfileSettings {
         user: "alice".into(),
-        ..server(ProxyKind::Socks5, "proxy", 1080)
-    });
-    assert!(merge_passwords(&Logins::new(), &passwords, &with_user, &with_user).is_ok());
+        ..profile(ProxyKind::Http, "proxy.corp", 3128)
+    };
+    let saved_profiles = [saved(1, saved_server.clone())];
+    let found = vec![
+        saved_server,
+        // The same address without the login: another proxy whose address is a saved name.
+        profile(ProxyKind::Http, "proxy.corp", 3128),
+        profile(ProxyKind::Socks5, "socks.corp", 1080),
+    ];
+    let copied = copies(found, &saved_profiles).unwrap();
+    let names: Vec<_> = copied
+        .iter()
+        .map(ProxyProfileSettings::shown_name)
+        .collect();
+    assert_eq!(names, ["proxy.corp:3128 (2)", "socks.corp:1080"]);
+
+    let full: Vec<_> = (0..MAX_PROXY_PROFILES)
+        .map(|n| {
+            saved(
+                i64::try_from(n).unwrap(),
+                profile(ProxyKind::Http, &format!("p{n}"), 1),
+            )
+        })
+        .collect();
+    assert!(copies(vec![profile(ProxyKind::Http, "new", 1)], &full).is_err());
 }

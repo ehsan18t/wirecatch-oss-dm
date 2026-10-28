@@ -148,7 +148,29 @@ impl fmt::Debug for ManualProxies {
     }
 }
 
+/// How a request for a link goes ([`ProxyChoice::route`]).
+///
+/// New variants may be added in minor releases, so a `match` needs a `_` arm.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ProxyRoute {
+    /// Directly: no proxy is set for its protocol, or an FTP link may go around a proxy
+    /// that cannot carry it.
+    Direct,
+    /// Directly, because its host is on the exceptions of the proxy set for it.
+    Excepted,
+    /// Through this proxy, written without its login.
+    Through(String),
+}
+
 impl ProxyChoice {
+    /// How a request for `url` goes, reading the environment and the system's setting now
+    /// for [`ProxyChoice::System`].
+    #[must_use]
+    pub fn route(&self, url: &Url) -> ProxyRoute {
+        Proxies::of(self).route(url)
+    }
+
     /// Whether every proxy given can be read. The HTTP client goes directly
     /// around one it cannot read, which an application's own setting must
     /// never do; a value from the environment keeps D62's behaviour.
@@ -174,6 +196,41 @@ impl ManualProxies {
     pub fn from_system() -> Option<Self> {
         Proxies::of(&ProxyChoice::System).as_manual()
     }
+
+    /// The hosts the computer reaches directly, in the form [`exceptions`](Self::exceptions)
+    /// takes: `NO_PROXY` (or `no_proxy`), or else on Windows the exceptions of the system's
+    /// proxy setting, whether that proxy is turned on or not. Empty when neither sets any.
+    #[must_use]
+    pub fn system_exceptions() -> String {
+        system_exceptions(&process_env, system_exception_list)
+    }
+}
+
+/// The exceptions `env` sets, or else those `system` reads.
+pub(crate) fn system_exceptions(env: Env<'_>, system: impl FnOnce() -> Option<String>) -> String {
+    if env("REQUEST_METHOD").is_some() {
+        return String::new();
+    }
+    match first_set(&["NO_PROXY", "no_proxy"], env) {
+        Some((_, value)) if !value.trim().is_empty() => value,
+        _ => system().unwrap_or_default(),
+    }
+}
+
+/// The exceptions of the system's proxy setting, read while the proxy is turned off too.
+#[cfg(windows)]
+fn system_exception_list() -> Option<String> {
+    windows_registry::CURRENT_USER
+        .open(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings")
+        .ok()?
+        .get_string("ProxyOverride")
+        .ok()
+}
+
+/// The exceptions of the system's proxy setting: none outside Windows.
+#[cfg(not(windows))]
+fn system_exception_list() -> Option<String> {
+    None
 }
 
 /// A proxy value with its login, if any, shown as `***`.
@@ -419,12 +476,7 @@ impl Proxies {
     /// still counts, the careful answer for a decision that would otherwise go
     /// around a proxy the user set; the client itself then goes directly.
     pub(crate) fn proxy_for(&self, scheme: Scheme, host: &str) -> Option<&Proxy> {
-        let own = match scheme {
-            Scheme::Http => &self.http,
-            Scheme::Https => &self.https,
-            Scheme::Ftp => &self.ftp,
-        };
-        let set = [own, &self.all].into_iter().flatten();
+        let set = [self.own(scheme), self.all.as_ref()].into_iter().flatten();
         let proxy = set
             .clone()
             .find(|proxy| proxy.url().is_some())
@@ -433,6 +485,29 @@ impl Proxies {
             return None;
         }
         (!excluded(&proxy.value, &self.no, host)).then_some(proxy)
+    }
+
+    /// The proxy set for `scheme` alone.
+    fn own(&self, scheme: Scheme) -> Option<&Proxy> {
+        match scheme {
+            Scheme::Http => self.http.as_ref(),
+            Scheme::Https => self.https.as_ref(),
+            Scheme::Ftp => self.ftp.as_ref(),
+        }
+    }
+
+    fn route(&self, url: &Url) -> ProxyRoute {
+        let (Some(scheme), Some(host)) = (Scheme::of(url), url.host_str()) else {
+            return ProxyRoute::Direct;
+        };
+        match self.proxy_for(scheme, host) {
+            Some(_) if scheme == Scheme::Ftp && matches!(self.ftp_route(host), Ok(None)) => {
+                ProxyRoute::Direct
+            }
+            Some(proxy) => ProxyRoute::Through(without_login(&proxy.value)),
+            None if self.own(scheme).is_some() || self.all.is_some() => ProxyRoute::Excepted,
+            None => ProxyRoute::Direct,
+        }
     }
 
     /// The proxy the HTTP client sends a request for `url` through.

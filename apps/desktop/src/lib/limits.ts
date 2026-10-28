@@ -1,13 +1,15 @@
 // How many connections and downloads may run at once, and how fast. The core owns these limits (crates/protocol generates them); the fields take them as their range, the queue dialog checks what it saves against them, and a queue's own limits are said in short phrases.
 
 import {
+  FOLLOW_APP,
   MAX_CONCURRENT_DOWNLOADS,
   MAX_CONNECTIONS_PER_DOWNLOAD,
+  ownSetting,
   ownValue,
   type Queue,
   type QueueSettings,
 } from '@wirecatch/protocol';
-import { formatRate } from '@wirecatch/units';
+import { formatRate, toBytes, type SizeUnit } from '@wirecatch/units';
 
 /** Why `typed` cannot be a queue's downloads at the same time, or `null` when it can. */
 export function queueConcurrentProblem(typed: number): string | null {
@@ -84,4 +86,25 @@ export type QueueLimit = 'max_concurrent' | 'speed_limit' | 'connections';
 /** The queues with their own value for `limit`, in sidebar order. */
 export function queuesWithOwn(queues: readonly Queue[], limit: QueueLimit): Queue[] {
   return queues.filter((q) => q.settings[limit].source === 'own');
+}
+
+/** What deleting a queue does with its `count` downloads, which move to the queue named `to`. */
+export function queueDeletionNote(count: number, to: string): string {
+  if (count === 0) return 'It holds no downloads.';
+  return count === 1
+    ? `Its download moves to ${to}.`
+    : `Its ${String(count)} downloads move to ${to}.`;
+}
+
+/** The speed limit a queue editor describes (`on`, and `value` in `unit`), or why it is not one. */
+export function readQueueLimit(
+  on: boolean,
+  value: number | null,
+  unit: SizeUnit,
+): { limit: QueueSettings['speed_limit'] } | string {
+  if (!on) return { limit: FOLLOW_APP };
+  const limit = value === null ? null : toBytes(value, unit);
+  return limit === null || limit <= 0
+    ? 'Enter a speed limit above zero, or turn the limit off.'
+    : { limit: ownSetting(limit) };
 }

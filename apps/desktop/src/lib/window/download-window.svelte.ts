@@ -232,6 +232,8 @@ export class DownloadWindowState {
         this.#gone('This download was removed from the list.');
       }
     },
+    // A download window shows no proxy.
+    proxy_profiles_changed: ignore,
     queues_changed: (e) => {
       this.queues = e.data;
     },

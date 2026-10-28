@@ -5,7 +5,14 @@
 import { shortcutLabel, type KeyCommand } from '../keymap';
 
 export type CommandGroup =
-  'Selected downloads' | 'Downloads' | 'Show' | 'Queues' | 'Settings' | 'Help' | 'Sample data';
+  | 'Selected downloads'
+  | 'Downloads'
+  | 'Show'
+  | 'Queues'
+  | 'Proxy'
+  | 'Settings'
+  | 'Help'
+  | 'Sample data';
 
 export interface Command {
   id: string;

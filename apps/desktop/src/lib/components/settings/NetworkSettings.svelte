@@ -1,33 +1,56 @@
 <script lang="ts">
-  // Network: the proxy everything the app sends goes through (D71). Unlike the other settings it is saved as a whole with Save, after an optional Test connection, so a proxy half typed never breaks the downloads meanwhile; once saved while downloads run, it asks whether to restart them.
-  import { MAX_PROXY_HOST_CHARS, type ProxyMode } from '@wirecatch/protocol';
+  // Network: the app's proxy, which every queue that follows it uses, the saved proxy profiles, and the hosts reached directly (D73). Each change applies to downloads that start after it.
+  import { MAX_PROXY_HOST_CHARS, type ProxyUse } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
-  import { Button, Callout, Dialog, Field, RadioGroup, Switch, TagInput } from '@wirecatch/ui';
-  import { MODE_OPTIONS, PER_PROTOCOL, testResultText } from '$lib/proxy';
+  import { Checkbox, Field, Select, TagInput, type FieldControl } from '@wirecatch/ui';
+  import { queueProxy, shownName } from '$lib/proxy';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
   import type { Row, SectionProps } from './row';
-  import ProxyServerFields from './ProxyServerFields.svelte';
+  import ProxyProfileList from './ProxyProfileList.svelte';
   import SettingRows from './SettingRows.svelte';
+  import SettingToggle from './SettingToggle.svelte';
 
-  let { items, settings, flash }: SectionProps = $props();
+  let { items, settings, flash, save }: SectionProps = $props();
 
   const app = getApp();
-  const form = app.proxy;
-  const draft = $derived(form.draft);
 
   const controls: Record<SettingIn<'network'>, Snippet<[Row]>> = {
-    proxy: proxyForm,
+    proxy: proxyChoice,
+    proxy_profiles: profileList,
+    proxy_exceptions: exceptions,
+    ftp_direct: ftpDirect,
   };
 
-  const running = $derived(app.counts.status.active - app.counts.joining);
-  /** Whether any proxy in use was given a user name or password, for the words of a refused login. */
-  const loginEntered = $derived(
-    (draft.per_protocol ? PER_PROTOCOL.map((p) => p.role) : (['all'] as const)).some(
-      (role) => draft[role].user.trim() !== '' || form.hasPassword(role),
-    ),
+  const SYSTEM = 'system';
+  const DIRECT = 'direct';
+
+  /** Every proxy to choose from; the saved ones are listed, with their tests, under Saved proxies. */
+  const options = $derived([
+    { value: SYSTEM, label: 'The computer’s proxy' },
+    { value: DIRECT, label: 'No proxy' },
+    ...app.proxies.list.map((p) => ({ value: String(p.id), label: shownName(p.settings) })),
+  ]);
+
+  /** The app's exceptions matter while it, or a queue that follows them, uses a proxy (D73.12). */
+  const exceptionsMatter = $derived(
+    settings.proxy.proxy.kind !== 'direct' ||
+      app.queues.list.some(
+        (q) =>
+          q.settings.exceptions.source === 'follow_app' &&
+          queueProxy(q, settings.proxy).kind !== 'direct',
+      ),
   );
-  const result = $derived(form.result ? testResultText(form.result, loginEntered) : null);
+
+  function keyOf(proxy: ProxyUse): string {
+    return proxy.kind === 'profile' ? String(proxy.id) : proxy.kind;
+  }
+
+  function proxyOf(key: string): ProxyUse {
+    if (key === SYSTEM || key === DIRECT) return { kind: key };
+    const profile = app.proxies.list.find((p) => String(p.id) === key);
+    return profile ? { kind: 'profile', id: profile.id } : { kind: 'system' };
+  }
 
   function normalizeException(text: string): string | null {
     const entry = text.trim().toLowerCase();
@@ -36,104 +59,70 @@
   }
 </script>
 
-<SettingRows {items} {settings} {flash} {controls} stacked={['proxy']} />
+<SettingRows
+  {items}
+  {settings}
+  {flash}
+  {controls}
+  stacked={['proxy_profiles', 'proxy_exceptions']}
+/>
 
-{#snippet proxyForm({ def }: Row)}
-  <div class="flex w-full flex-col gap-5">
-    <RadioGroup
-      label={def.label}
-      hideLabel
-      cards
-      value={draft.mode}
-      options={MODE_OPTIONS}
-      onchange={(mode: ProxyMode) => form.edit((d) => void (d.mode = mode))}
-    />
+{#snippet proxyChoice({ s, control }: Row)}
+  <Select
+    {...control}
+    class="w-72 max-w-full"
+    value={keyOf(s.proxy.proxy)}
+    {options}
+    onchange={(key: string) => save((d) => void (d.proxy.proxy = proxyOf(key)))}
+  />
+{/snippet}
 
-    {#if draft.mode === 'manual'}
-      <div class="flex flex-col gap-5 rounded-md border border-line p-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <Switch
-            label="A different proxy for each protocol"
-            checked={draft.per_protocol}
-            onchange={(on: boolean) => form.edit((d) => void (d.per_protocol = on))}
-          />
-          <Button size="sm" variant="secondary" onclick={() => void form.copyFromSystem()}
-            >Copy from system</Button
-          >
-        </div>
+{#snippet profileList()}
+  <ProxyProfileList />
+{/snippet}
 
-        {#if draft.per_protocol}
-          {#each PER_PROTOCOL as { role, label } (role)}
-            <div class="border-t border-line pt-4 first:border-t-0 first:pt-0">
-              <ProxyServerFields {form} {role} name={label} kinds={role !== 'socks'} />
-            </div>
-          {/each}
-        {:else}
-          <ProxyServerFields {form} role="all" name="Proxy server" kinds />
-        {/if}
-
-        <Field
-          label="Go directly to"
-          description="Names cover the names under them. Also addresses, networks like 10.0.0.0/8, and <local> for names without a dot."
-        >
-          {#snippet children(control)}
+{#snippet exceptions({ def, s }: Row)}
+  {#if exceptionsMatter}
+    <div class="flex w-full flex-col gap-3">
+      <Checkbox
+        label="The hosts the computer’s proxy skips"
+        description="The bypass list in your network settings, or in the environment."
+        checked={s.proxy.exceptions.system}
+        onchange={(on: boolean) => save((d) => void (d.proxy.exceptions.system = on))}
+      />
+      <Checkbox
+        label="These hosts"
+        description="A name also covers the names under it. Also addresses, networks like 10.0.0.0/8, and <local> for names without a dot."
+        checked={s.proxy.exceptions.use_hosts}
+        onchange={(on: boolean) => save((d) => void (d.proxy.exceptions.use_hosts = on))}
+      />
+      {#if s.proxy.exceptions.use_hosts}
+        <Field label={def.label} hideLabel>
+          {#snippet children(control: FieldControl)}
             <TagInput
               {...control}
-              label="Go directly to"
+              label="Hosts to go directly to"
               placeholder="Add a host, like intranet.example.com"
-              values={draft.exceptions}
+              values={s.proxy.exceptions.hosts}
               normalize={normalizeException}
-              onchange={(hosts: string[]) => form.edit((d) => void (d.exceptions = hosts))}
+              onchange={(hosts: string[]) => save((d) => void (d.proxy.exceptions.hosts = hosts))}
             />
           {/snippet}
         </Field>
-
-        <Switch
-          label="Download FTP links directly"
-          description="Only a SOCKS5 proxy can carry FTP. Off: FTP links with another kind of proxy fail rather than go around it."
-          checked={draft.ftp_direct}
-          onchange={(on: boolean) => form.edit((d) => void (d.ftp_direct = on))}
-        />
-      </div>
-    {/if}
-
-    {#if result}
-      <Callout tone={result.tone} live="polite">{result.text}</Callout>
-    {/if}
-
-    <div class="flex flex-wrap items-center justify-end gap-2">
-      <span class="mr-auto text-small text-ink-muted" role="status">
-        {form.notice ?? (form.dirty ? 'Not saved yet.' : '')}
-      </span>
-      {#if form.dirty}
-        <Button variant="ghost" onclick={() => form.reset()}>Discard</Button>
       {/if}
-      <Button variant="secondary" loading={form.testing} onclick={() => void form.test()}
-        >Test connection</Button
-      >
-      <Button
-        variant="primary"
-        disabled={!form.dirty}
-        loading={form.saving}
-        onclick={() => void form.save()}>Save</Button
-      >
     </div>
-  </div>
+  {:else}
+    <p class="text-small text-ink-muted">
+      Nothing goes through a proxy now, so there is nothing to go around.
+    </p>
+  {/if}
 {/snippet}
 
-<Dialog
-  open={form.askingRestart}
-  title="Restart the running downloads?"
-  description={running === 1
-    ? 'One download still uses the old proxy. Restarted, it continues on the new one and keeps what it has downloaded. Left running, it switches the next time it starts.'
-    : `${String(running)} downloads still use the old proxy. Restarted, they continue on the new one and keep what they have downloaded. Left running, they switch the next time they start.`}
-  size="sm"
-  onclose={() => (form.askingRestart = false)}
->
-  {#snippet footer()}
-    <Button variant="secondary" onclick={() => (form.askingRestart = false)}
-      >Keep them running</Button
-    >
-    <Button variant="primary" onclick={() => void form.restartRunning()}>Restart them</Button>
-  {/snippet}
-</Dialog>
+{#snippet ftpDirect({ def, s, control }: Row)}
+  <SettingToggle
+    {control}
+    label={def.label}
+    checked={s.proxy.ftp_direct}
+    onchange={(on: boolean) => save((d) => void (d.proxy.ftp_direct = on))}
+  />
+{/snippet}

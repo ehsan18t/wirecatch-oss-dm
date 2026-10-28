@@ -9,8 +9,9 @@ import type {
   CaptureConfirmation,
   DownloadId,
   MediaSelection,
-  ProxyChange,
-  ProxyTest,
+  ProxyProfileDraft,
+  ProxyProfileId,
+  ProxyUse,
   QuestionId,
   QueueId,
   QueueSettings,
@@ -28,6 +29,7 @@ import { MockFinished } from './finished';
 import * as suffixList from './suffix-list';
 import * as data from './data';
 import * as downloads from './downloads';
+import * as proxies from './proxies';
 import * as media from './media';
 import { populate } from './populate';
 import * as queues from './queues';
@@ -399,10 +401,6 @@ export class MockBackend extends MockShell implements Backend {
     return this.#call(() => suffixList.checkSuffixList(this.#state, this.nextSuffixCheck));
   }
 
-  setProxy(change: ProxyChange) {
-    return this.#call(() => settings.setProxy(this.#state, change));
-  }
-
   setQueueOrder(order: QueueId[]) {
     return this.#call(() => queues.setQueueOrder(this.#state, order));
   }
@@ -411,15 +409,35 @@ export class MockBackend extends MockShell implements Backend {
     return this.#call(() => queues.tryLink(this.#state, trial));
   }
 
-  testProxy(test: ProxyTest) {
-    return this.#call(() => settings.testProxy(this.#state, test));
+  listProxyProfiles() {
+    return this.#call(() => this.#state.proxyProfiles.map((p) => structuredClone(p)));
   }
 
-  systemProxy() {
-    return this.#call(() => settings.systemProxy());
+  createProxyProfile(draft: ProxyProfileDraft) {
+    return this.#call(() => proxies.createProxyProfile(this.#state, draft));
+  }
+
+  updateProxyProfile(id: ProxyProfileId, draft: ProxyProfileDraft) {
+    return this.#call(() => proxies.updateProxyProfile(this.#state, id, draft));
+  }
+
+  deleteProxyProfile(id: ProxyProfileId, replacement: ProxyUse) {
+    return this.#call(() => proxies.deleteProxyProfile(this.#state, id, replacement));
+  }
+
+  testProxyProfile(id: ProxyProfileId | null, draft: ProxyProfileDraft) {
+    return this.#call(() => proxies.testProxyProfile(this.#state, id, draft));
+  }
+
+  copySystemProxy() {
+    return this.#call(() => proxies.copySystemProxy(this.#state));
   }
 
   showProxySettings() {
+    return this.#call(() => undefined);
+  }
+
+  showDownloadDetails() {
     return this.#call(() => undefined);
   }
 

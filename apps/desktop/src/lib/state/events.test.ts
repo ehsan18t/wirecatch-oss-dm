@@ -35,6 +35,7 @@ describe('event handler tables', () => {
       downloads_changed: vi.fn(),
       downloads_removed: vi.fn(),
       queues_changed: vi.fn(),
+      proxy_profiles_changed: vi.fn(),
       settings_changed: vi.fn(),
       captured: vi.fn(),
       confirmation_requested: vi.fn(),

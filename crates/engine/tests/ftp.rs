@@ -3,9 +3,9 @@
 //! so those tests live inside the crate (`src/ftp/tests.rs`).
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use wirecatch_engine::units::{MIB, MIB_USIZE};
 use wirecatch_engine::{
@@ -641,26 +641,27 @@ async fn a_folder_link_is_refused_before_connecting() {
     dir.remove().unwrap();
 }
 
-/// Cancels `cancel` once `ready` holds, and records when.
-fn cancel_when(
-    cancel: &CancellationToken,
-    ready: impl Fn() -> bool + Send + 'static,
-) -> Arc<OnceLock<Instant>> {
-    let at = Arc::new(OnceLock::new());
-    let (cancel, recorded) = (cancel.clone(), at.clone());
+/// Cancels `cancel` once `ready` holds.
+fn cancel_when(cancel: &CancellationToken, ready: impl Fn() -> bool + Send + 'static) {
+    let cancel = cancel.clone();
     tokio::spawn(async move {
         while !ready() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        recorded.get_or_init(Instant::now);
         cancel.cancel();
     });
-    at
 }
 
-/// How long ago [`cancel_when`] cancelled; `None` if it has not.
-fn since(at: &OnceLock<Instant>) -> Option<Duration> {
-    at.get().map(Instant::elapsed)
+/// What a download that waits out the server instead of stopping would wait: past `PATIENCE`,
+/// so such a run fails the test, while a busy machine never fails one that stops at once.
+const WAITED_OUT: Duration = Duration::from_secs(PATIENCE.as_secs() * 2);
+
+/// [`request`] whose connection and greeting waits outlast [`PATIENCE`].
+fn patient_request(url: &Url, dir: &Path, connections: usize) -> DownloadRequest {
+    let mut req = request(url, dir, connections);
+    req.options.connect_timeout = WAITED_OUT;
+    req.options.stall_timeout = WAITED_OUT;
+    req
 }
 
 #[tokio::test]
@@ -683,25 +684,27 @@ async fn pausing_while_the_server_holds_back_its_426_returns_at_once() {
     assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
 
     // On resuming, the first transfer (from byte 0) is not needed and is cut
-    // short. The server now takes 30 s to answer that; pause meanwhile.
-    server.configure(|c| c.hold_abort_reply = Some(Duration::from_secs(30)));
+    // short. The server now holds its answer past PATIENCE; pause meanwhile.
+    server.configure(|c| c.hold_abort_reply = Some(WAITED_OUT));
     let held = server.stats.held_replies.load(Ordering::SeqCst);
     let cancel = CancellationToken::new();
     let stats = server.stats.clone();
-    let paused_at = cancel_when(&cancel, move || {
+    cancel_when(&cancel, move || {
         stats.held_replies.load(Ordering::SeqCst) > held
     });
-    let outcome = download(
-        request(&url, &dir, 2),
-        Arc::new(Progress::default()),
-        cancel,
+    let outcome = tokio::time::timeout(
+        PATIENCE,
+        download(
+            patient_request(&url, &dir, 2),
+            Arc::new(Progress::default()),
+            cancel,
+        ),
     )
     .await
+    .expect("the pause waited for the held reply")
     .unwrap();
 
-    let took = since(&paused_at).unwrap();
     assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
-    assert!(took < Duration::from_secs(2), "paused after {took:?}");
     dir.remove().unwrap();
 }
 
@@ -763,18 +766,20 @@ async fn pausing_while_a_connection_waits_for_a_greeting_returns_at_once() {
     let cancel = CancellationToken::new();
     let progress = Arc::new(Progress::default());
     let seen = progress.clone();
-    let paused_at = cancel_when(&cancel, move || seen.done() >= MIB);
-    let outcome = download(
-        request(&server.url("ftp", "", "pub/file.bin"), &dir, 4),
-        progress,
-        cancel,
+    cancel_when(&cancel, move || seen.done() >= MIB);
+    let outcome = tokio::time::timeout(
+        PATIENCE,
+        download(
+            patient_request(&server.url("ftp", "", "pub/file.bin"), &dir, 4),
+            progress,
+            cancel,
+        ),
     )
     .await
+    .expect("the pause waited for a greeting")
     .unwrap();
 
-    let took = since(&paused_at).unwrap();
     assert!(matches!(outcome, Outcome::Paused { .. }), "{outcome:?}");
-    assert!(took < Duration::from_secs(2), "paused after {took:?}");
     dir.remove().unwrap();
 }
 
@@ -787,18 +792,20 @@ async fn cancelling_before_the_server_greets_returns_at_once() {
 
     let cancel = CancellationToken::new();
     let stats = server.stats.clone();
-    let cancelled_at = cancel_when(&cancel, move || stats.sessions.load(Ordering::SeqCst) >= 1);
-    let error = download(
-        request(&server.url("ftp", "", "pub/file.bin"), &dir, 4),
-        Arc::new(Progress::default()),
-        cancel,
+    cancel_when(&cancel, move || stats.sessions.load(Ordering::SeqCst) >= 1);
+    let error = tokio::time::timeout(
+        PATIENCE,
+        download(
+            patient_request(&server.url("ftp", "", "pub/file.bin"), &dir, 4),
+            Arc::new(Progress::default()),
+            cancel,
+        ),
     )
     .await
+    .expect("cancelling waited for the greeting")
     .unwrap_err();
 
-    let took = since(&cancelled_at).unwrap();
     assert!(matches!(error, Error::Cancelled), "{error:?}");
-    assert!(took < Duration::from_secs(2), "returned after {took:?}");
     assert_eq!(files_in(&dir), [] as [std::string::String; 0]);
     dir.remove().unwrap();
 }

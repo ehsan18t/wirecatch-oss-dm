@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use wirecatch_core::{LinkFrom, Manager};
+use wirecatch_protocol::ProxyProfileId;
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
     CaptureConfirmation, DownloadStatus, DownloadSummary, ImportPreview, MediaChoice,
@@ -16,7 +17,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::claims::{LinkClaims, LinkTrial};
 use wirecatch_protocol::desktop::SAFE_EXTENSIONS;
-use wirecatch_protocol::proxy::{ProxyChange, ProxySettings, ProxyTest, ProxyTestResult};
+use wirecatch_protocol::proxy::{ProxyProfile, ProxyProfileDraft, ProxyTestResult, ProxyUse};
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 
@@ -645,16 +646,6 @@ pub async fn check_suffix_list(m: &Manager) -> CommandResult<SuffixListInfo> {
     plain(m.check_suffix_list().await)
 }
 
-/// Saves a new proxy setting (D71), restarting running downloads when `change` asks.
-///
-/// # Errors
-///
-/// The proxy cannot work, or the manager has shut down; nothing changes then
-/// ([`Manager::set_proxy`]).
-pub fn set_proxy(m: &Manager, change: ProxyChange) -> CommandResult<()> {
-    plain(m.set_proxy(change))
-}
-
 /// Puts the queues in a new order.
 ///
 /// # Errors
@@ -673,19 +664,69 @@ pub fn try_link(m: &Manager, trial: &LinkTrial) -> CommandResult<LinkClaims> {
     plain(m.try_link(trial))
 }
 
-/// Tries a proxy setting before it is saved.
+#[must_use]
+pub fn list_proxy_profiles(m: &Manager) -> Vec<ProxyProfile> {
+    m.list_proxy_profiles()
+}
+
+/// Saves a new proxy profile and tests it in the background.
 ///
 /// # Errors
 ///
-/// The proxy cannot work ([`Manager::test_proxy`]).
-pub async fn test_proxy(m: &Manager, test: ProxyTest) -> CommandResult<ProxyTestResult> {
-    plain(m.test_proxy(test).await)
+/// The profile cannot work, or there are as many as there can be ([`Manager::create_proxy_profile`]).
+pub fn create_proxy_profile(
+    m: &Manager,
+    draft: ProxyProfileDraft,
+) -> CommandResult<ProxyProfileId> {
+    plain(m.create_proxy_profile(draft))
 }
 
-/// The computer's proxy as a manual setting, for Copy from system.
-#[must_use]
-pub fn system_proxy() -> Option<ProxySettings> {
-    wirecatch_core::system_proxy()
+/// Saves a proxy profile's new settings.
+///
+/// # Errors
+///
+/// The profile is gone or cannot work ([`Manager::update_proxy_profile`]).
+pub fn update_proxy_profile(
+    m: &Manager,
+    id: ProxyProfileId,
+    draft: ProxyProfileDraft,
+) -> CommandResult<()> {
+    plain(m.update_proxy_profile(id, draft))
+}
+
+/// Deletes a proxy profile; what used it uses `replacement`.
+///
+/// # Errors
+///
+/// The profile is gone, or `replacement` is it or not saved ([`Manager::delete_proxy_profile`]).
+pub fn delete_proxy_profile(
+    m: &Manager,
+    id: ProxyProfileId,
+    replacement: ProxyUse,
+) -> CommandResult<()> {
+    plain(m.delete_proxy_profile(id, replacement))
+}
+
+/// Tries a proxy profile before it is saved.
+///
+/// # Errors
+///
+/// The profile cannot work, or `id` is not saved ([`Manager::test_proxy_profile`]).
+pub async fn test_proxy_profile(
+    m: &Manager,
+    id: Option<ProxyProfileId>,
+    draft: ProxyProfileDraft,
+) -> CommandResult<ProxyTestResult> {
+    plain(m.test_proxy_profile(id, draft).await)
+}
+
+/// Saves a profile for each server of the computer's proxy.
+///
+/// # Errors
+///
+/// A server cannot be saved as a profile ([`Manager::copy_system_proxy`]).
+pub async fn copy_system_proxy(m: &Manager) -> CommandResult<Vec<ProxyProfileId>> {
+    plain(m.copy_system_proxy().await)
 }
 
 /// Stops an install or update in progress. An update keeps the installed version working; a

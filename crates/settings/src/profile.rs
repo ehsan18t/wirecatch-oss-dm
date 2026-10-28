@@ -6,15 +6,17 @@ use std::path::Path;
 
 use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_files::FileError;
-use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
     AppSettings, Category, ImportSummary, ImportedFolder, PROFILE_FORMAT_VERSION, PortablePath,
-    ProfileQueue, Queue, QueueStatus, SettingsProfile,
+    ProfileProxy, ProfileQueue, Queue, QueueStatus, Setting, SettingsProfile,
 };
+use wirecatch_protocol::proxy::ProxyUse;
+use wirecatch_protocol::{ProxyProfileId, QueueId};
 
 use crate::DEFAULT_QUEUE_ID;
 use crate::error::{ProfileError, Result};
 use crate::folders::KnownFolders;
+use crate::proxy::SavedProfile;
 use wirecatch_engine::units::MIB;
 use wirecatch_sites::public_suffix::SuffixList;
 
@@ -22,18 +24,18 @@ use wirecatch_sites::public_suffix::SuffixList;
 /// queues and lists keep even a full one far below this.
 const MAX_PROFILE_BYTES: u64 = MIB;
 
-/// A profile of the current settings and queues, with every folder written
-/// relative to the user's standard folders where possible.
+/// A profile of the current settings, queues and proxy profiles, with every folder written
+/// relative to the user's standard folders where possible. Proxy passwords stay on this
+/// computer (A6).
 #[must_use]
 pub fn export(
     settings: &AppSettings,
     queues: &[Queue],
+    proxies: &[SavedProfile],
     folders: &KnownFolders,
     exported_at: i64,
 ) -> SettingsProfile {
     let mut settings = settings.clone();
-    // Passwords stay on this computer (A6), so the profile has none to speak of.
-    crate::proxy::mark_passwords(&mut settings.proxy, &crate::proxy::Logins::new());
     settings.default_folder = folders.to_portable(&settings.default_folder);
     for rule in &mut settings.categories {
         rule.folder = folders.to_portable(&rule.folder);
@@ -49,6 +51,13 @@ pub fn export(
                 id: q.id,
                 is_default: q.is_default,
                 settings: q.settings.clone(),
+            })
+            .collect(),
+        proxy_profiles: proxies
+            .iter()
+            .map(|p| ProfileProxy {
+                id: p.id,
+                settings: p.settings.clone(),
             })
             .collect(),
         addons: Vec::new(),
@@ -75,11 +84,13 @@ pub fn parse(bytes: &[u8]) -> Result<SettingsProfile, ProfileError> {
     serde_json::from_value(value).map_err(|e| ProfileError::Invalid(e.to_string()))
 }
 
-/// Settings and queues after applying an imported profile, and what changed.
+/// Settings, queues and proxy profiles after applying an imported profile, and what changed.
 #[derive(Debug)]
 pub struct Imported {
     pub settings: AppSettings,
     pub queues: Vec<Queue>,
+    /// Every proxy profile, those already saved first; an updated one keeps its last test.
+    pub proxies: Vec<SavedProfile>,
     pub summary: ImportSummary,
     /// Names of the queues added and of those updated, for a preview.
     pub added: Vec<String>,
@@ -134,13 +145,36 @@ pub(crate) fn merge(
     folders: &KnownFolders,
     next_queue_id: impl FnMut() -> QueueId,
 ) -> Result<Imported> {
+    let mut next_proxy = 0;
     merge_localized(
         localize(profile, folders),
-        current,
+        Current {
+            queues: current,
+            proxies: &[],
+        },
         folders,
         &SuffixList::built_in(),
-        next_queue_id,
+        NewIds {
+            queue: next_queue_id,
+            proxy: || {
+                next_proxy += 1;
+                ProxyProfileId(next_proxy)
+            },
+        },
     )
+}
+
+/// The queues and proxy profiles a profile merges into.
+#[derive(Debug, Clone, Copy)]
+pub struct Current<'a> {
+    pub queues: &'a [Queue],
+    pub proxies: &'a [SavedProfile],
+}
+
+/// Hands out the ids of the queues and proxy profiles a profile adds.
+pub struct NewIds<Q, P> {
+    pub queue: Q,
+    pub proxy: P,
 }
 
 /// Merges a profile whose folders were resolved here into the current queues
@@ -149,15 +183,16 @@ pub(crate) fn merge(
 /// Queue ids from another machine mean nothing here, so queues are matched by
 /// name: the profile's default queue updates this default queue, a queue with a
 /// known name updates that queue, and the rest are added. Queues missing from the
-/// profile are kept, because downloads may still be in them. A folder that does not
+/// profile are kept, because downloads may still be in them. Proxy profiles are matched by
+/// name the same way and never removed. A folder that does not
 /// exist on this machine (an absolute path from another system), or that is a
 /// startup or system folder, falls back to the default folder.
 pub fn merge_localized(
     localized: Localized,
-    current: &[Queue],
+    current: Current<'_>,
     folders: &KnownFolders,
     suffixes: &SuffixList,
-    mut next_queue_id: impl FnMut() -> QueueId,
+    mut new_ids: NewIds<impl FnMut() -> QueueId, impl FnMut() -> ProxyProfileId>,
 ) -> Result<Imported> {
     let Localized {
         profile,
@@ -165,11 +200,21 @@ pub fn merge_localized(
     } = localized;
     // Checked before the merge so a huge file costs nothing.
     crate::check_queue_count(profile.queues.len())?;
-    let mut queues = current.to_vec();
+    crate::proxy::check_count(profile.proxy_profiles.len())?;
+    let (proxies, proxy_ids) =
+        merge_proxies(profile.proxy_profiles, current.proxies, &mut new_ids.proxy)?;
+    let local_proxy = |proxy: ProxyUse| match proxy {
+        ProxyUse::Profile(id) => proxy_ids.get(&id).copied().map(ProxyUse::Profile),
+        other => Some(other),
+    };
+    let mut queues = current.queues.to_vec();
     let mut ids = HashMap::new();
     let (mut added, mut updated) = (Vec::new(), Vec::new());
     for incoming in profile.queues {
-        let settings = crate::validate_queue(incoming.settings)?;
+        let mut settings = crate::validate_queue(incoming.settings)?;
+        if let Setting::Own(proxy) = settings.proxy {
+            settings.proxy = local_proxy(proxy).map_or(Setting::FollowApp, Setting::Own);
+        }
         let target = queues.iter_mut().find(|q| {
             q.is_default == incoming.is_default
                 && (incoming.is_default || q.settings.name.eq_ignore_ascii_case(&settings.name))
@@ -180,7 +225,7 @@ pub fn merge_localized(
             existing.id
         } else {
             added.push(settings.name.clone());
-            let id = next_queue_id();
+            let id = (new_ids.queue)();
             queues.push(Queue {
                 id,
                 is_default: false,
@@ -193,6 +238,7 @@ pub fn merge_localized(
     }
 
     let mut settings = profile.settings;
+    settings.proxy.proxy = local_proxy(settings.proxy.proxy).unwrap_or_default();
     // A file edited by hand may hold sites no host matches.
     settings.extension.ignored_sites = crate::stored_sites(settings.extension.ignored_sites);
     settings.extension.default_queue = ids
@@ -205,6 +251,7 @@ pub fn merge_localized(
     Ok(Imported {
         settings,
         queues,
+        proxies,
         summary: ImportSummary {
             folders: folder_report,
             queues_added: count(&added),
@@ -214,6 +261,45 @@ pub fn merge_localized(
         added,
         updated,
     })
+}
+
+/// The proxy profiles after adding or updating `incoming` by name, and the local id of each
+/// incoming one by its id in the file.
+fn merge_proxies(
+    incoming: Vec<ProfileProxy>,
+    current: &[SavedProfile],
+    next_id: &mut impl FnMut() -> ProxyProfileId,
+) -> Result<(Vec<SavedProfile>, HashMap<ProxyProfileId, ProxyProfileId>)> {
+    let mut proxies = current.to_vec();
+    let mut ids = HashMap::with_capacity(incoming.len());
+    for profile in incoming {
+        let shown = profile.settings.shown_name();
+        let target = proxies
+            .iter()
+            .position(|p| p.settings.shown_name().eq_ignore_ascii_case(&shown));
+        let others: Vec<_> = proxies
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| Some(*i) != target)
+            .map(|(_, p)| &p.settings)
+            .collect();
+        let settings = crate::proxy::validate_profile(profile.settings, &others)?;
+        let local_id = if let Some(existing) = target.and_then(|i| proxies.get_mut(i)) {
+            existing.settings = settings;
+            existing.id
+        } else {
+            let id = next_id();
+            proxies.push(SavedProfile {
+                id,
+                settings,
+                last_test: None,
+            });
+            id
+        };
+        ids.insert(profile.id, local_id);
+    }
+    crate::proxy::check_count(proxies.len())?;
+    Ok((proxies, ids))
 }
 
 /// Replaces folders that do not exist on this machine, or that are startup or
@@ -337,7 +423,7 @@ mod tests {
         let f = folders();
         let mut s = default_settings();
         s.default_folder = PortablePath(f.downloads.join("Stuff").to_string_lossy().into_owned());
-        let profile = export(&s, &[default_queue()], &f, 42);
+        let profile = export(&s, &[default_queue()], &[], &f, 42);
         assert_eq!(
             profile.settings.default_folder,
             PortablePath("{Downloads}/Stuff".into())
@@ -354,7 +440,7 @@ mod tests {
         s.media.video.subtitle_languages = vec!["en".into()];
         s.media.audio.format = wirecatch_protocol::app::OutputFormat::Mp3;
         s.media.audio.audio_kbps = Some(256);
-        let profile = export(&s, &[default_queue()], &f, 42);
+        let profile = export(&s, &[default_queue()], &[], &f, 42);
         let bytes = serde_json::to_vec(&profile).unwrap();
         assert_eq!(parse(&bytes).unwrap().settings.media, s.media);
 
@@ -370,6 +456,7 @@ mod tests {
         let mut old = serde_json::to_value(export(
             &default_settings(),
             &[default_queue()],
+            &[],
             &folders(),
             42,
         ))
@@ -390,7 +477,8 @@ mod tests {
         let mut paused = default_queue();
         paused.status.paused = true;
         let profile =
-            serde_json::to_value(export(&default_settings(), &[paused], &folders(), 42)).unwrap();
+            serde_json::to_value(export(&default_settings(), &[paused], &[], &folders(), 42))
+                .unwrap();
         let queue = profile["queues"][0].as_object().unwrap();
         let mut keys: Vec<_> = queue.keys().map(String::as_str).collect();
         keys.sort_unstable();
@@ -416,6 +504,7 @@ mod tests {
                 .into_iter()
                 .map(in_profile)
                 .collect(),
+            proxy_profiles: Vec::new(),
             addons: vec![],
         };
         let mut next = 3;
@@ -440,6 +529,91 @@ mod tests {
             (QueueId(3), "Videos", false)
         );
         assert_eq!(imported.settings.extension.default_queue, QueueId(3));
+    }
+
+    #[test]
+    fn proxy_profiles_merge_by_name_and_the_queues_follow_them() {
+        use wirecatch_protocol::proxy::{ProxyKind, ProxyProfileSettings, ProxyUse};
+
+        let named = |name: &str, host: &str| ProxyProfileSettings {
+            name: name.into(),
+            kind: ProxyKind::Http,
+            host: host.into(),
+            port: 8080,
+            user: String::new(),
+        };
+        let office = SavedProfile {
+            id: ProxyProfileId(1),
+            settings: named("Office", "old.example"),
+            last_test: None,
+        };
+        let mut videos = queue(12, "Videos");
+        videos.settings.proxy = Setting::Own(ProxyUse::Profile(ProxyProfileId(21)));
+        let mut night = queue(13, "Night");
+        night.settings.proxy = Setting::Own(ProxyUse::Profile(ProxyProfileId(99)));
+        let mut settings = default_settings();
+        settings.proxy.proxy = ProxyUse::Profile(ProxyProfileId(20));
+        let profile = SettingsProfile {
+            format_version: PROFILE_FORMAT_VERSION,
+            app_version: "0.1.0".into(),
+            exported_at: 0,
+            settings,
+            queues: [default_queue(), videos, night]
+                .into_iter()
+                .map(in_profile)
+                .collect(),
+            proxy_profiles: vec![
+                ProfileProxy {
+                    id: ProxyProfileId(20),
+                    settings: named("office", "new.example"),
+                },
+                ProfileProxy {
+                    id: ProxyProfileId(21),
+                    settings: named("Home", "home.example"),
+                },
+            ],
+            addons: vec![],
+        };
+        let mut next_queue = 1;
+        let imported = merge_localized(
+            localize(profile, &folders()),
+            Current {
+                queues: &[default_queue()],
+                proxies: &[office],
+            },
+            &folders(),
+            &SuffixList::built_in(),
+            NewIds {
+                queue: || {
+                    next_queue += 1;
+                    QueueId(next_queue)
+                },
+                proxy: || ProxyProfileId(5),
+            },
+        )
+        .unwrap();
+
+        let proxies: Vec<_> = imported
+            .proxies
+            .iter()
+            .map(|p| (p.id, p.settings.host.as_str()))
+            .collect();
+        assert_eq!(
+            proxies,
+            [
+                (ProxyProfileId(1), "new.example"),
+                (ProxyProfileId(5), "home.example")
+            ]
+        );
+        assert_eq!(
+            imported.settings.proxy.proxy,
+            ProxyUse::Profile(ProxyProfileId(1))
+        );
+        assert_eq!(
+            imported.queues[1].settings.proxy,
+            Setting::Own(ProxyUse::Profile(ProxyProfileId(5)))
+        );
+        assert_eq!(imported.queues[2].settings.proxy, Setting::FollowApp);
     }
 
     #[test]
@@ -468,6 +642,7 @@ mod tests {
             queues: (0..=i64::try_from(crate::MAX_QUEUES).unwrap())
                 .map(|i| in_profile(queue(i + 10, &format!("Q{i}"))))
                 .collect(),
+            proxy_profiles: Vec::new(),
             addons: vec![],
         };
         let err = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap_err();
@@ -488,6 +663,7 @@ mod tests {
             exported_at: 0,
             settings,
             queues: vec![],
+            proxy_profiles: Vec::new(),
             addons: vec![],
         };
         let imported = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap();
@@ -516,6 +692,7 @@ mod tests {
             exported_at: 0,
             settings,
             queues: vec![],
+            proxy_profiles: Vec::new(),
             addons: vec![],
         };
         let imported = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap();
@@ -552,6 +729,7 @@ mod tests {
             exported_at: 0,
             settings,
             queues: vec![],
+            proxy_profiles: Vec::new(),
             addons: vec![],
         };
         let imported = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap();
@@ -597,6 +775,7 @@ mod tests {
             exported_at: 0,
             settings,
             queues: vec![],
+            proxy_profiles: Vec::new(),
             addons: vec![],
         };
         let imported = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap();

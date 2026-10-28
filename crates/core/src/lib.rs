@@ -27,6 +27,6 @@ pub use wirecatch_addons::manifest::{
     ManifestError, MediaAddonSources, PinnedKey, ReleaseFile, Sha256Digest,
 };
 pub use wirecatch_settings::folders::{KnownFolders, PathError};
-pub use wirecatch_settings::proxy::{UpdaterProxy, from_system as system_proxy};
+pub use wirecatch_settings::proxy::UpdaterProxy;
 pub use wirecatch_settings::{DEFAULT_QUEUE_ID, ProfileError, SettingsError, default_settings};
 pub use wirecatch_store::{DATABASE_FILE, DATABASE_SIDE_FILES, StoreError};

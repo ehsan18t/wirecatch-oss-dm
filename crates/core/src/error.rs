@@ -4,7 +4,7 @@ use std::io;
 
 use wirecatch_files::FileError;
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
-use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
+use wirecatch_protocol::{DownloadId, ProxyProfileId, QuestionId, QueueId};
 use wirecatch_settings::folders::PathError;
 use wirecatch_settings::{ProfileError, SettingsError};
 use wirecatch_store::StoreError;
@@ -20,6 +20,10 @@ pub enum CoreError {
     /// The queue does not exist (any more).
     #[error("That queue no longer exists. It may have been deleted.")]
     QueueNotFound(QueueId),
+
+    /// The proxy profile does not exist (any more).
+    #[error("That proxy no longer exists. It may have been deleted.")]
+    ProxyProfileNotFound(ProxyProfileId),
 
     /// The confirmation was already answered or never existed.
     #[error("That download was already confirmed or dismissed, or the browser took it back.")]
@@ -166,6 +170,7 @@ impl CoreError {
         let code = match self {
             CoreError::DownloadNotFound(_)
             | CoreError::QueueNotFound(_)
+            | CoreError::ProxyProfileNotFound(_)
             | CoreError::ConfirmationNotFound(_)
             | CoreError::UnknownAddon => ErrorCode::NotFound,
             CoreError::InvalidUrl(_) => ErrorCode::InvalidUrl,

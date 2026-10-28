@@ -33,6 +33,8 @@ export interface DownloadActionsHost {
   openDialog: (dialog: Dialog) => void;
   /** Opens the settings on one setting, for a fix that is a setting to change. */
   openSettings: (focus: SettingId) => void;
+  /** Shows a download's details, where its queue is chosen. */
+  openDetails: (id: DownloadId) => void;
   /** What the list shows and how it is sorted: nudging works in one queue, in its order. */
   /** The list's sort: a queue's order changes only while the list shows it. */
   sort: () => Sort;
@@ -215,6 +217,9 @@ export class DownloadActions {
         break;
       case 'proxy_settings':
         this.#host.openSettings('proxy');
+        break;
+      case 'change_queue':
+        this.#host.openDetails(id);
         break;
     }
   }

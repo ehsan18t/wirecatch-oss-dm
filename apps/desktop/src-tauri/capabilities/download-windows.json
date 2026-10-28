@@ -16,6 +16,7 @@
     "allow-refresh-link",
     "allow-keep-original",
     "allow-show-proxy-settings",
+    "allow-show-download-details",
     "allow-list-queues",
     "allow-get-settings",
     "allow-change-settings",

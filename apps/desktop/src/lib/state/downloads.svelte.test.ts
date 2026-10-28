@@ -24,6 +24,7 @@ function row(id: number, patch: Partial<DownloadSummary> = {}): DownloadSummary 
     waiting: null,
     media: null,
     processing: null,
+    proxy: null,
     added_at: id,
     completed_at: null,
     ...patch,
@@ -200,6 +201,7 @@ describe('DownloadStore', () => {
       waiting: { type: 'in_line', data: { position: 3 } },
       media: { quality: '1080p', source: 'hls', video_key: 'abc', instead_of: null },
       processing: { step: 'converting', per_mille: 450 },
+      proxy: 'Office (10.0.0.5:1080)',
       added_at: 7,
       completed_at: 9,
     };

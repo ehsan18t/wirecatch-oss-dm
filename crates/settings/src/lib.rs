@@ -19,7 +19,7 @@ use wirecatch_protocol::extension::{
     ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, MAX_VIDEO_SITES,
     NotASite, SitesRefused, normalize_file_type, read_site,
 };
-use wirecatch_protocol::proxy::ProxySettings;
+use wirecatch_protocol::proxy::{AppExceptions, ProxySettings};
 
 use wirecatch_protocol::claims::QueueTakes;
 use wirecatch_queues::{claims, schedule};
@@ -150,11 +150,14 @@ pub fn within_limits(mut settings: AppSettings, suffixes: &SuffixList) -> AppSet
     settings.global_speed_limit = speed_limit_within_limits(settings.global_speed_limit);
     settings.extension.ignored_sites = stored_sites(settings.extension.ignored_sites);
     settings.local_sites = stored_local_sites(&settings.local_sites, suffixes);
-    // A stored proxy this build would refuse cannot be followed as it is; the computer's
-    // proxy takes its place until the person sets one again.
-    settings.proxy = crate::proxy::validate(settings.proxy).unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "the stored proxy setting cannot be used; following the computer's proxy instead");
-        ProxySettings::default()
+    // Exceptions this build would refuse cannot be matched as they are; the defaults take
+    // their place until the person sets them again.
+    settings.proxy = crate::proxy::validate(settings.proxy.clone()).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "the stored proxy exceptions cannot be used; using the defaults instead");
+        ProxySettings {
+            exceptions: AppExceptions::default(),
+            ..settings.proxy
+        }
     });
     settings
 }
@@ -445,6 +448,7 @@ pub fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> {
     if let Setting::Own(connections) = queue.connections {
         check_connections(connections)?;
     }
+    queue.exceptions = crate::proxy::validate_queue_exceptions(queue.exceptions)?;
     if let QueueTakes::Auto(claims) = queue.takes {
         queue.takes = QueueTakes::Auto(claims::checked(claims).map_err(SettingsError::Invalid)?);
     }

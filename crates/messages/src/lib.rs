@@ -131,17 +131,26 @@ pub fn private_network(chosen_by: ChosenBy) -> UserError {
     }
 }
 
-/// [`describe`] for a download's own run, whose link `chosen_by` chose.
+/// [`describe`] for a download's own run, whose link `chosen_by` chose and which went through
+/// the proxy `through_proxy` names, if one.
 #[must_use]
 pub fn describe_run(
     error: &EngineError,
     folder: &Path,
     previously_worked: bool,
     chosen_by: ChosenBy,
+    through_proxy: Option<&str>,
 ) -> UserError {
-    match error {
-        EngineError::PrivateNetwork { .. } => private_network(chosen_by),
-        other => describe(other, folder, previously_worked),
+    match (error, through_proxy) {
+        (EngineError::PrivateNetwork { .. }, _) => private_network(chosen_by),
+        // Through a proxy, the first connection is the proxy's (D73.4).
+        (EngineError::Network(e), Some(proxy)) if e.is_connect() => fix(
+            format!(
+                "Could not reach the proxy {proxy}. Move the download to a queue with another proxy, or check the proxy in Settings, Network."
+            ),
+            FixAction::ChangeQueue,
+        ),
+        (other, _) => describe(other, folder, previously_worked),
     }
 }
 
@@ -182,8 +191,8 @@ fn ftp_tls_unavailable(host: &str) -> UserError {
 /// A proxy that wants a login it was not given, or refused the one it was.
 fn proxy_login_refused() -> UserError {
     fix(
-        "The proxy asked for a user name and password, or did not accept the ones it was given. Check the proxy's login in the proxy settings, then try again.",
-        FixAction::ProxySettings,
+        "The proxy asked for a user name and password, or did not accept the ones it was given. Move the download to a queue with another proxy, or check the proxy's login in Settings, Network.",
+        FixAction::ChangeQueue,
     )
 }
 
@@ -444,9 +453,11 @@ mod tests {
         assert!(system.message.contains("exceptions"));
         let given = ftp_proxy_unsupported(&ProxySetting::Given);
         assert!(given.message.contains("Download FTP links directly"));
+        // A proxy that refuses the login is another queue's to avoid (D73.4).
         let login = describe(&EngineError::ProxyLoginRefused, Path::new(""), false);
         assert!(login.message.contains("user name and password"));
-        for e in [variable, system, given, login] {
+        assert_eq!(login.fix, Some(FixAction::ChangeQueue));
+        for e in [variable, system, given] {
             assert_eq!(e.fix, Some(FixAction::ProxySettings));
             assert!(e.message.ends_with('.') && !e.message.contains('\u{2014}'));
         }
@@ -597,7 +608,7 @@ mod tests {
     #[test]
     fn a_refused_link_says_who_can_open_it() {
         let error = EngineError::PrivateNetwork { url: "u".into() };
-        let website = describe_run(&error, Path::new("/d"), false, ChosenBy::Website);
+        let website = describe_run(&error, Path::new("/d"), false, ChosenBy::Website, None);
         assert_eq!(website.fix, Some(FixAction::RefreshLink));
         assert!(
             website.message.contains("a website gave"),
@@ -613,7 +624,7 @@ mod tests {
             website.message
         );
         for own in [ChosenBy::Person, ChosenBy::LocalPage] {
-            let refused = describe_run(&error, Path::new("/d"), false, own);
+            let refused = describe_run(&error, Path::new("/d"), false, own, None);
             assert_eq!(refused.fix, None, "pasting it again would not help");
             assert!(!refused.message.contains("website"), "{}", refused.message);
         }

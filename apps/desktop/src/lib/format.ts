@@ -384,6 +384,7 @@ export const FIX_LABEL: Record<FixAction, string> = {
   free_disk_space: 'Open folder',
   keep_original: 'Keep the original',
   proxy_settings: 'Proxy settings',
+  change_queue: 'Change queue',
 };
 
 /** What ffmpeg does to a downloaded video, in a couple of words (D24). */

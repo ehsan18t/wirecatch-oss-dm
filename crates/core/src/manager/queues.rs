@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{Queue, QueueSettings, QueueStatus, UiEvent};
+use wirecatch_protocol::app::{Queue, QueueSettings, QueueStatus, Setting, UiEvent};
 use wirecatch_protocol::claims::{DraftClaims, LinkClaims, LinkTrial, QueueReason, QueueTakes};
 use wirecatch_protocol::wire::{Event, QueueSummary};
 use wirecatch_queues::claims;
@@ -39,6 +39,7 @@ impl Manager {
         wirecatch_settings::check_queue_count(state.queues.len() + 1)?;
         let settings = wirecatch_settings::validate_queue(settings)?;
         ensure_name_free(&state, &settings.name, None)?;
+        ensure_proxy_saved(&state, &settings)?;
         let queue = Queue {
             id: state.ids.queue(),
             is_default: false,
@@ -56,6 +57,7 @@ impl Manager {
         let settings = wirecatch_settings::validate_queue(settings)?;
         let mut state = self.lock_open()?;
         ensure_name_free(&state, &settings.name, Some(id))?;
+        ensure_proxy_saved(&state, &settings)?;
         apply_to_slot(state.slot_mut(id)?, settings);
         self.queues_changed(&mut state);
         Ok(())
@@ -180,6 +182,16 @@ impl Manager {
         self.inner.store.save_queues(state.queue_list());
         self.emit(UiEvent::QueuesChanged(state.queue_list()));
         self.emit_wire(Event::QueuesChanged(state.queue_summaries()));
+    }
+}
+
+fn ensure_proxy_saved(state: &State, settings: &QueueSettings) -> Result<()> {
+    match settings.proxy {
+        Setting::Own(proxy) => Ok(wirecatch_settings::proxy::check_use(
+            proxy,
+            &state.proxy_profiles,
+        )?),
+        Setting::FollowApp => Ok(()),
     }
 }
 

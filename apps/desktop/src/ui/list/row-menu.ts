@@ -7,6 +7,7 @@ import FileCheck from '~icons/lucide/file-check';
 import FolderInput from '~icons/lucide/folder-input';
 import FolderPen from '~icons/lucide/folder-pen';
 import Link from '~icons/lucide/link';
+import ListOrdered from '~icons/lucide/list-ordered';
 import Network from '~icons/lucide/network';
 import PanelRight from '~icons/lucide/panel-right';
 import Pause from '~icons/lucide/pause';
@@ -28,6 +29,7 @@ const FIX_ICON: Record<FixAction, IconComponent> = {
   free_disk_space: FolderOpen,
   keep_original: FileCheck,
   proxy_settings: Network,
+  change_queue: ListOrdered,
 };
 
 /** A failed download's own fix, which the row and the details offer and Enter runs, leads the menu. */

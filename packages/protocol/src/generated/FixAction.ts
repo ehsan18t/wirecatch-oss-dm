@@ -9,4 +9,5 @@ export type FixAction =
   | 'choose_folder'
   | 'free_disk_space'
   | 'keep_original'
-  | 'proxy_settings';
+  | 'proxy_settings'
+  | 'change_queue';

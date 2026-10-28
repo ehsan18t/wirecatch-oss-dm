@@ -5,9 +5,9 @@ use ts_rs::TS;
 
 use crate::claims::{QueueReason, QueueTakes};
 use crate::extension::{ExtensionSettings, ExtensionSettingsPatch};
-use crate::proxy::ProxySettings;
+use crate::proxy::{ProxyProfile, ProxyProfileSettings, ProxySettings, ProxyUse, QueueExceptions};
 use crate::secret::Link;
-use crate::{DownloadId, QuestionId, QueueId};
+use crate::{DownloadId, ProxyProfileId, QuestionId, QueueId};
 
 /// One row of the download list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -59,6 +59,10 @@ pub struct DownloadSummary {
     /// `None` at any other time.
     #[serde(default)]
     pub processing: Option<ProcessingProgress>,
+    /// The proxy its last run started through, in words: a profile's name and address, the
+    /// computer's proxy, or no proxy (D73.3). `None` before its first run.
+    #[serde(default)]
+    pub proxy: Option<String>,
 }
 
 /// What ffmpeg is doing to a downloaded video or audio, and how far it is (D24).
@@ -150,8 +154,11 @@ pub enum FixAction {
     FreeDiskSpace,
     /// Converting a downloaded video failed: save it as it was downloaded instead (D24).
     KeepOriginal,
-    /// The proxy refused the login, or cannot carry the download: open the proxy settings (D71).
+    /// An FTP link a proxy cannot carry: open the proxy settings (D71).
     ProxySettings,
+    /// The proxy could not be reached or refused the login: move the download to a queue with
+    /// another proxy (D73.4).
+    ChangeQueue,
 }
 
 /// The kind of file a download is; each has its own folder ([`CategoryRule`]).
@@ -207,6 +214,15 @@ impl<T> Setting<T> {
             Self::Own(value) => Some(value),
         }
     }
+
+    /// The queue's own value by reference, `None` when it follows the app.
+    #[must_use]
+    pub fn own_ref(&self) -> Option<&T> {
+        match self {
+            Self::FollowApp => None,
+            Self::Own(value) => Some(value),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -223,6 +239,10 @@ pub struct QueueSettings {
     pub speed_limit: Setting<u64>,
     /// Connections per download; following the app uses [`AppSettings::connections_per_download`].
     pub connections: Setting<u8>,
+    /// The proxy its downloads go through (D73); following the app uses [`ProxySettings::proxy`].
+    pub proxy: Setting<ProxyUse>,
+    /// The hosts its downloads reach directly; following the app uses its exceptions (D73.7).
+    pub exceptions: Setting<QueueExceptions>,
     /// When set, the queue only runs inside this window.
     pub schedule: Option<Schedule>,
     /// Manual, or auto with the new downloads it claims (D72.2).
@@ -242,6 +262,8 @@ impl QueueSettings {
             max_concurrent: Setting::FollowApp,
             speed_limit: Setting::FollowApp,
             connections: Setting::FollowApp,
+            proxy: Setting::FollowApp,
+            exceptions: Setting::FollowApp,
             takes: QueueTakes::Manual,
             schedule: None,
             notify: QueueNotify::EachDownload,
@@ -268,6 +290,14 @@ pub struct ProfileQueue {
     pub id: QueueId,
     pub is_default: bool,
     pub settings: QueueSettings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProfileProxy {
+    /// Its id where the profile was written; the profile's settings and queues refer to it.
+    pub id: ProxyProfileId,
+    pub settings: ProxyProfileSettings,
 }
 
 /// A queue that is done: nothing in it downloads or waits to start (D52). It covers the
@@ -1129,6 +1159,8 @@ pub struct AppSettingsPatch {
     pub local_sites: Option<Vec<String>>,
     /// The new [`AppSettings::update_suffix_list`].
     pub update_suffix_list: Option<bool>,
+    /// The new [`AppSettings::proxy`], replacing it whole.
+    pub proxy: Option<ProxySettings>,
 }
 
 /// A change to some of [`MediaDefaults`].
@@ -1244,7 +1276,7 @@ crate::exported::exported_consts! {
     /// a percent.
     pub const PER_MILLE_DONE: u16 = 1000;
     /// The only [`SettingsProfile::format_version`] this build reads and writes (D75).
-    pub const PROFILE_FORMAT_VERSION: u32 = 2;
+    pub const PROFILE_FORMAT_VERSION: u32 = 3;
     /// Most download windows asking a question at once (D23); later questions wait until one
     /// of them closes.
     pub const MAX_QUESTION_WINDOWS: usize = 5;
@@ -1373,9 +1405,7 @@ pub struct AppSettings {
     /// downloads are idle (D44). Off: the list in use stays until the person checks.
     #[serde(default = "default_true")]
     pub update_suffix_list: bool,
-    /// Which proxy everything the app sends goes through (D71), without its passwords. It
-    /// changes as a whole, with a [`ProxyChange`](crate::proxy::ProxyChange), never in a
-    /// patch.
+    /// The proxy and exceptions of every queue that follows the app's (D73).
     #[serde(default)]
     pub proxy: ProxySettings,
 }
@@ -1408,8 +1438,7 @@ impl AppSettings {
             media,
             local_sites,
             update_suffix_list,
-            // Changes only as a whole, through a `ProxyChange` (D71).
-            proxy: _,
+            proxy,
         } = self;
         let AppSettingsPatch {
             default_folder: new_default_folder,
@@ -1432,6 +1461,7 @@ impl AppSettings {
             media: media_patch,
             local_sites: new_local_sites,
             update_suffix_list: new_update_suffix_list,
+            proxy: new_proxy,
         } = patch;
         set(default_folder, new_default_folder);
         set(categories, new_categories);
@@ -1460,6 +1490,7 @@ impl AppSettings {
         }
         set(local_sites, new_local_sites);
         set(update_suffix_list, new_update_suffix_list);
+        set(proxy, new_proxy);
     }
 }
 
@@ -1535,6 +1566,8 @@ pub struct SettingsProfile {
     pub settings: AppSettings,
     /// Every queue, with its limits and schedule, in sidebar order.
     pub queues: Vec<ProfileQueue>,
+    /// Every proxy profile, without its password or last test.
+    pub proxy_profiles: Vec<ProfileProxy>,
     /// The installed add-ons, offered for installing on import.
     pub addons: Vec<AddonId>,
 }
@@ -1607,6 +1640,8 @@ pub enum UiEvent {
     DownloadsRemoved(Vec<DownloadId>),
     /// Every queue, in sidebar order, after any queue changed.
     QueuesChanged(Vec<Queue>),
+    /// Every proxy profile, after any changed or was tested.
+    ProxyProfilesChanged(Vec<ProxyProfile>),
     /// Every setting, after any changed. Boxed: the settings are far larger than any other event.
     SettingsChanged(Box<AppSettings>),
     /// A browser capture started; the UI shows the toast with Change and Open folder (D4).

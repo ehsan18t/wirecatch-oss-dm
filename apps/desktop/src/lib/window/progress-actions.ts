@@ -100,6 +100,9 @@ export class ProgressActions {
       case 'proxy_settings':
         await this.#host.runner.run(() => this.#host.backend().showProxySettings());
         break;
+      case 'change_queue':
+        await this.#onRow((id) => this.#host.backend().showDownloadDetails(id));
+        break;
     }
   }
 }

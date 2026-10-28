@@ -61,6 +61,8 @@ describe('AppState', () => {
       max_concurrent: ownSetting(2),
       speed_limit: FOLLOW_APP,
       connections: FOLLOW_APP,
+      proxy: FOLLOW_APP,
+      exceptions: FOLLOW_APP,
       takes: MANUAL_QUEUE,
       schedule: null,
       notify: 'each_download' as const,
@@ -124,6 +126,16 @@ describe('AppState', () => {
     // Downloads that are all gone change nothing.
     revealDownloads(app, { queue: null, ids: [unknown] });
     expect(app.selection.list).toEqual([ids[1]]);
+  });
+
+  it('opens a download’s details for a progress window’s Change queue, and the row’s fix does too', async () => {
+    const { app } = await make();
+    const [first, second] = app.downloads.idsInQueue(app.queues.list[0]!.id);
+    revealDownloads(app, { queue: null, ids: [first!], details: true });
+    expect(app.details).toBe(first);
+    app.closeDetails();
+    await app.actions.fix(second!, 'change_queue');
+    expect(app.details).toBe(second);
   });
 
   it('selects the downloads of a notification clicked while the page was loading, once the list is in', async () => {

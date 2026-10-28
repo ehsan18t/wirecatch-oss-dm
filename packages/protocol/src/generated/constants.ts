@@ -93,7 +93,7 @@ export const PER_MILLE_DONE = 1000;
 /**
  * The only [`SettingsProfile::format_version`] this build reads and writes (D75).
  */
-export const PROFILE_FORMAT_VERSION = 2;
+export const PROFILE_FORMAT_VERSION = 3;
 
 /**
  * Most download windows asking a question at once (D23); later questions wait until one
@@ -355,9 +355,19 @@ export const MAX_PROXY_HOST_CHARS = 253;
 export const MAX_PROXY_LOGIN_BYTES = 255;
 
 /**
- * Most hosts the proxy's exceptions list.
+ * Most hosts in one list of exceptions.
  */
 export const MAX_PROXY_EXCEPTIONS = 256;
+
+/**
+ * Most characters in a proxy profile's name.
+ */
+export const MAX_PROXY_NAME_CHARS = 60;
+
+/**
+ * Most proxy profiles there can be.
+ */
+export const MAX_PROXY_PROFILES = 100;
 
 /**
  * Words that make a name a secret's when one of its segments is the word (see the module documentation for how a name is split). `key` alone counts, so `Invalid key: 5` loses its 5: a bare `key=` pair is most often an API key.

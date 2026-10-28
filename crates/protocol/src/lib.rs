@@ -49,6 +49,13 @@ pub struct DownloadId(#[ts(type = "number & { readonly __brand: \"DownloadId\" }
 #[ts(export)]
 pub struct QueueId(#[ts(type = "number & { readonly __brand: \"QueueId\" }")] pub i64);
 
+/// Identifies one proxy profile (D73).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ProxyProfileId(
+    #[ts(type = "number & { readonly __brand: \"ProxyProfileId\" }")] pub i64,
+);
+
 /// Identifies one question the app asks the person about a browser download: a file to
 /// confirm ([`app::PendingCapture`]), media being read ([`app::MediaReading`]), a quality to pick
 /// ([`app::MediaChoice`]) or a page waiting for the media add-on ([`app::AddonRequestItem`]).

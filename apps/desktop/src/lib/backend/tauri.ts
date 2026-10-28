@@ -29,8 +29,9 @@ import {
   type DownloadId,
   type FinishedList,
   type MediaSelection,
-  type ProxyChange,
-  type ProxyTest,
+  type ProxyProfileDraft,
+  type ProxyProfileId,
+  type ProxyUse,
   type QuestionId,
   type QueueSettings,
   type QueueId,
@@ -294,9 +295,6 @@ export class TauriBackend implements DownloadWindowBackend {
   checkSuffixList() {
     return this.#call('check_suffix_list');
   }
-  setProxy(change: ProxyChange) {
-    return this.#exec('set_proxy', { change });
-  }
   setQueueOrder(order: QueueId[]) {
     return this.#exec('set_queue_order', { order });
   }
@@ -305,14 +303,29 @@ export class TauriBackend implements DownloadWindowBackend {
     return this.#call('try_link', { trial });
   }
 
-  testProxy(test: ProxyTest) {
-    return this.#call('test_proxy', { test });
+  listProxyProfiles() {
+    return this.#call('list_proxy_profiles');
   }
-  systemProxy() {
-    return this.#call('system_proxy');
+  createProxyProfile(draft: ProxyProfileDraft) {
+    return this.#call('create_proxy_profile', { draft });
+  }
+  updateProxyProfile(id: ProxyProfileId, draft: ProxyProfileDraft) {
+    return this.#exec('update_proxy_profile', { id, draft });
+  }
+  deleteProxyProfile(id: ProxyProfileId, replacement: ProxyUse) {
+    return this.#exec('delete_proxy_profile', { id, replacement });
+  }
+  testProxyProfile(id: ProxyProfileId | null, draft: ProxyProfileDraft) {
+    return this.#call('test_proxy_profile', { id, draft });
+  }
+  copySystemProxy() {
+    return this.#call('copy_system_proxy');
   }
   showProxySettings() {
     return this.#exec('show_proxy_settings');
+  }
+  showDownloadDetails(id: DownloadId) {
+    return this.#exec('show_download_details', { id });
   }
 
   /** Passes on every event with the contract's shape. One without it is a bug on one side: it is dropped, reported to the shell's log, and `reload` is called to load everything again from the commands, whose answers are checked; for a kind that keeps failing, at most once every `UNREADABLE_RELOAD_MS`. */
