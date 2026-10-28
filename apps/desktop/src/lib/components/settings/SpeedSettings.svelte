@@ -1,15 +1,25 @@
 <script lang="ts">
-  // Speed and limits: a limit on all downloads together, how many run at once across the queues, and how many connections each opens, in the ranges the core accepts.
+  // Speed and limits: a limit on all downloads together, how many run at once across the queues, and how many connections each opens, in the ranges the core accepts, each with the queues that use their own value.
   import { MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
   import { FIRST_TOTAL_SPEED_LIMIT, inUnit, SPEED_FIELD, toBytes } from '@wirecatch/units';
   import type { Snippet } from 'svelte';
   import { NumberInput } from '@wirecatch/ui';
+  import { queuesWithOwn } from '$lib/limits';
   import type { SettingIn } from '$lib/settings-schema';
+  import { getApp } from '$lib/state/app.svelte';
+  import OwnValueQueues from './OwnValueQueues.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
   import SettingToggle from './SettingToggle.svelte';
 
   let { items, settings, flash, save }: SectionProps = $props();
+
+  const app = getApp();
+  const notes: Record<SettingIn<'speed'>, Snippet> = {
+    global_speed_limit: ownSpeed,
+    max_concurrent_downloads: ownConcurrent,
+    connections_per_download: ownConnections,
+  };
 
   const controls: Record<SettingIn<'speed'>, Snippet<[Row]>> = {
     global_speed_limit: speedLimit,
@@ -18,7 +28,17 @@
   };
 </script>
 
-<SettingRows {items} {settings} {flash} {controls} />
+<SettingRows {items} {settings} {flash} {controls} {notes} />
+
+{#snippet ownSpeed()}<OwnValueQueues
+    queues={queuesWithOwn(app.queues.list, 'speed_limit')}
+  />{/snippet}
+{#snippet ownConcurrent()}<OwnValueQueues
+    queues={queuesWithOwn(app.queues.list, 'max_concurrent')}
+  />{/snippet}
+{#snippet ownConnections()}<OwnValueQueues
+    queues={queuesWithOwn(app.queues.list, 'connections')}
+  />{/snippet}
 
 {#snippet speedLimit({ def, s, control }: Row)}
   {#if s.global_speed_limit !== null}
