@@ -6,6 +6,7 @@ import type { FinishNoteTime } from './FinishNoteTime';
 import type { FinishNotice } from './FinishNotice';
 import type { MediaDefaultsPatch } from './MediaDefaultsPatch';
 import type { PortablePath } from './PortablePath';
+import type { ProxySettings } from './ProxySettings';
 import type { StartNoteTime } from './StartNoteTime';
 import type { StartNotice } from './StartNotice';
 import type { Theme } from './Theme';
@@ -94,4 +95,8 @@ export type AppSettingsPatch = {
    * The new [`AppSettings::update_suffix_list`].
    */
   update_suffix_list?: boolean;
+  /**
+   * The new [`AppSettings::proxy`], replacing it whole.
+   */
+  proxy?: ProxySettings;
 };

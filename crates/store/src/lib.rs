@@ -25,7 +25,7 @@ use wirecatch_files::{FileError, owner_only, with_suffix};
 use wirecatch_records::batch::StoredBatch;
 use wirecatch_records::media::{MediaJob, StoredMedia, unreadable};
 use wirecatch_records::origin::{Origin, without_sign_in};
-use wirecatch_records::proxy::Logins;
+use wirecatch_records::proxy::{Logins, SavedProfile};
 use wirecatch_sites::local_network::ChosenBy;
 
 mod error;
@@ -156,19 +156,36 @@ const MIGRATIONS: &[&str] = &[
     SET settings = json_set(settings, '$.takes', json('{"kind":"manual"}'))
     WHERE json_valid(settings);
 "#,
+    // D73.9: the proxy is profiles, so D71's manual proxies and their passwords go, and every
+    // queue follows the app's proxy and exceptions.
+    r#"
+    DELETE FROM settings WHERE key = 'proxy_passwords';
+    UPDATE settings SET value = json_remove(value, '$.proxy')
+    WHERE key = 'app' AND json_valid(value);
+    UPDATE queues
+    SET settings = json_set(
+        settings,
+        '$.proxy', json('{"source":"follow_app"}'),
+        '$.exceptions', json('{"source":"follow_app"}')
+    )
+    WHERE json_valid(settings);
+"#,
 ];
 
 const SETTINGS_KEY: &str = "app";
 const LAST_IDS_KEY: &str = "last_ids";
 const BATCHES_KEY: &str = "queue_batches";
 const PROXY_LOGINS_KEY: &str = "proxy_passwords";
+const PROXY_PROFILES_KEY: &str = "proxy_profiles";
 
-/// The highest download and queue ids ever handed out. Kept so an id is never
-/// reused, even after the newest download or queue was deleted.
+/// The highest download, queue and proxy profile ids ever handed out. Kept so an id is never
+/// reused, even after the newest one was deleted.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LastIds {
     pub download: i64,
     pub queue: i64,
+    #[serde(default)]
+    pub proxy_profile: i64,
 }
 
 /// One download as stored.
@@ -220,8 +237,9 @@ pub struct Snapshot {
     pub downloads: Vec<StoredDownload>,
     /// What each queue at work had finished or failed so far (D52).
     pub batches: Vec<StoredBatch>,
-    /// The passwords of the manual proxies (D71.2).
+    /// The passwords of the proxy profiles (D71.2).
     pub proxy_logins: Logins,
+    pub proxy_profiles: Vec<SavedProfile>,
     /// What had to be repaired to open the list, for the person to be told.
     pub recoveries: Vec<Recovery>,
     /// Why the data folder could not be made private to the current user, when it could
@@ -279,6 +297,7 @@ enum Op {
     SaveLastIds(LastIds),
     SaveBatches(Vec<StoredBatch>),
     SaveProxyLogins(Logins),
+    SaveProxyProfiles(Vec<SavedProfile>),
     /// Answers once every write sent before it is on disk; only tests wait
     /// for that.
     #[cfg(test)]
@@ -303,6 +322,7 @@ impl std::fmt::Debug for Op {
             Op::SaveLastIds(_) => "SaveLastIds",
             Op::SaveBatches(_) => "SaveBatches",
             Op::SaveProxyLogins(_) => "SaveProxyLogins",
+            Op::SaveProxyProfiles(_) => "SaveProxyProfiles",
             #[cfg(test)]
             Op::Flush(_) => "Flush",
             Op::Close(_) => "Close",
@@ -430,6 +450,11 @@ impl Store {
     /// Replaces the saved proxy passwords.
     pub fn save_proxy_logins(&self, logins: Logins) {
         self.send(Op::SaveProxyLogins(logins));
+    }
+
+    /// Replaces the saved proxy profiles.
+    pub fn save_proxy_profiles(&self, profiles: Vec<SavedProfile>) {
+        self.send(Op::SaveProxyProfiles(profiles));
     }
 
     /// Waits until every write sent so far is on disk.
@@ -625,6 +650,7 @@ enum Target {
     LastIds,
     Batches,
     ProxyLogins,
+    ProxyProfiles,
     Nothing,
 }
 
@@ -637,6 +663,7 @@ fn target_of(op: &Op) -> Target {
         Op::SaveLastIds(_) => Target::LastIds,
         Op::SaveBatches(_) => Target::Batches,
         Op::SaveProxyLogins(_) => Target::ProxyLogins,
+        Op::SaveProxyProfiles(_) => Target::ProxyProfiles,
         #[cfg(test)]
         Op::Flush(_) => Target::Nothing,
         Op::Close(_) => Target::Nothing,
@@ -737,6 +764,7 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
             Op::SaveLastIds(ids) => write_value(&tx, LAST_IDS_KEY, ids)?,
             Op::SaveBatches(batches) => write_value(&tx, BATCHES_KEY, batches)?,
             Op::SaveProxyLogins(logins) => write_value(&tx, PROXY_LOGINS_KEY, logins)?,
+            Op::SaveProxyProfiles(profiles) => write_value(&tx, PROXY_PROFILES_KEY, profiles)?,
             #[cfg(test)]
             Op::Flush(_) => {}
             Op::Close(_) => {}
@@ -998,6 +1026,8 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     let last_ids = read_value(conn, LAST_IDS_KEY, "id counters")?.unwrap_or_default();
     let batches = read_value(conn, BATCHES_KEY, "queue batches")?.unwrap_or_default();
     let proxy_logins = read_value(conn, PROXY_LOGINS_KEY, "proxy passwords")?.unwrap_or_default();
+    let proxy_profiles =
+        read_value(conn, PROXY_PROFILES_KEY, "proxy profiles")?.unwrap_or_default();
 
     let queues = load_queues(conn)?;
     let mut downloads_reset = 0;
@@ -1058,6 +1088,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
         downloads,
         batches,
         proxy_logins,
+        proxy_profiles,
         recoveries: [
             (newly_unreadable > 0).then_some(Recovery::UnreadableKept(newly_unreadable)),
             (downloads_reset > 0).then_some(Recovery::ValuesReset {
@@ -1351,7 +1382,9 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use wirecatch_protocol::DEFAULT_QUEUE_ID;
+    use wirecatch_protocol::ProxyProfileId;
     use wirecatch_protocol::claims::{QueueClaims, QueueTakes};
+    use wirecatch_protocol::proxy::{ProxySettings, ProxyUse, QueueExceptions};
     use wirecatch_test_support::PATIENCE;
 
     use super::*;
@@ -1736,6 +1769,13 @@ mod tests {
                 max_concurrent: Setting::Own(2),
                 speed_limit: Setting::Own(1000),
                 connections: Setting::Own(4),
+                proxy: Setting::Own(ProxyUse::Profile(ProxyProfileId(2))),
+                exceptions: Setting::Own(QueueExceptions {
+                    app_hosts: true,
+                    use_hosts: true,
+                    hosts: vec!["intranet.example".into()],
+                    ..QueueExceptions::default()
+                }),
                 takes: QueueTakes::Auto(QueueClaims {
                     enabled: true,
                     sites: vec!["example.com".into()],
@@ -1758,8 +1798,14 @@ mod tests {
             },
         };
         let settings = sample_settings();
+        let profiles: Vec<SavedProfile> =
+            serde_json::from_str(include_str!("../samples/proxy_profiles/example.json")).unwrap();
+        let logins: Logins =
+            serde_json::from_str(include_str!("../samples/proxy_logins/example.json")).unwrap();
         store.save_queues(vec![queue.clone()]);
         store.save_settings(settings.clone());
+        store.save_proxy_profiles(profiles.clone());
+        store.save_proxy_logins(logins.clone());
         store.save_downloads(vec![download(1), download(2)]);
         store.delete_downloads(vec![DownloadId(2)]);
         store.flush().await;
@@ -1769,6 +1815,8 @@ mod tests {
         assert_eq!(snapshot.settings, Some(settings));
         assert_eq!(snapshot.queues, vec![queue]);
         assert_eq!(snapshot.downloads, vec![download(1)]);
+        assert_eq!(snapshot.proxy_profiles, profiles);
+        assert_eq!(snapshot.proxy_logins, logins);
     }
 
     /// Files in `dir` whose names start with `prefix`.
@@ -2276,6 +2324,50 @@ mod tests {
         assert_eq!(main.settings, QueueSettings::new("Main"));
         assert_eq!(main.status, QueueStatus::default());
         assert_old_download_upgraded(&snapshot);
+    }
+
+    #[test]
+    fn the_manual_proxies_go_and_queues_follow_the_apps_proxy() {
+        let dir = tempfile::tempdir().unwrap();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| step.contains("proxy_passwords"))
+            .unwrap();
+        database_with_settings(dir.path(), before, true);
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        conn.execute(
+            r#"UPDATE settings SET value = json_set(value, '$.proxy',
+                 json('{"mode":"manual","per_protocol":false,"all":{"host":"proxy.example","port":8080}}'))
+               WHERE key = 'app'"#,
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            r#"INSERT INTO settings (key, value) VALUES ('proxy_passwords', '{"all":"secret"}')"#,
+            [],
+        )
+        .unwrap();
+        let mut main = serde_json::to_value(QueueSettings::new("Main")).unwrap();
+        let fields = main.as_object_mut().unwrap();
+        fields.remove("proxy");
+        fields.remove("exceptions");
+        conn.execute(
+            "INSERT INTO queues (id, position, is_default, paused, running_outside_schedule, settings)
+             VALUES (1, 0, 1, 0, 0, ?1)",
+            [main.to_string()],
+        )
+        .unwrap();
+        drop(conn);
+
+        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let settings = snapshot.settings.expect("the settings survive");
+        assert_eq!(settings.proxy, ProxySettings::default());
+        assert!(
+            settings.extension.ask_before_download,
+            "nothing else changes"
+        );
+        assert!(snapshot.proxy_logins.is_empty());
+        assert_eq!(snapshot.queues[0].settings, QueueSettings::new("Main"));
     }
 
     #[test]

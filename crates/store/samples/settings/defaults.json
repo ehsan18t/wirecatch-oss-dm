@@ -148,44 +148,14 @@
   "local_sites": [],
   "update_suffix_list": true,
   "proxy": {
-    "mode": "system",
-    "per_protocol": false,
-    "all": {
-      "kind": "http",
-      "host": "",
-      "port": 0,
-      "user": "",
-      "has_password": false
+    "proxy": {
+      "kind": "system"
     },
-    "http": {
-      "kind": "http",
-      "host": "",
-      "port": 0,
-      "user": "",
-      "has_password": false
+    "exceptions": {
+      "system": true,
+      "use_hosts": true,
+      "hosts": []
     },
-    "https": {
-      "kind": "http",
-      "host": "",
-      "port": 0,
-      "user": "",
-      "has_password": false
-    },
-    "ftp": {
-      "kind": "http",
-      "host": "",
-      "port": 0,
-      "user": "",
-      "has_password": false
-    },
-    "socks": {
-      "kind": "http",
-      "host": "",
-      "port": 0,
-      "user": "",
-      "has_password": false
-    },
-    "exceptions": [],
     "ftp_direct": false
   }
 }

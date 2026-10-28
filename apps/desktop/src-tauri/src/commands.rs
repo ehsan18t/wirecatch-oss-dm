@@ -8,14 +8,15 @@ use wirecatch_core::LinkFrom;
 use wirecatch_protocol::desktop::commands as contract;
 use wirecatch_protocol::desktop::{
     AddDownloadArgs, AddVideoPageArgs, CancelAddonOperationArgs, CancelArgs, ChangeSettingsArgs,
-    ChooseMediaArgs, ConfirmCaptureArgs, ControlWindowArgs, CreateQueueArgs, DeleteQueueArgs,
-    DismissMediaChoiceArgs, EarlierDownloadArgs, ExportSettingsArgs, FitDownloadWindowArgs,
-    GetDownloadArgs, GetQuestionArgs, ImportSettingsArgs, InstallAddonArgs, KeepOriginalArgs,
-    MoveToQueueArgs, OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs,
-    RejectCaptureArgs, RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs,
-    ResumeArgs, RetryArgs, SetDownloadFolderArgs, SetMaximizeButtonArgs, SetProxyArgs,
-    SetQueueOrderArgs, SetQueuePausedArgs, ShowProgressWindowArgs, StartQueueNowArgs,
-    SystemAppearance, TestProxyArgs, TryLinkArgs, UpdateAddonArgs, UpdateQueueArgs,
+    ChooseMediaArgs, ConfirmCaptureArgs, ControlWindowArgs, CreateProxyProfileArgs,
+    CreateQueueArgs, DeleteProxyProfileArgs, DeleteQueueArgs, DismissMediaChoiceArgs,
+    EarlierDownloadArgs, ExportSettingsArgs, FitDownloadWindowArgs, GetDownloadArgs,
+    GetQuestionArgs, ImportSettingsArgs, InstallAddonArgs, KeepOriginalArgs, MoveToQueueArgs,
+    OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs, RejectCaptureArgs,
+    RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs, ResumeArgs, RetryArgs,
+    SetDownloadFolderArgs, SetMaximizeButtonArgs, SetQueueOrderArgs, SetQueuePausedArgs,
+    ShowProgressWindowArgs, StartQueueNowArgs, SystemAppearance, TestProxyProfileArgs, TryLinkArgs,
+    UpdateAddonArgs, UpdateProxyProfileArgs, UpdateQueueArgs,
 };
 
 use crate::api::{self, CommandResult};
@@ -569,15 +570,6 @@ pub async fn check_suffix_list(
 }
 
 #[tauri::command]
-pub async fn set_proxy(
-    core: CoreState<'_>,
-    args: contract::set_proxy::Args,
-) -> CommandResult<contract::set_proxy::Output> {
-    let SetProxyArgs { change } = args;
-    api::set_proxy(core.manager().await?, change)
-}
-
-#[tauri::command]
 pub async fn set_queue_order(
     core: CoreState<'_>,
     args: contract::set_queue_order::Args,
@@ -596,17 +588,53 @@ pub async fn try_link(
 }
 
 #[tauri::command]
-pub async fn test_proxy(
+pub async fn list_proxy_profiles(
     core: CoreState<'_>,
-    args: contract::test_proxy::Args,
-) -> CommandResult<contract::test_proxy::Output> {
-    let TestProxyArgs { test } = args;
-    api::test_proxy(core.manager().await?, test).await
+) -> CommandResult<contract::list_proxy_profiles::Output> {
+    Ok(api::list_proxy_profiles(core.manager().await?))
 }
 
 #[tauri::command]
-pub async fn system_proxy() -> CommandResult<contract::system_proxy::Output> {
-    Ok(api::system_proxy())
+pub async fn create_proxy_profile(
+    core: CoreState<'_>,
+    args: contract::create_proxy_profile::Args,
+) -> CommandResult<contract::create_proxy_profile::Output> {
+    let CreateProxyProfileArgs { draft } = args;
+    api::create_proxy_profile(core.manager().await?, draft)
+}
+
+#[tauri::command]
+pub async fn update_proxy_profile(
+    core: CoreState<'_>,
+    args: contract::update_proxy_profile::Args,
+) -> CommandResult<contract::update_proxy_profile::Output> {
+    let UpdateProxyProfileArgs { id, draft } = args;
+    api::update_proxy_profile(core.manager().await?, id, draft)
+}
+
+#[tauri::command]
+pub async fn delete_proxy_profile(
+    core: CoreState<'_>,
+    args: contract::delete_proxy_profile::Args,
+) -> CommandResult<contract::delete_proxy_profile::Output> {
+    let DeleteProxyProfileArgs { id, replacement } = args;
+    api::delete_proxy_profile(core.manager().await?, id, replacement)
+}
+
+#[tauri::command]
+pub async fn test_proxy_profile(
+    core: CoreState<'_>,
+    args: contract::test_proxy_profile::Args,
+) -> CommandResult<contract::test_proxy_profile::Output> {
+    let TestProxyProfileArgs { id, draft } = args;
+    api::test_proxy_profile(core.manager().await?, id, draft).await
+}
+
+#[tauri::command]
+pub async fn copy_system_proxy(
+    core: CoreState<'_>,
+) -> CommandResult<contract::copy_system_proxy::Output> {
+    api::copy_system_proxy(core.manager().await?).await
 }
 
 #[tauri::command]
@@ -760,11 +788,14 @@ handler![
     check_addon_updates,
     suffix_list,
     check_suffix_list,
-    set_proxy,
     set_queue_order,
     try_link,
-    test_proxy,
-    system_proxy,
+    list_proxy_profiles,
+    create_proxy_profile,
+    update_proxy_profile,
+    delete_proxy_profile,
+    test_proxy_profile,
+    copy_system_proxy,
     show_proxy_settings,
     get_question,
     get_download,

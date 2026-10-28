@@ -380,6 +380,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
         connections_per_download: 3,
       },
       queues: plain(app.queues.list),
+      proxy_profiles: [],
       addons: [],
     };
     backend.putSettingsFile(String.raw`C:\Users\ada\Downloads\evil.json`, profile);

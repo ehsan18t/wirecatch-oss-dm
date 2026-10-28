@@ -6,9 +6,11 @@ use std::sync::Arc;
 
 use chrono::NaiveDateTime;
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{DownloadStatus, Queue};
+use wirecatch_protocol::app::{AppSettings, DownloadStatus, Queue, Setting};
 use wirecatch_protocol::claims::QueueReason;
+use wirecatch_protocol::proxy::ProxyUse;
 use wirecatch_settings::DEFAULT_QUEUE_ID;
+use wirecatch_settings::proxy::SavedProfile;
 use wirecatch_sites::public_suffix::SuffixList;
 use wirecatch_store::{Snapshot, StoredDownload};
 
@@ -93,7 +95,13 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
     }
 
     let mut settings = settings;
-    wirecatch_settings::proxy::mark_passwords(&mut settings.proxy, &snapshot.proxy_logins);
+    let profiles = snapshot.proxy_profiles;
+    ids.proxy_profile = profiles
+        .iter()
+        .map(|p| p.id.0)
+        .fold(snapshot.last_ids.proxy_profile, i64::max);
+    let settings_changed =
+        forget_missing_profiles(&mut settings, &mut queues, &profiles) || settings_changed;
     let mut state = State {
         settings,
         queues,
@@ -109,6 +117,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         dirty: BTreeSet::default(),
         batches: Batches::default(),
         proxy_logins: snapshot.proxy_logins,
+        proxy_profiles: profiles,
         last_checked: around.now,
         ids,
         closed: false,
@@ -126,6 +135,26 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
 
 /// The stored queues within today's limits, with the default queue first when
 /// none of them is the default.
+/// A profile that cannot be read was dropped with its settings, so what used it falls back:
+/// the app to the computer's proxy, a queue to the app's. Says whether the app's changed.
+fn forget_missing_profiles(
+    settings: &mut AppSettings,
+    queues: &mut [QueueSlot],
+    profiles: &[SavedProfile],
+) -> bool {
+    let saved = |proxy: ProxyUse| wirecatch_settings::proxy::check_use(proxy, profiles).is_ok();
+    for slot in queues {
+        if slot.queue.settings.proxy.own().is_some_and(|p| !saved(p)) {
+            slot.queue.settings.proxy = Setting::FollowApp;
+        }
+    }
+    if saved(settings.proxy.proxy) {
+        return false;
+    }
+    settings.proxy.proxy = ProxyUse::System;
+    true
+}
+
 fn restore_queues(stored: Vec<Queue>) -> Vec<QueueSlot> {
     let mut queues: Vec<QueueSlot> = stored
         .into_iter()
@@ -380,6 +409,7 @@ mod tests {
             ],
             batches: Vec::new(),
             proxy_logins: wirecatch_settings::proxy::Logins::new(),
+            proxy_profiles: Vec::new(),
             recoveries: Vec::new(),
             not_private: None,
         };

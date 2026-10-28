@@ -1,9 +1,16 @@
-// The one place a plain number becomes an id. The protocol's ids are branded (`DownloadId`, `QueueId`, `QuestionId`, `NoteId`), so one cannot pass for another; an id that comes from the app is already typed, or is checked with its generated guard (`isDownloadId`). These constructors are for a number known to be the id: the desktop's stand-in backend, and tests. Each checks the number with the same guard, so no id is made without the check.
+// The one place a plain number becomes an id. The protocol's ids are branded (`DownloadId`, `QueueId`, `QuestionId`, `NoteId`, `ProxyProfileId`), so one cannot pass for another; an id that comes from the app is already typed, or is checked with its generated guard (`isDownloadId`). These constructors are for a number known to be the id: the desktop's stand-in backend, and tests. Each checks the number with the same guard, so no id is made without the check.
 import type { DownloadId } from './generated/DownloadId';
 import type { NoteId } from './generated/NoteId';
+import type { ProxyProfileId } from './generated/ProxyProfileId';
 import type { QuestionId } from './generated/QuestionId';
 import type { QueueId } from './generated/QueueId';
-import { isDownloadId, isNoteId, isQuestionId, isQueueId } from './generated/validators';
+import {
+  isDownloadId,
+  isNoteId,
+  isProxyProfileId,
+  isQuestionId,
+  isQueueId,
+} from './generated/validators';
 
 /** `value` checked by `isId`, or a `RangeError` naming `what` it is not. */
 function checked<T extends number>(
@@ -33,4 +40,9 @@ export function questionId(value: number): QuestionId {
 /** `value` as the id of a note the app asks a browser to show (D65). */
 export function noteId(value: number): NoteId {
   return checked(value, isNoteId, 'note id');
+}
+
+/** `value` as the id of a proxy profile (D73). */
+export function proxyProfileId(value: number): ProxyProfileId {
+  return checked(value, isProxyProfileId, 'proxy profile id');
 }

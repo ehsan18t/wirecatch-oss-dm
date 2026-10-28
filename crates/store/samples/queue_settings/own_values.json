@@ -13,6 +13,25 @@
     "source": "own",
     "value": 4
   },
+  "proxy": {
+    "source": "own",
+    "value": {
+      "kind": "profile",
+      "id": 2
+    }
+  },
+  "exceptions": {
+    "source": "own",
+    "value": {
+      "system": false,
+      "app_hosts": true,
+      "use_hosts": true,
+      "hosts": [
+        "intranet.example",
+        "10.*"
+      ]
+    }
+  },
   "takes": {
     "kind": "auto",
     "enabled": true,

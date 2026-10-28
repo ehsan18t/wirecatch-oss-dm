@@ -18,9 +18,9 @@ use crate::app::{
     PendingCapture, Question, Queue, QueueSettings, StartupNotice, SuffixListInfo,
 };
 use crate::claims::{LinkClaims, LinkTrial};
-use crate::proxy::{ProxyChange, ProxySettings, ProxyTest, ProxyTestResult};
+use crate::proxy::{ProxyProfile, ProxyProfileDraft, ProxyTestResult, ProxyUse};
 use crate::secret::Link;
-use crate::{DownloadId, QuestionId, QueueId};
+use crate::{DownloadId, ProxyProfileId, QuestionId, QueueId};
 
 crate::exported::exported_consts! {
     /// The Tauri event that carries every [`UiEvent`](crate::app::UiEvent), in order.
@@ -498,13 +498,6 @@ commands! {
     /// a message for the person when it could not be fetched or was refused, keeping the
     /// list in use.
     check_suffix_list -> SuffixListInfo;
-    /// Saves a new proxy setting (D71) with its passwords, restarting the running downloads
-    /// when it asks. Fails with `invalid_request` and a message for the person for a proxy that cannot
-    /// work, changing nothing.
-    set_proxy: SetProxyArgs {
-        /// The new setting.
-        change: ProxyChange,
-    } -> ();
     /// Puts the queues in this order in the sidebar, which also settles ties between claims (D72.9). Fails with `invalid_request` unless it names every queue once, the default queue first.
     set_queue_order: SetQueueOrderArgs {
         /// Every queue, in its new order.
@@ -515,14 +508,45 @@ commands! {
         /// The link, and the claims to try it against.
         trial: LinkTrial,
     } -> LinkClaims;
-    /// Sends one request through a proxy setting before it is saved (D71.5).
-    test_proxy: TestProxyArgs {
-        /// The setting to try.
-        test: ProxyTest,
+    /// Every proxy profile (D73).
+    list_proxy_profiles -> Vec<ProxyProfile>;
+    /// Saves a new proxy profile and tests it in the background; the profiles arrive as
+    /// `ProxyProfilesChanged`, again with the test's result. Fails with `invalid_request` and a
+    /// message for the person for a profile that cannot work, changing nothing.
+    create_proxy_profile: CreateProxyProfileArgs {
+        /// The profile and its password.
+        draft: ProxyProfileDraft,
+    } -> ProxyProfileId;
+    /// Saves a profile's new settings, tested in the background when its server or login
+    /// changed. Downloads running through it keep the proxy they started with (D73.3). Fails like
+    /// `create_proxy_profile`, or with `not_found`.
+    update_proxy_profile: UpdateProxyProfileArgs {
+        /// The profile.
+        id: ProxyProfileId,
+        /// Its new settings and the change to its password.
+        draft: ProxyProfileDraft,
+    } -> ();
+    /// Deletes a profile; the app and the queues that use it use `replacement` instead (D73.4).
+    /// Fails with `not_found`, or `invalid_request` when `replacement` is the profile itself or
+    /// another that does not exist.
+    delete_proxy_profile: DeleteProxyProfileArgs {
+        /// The profile.
+        id: ProxyProfileId,
+        /// What its users use instead.
+        replacement: ProxyUse,
+    } -> ();
+    /// Sends one request through a profile as `draft` has it, before it is saved (D71.5). For a
+    /// saved profile (`id`), a password `draft` keeps is the saved one, and the result is kept as
+    /// its last test when the draft is what is saved.
+    test_proxy_profile: TestProxyProfileArgs {
+        /// The saved profile the draft edits, if any.
+        id: Option<ProxyProfileId>,
+        /// The profile to try.
+        draft: ProxyProfileDraft,
     } -> ProxyTestResult;
-    /// The computer's proxy as a manual setting, without passwords, for Copy from system;
-    /// `null` when the computer sets none.
-    system_proxy -> Option<ProxySettings>;
+    /// Saves a profile for each server the computer's proxy names, without passwords, and
+    /// answers with their ids, those saved before included; empty when the computer sets none.
+    copy_system_proxy -> Vec<ProxyProfileId>;
     /// Brings the main window to the front on the proxy settings, for a progress window's fix
     /// of a proxy error.
     show_proxy_settings -> ();

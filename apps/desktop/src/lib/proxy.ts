@@ -1,21 +1,46 @@
-// The app's proxy setting (D71) as the settings show it: its parts in words, and what a test found.
+// Proxies (D73) as the windows show them: profiles and their parts in words, which proxy a queue uses, and what a test found.
 
-import type {
-  ProxyKind,
-  ProxyMode,
-  ProxyRole,
-  ProxyServer,
-  ProxySettings,
-  ProxyTestResult,
+import {
+  FOLLOW_APP,
+  type ProxyKind,
+  type ProxyProfile,
+  type ProxyProfileSettings,
+  type ProxySettings,
+  type ProxyTestResult,
+  type ProxyUse,
+  type Queue,
+  type QueueSettings,
 } from '@wirecatch/protocol';
 
-/** A proxy with nothing entered. */
-export function emptyServer(kind: ProxyKind = 'http'): ProxyServer {
-  return { kind, host: '', port: 0, user: '', has_password: false };
+/** The app's proxy on a fresh install: the computer's, with its bypass list. */
+export function defaultProxySettings(): ProxySettings {
+  return {
+    proxy: { kind: 'system' },
+    exceptions: { system: true, use_hosts: true, hosts: [] },
+    ftp_direct: false,
+  };
+}
+
+/** A new queue's proxy and exceptions: the app's. */
+export const FOLLOWS_APP_PROXY = {
+  proxy: FOLLOW_APP,
+  exceptions: FOLLOW_APP,
+} as const satisfies Pick<QueueSettings, 'proxy' | 'exceptions'>;
+
+/** `host:port`, with an IPv6 address in brackets, as the core writes it. */
+export function proxyAddress(profile: ProxyProfileSettings): string {
+  const host = profile.host.includes(':') ? `[${profile.host}]` : profile.host;
+  return `${host}:${String(profile.port)}`;
+}
+
+/** A profile's name, or its address when it has none, as the core shows it. */
+export function shownName(profile: ProxyProfileSettings): string {
+  const name = profile.name.trim();
+  return name === '' ? proxyAddress(profile) : name;
 }
 
 /** Whether `a` and `b` name the same proxy and login, so a password saved for one is the other's, as the core decides. */
-export function sameProxy(a: ProxyServer, b: ProxyServer): boolean {
+export function sameProxy(a: ProxyProfileSettings, b: ProxyProfileSettings): boolean {
   return (
     a.kind === b.kind &&
     a.host.trim().toLowerCase() === b.host.trim().toLowerCase() &&
@@ -24,43 +49,37 @@ export function sameProxy(a: ProxyServer, b: ProxyServer): boolean {
   );
 }
 
-/** The setting of a fresh install: the computer's proxy. */
-export function defaultProxySettings(): ProxySettings {
-  return {
-    mode: 'system',
-    per_protocol: false,
-    all: emptyServer(),
-    http: emptyServer(),
-    https: emptyServer(),
-    ftp: emptyServer(),
-    socks: emptyServer('socks5'),
-    exceptions: [],
-    ftp_direct: false,
-  };
+/** The proxy `queue`'s downloads go through: its own, or the app's when it follows it. */
+export function queueProxy(queue: Queue, app: ProxySettings): ProxyUse {
+  return queue.settings.proxy.source === 'own' ? queue.settings.proxy.value : app.proxy;
 }
 
-export const MODE_OPTIONS: readonly { value: ProxyMode; label: string; description: string }[] = [
-  {
-    value: 'system',
-    label: 'Use the computer’s proxy',
-    description: 'The proxy set in your network settings, or in the environment.',
-  },
-  { value: 'direct', label: 'No proxy', description: 'Connect to every server directly.' },
-  { value: 'manual', label: 'Use this proxy', description: 'A proxy server you enter below.' },
-];
+/** The profile `proxy` names, if it names one that is saved. */
+export function profileOf(
+  proxy: ProxyUse,
+  profiles: readonly ProxyProfile[],
+): ProxyProfile | undefined {
+  return proxy.kind === 'profile' ? profiles.find((p) => p.id === proxy.id) : undefined;
+}
+
+/** `proxy` in words. */
+export function proxyName(proxy: ProxyUse, profiles: readonly ProxyProfile[]): string {
+  switch (proxy.kind) {
+    case 'system':
+      return 'The computer’s proxy';
+    case 'direct':
+      return 'No proxy';
+    case 'profile': {
+      const profile = profileOf(proxy, profiles);
+      return profile ? shownName(profile.settings) : 'A deleted proxy';
+    }
+  }
+}
 
 export const KIND_OPTIONS: readonly { value: ProxyKind; label: string }[] = [
   { value: 'http', label: 'HTTP' },
   { value: 'https', label: 'HTTPS' },
   { value: 'socks5', label: 'SOCKS5' },
-];
-
-/** The proxies set one per protocol, in the order the settings show them, each with its name. */
-export const PER_PROTOCOL: readonly { role: ProxyRole; label: string }[] = [
-  { role: 'http', label: 'HTTP links' },
-  { role: 'https', label: 'HTTPS links' },
-  { role: 'ftp', label: 'FTP links' },
-  { role: 'socks', label: 'SOCKS5, for all other links' },
 ];
 
 /** The highest port a server can listen on. */

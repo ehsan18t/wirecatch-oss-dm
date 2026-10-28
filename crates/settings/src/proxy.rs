@@ -1,48 +1,54 @@
-//! The app's proxy setting (D71) as the engine, yt-dlp and the updater take it: its checks,
-//! its saved passwords, and copying the system's setting into it.
+//! Proxies (D73) as the engine, yt-dlp and the updater take them: the checks of a profile and
+//! of a list of exceptions, a profile's saved password, and copying the computer's proxy.
 
 use std::net::IpAddr;
 
 use wirecatch_engine::{ManualProxies, ProxyChoice, Url};
 use wirecatch_protocol::Secret;
-use wirecatch_protocol::app::Update;
+use wirecatch_protocol::app::{Setting, Update};
 use wirecatch_protocol::proxy::{
-    MAX_PROXY_EXCEPTIONS, MAX_PROXY_HOST_CHARS, MAX_PROXY_LOGIN_BYTES, ProxyKind, ProxyMode,
-    ProxyPasswords, ProxyRole, ProxyServer, ProxySettings,
+    MAX_PROXY_EXCEPTIONS, MAX_PROXY_HOST_CHARS, MAX_PROXY_LOGIN_BYTES, MAX_PROXY_NAME_CHARS,
+    MAX_PROXY_PROFILES, ProxyKind, ProxyProfileSettings, ProxySettings, ProxyUse, QueueExceptions,
 };
 
-pub use wirecatch_records::proxy::Logins;
+pub use wirecatch_records::proxy::{Logins, SavedProfile};
 
 use crate::error::{Result, SettingsError};
 
-/// Checks `proxy` and cleans it up: hosts trimmed, exceptions trimmed, in lower case and
-/// without duplicates. A proxy whose host is empty is not set and is kept as it is.
+/// Checks the app's proxy and cleans up its hosts. Whether its profile exists is
+/// [`check_use`]'s to say.
 ///
 /// # Errors
 ///
-/// [`SettingsError::Invalid`] naming the first value that cannot work.
+/// [`SettingsError::Invalid`] naming the first host that cannot be an exception.
 pub fn validate(mut proxy: ProxySettings) -> Result<ProxySettings> {
-    for role in ProxyRole::ALL {
-        let server = proxy.server_mut(role);
-        server.host = server.host.trim().to_string();
-        if server.is_set() {
-            check_server(server)?;
+    proxy.exceptions.hosts = clean_hosts(&proxy.exceptions.hosts)?;
+    Ok(proxy)
+}
+
+/// Checks a queue's own exceptions and cleans up their hosts.
+///
+/// # Errors
+///
+/// [`SettingsError::Invalid`] naming the first host that cannot be an exception.
+pub fn validate_queue_exceptions(
+    exceptions: Setting<QueueExceptions>,
+) -> Result<Setting<QueueExceptions>> {
+    Ok(match exceptions {
+        Setting::FollowApp => Setting::FollowApp,
+        Setting::Own(mut own) => {
+            own.hosts = clean_hosts(&own.hosts)?;
+            Setting::Own(own)
         }
-    }
-    if proxy.mode == ProxyMode::Manual
-        && !proxy
-            .roles_in_use()
-            .iter()
-            .any(|role| proxy.server(*role).is_set())
-    {
-        return Err(invalid(
-            "Enter a proxy server, or choose another proxy option.",
-        ));
-    }
-    let mut exceptions: Vec<String> = Vec::new();
-    for entry in &proxy.exceptions {
+    })
+}
+
+/// Hosts trimmed, in lower case and without duplicates.
+fn clean_hosts(hosts: &[String]) -> Result<Vec<String>> {
+    let mut cleaned: Vec<String> = Vec::new();
+    for entry in hosts {
         let entry = entry.trim().to_ascii_lowercase();
-        if entry.is_empty() || exceptions.contains(&entry) {
+        if entry.is_empty() || cleaned.contains(&entry) {
             continue;
         }
         if entry.len() > MAX_PROXY_HOST_CHARS
@@ -52,19 +58,79 @@ pub fn validate(mut proxy: ProxySettings) -> Result<ProxySettings> {
                 "\"{entry}\" cannot be a proxy exception. Use a host name like files.example.com, an address, or a network like 10.0.0.0/8."
             )));
         }
-        exceptions.push(entry);
+        cleaned.push(entry);
     }
-    if exceptions.len() > MAX_PROXY_EXCEPTIONS {
+    if cleaned.len() > MAX_PROXY_EXCEPTIONS {
         return Err(invalid(&format!(
-            "The proxy can have at most {MAX_PROXY_EXCEPTIONS} exceptions. Remove some first."
+            "A list of proxy exceptions can have at most {MAX_PROXY_EXCEPTIONS} hosts. Remove some first."
         )));
     }
-    proxy.exceptions = exceptions;
-    Ok(proxy)
+    Ok(cleaned)
 }
 
-fn check_server(server: &ProxyServer) -> Result<()> {
+/// Checks that `count` proxy profiles are allowed.
+///
+/// # Errors
+///
+/// [`SettingsError::LimitReached`] past [`MAX_PROXY_PROFILES`].
+pub fn check_count(count: usize) -> Result<()> {
+    if count > MAX_PROXY_PROFILES {
+        return Err(SettingsError::LimitReached(format!(
+            "There can be at most {MAX_PROXY_PROFILES} proxy profiles. Delete one first."
+        )));
+    }
+    Ok(())
+}
+
+/// Checks that `proxy` names a saved profile, when it names one.
+///
+/// # Errors
+///
+/// [`SettingsError::Invalid`] for a profile that is not saved.
+pub fn check_use(proxy: ProxyUse, profiles: &[SavedProfile]) -> Result<()> {
+    match proxy {
+        ProxyUse::Profile(id) if !profiles.iter().any(|p| p.id == id) => Err(invalid(
+            "That proxy profile no longer exists. Choose another proxy.",
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Checks a profile and cleans it up: its name and host trimmed. `others` are the saved
+/// profiles but this one, whose names it may not take.
+///
+/// # Errors
+///
+/// [`SettingsError::Invalid`] naming the first value that cannot work.
+pub fn validate_profile(
+    mut profile: ProxyProfileSettings,
+    others: &[&ProxyProfileSettings],
+) -> Result<ProxyProfileSettings> {
+    profile.name = profile.name.trim().to_string();
+    profile.host = profile.host.trim().to_string();
+    if profile.name.chars().count() > MAX_PROXY_NAME_CHARS {
+        return Err(invalid(&format!(
+            "Proxy names can be at most {MAX_PROXY_NAME_CHARS} characters."
+        )));
+    }
+    check_server(&profile)?;
+    let shown = profile.shown_name();
+    if others
+        .iter()
+        .any(|other| other.shown_name().eq_ignore_ascii_case(&shown))
+    {
+        return Err(invalid(&format!(
+            "A proxy named \"{shown}\" is already saved. Give this one another name."
+        )));
+    }
+    Ok(profile)
+}
+
+fn check_server(server: &ProxyProfileSettings) -> Result<()> {
     let host = &server.host;
+    if host.is_empty() {
+        return Err(invalid("Enter the proxy server's name or address."));
+    }
     let readable = host.len() <= MAX_PROXY_HOST_CHARS
         && (host.parse::<IpAddr>().is_ok()
             || host
@@ -81,12 +147,7 @@ fn check_server(server: &ProxyServer) -> Result<()> {
         )));
     }
     // Digits and dots read as an address, and one out of range fits no URL.
-    let in_url = if host.contains(':') {
-        format!("[{host}]")
-    } else {
-        host.clone()
-    };
-    if Url::parse(&format!("http://{in_url}:{}", server.port)).is_err() {
+    if Url::parse(&format!("http://{}", server.address())).is_err() {
         return Err(invalid(&format!(
             "\"{host}\" is not a proxy server name or address. Check it for a mistyped number."
         )));
@@ -103,116 +164,153 @@ fn invalid(message: &str) -> SettingsError {
     SettingsError::Invalid(message.to_string())
 }
 
-/// The saved passwords after `passwords` changed them, for the proxies `was` named becoming
-/// those `now` names. A password kept as it is stays only while its proxy is the same one (type,
+/// A profile's password after `change`, for the profile `was` (`None` for a new one) becoming
+/// `now`. A password kept as it is stays only while the profile is the same proxy (type,
 /// server, port and user name): it was given for that proxy, never for another.
 ///
 /// # Errors
 ///
-/// [`SettingsError::Invalid`] for a password the proxies cannot be sent.
-pub fn merge_passwords(
-    saved: &Logins,
-    passwords: &ProxyPasswords,
-    was: &ProxySettings,
-    now: &ProxySettings,
-) -> Result<Logins> {
-    let mut merged = saved.clone();
-    for role in ProxyRole::ALL {
-        match passwords.get(role) {
-            Update::Keep => {
-                if !same_proxy(was.server(role), now.server(role)) {
-                    merged.remove(&role);
-                }
+/// [`SettingsError::Invalid`] for a password the proxy cannot be sent.
+pub fn merge_password(
+    saved: Option<&Secret>,
+    change: &Update<Option<Secret>>,
+    was: Option<&ProxyProfileSettings>,
+    now: &ProxyProfileSettings,
+) -> Result<Option<Secret>> {
+    match change {
+        Update::Keep => Ok(saved
+            .filter(|_| was.is_some_and(|was| same_proxy(was, now)))
+            .cloned()),
+        Update::Set(Some(password)) if !password.expose().is_empty() => {
+            if now.user.is_empty() {
+                return Err(invalid(
+                    "Enter the user name that goes with the proxy password.",
+                ));
             }
-            Update::Set(Some(password)) if !password.expose().is_empty() => {
-                if now.server(role).user.is_empty() {
-                    return Err(invalid(
-                        "Enter the user name that goes with the proxy password.",
-                    ));
-                }
-                let text = password.expose();
-                if text.len() > MAX_PROXY_LOGIN_BYTES || text.contains(char::is_control) {
-                    return Err(invalid(
-                        "A proxy password is too long or holds a line break.",
-                    ));
-                }
-                merged.insert(role, password.clone());
+            let text = password.expose();
+            if text.len() > MAX_PROXY_LOGIN_BYTES || text.contains(char::is_control) {
+                return Err(invalid(
+                    "A proxy password is too long or holds a line break.",
+                ));
             }
-            Update::Set(_) => {
-                merged.remove(&role);
-            }
+            Ok(Some(password.clone()))
         }
+        Update::Set(_) => Ok(None),
     }
-    Ok(merged)
 }
 
 /// Whether `a` and `b` name the same proxy and login, so a password given for one is the other's.
-fn same_proxy(a: &ProxyServer, b: &ProxyServer) -> bool {
+#[must_use]
+pub fn same_proxy(a: &ProxyProfileSettings, b: &ProxyProfileSettings) -> bool {
     a.kind == b.kind
         && a.host.trim().eq_ignore_ascii_case(b.host.trim())
         && a.port == b.port
         && a.user == b.user
 }
 
-/// Sets each proxy's `has_password` from the saved passwords.
-pub fn mark_passwords(proxy: &mut ProxySettings, logins: &Logins) {
-    for role in ProxyRole::ALL {
-        proxy.server_mut(role).has_password = logins.contains_key(&role);
-    }
+/// The hosts a queue's downloads reach directly: the computer's bypass list or not, and the
+/// hosts listed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Exceptions {
+    pub system: bool,
+    pub hosts: Vec<String>,
 }
 
-/// The proxies the engine follows for `proxy`, with its passwords.
+/// The exceptions a queue's `own` (or the app's, when it follows them) come to (D73.7).
 #[must_use]
-pub fn engine_choice(proxy: &ProxySettings, logins: &Logins) -> ProxyChoice {
-    match proxy.mode {
-        ProxyMode::System => ProxyChoice::System,
-        ProxyMode::Direct => ProxyChoice::Direct,
-        ProxyMode::Manual => {
-            let url = |role: ProxyRole| {
-                let server = proxy.server(role);
-                let kind = if role == ProxyRole::Socks {
-                    ProxyKind::Socks5
-                } else {
-                    server.kind
-                };
-                server_url(kind, server, logins.get(&role))
-            };
-            let mut manual = ManualProxies::default();
-            if proxy.per_protocol {
-                manual.http = url(ProxyRole::Http);
-                manual.https = url(ProxyRole::Https);
-                manual.ftp = url(ProxyRole::Ftp);
-                manual.all = url(ProxyRole::Socks);
+pub fn exceptions(app: &ProxySettings, own: &Setting<QueueExceptions>) -> Exceptions {
+    let app_hosts = || {
+        if app.exceptions.use_hosts {
+            app.exceptions.hosts.clone()
+        } else {
+            Vec::new()
+        }
+    };
+    match own {
+        Setting::FollowApp => Exceptions {
+            system: app.exceptions.system,
+            hosts: app_hosts(),
+        },
+        Setting::Own(own) => {
+            let mut hosts = if own.app_hosts {
+                app_hosts()
             } else {
-                manual.all = url(ProxyRole::All);
+                Vec::new()
+            };
+            if own.use_hosts {
+                hosts.extend(own.hosts.iter().cloned());
             }
-            manual.exceptions = proxy.exceptions.join(",");
-            manual.ftp_direct = proxy.ftp_direct;
-            ProxyChoice::Manual(manual)
+            Exceptions {
+                system: own.system,
+                hosts,
+            }
         }
     }
 }
 
-/// The URL of a proxy as the engine takes it, with its login; `None` when it is not set.
-fn server_url(kind: ProxyKind, server: &ProxyServer, password: Option<&Secret>) -> Option<String> {
-    if !server.is_set() {
-        return None;
+/// The proxies the engine follows for `proxy` with `exceptions`. `profiles` and `logins` are the
+/// saved profiles and their passwords.
+#[must_use]
+pub fn engine_choice(
+    proxy: ProxyUse,
+    exceptions: &Exceptions,
+    ftp_direct: bool,
+    profiles: &[SavedProfile],
+    logins: &Logins,
+) -> ProxyChoice {
+    let manual = |mut manual: ManualProxies| {
+        manual.exceptions = exception_list(exceptions);
+        manual.ftp_direct = ftp_direct;
+        ProxyChoice::Manual(manual)
+    };
+    match proxy {
+        ProxyUse::Direct => ProxyChoice::Direct,
+        // As D62 reads it, unless something is added to what it reads.
+        ProxyUse::System if exceptions.system && exceptions.hosts.is_empty() && !ftp_direct => {
+            ProxyChoice::System
+        }
+        ProxyUse::System => ManualProxies::from_system().map_or(ProxyChoice::Direct, manual),
+        ProxyUse::Profile(id) => {
+            let Some(profile) = profiles.iter().find(|p| p.id == id) else {
+                tracing::warn!(
+                    profile = id.0,
+                    "a proxy profile that is not saved was chosen; following the computer's proxy instead"
+                );
+                return ProxyChoice::System;
+            };
+            let mut proxies = ManualProxies::default();
+            proxies.all = profile_url(&profile.settings, logins.get(&id));
+            manual(proxies)
+        }
     }
-    let scheme = match kind {
+}
+
+/// `exceptions` as one list in the form [`ManualProxies::exceptions`] takes.
+fn exception_list(exceptions: &Exceptions) -> String {
+    let mut list = Vec::with_capacity(exceptions.hosts.len() + 1);
+    if exceptions.system {
+        let system = ManualProxies::system_exceptions();
+        if !system.trim().is_empty() {
+            list.push(system);
+        }
+    }
+    list.extend(exceptions.hosts.iter().cloned());
+    list.join(",")
+}
+
+/// The URL of a profile as the engine takes it, with its login.
+#[must_use]
+pub fn profile_url(profile: &ProxyProfileSettings, password: Option<&Secret>) -> Option<String> {
+    let scheme = match profile.kind {
         ProxyKind::Http => "http",
         ProxyKind::Https => "https",
         // The proxy resolves names, so they never reach this computer's name server.
         ProxyKind::Socks5 => "socks5h",
     };
-    let host = if server.host.contains(':') {
-        format!("[{}]", server.host)
-    } else {
-        server.host.clone()
-    };
-    let mut url = Url::parse(&format!("{scheme}://{host}:{}", server.port)).ok()?;
-    if !server.user.is_empty() || password.is_some() {
+    let mut url = Url::parse(&format!("{scheme}://{}", profile.address())).ok()?;
+    if !profile.user.is_empty() || password.is_some() {
         // Neither fails on a URL with a host.
-        url.set_username(&server.user).ok()?;
+        url.set_username(&profile.user).ok()?;
         url.set_password(password.map(Secret::expose)).ok()?;
     }
     Some(url.into())
@@ -263,52 +361,31 @@ pub fn updater_proxy(choice: &ProxyChoice) -> UpdaterProxy {
     }
 }
 
-/// The computer's proxy as a manual setting, for Copy from system: the environment's
-/// proxy variables, or else the system's setting. Passwords are left out, so they never
-/// reach a window. `None` when the computer sets no proxy.
+/// A profile for each server the computer's proxy names (D73.9): the environment's proxy
+/// variables, or else the system's setting. Passwords are left out, so they never reach a
+/// window. Empty when the computer sets no proxy.
 #[must_use]
-pub fn from_system() -> Option<ProxySettings> {
-    let system = ManualProxies::from_system()?;
-    let server = |value: &Option<String>| value.as_deref().and_then(parse_server);
-    let mut proxy = ProxySettings {
-        mode: ProxyMode::Manual,
-        exceptions: system
-            .exceptions
-            .split(',')
-            .map(str::trim)
-            .filter(|e| !e.is_empty())
-            .map(str::to_string)
-            .collect(),
-        ..ProxySettings::default()
+pub fn from_system() -> Vec<ProxyProfileSettings> {
+    let Some(system) = ManualProxies::from_system() else {
+        return Vec::new();
     };
-    if system.http.is_none() && system.https.is_none() && system.ftp.is_none() {
-        proxy.all = server(&system.all).unwrap_or_default();
-    } else {
-        // The one for every protocol fills in for the protocols without their own, or, when it
-        // is a SOCKS proxy (the system's `socks=` entry), becomes the SOCKS proxy.
-        let socks = system
-            .all
-            .as_deref()
-            .is_some_and(|all| all.starts_with("socks"));
-        let general = if socks { None } else { server(&system.all) };
-        proxy.per_protocol = true;
-        proxy.http = server(&system.http)
-            .or_else(|| general.clone())
-            .unwrap_or_default();
-        proxy.https = server(&system.https)
-            .or_else(|| general.clone())
-            .unwrap_or_default();
-        proxy.ftp = server(&system.ftp).or(general).unwrap_or_default();
-        if socks {
-            proxy.socks = server(&system.all).unwrap_or_default();
+    let mut profiles: Vec<ProxyProfileSettings> = Vec::new();
+    for value in [&system.all, &system.http, &system.https, &system.ftp]
+        .into_iter()
+        .flatten()
+    {
+        if let Some(profile) = parse_server(value)
+            && !profiles.iter().any(|p| same_proxy(p, &profile))
+        {
+            profiles.push(profile);
         }
     }
-    Some(proxy)
+    profiles
 }
 
-/// A proxy value (`http://user@proxy:8080`, `proxy:8080`, `socks5://...`) as a server; its
-/// password is left out.
-fn parse_server(value: &str) -> Option<ProxyServer> {
+/// A proxy value (`http://user@proxy:8080`, `proxy:8080`, `socks5://...`) as a profile without
+/// a name; its password is left out.
+fn parse_server(value: &str) -> Option<ProxyProfileSettings> {
     let value = value.trim();
     let url = if value.contains("://") {
         Url::parse(value)
@@ -333,12 +410,12 @@ fn parse_server(value: &str) -> Option<ProxyServer> {
     let user = percent_encoding::percent_decode_str(url.username())
         .decode_utf8_lossy()
         .into_owned();
-    Some(ProxyServer {
+    Some(ProxyProfileSettings {
+        name: String::new(),
         kind,
         host,
         port,
         user,
-        has_password: false,
     })
 }
 

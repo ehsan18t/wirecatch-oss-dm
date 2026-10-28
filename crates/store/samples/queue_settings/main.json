@@ -10,6 +10,12 @@
   "connections": {
     "source": "follow_app"
   },
+  "proxy": {
+    "source": "follow_app"
+  },
+  "exceptions": {
+    "source": "follow_app"
+  },
   "takes": {
     "kind": "manual"
   },

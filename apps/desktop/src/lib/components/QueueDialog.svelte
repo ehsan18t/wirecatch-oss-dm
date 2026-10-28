@@ -30,7 +30,6 @@
     type QueueClaims,
     type QueueNotify,
     type QueueSettings,
-    type TimeOfDay,
     type Weekday,
   } from '@wirecatch/protocol';
   import { MB, SPEED_FIELD, splitKbOrMb, toBytes } from '@wirecatch/units';
@@ -47,17 +46,20 @@
     type FieldControl,
   } from '@wirecatch/ui';
   import { QUEUE_NOTIFY_OPTIONS, queueNotifyHelp } from '$lib/finish-notices';
-  import { dayPattern, formatTime, parseTime, WEEKDAY_SHORT } from '$lib/format';
+  import { dayPattern, formatTime, WEEKDAY_SHORT } from '$lib/format';
   import { daysForPattern, pickedDaysHelp, toggledDay } from '$lib/schedule-days';
-  import { DAYS_PER_WEEK, WEEKDAYS } from '$lib/time';
+  import { FIRST_START, FIRST_STOP, readSchedule } from '$lib/queue-schedule';
+  import { WEEKDAYS } from '$lib/time';
   import {
     concurrentLimitHelp,
     firstConcurrent,
     ownConnectionsHelp,
     queueConcurrentProblem,
     queueConnectionsProblem,
+    queueDeletionNote,
     speedLimitHelp,
   } from '$lib/limits';
+  import { FOLLOWS_APP_PROXY } from '$lib/proxy';
   import { claimsOf, takesOf } from '$lib/queue-claims';
   import { getApp } from '$lib/state/app.svelte';
   import ChoiceCard from './ChoiceCard.svelte';
@@ -71,11 +73,11 @@
   // A snapshot of the queue when the dialog opened; the form edits its own copy.
   const original = (() => (id === null ? undefined : app.queues.byId(id)))();
   const opened = original?.settings;
+  // The editor does not change these yet; a new queue follows the app's (D73).
+  const kept = $state.snapshot(opened) ?? FOLLOWS_APP_PROXY;
   // What the form suggests when a limit or schedule is turned on for a queue that has none.
   // The core makes a new queue that follows the app; a limit switched on starts near the app's value.
   const FIRST_SPEED_LIMIT = 2 * MB;
-  const FIRST_START: TimeOfDay = { hour: 1, minute: 0 };
-  const FIRST_STOP: TimeOfDay = { hour: 7, minute: 0 };
   const formId = $props.id();
 
   const ownConcurrent = opened ? ownValue(opened.max_concurrent) : null;
@@ -137,16 +139,14 @@
     target.focus();
   });
 
-  /** What deleting the queue does with its downloads. */
-  const movingLine = $derived.by(() => {
-    if (!original) return '';
-    const count = app.downloads.idsInQueue(original.id).length;
-    const to = app.queues.defaultQueue?.settings.name ?? 'the default queue';
-    if (count === 0) return 'It holds no downloads.';
-    return count === 1
-      ? `Its download moves to ${to}.`
-      : `Its ${String(count)} downloads move to ${to}.`;
-  });
+  const movingLine = $derived(
+    original
+      ? queueDeletionNote(
+          app.downloads.idsInQueue(original.id).length,
+          app.queues.defaultQueue?.settings.name ?? 'the default queue',
+        )
+      : '',
+  );
 
   const pattern = $derived<DayPattern>(pickingDays ? 'custom' : dayPattern(days));
   function choosePattern(next: DayPattern) {
@@ -165,23 +165,6 @@
       : { limit: ownSetting(limit) };
   }
 
-  /** The schedule the form describes, or why it is not one. */
-  function readSchedule(): { schedule: QueueSettings['schedule'] } | string {
-    if (!scheduleOn) return { schedule: null };
-    const s = parseTime(start);
-    const e = untilEmpty ? null : parseTime(stop);
-    if (!s) return `Enter a start time like ${formatTime(FIRST_START)}.`;
-    if (!untilEmpty && !e) return `Enter a stop time like ${formatTime(FIRST_STOP)}.`;
-    if (e?.hour === s.hour && e.minute === s.minute)
-      return 'The start and stop times are the same. Pick a different stop time.';
-    if (pickingDays && days.length === 0) return 'Pick at least one day for the queue to run.';
-    // Seven ticked days is the same as every day.
-    const every = days.length === DAYS_PER_WEEK;
-    return {
-      schedule: { start: s, stop: e, days: every ? [] : WEEKDAYS.filter((d) => days.includes(d)) },
-    };
-  }
-
   /** What the form changes in a queue, or why it cannot. */
   function readForm(): QueueSettings | string {
     if (!name.trim()) return 'Give the queue a name.';
@@ -191,9 +174,17 @@
     if (badConnections !== null) return badConnections;
     const limit = readLimit();
     if (typeof limit === 'string') return limit;
-    const schedule = readSchedule();
+    const schedule = readSchedule({
+      on: scheduleOn,
+      start,
+      untilEmpty,
+      stop,
+      pickingDays,
+      days,
+    });
     if (typeof schedule === 'string') return schedule;
     return {
+      ...kept,
       name: name.trim(),
       description: description.trim(),
       max_concurrent: concurrentOn ? ownSetting(Math.round(maxConcurrent)) : FOLLOW_APP,
