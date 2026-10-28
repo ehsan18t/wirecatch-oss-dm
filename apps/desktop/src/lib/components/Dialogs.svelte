@@ -5,6 +5,8 @@
   import { getApp, type Dialog } from '$lib/state/app.svelte';
   import AddDialog from '../../ui/add/AddDialog.svelte';
   import CancelDialog from './CancelDialog.svelte';
+  import DeleteProxyDialog from './DeleteProxyDialog.svelte';
+  import ProxyProfileDialog from './ProxyProfileDialog.svelte';
   import RemoveAddonDialog from './RemoveAddonDialog.svelte';
   import QueueDialog from './QueueDialog.svelte';
   import RefreshDialog from './RefreshDialog.svelte';
@@ -27,6 +29,8 @@
     import: transferView,
     shortcuts: shortcutsView,
     'remove-addon': removeAddonView,
+    proxy: proxyView,
+    'delete-proxy': deleteProxyView,
   };
 
   /** The view for a dialog of kind `K`. */
@@ -72,4 +76,12 @@
 
 {#snippet removeAddonView(d: DialogOf<'remove-addon'>)}
   <RemoveAddonDialog id={d.id} />
+{/snippet}
+
+{#snippet proxyView(d: DialogOf<'proxy'>)}
+  <ProxyProfileDialog id={d.id} />
+{/snippet}
+
+{#snippet deleteProxyView(d: DialogOf<'delete-proxy'>)}
+  <DeleteProxyDialog id={d.id} />
 {/snippet}

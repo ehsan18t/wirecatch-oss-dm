@@ -309,9 +309,29 @@ const DEFS = [
     id: 'proxy',
     section: 'network',
     label: 'Proxy',
-    help: 'Every queue that follows the app uses it, and Main’s proxy carries the app’s own requests. A change applies to downloads that start after it.',
-    keywords:
-      'proxy socks socks5 http https firewall vpn corporate office no proxy direct system exceptions bypass login password',
+    help: 'Queues that follow the app use it; updates and add-ons use the Main queue’s. Changes apply to downloads that start after them.',
+    keywords: 'proxy socks socks5 http https firewall vpn corporate office no proxy direct system',
+  },
+  {
+    id: 'proxy_profiles',
+    section: 'network',
+    label: 'Saved proxies',
+    help: 'Each proxy server you use, with its login. The app and each queue choose one of them.',
+    keywords: 'proxy profiles servers login password user name test connection copy from system',
+  },
+  {
+    id: 'proxy_exceptions',
+    section: 'network',
+    label: 'Go directly to',
+    help: 'Hosts reached without a proxy, for every queue that follows the app’s list.',
+    keywords: 'proxy exceptions bypass no_proxy direct intranet local hosts',
+  },
+  {
+    id: 'ftp_direct',
+    section: 'network',
+    label: 'Download FTP links directly',
+    help: 'On: FTP links go around any proxy that is not SOCKS5, the only kind that carries FTP. Off: those links fail.',
+    keywords: 'ftp ftps proxy direct',
   },
   {
     id: 'local_sites',

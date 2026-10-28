@@ -2,6 +2,7 @@
 
 import {
   FOLLOW_APP,
+  type ProxyTestRun,
   type ProxyKind,
   type ProxyProfile,
   type ProxyProfileSettings,
@@ -11,6 +12,7 @@ import {
   type Queue,
   type QueueSettings,
 } from '@wirecatch/protocol';
+import { whenSaid } from './format';
 
 /** The app's proxy on a fresh install: the computer's, with its bypass list. */
 export function defaultProxySettings(): ProxySettings {
@@ -74,6 +76,25 @@ export function proxyName(proxy: ProxyUse, profiles: readonly ProxyProfile[]): s
       return profile ? shownName(profile.settings) : 'A deleted proxy';
     }
   }
+}
+
+const TEST_OUTCOME: Record<ProxyTestResult['outcome'], string> = {
+  works: 'Works',
+  login_refused: 'Login refused',
+  unreachable: 'Could not be reached',
+  timed_out: 'Did not answer in time',
+};
+
+/** A profile's last test in a few words, with when it ran: "Works, tested today at 09:30". */
+export function lastTestLine(
+  test: ProxyTestRun | null,
+  now: Date,
+): { tone: 'success' | 'danger' | 'warning' | 'neutral'; text: string } {
+  if (!test) return { tone: 'neutral', text: 'Not tested yet' };
+  const text = `${TEST_OUTCOME[test.result.outcome]}, tested ${whenSaid(test.at, now)}`;
+  const outcome = test.result.outcome;
+  if (outcome === 'works') return { tone: 'success', text };
+  return { tone: outcome === 'timed_out' ? 'warning' : 'danger', text };
 }
 
 export const KIND_OPTIONS: readonly { value: ProxyKind; label: string }[] = [

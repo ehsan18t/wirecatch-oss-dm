@@ -239,6 +239,13 @@ Found while building the rest of D72's windows (2026-10-29), outside what they c
 - A regular expression in a queue's file name claims is checked only when a link is tried or the queue saved, not as it is typed; checking it as typed needs a core command that checks claims alone (W12).
 - Core's public methods still carry `# Errors` doc sections that restate the error type (`crates/core/src/manager/*.rs`, about 40); the comment rules allow one line where the signature is unclear.
 
+Found while building D73 (2026-10-29), outside what it changes:
+
+- Toasts sit over the controls at the bottom right of a page, Saved proxies' Test, Edit and Delete among them, and info toasts stay until closed (`apps/desktop/src/lib/state/toasts.svelte.ts`, the shared toaster).
+- A toast breaks a host name at its hyphen (`backup-` / `proxy.example`), which reads as two names.
+- A dialog is centred on its height, so it moves when a line appears in it, such as a proxy's test result.
+- A run's proxy is read under the manager's lock, and with the computer's proxy and something added that reads the environment and on Windows the registry (`crates/core/src/manager/policy.rs`, `crates/settings/src/proxy.rs`); fast, but a blocking call on an async thread (W9).
+
 Parts of W4 carried into later work:
 
 - ENG-11 in core: the app still hands the engine the exact path it picked when the download was added, with the default `ExistingFile::Replace`, so a file another program saves under the name meanwhile is replaced in the app. Carried to W9, as the item under "Parts of W7 carried" describes.
