@@ -121,6 +121,7 @@ export class AppState {
     queues: this.queues,
     openDialog: (dialog) => this.openDialog(dialog),
     openSettings: (focus) => this.openSettings(focus),
+    openDetails: (id) => this.openDetails(id),
     sort: () => this.sort,
     videoSites: () => this.settings?.extension.video_sites ?? [],
     videosAsk: () => this.settings?.media.ask_each_time ?? true,

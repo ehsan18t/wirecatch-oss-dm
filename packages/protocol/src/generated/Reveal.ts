@@ -26,4 +26,8 @@ export type Reveal = {
    * Show the proxy settings instead of downloads.
    */
   proxy_settings?: boolean;
+  /**
+   * Open the details of the first download, where its queue is chosen (D73.4).
+   */
+  details?: boolean;
 };

@@ -90,4 +90,9 @@ export type DownloadSummary = {
    * `None` at any other time.
    */
   processing: ProcessingProgress | null;
+  /**
+   * The proxy its last run started through, in words: a profile's name and address, the
+   * computer's proxy, or no proxy (D73.3). `None` before its first run.
+   */
+  proxy: string | null;
 };

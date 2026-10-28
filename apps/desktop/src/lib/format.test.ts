@@ -66,6 +66,7 @@ describe('progress', () => {
       done,
       total,
       processing: null,
+      proxy: null,
     });
     expect(wireFraction(at('downloading', 25, 100))).toBe(0.25);
     expect(wireFraction(at('downloading', 25, null))).toBeNull();
@@ -183,6 +184,7 @@ describe('a download already in the list (D23)', () => {
     waiting: null,
     media: null,
     processing: null,
+    proxy: null,
     added_at: new Date(2026, 9, 10, 18, 30).getTime(),
     completed_at: new Date(2026, 9, 10, 18, 38).getTime(),
     ...change,
@@ -269,6 +271,7 @@ describe('a video whose server refused it for now', () => {
       waiting,
       media: null,
       processing: null,
+      proxy: null,
       added_at: at,
       completed_at: null,
     };

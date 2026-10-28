@@ -55,6 +55,7 @@ import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
 import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
 import type { SetQueueOrderArgs } from './SetQueueOrderArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
+import type { ShowDownloadDetailsArgs } from './ShowDownloadDetailsArgs';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
 import type { StartQueueNowArgs } from './StartQueueNowArgs';
 import type { StartupNotice } from './StartupNotice';
@@ -307,6 +308,11 @@ export type CommandMap = {
    * of a proxy error.
    */
   show_proxy_settings: Command<null, null>;
+  /**
+   * Brings the main window to the front with a download's details open, for a progress
+   * window's Change queue (D73.4).
+   */
+  show_download_details: Command<ShowDownloadDetailsArgs, null>;
   /**
    * The open question a download window shows, or `null` once it is answered, dismissed or
    * taken back by the browser.

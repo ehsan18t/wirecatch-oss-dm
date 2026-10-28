@@ -141,6 +141,7 @@ import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
 import type { SetQueueOrderArgs } from './SetQueueOrderArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
 import type { SettingsProfile } from './SettingsProfile';
+import type { ShowDownloadDetailsArgs } from './ShowDownloadDetailsArgs';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
 import type { StartNoteTime } from './StartNoteTime';
 import type { StartNotice } from './StartNotice';
@@ -621,7 +622,8 @@ export function isDownloadSummary(value: unknown): value is DownloadSummary {
     (isMediaSummary(value1['media']) || value1['media'] === null) &&
     typeof value1['added_at'] === 'number' &&
     (typeof value1['completed_at'] === 'number' || value1['completed_at'] === null) &&
-    (isProcessingProgress(value1['processing']) || value1['processing'] === null))(value);
+    (isProcessingProgress(value1['processing']) || value1['processing'] === null) &&
+    (typeof value1['proxy'] === 'string' || value1['proxy'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link DraftClaims}; fields it does not name are not checked. */
@@ -799,7 +801,8 @@ export function isFixAction(value: unknown): value is FixAction {
     value === 'choose_folder' ||
     value === 'free_disk_space' ||
     value === 'keep_original' ||
-    value === 'proxy_settings'
+    value === 'proxy_settings' ||
+    value === 'change_queue'
   );
 }
 
@@ -1577,9 +1580,8 @@ export function isReveal(value: unknown): value is Reveal {
     (isQueueId(value1['queue']) || value1['queue'] === null) &&
     isArrayOf(value1['ids'], isDownloadId) &&
     (value1['browser_settings'] === undefined || typeof value1['browser_settings'] === 'boolean') &&
-    (value1['proxy_settings'] === undefined || typeof value1['proxy_settings'] === 'boolean'))(
-    value,
-  );
+    (value1['proxy_settings'] === undefined || typeof value1['proxy_settings'] === 'boolean') &&
+    (value1['details'] === undefined || typeof value1['details'] === 'boolean'))(value);
 }
 
 /** Whether `value` has the shape of a {@link Schedule}; fields it does not name are not checked. */
@@ -1627,6 +1629,11 @@ export function isSettingsProfile(value: unknown): value is SettingsProfile {
     isArrayOf(value1['queues'], isProfileQueue) &&
     isArrayOf(value1['proxy_profiles'], isProfileProxy) &&
     isArrayOf(value1['addons'], isAddonId))(value);
+}
+
+/** Whether `value` has the shape of a {@link ShowDownloadDetailsArgs}; fields it does not name are not checked. */
+export function isShowDownloadDetailsArgs(value: unknown): value is ShowDownloadDetailsArgs {
+  return ((value1: unknown): boolean => isRecord(value1) && isDownloadId(value1['id']))(value);
 }
 
 /** Whether `value` has the shape of a {@link ShowProgressWindowArgs}; fields it does not name are not checked. */
@@ -2020,6 +2027,8 @@ export const COMMAND_OUTPUTS: {
   copy_system_proxy: (value: unknown): value is CommandMap['copy_system_proxy']['output'] =>
     isArrayOf(value, isProxyProfileId),
   show_proxy_settings: (value: unknown): value is CommandMap['show_proxy_settings']['output'] =>
+    value === null,
+  show_download_details: (value: unknown): value is CommandMap['show_download_details']['output'] =>
     value === null,
   get_question: (value: unknown): value is CommandMap['get_question']['output'] =>
     isQuestion(value) || value === null,

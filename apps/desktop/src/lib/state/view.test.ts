@@ -39,6 +39,7 @@ const rows: DownloadSummary[] = [
   waiting: null,
   media: null,
   processing: null,
+  proxy: null,
   added_at: added_at as number,
   completed_at: null,
 }));

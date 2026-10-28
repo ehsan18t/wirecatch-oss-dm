@@ -514,6 +514,7 @@ fn ended_row(id: i64, queue: i64, status: DownloadStatus) -> DownloadSummary {
         added_at: 0,
         completed_at: None,
         processing: None,
+        proxy: None,
     }
 }
 

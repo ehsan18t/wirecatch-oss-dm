@@ -147,13 +147,55 @@ async fn a_proxy_that_refuses_the_login_fails_the_download_with_the_way_to_fix_i
     let error = failed.error.unwrap();
     assert_eq!(
         error.fix,
-        Some(wirecatch_protocol::app::FixAction::ProxySettings)
+        Some(wirecatch_protocol::app::FixAction::ChangeQueue)
     );
     assert!(
         error.message.contains("user name and password"),
         "{}",
         error.message
     );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_download_keeps_the_proxy_it_went_through_and_names_one_it_could_not_reach() -> TestResult
+{
+    let server = fast_server(16 * KIB).await?;
+    let socks = SocksServer::start(SocksConfig::default()).await;
+    let h = Harness::new().await?;
+    let id = h
+        .manager
+        .create_proxy_profile(draft(socks_profile("Office", &socks, ""), None))?;
+    use_for_the_app(&h, profile(id))?;
+    let row = h.add(server.url("file.bin")).await?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    let through = format!("Office (127.0.0.1:{})", socks.port);
+    assert_eq!(done.proxy.as_deref(), Some(through.as_str()));
+
+    // A port nothing listens on: the proxy cannot be reached.
+    let gone = std::net::TcpListener::bind("127.0.0.1:0")?
+        .local_addr()?
+        .port();
+    let mut closed = socks_profile("Office", &socks, "");
+    closed.port = gone;
+    h.manager.update_proxy_profile(id, draft(closed, None))?;
+    let row = h.add(server.url("again.bin")).await?;
+    let failed = h.wait_status(row.id, DownloadStatus::Failed).await;
+    let error = failed.error.unwrap();
+    assert_eq!(
+        error.fix,
+        Some(wirecatch_protocol::app::FixAction::ChangeQueue)
+    );
+    assert!(
+        error.message.contains("Could not reach the proxy Office"),
+        "{}",
+        error.message
+    );
+
+    use_for_the_app(&h, ProxyUse::Direct)?;
+    let direct = h.add(server.url("direct.bin")).await?;
+    let done = h.wait_status(direct.id, DownloadStatus::Completed).await;
+    assert_eq!(done.proxy.as_deref(), Some("No proxy"));
     Ok(())
 }
 
