@@ -35,7 +35,7 @@ describe('a queue’s proxy', () => {
   it('follows the app’s by default and saves one of its own', async () => {
     const { app } = await openQueueDialog('Overnight');
     expect(screen.getByRole('combobox', { name: 'Proxy' })).toHaveTextContent(
-      'Same as the app: The computer’s proxy',
+      'Same as the app (now the computer’s proxy)',
     );
     await pickProxy('Office');
     await click(queueDialog().getByRole('button', { name: 'Save' }));
@@ -53,8 +53,9 @@ describe('a queue’s proxy', () => {
     expect(
       screen.getByRole('checkbox', { name: 'The hosts the computer’s proxy skips' }),
     ).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: /^The app’s hosts/ })).toBeChecked();
-    await click(screen.getByRole('checkbox', { name: 'These hosts' }));
+    // The app lists no hosts of its own in the sample, so there is nothing to take from it.
+    expect(screen.getByRole('checkbox', { name: /^The app’s hosts: none yet/ })).toBeDisabled();
+    await click(screen.getByRole('checkbox', { name: 'This queue’s hosts' }));
     const hosts = screen.getByPlaceholderText('Add a host, like intranet.example.com');
     await fireEvent.input(hosts, { target: { value: 'intranet.example' } });
     await fireEvent.keyDown(hosts, { key: 'Enter' });
@@ -76,11 +77,12 @@ describe('a queue’s proxy', () => {
 
   it('saves a new proxy from the editor and picks it', async () => {
     const { app } = await openQueueDialog('Overnight');
-    await pickProxy('New proxy…');
+    await click(screen.getByRole('button', { name: 'New proxy' }));
     const created = within(screen.getAllByRole('dialog').at(-1) ?? document.body);
     await type(created.getByLabelText('Name (optional)'), 'Night proxy');
     await type(created.getByLabelText('Server'), 'night.example');
-    await click(created.getByRole('button', { name: 'Save' }));
+    expect(created.getByText('Saved for the whole app, and used by Overnight.')).toBeInTheDocument();
+    await click(created.getByRole('button', { name: 'Save and use' }));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
     expect(screen.getByRole('combobox', { name: 'Proxy' })).toHaveTextContent('Night proxy');
     expect(app.proxies.list.map((p) => p.settings.name)).toContain('Night proxy');

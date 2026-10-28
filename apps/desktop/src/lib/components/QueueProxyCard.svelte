@@ -1,5 +1,6 @@
 <script lang="ts">
   // The queue editor's "Proxy" card: the queue's proxy, the app's or its own, with New proxy, and the hosts it reaches directly: the app's, or chosen from the computer's bypass list, the app's hosts and its own (D73.2, D73.7).
+  import Plus from '~icons/lucide/plus';
   import {
     FOLLOW_APP,
     MAX_PROXY_HOST_CHARS,
@@ -9,17 +10,20 @@
     type QueueExceptions,
     type Setting,
   } from '@wirecatch/protocol';
-  import { Checkbox, Field, Select, TagInput, type FieldControl } from '@wirecatch/ui';
+  import { Button, Checkbox, Field, Select, TagInput, type FieldControl } from '@wirecatch/ui';
   import { defaultProxySettings, proxyName, shownName } from '$lib/proxy';
   import { getApp } from '$lib/state/app.svelte';
   import ChoiceCard from './ChoiceCard.svelte';
   import ProxyProfileDialog from './ProxyProfileDialog.svelte';
 
   let {
+    queueName,
     proxy,
     exceptions,
     onchange,
   }: {
+    /** The queue's name as the form has it, for the new proxy dialog. */
+    queueName: string;
     proxy: Setting<ProxyUse>;
     exceptions: Setting<QueueExceptions>;
     onchange: (proxy: Setting<ProxyUse>, exceptions: Setting<QueueExceptions>) => void;
@@ -34,14 +38,20 @@
   const FOLLOW = 'follow';
   const SYSTEM = 'system';
   const DIRECT = 'direct';
-  const NEW = 'new';
+
+  const appProxyName = $derived.by(() => {
+    const name = proxyName(appProxy.proxy, app.proxies.list);
+    return appProxy.proxy.kind === 'profile' ? name : name.toLowerCase();
+  });
 
   const options = $derived([
-    { value: FOLLOW, label: `Same as the app: ${proxyName(appProxy.proxy, app.proxies.list)}` },
+    {
+      value: FOLLOW,
+      label: `Same as the app (now ${appProxyName})`,
+    },
     { value: SYSTEM, label: 'The computer’s proxy' },
     { value: DIRECT, label: 'No proxy' },
     ...app.proxies.list.map((p) => ({ value: String(p.id), label: shownName(p.settings) })),
-    { value: NEW, label: 'New proxy…' },
   ]);
 
   function keyOf(setting: Setting<ProxyUse>): string {
@@ -50,10 +60,6 @@
   }
 
   function choose(key: string) {
-    if (key === NEW) {
-      creating = true;
-      return;
-    }
     const profile = app.proxies.list.find((p) => String(p.id) === key);
     if (key === FOLLOW) onchange(FOLLOW_APP, exceptions);
     else if (key === SYSTEM || key === DIRECT) onchange(ownSetting({ kind: key }), exceptions);
@@ -90,12 +96,19 @@
 </script>
 
 <div class="flex flex-col divide-y divide-line rounded-md border border-line bg-layer">
-  <div class="flex flex-col gap-1.5 p-3">
-    <Field label="Proxy" description="Downloads already running keep the proxy they started with.">
+  <div class="flex flex-wrap items-end gap-2 p-3">
+    <Field
+      label="Proxy"
+      class="min-w-56 flex-1"
+      description={proxy.source === 'follow_app'
+        ? 'Changes when you change the app’s proxy.'
+        : undefined}
+    >
       {#snippet children(control: FieldControl)}
         <Select {...control} value={keyOf(proxy)} {options} onchange={choose} />
       {/snippet}
     </Field>
+    <Button icon={Plus} onclick={() => (creating = true)}>New proxy</Button>
   </div>
 
   {#if resulting.kind !== 'direct'}
@@ -122,13 +135,14 @@
         />
         <Checkbox
           label={appHostCount === 0
-            ? 'The app’s hosts (none yet)'
+            ? 'The app’s hosts: none yet, add them in Settings, Network'
             : `The app’s hosts (${String(appHostCount)})`}
-          checked={own.app_hosts}
+          disabled={appHostCount === 0}
+          checked={own.app_hosts && appHostCount > 0}
           onchange={(on: boolean) => change({ app_hosts: on })}
         />
         <Checkbox
-          label="These hosts"
+          label="This queue’s hosts"
           checked={own.use_hosts}
           onchange={(on: boolean) => change({ use_hosts: on })}
         />
@@ -153,8 +167,11 @@
       </div>
     {/if}
   {/if}
+  <p class="px-3 py-2.5 text-small text-ink-muted">
+    Downloads already running keep the connection they started with.
+  </p>
 </div>
 
 {#if creating}
-  <ProxyProfileDialog id={null} onclose={created} />
+  <ProxyProfileDialog id={null} forQueue={queueName.trim() || 'this queue'} onclose={created} />
 {/if}

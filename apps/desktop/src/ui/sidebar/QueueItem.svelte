@@ -1,5 +1,5 @@
 <script lang="ts">
-  // One queue in the sidebar: what it is doing, and one button for its own actions (start now outside its hours, pause or resume, edit, move up or down), which its view's header shows too. Downloads dragged onto it move to it; a queue below the default one can be dragged to another place (D72.9). It is marked Auto, dimmed with Auto off, and marked with the network icon while its proxy is a saved profile (D72.4, D73.9).
+  // One queue in the sidebar: what it is doing, and one button for its own actions (start now outside its hours, pause or resume, edit, move up or down), which its view's header shows too. Downloads dragged onto it move to it; a queue below the default one can be dragged to another place (D72.9). It is marked Auto, dimmed with Auto off, and marked on its second line with the network icon while its proxy is a saved profile, where hovering it does not hide the mark (D72.4, D73.13).
   import ArrowDown from '~icons/lucide/arrow-down';
   import ArrowUp from '~icons/lucide/arrow-up';
   import Ellipsis from '~icons/lucide/ellipsis';
@@ -191,12 +191,6 @@
     onclick={() => app.show({ kind: 'queue', id: queue.id })}
   >
     {#snippet trailing()}
-      {#if profile}
-        <span class="mr-1.5 flex text-ink-muted" {@attach tooltip(() => proxyNote)}>
-          <Icon icon={Network} size="xs" />
-          <span class="sr-only">{proxyNote}</span>
-        </span>
-      {/if}
       {#if speed > 0}
         <span class="text-small text-accent tabular-nums">{formatSpeed(speed)}</span>
       {:else if count > 0}
@@ -222,6 +216,12 @@
   <span class="flex min-w-0 items-center gap-1">
     {#if takes.kind === 'auto'}
       <Badge size="sm">{takes.enabled ? 'Auto' : 'Auto off'}</Badge>
+    {/if}
+    {#if profile}
+      <span class="flex shrink-0 text-ink-muted" {@attach tooltip(() => proxyNote)}>
+        <Icon icon={Network} size="xs" />
+        <span class="sr-only">{proxyNote}</span>
+      </span>
     {/if}
     <span class="truncate" {@attach tooltip(() => textIfCut(status))}>{status}</span>
   </span>

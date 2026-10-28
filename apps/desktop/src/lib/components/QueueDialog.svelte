@@ -333,6 +333,7 @@
     />
 
     <QueueProxyCard
+      queueName={name}
       {proxy}
       {exceptions}
       onchange={(p: QueueSettings['proxy'], e: QueueSettings['exceptions']) =>

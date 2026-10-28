@@ -32,9 +32,12 @@
   const app = getApp();
   let {
     id,
+    forQueue,
     onclose = () => app.closeDialog(),
   }: {
     id: ProxyProfileId | null;
+    /** The queue a new proxy is made for from its editor, which then uses it. */
+    forQueue?: string;
     /** Called when it closes, with the profile's id once saved; it closes the app's dialog unless given. */
     onclose?: (saved?: ProxyProfileId) => void;
   } = $props();
@@ -124,7 +127,9 @@
   title={opened ? `Edit ${name.trim() || proxyAddress(opened)}` : 'New proxy'}
   description={opened
     ? 'Downloads already running keep the proxy they started with.'
-    : 'Save a proxy server once; the app and each queue can then choose it.'}
+    : forQueue
+      ? `Saved for the whole app, and used by ${forQueue}.`
+      : 'Save a proxy server once; the app and each queue can then choose it.'}
   onclose={() => onclose()}
 >
   <form
@@ -261,6 +266,8 @@
       >Test connection</Button
     >
     <Button onclick={() => onclose()}>Cancel</Button>
-    <Button type="submit" form={formId} variant="primary" loading={busy}>Save</Button>
+    <Button type="submit" form={formId} variant="primary" loading={busy}
+      >{forQueue ? 'Save and use' : 'Save'}</Button
+    >
   {/snippet}
 </Dialog>
