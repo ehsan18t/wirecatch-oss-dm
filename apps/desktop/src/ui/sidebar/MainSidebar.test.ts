@@ -3,12 +3,43 @@ import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { DRAG_TYPE } from '$lib/dnd';
+import { claimsOf } from '$lib/queue-claims';
 import { renderApp, rowByName, settle } from '$lib/testing/setup';
 import { sidebarCollapsed } from '$lib/state/sidebar-preference';
 
 const nav = () => screen.getByRole('navigation', { name: 'Views and queues' });
 
 describe('the sidebar', () => {
+  it('marks auto queues, dims one whose claims are off, and marks Proxy while the proxy is set by hand', async () => {
+    const { app } = await renderApp();
+    const item = (name: string) =>
+      within(nav())
+        .getByRole('button', { name: new RegExp(`^${name}`) })
+        .closest('[draggable]');
+    const claim = async (name: string, enabled: boolean) => {
+      const queue = app.queues.list.find((q) => q.settings.name === name);
+      if (!queue) throw new Error('no sample queue');
+      const settings = JSON.parse(JSON.stringify(queue.settings)) as typeof queue.settings;
+      await app.queues.save(queue.id, {
+        ...settings,
+        takes: { kind: 'auto', ...claimsOf(undefined), enabled, sites: ['example.com'] },
+      });
+      await settle();
+    };
+    expect(within(nav()).queryByText('Auto')).toBeNull();
+    await claim('Overnight', true);
+    await claim('Work files', false);
+    expect(item('Overnight')).toHaveTextContent('Auto');
+    expect(item('Overnight')).not.toHaveClass('opacity-quiet');
+    expect(item('Work files')).toHaveTextContent('Auto off');
+    expect(item('Work files')).toHaveClass('opacity-quiet');
+    expect(within(nav()).queryByText('Proxy')).toBeNull();
+    if (!app.settings) throw new Error('no settings');
+    app.settings.proxy.mode = 'manual';
+    await settle();
+    expect(within(nav()).getAllByText('Proxy')).toHaveLength(app.queues.list.length);
+  });
+
   it('shows each view with how many it holds, and marks the one shown', async () => {
     const { app } = await renderApp();
     const user = userEvent.setup();
