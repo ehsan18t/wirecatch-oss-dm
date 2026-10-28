@@ -50,6 +50,8 @@ auditConfig:
   ignoreGhsas:
     # node-forge, no fixed release: reached only through web-ext's Android support, which the Firefox signing script never uses.
     - GHSA-86w9-cpqp-85rv
+    # deepmerge, no fixed release: reached only through the build tools (vite-plugin-svelte, web-ext's addons-linter), which merge the project's own config, never outside input.
+    - GHSA-gcqx-w48m-w2h4
 
 # Packages allowed to run install scripts, and those refused one.
 allowBuilds:

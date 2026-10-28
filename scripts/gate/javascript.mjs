@@ -75,6 +75,6 @@ export const JS_CHECKS = {
   'js-lint': () => pnpm('lint'),
   'js-test': () => pnpm('test'),
   'js-build': () => pnpm('build'),
-  // Ignored advisories live in `auditConfig` in pnpm-workspace.yaml. GHSA-86w9-cpqp-85rv (node-forge, no fixed release) reaches us only through web-ext's Android device support, which the Firefox signing script never uses.
+  // Ignored advisories, each with its reason, live in `auditConfig` in pnpm-workspace.yaml.
   'npm-audit': () => pnpm('audit'),
 };
