@@ -5,6 +5,7 @@
   import { Button, Callout, Dialog, Field, type FieldControl, Kbd, TextArea } from '@wirecatch/ui';
   import { fileNameFromUrl } from '$lib/format';
   import { type AddDraft, linksHint } from '$lib/state/add-draft.svelte';
+  import { queueLine } from '$lib/queue-reasons';
   import { getApp } from '$lib/state/app.svelte';
   import FileNameField from '../save/FileNameField.svelte';
   import FolderField from '../save/FolderField.svelte';
@@ -40,7 +41,13 @@
       clearTimeout(timer);
     };
   });
-  const queueHint = $derived(draft.queue === null ? placement : 'For this add only.');
+  const queueHint = $derived.by(() => {
+    if (draft.queue === null) return placement;
+    const name = app.queues.byId(draft.queue)?.settings.name ?? '';
+    return draft.queue === draft.openedOn
+      ? `Queue: ${name}. It is the queue you had open.`
+      : `${queueLine(name, { kind: 'picked' })} For this add only.`;
+  });
 
   /** Which button sent the links, for its spinner. */
   let sending = $state<'now' | 'paused' | null>(null);
@@ -109,26 +116,15 @@
       {/snippet}
     </Field>
 
-    <div class="flex flex-wrap gap-4">
-      <!-- There before a link is, so pasting one does not move the form; several links each keep their own name. -->
-      {#if count <= 1}
-        <FileNameField
-          class="flex-1 basis-64"
-          value={draft.fileName}
-          onchange={(name: string) => (draft.fileName = name)}
-          placeholder={draft.single ? fileNameFromUrl(draft.single) : ''}
-          description="Leave empty for the name the server gives."
-        />
-      {/if}
-      <QueueField
-        class="flex-1 basis-48"
-        queues={app.queues.list}
-        automatic
-        value={draft.queue}
-        description={queueHint}
-        onchange={(queue: QueueId | null) => (draft.queue = queue)}
+    <!-- There before a link is, so pasting one does not move the form; several links each keep their own name. -->
+    {#if count <= 1}
+      <FileNameField
+        value={draft.fileName}
+        onchange={(name: string) => (draft.fileName = name)}
+        placeholder={draft.single ? fileNameFromUrl(draft.single) : ''}
+        description="Leave empty for the name the server gives."
       />
-    </div>
+    {/if}
 
     <FolderField
       folder={draft.folder}
@@ -136,6 +132,14 @@
       onreset={() => {
         draft.useDefaultFolder();
       }}
+    />
+
+    <QueueField
+      queues={app.queues.list}
+      automatic
+      value={draft.queue}
+      description={queueHint}
+      onchange={(queue: QueueId | null) => (draft.queue = queue)}
     />
   </form>
 

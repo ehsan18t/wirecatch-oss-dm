@@ -59,7 +59,7 @@ test('the whole flow by keyboard: open, type, choose, download, and the focus co
   await grid.focus();
   await openAdd(page);
   await page.keyboard.type(LINKS[0] ?? '');
-  // Tab reaches the file name, the queue, the folder's Change and the two buttons, then wraps.
+  // Tab reaches the file name, the folder's Change, the queue and the two buttons, then wraps.
   const stops: string[] = [];
   for (let i = 0; i < 7; i++) {
     await page.keyboard.press('Tab');
@@ -73,15 +73,14 @@ test('the whole flow by keyboard: open, type, choose, download, and the focus co
   }
   expect(stops.slice(0, 6)).toEqual([
     'File name',
-    'Main',
     'Change',
+    'Automatic',
     'Add paused',
     'Download',
     'Close',
   ]);
   await expect(linksBox(page)).toBeFocused();
   // The queue opens and is chosen from the keyboard.
-  await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Shift+Tab');

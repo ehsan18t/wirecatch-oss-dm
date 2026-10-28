@@ -2,6 +2,7 @@
   // Which queue a download joins, the default one marked in the list (not in the chosen value, where it would be noise). With `automatic`, Automatic comes first and stands for `null`: each link goes where the claims send it (D72.8). The Add dialog and the download windows' questions use it.
   import type { Queue, QueueId } from '@wirecatch/protocol';
   import { Field, type FieldControl, Select, type SelectOption } from '@wirecatch/ui';
+  import { claimsFact } from '$lib/queue-claims';
 
   interface Props {
     queues: readonly Queue[];
@@ -27,7 +28,7 @@
   const AUTOMATIC_OPTION: SelectOption<Choice> = {
     value: AUTOMATIC,
     label: 'Automatic',
-    description: 'Where the claims send it',
+    description: 'To the queue that takes it',
   };
 
   const options = $derived<SelectOption<Choice>[]>([
@@ -35,7 +36,10 @@
     ...queues.map((q) => ({
       value: q.id,
       label: q.settings.name,
-      description: q.is_default ? 'The default queue' : undefined,
+      description:
+        [q.is_default ? 'The default queue' : null, claimsFact(q.settings.takes)]
+          .filter((fact) => fact !== null)
+          .join(' · ') || undefined,
     })),
   ]);
 </script>

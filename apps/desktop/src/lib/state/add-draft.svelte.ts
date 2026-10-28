@@ -62,6 +62,8 @@ export class AddDraft {
   invalid = $state<string | null>(null);
   problem = $state<Problem | null>(null);
   busy = $state(false);
+  /** The queue the form opened on: the one shown in the window, or none for Automatic. */
+  readonly openedOn: QueueId | null;
   /** Opened with links (pasted, dropped, from the command line): they are ready to send as they are. */
   readonly fromPaste: boolean;
 
@@ -75,6 +77,7 @@ export class AddDraft {
     this.#host = host;
     this.text = start.urls.join('\n');
     this.queue = start.queue;
+    this.openedOn = start.queue;
     this.fromPaste = start.urls.length > 0;
   }
 

@@ -243,9 +243,9 @@
         queues={win.queues}
         value={queue}
         onchange={(chosen: QueueId | null) => (queue = chosen ?? queue)}
-        description={queueReason}
       />
     </Disclosure>
+    <p class="-mt-2 text-small text-ink-muted">{queueReason}</p>
 
     <WindowOptions {win}>
       <Checkbox

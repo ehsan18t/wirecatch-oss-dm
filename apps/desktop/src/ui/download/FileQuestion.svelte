@@ -62,10 +62,15 @@
   >
     <div class="flex items-center gap-3">
       <CategoryIcon category={capture.category} />
-      <p class="flex min-w-0 flex-wrap gap-x-3 text-ui text-ink-muted tabular-nums">
-        <span>{capture.size === null ? 'Size not known yet' : formatBytes(capture.size)}</span>
-        <span class="wrap-anywhere">from {hostOf(capture.page_url ?? capture.url)}</span>
-      </p>
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <p class="flex min-w-0 flex-wrap gap-x-3 text-ui text-ink-muted tabular-nums">
+          <span>{capture.size === null ? 'Size not known yet' : formatBytes(capture.size)}</span>
+          <span class="wrap-anywhere">from {hostOf(capture.page_url ?? capture.url)}</span>
+        </p>
+        <p class="truncate text-small text-ink-subtle" {@attach tooltip(() => textIfCut(link))}>
+          {link}
+        </p>
+      </div>
     </div>
 
     {#if win.earlier}
@@ -88,10 +93,6 @@
       onchange={(chosen: QueueId | null) => (queue = chosen ?? queue)}
       description={queueReason}
     />
-
-    <p class="truncate text-small text-ink-muted" {@attach tooltip(() => textIfCut(link))}>
-      {link}
-    </p>
 
     <WindowOptions {win} files />
   </form>

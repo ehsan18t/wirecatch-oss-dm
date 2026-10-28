@@ -156,7 +156,9 @@ describe('the Add dialog', () => {
     await click(queue);
     expect(screen.getByRole('option', { name: /^Main/ })).toHaveTextContent('The default queue');
     await click(screen.getByRole('option', { name: /^Overnight/ }));
-    expect(queue).toHaveAccessibleDescription('For this add only.');
+    expect(queue).toHaveAccessibleDescription(
+      'Queue: Overnight. You picked it. For this add only.',
+    );
     await click(inDialog().getByRole('button', { name: 'Add paused' }));
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ queue: queueId(2), start: false }));
   });
@@ -195,7 +197,9 @@ describe('the Add dialog', () => {
     app.show({ kind: 'queue', id: queueId(2) });
     app.openDialog({ kind: 'add', urls: [] });
     await settle();
-    expect(inDialog().getByRole('combobox', { name: 'Queue' })).toHaveTextContent('Overnight');
+    const queue = inDialog().getByRole('combobox', { name: 'Queue' });
+    expect(queue).toHaveTextContent('Overnight');
+    expect(queue).toHaveAccessibleDescription('Queue: Overnight. It is the queue you had open.');
   });
 
   it('keeps a link the app refused in the box and says why there, in the dialog', async () => {

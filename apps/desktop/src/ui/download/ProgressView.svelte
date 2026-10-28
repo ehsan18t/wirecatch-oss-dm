@@ -219,7 +219,7 @@
           <dt class="text-small text-ink-muted">Queue</dt>
           <dd class="text-ui text-ink">
             {win.queueName(row.queue)}
-            <span class="block text-small text-ink-muted">{reasonPhrase(row.queue_reason)}</span>
+            <span class="text-small text-ink-muted">· {reasonPhrase(row.queue_reason)}</span>
           </dd>
         </div>
         <div class="col-span-2 min-w-0">
