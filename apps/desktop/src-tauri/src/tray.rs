@@ -1,13 +1,14 @@
 //! The tray icon: its menu (Open Wirecatch, Pause all, Resume all, Quit), a left click that
 //! opens the window, and a tooltip with the live speed.
 
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager as _, Runtime};
 use wirecatch_core::Manager;
 
 use crate::api;
 use crate::host::Core;
+use crate::tray_proxy::{self, ProxyItem};
 use crate::{lifecycle, window};
 
 /// Id of the one tray icon.
@@ -103,11 +104,19 @@ impl<R: Runtime> Shell for AppShell<'_, R> {
 
 /// Runs the tray menu item with this id.
 pub fn on_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
+    let core = app.try_state::<Core>();
+    let manager = core.as_ref().and_then(|c| c.get());
+    if let Some(proxy) = tray_proxy::proxy_of(id) {
+        if let Some(manager) = manager
+            && let Err(e) = tray_proxy::switch(manager, proxy)
+        {
+            tracing::warn!("the tray could not switch the proxy: {e}");
+        }
+        return;
+    }
     let Some(action) = TrayAction::from_id(id) else {
         return;
     };
-    let core = app.try_state::<Core>();
-    let manager = core.as_ref().and_then(|c| c.get());
     if let Err(e) = perform(action, manager, &AppShell(app)) {
         tracing::warn!("tray action {} failed: {e}", action.id());
     }
@@ -118,7 +127,8 @@ pub fn on_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
 /// # Errors
 ///
 /// The menu or the icon could not be made: some Linux desktops have no tray at all.
-pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+/// The tray's menu, with `proxies` in its Proxy submenu (none until the manager has opened).
+fn menu<R: Runtime>(app: &AppHandle<R>, proxies: &[ProxyItem]) -> tauri::Result<Menu<R>> {
     let item = |a: TrayAction| MenuItem::with_id(app, a.id(), a.label(), true, None::<&str>);
     let open = item(TrayAction::Open)?;
     let pause = item(TrayAction::PauseAll)?;
@@ -126,7 +136,32 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let quit = item(TrayAction::Quit)?;
     let line = PredefinedMenuItem::separator(app)?;
     let line2 = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&open, &line, &pause, &resume, &line2, &quit])?;
+    let line3 = PredefinedMenuItem::separator(app)?;
+    let choices = proxies
+        .iter()
+        .map(|p| CheckMenuItem::with_id(app, &p.id, &p.label, true, p.checked, None::<&str>))
+        .collect::<tauri::Result<Vec<_>>>()?;
+    let choices: Vec<&dyn IsMenuItem<R>> =
+        choices.iter().map(|c| c as &dyn IsMenuItem<R>).collect();
+    let proxy = Submenu::with_items(app, "Proxy", !proxies.is_empty(), &choices)?;
+    Menu::with_items(
+        app,
+        &[&open, &line, &pause, &resume, &line2, &proxy, &line3, &quit],
+    )
+}
+
+/// Shows the app's proxy and the saved profiles in the Proxy submenu.
+pub fn set_proxies<R: Runtime>(app: &AppHandle<R>, proxies: &[ProxyItem]) {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return;
+    };
+    if let Err(e) = menu(app, proxies).and_then(|m| tray.set_menu(Some(m))) {
+        tracing::debug!("could not update the tray menu: {e}");
+    }
+}
+
+pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    let menu = menu(app, &[])?;
 
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip(crate::activity::tooltip(0, 0))

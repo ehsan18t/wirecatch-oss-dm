@@ -1,8 +1,9 @@
 // Commands for settings: opening any one of them, the switches people flip most, the theme,
-// and the media add-on, so it can be installed or removed without visiting Settings.
+// the app's proxy, and the media add-on, so it can be installed or removed without visiting Settings.
 
-import type { AddonInfo, Theme } from '@wirecatch/protocol';
+import type { AddonInfo, ProxyUse, Theme } from '@wirecatch/protocol';
 import { addonAction, isInstalled } from '../addons';
+import { sameUse, shownName } from '../proxy';
 import { SETTINGS, type SettingDef } from '../settings-schema';
 import { SECTIONS } from '../settings-sections';
 import type { AppState } from '../state/app.svelte';
@@ -103,6 +104,48 @@ const THEMES: readonly CommandSpec<AppState>[] = [
   },
 ];
 
+/** One proxy the app's could switch to (D73.4). */
+interface ProxyOption {
+  app: AppState;
+  proxy: ProxyUse;
+  /** Its name inside a sentence. */
+  name: string;
+}
+
+const PROXY_KEYWORDS = 'proxy network switch change turn off direct socks http vpn';
+
+/** Switching to a proxy the app is not using, and the one it is using, which opens its setting. */
+const PROXY: readonly CommandSpec<ProxyOption>[] = [
+  {
+    id: ({ proxy }) => `proxy.use.${proxy.kind === 'profile' ? String(proxy.id) : proxy.kind}`,
+    title: ({ proxy, name }) =>
+      proxy.kind === 'direct' ? 'Proxy: turn it off for the app' : `Proxy: use ${name} for the app`,
+    keywords: PROXY_KEYWORDS,
+    when: ({ app, proxy }) => !app.settings || !sameUse(app.settings.proxy.proxy, proxy),
+    run: ({ app, proxy }) => app.updateSettings((d) => void (d.proxy.proxy = proxy)),
+  },
+  {
+    id: 'proxy.current',
+    title: ({ name }) => `Proxy: the app uses ${name} now (opens settings)`,
+    keywords: PROXY_KEYWORDS,
+    when: ({ app, proxy }) => app.settings !== null && sameUse(app.settings.proxy.proxy, proxy),
+    run: ({ app }) => app.openSettings('proxy'),
+  },
+];
+
+/** The proxies the app's could switch to, each named as a sentence takes it. */
+function proxyOptions(app: AppState): ProxyOption[] {
+  return [
+    { app, proxy: { kind: 'system' }, name: 'the computer’s proxy' },
+    { app, proxy: { kind: 'direct' }, name: 'no proxy' },
+    ...app.proxies.list.map((p) => ({
+      app,
+      proxy: { kind: 'profile' as const, id: p.id },
+      name: `“${shownName(p.settings)}”`,
+    })),
+  ];
+}
+
 const ADDON_KEYWORDS = 'addon add-on yt-dlp ffmpeg deno youtube video media';
 
 /** One add-on as the palette offers it. */
@@ -169,6 +212,7 @@ export function settingsCommands(app: AppState): Command[] {
     ...SETTINGS.flatMap((s) => commandsFrom(GROUP, [SETTING], { app, s })),
     ...commandsFrom(GROUP, TOGGLES, switches),
     ...commandsFrom(GROUP, THEMES, app),
+    ...proxyOptions(app).flatMap((option) => commandsFrom('Proxy', PROXY, option)),
   ];
 }
 

@@ -66,6 +66,7 @@ pub mod questions;
 pub mod sleep;
 pub mod system_notices;
 pub mod tray;
+pub mod tray_proxy;
 pub mod updates;
 pub mod window;
 

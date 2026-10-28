@@ -56,6 +56,11 @@ export function queueProxy(queue: Queue, app: ProxySettings): ProxyUse {
   return queue.settings.proxy.source === 'own' ? queue.settings.proxy.value : app.proxy;
 }
 
+/** Whether `a` and `b` are the same proxy. */
+export function sameUse(a: ProxyUse, b: ProxyUse): boolean {
+  return a.kind === 'profile' && b.kind === 'profile' ? a.id === b.id : a.kind === b.kind;
+}
+
 /** The profile `proxy` names, if it names one that is saved. */
 export function profileOf(
   proxy: ProxyUse,
