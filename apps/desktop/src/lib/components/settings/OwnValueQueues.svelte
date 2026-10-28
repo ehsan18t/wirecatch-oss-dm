@@ -17,7 +17,10 @@
       : `${String(queues.length)} queues use their own value:`}
     {#each queues as queue, i (queue.id)}<button
         type="button"
-        class={cn('rounded-xs text-accent underline-offset-4 hover:underline', FOCUS_RING)}
+        class={cn(
+          'rounded-xs text-accent underline decoration-from-font underline-offset-2 hover:decoration-2',
+          FOCUS_RING,
+        )}
         onclick={() => app.openDialog({ kind: 'queue', id: queue.id })}
         >{queue.settings.name}</button
       >{i < queues.length - 1 ? ', ' : '.'}{/each}

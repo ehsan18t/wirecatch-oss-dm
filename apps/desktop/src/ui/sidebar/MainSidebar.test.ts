@@ -10,7 +10,7 @@ import { sidebarCollapsed } from '$lib/state/sidebar-preference';
 const nav = () => screen.getByRole('navigation', { name: 'Views and queues' });
 
 describe('the sidebar', () => {
-  it('marks auto queues, dims one whose claims are off, and marks Proxy while the proxy is set by hand', async () => {
+  it('marks auto queues, dims one whose claims are off, and marks a proxy set by hand', async () => {
     const { app } = await renderApp();
     const item = (name: string) =>
       within(nav())
@@ -33,11 +33,13 @@ describe('the sidebar', () => {
     expect(item('Overnight')).not.toHaveClass('opacity-quiet');
     expect(item('Work files')).toHaveTextContent('Auto off');
     expect(item('Work files')).toHaveClass('opacity-quiet');
-    expect(within(nav()).queryByText('Proxy')).toBeNull();
+    expect(within(nav()).queryAllByText('Uses the proxy set in Network')).toHaveLength(0);
     if (!app.settings) throw new Error('no settings');
     app.settings.proxy.mode = 'manual';
     await settle();
-    expect(within(nav()).getAllByText('Proxy')).toHaveLength(app.queues.list.length);
+    expect(within(nav()).getAllByText('Uses the proxy set in Network')).toHaveLength(
+      app.queues.list.length,
+    );
   });
 
   it('shows each view with how many it holds, and marks the one shown', async () => {
