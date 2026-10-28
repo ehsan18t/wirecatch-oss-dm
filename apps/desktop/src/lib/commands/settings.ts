@@ -112,13 +112,26 @@ interface ProxyOption {
   name: string;
 }
 
-const PROXY: CommandSpec<ProxyOption> = {
-  id: ({ proxy }) => `proxy.use.${proxy.kind === 'profile' ? String(proxy.id) : proxy.kind}`,
-  title: ({ name }) => `Use ${name} for the app`,
-  keywords: 'proxy network switch socks http vpn direct',
-  when: ({ app, proxy }) => !app.settings || !sameUse(app.settings.proxy.proxy, proxy),
-  run: ({ app, proxy }) => app.updateSettings((d) => void (d.proxy.proxy = proxy)),
-};
+const PROXY_KEYWORDS = 'proxy network switch change turn off direct socks http vpn';
+
+/** Switching to a proxy the app is not using, and the one it is using, which opens its setting. */
+const PROXY: readonly CommandSpec<ProxyOption>[] = [
+  {
+    id: ({ proxy }) => `proxy.use.${proxy.kind === 'profile' ? String(proxy.id) : proxy.kind}`,
+    title: ({ proxy, name }) =>
+      proxy.kind === 'direct' ? 'Proxy: turn it off for the app' : `Proxy: use ${name} for the app`,
+    keywords: PROXY_KEYWORDS,
+    when: ({ app, proxy }) => !app.settings || !sameUse(app.settings.proxy.proxy, proxy),
+    run: ({ app, proxy }) => app.updateSettings((d) => void (d.proxy.proxy = proxy)),
+  },
+  {
+    id: 'proxy.current',
+    title: ({ name }) => `Proxy: the app uses ${name} now (opens settings)`,
+    keywords: PROXY_KEYWORDS,
+    when: ({ app, proxy }) => app.settings !== null && sameUse(app.settings.proxy.proxy, proxy),
+    run: ({ app }) => app.openSettings('proxy'),
+  },
+];
 
 /** The proxies the app's could switch to, each named as a sentence takes it. */
 function proxyOptions(app: AppState): ProxyOption[] {
@@ -128,7 +141,7 @@ function proxyOptions(app: AppState): ProxyOption[] {
     ...app.proxies.list.map((p) => ({
       app,
       proxy: { kind: 'profile' as const, id: p.id },
-      name: `the proxy ${shownName(p.settings)}`,
+      name: `“${shownName(p.settings)}”`,
     })),
   ];
 }
@@ -199,7 +212,7 @@ export function settingsCommands(app: AppState): Command[] {
     ...SETTINGS.flatMap((s) => commandsFrom(GROUP, [SETTING], { app, s })),
     ...commandsFrom(GROUP, TOGGLES, switches),
     ...commandsFrom(GROUP, THEMES, app),
-    ...proxyOptions(app).flatMap((option) => commandsFrom(GROUP, [PROXY], option)),
+    ...proxyOptions(app).flatMap((option) => commandsFrom('Proxy', PROXY, option)),
   ];
 }
 
