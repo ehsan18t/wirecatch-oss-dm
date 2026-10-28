@@ -27,13 +27,19 @@ const dialog = () => within(screen.getByRole('dialog'));
 const list = () => within(screen.getByRole('list', { name: 'Saved proxies' }));
 
 describe('proxy profiles in settings', () => {
-  it('chooses the app’s proxy from the saved profiles, with each one’s last test', async () => {
+  it('lists each saved profile once, with its last test and what uses it', async () => {
     const { app } = await openNetwork();
-    const office = screen.getByRole('radio', { name: /^Office/ });
-    expect(office.closest('label')).toHaveTextContent('Works, tested');
-    await click(office);
-    expect(app.settings?.proxy.proxy).toEqual({ kind: 'profile', id: app.proxies.list[0]?.id });
-    expect(screen.getByRole('radio', { name: /^backup-proxy\.example:443/ })).toBeInTheDocument();
+    expect(list().getByText(/^Works, tested /)).toBeInTheDocument();
+    expect(list().getByText('Used by Work files')).toBeInTheDocument();
+    expect(list().getByText('backup-proxy.example:443')).toBeInTheDocument();
+    expect(list().getAllByText('Not used yet')).toHaveLength(1);
+    const office = app.proxies.list[0];
+    if (!office || !app.settings) throw new Error('no sample proxy');
+    app.settings.proxy.proxy = { kind: 'profile', id: office.id };
+    await settle();
+    expect(
+      list().getByText('Used by the app (Main, Overnight) and Work files'),
+    ).toBeInTheDocument();
   });
 
   it('saves a new profile after testing it, and keeps its password out of sight', async () => {
@@ -44,10 +50,10 @@ describe('proxy profiles in settings', () => {
     await click(dialog().getByRole('button', { name: 'Test connection' }));
     expect(dialog().getByText(/The proxy needs a login/)).toBeInTheDocument();
     await type(dialog().getByLabelText('User name (optional)'), 'ada');
-    await type(dialog().getByLabelText('Password'), 'secret');
+    await type(dialog().getByLabelText('Password (optional)'), 'secret');
     await click(dialog().getByRole('button', { name: 'Test connection' }));
     expect(dialog().getByText(/The proxy works/)).toBeInTheDocument();
-    await click(dialog().getByRole('button', { name: 'Save proxy' }));
+    await click(dialog().getByRole('button', { name: 'Save' }));
     const lab = app.proxies.list.find((p) => p.settings.name === 'Lab');
     expect(lab).toMatchObject({
       has_password: true,
@@ -70,8 +76,8 @@ describe('proxy profiles in settings', () => {
     const work = app.queues.list.find((q) => q.settings.name === 'Work files');
     await click(list().getByRole('button', { name: 'Delete Office' }));
     const confirm = within(screen.getByRole('alertdialog'));
-    expect(confirm.getByText(/Work files uses it/)).toBeInTheDocument();
-    await click(confirm.getByRole('button', { name: 'Delete Office' }));
+    expect(confirm.getByText(/Used by Work files/)).toBeInTheDocument();
+    await click(confirm.getByRole('button', { name: 'Delete proxy' }));
     expect(app.proxies.list.map((p) => p.settings.name)).not.toContain('Office');
     expect(app.queues.list.find((q) => q.id === work?.id)?.settings.proxy).toEqual({
       source: 'own',
@@ -90,18 +96,18 @@ describe('proxy profiles in settings', () => {
 
   it('leaves out the hosts to go around while nothing uses a proxy', async () => {
     const { app } = await openNetwork();
-    expect(screen.getByRole('switch', { name: 'These hosts' })).toBeInTheDocument();
-    await click(screen.getByRole('radio', { name: /^No proxy/ }));
+    expect(screen.getByRole('checkbox', { name: /^These hosts/ })).toBeInTheDocument();
+    if (!app.settings) throw new Error('no settings');
+    app.settings.proxy.proxy = { kind: 'direct' };
+    await settle();
     // Work files still has the Office profile of its own and follows the app's exceptions.
-    expect(screen.getByRole('switch', { name: 'These hosts' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /^These hosts/ })).toBeInTheDocument();
     const work = app.queues.list.find((q) => q.settings.name === 'Work files');
     if (!work) throw new Error('no sample queue');
-    await app.queues.save(work.id, {
-      ...JSON.parse(JSON.stringify(work.settings)),
-      proxy: { source: 'follow_app' },
-    });
+    const settings = JSON.parse(JSON.stringify(work.settings)) as typeof work.settings;
+    await app.queues.save(work.id, { ...settings, proxy: { source: 'follow_app' } });
     await settle();
-    expect(screen.queryByRole('switch', { name: 'These hosts' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: /^These hosts/ })).toBeNull();
     expect(screen.getByText(/nothing to go around/)).toBeInTheDocument();
   });
 });

@@ -85,13 +85,13 @@ const TEST_OUTCOME: Record<ProxyTestResult['outcome'], string> = {
   timed_out: 'Did not answer in time',
 };
 
-/** A profile's last test in a few words, with when it ran: "Works, tested today at 09:30." */
+/** A profile's last test in a few words, with when it ran: "Works, tested today at 09:30". */
 export function lastTestLine(
   test: ProxyTestRun | null,
   now: Date,
 ): { tone: 'success' | 'danger' | 'warning' | 'neutral'; text: string } {
-  if (!test) return { tone: 'neutral', text: 'Not tested yet.' };
-  const text = `${TEST_OUTCOME[test.result.outcome]}, tested ${whenSaid(test.at, now)}.`;
+  if (!test) return { tone: 'neutral', text: 'Not tested yet' };
+  const text = `${TEST_OUTCOME[test.result.outcome]}, tested ${whenSaid(test.at, now)}`;
   const outcome = test.result.outcome;
   if (outcome === 'works') return { tone: 'success', text };
   return { tone: outcome === 'timed_out' ? 'warning' : 'danger', text };

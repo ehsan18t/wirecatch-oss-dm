@@ -40,7 +40,7 @@
   let name = $state(opened?.name ?? '');
   let kind = $state<ProxyKind>(opened?.kind ?? 'http');
   let host = $state(opened?.host ?? '');
-  let port = $state<number | null>(opened?.port ?? null);
+  let port = $state<number | null>(opened?.port ?? usualPort('http'));
   let user = $state(opened?.user ?? '');
   /** What happens to the password: the saved one kept, the one typed, or none. */
   let password = $state<
@@ -177,7 +177,6 @@
           <NumberInput
             {...control}
             value={port}
-            placeholder={String(usualPort(kind))}
             min={1}
             max={MAX_PORT}
             optional
@@ -199,7 +198,7 @@
           />
         {/snippet}
       </Field>
-      <Field label="Password" class="min-w-40 flex-1" description={passwordHelp}>
+      <Field label="Password (optional)" class="min-w-40 flex-1" description={passwordHelp}>
         {#snippet children(control: FieldControl)}
           <Input
             {...control}
@@ -207,14 +206,13 @@
             autocomplete="new-password"
             value={password.change === 'set' ? password.text : ''}
             placeholder={keepsSaved ? '••••••••' : ''}
-            disabled={password.change === 'remove'}
             onchange={(text: string) =>
               edit(() => (password = text === '' ? { change: 'keep' } : { change: 'set', text }))}
           />
         {/snippet}
       </Field>
     </div>
-    {#if savedPassword}
+    {#if savedPassword && sameServer && password.change !== 'set'}
       <div class="-mt-3 flex justify-end">
         {#if password.change === 'remove'}
           <Button
@@ -244,8 +242,6 @@
       >Test connection</Button
     >
     <Button onclick={() => app.closeDialog()}>Cancel</Button>
-    <Button type="submit" form={formId} variant="primary" loading={busy}>
-      {opened ? 'Save' : 'Save proxy'}
-    </Button>
+    <Button type="submit" form={formId} variant="primary" loading={busy}>Save</Button>
   {/snippet}
 </Dialog>

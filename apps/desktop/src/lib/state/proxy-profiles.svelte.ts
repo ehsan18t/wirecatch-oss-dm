@@ -10,7 +10,7 @@ import type {
   Queue,
 } from '@wirecatch/protocol';
 import type { Backend } from '../backend';
-import { queueProxy, shownName } from '../proxy';
+import { shownName } from '../proxy';
 import type { Runner } from './runner';
 import type { Toasts } from './toasts.svelte';
 
@@ -24,10 +24,24 @@ export interface ProxyProfilesHost {
   queues: () => readonly Queue[];
 }
 
-/** What uses a profile: the app's proxy, and the queues with it as their own. */
+/** What uses a profile: the app's proxy with the queues that follow it, and the queues with it as their own. */
 export interface ProfileUsers {
   app: boolean;
+  /** The queues that follow the app, while the app uses it. */
+  following: Queue[];
+  /** The queues with it as their own proxy. */
   queues: Queue[];
+}
+
+/** "Used by the app (Main, Overnight) and Work files", or "Not used yet". */
+export function usersLine(users: ProfileUsers): string {
+  const names = (queues: readonly Queue[]) => queues.map((q) => q.settings.name).join(', ');
+  const parts: string[] = [];
+  if (users.app) {
+    parts.push(users.following.length === 0 ? 'the app' : `the app (${names(users.following)})`);
+  }
+  if (users.queues.length > 0) parts.push(names(users.queues));
+  return parts.length === 0 ? 'Not used yet' : `Used by ${parts.join(' and ')}`;
 }
 
 export class ProxyProfiles {
@@ -46,22 +60,15 @@ export class ProxyProfiles {
   usersOf(id: ProxyProfileId): ProfileUsers {
     const uses = (proxy: ProxyUse) => proxy.kind === 'profile' && proxy.id === id;
     const app = this.#host.app();
+    const byApp = app !== undefined && uses(app.proxy);
+    const queues = this.#host.queues();
     return {
-      app: app !== undefined && uses(app.proxy),
-      queues: this.#host
-        .queues()
-        .filter((q) => q.settings.proxy.source === 'own' && uses(q.settings.proxy.value)),
+      app: byApp,
+      following: byApp ? queues.filter((q) => q.settings.proxy.source === 'follow_app') : [],
+      queues: queues.filter(
+        (q) => q.settings.proxy.source === 'own' && uses(q.settings.proxy.value),
+      ),
     };
-  }
-
-  /** The queues whose downloads go through profile `id`, their own or the app's. */
-  queuesThrough(id: ProxyProfileId): Queue[] {
-    const app = this.#host.app();
-    if (!app) return [];
-    return this.#host.queues().filter((q) => {
-      const proxy = queueProxy(q, app);
-      return proxy.kind === 'profile' && proxy.id === id;
-    });
   }
 
   /** Saves a profile, new when `id` is null; its id once saved. The core tests it in the background. */
@@ -95,15 +102,19 @@ export class ProxyProfiles {
     const before = this.list.map((p) => p.id);
     const ids = await this.#host.runner.run(() => this.#host.backend().copySystemProxy());
     if (ids === undefined) return;
-    const added = ids.filter((id) => !before.includes(id)).length;
-    let note: string;
-    if (ids.length === 0) note = 'This computer sets no proxy to copy.';
-    else if (added === 0) note = 'The computer’s proxy is already saved.';
-    else
-      note =
-        added === 1
-          ? 'Saved the computer’s proxy. Its password is not copied: edit it to enter one.'
-          : `Saved the computer’s ${String(added)} proxies. Passwords are not copied: edit one to enter it.`;
-    this.#host.toasts.notify(note);
+    const added = ids.filter((id) => !before.includes(id));
+    if (ids.length === 0) { this.#host.toasts.notify('This computer sets no proxy to copy.'); return; }
+    if (added.length === 0) {
+      this.#host.toasts.notify('The computer’s proxy is already saved.'); return;
+    }
+    // A user name comes along; its password stays with the computer's setting.
+    const login = added.some((id) => (this.byId(id)?.settings.user ?? '') !== '');
+    const saved =
+      added.length === 1
+        ? 'Saved the computer’s proxy.'
+        : `Saved the computer’s ${String(added.length)} proxies.`;
+    this.#host.toasts.notify(
+      login ? `${saved} Passwords are not copied: edit it to enter one.` : saved,
+    );
   }
 }

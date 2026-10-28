@@ -4,6 +4,7 @@
   import { Button, Dialog, Field, Select, type FieldControl } from '@wirecatch/ui';
   import { shownName } from '$lib/proxy';
   import { getApp } from '$lib/state/app.svelte';
+  import { usersLine } from '$lib/state/proxy-profiles.svelte';
 
   let { id }: { id: ProxyProfileId } = $props();
   const app = getApp();
@@ -24,15 +25,6 @@
       .map((p) => ({ value: String(p.id), label: shownName(p.settings) })),
   ]);
 
-  const usersLine = $derived.by(() => {
-    const names = users.queues.map((q) => q.settings.name);
-    if (users.app) names.unshift('the app’s proxy');
-    if (names.length === 0) return 'Nothing uses it.';
-    const last = names.pop() ?? '';
-    const list = names.length === 0 ? last : `${names.join(', ')} and ${last}`;
-    return `${list.charAt(0).toUpperCase()}${list.slice(1)} ${users.app || users.queues.length > 1 ? 'use' : 'uses'} it.`;
-  });
-
   function replacement(): ProxyUse {
     if (choice === SYSTEM || choice === DIRECT) return { kind: choice };
     const other = app.proxies.list.find((p) => String(p.id) === choice);
@@ -48,18 +40,13 @@
   }
 </script>
 
-<Dialog
-  open
-  role="alertdialog"
-  title={`Delete the proxy ${label}?`}
-  onclose={() => app.closeDialog()}
->
+<Dialog open role="alertdialog" title={`Delete “${label}”?`} onclose={() => app.closeDialog()}>
   <div class="flex flex-col gap-4">
     <p class="text-ui text-ink-muted">
-      {usersLine} Downloads running through it finish on it.
+      {usersLine(users)}. Downloads running through it finish on it.
     </p>
     {#if used}
-      <Field label="What uses it uses instead">
+      <Field label="Switch what uses it to">
         {#snippet children(control: FieldControl)}
           <Select {...control} value={choice} {options} onchange={(v: string) => (choice = v)} />
         {/snippet}
@@ -69,6 +56,6 @@
 
   {#snippet footer()}
     <Button data-autofocus onclick={() => app.closeDialog()}>Keep it</Button>
-    <Button variant="danger" onclick={remove}>Delete {label}</Button>
+    <Button variant="danger" onclick={remove}>Delete proxy</Button>
   {/snippet}
 </Dialog>

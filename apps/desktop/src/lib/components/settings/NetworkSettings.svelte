@@ -2,8 +2,8 @@
   // Network: the app's proxy, which every queue that follows it uses, the saved proxy profiles, and the hosts reached directly (D73). Each change applies to downloads that start after it.
   import { MAX_PROXY_HOST_CHARS, type ProxyUse } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
-  import { Badge, Field, RadioGroup, Switch, TagInput, type SelectOption } from '@wirecatch/ui';
-  import { lastTestLine, proxyAddress, queueProxy, shownName } from '$lib/proxy';
+  import { Checkbox, Field, Select, TagInput, type FieldControl } from '@wirecatch/ui';
+  import { queueProxy, shownName } from '$lib/proxy';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
   import type { Row, SectionProps } from './row';
@@ -25,19 +25,11 @@
   const SYSTEM = 'system';
   const DIRECT = 'direct';
 
-  /** Every proxy to choose from, keyed as the radio group takes them. */
-  const options = $derived<SelectOption[]>([
-    {
-      value: SYSTEM,
-      label: 'Use the computer’s proxy',
-      description: 'The proxy set in your network settings, or in the environment.',
-    },
-    { value: DIRECT, label: 'No proxy', description: 'Connect to every server directly.' },
-    ...app.proxies.list.map((p) => ({
-      value: String(p.id),
-      label: shownName(p.settings),
-      description: proxyAddress(p.settings),
-    })),
+  /** Every proxy to choose from; the saved ones are listed, with their tests, under Saved proxies. */
+  const options = $derived([
+    { value: SYSTEM, label: 'The computer’s proxy' },
+    { value: DIRECT, label: 'No proxy' },
+    ...app.proxies.list.map((p) => ({ value: String(p.id), label: shownName(p.settings) })),
   ]);
 
   /** The app's exceptions matter while it, or a queue that follows them, uses a proxy (D73.12). */
@@ -72,27 +64,17 @@
   {settings}
   {flash}
   {controls}
-  stacked={['proxy', 'proxy_profiles', 'proxy_exceptions']}
+  stacked={['proxy_profiles', 'proxy_exceptions']}
 />
 
-{#snippet proxyChoice({ def, s }: Row)}
-  <RadioGroup
-    label={def.label}
-    hideLabel
-    cards
-    class="w-full"
+{#snippet proxyChoice({ s, control }: Row)}
+  <Select
+    {...control}
+    class="w-72 max-w-full"
     value={keyOf(s.proxy.proxy)}
     {options}
     onchange={(key: string) => save((d) => void (d.proxy.proxy = proxyOf(key)))}
-  >
-    {#snippet aside(option: SelectOption)}
-      {const profile = app.proxies.list.find((p) => String(p.id) === option.value)}
-      {#if profile}
-        {const status = lastTestLine(profile.last_test, app.clock.now)}
-        <Badge size="sm" dot tone={status.tone}>{status.text}</Badge>
-      {/if}
-    {/snippet}
-  </RadioGroup>
+  />
 {/snippet}
 
 {#snippet profileList()}
@@ -101,22 +83,22 @@
 
 {#snippet exceptions({ def, s }: Row)}
   {#if exceptionsMatter}
-    <div class="flex w-full flex-col gap-4">
-      <Switch
+    <div class="flex w-full flex-col gap-3">
+      <Checkbox
         label="The hosts the computer’s proxy skips"
-        description="Its bypass list: NO_PROXY, or the exceptions in your network settings."
+        description="The bypass list in your network settings, or in the environment."
         checked={s.proxy.exceptions.system}
         onchange={(on: boolean) => save((d) => void (d.proxy.exceptions.system = on))}
       />
-      <Switch
+      <Checkbox
         label="These hosts"
-        description="Names cover the names under them. Also addresses, networks like 10.0.0.0/8, and <local> for names without a dot."
+        description="A name also covers the names under it. Also addresses, networks like 10.0.0.0/8, and <local> for names without a dot."
         checked={s.proxy.exceptions.use_hosts}
         onchange={(on: boolean) => save((d) => void (d.proxy.exceptions.use_hosts = on))}
       />
       {#if s.proxy.exceptions.use_hosts}
         <Field label={def.label} hideLabel>
-          {#snippet children(control)}
+          {#snippet children(control: FieldControl)}
             <TagInput
               {...control}
               label="Hosts to go directly to"

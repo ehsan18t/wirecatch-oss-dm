@@ -6,6 +6,7 @@
   import { Badge, Button, IconButton } from '@wirecatch/ui';
   import { KIND_OPTIONS, lastTestLine, proxyAddress, shownName } from '$lib/proxy';
   import { getApp } from '$lib/state/app.svelte';
+  import { usersLine } from '$lib/state/proxy-profiles.svelte';
 
   const app = getApp();
   const profiles = $derived(app.proxies.list);
@@ -16,11 +17,14 @@
     return KIND_OPTIONS.find((k) => k.value === profile.settings.kind)?.label ?? '';
   }
 
-  /** Which queues go through the profile, for the line under it. */
-  function usedLine(profile: ProxyProfile): string {
-    const names = app.proxies.queuesThrough(profile.id).map((q) => q.settings.name);
-    if (names.length === 0) return 'No queue uses it.';
-    return `Used by ${names.join(', ')}.`;
+  /** The second line: its address when its name is not the address, and its login. */
+  function detailLine(profile: ProxyProfile): string {
+    const { name, user } = profile.settings;
+    let login = 'no login';
+    if (user !== '') {
+      login = `user ${user}, ${profile.has_password ? 'password saved' : 'no password saved'}`;
+    }
+    return name.trim() === '' ? login : `${proxyAddress(profile.settings)} · ${login}`;
   }
 
   async function test(profile: ProxyProfile) {
@@ -64,15 +68,10 @@
               <span class="truncate text-ui font-medium text-ink">{name}</span>
               <Badge size="sm">{kindLabel(profile)}</Badge>
             </div>
-            <span class="truncate text-small text-ink-muted">
-              {#if profile.settings.name.trim() !== ''}{proxyAddress(profile.settings)} ·
-              {/if}{profile.settings.user === ''
-                ? 'No login'
-                : `User ${profile.settings.user}${profile.has_password ? ', password saved' : ''}`}
-            </span>
+            <span class="truncate text-small text-ink-muted">{detailLine(profile)}</span>
             <span class="flex flex-wrap items-center gap-x-2 text-small">
               <Badge size="sm" dot tone={status.tone}>{status.text}</Badge>
-              <span class="text-ink-muted">{usedLine(profile)}</span>
+              <span class="text-ink-muted">{usersLine(app.proxies.usersOf(profile.id))}</span>
             </span>
           </div>
           <div class="flex items-center gap-1">
