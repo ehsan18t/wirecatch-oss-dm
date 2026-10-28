@@ -139,6 +139,7 @@
           <QueueItem {queue} />
         </div>
       {/each}
+      <p class="sr-only" aria-live="polite">{app.queues.moved}</p>
       {#if (moreQueues || hiddenQueues > 0) && sidebar.showLabels}
         <button
           type="button"

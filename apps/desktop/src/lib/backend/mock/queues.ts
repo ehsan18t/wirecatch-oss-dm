@@ -82,6 +82,21 @@ export function deleteQueue(state: MockState, id: QueueId): void {
   state.changed(moved);
 }
 
+/** Puts the queues in `order`, which must name each once with the default queue first, as the core asks. */
+export function setQueueOrder(state: MockState, order: QueueId[]): void {
+  if (order[0] !== state.queues.find((q) => q.is_default)?.id)
+    throw new BackendError('The default queue stays first in the list.');
+  const named = new Set(order);
+  if (
+    named.size !== order.length ||
+    named.size !== state.queues.length ||
+    state.queues.some((q) => !named.has(q.id))
+  )
+    throw new BackendError('The queues changed while you were moving them. Try again.');
+  state.queues.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  state.queuesChanged();
+}
+
 /** Try a link in the mock, by site claims alone: a name covers itself and the names under it. The app matches every kind and pattern in `wirecatch-queues`; this stands in for it so the windows can be built against sample data. */
 export function tryLink(state: MockState, trial: LinkTrial): LinkClaims {
   let host: string;

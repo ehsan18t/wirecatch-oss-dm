@@ -94,3 +94,43 @@ async fn a_download_no_queue_claims_joins_the_default_queue() -> TestResult {
     );
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_sidebar_order_settles_a_tie_and_keeps_the_default_queue_first() -> TestResult {
+    let mut h = Harness::new().await?;
+    let server = fast_server(1024).await?;
+    let same = || QueueClaims {
+        file_types: vec!["bin".into()],
+        ..QueueClaims::default()
+    };
+    let first = auto_queue(&h, "First", same())?;
+    let second = auto_queue(&h, "Second", same())?;
+    let claimed_by = |h: &Harness, row: &wirecatch_protocol::app::DownloadSummary| {
+        assert_eq!(
+            row.queue_reason,
+            QueueReason::Claimed(Claim::FileType("bin".into()))
+        );
+        h.row(row.id).queue
+    };
+    let row = h.add_with(server.url("/a.bin"), paused).await?;
+    assert_eq!(claimed_by(&h, &row), first);
+
+    h.manager
+        .set_queue_order(&[DEFAULT_QUEUE_ID, second, first])?;
+    h.restart().await?;
+    let order: Vec<QueueId> = h.manager.list_queues().iter().map(|q| q.id).collect();
+    assert_eq!(order, [DEFAULT_QUEUE_ID, second, first]);
+    let row = h.add_with(server.url("/b.bin"), paused).await?;
+    assert_eq!(claimed_by(&h, &row), second);
+
+    for refused in [
+        vec![second, DEFAULT_QUEUE_ID, first],
+        vec![DEFAULT_QUEUE_ID, second],
+        vec![DEFAULT_QUEUE_ID, second, second, first],
+    ] {
+        assert!(h.manager.set_queue_order(&refused).is_err(), "{refused:?}");
+    }
+    let unchanged: Vec<QueueId> = h.manager.list_queues().iter().map(|q| q.id).collect();
+    assert_eq!(unchanged, order);
+    Ok(())
+}

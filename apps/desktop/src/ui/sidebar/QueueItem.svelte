@@ -1,5 +1,7 @@
 <script lang="ts">
-  // One queue in the sidebar: what it is doing, and one button for its own actions (start now outside its hours, pause or resume, edit), which its view's header shows too. Downloads dragged onto it move to it.
+  // One queue in the sidebar: what it is doing, and one button for its own actions (start now outside its hours, pause or resume, edit, move up or down), which its view's header shows too. Downloads dragged onto it move to it; a queue below the default one can be dragged to another place (D72.9).
+  import ArrowDown from '~icons/lucide/arrow-down';
+  import ArrowUp from '~icons/lucide/arrow-up';
   import Ellipsis from '~icons/lucide/ellipsis';
   import ListOrdered from '~icons/lucide/list-ordered';
   import Pause from '~icons/lucide/pause';
@@ -15,7 +17,13 @@
     type MenuEntry,
     type MenuTriggerProps,
   } from '@wirecatch/ui';
-  import { getDragIds, isDownloadDrag } from '$lib/dnd';
+  import {
+    endQueueDrag,
+    getDraggedQueue,
+    getDragIds,
+    isDownloadDrag,
+    startQueueDrag,
+  } from '$lib/dnd';
   import { getApp } from '$lib/state/app.svelte';
 
   let { queue }: { queue: Queue } = $props();
@@ -23,6 +31,11 @@
   const app = getApp();
 
   let dropping = $state(false);
+  let dragging = $state(false);
+  /** Where a dragged queue would land: above this one or below it. */
+  let landing = $state<'above' | 'below' | null>(null);
+  const index = $derived(app.queues.list.findIndex((q) => q.id === queue.id));
+  const last = $derived(app.queues.list.length - 1);
 
   const shown = $derived(
     app.screen === 'downloads' && app.view.kind === 'queue' && app.view.id === queue.id,
@@ -54,16 +67,63 @@
       icon: Pencil,
       onselect: () => app.openDialog({ kind: 'queue', id: queue.id }),
     },
+    ...(index > 0 && last > 1 ? [{ kind: 'separator' as const, id: 'order' }] : []),
+    ...(index > 1
+      ? [
+          {
+            id: 'up',
+            label: 'Move up',
+            icon: ArrowUp,
+            onselect: () => void app.queues.moveTo(queue.id, index - 1),
+          },
+        ]
+      : []),
+    ...(index > 0 && index < last
+      ? [
+          {
+            id: 'down',
+            label: 'Move down',
+            icon: ArrowDown,
+            onselect: () => void app.queues.moveTo(queue.id, index + 1),
+          },
+        ]
+      : []),
   ]);
 
   function ondragover(e: DragEvent) {
+    const dragged = getDraggedQueue(e);
+    if (dragged !== null) {
+      const from = app.queues.list.findIndex((q) => q.id === dragged);
+      if (dragged === queue.id || from === -1) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      // The default queue stays first, so a queue dropped on it lands just below it.
+      landing = from > index && index > 0 ? 'above' : 'below';
+      return;
+    }
     if (!isDownloadDrag(e)) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
     dropping = true;
   }
 
+  /** Leaving the row, not crossing from it into its own button or text, which fires dragleave too. */
+  function ondragleave(e: DragEvent) {
+    const into = e.relatedTarget;
+    if (into instanceof Node && e.currentTarget instanceof Node && e.currentTarget.contains(into))
+      return;
+    dropping = false;
+    landing = null;
+  }
+
   function ondrop(e: DragEvent) {
+    const dragged = getDraggedQueue(e);
+    if (dragged !== null) {
+      e.preventDefault();
+      landing = null;
+      void app.queues.moveTo(dragged, index);
+      return;
+    }
     if (!isDownloadDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
@@ -73,11 +133,39 @@
   }
 </script>
 
+<!-- A drop anywhere ends the drag too: the source row may never get its dragend. -->
+<svelte:window
+  ondrop={() => {
+    dragging = false;
+    landing = null;
+  }}
+/>
+
 <div
   role="presentation"
-  class={cn('rounded-sm', dropping && 'bg-accent-soft outline-2 -outline-offset-2 outline-accent')}
+  class={cn(
+    'rounded-sm',
+    dropping && 'bg-accent-soft outline-2 -outline-offset-2 outline-accent',
+    dragging && 'opacity-dragged',
+    // Centred on the edge, so "below one row" and "above the next" draw the same line.
+    landing !== null &&
+      'relative after:absolute after:inset-x-1 after:h-0.5 after:rounded-full after:bg-accent',
+    landing === 'above' && 'after:-top-px',
+    landing === 'below' && 'after:-bottom-px',
+  )}
+  draggable={!queue.is_default}
+  ondragstart={(e) => {
+    if (queue.is_default) return;
+    startQueueDrag(e, queue.id, queue.settings.name);
+    dragging = true;
+  }}
+  ondragend={() => {
+    endQueueDrag();
+    dragging = false;
+    landing = null;
+  }}
   {ondragover}
-  ondragleave={() => (dropping = false)}
+  {ondragleave}
   {ondrop}
 >
   <SidebarItem

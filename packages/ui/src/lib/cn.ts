@@ -94,6 +94,7 @@ export const GROUP_NAMES = {
     'rim',
     'hover',
     'pressed',
+    'dragged',
     'sheen',
   ],
 } as const;

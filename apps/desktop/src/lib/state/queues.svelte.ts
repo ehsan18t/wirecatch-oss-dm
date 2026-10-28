@@ -27,6 +27,8 @@ function runningPhrase(running: number, atOnce: number | null): string {
 
 export class Queues {
   list = $state<Queue[]>([]);
+  /** Where the last queue moved, for screen readers: the sidebar shows it only by its order. */
+  moved = $state('');
   readonly #host: QueuesHost;
 
   constructor(host: QueuesHost) {
@@ -83,6 +85,20 @@ export class Queues {
         `Deleted ${name ?? 'the queue'}. Its downloads moved to ${this.defaultQueue?.settings.name ?? 'the default queue'}.`,
       );
     return ok;
+  }
+
+  /** Moves a queue to `index` in the sidebar, whose order also settles ties between claims; the default queue stays first (D72.9). */
+  async moveTo(queue: QueueId, index: number): Promise<void> {
+    const order = this.list.map((q) => q.id);
+    const from = order.indexOf(queue);
+    const to = Math.min(Math.max(index, 1), order.length - 1);
+    if (from < 1 || from === to) return;
+    order.splice(from, 1);
+    order.splice(to, 0, queue);
+    const name = this.byId(queue)?.settings.name ?? 'The queue';
+    if (await this.#host.runner.succeeds(() => this.#host.backend().setQueueOrder(order))) {
+      this.moved = `${name} is now ${String(to + 1)} of ${String(order.length)} queues.`;
+    }
   }
 
   /** Pauses or resumes a whole queue. Downloads paused one by one stay paused either way. */

@@ -134,6 +134,7 @@ import type { Schedule } from './Schedule';
 import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
 import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
 import type { SetProxyArgs } from './SetProxyArgs';
+import type { SetQueueOrderArgs } from './SetQueueOrderArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
 import type { SettingsProfile } from './SettingsProfile';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
@@ -1556,6 +1557,13 @@ export function isSetProxyArgs(value: unknown): value is SetProxyArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isProxyChange(value1['change']))(value);
 }
 
+/** Whether `value` has the shape of a {@link SetQueueOrderArgs}; fields it does not name are not checked. */
+export function isSetQueueOrderArgs(value: unknown): value is SetQueueOrderArgs {
+  return ((value1: unknown): boolean => isRecord(value1) && isArrayOf(value1['order'], isQueueId))(
+    value,
+  );
+}
+
 /** Whether `value` has the shape of a {@link SetQueuePausedArgs}; fields it does not name are not checked. */
 export function isSetQueuePausedArgs(value: unknown): value is SetQueuePausedArgs {
   return ((value1: unknown): boolean =>
@@ -1935,6 +1943,8 @@ export const COMMAND_OUTPUTS: {
   check_suffix_list: (value: unknown): value is CommandMap['check_suffix_list']['output'] =>
     isSuffixListInfo(value),
   set_proxy: (value: unknown): value is CommandMap['set_proxy']['output'] => value === null,
+  set_queue_order: (value: unknown): value is CommandMap['set_queue_order']['output'] =>
+    value === null,
   try_link: (value: unknown): value is CommandMap['try_link']['output'] => isLinkClaims(value),
   test_proxy: (value: unknown): value is CommandMap['test_proxy']['output'] =>
     isProxyTestResult(value),

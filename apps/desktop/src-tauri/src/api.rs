@@ -655,6 +655,15 @@ pub fn set_proxy(m: &Manager, change: ProxyChange) -> CommandResult<()> {
     plain(m.set_proxy(change))
 }
 
+/// Puts the queues in a new order.
+///
+/// # Errors
+///
+/// The order leaves a queue out, names one twice or moves the default queue ([`Manager::set_queue_order`]).
+pub fn set_queue_order(m: &Manager, order: &[QueueId]) -> CommandResult<()> {
+    plain(m.set_queue_order(order))
+}
+
 /// Where a link would go by the claims, saved or as one queue's editor has them.
 ///
 /// # Errors

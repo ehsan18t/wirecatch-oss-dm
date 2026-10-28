@@ -145,6 +145,7 @@ export type { Schedule } from './generated/Schedule';
 export type { SetDownloadFolderArgs } from './generated/SetDownloadFolderArgs';
 export type { SetMaximizeButtonArgs } from './generated/SetMaximizeButtonArgs';
 export type { SetProxyArgs } from './generated/SetProxyArgs';
+export type { SetQueueOrderArgs } from './generated/SetQueueOrderArgs';
 export type { SetQueuePausedArgs } from './generated/SetQueuePausedArgs';
 export type { Setting } from './generated/Setting';
 export type { SettingsProfile } from './generated/SettingsProfile';

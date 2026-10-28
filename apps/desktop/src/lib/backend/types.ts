@@ -171,6 +171,8 @@ export interface Backend {
 
   /** Saves a new proxy setting with its passwords, restarting running downloads when it asks (D71). */
   setProxy: (change: ProxyChange) => Promise<void>;
+  /** Puts the queues in this order in the sidebar; the default queue stays first (D72.9). */
+  setQueueOrder: (order: QueueId[]) => Promise<void>;
   /** Where a link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7). */
   tryLink: (trial: LinkTrial) => Promise<LinkClaims>;
   /** Sends one request through a proxy setting before it is saved. */

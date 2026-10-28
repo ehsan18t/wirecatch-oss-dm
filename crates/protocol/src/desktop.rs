@@ -505,6 +505,11 @@ commands! {
         /// The new setting.
         change: ProxyChange,
     } -> ();
+    /// Puts the queues in this order in the sidebar, which also settles ties between claims (D72.9). Fails with `invalid_request` unless it names every queue once, the default queue first.
+    set_queue_order: SetQueueOrderArgs {
+        /// Every queue, in its new order.
+        order: Vec<QueueId>,
+    } -> ();
     /// Where a link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7). Fails with `invalid_url` for a link that is not http, https or FTP.
     try_link: TryLinkArgs {
         /// The link, and the claims to try it against.

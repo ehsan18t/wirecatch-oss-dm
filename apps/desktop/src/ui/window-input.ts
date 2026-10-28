@@ -1,7 +1,7 @@
 // What the main window does with keys, pasted text and dropped links, wherever they land: each key runs the palette's command for it, so a key and the palette never differ; a link pasted or dropped anywhere opens the Add dialog with it, and while one is dragged over the window the window says it takes it.
 
 import { runKey } from '$lib/commands';
-import { isDownloadDrag } from '$lib/dnd';
+import { isOwnDrag } from '$lib/dnd';
 import { isEditable, windowCommand } from '$lib/keymap';
 import type { AppState } from '$lib/state/app.svelte';
 import { cycleRegion } from './regions';
@@ -20,10 +20,10 @@ function inDownloadWindow(e: Event): boolean {
   return e.target instanceof Element && e.target.closest('[data-download-window]') !== null;
 }
 
-/** A link dragged in from a browser or another app, not one of the list's own rows. */
+/** A link dragged in from a browser or another app, not one of the app's own rows or queues. */
 function isLinkDrag(e: DragEvent): boolean {
   const types = e.dataTransfer?.types ?? [];
-  return !isDownloadDrag(e) && (types.includes('text/uri-list') || types.includes('text/plain'));
+  return !isOwnDrag(e) && (types.includes('text/uri-list') || types.includes('text/plain'));
 }
 
 /** F6 and Shift+F6: to the next region or the one before; inside a modal layer (the details over a veil) the focus stays in it. */
