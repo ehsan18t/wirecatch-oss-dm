@@ -136,7 +136,7 @@
           <Field
             label="Hosts for this queue"
             hideLabel
-            description="Names cover the names under them. Also addresses, networks like 10.0.0.0/8, and <local> for names without a dot."
+            description="A name also covers the names under it. Also addresses, networks like 10.0.0.0/8, and <local> for names without a dot."
           >
             {#snippet children(control: FieldControl)}
               <TagInput

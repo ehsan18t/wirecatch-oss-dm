@@ -132,6 +132,8 @@
     class="flex flex-col gap-5 pb-1"
     onsubmit={(e) => {
       e.preventDefault();
+      // Opened from the queue editor, this form sits inside the editor's, which must not save.
+      e.stopPropagation();
       void save();
     }}
   >
