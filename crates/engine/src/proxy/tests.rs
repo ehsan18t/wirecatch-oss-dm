@@ -569,3 +569,64 @@ fn the_systems_proxies_read_back_as_manual_ones() {
     );
     assert_eq!(from_env(&[]).as_manual(), None);
 }
+
+fn route(proxies: &Proxies, url: &str) -> ProxyRoute {
+    proxies.route(&Url::parse(url).unwrap())
+}
+
+#[test]
+fn a_route_says_whether_a_link_goes_through_its_proxy_or_around_it() {
+    let set = manual("http://user:secret@given:8080", "files.example,<local>");
+    assert_eq!(
+        route(&set, "https://h.example/a"),
+        ProxyRoute::Through("http://***@given:8080".into())
+    );
+    assert_eq!(
+        route(&set, "https://cdn.files.example/a"),
+        ProxyRoute::Excepted
+    );
+    assert_eq!(route(&set, "http://intranet/a"), ProxyRoute::Excepted);
+    assert_eq!(
+        route(&from_env(&[]), "https://h.example/a"),
+        ProxyRoute::Direct
+    );
+    let web_only = from_env(&[("HTTP_PROXY", "http://web:80")]);
+    assert_eq!(route(&web_only, "https://h.example/a"), ProxyRoute::Direct);
+}
+
+#[test]
+fn an_ftp_link_that_may_go_around_an_http_proxy_routes_directly() {
+    let mut given = ManualProxies {
+        all: Some("http://given:8080".into()),
+        ..ManualProxies::default()
+    };
+    let refused = Proxies::of(&ProxyChoice::Manual(given.clone()));
+    assert_eq!(
+        route(&refused, "ftp://h.example/a"),
+        ProxyRoute::Through("http://given:8080".into())
+    );
+    given.ftp_direct = true;
+    let around = Proxies::of(&ProxyChoice::Manual(given));
+    assert_eq!(route(&around, "ftp://h.example/a"), ProxyRoute::Direct);
+}
+
+#[test]
+fn the_computers_exceptions_come_from_no_proxy_then_the_system() {
+    let system = || Some("*.corp;<local>".to_string());
+    assert_eq!(
+        system_exceptions(&env(&[("no_proxy", "a.example")]), system),
+        "a.example"
+    );
+    assert_eq!(
+        system_exceptions(&env(&[("NO_PROXY", " ")]), system),
+        "*.corp;<local>"
+    );
+    assert_eq!(system_exceptions(&env(&[]), || None), "");
+    assert_eq!(
+        system_exceptions(
+            &env(&[("REQUEST_METHOD", "GET"), ("NO_PROXY", "a.example")]),
+            system
+        ),
+        ""
+    );
+}
