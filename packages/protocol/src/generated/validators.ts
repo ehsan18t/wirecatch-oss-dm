@@ -26,6 +26,7 @@ import type { Category } from './Category';
 import type { CategoryRule } from './CategoryRule';
 import type { ChangeSettingsArgs } from './ChangeSettingsArgs';
 import type { ChooseMediaArgs } from './ChooseMediaArgs';
+import type { Claim } from './Claim';
 import type { ClientKind } from './ClientKind';
 import type { ConfirmCaptureArgs } from './ConfirmCaptureArgs';
 import type { ControlWindowArgs } from './ControlWindowArgs';
@@ -35,6 +36,7 @@ import type { DismissMediaChoiceArgs } from './DismissMediaChoiceArgs';
 import type { DownloadId } from './DownloadId';
 import type { DownloadStatus } from './DownloadStatus';
 import type { DownloadSummary } from './DownloadSummary';
+import type { DraftClaims } from './DraftClaims';
 import type { EarlierDownloadArgs } from './EarlierDownloadArgs';
 import type { ErrorCode } from './ErrorCode';
 import type { Event } from './Event';
@@ -60,6 +62,9 @@ import type { ImportedFolder } from './ImportedFolder';
 import type { InstallAddonArgs } from './InstallAddonArgs';
 import type { KeepOriginalArgs } from './KeepOriginalArgs';
 import type { Link } from './Link';
+import type { LinkClaims } from './LinkClaims';
+import type { LinkProtocol } from './LinkProtocol';
+import type { LinkTrial } from './LinkTrial';
 import type { MediaChoice } from './MediaChoice';
 import type { MediaDefaults } from './MediaDefaults';
 import type { MediaDefaultsPatch } from './MediaDefaultsPatch';
@@ -72,6 +77,7 @@ import type { MediaSubtitle } from './MediaSubtitle';
 import type { MediaSummary } from './MediaSummary';
 import type { Message } from './Message';
 import type { MoveToQueueArgs } from './MoveToQueueArgs';
+import type { NameSyntax } from './NameSyntax';
 import type { NewDownload } from './NewDownload';
 import type { NoteId } from './NoteId';
 import type { NoteKind } from './NoteKind';
@@ -105,12 +111,15 @@ import type { QualityFallback } from './QualityFallback';
 import type { Question } from './Question';
 import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
+import type { QueueClaims } from './QueueClaims';
 import type { QueueId } from './QueueId';
 import type { QueueNotify } from './QueueNotify';
+import type { QueueReason } from './QueueReason';
 import type { QueueReport } from './QueueReport';
 import type { QueueSettings } from './QueueSettings';
 import type { QueueStatus } from './QueueStatus';
 import type { QueueSummary } from './QueueSummary';
+import type { QueueTakes } from './QueueTakes';
 import type { RefreshLinkArgs } from './RefreshLinkArgs';
 import type { RejectCaptureArgs } from './RejectCaptureArgs';
 import type { RemoveAddonArgs } from './RemoveAddonArgs';
@@ -125,6 +134,7 @@ import type { Schedule } from './Schedule';
 import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
 import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
 import type { SetProxyArgs } from './SetProxyArgs';
+import type { SetQueueOrderArgs } from './SetQueueOrderArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
 import type { SettingsProfile } from './SettingsProfile';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
@@ -138,6 +148,8 @@ import type { SystemAppearance } from './SystemAppearance';
 import type { TestProxyArgs } from './TestProxyArgs';
 import type { Theme } from './Theme';
 import type { TimeOfDay } from './TimeOfDay';
+import type { TriedClaim } from './TriedClaim';
+import type { TryLinkArgs } from './TryLinkArgs';
 import type { UiEvent } from './UiEvent';
 import type { UpdateAddonArgs } from './UpdateAddonArgs';
 import type { UpdateQueueArgs } from './UpdateQueueArgs';
@@ -481,6 +493,28 @@ export function isChooseMediaArgs(value: unknown): value is ChooseMediaArgs {
     isRecord(value1) && isQuestionId(value1['id']) && isMediaSelection(value1['selection']))(value);
 }
 
+/** Whether `value` has the shape of a {@link Claim}; fields it does not name are not checked. */
+export function isClaim(value: unknown): value is Claim {
+  return (
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'site' && typeof value1['claim'] === 'string')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'file_name' && typeof value1['claim'] === 'string')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'file_type' && typeof value1['claim'] === 'string')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'category' && isCategory(value1['claim']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'protocol' && isLinkProtocol(value1['claim']))(value)
+  );
+}
+
 /** Whether `value` has the shape of a {@link ClientKind}; fields it does not name are not checked. */
 export function isClientKind(value: unknown): value is ClientKind {
   return value === 'extension' || value === 'bridge' || value === 'cli';
@@ -546,6 +580,7 @@ export function isDownloadSummary(value: unknown): value is DownloadSummary {
     typeof value1['file_name'] === 'string' &&
     typeof value1['path'] === 'string' &&
     isQueueId(value1['queue']) &&
+    isQueueReason(value1['queue_reason']) &&
     isCategory(value1['category']) &&
     isDownloadStatus(value1['status']) &&
     (typeof value1['total'] === 'number' || value1['total'] === null) &&
@@ -559,6 +594,14 @@ export function isDownloadSummary(value: unknown): value is DownloadSummary {
     typeof value1['added_at'] === 'number' &&
     (typeof value1['completed_at'] === 'number' || value1['completed_at'] === null) &&
     (isProcessingProgress(value1['processing']) || value1['processing'] === null))(value);
+}
+
+/** Whether `value` has the shape of a {@link DraftClaims}; fields it does not name are not checked. */
+export function isDraftClaims(value: unknown): value is DraftClaims {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (isQueueId(value1['queue']) || value1['queue'] === null) &&
+    isQueueTakes(value1['takes']))(value);
 }
 
 /** Whether `value` has the shape of a {@link EarlierDownloadArgs}; fields it does not name are not checked. */
@@ -825,6 +868,27 @@ export function isLink(value: unknown): value is Link {
   return typeof value === 'string';
 }
 
+/** Whether `value` has the shape of a {@link LinkClaims}; fields it does not name are not checked. */
+export function isLinkClaims(value: unknown): value is LinkClaims {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (isTriedClaim(value1['taken']) || value1['taken'] === null) &&
+    (isTriedClaim(value1['switched_off']) || value1['switched_off'] === null))(value);
+}
+
+/** Whether `value` has the shape of a {@link LinkProtocol}; fields it does not name are not checked. */
+export function isLinkProtocol(value: unknown): value is LinkProtocol {
+  return value === 'http' || value === 'https' || value === 'ftp';
+}
+
+/** Whether `value` has the shape of a {@link LinkTrial}; fields it does not name are not checked. */
+export function isLinkTrial(value: unknown): value is LinkTrial {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['url'] === 'string' &&
+    (isDraftClaims(value1['draft']) || value1['draft'] === null))(value);
+}
+
 /** Whether `value` has the shape of a {@link MediaChoice}; fields it does not name are not checked. */
 export function isMediaChoice(value: unknown): value is MediaChoice {
   return ((value1: unknown): boolean =>
@@ -835,6 +899,7 @@ export function isMediaChoice(value: unknown): value is MediaChoice {
     isArrayOf(value1['options'], isMediaOption) &&
     typeof value1['folder'] === 'string' &&
     isQueueId(value1['queue']) &&
+    isQueueReason(value1['queue_reason']) &&
     isArrayOf(value1['subtitles'], isMediaSubtitle) &&
     typeof value1['chapters'] === 'boolean' &&
     (typeof value1['duration_ms'] === 'number' || value1['duration_ms'] === null) &&
@@ -958,6 +1023,11 @@ export function isMoveToQueueArgs(value: unknown): value is MoveToQueueArgs {
     isRecord(value1) && isArrayOf(value1['ids'], isDownloadId) && isQueueId(value1['queue']))(
     value,
   );
+}
+
+/** Whether `value` has the shape of a {@link NameSyntax}; fields it does not name are not checked. */
+export function isNameSyntax(value: unknown): value is NameSyntax {
+  return value === 'wildcards' || value === 'regex';
 }
 
 /** Whether `value` has the shape of a {@link NewDownload}; fields it does not name are not checked. */
@@ -1096,6 +1166,7 @@ export function isPendingCapture(value: unknown): value is PendingCapture {
     isCategory(value1['category']) &&
     (typeof value1['size'] === 'number' || value1['size'] === null) &&
     isQueueId(value1['queue']) &&
+    isQueueReason(value1['queue_reason']) &&
     (typeof value1['page_url'] === 'string' || value1['page_url'] === null))(value);
 }
 
@@ -1269,6 +1340,19 @@ export function isQueue(value: unknown): value is Queue {
     isQueueStatus(value1['status']))(value);
 }
 
+/** Whether `value` has the shape of a {@link QueueClaims}; fields it does not name are not checked. */
+export function isQueueClaims(value: unknown): value is QueueClaims {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['enabled'] === 'boolean' &&
+    isArrayOf(value1['sites'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['file_names'], (value2: unknown) => typeof value2 === 'string') &&
+    isNameSyntax(value1['file_name_syntax']) &&
+    isArrayOf(value1['file_types'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['categories'], isCategory) &&
+    isArrayOf(value1['protocols'], isLinkProtocol))(value);
+}
+
 /** Whether `value` has the shape of a {@link QueueId}; fields it does not name are not checked. */
 export function isQueueId(value: unknown): value is QueueId {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -1277,6 +1361,17 @@ export function isQueueId(value: unknown): value is QueueId {
 /** Whether `value` has the shape of a {@link QueueNotify}; fields it does not name are not checked. */
 export function isQueueNotify(value: unknown): value is QueueNotify {
   return value === 'each_download' || value === 'when_done';
+}
+
+/** Whether `value` has the shape of a {@link QueueReason}; fields it does not name are not checked. */
+export function isQueueReason(value: unknown): value is QueueReason {
+  return (
+    ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'picked')(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'claimed' && isClaim(value1['claim']))(value) ||
+    ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'browser_queue')(value) ||
+    ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'default_queue')(value)
+  );
 }
 
 /** Whether `value` has the shape of a {@link QueueReport}; fields it does not name are not checked. */
@@ -1294,9 +1389,30 @@ export function isQueueSettings(value: unknown): value is QueueSettings {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     typeof value1['name'] === 'string' &&
-    typeof value1['max_concurrent'] === 'number' &&
-    (typeof value1['speed_limit'] === 'number' || value1['speed_limit'] === null) &&
+    typeof value1['description'] === 'string' &&
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'follow_app')(
+      value1['max_concurrent'],
+    ) ||
+      ((value2: unknown): boolean =>
+        isRecord(value2) && value2['source'] === 'own' && typeof value2['value'] === 'number')(
+        value1['max_concurrent'],
+      )) &&
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'follow_app')(
+      value1['speed_limit'],
+    ) ||
+      ((value2: unknown): boolean =>
+        isRecord(value2) && value2['source'] === 'own' && typeof value2['value'] === 'number')(
+        value1['speed_limit'],
+      )) &&
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'follow_app')(
+      value1['connections'],
+    ) ||
+      ((value2: unknown): boolean =>
+        isRecord(value2) && value2['source'] === 'own' && typeof value2['value'] === 'number')(
+        value1['connections'],
+      )) &&
     (isSchedule(value1['schedule']) || value1['schedule'] === null) &&
+    isQueueTakes(value1['takes']) &&
     isQueueNotify(value1['notify']))(value);
 }
 
@@ -1315,6 +1431,15 @@ export function isQueueSummary(value: unknown): value is QueueSummary {
     isQueueId(value1['id']) &&
     typeof value1['name'] === 'string' &&
     typeof value1['is_default'] === 'boolean')(value);
+}
+
+/** Whether `value` has the shape of a {@link QueueTakes}; fields it does not name are not checked. */
+export function isQueueTakes(value: unknown): value is QueueTakes {
+  return (
+    ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'manual')(value) ||
+    (((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'auto')(value) &&
+      isQueueClaims(value))
+  );
 }
 
 /** Whether `value` has the shape of a {@link RefreshLinkArgs}; fields it does not name are not checked. */
@@ -1432,6 +1557,13 @@ export function isSetProxyArgs(value: unknown): value is SetProxyArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isProxyChange(value1['change']))(value);
 }
 
+/** Whether `value` has the shape of a {@link SetQueueOrderArgs}; fields it does not name are not checked. */
+export function isSetQueueOrderArgs(value: unknown): value is SetQueueOrderArgs {
+  return ((value1: unknown): boolean => isRecord(value1) && isArrayOf(value1['order'], isQueueId))(
+    value,
+  );
+}
+
 /** Whether `value` has the shape of a {@link SetQueuePausedArgs}; fields it does not name are not checked. */
 export function isSetQueuePausedArgs(value: unknown): value is SetQueuePausedArgs {
   return ((value1: unknown): boolean =>
@@ -1520,6 +1652,19 @@ export function isTimeOfDay(value: unknown): value is TimeOfDay {
     isRecord(value1) && typeof value1['hour'] === 'number' && typeof value1['minute'] === 'number')(
     value,
   );
+}
+
+/** Whether `value` has the shape of a {@link TriedClaim}; fields it does not name are not checked. */
+export function isTriedClaim(value: unknown): value is TriedClaim {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (isQueueId(value1['queue']) || value1['queue'] === null) &&
+    isClaim(value1['claim']))(value);
+}
+
+/** Whether `value` has the shape of a {@link TryLinkArgs}; fields it does not name are not checked. */
+export function isTryLinkArgs(value: unknown): value is TryLinkArgs {
+  return ((value1: unknown): boolean => isRecord(value1) && isLinkTrial(value1['trial']))(value);
 }
 
 /** Whether `value` has the shape of a {@link UiEvent}; fields it does not name are not checked. */
@@ -1798,6 +1943,9 @@ export const COMMAND_OUTPUTS: {
   check_suffix_list: (value: unknown): value is CommandMap['check_suffix_list']['output'] =>
     isSuffixListInfo(value),
   set_proxy: (value: unknown): value is CommandMap['set_proxy']['output'] => value === null,
+  set_queue_order: (value: unknown): value is CommandMap['set_queue_order']['output'] =>
+    value === null,
+  try_link: (value: unknown): value is CommandMap['try_link']['output'] => isLinkClaims(value),
   test_proxy: (value: unknown): value is CommandMap['test_proxy']['output'] =>
     isProxyTestResult(value),
   system_proxy: (value: unknown): value is CommandMap['system_proxy']['output'] =>

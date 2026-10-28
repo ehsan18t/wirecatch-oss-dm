@@ -2,6 +2,7 @@
 // limits, finishes joining and converting, and moves add-on installs along.
 
 import {
+  ownValue,
   PER_MILLE_DONE,
   type DownloadId,
   type DownloadSummary,
@@ -100,7 +101,10 @@ function schedule(s: Step): Map<QueueId, DownloadSummary[]> {
     const line: Line = {
       queue,
       inWindow,
-      room: !queue.status.paused && inWindow ? queue.settings.max_concurrent : 0,
+      room:
+        !queue.status.paused && inWindow
+          ? (ownValue(queue.settings.max_concurrent) ?? Infinity)
+          : 0,
       waiting: 0,
     };
     const { list, active } = scheduleLine(s, line, global);
@@ -163,11 +167,9 @@ function waitReason({ queue, inWindow, room, waiting }: Line, globalMax: number)
   if (!inWindow)
     return { type: 'queue_schedule', data: { starts_at: queue.settings.schedule?.start ?? null } };
   if (waiting > 1) return { type: 'in_line', data: { position: waiting } };
-  if (room <= 0) {
-    return {
-      type: 'queue_full',
-      data: { running: queue.settings.max_concurrent, limit: queue.settings.max_concurrent },
-    };
+  const limit = ownValue(queue.settings.max_concurrent);
+  if (room <= 0 && limit !== null) {
+    return { type: 'queue_full', data: { running: limit, limit } };
   }
   return { type: 'global_limit', data: { running: globalMax, limit: globalMax } };
 }
@@ -178,10 +180,8 @@ function wantedSpeeds(s: Step, running: Map<QueueId, DownloadSummary[]>): Map<Do
   for (const q of s.state.queues) {
     const list = running.get(q.id) ?? [];
     const downloading = list.filter((r) => r.status === 'downloading');
-    const share =
-      q.settings.speed_limit === null
-        ? Infinity
-        : q.settings.speed_limit / Math.max(1, downloading.length);
+    const limit = ownValue(q.settings.speed_limit);
+    const share = limit === null ? Infinity : limit / Math.max(1, downloading.length);
     for (const row of list) {
       const sim = s.state.sim.get(row.id);
       if (!sim) continue;
@@ -219,10 +219,11 @@ function download(s: Step, row: DownloadSummary, speed: number) {
     row.speed === 0
       ? speed
       : Math.round(row.speed * (1 - SPEED_SMOOTHING) + speed * SPEED_SMOOTHING);
-  row.connections = Math.min(
-    s.state.settings.connections_per_download,
-    row.total === null ? 1 : SIMULATED_CONNECTIONS,
-  );
+  const queue = s.state.queues.find((q) => q.id === row.queue);
+  const allowed =
+    (queue ? ownValue(queue.settings.connections) : null) ??
+    s.state.settings.connections_per_download;
+  row.connections = Math.min(allowed, row.total === null ? 1 : SIMULATED_CONNECTIONS);
   row.done += Math.round((speed * s.dt) / MS_PER_SECOND);
   if (row.total !== null && row.done >= row.total) {
     row.done = row.total;

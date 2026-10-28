@@ -612,3 +612,24 @@ async fn a_download_runs_under_the_apps_limits_and_its_queues() {
         assert!(matches!(&app_only.limiters[..], [a] if Arc::ptr_eq(a, global)));
     }
 }
+
+#[tokio::test]
+async fn a_queue_with_its_own_connections_runs_its_downloads_with_them() {
+    const OWN: u8 = 5;
+    let (manager, _dir) = manager_with(deaf, PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
+    let mut main = manager
+        .list_queues()
+        .into_iter()
+        .find(|q| q.id == DEFAULT_QUEUE_ID)
+        .unwrap();
+    main.settings.connections = wirecatch_protocol::app::Setting::Own(OWN);
+    manager
+        .update_queue(DEFAULT_QUEUE_ID, main.settings)
+        .unwrap();
+    let state = manager.lock();
+    assert_eq!(
+        manager.run_policy(&state, DEFAULT_QUEUE_ID).connections,
+        usize::from(OWN)
+    );
+    assert_ne!(manager.app_policy(&state).connections, usize::from(OWN));
+}

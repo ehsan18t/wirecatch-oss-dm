@@ -12,6 +12,7 @@ import { MB } from '@wirecatch/units';
 import { fileNameFromUrl } from '../../format';
 import { BackendError } from '../types';
 import { categoryFor, folderFor } from './data';
+import { answeredQueue } from './queues';
 import type { MockState } from './state';
 
 /** The core's answer for a question that is no longer open. */
@@ -44,7 +45,7 @@ export function confirmCapture(
   state.pending = state.pending.filter((x) => x.id !== id);
   closeQuestion(state, id);
   const row = state.create(p.url, {
-    queue: confirmation.queue ?? p.queue,
+    ...answeredQueue(p, confirmation.queue),
     folder: confirmation.folder ?? p.folder,
     fileName: confirmation.file_name ?? p.file_name,
     start: !confirmation.later,
@@ -116,6 +117,7 @@ export function simulateCapture(state: MockState, index: number): void {
       category,
       size,
       queue,
+      queue_reason: { kind: 'browser_queue' },
       page_url: `https://${new URL(url).host}/`,
     };
     state.pending.push(pending);

@@ -71,7 +71,7 @@ export type NewDownload = {
    */
   source: CaptureSource;
   /**
-   * Queue to add to; the default queue if absent.
+   * The browser's queue, used when no claim takes the download; absent, the one set in the app (D72.3).
    */
   queue: QueueId | null;
   /**

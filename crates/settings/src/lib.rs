@@ -10,10 +10,10 @@ use std::path::PathBuf;
 
 use wirecatch_protocol::app::{
     Accent, AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
-    DEFAULT_MAX_CONCURRENT_DOWNLOADS, DEFAULT_QUEUE_MAX_CONCURRENT, FinishNoteTime, FinishNotice,
-    MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD, MediaDefaults, OutputDefaults,
-    PortablePath, Queue, QueueNotify, QueueSettings, QueueStatus, StartNoteTime, StartNotice,
-    Theme, VideoQuality,
+    DEFAULT_MAX_CONCURRENT_DOWNLOADS, FinishNoteTime, FinishNotice, MAX_CONCURRENT_DOWNLOADS,
+    MAX_CONNECTIONS_PER_DOWNLOAD, MAX_QUEUE_DESCRIPTION_CHARS, MediaDefaults, OutputDefaults,
+    PortablePath, Queue, QueueSettings, QueueStatus, Setting, StartNoteTime, StartNotice, Theme,
+    VideoQuality,
 };
 use wirecatch_protocol::extension::{
     ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, MAX_VIDEO_SITES,
@@ -21,10 +21,12 @@ use wirecatch_protocol::extension::{
 };
 use wirecatch_protocol::proxy::ProxySettings;
 
-use crate::folders::KnownFolders;
-use wirecatch_queues::schedule;
+use wirecatch_protocol::claims::QueueTakes;
+use wirecatch_queues::{claims, schedule};
 use wirecatch_sites::local_network::{self, NotALocalSite};
 use wirecatch_sites::public_suffix::SuffixList;
+
+use crate::folders::KnownFolders;
 
 pub use error::{ProfileError, Result, SettingsError};
 
@@ -131,13 +133,7 @@ pub fn default_queue() -> Queue {
     Queue {
         id: DEFAULT_QUEUE_ID,
         is_default: true,
-        settings: QueueSettings {
-            name: "Main".into(),
-            max_concurrent: DEFAULT_QUEUE_MAX_CONCURRENT,
-            speed_limit: None,
-            schedule: None,
-            notify: QueueNotify::EachDownload,
-        },
+        settings: QueueSettings::new("Main"),
         status: QueueStatus::default(),
     }
 }
@@ -238,8 +234,16 @@ fn too_many(rules: &ListRules) -> SettingsError {
 /// [`within_limits`] for a queue.
 #[must_use]
 pub fn queue_within_limits(mut settings: QueueSettings) -> QueueSettings {
-    settings.max_concurrent = settings.max_concurrent.clamp(1, MAX_CONCURRENT_DOWNLOADS);
-    settings.speed_limit = speed_limit_within_limits(settings.speed_limit);
+    if let Setting::Own(max) = &mut settings.max_concurrent {
+        *max = (*max).clamp(1, MAX_CONCURRENT_DOWNLOADS);
+    }
+    if let Setting::Own(connections) = &mut settings.connections {
+        *connections = (*connections).clamp(1, MAX_CONNECTIONS_PER_DOWNLOAD);
+    }
+    if let Setting::Own(limit) = settings.speed_limit {
+        settings.speed_limit =
+            speed_limit_within_limits(Some(limit)).map_or(Setting::FollowApp, Setting::Own);
+    }
     settings
 }
 
@@ -268,11 +272,7 @@ pub fn validate(
         check_folder(&rule.folder, folders)?;
         rule.extensions = clean_extensions(&rule.extensions)?;
     }
-    if !(1..=MAX_CONNECTIONS_PER_DOWNLOAD).contains(&settings.connections_per_download) {
-        return Err(SettingsError::Invalid(format!(
-            "Connections per download must be between 1 and {MAX_CONNECTIONS_PER_DOWNLOAD}."
-        )));
-    }
+    check_connections(settings.connections_per_download)?;
     check_concurrency(settings.max_concurrent_downloads, "Downloads at once")?;
     check_speed_limit(settings.global_speed_limit)?;
 
@@ -430,8 +430,24 @@ pub fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> {
             "Queue names can be at most {MAX_QUEUE_NAME_CHARS} characters."
         )));
     }
-    check_concurrency(queue.max_concurrent, "Downloads at once in a queue")?;
-    check_speed_limit(queue.speed_limit)?;
+    queue.description = queue.description.trim().to_string();
+    if queue.description.chars().count() > MAX_QUEUE_DESCRIPTION_CHARS {
+        return Err(SettingsError::Invalid(format!(
+            "A queue's description can be at most {MAX_QUEUE_DESCRIPTION_CHARS} characters."
+        )));
+    }
+    if let Setting::Own(max) = queue.max_concurrent {
+        check_concurrency(max, "Downloads at once in a queue")?;
+    }
+    if let Setting::Own(limit) = queue.speed_limit {
+        check_speed_limit(Some(limit))?;
+    }
+    if let Setting::Own(connections) = queue.connections {
+        check_connections(connections)?;
+    }
+    if let QueueTakes::Auto(claims) = queue.takes {
+        queue.takes = QueueTakes::Auto(claims::checked(claims).map_err(SettingsError::Invalid)?);
+    }
     if let Some(s) = &queue.schedule {
         let times_valid =
             schedule::is_valid_time(s.start) && s.stop.is_none_or(schedule::is_valid_time);
@@ -514,6 +530,16 @@ pub fn folder_for(
         .find(|rule| rule.category == category)
         .map_or(&settings.default_folder, |rule| &rule.folder);
     Ok(folders.resolve(folder)?)
+}
+
+fn check_connections(value: u8) -> Result<()> {
+    if (1..=MAX_CONNECTIONS_PER_DOWNLOAD).contains(&value) {
+        Ok(())
+    } else {
+        Err(SettingsError::Invalid(format!(
+            "Connections per download must be between 1 and {MAX_CONNECTIONS_PER_DOWNLOAD}."
+        )))
+    }
 }
 
 fn check_concurrency(value: u32, what: &str) -> Result<()> {
@@ -934,6 +960,26 @@ mod tests {
             days: vec![],
         });
         assert!(validate_queue(q).unwrap_err().to_string().contains("00:00"));
+    }
+
+    #[test]
+    fn an_auto_queue_keeps_its_claims_cleaned_and_refuses_one_that_names_nothing() {
+        use wirecatch_protocol::claims::QueueClaims;
+        let mut q = default_queue().settings;
+        q.takes = QueueTakes::Auto(QueueClaims {
+            enabled: true,
+            sites: vec![" example.com ".into(), String::new()],
+            ..QueueClaims::default()
+        });
+        let QueueTakes::Auto(kept) = validate_queue(q.clone()).unwrap().takes else {
+            panic!("the queue stopped being an auto queue");
+        };
+        assert_eq!(kept.sites, ["example.com"]);
+        q.takes = QueueTakes::Auto(QueueClaims {
+            sites: vec!["*".into()],
+            ..QueueClaims::default()
+        });
+        assert!(validate_queue(q).unwrap_err().to_string().contains("\"*\""));
     }
 
     #[test]

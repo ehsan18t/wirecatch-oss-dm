@@ -8,6 +8,7 @@ use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::app::{
     AddRequest, Category, DownloadStatus, DownloadSummary, PortablePath, UiEvent,
 };
+use wirecatch_protocol::claims::QueueReason;
 use wirecatch_protocol::extension::{AddAction, AddedDownload};
 use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_sites::local_network::ChosenBy;
@@ -16,7 +17,7 @@ use wirecatch_store::NameChoice;
 use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::handovers::{Handover, Target};
-use super::placement::QueueRequest;
+use super::placement::{Candidate, QueueRequest};
 use super::run::{delete_files, mark_cancelled};
 use super::state::{Entry, State, Stop};
 use crate::error::{CoreError, Result};
@@ -106,9 +107,16 @@ impl Manager {
             .folder
             .map(|f| self.inner.folders.resolve(&PortablePath(f)))
             .transpose()?;
-        let queue = self
-            .lock_open()?
-            .queue_for(QueueRequest::in_app(request.queue))?;
+        let placed = {
+            let state = self.lock_open()?;
+            let name = naming::file_name(request.file_name.as_deref(), &url)?;
+            let candidate = Candidate {
+                url: &url,
+                file_name: &name,
+                category: None,
+            };
+            state.place(QueueRequest::in_app(request.queue), &candidate)?
+        };
         let added = self
             .insert(NewEntry {
                 fetch: Fetch::typed(url),
@@ -117,7 +125,7 @@ impl Manager {
                     folder,
                     ..Wanted::default()
                 },
-                queue,
+                placed,
                 start: request.start,
                 kind: Kind::File { video_check: true },
             })
@@ -360,6 +368,7 @@ impl Manager {
                 && entry.row.queue != queue
             {
                 entry.row.queue = queue;
+                entry.row.queue_reason = QueueReason::Picked;
                 entry.position = position;
                 self.stop_run(entry, Stop::Requeue);
                 self.save(&mut state, *id);
@@ -516,7 +525,7 @@ impl Manager {
             if state.claimed.contains(&path) {
                 continue;
             }
-            state.slot(new.queue)?;
+            state.slot(new.placed.queue)?;
             return self.add_entry(&mut state, new, &path, category).map(Some);
         }
     }
@@ -524,7 +533,7 @@ impl Manager {
     /// Where a new download goes: its folder, its file name and its category.
     fn destination(&self, new: &NewEntry) -> Result<(PathBuf, String, Category)> {
         let state = self.lock_open()?;
-        state.slot(new.queue)?;
+        state.slot(new.placed.queue)?;
         let wanted = &new.wanted;
         let name = naming::file_name(
             wanted.file_name.as_deref().or(wanted.hint_name.as_deref()),
@@ -552,7 +561,7 @@ impl Manager {
         let NewEntry {
             fetch,
             wanted,
-            queue,
+            placed,
             start,
             kind,
         } = new;
@@ -576,7 +585,8 @@ impl Manager {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default(),
             path: path.to_string_lossy().into_owned(),
-            queue,
+            queue: placed.queue,
+            queue_reason: placed.reason,
             category,
             status: if start {
                 DownloadStatus::Queued

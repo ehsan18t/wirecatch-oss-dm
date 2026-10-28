@@ -1,7 +1,13 @@
+use wirecatch_engine::Url;
 use wirecatch_protocol::QueueId;
+use wirecatch_protocol::app::Category;
+use wirecatch_protocol::claims::{DraftClaims, LinkClaims, QueueReason, QueueTakes, TriedClaim};
+use wirecatch_queues::claims::{self, Claimed, ClaimingQueue, Found, Link};
+use wirecatch_sites::local_network::is_on_own_network;
 
 use super::state::State;
 use crate::error::Result;
+use crate::naming;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum QueueRequest {
@@ -18,26 +24,162 @@ impl QueueRequest {
     }
 }
 
+/// The queue a new download joins, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Placed {
+    pub queue: QueueId,
+    pub reason: QueueReason,
+}
+
+impl Placed {
+    pub fn picked(queue: QueueId) -> Self {
+        Self {
+            queue,
+            reason: QueueReason::Picked,
+        }
+    }
+
+    /// What placing it again asks for: the same queue if the person picked it.
+    pub fn request(&self) -> QueueRequest {
+        if self.reason == QueueReason::Picked {
+            QueueRequest::Picked(self.queue)
+        } else {
+            QueueRequest::App
+        }
+    }
+
+    /// `proposed` unless the person picked another queue in its window (D72.8).
+    pub fn answered(proposed: Self, answer: Option<QueueId>) -> Self {
+        match answer {
+            Some(queue) if queue != proposed.queue => Self::picked(queue),
+            _ => proposed,
+        }
+    }
+}
+
+/// A new download as the claims read it (D72.3).
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Candidate<'a> {
+    pub url: &'a Url,
+    /// The name known when it is added: the browser's for a captured file, else the link's.
+    pub file_name: &'a str,
+    /// `None`: the category Settings sorts the name into.
+    pub category: Option<Category>,
+}
+
+impl<'a> Candidate<'a> {
+    /// A video is claimed by its page's address and the name its window proposes (D72.11).
+    pub fn video(page: &'a Url, file_name: &'a str) -> Self {
+        Self {
+            url: page,
+            file_name,
+            category: Some(Category::Video),
+        }
+    }
+}
+
 impl State {
-    /// A picked queue that is gone is an error; a browser's queue deleted since the extension
-    /// synced gives way to the default queue.
-    pub fn queue_for(&self, request: QueueRequest) -> Result<QueueId> {
-        match request {
-            QueueRequest::Picked(queue) => Ok(self.slot(queue)?.queue.id),
-            QueueRequest::App => Ok(self.default_queue()),
+    /// The person's pick, else the first claim that applies (D72.3), else the browser's queue for a browser download, else the default queue. A picked queue that is gone is an error; a browser's queue deleted since the extension synced gives way to the default queue.
+    pub fn place(&self, request: QueueRequest, candidate: &Candidate<'_>) -> Result<Placed> {
+        if let QueueRequest::Picked(queue) = request {
+            return Ok(Placed::picked(self.slot(queue)?.queue.id));
+        }
+        if let Some(found) = self.claim(candidate).taken {
+            return Ok(Placed {
+                queue: found.queue,
+                reason: QueueReason::Claimed(found.claim),
+            });
+        }
+        let default = || Placed {
+            queue: self.default_queue(),
+            reason: QueueReason::DefaultQueue,
+        };
+        Ok(match request {
             QueueRequest::Browser(named) => {
                 let wanted = named.unwrap_or(self.settings.extension.default_queue);
-                Ok(self
-                    .slot(wanted)
-                    .map_or_else(|_| self.default_queue(), |s| s.queue.id))
+                self.slot(wanted).map_or_else(
+                    |_| default(),
+                    |s| Placed {
+                        queue: s.queue.id,
+                        reason: QueueReason::BrowserQueue,
+                    },
+                )
             }
+            QueueRequest::App | QueueRequest::Picked(_) => default(),
+        })
+    }
+
+    /// What the auto queues make of `candidate`, in sidebar order.
+    pub fn claim(&self, candidate: &Candidate<'_>) -> Claimed {
+        let auto: Vec<ClaimingQueue<'_>> = self
+            .queues
+            .iter()
+            .filter_map(|slot| auto_queue(slot.queue.id, &slot.queue.settings.takes))
+            .collect();
+        self.claim_among(&auto, candidate)
+    }
+
+    /// What the claims make of `url` for Try a link: the saved claims, or `draft` in its queue's place, a queue not made yet after every saved one (D72.7).
+    pub fn try_link(&self, url: &Url, draft: Option<&DraftClaims>) -> LinkClaims {
+        let drafted = |id: QueueId| draft.filter(|d| d.queue == Some(id)).map(|d| &d.takes);
+        let mut auto: Vec<ClaimingQueue<'_, Option<QueueId>>> = self
+            .queues
+            .iter()
+            .filter_map(|slot| {
+                let id = slot.queue.id;
+                auto_queue(Some(id), drafted(id).unwrap_or(&slot.queue.settings.takes))
+            })
+            .collect();
+        if let Some(new) = draft.filter(|d| d.queue.is_none()) {
+            auto.extend(auto_queue(None, &new.takes));
         }
+        let name = naming::file_name(None, url).unwrap_or_default();
+        let candidate = Candidate {
+            url,
+            file_name: &name,
+            category: None,
+        };
+        let claimed = self.claim_among(&auto, &candidate);
+        let tried = |found: Found<Option<QueueId>>| TriedClaim {
+            queue: found.queue,
+            claim: found.claim,
+        };
+        LinkClaims {
+            taken: claimed.taken.map(tried),
+            switched_off: claimed.switched_off.map(tried),
+        }
+    }
+
+    fn claim_among<K: Copy + PartialEq>(
+        &self,
+        queues: &[ClaimingQueue<'_, K>],
+        candidate: &Candidate<'_>,
+    ) -> Claimed<K> {
+        let category = candidate.category.unwrap_or_else(|| {
+            wirecatch_settings::category_of(&self.settings, candidate.file_name)
+        });
+        let link = Link {
+            url: candidate.url,
+            file_name: candidate.file_name,
+            category,
+        };
+        claims::claim(queues, &link, &|url| {
+            is_on_own_network(url, &self.settings.local_sites, &self.suffixes)
+        })
+    }
+}
+
+fn auto_queue<K>(id: K, takes: &QueueTakes) -> Option<ClaimingQueue<'_, K>> {
+    match takes {
+        QueueTakes::Auto(claims) => Some(ClaimingQueue { id, claims }),
+        QueueTakes::Manual => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use wirecatch_protocol::app::{Queue, QueueSettings};
+    use wirecatch_protocol::claims::{Claim, QueueClaims};
 
     use super::*;
     use crate::error::CoreError;
@@ -46,56 +188,188 @@ mod tests {
     use wirecatch_settings::{DEFAULT_QUEUE_ID, default_queue};
 
     const OTHER: QueueId = QueueId(7);
+    const VIDEOS: QueueId = QueueId(8);
     const GONE: QueueId = QueueId(99);
 
-    fn state_with_browser_queue(browser: QueueId) -> State {
-        let mut state = first_start();
-        let main = default_queue();
-        state.queues.push(QueueSlot::new(Queue {
-            id: OTHER,
+    fn queue(id: QueueId, name: &str, takes: QueueTakes) -> QueueSlot {
+        QueueSlot::new(Queue {
+            id,
             is_default: false,
             settings: QueueSettings {
-                name: "Other".into(),
-                ..main.settings
+                takes,
+                ..QueueSettings::new(name)
             },
-            ..main
-        }));
+            ..default_queue()
+        })
+    }
+
+    /// Main, a manual queue the browser's downloads go to, and an auto queue that claims `example.com` while it is `on`.
+    fn state_with(browser: QueueId, on: bool) -> State {
+        let mut state = first_start();
+        state.queues.push(queue(OTHER, "Other", QueueTakes::Manual));
+        let claims = QueueClaims {
+            enabled: on,
+            sites: vec!["example.com".into()],
+            ..QueueClaims::default()
+        };
+        state
+            .queues
+            .push(queue(VIDEOS, "Videos", QueueTakes::Auto(claims)));
         state.settings.extension.default_queue = browser;
         state
     }
 
+    fn place(state: &State, request: QueueRequest, link: &str) -> Result<Placed> {
+        let url = Url::parse(link).unwrap();
+        let candidate = Candidate {
+            url: &url,
+            file_name: "a.bin",
+            category: None,
+        };
+        state.place(request, &candidate)
+    }
+
+    fn at(queue: QueueId, reason: QueueReason) -> Placed {
+        Placed { queue, reason }
+    }
+
+    const ELSEWHERE: &str = "https://files.example.org/a.bin";
+    const CLAIMED: &str = "https://cdn.example.com/a.bin";
+
     #[test]
-    fn a_picked_queue_is_taken_and_one_that_is_gone_is_refused() {
-        let state = state_with_browser_queue(OTHER);
-        assert_eq!(state.queue_for(QueueRequest::Picked(OTHER)).unwrap(), OTHER);
+    fn a_picked_queue_is_taken_over_any_claim_and_one_that_is_gone_is_refused() {
+        let state = state_with(OTHER, true);
+        assert_eq!(
+            place(&state, QueueRequest::Picked(OTHER), CLAIMED).unwrap(),
+            Placed::picked(OTHER)
+        );
         assert!(matches!(
-            state.queue_for(QueueRequest::Picked(GONE)),
+            place(&state, QueueRequest::Picked(GONE), CLAIMED),
             Err(CoreError::QueueNotFound(GONE))
         ));
     }
 
     #[test]
-    fn a_download_added_in_the_app_without_a_queue_joins_the_default_queue() {
-        let state = state_with_browser_queue(OTHER);
+    fn a_claim_comes_before_the_browsers_queue_and_the_default_queue() {
+        let state = state_with(OTHER, true);
+        let claimed = at(
+            VIDEOS,
+            QueueReason::Claimed(Claim::Site("example.com".into())),
+        );
         assert_eq!(
-            state.queue_for(QueueRequest::in_app(None)).unwrap(),
-            DEFAULT_QUEUE_ID
+            place(&state, QueueRequest::Browser(None), CLAIMED).unwrap(),
+            claimed
+        );
+        assert_eq!(place(&state, QueueRequest::App, CLAIMED).unwrap(), claimed);
+    }
+
+    #[test]
+    fn a_queue_that_is_off_claims_nothing() {
+        let state = state_with(OTHER, false);
+        assert_eq!(
+            place(&state, QueueRequest::App, CLAIMED).unwrap(),
+            at(DEFAULT_QUEUE_ID, QueueReason::DefaultQueue)
+        );
+        let url = Url::parse(CLAIMED).unwrap();
+        let candidate = Candidate {
+            url: &url,
+            file_name: "a.bin",
+            category: None,
+        };
+        assert_eq!(
+            state.claim(&candidate).switched_off.map(|f| f.queue),
+            Some(VIDEOS)
         );
     }
 
     #[test]
-    fn a_browser_download_joins_the_named_queue_then_the_browsers_then_the_default() {
-        let state = state_with_browser_queue(OTHER);
-        let browser = |named| state.queue_for(QueueRequest::Browser(named)).unwrap();
-        assert_eq!(browser(Some(DEFAULT_QUEUE_ID)), DEFAULT_QUEUE_ID);
-        assert_eq!(browser(None), OTHER);
-        assert_eq!(browser(Some(GONE)), DEFAULT_QUEUE_ID);
-        let browser_queue_gone = state_with_browser_queue(GONE);
+    fn unclaimed_downloads_join_the_browsers_queue_then_the_default_queue() {
+        let state = state_with(OTHER, true);
+        let browser = |named| place(&state, QueueRequest::Browser(named), ELSEWHERE).unwrap();
+        assert_eq!(browser(None), at(OTHER, QueueReason::BrowserQueue));
         assert_eq!(
-            browser_queue_gone
-                .queue_for(QueueRequest::Browser(None))
-                .unwrap(),
-            DEFAULT_QUEUE_ID
+            browser(Some(GONE)),
+            at(DEFAULT_QUEUE_ID, QueueReason::DefaultQueue)
+        );
+        assert_eq!(
+            place(&state, QueueRequest::App, ELSEWHERE).unwrap(),
+            at(DEFAULT_QUEUE_ID, QueueReason::DefaultQueue)
+        );
+        let browser_queue_gone = state_with(GONE, true);
+        assert_eq!(
+            place(&browser_queue_gone, QueueRequest::Browser(None), ELSEWHERE).unwrap(),
+            at(DEFAULT_QUEUE_ID, QueueReason::DefaultQueue)
+        );
+    }
+
+    fn tried(queue: Option<QueueId>, site: &str) -> TriedClaim {
+        TriedClaim {
+            queue,
+            claim: Claim::Site(site.into()),
+        }
+    }
+
+    fn sites(on: bool, sites: &[&str]) -> QueueTakes {
+        QueueTakes::Auto(QueueClaims {
+            enabled: on,
+            sites: sites.iter().map(ToString::to_string).collect(),
+            ..QueueClaims::default()
+        })
+    }
+
+    #[test]
+    fn try_a_link_answers_by_the_saved_claims_or_one_queues_unsaved_ones() {
+        let state = state_with(OTHER, true);
+        let url = Url::parse(CLAIMED).unwrap();
+        let saved = state.try_link(&url, None);
+        assert_eq!(saved.taken, Some(tried(Some(VIDEOS), "example.com")));
+
+        let other_drafted = DraftClaims {
+            queue: Some(OTHER),
+            takes: sites(true, &["cdn.example.com"]),
+        };
+        let drafted = state.try_link(&url, Some(&other_drafted));
+        assert_eq!(drafted.taken, Some(tried(Some(OTHER), "cdn.example.com")));
+
+        let videos_off = DraftClaims {
+            queue: Some(VIDEOS),
+            takes: sites(false, &["example.com"]),
+        };
+        let off = state.try_link(&url, Some(&videos_off));
+        assert_eq!(off.taken, None);
+        assert_eq!(off.switched_off, Some(tried(Some(VIDEOS), "example.com")));
+
+        let new_queue = DraftClaims {
+            queue: None,
+            takes: sites(true, &["example.com"]),
+        };
+        let tie = state.try_link(&url, Some(&new_queue));
+        assert_eq!(
+            tie.taken,
+            Some(tried(Some(VIDEOS), "example.com")),
+            "a saved queue wins a tie"
+        );
+        let new_wins = state.try_link(
+            &url,
+            Some(&DraftClaims {
+                takes: sites(true, &["cdn.example.com"]),
+                ..new_queue
+            }),
+        );
+        assert_eq!(new_wins.taken, Some(tried(None, "cdn.example.com")));
+    }
+
+    #[test]
+    fn a_picked_queue_in_a_window_is_the_persons_pick_only_when_it_changed() {
+        let proposed = at(
+            VIDEOS,
+            QueueReason::Claimed(Claim::Site("example.com".into())),
+        );
+        assert_eq!(Placed::answered(proposed.clone(), None), proposed);
+        assert_eq!(Placed::answered(proposed.clone(), Some(VIDEOS)), proposed);
+        assert_eq!(
+            Placed::answered(proposed, Some(OTHER)),
+            Placed::picked(OTHER)
         );
     }
 }

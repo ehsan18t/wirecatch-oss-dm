@@ -6,7 +6,6 @@ import { PRODUCT_NAME, PRODUCT_SLUG } from '@wirecatch/product';
 import type {
   AddRequest,
   AppSettingsPatch,
-  ButtonArea,
   CaptureConfirmation,
   DownloadId,
   MediaSelection,
@@ -15,27 +14,25 @@ import type {
   QuestionId,
   QueueId,
   QueueSettings,
-  Reveal,
   SettingsProfile,
   StartupNotice,
-  SystemAppearance,
   UiEvent,
-  WindowAction,
-  WindowFrame,
+  LinkTrial,
 } from '@wirecatch/protocol';
 import { folderOf } from '../../format';
 import { WindowRegistry } from '../../sample-windows';
-import type { Backend, SampleData, ShellSignal, Unsubscribe } from '../types';
+import type { Backend, SampleData, Unsubscribe } from '../types';
 import * as addons from './addons';
 import * as captures from './captures';
 import { MockFinished } from './finished';
 import * as suffixList from './suffix-list';
-import { DOWNLOADS, HOME, PICKED_FOLDERS, startupNoticesFor } from './data';
+import * as data from './data';
 import * as downloads from './downloads';
 import * as media from './media';
 import { populate } from './populate';
 import * as queues from './queues';
 import { mulberry32 } from './rng';
+import { MockShell } from './shell';
 import { sampleCommands } from './sample-commands';
 import { SEEDS } from './seeds';
 import * as settings from './settings';
@@ -43,19 +40,10 @@ import { DEFAULT_TICK_MS, step } from './simulator';
 import type { MockOptions } from './options';
 import { MockState } from './state';
 
-/** The seed of the sample data people and screenshots see. */
-const DEFAULT_SEED = 7;
-/** With `autoCapture`, the browser "sends" a download this long after start. */
-const AUTO_CAPTURE_MS = 6000;
-/** The sample system's accent colour: Windows' own default blue. */
-export const SAMPLE_SYSTEM_ACCENT = '#0078d4';
-/** How long the slow sample page takes to read. */
-const SLOW_READING_MS = 3000;
-
 /** What a call to the mock core came to: its value, or the error it failed with. */
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
-export class MockBackend implements Backend {
+export class MockBackend extends MockShell implements Backend {
   readonly kind = 'mock';
 
   appName() {
@@ -94,10 +82,11 @@ export class MockBackend implements Backend {
   #folderPick = 0;
 
   constructor(options: MockOptions = {}) {
+    super();
     const now = options.now ?? (() => Date.now());
-    this.#state = new MockState(this.windows, mulberry32(options.seed ?? DEFAULT_SEED), now);
+    this.#state = new MockState(this.windows, mulberry32(options.seed ?? data.DEFAULT_SEED), now);
     this.#latencyMs = options.latencyMs ?? 0;
-    this.#startupNotices = startupNoticesFor(options);
+    this.#startupNotices = data.startupNoticesFor(options);
     this.#lastTick = now();
     if (!options.empty) populate(this.#state, options.count ?? SEEDS.length, options.active ?? 0);
     this.#finished = new MockFinished(this.#state);
@@ -119,7 +108,7 @@ export class MockBackend implements Backend {
     autoCapture = false,
   }: MockOptions): void {
     if (autoTick) this.#timer = setInterval(() => this.tick(), tickMs);
-    if (autoCapture) this.#after(AUTO_CAPTURE_MS, () => this.simulateCapture());
+    if (autoCapture) this.#after(data.AUTO_CAPTURE_MS, () => this.simulateCapture());
   }
 
   /** Stops the timers, including answers still on their way back; those never arrive. */
@@ -144,6 +133,10 @@ export class MockBackend implements Backend {
    * the returned promise straight away; with `latencyMs` it comes back that much later, as from
    * the real core over IPC.
    */
+  protected answer<T>(work: () => T): Promise<T> {
+    return this.#call(work);
+  }
+
   async #call<T>(work: () => T): Promise<T> {
     let outcome: Outcome<T>;
     try {
@@ -174,8 +167,6 @@ export class MockBackend implements Backend {
       });
     }
   }
-
-  // ---- Downloads ----
 
   listDownloads() {
     return this.#call(() => downloads.listDownloads(this.#state));
@@ -238,8 +229,6 @@ export class MockBackend implements Backend {
     return this.#call(() => ({ ...this.#state.row(id) }));
   }
 
-  // ---- Queues ----
-
   listQueues() {
     return this.#call(() => queues.listQueues(this.#state));
   }
@@ -270,8 +259,6 @@ export class MockBackend implements Backend {
     return this.#call(() => queues.deleteQueue(this.#state, id));
   }
 
-  // ---- Settings ----
-
   getSettings() {
     return this.#call(() => structuredClone(this.#state.settings));
   }
@@ -296,8 +283,6 @@ export class MockBackend implements Backend {
   importSettings(path: string) {
     return this.#call(() => settings.importSettings(this.#state, path));
   }
-
-  // ---- Browser captures and their questions ----
 
   pendingConfirmations() {
     return this.#call(() => this.#state.pending.map((p) => ({ ...p })));
@@ -350,8 +335,6 @@ export class MockBackend implements Backend {
     captures.simulateConfirmation(this.#state, this.#captureIndex++);
   }
 
-  // ---- Media and add-ons ----
-
   /** Sample data only: the browser found media with several qualities. */
   simulateMediaChoice(page?: string, id?: QuestionId): void {
     media.simulateMediaChoice(this.#state, this.#mediaIndex++, page, id);
@@ -366,7 +349,7 @@ export class MockBackend implements Backend {
   #readSlowly(page: string): QuestionId {
     const id = media.startReading(this.#state, page);
     const stillReading = () => this.#state.reading.some((r) => r.id === id);
-    this.#after(SLOW_READING_MS, () => stillReading() && this.simulateMediaChoice(page, id));
+    this.#after(data.SLOW_READING_MS, () => stillReading() && this.simulateMediaChoice(page, id));
     return id;
   }
 
@@ -420,6 +403,14 @@ export class MockBackend implements Backend {
     return this.#call(() => settings.setProxy(this.#state, change));
   }
 
+  setQueueOrder(order: QueueId[]) {
+    return this.#call(() => queues.setQueueOrder(this.#state, order));
+  }
+
+  tryLink(trial: LinkTrial) {
+    return this.#call(() => queues.tryLink(this.#state, trial));
+  }
+
   testProxy(test: ProxyTest) {
     return this.#call(() => settings.testProxy(this.#state, test));
   }
@@ -445,63 +436,12 @@ export class MockBackend implements Backend {
     return this.#call(() => addons.removeAddon(this.#state, id));
   }
 
-  // ---- The desktop shell ----
-
   takeLaunchLinks() {
     return this.#call((): string[] => []);
   }
 
   startupNotices() {
     return this.#call((): StartupNotice[] => [...this.#startupNotices]);
-  }
-
-  showSetAsideList() {
-    // The sample app has no folder to show; the call answers as the shell's would.
-    return this.#call(() => undefined);
-  }
-
-  takeReveal() {
-    // A browser tab gets no system notifications to click.
-    return this.#call((): Reveal | null => null);
-  }
-  onReveal(_listener: (reveal: Reveal) => void) {
-    return this.#call((): Unsubscribe => () => undefined);
-  }
-
-  onShellSignal(_listener: (signal: ShellSignal) => void) {
-    // A browser tab has no desktop shell to signal anything.
-    return this.#call((): Unsubscribe => () => undefined);
-  }
-
-  systemAppearance() {
-    return this.#call((): SystemAppearance => ({ accent: SAMPLE_SYSTEM_ACCENT }));
-  }
-
-  onSystemAppearance(_listener: (appearance: SystemAppearance) => void) {
-    // The sample system never changes its accent colour.
-    return this.#call((): Unsubscribe => () => undefined);
-  }
-
-  controlWindow(_action: WindowAction) {
-    // A browser tab cannot minimize, maximize or close itself.
-    return this.#call(() => undefined);
-  }
-
-  windowFrame() {
-    return this.#call((): WindowFrame => ({
-      maximized: false,
-      focused: true,
-      maximize_hovered: false,
-    }));
-  }
-
-  onWindowFrame(_listener: (frame: WindowFrame) => void) {
-    return this.#call((): Unsubscribe => () => undefined);
-  }
-
-  setMaximizeButton(_area: ButtonArea | null) {
-    // The page keeps the pointer over its own button: there are no snap layouts to offer.
-    return this.#call(() => undefined);
   }
 
   /** Its events are always readable, so it never asks for a reload. */
@@ -512,8 +452,6 @@ export class MockBackend implements Backend {
       return () => listeners.delete(listener);
     });
   }
-
-  // ---- Files and pickers ----
 
   openFile(id: DownloadId) {
     return this.#call(() => {
@@ -533,20 +471,22 @@ export class MockBackend implements Backend {
 
   pickFolder(current?: string) {
     return this.#call(() => {
-      const next = () => PICKED_FOLDERS[this.#folderPick++ % PICKED_FOLDERS.length] ?? DOWNLOADS;
+      const next = () =>
+        data.PICKED_FOLDERS[this.#folderPick++ % data.PICKED_FOLDERS.length] ?? data.DOWNLOADS;
       const first = next();
       return first === current ? next() : first;
     });
   }
 
   pickSaveFile(suggestedName: string) {
-    return this.#call(() => `${HOME}\\Documents\\${suggestedName}`);
+    return this.#call(() => `${data.HOME}\\Documents\\${suggestedName}`);
   }
 
   pickOpenFile() {
     return this.#call(
       () =>
-        [...this.#state.files.keys()].pop() ?? `${HOME}\\Documents\\${PRODUCT_SLUG}-settings.json`,
+        [...this.#state.files.keys()].pop() ??
+        `${data.HOME}\\Documents\\${PRODUCT_SLUG}-settings.json`,
     );
   }
 

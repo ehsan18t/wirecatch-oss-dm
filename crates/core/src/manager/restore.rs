@@ -7,6 +7,7 @@ use std::sync::Arc;
 use chrono::NaiveDateTime;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, Queue};
+use wirecatch_protocol::claims::QueueReason;
 use wirecatch_settings::DEFAULT_QUEUE_ID;
 use wirecatch_sites::public_suffix::SuffixList;
 use wirecatch_store::{Snapshot, StoredDownload};
@@ -170,6 +171,7 @@ fn restore_entry(
     let mut fixed = false;
     if !queues.iter().any(|s| s.queue.id == entry.row.queue) {
         entry.row.queue = default_queue;
+        entry.row.queue_reason = QueueReason::DefaultQueue;
         fixed = true;
     }
     let done_with = matches!(
@@ -212,7 +214,7 @@ pub(super) fn first_start() -> State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wirecatch_protocol::app::{Category, DownloadSummary};
+    use wirecatch_protocol::app::{Category, DownloadSummary, Setting};
     use wirecatch_protocol::{DownloadId, QueueId};
     use wirecatch_sites::local_network::ChosenBy;
     use wirecatch_store::{LastIds, NameChoice};
@@ -257,6 +259,7 @@ mod tests {
                 file_name: "f".into(),
                 path: "f".into(),
                 queue: QueueId(queue),
+                queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
                 category: Category::Other,
                 status,
                 total: Some(10),
@@ -316,8 +319,8 @@ mod tests {
         stored_settings.max_concurrent_downloads = 0;
         stored_settings.global_speed_limit = Some(0);
         let mut queue = wirecatch_settings::default_queue();
-        queue.settings.max_concurrent = 0;
-        queue.settings.speed_limit = Some(0);
+        queue.settings.max_concurrent = Setting::Own(0);
+        queue.settings.speed_limit = Setting::Own(0);
         let snapshot = Snapshot {
             settings: Some(stored_settings),
             queues: vec![queue],
@@ -332,7 +335,10 @@ mod tests {
         assert_eq!(loaded.max_concurrent_downloads, 1);
         assert_eq!(loaded.global_speed_limit, None);
         let queue = &restored.state.queue_list()[0].settings;
-        assert_eq!((queue.max_concurrent, queue.speed_limit), (1, None));
+        assert_eq!(
+            (queue.max_concurrent, queue.speed_limit),
+            (Setting::Own(1), Setting::FollowApp)
+        );
     }
 
     // An older version kept sites as typed, so a Unicode host never matched the punycode host

@@ -1,4 +1,12 @@
-import { downloadId, questionId, queueId } from '@wirecatch/protocol';
+import {
+  downloadId,
+  FOLLOW_APP,
+  MANUAL_QUEUE,
+  ownSetting,
+  questionId,
+  queueId,
+  type QueueSettings,
+} from '@wirecatch/protocol';
 import { PRODUCT_NAME } from '@wirecatch/product';
 import { describe, expect, it, vi } from 'vitest';
 import { appState, mockBackend } from '$lib/testing/setup';
@@ -39,17 +47,21 @@ describe('AppState', () => {
     await app.init();
     const queue = app.queues.defaultQueue;
     if (!queue) throw new Error('The sample has no default queue.');
-    expect(app.queues.describe(queue)).toBe(
-      `Idle, up to ${String(queue.settings.max_concurrent)} at once`,
-    );
+    const atOnce = (max_concurrent: QueueSettings['max_concurrent']) =>
+      app.queues.describe({ ...queue, settings: { ...queue.settings, max_concurrent } });
+    expect(atOnce(FOLLOW_APP)).toBe('Idle');
+    expect(atOnce(ownSetting(2))).toBe('Idle, up to 2 at once');
   });
 
   it('makes a new queue with its settings in one step, and a refused one makes nothing', async () => {
     const { app, backend } = await make();
     const settings = {
       name: 'Night',
-      max_concurrent: 2,
-      speed_limit: null,
+      description: '',
+      max_concurrent: ownSetting(2),
+      speed_limit: FOLLOW_APP,
+      connections: FOLLOW_APP,
+      takes: MANUAL_QUEUE,
       schedule: null,
       notify: 'each_download' as const,
     };
@@ -59,8 +71,8 @@ describe('AppState', () => {
     expect(await app.queues.save(null, settings)).toBeUndefined();
     expect(named()).toHaveLength(0);
 
-    const id = await app.queues.save(null, { ...settings, max_concurrent: 3 });
-    expect(named().map((q) => [q.id, q.settings.max_concurrent])).toEqual([[id, 3]]);
+    const id = await app.queues.save(null, { ...settings, max_concurrent: ownSetting(3) });
+    expect(named().map((q) => [q.id, q.settings.max_concurrent])).toEqual([[id, ownSetting(3)]]);
   });
 
   it('loads everything and applies events', async () => {

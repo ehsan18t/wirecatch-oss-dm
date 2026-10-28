@@ -22,6 +22,7 @@ import {
   SAMPLE_SUBTITLES,
   sampleMediaOptions,
 } from './media-samples';
+import { answeredQueue } from './queues';
 import { nonBlank, type MockState } from './state';
 
 /** The core's answer for a quality that needs the media add-on while it is missing. */
@@ -63,6 +64,7 @@ export function simulateMediaChoice(
     options,
     folder: folderFor('video', state.settings),
     queue: state.settings.extension.default_queue,
+    queue_reason: { kind: 'browser_queue' },
     subtitles,
     chapters: isPage,
     duration_ms: SAMPLE_DURATION_MS,
@@ -214,7 +216,7 @@ function addMediaDownload(
   insteadOf: string | null,
 ) {
   const row = state.create(choice.page_url ?? choice.title, {
-    queue: selection.queue ?? choice.queue,
+    ...answeredQueue(choice, selection.queue),
     folder: selection.folder ?? choice.folder,
     fileName: nonBlank(selection.file_name) ?? `${choice.title}.${fit.ext}`,
     start: !selection.later,

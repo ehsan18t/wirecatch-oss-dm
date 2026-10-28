@@ -3,6 +3,7 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ts_rs::TS;
 
+use crate::claims::{QueueReason, QueueTakes};
 use crate::extension::{ExtensionSettings, ExtensionSettingsPatch};
 use crate::proxy::ProxySettings;
 use crate::secret::Link;
@@ -22,6 +23,8 @@ pub struct DownloadSummary {
     pub path: String,
     /// The queue it belongs to.
     pub queue: QueueId,
+    /// Why it is in that queue (D72.8).
+    pub queue_reason: QueueReason,
     /// The kind of file, which picked its folder.
     pub category: Category,
     /// Where it is in its life.
@@ -186,18 +189,44 @@ pub struct Queue {
     pub status: QueueStatus,
 }
 
+/// A queue setting that follows the app's or is the queue's own (D72.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "source", content = "value", rename_all = "snake_case")]
+#[ts(export)]
+pub enum Setting<T> {
+    FollowApp,
+    Own(T),
+}
+
+impl<T> Setting<T> {
+    /// The queue's own value, `None` when it follows the app.
+    #[must_use]
+    pub fn own(self) -> Option<T> {
+        match self {
+            Self::FollowApp => None,
+            Self::Own(value) => Some(value),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct QueueSettings {
     /// The name the person gave it, unique among the queues.
     pub name: String,
-    /// Downloads from this queue that may run at the same time.
-    pub max_concurrent: u32,
-    /// Bytes per second shared by the whole queue; `None` is unlimited.
-    #[ts(type = "number | null")]
-    pub speed_limit: Option<u64>,
+    /// What the queue is for, in the person's words; may be empty.
+    pub description: String,
+    /// Downloads from this queue that may run at the same time. Following the app sets no limit of the queue's own; [`AppSettings::max_concurrent_downloads`] caps every queue.
+    pub max_concurrent: Setting<u32>,
+    /// Bytes per second shared by the whole queue. Following the app sets no limit of the queue's own; [`AppSettings::global_speed_limit`] caps every queue.
+    #[ts(type = "Setting<number>")]
+    pub speed_limit: Setting<u64>,
+    /// Connections per download; following the app uses [`AppSettings::connections_per_download`].
+    pub connections: Setting<u8>,
     /// When set, the queue only runs inside this window.
     pub schedule: Option<Schedule>,
+    /// Manual, or auto with the new downloads it claims (D72.2).
+    pub takes: QueueTakes,
     /// When the person is told its downloads finished (D52).
     #[serde(default, with = "known_or_default")]
     #[ts(as = "QueueNotify")]
@@ -209,8 +238,11 @@ impl QueueSettings {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            max_concurrent: NEW_QUEUE_MAX_CONCURRENT,
-            speed_limit: None,
+            description: String::new(),
+            max_concurrent: Setting::FollowApp,
+            speed_limit: Setting::FollowApp,
+            connections: Setting::FollowApp,
+            takes: QueueTakes::Manual,
             schedule: None,
             notify: QueueNotify::EachDownload,
         }
@@ -288,6 +320,8 @@ pub struct MediaChoice {
     pub folder: String,
     /// The queue it goes to if the user just confirms.
     pub queue: QueueId,
+    /// Why it goes to that queue (D72.8).
+    pub queue_reason: QueueReason,
     /// The subtitles the video has, human-written ones first, then auto-generated ones (D24).
     /// Empty for streams and for videos without subtitles.
     #[serde(default)]
@@ -1204,10 +1238,8 @@ crate::exported::exported_consts! {
     pub const MAX_CONCURRENT_DOWNLOADS: u32 = 100;
     /// [`AppSettings::max_concurrent_downloads`] on a fresh install.
     pub const DEFAULT_MAX_CONCURRENT_DOWNLOADS: u32 = 5;
-    /// Where a new queue's editor starts.
-    pub const NEW_QUEUE_MAX_CONCURRENT: u32 = 2;
-    /// The default queue's, on a fresh install.
-    pub const DEFAULT_QUEUE_MAX_CONCURRENT: u32 = 3;
+    /// Most characters in [`QueueSettings::description`].
+    pub const MAX_QUEUE_DESCRIPTION_CHARS: usize = 500;
     /// [`ProcessingProgress::per_mille`] of a finished step: progress is counted in tenths of
     /// a percent.
     pub const PER_MILLE_DONE: u16 = 1000;
@@ -1513,7 +1545,7 @@ pub struct SettingsProfile {
 pub struct AddRequest {
     /// The address to download.
     pub url: Link,
-    /// Default queue if absent.
+    /// The queue picked; absent, the claims place it, else it joins the default queue (D72.3).
     pub queue: Option<QueueId>,
     /// Absolute folder; the category rule decides if absent.
     pub folder: Option<String>,
@@ -1542,6 +1574,8 @@ pub struct PendingCapture {
     pub size: Option<u64>,
     /// The queue it goes to if the user just confirms.
     pub queue: QueueId,
+    /// Why it goes to that queue (D72.8).
+    pub queue_reason: QueueReason,
     /// The page it came from, shown so the user knows what they are confirming.
     pub page_url: Option<String>,
 }

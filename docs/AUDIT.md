@@ -219,6 +219,26 @@ Parts of the interface revamp's phase 1 carried into later work:
 - A link that failed after its add dialog was closed with Escape has nowhere to show the failure (`apps/desktop/src/ui/add`; phase 2, with the dialogs).
 - The add spec's check that nothing sits past the dialog's sides (`apps/desktop/e2e/add.spec.ts:174`) did not fire when the folder row's wrapping was removed; the sideways-scroll check caught it instead. Show the check failing on some break of its own, or drop it (W12).
 
+Found while reviewing the queue editor of D72 (2026-10-25), in shared parts it did not change (W12, or phase 2 of the revamp):
+
+- In the dark theme, white text on the cyan primary buttons ("Create queue", "Save", "New download") has a contrast near 2:1; give the primary button dark text or a darker fill in that theme (`packages/ui`).
+- An off switch looks heavier than an on one in the light theme (its knob is dark); an off switch wants a muted knob and an outlined track.
+- The selected option of a segmented control (KB/s or MB/s, the day patterns) is hard to tell apart in both themes, and the control is slightly shorter than a number field beside it.
+- A dialog whose content scrolls shows no sign of it at the footer; add a shadow or fade at the edge that has more content.
+- A queue's header line puts its settings and what it is doing now in one line (`apps/desktop/src/ui/list/ListHeader.svelte`); split them, or show the live part as a chip.
+- The sidebar's "1 of 1 running" reads as one download of one (`apps/desktop/src/lib/state/queues.svelte.ts`).
+- The edit dialog of a queue has no intro line where New queue has one.
+
+Found while building the rest of D72's windows (2026-10-29), outside what they change:
+
+- The queue editor is long once Auto is on: the claims push the hours and the notices far down. Tabs or folded sections for its cards would shorten it (phase 2 of the revamp).
+- A switched-on limit's number field reads as disabled in the queue editor's light theme (its value is grey).
+- The three queues in the icon rail share one icon and cannot be told apart; give each its initial or a colour (`apps/desktop/src/ui/sidebar`).
+- The "Sample data" badge in the title bar competes with the total speed beside it.
+- "Across all queues. A queue can run fewer, set in the queue." under Downloads at the same time reads clumsily (`apps/desktop/src/lib/settings-schema.ts`).
+- A regular expression in a queue's file name claims is checked only when a link is tried or the queue saved, not as it is typed; checking it as typed needs a core command that checks claims alone (W12).
+- Core's public methods still carry `# Errors` doc sections that restate the error type (`crates/core/src/manager/*.rs`, about 40); the comment rules allow one line where the signature is unclear.
+
 Parts of W4 carried into later work:
 
 - ENG-11 in core: the app still hands the engine the exact path it picked when the download was added, with the default `ExistingFile::Replace`, so a file another program saves under the name meanwhile is replaced in the app. Carried to W9, as the item under "Parts of W7 carried" describes.

@@ -5,6 +5,7 @@
   import { formatBytes } from '@wirecatch/units';
   import { Button, Callout, textIfCut, tooltip } from '@wirecatch/ui';
   import { earlierNote, hostOf, linkForDisplay } from '$lib/format';
+  import { queueLine } from '$lib/queue-reasons';
   import type { DownloadWindowState } from '$lib/window/download-window.svelte';
   import { enterSubmits } from '$lib/window/keys';
   import CategoryIcon from '../CategoryIcon.svelte';
@@ -23,6 +24,13 @@
   let fileName = $state(proposal.file_name);
   let folder = $state(proposal.folder);
   let queue = $state<QueueId>(proposal.queue);
+  /** Why the download goes to the queue shown: the core's reason, or the person's pick (D72.8). */
+  const queueReason = $derived(
+    queueLine(
+      win.queues.find((q) => q.id === queue)?.settings.name ?? '',
+      queue === proposal.queue ? proposal.queue_reason : { kind: 'picked' },
+    ),
+  );
   /** Which button sent the answer, for its spinner. */
   let sending = $state<'now' | 'later' | null>(null);
 
@@ -54,10 +62,15 @@
   >
     <div class="flex items-center gap-3">
       <CategoryIcon category={capture.category} />
-      <p class="flex min-w-0 flex-wrap gap-x-3 text-ui text-ink-muted tabular-nums">
-        <span>{capture.size === null ? 'Size not known yet' : formatBytes(capture.size)}</span>
-        <span class="wrap-anywhere">from {hostOf(capture.page_url ?? capture.url)}</span>
-      </p>
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <p class="flex min-w-0 flex-wrap gap-x-3 text-ui text-ink-muted tabular-nums">
+          <span>{capture.size === null ? 'Size not known yet' : formatBytes(capture.size)}</span>
+          <span class="wrap-anywhere">from {hostOf(capture.page_url ?? capture.url)}</span>
+        </p>
+        <p class="truncate text-small text-ink-subtle" {@attach tooltip(() => textIfCut(link))}>
+          {link}
+        </p>
+      </div>
     </div>
 
     {#if win.earlier}
@@ -77,12 +90,9 @@
     <QueueField
       queues={win.queues}
       value={queue}
-      onchange={(chosen: QueueId) => (queue = chosen)}
+      onchange={(chosen: QueueId | null) => (queue = chosen ?? queue)}
+      description={queueReason}
     />
-
-    <p class="truncate text-small text-ink-muted" {@attach tooltip(() => textIfCut(link))}>
-      {link}
-    </p>
 
     <WindowOptions {win} files />
   </form>

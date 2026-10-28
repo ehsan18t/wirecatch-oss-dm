@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast::error::RecvError;
 use wirecatch_core::DEFAULT_QUEUE_ID;
-use wirecatch_protocol::app::{DownloadStatus, QueueSettings, UiEvent};
+use wirecatch_protocol::app::{DownloadStatus, QueueSettings, Setting, UiEvent};
 
 use crate::common::{Harness, TestResult, fast_server, is_running, throttled_server, tune};
 use wirecatch_engine::units::KIB;
@@ -33,12 +33,12 @@ async fn queue_and_global_concurrency_limits_hold() -> TestResult {
     let server = throttled_server(64 * KIB, 128 * KIB).await?;
     let h = Harness::new().await?;
     tune(&h.manager, |s| s.max_concurrent_downloads = 3)?;
-    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.max_concurrent = 1)?;
+    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.max_concurrent = Setting::Own(1))?;
     let second = h
         .manager
         .create_queue(QueueSettings::new("Second"))
         .unwrap();
-    set_queue(&h, second.id, |q| q.max_concurrent = 3)?;
+    set_queue(&h, second.id, |q| q.max_concurrent = Setting::Own(3))?;
     let limits = HashMap::from([(DEFAULT_QUEUE_ID, 1), (second.id, 3)]);
 
     let mut events = h.manager.subscribe();
@@ -107,7 +107,9 @@ async fn time_download(queue_limit: u64, global_limit: u64) -> TestResult<Durati
     let server = fast_server(128 * KIB).await?;
     let h = Harness::new().await?;
     tune(&h.manager, |s| s.global_speed_limit = Some(global_limit))?;
-    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = Some(queue_limit))?;
+    set_queue(&h, DEFAULT_QUEUE_ID, |q| {
+        q.speed_limit = Setting::Own(queue_limit);
+    })?;
     let start = Instant::now();
     let row = h.add(&server.url("f.bin")).await?;
     h.wait_status(row.id, DownloadStatus::Completed).await;
@@ -137,13 +139,15 @@ async fn a_download_obeys_a_stricter_global_limit() -> TestResult {
 async fn limit_changes_apply_to_running_downloads() -> TestResult {
     let server = fast_server(512 * KIB).await?;
     let h = Harness::new().await?;
-    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = Some(2 * KIB))?;
+    set_queue(&h, DEFAULT_QUEUE_ID, |q| {
+        q.speed_limit = Setting::Own(2 * KIB);
+    })?;
     let row = h.add(&server.url("f.bin")).await?;
     h.wait_for(row.id, "progress", |r| r.done > 0).await;
 
     // At 2 KiB/s this would take over four minutes, longer than the wait below
     // allows; lifting the limit finishes it now.
-    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = None)?;
+    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = Setting::FollowApp)?;
     h.wait_status(row.id, DownloadStatus::Completed).await;
     Ok(())
 }

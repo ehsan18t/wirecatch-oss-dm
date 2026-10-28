@@ -174,6 +174,12 @@ pub fn local_site(entry: &str, suffixes: &SuffixList) -> Result<Option<String>, 
     Ok(Some(name.to_string()))
 }
 
+/// Whether `url`'s host is on the person's own network: by what is written in it, or by being one of `local_sites` or under one.
+#[must_use]
+pub fn is_on_own_network(url: &Url, local_sites: &[String], suffixes: &SuffixList) -> bool {
+    is_local_by_itself(url, suffixes) || is_listed(url, local_sites, suffixes)
+}
+
 /// Whether `url`'s host is one of `sites` or under one of them
 /// (`corp.example.com` covers `wiki.corp.example.com`). A site counts only
 /// while it is one owner's by the list in use, which may be newer than the

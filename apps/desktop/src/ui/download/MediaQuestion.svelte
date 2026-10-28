@@ -32,6 +32,7 @@
     sizeFor,
     switchedChoice,
   } from '$lib/media-output';
+  import { queueLine } from '$lib/queue-reasons';
   import type { DownloadWindowState } from '$lib/window/download-window.svelte';
   import { enterSubmits } from '$lib/window/keys';
   import { OutputChoiceState } from '$lib/window/output-choice.svelte';
@@ -55,6 +56,13 @@
   let fileName = $state('');
   let folder = $state(proposal.folder);
   let queue = $state<QueueId>(proposal.queue);
+  /** Why the download goes to the queue shown: the core's reason, or the person's pick (D72.8). */
+  const queueReason = $derived(
+    queueLine(
+      win.queues.find((q) => q.id === queue)?.settings.name ?? '',
+      queue === proposal.queue ? proposal.queue_reason : { kind: 'picked' },
+    ),
+  );
   const output = new OutputChoiceState(proposedChoice(proposal.start));
   /** "Use these choices for every video", as the settings say until the person changes it. */
   let everyVideo = $state<boolean | null>(null);
@@ -234,9 +242,10 @@
       <QueueField
         queues={win.queues}
         value={queue}
-        onchange={(chosen: QueueId) => (queue = chosen)}
+        onchange={(chosen: QueueId | null) => (queue = chosen ?? queue)}
       />
     </Disclosure>
+    <p class="-mt-2 text-small text-ink-muted">{queueReason}</p>
 
     <WindowOptions {win}>
       <Checkbox

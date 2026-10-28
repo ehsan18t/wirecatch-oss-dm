@@ -27,6 +27,7 @@ const rows: DownloadSummary[] = [
   file_name: file_name as string,
   path: '',
   queue: queueId(queue as number),
+  queue_reason: { kind: 'default_queue' },
   category: category as DownloadSummary['category'],
   status: status as DownloadSummary['status'],
   total: total as number | null,

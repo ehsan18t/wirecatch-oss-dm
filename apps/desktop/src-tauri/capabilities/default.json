@@ -52,6 +52,8 @@
     "allow-suffix-list",
     "allow-check-suffix-list",
     "allow-set-proxy",
+    "allow-set-queue-order",
+    "allow-try-link",
     "allow-test-proxy",
     "allow-system-proxy",
     "allow-show-question-windows",

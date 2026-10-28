@@ -44,7 +44,7 @@ export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[
   {
     id: 'queues',
     title: 'Queues',
-    blurb: 'Each queue has its own hours and limits.',
+    blurb: "Each queue has its own hours, and uses the app's limits unless you set its own.",
   },
   {
     id: 'network',

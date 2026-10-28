@@ -15,7 +15,7 @@ use tokio::sync::oneshot;
 use tracing::{debug, error, warn};
 use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_protocol::app::{
-    AppSettings, DownloadStatus, DownloadSummary, MediaSummary, Queue, QueueStatus,
+    AppSettings, DownloadStatus, DownloadSummary, MediaSummary, Queue, QueueStatus, UserError,
 };
 use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::extension::MediaKind;
@@ -134,6 +134,28 @@ const MIGRATIONS: &[&str] = &[
     FROM queues_before_settings;
     DROP TABLE queues_before_settings;
 ",
+    // D72.11: every queue follows the app in downloads at once, speed limit and connections.
+    r#"
+    UPDATE queues
+    SET settings = json_set(
+        settings,
+        '$.description', '',
+        '$.max_concurrent', json('{"source":"follow_app"}'),
+        '$.speed_limit', json('{"source":"follow_app"}'),
+        '$.connections', json('{"source":"follow_app"}')
+    )
+    WHERE json_valid(settings);
+"#,
+    // D72.8: why each stored download is in its queue; one stored before is read as in the default queue.
+    r"
+    ALTER TABLE downloads ADD COLUMN queue_reason TEXT;
+",
+    // D72.2: every stored queue is manual.
+    r#"
+    UPDATE queues
+    SET settings = json_set(settings, '$.takes', json('{"kind":"manual"}'))
+    WHERE json_valid(settings);
+"#,
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -983,7 +1005,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     let mut stmt = conn.prepare(
         "SELECT id, url, path, queue_id, position, category, status, total, done, error,
                 added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-                stranded, chosen_by
+                stranded, chosen_by, queue_reason
          FROM downloads ORDER BY position",
     )?;
     let mut downloads = Vec::new();
@@ -1122,9 +1144,9 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         "INSERT OR REPLACE INTO downloads
             (id, url, path, queue_id, position, category, status, total, done, error,
              added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-             stranded, chosen_by)
+             stranded, chosen_by, queue_reason)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                 ?18, ?19)",
+                 ?18, ?19, ?20)",
     )?
     .execute(params![
         d.id.0,
@@ -1148,6 +1170,7 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
             .as_ref()
             .map(|path| path.to_string_lossy().into_owned()),
         enum_text(&row.chosen_by),
+        to_json(&d.queue_reason),
     ])?;
     Ok(())
 }
@@ -1208,28 +1231,9 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
     let mut error = row
         .get::<_, Option<String>>(9)?
         .and_then(|json| from_json(&json, "download error"));
-    let media: Option<StoredMedia> = row.get::<_, Option<String>>(16)?.map(|json| {
-        // Media whose details are damaged must never run as a plain download of
-        // its link (a page or a playlist).
-        from_json(&json, "download media").unwrap_or_else(|| {
-            if !matches!(
-                status,
-                DownloadStatus::Completed | DownloadStatus::Cancelled
-            ) {
-                status = DownloadStatus::Failed;
-                error = Some(unreadable());
-            }
-            StoredMedia {
-                summary: MediaSummary {
-                    quality: "Unknown".into(),
-                    source: MediaKind::Page,
-                    video_key: None,
-                    instead_of: None,
-                },
-                job: Some(MediaJob::Unreadable),
-            }
-        })
-    });
+    let media = row
+        .get::<_, Option<String>>(16)?
+        .map(|json| stored_media(&json, &mut status, &mut error));
     let file_name = PathBuf::from(&path)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -1245,6 +1249,11 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
                 file_name,
                 path,
                 queue: QueueId(row.get(3)?),
+                // A reason this build cannot read says only that the download is in its queue.
+                queue_reason: row
+                    .get::<_, Option<String>>(19)?
+                    .and_then(|json| from_json(&json, "queue reason"))
+                    .unwrap_or_default(),
                 category,
                 status,
                 total,
@@ -1272,6 +1281,32 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
             media,
             stranded: row.get::<_, Option<String>>(17)?.map(PathBuf::from),
         }),
+    })
+}
+
+/// A stored download's media. Media whose details are damaged must never run as a plain download of its link (a page or a playlist), so an unfinished one fails.
+fn stored_media(
+    json: &str,
+    status: &mut DownloadStatus,
+    error: &mut Option<UserError>,
+) -> StoredMedia {
+    from_json(json, "download media").unwrap_or_else(|| {
+        if !matches!(
+            *status,
+            DownloadStatus::Completed | DownloadStatus::Cancelled
+        ) {
+            *status = DownloadStatus::Failed;
+            *error = Some(unreadable());
+        }
+        StoredMedia {
+            summary: MediaSummary {
+                quality: "Unknown".into(),
+                source: MediaKind::Page,
+                video_key: None,
+                instead_of: None,
+            },
+            job: Some(MediaJob::Unreadable),
+        }
     })
 }
 
@@ -1316,12 +1351,13 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use wirecatch_protocol::DEFAULT_QUEUE_ID;
+    use wirecatch_protocol::claims::{QueueClaims, QueueTakes};
     use wirecatch_test_support::PATIENCE;
 
     use super::*;
     use wirecatch_protocol::app::{
         Accent, Category, DownloadStatus, FinishNotice, FixAction, QueueNotify, QueueSettings,
-        Schedule, Theme, TimeOfDay, UserError,
+        Schedule, Setting, Theme, TimeOfDay, UserError,
     };
 
     fn sample_settings() -> AppSettings {
@@ -1349,6 +1385,7 @@ mod tests {
                     .to_string_lossy()
                     .into_owned(),
                 queue: QueueId(1),
+                queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
                 category: Category::Archive,
                 status: DownloadStatus::Failed,
                 total: Some(100),
@@ -1695,8 +1732,16 @@ mod tests {
             is_default: false,
             settings: QueueSettings {
                 name: "Night".into(),
-                max_concurrent: 2,
-                speed_limit: Some(1000),
+                description: "Large files overnight".into(),
+                max_concurrent: Setting::Own(2),
+                speed_limit: Setting::Own(1000),
+                connections: Setting::Own(4),
+                takes: QueueTakes::Auto(QueueClaims {
+                    enabled: true,
+                    sites: vec!["example.com".into()],
+                    categories: vec![Category::Archive],
+                    ..QueueClaims::default()
+                }),
                 schedule: Some(Schedule {
                     start: TimeOfDay {
                         hour: 1,
@@ -2228,10 +2273,7 @@ mod tests {
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         let main = &snapshot.queues[0];
-        assert_eq!(
-            (main.settings.name.as_str(), main.settings.max_concurrent),
-            ("Main", 3)
-        );
+        assert_eq!(main.settings, QueueSettings::new("Main"));
         assert_eq!(main.status, QueueStatus::default());
         assert_old_download_upgraded(&snapshot);
     }
@@ -2272,21 +2314,11 @@ mod tests {
         assert_eq!(
             snapshot.queues,
             vec![
-                queue(
-                    1,
-                    true,
-                    QueueSettings {
-                        max_concurrent: 3,
-                        ..QueueSettings::new("Main")
-                    },
-                    running
-                ),
+                queue(1, true, QueueSettings::new("Main"), running),
                 queue(
                     4,
                     false,
                     QueueSettings {
-                        max_concurrent: 2,
-                        speed_limit: Some(1000),
                         schedule: Some(night),
                         notify: QueueNotify::WhenDone,
                         ..QueueSettings::new("Night")
@@ -2296,15 +2328,7 @@ mod tests {
                         running_outside_schedule: true,
                     }
                 ),
-                queue(
-                    5,
-                    false,
-                    QueueSettings {
-                        max_concurrent: 1,
-                        ..QueueSettings::new("Broken")
-                    },
-                    running
-                ),
+                queue(5, false, QueueSettings::new("Broken"), running),
             ]
         );
     }

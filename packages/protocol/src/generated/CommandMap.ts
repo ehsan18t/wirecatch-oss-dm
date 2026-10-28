@@ -26,6 +26,7 @@ import type { ImportPreview } from './ImportPreview';
 import type { ImportSettingsArgs } from './ImportSettingsArgs';
 import type { InstallAddonArgs } from './InstallAddonArgs';
 import type { KeepOriginalArgs } from './KeepOriginalArgs';
+import type { LinkClaims } from './LinkClaims';
 import type { MediaChoice } from './MediaChoice';
 import type { MoveToQueueArgs } from './MoveToQueueArgs';
 import type { OpenFileArgs } from './OpenFileArgs';
@@ -50,6 +51,7 @@ import type { Reveal } from './Reveal';
 import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
 import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
 import type { SetProxyArgs } from './SetProxyArgs';
+import type { SetQueueOrderArgs } from './SetQueueOrderArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
 import type { StartQueueNowArgs } from './StartQueueNowArgs';
@@ -57,6 +59,7 @@ import type { StartupNotice } from './StartupNotice';
 import type { SuffixListInfo } from './SuffixListInfo';
 import type { SystemAppearance } from './SystemAppearance';
 import type { TestProxyArgs } from './TestProxyArgs';
+import type { TryLinkArgs } from './TryLinkArgs';
 import type { UpdateAddonArgs } from './UpdateAddonArgs';
 import type { UpdateQueueArgs } from './UpdateQueueArgs';
 import type { WindowFrame } from './WindowFrame';
@@ -261,6 +264,14 @@ export type CommandMap = {
    * work, changing nothing.
    */
   set_proxy: Command<SetProxyArgs, null>;
+  /**
+   * Puts the queues in this order in the sidebar, which also settles ties between claims (D72.9). Fails with `invalid_request` unless it names every queue once, the default queue first.
+   */
+  set_queue_order: Command<SetQueueOrderArgs, null>;
+  /**
+   * Where a link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7). Fails with `invalid_url` for a link that is not http, https or FTP.
+   */
+  try_link: Command<TryLinkArgs, LinkClaims>;
   /**
    * Sends one request through a proxy setting before it is saved (D71.5).
    */

@@ -1,10 +1,15 @@
-//! Creating, editing and deleting queues.
+//! Creating, editing, ordering and deleting queues.
+
+use std::collections::BTreeSet;
 
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{Queue, QueueSettings, QueueStatus, UiEvent};
+use wirecatch_protocol::claims::{DraftClaims, LinkClaims, LinkTrial, QueueReason, QueueTakes};
 use wirecatch_protocol::wire::{Event, QueueSummary};
+use wirecatch_queues::claims;
 
 use super::Manager;
+use super::downloads::parse_url;
 use super::state::{QueueSlot, State, Stop};
 use crate::error::{CoreError, Result};
 
@@ -19,6 +24,13 @@ impl Manager {
     #[must_use]
     pub fn queue_summaries(&self) -> Vec<QueueSummary> {
         self.lock().queue_summaries()
+    }
+
+    /// Where `trial`'s link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7); drafted claims are checked as saving checks them.
+    pub fn try_link(&self, trial: &LinkTrial) -> Result<LinkClaims> {
+        let url = parse_url(&trial.url)?;
+        let draft = trial.draft.clone().map(checked_draft).transpose()?;
+        Ok(self.lock_open()?.try_link(&url, draft.as_ref()))
     }
 
     /// Adds a running queue, last in the sidebar.
@@ -112,6 +124,7 @@ impl Manager {
             let position = state.ids.position();
             if let Some(entry) = state.downloads.get_mut(&download) {
                 entry.row.queue = fallback;
+                entry.row.queue_reason = QueueReason::DefaultQueue;
                 entry.position = position;
                 self.stop_run(entry, Stop::Requeue);
             }
@@ -121,6 +134,7 @@ impl Manager {
         for waiting in state.pending.values_mut() {
             if waiting.capture.queue == id {
                 waiting.capture.queue = fallback;
+                waiting.capture.queue_reason = QueueReason::DefaultQueue;
             }
         }
         if state.settings.extension.default_queue == id {
@@ -129,6 +143,28 @@ impl Manager {
             self.apply_settings(&mut state, settings);
         }
         self.queues_changed(&mut state);
+        Ok(())
+    }
+
+    /// Puts the queues in `order`, the sidebar's, which also settles ties between claims (D72.9); `order` names every queue once, the default queue first.
+    pub fn set_queue_order(&self, order: &[QueueId]) -> Result<()> {
+        let mut state = self.lock_open()?;
+        if order.first() != Some(&state.default_queue()) {
+            return Err(CoreError::Invalid(
+                "The default queue stays first in the list.".into(),
+            ));
+        }
+        let current: BTreeSet<QueueId> = state.queues.iter().map(|s| s.queue.id).collect();
+        let named: BTreeSet<QueueId> = order.iter().copied().collect();
+        if named != current || named.len() != order.len() {
+            return Err(CoreError::Invalid(
+                "The queues changed while you were moving them. Try again.".into(),
+            ));
+        }
+        let mut slots = std::mem::take(&mut state.queues);
+        slots.sort_by_key(|s| order.iter().position(|id| *id == s.queue.id));
+        state.queues = slots;
+        self.publish_queues(&state);
         Ok(())
     }
 
@@ -154,7 +190,7 @@ pub(super) fn apply_to_slot(slot: &mut QueueSlot, settings: QueueSettings) {
         slot.gate.reset();
     }
     if old.speed_limit != settings.speed_limit {
-        slot.limiter.set_limit(settings.speed_limit);
+        slot.limiter.set_limit(settings.speed_limit.own());
     }
     slot.queue.settings = settings;
 }
@@ -166,4 +202,12 @@ fn ensure_name_free(state: &State, name: &str, except: Option<QueueId>) -> Resul
         )));
     }
     Ok(())
+}
+
+/// `draft` with its claims as saving keeps them, or why they cannot be kept.
+fn checked_draft(mut draft: DraftClaims) -> Result<DraftClaims> {
+    if let QueueTakes::Auto(written) = draft.takes {
+        draft.takes = QueueTakes::Auto(claims::checked(written).map_err(CoreError::Invalid)?);
+    }
+    Ok(draft)
 }

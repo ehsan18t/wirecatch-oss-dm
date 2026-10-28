@@ -1,9 +1,10 @@
 // Adding downloads by hand in the Add dialog: by keyboard and pointer, what it says while the links are not right, where they go, what it keeps when the app refuses one, and where the focus goes.
 
 import { queueId } from '@wirecatch/protocol';
-import { fireEvent, screen, within } from '@testing-library/svelte';
+import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { claimsOf } from '$lib/queue-claims';
 import { NO_LINK } from '$lib/state/add-draft.svelte';
 import { renderApp, settle } from '$lib/testing/setup';
 
@@ -150,14 +151,55 @@ describe('the Add dialog', () => {
     app.openDialog({ kind: 'add', urls: ['https://a.example/1.zip'] });
     await settle();
     const queue = inDialog().getByRole('combobox', { name: 'Queue' });
-    // The default queue is chosen, and marked as the default in the list only.
-    expect(queue).toHaveTextContent('Main');
-    expect(queue).not.toHaveTextContent('default');
+    // Automatic is chosen; the default queue is marked as the default in the list only.
+    expect(queue).toHaveTextContent('Automatic');
     await click(queue);
     expect(screen.getByRole('option', { name: /^Main/ })).toHaveTextContent('The default queue');
     await click(screen.getByRole('option', { name: /^Overnight/ }));
+    expect(queue).toHaveAccessibleDescription(
+      'Queue: Overnight. You picked it. For this add only.',
+    );
     await click(inDialog().getByRole('button', { name: 'Add paused' }));
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ queue: queueId(2), start: false }));
+  });
+
+  it('sends each link where the claims do, and says where and why', async () => {
+    const { app, user, press } = await setup();
+    const work = app.queues.list.find((q) => q.settings.name === 'Work files');
+    if (!work) throw new Error('no sample queue');
+    const settings = JSON.parse(JSON.stringify(work.settings)) as typeof work.settings;
+    await app.queues.save(work.id, {
+      ...settings,
+      takes: { kind: 'auto', ...claimsOf(undefined), sites: ['share.example.com'] },
+    });
+    app.openDialog({ kind: 'add', urls: ['https://share.example.com/a.zip'] });
+    await settle();
+    const queue = inDialog().getByRole('combobox', { name: 'Queue' });
+    await waitFor(() => {
+      expect(queue).toHaveAccessibleDescription('Queue: Work files. It takes share.example.com.');
+    });
+    await user.type(linksBox(), '{End}{Enter}https://elsewhere.example/b.zip');
+    await waitFor(() => {
+      expect(queue).toHaveAccessibleDescription('Queue: 1 link to Work files, 1 to Main.');
+    });
+    await press('{Control>}{Enter}{/Control}');
+    const [added] = app.selection.rows;
+    expect(added?.url).toBe('https://share.example.com/a.zip');
+    expect(added?.queue).toBe(work.id);
+    expect(added?.queue_reason).toEqual({
+      kind: 'claimed',
+      claim: { kind: 'site', claim: 'share.example.com' },
+    });
+  });
+
+  it('starts on the queue shown in the main window', async () => {
+    const { app } = await setup();
+    app.show({ kind: 'queue', id: queueId(2) });
+    app.openDialog({ kind: 'add', urls: [] });
+    await settle();
+    const queue = inDialog().getByRole('combobox', { name: 'Queue' });
+    expect(queue).toHaveTextContent('Overnight');
+    expect(queue).toHaveAccessibleDescription('Queue: Overnight. It is the queue you had open.');
   });
 
   it('keeps a link the app refused in the box and says why there, in the dialog', async () => {

@@ -56,12 +56,14 @@ export class AddDraft {
   fileName = $state('');
   /** The folder to save in; null for the one Settings picks by file type. */
   folder = $state<string | null>(null);
-  /** The queue; null lets the core use its default (none listed yet). */
+  /** The queue every link goes to; null for Automatic, where the claims place each one. */
   queue = $state<QueueId | null>(null);
   /** Why the links cannot be sent as they are. */
   invalid = $state<string | null>(null);
   problem = $state<Problem | null>(null);
   busy = $state(false);
+  /** The queue the form opened on: the one shown in the window, or none for Automatic. */
+  readonly openedOn: QueueId | null;
   /** Opened with links (pasted, dropped, from the command line): they are ready to send as they are. */
   readonly fromPaste: boolean;
 
@@ -75,6 +77,7 @@ export class AddDraft {
     this.#host = host;
     this.text = start.urls.join('\n');
     this.queue = start.queue;
+    this.openedOn = start.queue;
     this.fromPaste = start.urls.length > 0;
   }
 

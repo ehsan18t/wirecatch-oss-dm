@@ -124,7 +124,7 @@ pub(super) struct QueueSlot {
 impl QueueSlot {
     pub fn new(queue: Queue) -> Self {
         Self {
-            limiter: Arc::new(RateLimiter::new(queue.settings.speed_limit)),
+            limiter: Arc::new(RateLimiter::new(queue.settings.speed_limit.own())),
             queue,
             gate: Gate::default(),
         }
@@ -524,6 +524,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
             file_name: "f".into(),
             path: "f".into(),
             queue: QueueId(1),
+            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
             category: Category::Other,
             status: DownloadStatus::Queued,
             total: None,
@@ -567,6 +568,7 @@ mod tests {
                 file_name: "f".into(),
                 path: "f".into(),
                 queue: QueueId(1),
+                queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
                 category: Category::Other,
                 status: DownloadStatus::Downloading,
                 total: None,

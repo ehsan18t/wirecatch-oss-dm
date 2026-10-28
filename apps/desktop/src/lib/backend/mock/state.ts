@@ -21,6 +21,7 @@ import {
   downloadId,
   questionId,
   queueId,
+  type QueueReason,
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { fileNameFromUrl } from '../../format';
@@ -62,6 +63,8 @@ export interface NewRow {
   url: string;
   file_name: string;
   queue: QueueId;
+  /** By default the person's pick when the row names its queue in the app, else the default queue's. */
+  queue_reason?: QueueReason;
   status: DownloadSummary['status'];
   total: number | null;
   done: number;
@@ -75,6 +78,7 @@ export interface NewRow {
 /** What `create` needs to add a download someone asked for. */
 export interface CreateOptions {
   queue?: QueueId | null;
+  queue_reason?: QueueReason;
   folder?: string | null;
   fileName?: string | null;
   start: boolean;
@@ -233,6 +237,7 @@ export class MockState {
       file_name: fields.file_name,
       path: `${folder}\\${fields.file_name}`,
       queue: fields.queue,
+      queue_reason: fields.queue_reason ?? { kind: 'default_queue' },
       category,
       status: fields.status,
       total: fields.total,
@@ -261,6 +266,7 @@ export class MockState {
       url,
       file_name: nonBlank(opts.fileName) ?? fileNameFromUrl(url),
       queue,
+      queue_reason: opts.queue_reason,
       status: opts.start ? 'queued' : 'paused',
       total: opts.size ?? Math.round(between(this.random, ADDED_SIZE_MB) * MB),
       done: 0,

@@ -102,4 +102,17 @@ describe('the main window', () => {
     expect(zone()).toBeNull();
     expect(app.dialog).toEqual({ kind: 'add', urls: ['https://example.org/big.iso'] });
   });
+
+  it('takes a queue dragged in the sidebar for no link', async () => {
+    const { app } = await renderApp();
+    const queue = {
+      types: ['application/x-wirecatch-queue', 'text/plain'],
+      getData: (t: string) => (t === 'text/plain' ? 'Overnight' : ''),
+    };
+    await fireEvent.dragOver(window, { dataTransfer: queue });
+    expect(screen.queryByText('Drop to download')).toBeNull();
+    await fireEvent.drop(window, { dataTransfer: queue });
+    await settle();
+    expect(app.dialog).toBeNull();
+  });
 });

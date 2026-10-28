@@ -80,14 +80,9 @@ export const MAX_CONCURRENT_DOWNLOADS = 100;
 export const DEFAULT_MAX_CONCURRENT_DOWNLOADS = 5;
 
 /**
- * Where a new queue's editor starts.
+ * Most characters in [`QueueSettings::description`].
  */
-export const NEW_QUEUE_MAX_CONCURRENT = 2;
-
-/**
- * The default queue's, on a fresh install.
- */
-export const DEFAULT_QUEUE_MAX_CONCURRENT = 3;
+export const MAX_QUEUE_DESCRIPTION_CHARS = 500;
 
 /**
  * [`ProcessingProgress::per_mille`] of a finished step: progress is counted in tenths of
@@ -180,6 +175,16 @@ export const ACCENTS: readonly Accent[] = [
   'amber',
   'system',
 ];
+
+/**
+ * Most claims of one kind in one queue.
+ */
+export const MAX_CLAIMS_PER_KIND = 200;
+
+/**
+ * Most characters in one claim as the person writes it.
+ */
+export const MAX_CLAIM_CHARS = 256;
 
 /**
  * The Tauri event that carries every [`UiEvent`](crate::app::UiEvent), in order.

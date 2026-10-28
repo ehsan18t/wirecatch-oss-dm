@@ -3,12 +3,43 @@ import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { DRAG_TYPE } from '$lib/dnd';
+import { claimsOf } from '$lib/queue-claims';
 import { renderApp, rowByName, settle } from '$lib/testing/setup';
 import { sidebarCollapsed } from '$lib/state/sidebar-preference';
 
 const nav = () => screen.getByRole('navigation', { name: 'Views and queues' });
 
 describe('the sidebar', () => {
+  it('marks auto queues, dims one whose claims are off, and marks a proxy set by hand', async () => {
+    const { app } = await renderApp();
+    const item = (name: string) =>
+      within(nav())
+        .getByRole('button', { name: new RegExp(`^${name}`) })
+        .closest('[draggable]');
+    const claim = async (name: string, enabled: boolean) => {
+      const queue = app.queues.list.find((q) => q.settings.name === name);
+      if (!queue) throw new Error('no sample queue');
+      const settings = JSON.parse(JSON.stringify(queue.settings)) as typeof queue.settings;
+      await app.queues.save(queue.id, {
+        ...settings,
+        takes: { kind: 'auto', ...claimsOf(undefined), enabled, sites: ['example.com'] },
+      });
+      await settle();
+    };
+    expect(within(nav()).queryByText('Auto')).toBeNull();
+    await claim('Overnight', true);
+    await claim('Work files', false);
+    expect(item('Overnight')).toHaveTextContent('Auto');
+    expect(item('Overnight')).not.toHaveClass('opacity-quiet');
+    expect(item('Work files')).toHaveTextContent('Auto off');
+    expect(item('Work files')).toHaveClass('opacity-quiet');
+    expect(within(nav()).queryAllByText('Uses a proxy')).toHaveLength(0);
+    if (!app.settings) throw new Error('no settings');
+    app.settings.proxy.mode = 'manual';
+    await settle();
+    expect(within(nav()).getAllByText('Uses a proxy')).toHaveLength(app.queues.list.length);
+  });
+
   it('shows each view with how many it holds, and marks the one shown', async () => {
     const { app } = await renderApp();
     const user = userEvent.setup();
@@ -43,6 +74,32 @@ describe('the sidebar', () => {
     expect(app.dialog).toEqual({ kind: 'queue', id: queueId(2) });
   });
 
+  it('moves a queue up and down below the default queue, which stays first', async () => {
+    const { app } = await renderApp();
+    const user = userEvent.setup();
+    const order = () => app.queues.list.map((q) => q.settings.name);
+    expect(order()).toEqual(['Main', 'Overnight', 'Work files']);
+    const actions = async (name: string) => {
+      await user.click(within(nav()).getByRole('button', { name: `Actions for ${name}` }));
+      return screen.getByRole('menu');
+    };
+
+    const main = await actions('Main');
+    expect(within(main).queryByRole('menuitem', { name: /^Move/ })).toBeNull();
+    await user.keyboard('{Escape}');
+    const overnight = await actions('Overnight');
+    expect(within(overnight).queryByRole('menuitem', { name: 'Move up' })).toBeNull();
+    await user.click(within(overnight).getByRole('menuitem', { name: 'Move down' }));
+    await settle();
+    expect(order()).toEqual(['Main', 'Work files', 'Overnight']);
+    expect(within(nav()).getByText('Overnight is now 3 of 3 queues.')).toHaveClass('sr-only');
+
+    const work = await actions('Work files');
+    await user.click(within(work).getByRole('menuitem', { name: 'Move down' }));
+    await settle();
+    expect(order()).toEqual(['Main', 'Overnight', 'Work files']);
+  });
+
   it('moves downloads dropped on a queue to it', async () => {
     const { app } = await renderApp();
     const libre = rowByName('LibreOffice');
@@ -58,6 +115,65 @@ describe('the sidebar', () => {
     await fireEvent.drop(target, { dataTransfer });
     await settle();
     expect(app.downloads.get(downloadId(id))?.queue).toBe(3);
+  });
+
+  it('moves a queue dragged onto another to its place, but never above the default queue', async () => {
+    const { app } = await renderApp();
+    const order = () => app.queues.list.map((q) => q.settings.name);
+    const data = new Map<string, string>();
+    const dataTransfer = {
+      get types() {
+        return [...data.keys()];
+      },
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type) ?? '',
+      effectAllowed: 'none',
+      dropEffect: 'none',
+    };
+    const item = (name: string) => {
+      const button = within(nav()).getByRole('button', { name: new RegExp(`^${name}`) });
+      return button.closest('[draggable]') ?? button;
+    };
+    expect(item('Main')).toHaveAttribute('draggable', 'false');
+    const drag = async (from: string, onto: string) => {
+      data.clear();
+      await fireEvent.dragStart(item(from), { dataTransfer });
+      await fireEvent.dragOver(item(onto), { dataTransfer });
+      await fireEvent.drop(item(onto), { dataTransfer });
+      await fireEvent.dragEnd(item(from), { dataTransfer });
+      await settle();
+    };
+
+    // While dragged, the queue fades; the line stays while the pointer crosses into the row's own button.
+    data.clear();
+    await fireEvent.dragStart(item('Work files'), { dataTransfer });
+    expect(item('Work files')).toHaveClass('opacity-dragged');
+    await fireEvent.dragOver(item('Overnight'), { dataTransfer });
+    const inside = within(nav()).getByRole('button', { name: 'Actions for Overnight' });
+    // jsdom has no DragEvent, and its stand-in drops `relatedTarget`.
+    await fireEvent(
+      item('Overnight'),
+      new MouseEvent('dragleave', { bubbles: true, relatedTarget: inside }),
+    );
+    expect(item('Overnight')).toHaveClass('after:-top-px');
+    await fireEvent.dragLeave(item('Overnight'), { dataTransfer, relatedTarget: null });
+    expect(item('Overnight')).not.toHaveClass('after:-top-px');
+    await fireEvent.dragEnd(item('Work files'), { dataTransfer });
+    expect(item('Work files')).not.toHaveClass('opacity-dragged');
+
+    // A drop ends the fade even when the moved row never gets its dragend.
+    await fireEvent.dragStart(item('Work files'), { dataTransfer });
+    await fireEvent.dragOver(item('Overnight'), { dataTransfer });
+    await fireEvent.drop(item('Overnight'), { dataTransfer });
+    await settle();
+    expect(item('Work files')).not.toHaveClass('opacity-dragged');
+    expect(order()).toEqual(['Main', 'Work files', 'Overnight']);
+    await drag('Work files', 'Overnight');
+
+    await drag('Work files', 'Main');
+    expect(order()).toEqual(['Main', 'Work files', 'Overnight']);
+    await drag('Work files', 'Overnight');
+    expect(order()).toEqual(['Main', 'Overnight', 'Work files']);
   });
 
   it('collapses to an icon rail from the title bar, and keeps that choice', async () => {

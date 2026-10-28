@@ -1,5 +1,11 @@
 import {
   downloadId,
+  FOLLOW_APP,
+  MANUAL_QUEUE,
+  ownSetting,
+  ownValue,
+  type QueueClaims,
+  type QueueTakes,
   questionId,
   queueId,
   type DownloadSummary,
@@ -29,6 +35,15 @@ function make(opts: ConstructorParameters<typeof MockBackend>[0] = {}) {
     },
   };
 }
+
+/** An auto queue's claims of the kinds the mock does not read. */
+const EMPTY_CLAIMS: Omit<QueueClaims, 'enabled' | 'sites'> = {
+  file_names: [],
+  file_name_syntax: 'wildcards',
+  file_types: [],
+  categories: [],
+  protocols: [],
+};
 
 const running = (rows: DownloadSummary[], queue?: number) =>
   rows.filter(
@@ -65,8 +80,12 @@ describe('MockBackend', () => {
     for (let i = 0; i < 20; i++) advance(250);
     const rows = await mock.listDownloads();
     const queues = await mock.listQueues();
-    for (const q of queues)
-      expect(running(rows, q.id).length).toBeLessThanOrEqual(q.settings.max_concurrent);
+    const limited = queues.flatMap((q) => {
+      const own = ownValue(q.settings.max_concurrent);
+      return own === null ? [] : [{ id: q.id, own }];
+    });
+    expect(limited.length).toBeGreaterThan(0);
+    for (const { id, own } of limited) expect(running(rows, id).length).toBeLessThanOrEqual(own);
     expect(running(rows).length).toBeLessThanOrEqual(
       (await mock.getSettings()).max_concurrent_downloads,
     );
@@ -91,7 +110,8 @@ describe('MockBackend', () => {
     for (let i = 0; i < 12; i++) advance(250);
     const work = running(await mock.listDownloads(), 3);
     const total = work.reduce((s, r) => s + r.speed, 0);
-    const limit = (await mock.listQueues()).find((q) => q.id === 3)?.settings.speed_limit;
+    const work3 = (await mock.listQueues()).find((q) => q.id === 3);
+    const limit = work3 ? ownValue(work3.settings.speed_limit) : null;
     expect(limit).toBeTypeOf('number');
     // Speeds are rounded to whole bytes, so the total may go one byte over.
     expect(total).toBeLessThanOrEqual((limit ?? 0) + 1);
@@ -153,18 +173,53 @@ describe('MockBackend', () => {
     const { mock } = make();
     const weekend = {
       name: 'Weekend',
-      max_concurrent: 2,
-      speed_limit: null,
+      description: '',
+      max_concurrent: ownSetting(2),
+      speed_limit: FOLLOW_APP,
+      connections: FOLLOW_APP,
+      takes: MANUAL_QUEUE,
       schedule: null,
       notify: 'each_download',
     } as const;
     const q = await mock.createQueue(weekend);
-    await mock.updateQueue(q.id, { ...weekend, max_concurrent: 5 });
-    expect((await mock.listQueues()).find((x) => x.id === q.id)?.settings.max_concurrent).toBe(5);
+    await mock.updateQueue(q.id, { ...weekend, max_concurrent: ownSetting(5) });
+    expect((await mock.listQueues()).find((x) => x.id === q.id)?.settings.max_concurrent).toEqual(
+      ownSetting(5),
+    );
     await expect(mock.deleteQueue(queueId(1))).rejects.toThrow(/default queue cannot be deleted/);
     await expect(mock.createQueue({ ...weekend, name: '  ' })).rejects.toThrow(/name/);
     await mock.deleteQueue(q.id);
     expect((await mock.listQueues()).some((x) => x.id === q.id)).toBe(false);
+  });
+
+  it('tries a link against saved and unsaved site claims', async () => {
+    const { mock } = make();
+    const takes = (enabled: boolean): QueueTakes => ({
+      ...EMPTY_CLAIMS,
+      kind: 'auto',
+      enabled,
+      sites: ['example.com'],
+    });
+    const videos = await mock.createQueue({
+      name: 'Videos',
+      description: '',
+      max_concurrent: FOLLOW_APP,
+      speed_limit: FOLLOW_APP,
+      connections: FOLLOW_APP,
+      takes: takes(true),
+      schedule: null,
+      notify: 'each_download',
+    });
+    const link = 'https://cdn.example.com/a.mp4';
+    const site = { kind: 'site', claim: 'example.com' } as const;
+    expect(await mock.tryLink({ url: link, draft: null })).toEqual({
+      taken: { queue: videos.id, claim: site },
+      switched_off: null,
+    });
+    expect(
+      await mock.tryLink({ url: link, draft: { queue: videos.id, takes: takes(false) } }),
+    ).toEqual({ taken: null, switched_off: { queue: videos.id, claim: site } });
+    await expect(mock.tryLink({ url: 'not a link', draft: null })).rejects.toThrow(/valid link/);
   });
 
   it('round-trips settings through export and import', async () => {

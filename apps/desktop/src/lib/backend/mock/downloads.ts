@@ -1,9 +1,16 @@
 // What the mock core does to downloads: add, pause, resume, cancel, retry, move and remove them.
 
-import type { AddRequest, DownloadId, DownloadSummary, QueueId } from '@wirecatch/protocol';
+import type {
+  AddRequest,
+  DownloadId,
+  DownloadSummary,
+  QueueId,
+  QueueReason,
+} from '@wirecatch/protocol';
 import { fileType, isProgramName } from '../../filetypes';
 import { hostOf } from '../../format';
 import { BackendError } from '../types';
+import { tryLink } from './queues';
 import { RUNNING, stop, type MockState } from './state';
 
 const NOT_A_LINK = 'That does not look like a link. Copy the full address, starting with https://.';
@@ -36,13 +43,26 @@ export function listDownloads(state: MockState): DownloadSummary[] {
 export function addDownload(state: MockState, request: AddRequest): DownloadId {
   requireLink(request.url);
   const row = state.create(request.url, {
-    queue: request.queue,
+    ...placed(state, request),
     folder: request.folder,
     fileName: request.file_name,
     start: request.start,
   });
   state.changed([row]);
   return row.id;
+}
+
+/** The queue a download added in the app joins, and why: the one picked, else the claims', else the default queue (D72.3). */
+function placed(
+  state: MockState,
+  request: AddRequest,
+): { queue: QueueId | null; queue_reason: QueueReason } {
+  if (request.queue !== null) return { queue: request.queue, queue_reason: { kind: 'picked' } };
+  const { taken } = tryLink(state, { url: request.url, draft: null });
+  const queue = taken?.queue ?? null;
+  if (taken === null || queue === null)
+    return { queue: null, queue_reason: { kind: 'default_queue' } };
+  return { queue, queue_reason: { kind: 'claimed', claim: taken.claim } };
 }
 
 export function pause(state: MockState, id: DownloadId): void {
@@ -112,6 +132,7 @@ export function moveToQueue(state: MockState, ids: DownloadId[], queue: QueueId)
     const r = state.rows.get(id);
     if (!r || r.queue === queue) return [];
     r.queue = queue;
+    r.queue_reason = { kind: 'picked' };
     return [r];
   });
   state.changed(rows);
