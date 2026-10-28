@@ -132,7 +132,7 @@ export class Queues {
     const fallback = this.defaultQueue?.settings.name ?? 'Main';
     const found = await Promise.all(urls.map((url) => this.tryLink({ url, draft: null })));
     const placed = found.flatMap((f): { name: string; reason: QueueReason }[] => {
-      if (typeof f === 'string') return [];
+      if ('problem' in f) return [];
       if (f.taken === null) return [{ name: fallback, reason: { kind: 'default_queue' } }];
       const { queue } = f.taken;
       const name = (queue === null ? undefined : this.byId(queue)?.settings.name) ?? fallback;

@@ -6,6 +6,7 @@ import type {
   LinkTrial,
   Queue,
   QueueId,
+  QueueReason,
   QueueSettings,
   QueueTakes,
   TriedClaim,
@@ -136,4 +137,14 @@ function readsAsRegex(pattern: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** The queue a question's answer sends its download to, and why: the proposal's, unless the person picked another (D72.8). */
+export function answeredQueue(
+  proposed: { queue: QueueId; queue_reason: QueueReason },
+  answer: QueueId | null,
+): { queue: QueueId; queue_reason: QueueReason } {
+  return answer === null || answer === proposed.queue
+    ? { queue: proposed.queue, queue_reason: proposed.queue_reason }
+    : { queue: answer, queue_reason: { kind: 'picked' } };
 }
