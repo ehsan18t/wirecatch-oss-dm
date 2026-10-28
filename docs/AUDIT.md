@@ -249,6 +249,7 @@ Found while building D73 (2026-10-29), outside what it changes:
 - A dialog opened over another, such as New proxy over the queue editor, is the same width and lines up with it, so the one below shows round its edges.
 - A select has no groups or dividers, so following the app, the fixed choices and the saved proxies run together in the queue's proxy list.
 - "<local> for names without a dot" in the help of the hosts to go directly to is jargon.
+- The `test-timing` check misses an upper bound on a duration measured through a helper: three FTP tests asserted `since(&paused_at) < 2 s` until one failed on a busy Windows runner (`crates/engine/tests/ftp.rs`). Proposed: also refuse, in a test outside tokio's paused clock, a comparison of any `Duration` value with a `Duration` written out (W6).
 - A run's proxy is read under the manager's lock, and with the computer's proxy and something added that reads the environment and on Windows the registry (`crates/core/src/manager/policy.rs`, `crates/settings/src/proxy.rs`); fast, but a blocking call on an async thread (W9).
 
 Parts of W4 carried into later work:
