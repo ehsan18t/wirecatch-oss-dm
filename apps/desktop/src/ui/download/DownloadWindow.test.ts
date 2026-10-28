@@ -219,3 +219,22 @@ describe('a download window and the clock', () => {
     expect(screen.getByRole('note')).toHaveTextContent(/^You downloaded this today at /);
   });
 });
+
+describe('why a download goes to its queue', () => {
+  it("says the core's reason, the person's pick once changed, and keeps it while it runs", async () => {
+    const b = mockBackend({ empty: true });
+    b.simulateConfirmation();
+    const [asked] = await b.pendingConfirmations();
+    await show(b, { question: asked?.id ?? questionId(0) });
+    const queue = screen.getByRole('combobox', { name: 'Queue' });
+    expect(queue).toHaveAccessibleDescription("Queue: Main. It is the browser's queue.");
+    const user = userEvent.setup();
+    await user.click(queue);
+    await user.click(screen.getByRole('option', { name: /^Overnight/ }));
+    await settle();
+    expect(queue).toHaveAccessibleDescription('Queue: Overnight. You picked it.');
+    await user.click(screen.getByRole('button', { name: 'Download now' }));
+    await settle();
+    expect(screen.getByText('Overnight').closest('dd')).toHaveTextContent('You picked it.');
+  });
+});

@@ -15,6 +15,7 @@
     statusDetail,
     statusShort,
   } from '$lib/format';
+  import { reasonPhrase } from '$lib/queue-reasons';
   import { track } from '$lib/state/reactivity';
   import { CLOSE_AFTER_MS, type DownloadWindowState } from '$lib/window/download-window.svelte';
   import CategoryIcon from '../CategoryIcon.svelte';
@@ -214,6 +215,13 @@
             </dd>
           </div>
         {/if}
+        <div class="col-span-2 min-w-0">
+          <dt class="text-small text-ink-muted">Queue</dt>
+          <dd class="text-ui text-ink">
+            {win.queueName(row.queue)}
+            <span class="text-small text-ink-muted">· {reasonPhrase(row.queue_reason)}</span>
+          </dd>
+        </div>
         <div class="col-span-2 min-w-0">
           <dt class="text-small text-ink-muted">Saved to</dt>
           <dd class="text-ui text-ink wrap-anywhere">{folderOf(row.path)}</dd>

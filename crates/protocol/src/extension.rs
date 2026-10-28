@@ -67,7 +67,7 @@ pub struct NewDownload {
     pub extra_headers: Vec<Header>,
     /// What in the browser started the capture.
     pub source: CaptureSource,
-    /// Queue to add to; the default queue if absent.
+    /// The browser's queue, used when no claim takes the download; absent, the one set in the app (D72.3).
     pub queue: Option<QueueId>,
     /// Set when the extension knows this is media rather than a plain file.
     #[serde(default, skip_serializing_if = "Option::is_none")]

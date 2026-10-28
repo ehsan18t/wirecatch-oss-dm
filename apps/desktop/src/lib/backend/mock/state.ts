@@ -78,6 +78,7 @@ export interface NewRow {
 /** What `create` needs to add a download someone asked for. */
 export interface CreateOptions {
   queue?: QueueId | null;
+  queue_reason?: QueueReason;
   folder?: string | null;
   fileName?: string | null;
   start: boolean;
@@ -265,6 +266,7 @@ export class MockState {
       url,
       file_name: nonBlank(opts.fileName) ?? fileNameFromUrl(url),
       queue,
+      queue_reason: opts.queue_reason,
       status: opts.start ? 'queued' : 'paused',
       total: opts.size ?? Math.round(between(this.random, ADDED_SIZE_MB) * MB),
       done: 0,
