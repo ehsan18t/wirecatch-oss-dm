@@ -15,7 +15,7 @@
 
 As of 2026-10-15 (main at e18e845f) the code quality audit has W0 to W5, W7, W8 and W14 done, and phase 1 of the interface revamp is on main. [AUDIT](AUDIT.md) has the status table and every carried item; this section is the order to take them in, which the maintainer may change.
 
-1. Queues that decide how their downloads run (D72), built on the queue rules crate and the run policy and queue choice of D74, then proxy profiles chosen per queue (D73), both before the first release. The in-app proxy setting of D71 is on main.
+1. Proxy profiles chosen per queue (D73), before the first release. Queues that decide how their downloads run (D72), on the queue rules crate and the run policy and queue choice of D74, and the in-app proxy setting of D71 are on main.
 2. The flaky tests still open under W6 in AUDIT. The tests that bounded the clock from above, behind most CI failures that local runs did not show, are fixed and refused by the `test-timing` check; the stray part file behind the Windows-only `.wcpart` failures is fixed. Open: `a_resume_file_that_cannot_be_read_is_logged_with_the_reason` (engine, failed once) and `progress_events_are_batched` (core, a real-time window).
 3. Phase 2 of the interface revamp ([REVAMP](REVAMP.md)): settings pages, the add-ons page, the remaining dialogs, the command palette, the in-page media button, the tray menu and installer pages, "Copy diagnostics" in the extension popup, the desktop's "already running" notice, then what phase 1 left open.
 4. The rest of W6: shared test support, CI, and the backlog of proposed gate checks listed under W6.
