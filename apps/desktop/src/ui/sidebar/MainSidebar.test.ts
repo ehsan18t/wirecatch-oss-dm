@@ -33,13 +33,11 @@ describe('the sidebar', () => {
     expect(item('Overnight')).not.toHaveClass('opacity-quiet');
     expect(item('Work files')).toHaveTextContent('Auto off');
     expect(item('Work files')).toHaveClass('opacity-quiet');
-    expect(within(nav()).queryAllByText('Uses the proxy set in Network')).toHaveLength(0);
+    expect(within(nav()).queryAllByText('Uses a proxy')).toHaveLength(0);
     if (!app.settings) throw new Error('no settings');
     app.settings.proxy.mode = 'manual';
     await settle();
-    expect(within(nav()).getAllByText('Uses the proxy set in Network')).toHaveLength(
-      app.queues.list.length,
-    );
+    expect(within(nav()).getAllByText('Uses a proxy')).toHaveLength(app.queues.list.length);
   });
 
   it('shows each view with how many it holds, and marks the one shown', async () => {

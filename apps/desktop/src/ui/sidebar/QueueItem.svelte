@@ -17,6 +17,7 @@
     IconButton,
     Menu,
     SidebarItem,
+    textIfCut,
     tooltip,
     type MenuEntry,
     type MenuTriggerProps,
@@ -49,7 +50,8 @@
   const takes = $derived(queue.settings.takes);
   // Until queues have proxies of their own (D73), each uses the app's, so all are marked while it is set by hand (D72.11).
   const proxied = $derived(app.settings?.proxy.mode === 'manual');
-  const PROXY_NOTE = 'Uses the proxy set in Network';
+  const status = $derived(app.queues.describe(queue));
+  const PROXY_NOTE = 'Uses a proxy';
   const outside = $derived(app.queues.isOutsideSchedule(queue) && !queue.status.paused);
 
   const entries = $derived<MenuEntry[]>([
@@ -187,7 +189,7 @@
   >
     {#snippet trailing()}
       {#if proxied}
-        <span class="mr-1.5 flex text-ink-subtle" {@attach tooltip(() => PROXY_NOTE)}>
+        <span class="mr-1.5 flex text-ink-muted" {@attach tooltip(() => PROXY_NOTE)}>
           <Icon icon={Network} size="xs" />
           <span class="sr-only">{PROXY_NOTE}</span>
         </span>
@@ -218,6 +220,6 @@
     {#if takes.kind === 'auto'}
       <Badge size="sm">{takes.enabled ? 'Auto' : 'Auto off'}</Badge>
     {/if}
-    <span class="truncate">{app.queues.describe(queue)}</span>
+    <span class="truncate" {@attach tooltip(() => textIfCut(status))}>{status}</span>
   </span>
 {/snippet}
