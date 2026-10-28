@@ -79,8 +79,12 @@ describe('the claims card', () => {
   it('keeps the claims of a queue whose claiming is switched off', async () => {
     const { app, dialog } = await openQueueDialog('Overnight');
     await click(dialog.getByRole('radio', { name: 'Auto' }));
+    expect(dialog.getByText(/claims nothing yet/)).toBeInTheDocument();
     await typeInto(dialog.getByLabelText('Sites'), 'example.org');
     await click(dialog.getByRole('switch', { name: /^Claim new downloads/ }));
+    expect(
+      dialog.getByText('Only the downloads you put in it, while its claims are off.'),
+    ).toBeInTheDocument();
     await save();
     expect(
       app.queues.list.find((q) => q.settings.name === 'Overnight')?.settings.takes,
@@ -96,6 +100,8 @@ describe('Try a link', () => {
     await typeInto(dialog.getByLabelText('Sites'), 'youtube.com');
     const result = await tryLink(screen.getByRole('dialog'), 'https://www.youtube.com/watch?v=1');
     expect(result).toHaveTextContent('Queue: Videos. It takes youtube.com.');
+    await typeInto(dialog.getByRole('textbox', { name: 'Sites' }), 'vimeo.com');
+    expect(dialog.queryByText(/^Queue: Videos/)).toBeNull();
     const elsewhere = await tryLink(screen.getByRole('dialog'), 'https://example.org/a.zip');
     expect(elsewhere).toHaveTextContent('Queue: Main. No queue claims it.');
   });
@@ -110,12 +116,17 @@ describe('Try a link', () => {
     expect(result).toHaveTextContent('Work files would take example.com, but its claims are off.');
   });
 
-  it('says why a link cannot be tried', async () => {
+  it('says why a link cannot be tried, until the link changes', async () => {
     const { dialog } = await openQueueDialog(null);
+    expect(dialog.queryByLabelText('Try a link')).toBeNull();
+    await click(dialog.getByRole('radio', { name: 'Auto' }));
     await typeInto(dialog.getByLabelText('Try a link'), 'not a link');
     await click(dialog.getByRole('button', { name: 'Try' }));
     expect(dialog.getByText(/is not a valid link/)).toBeInTheDocument();
     expect(dialog.getByLabelText('Try a link')).toHaveAttribute('aria-invalid', 'true');
+    await fireEvent.input(dialog.getByLabelText('Try a link'), { target: { value: 'https://' } });
+    await settle();
+    expect(dialog.queryByText(/is not a valid link/)).toBeNull();
   });
 
   it('tries the saved claims in Settings', async () => {
@@ -125,6 +136,7 @@ describe('Try a link', () => {
     await save();
     app.openSettings('queues');
     await settle();
+    expect(screen.getByRole('main')).toHaveTextContent('Takes share.example.com');
     const result = await tryLink(screen.getByRole('main'), 'https://share.example.com/report.pdf');
     expect(result).toHaveTextContent('Queue: Work files. It takes share.example.com.');
   });

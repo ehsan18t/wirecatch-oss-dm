@@ -32,7 +32,7 @@
     type FieldControl,
   } from '@wirecatch/ui';
   import { CATEGORIES, CATEGORY_LABEL } from '$lib/format';
-  import { fileTypeClaim, takesOf, toggled } from '$lib/queue-claims';
+  import { fileTypeClaim, hasClaims, takesOf, toggled } from '$lib/queue-claims';
   import ChoiceCard from './ChoiceCard.svelte';
   import TryLink from './TryLink.svelte';
 
@@ -67,7 +67,9 @@
     flush
     label="Takes new downloads"
     description={auto
-      ? 'The downloads you put in it, and new ones its claims match.'
+      ? claims.enabled
+        ? 'The downloads you put in it, and new ones its claims match.'
+        : 'Only the downloads you put in it, while its claims are off.'
       : 'Only the downloads you put in it.'}
     value={auto ? 'auto' : 'manual'}
     options={TAKES}
@@ -80,7 +82,9 @@
         labelSide="start"
         label="Claim new downloads"
         description={claims.enabled
-          ? 'New downloads its claims match come here.'
+          ? hasClaims(claims)
+            ? 'New downloads its claims match come here.'
+            : 'It claims nothing yet: add a site, a name, a type, a category or a protocol.'
           : 'Its claims are kept, but it takes nothing new until you turn this on.'}
         checked={claims.enabled}
         onchange={(on: boolean) => change({ enabled: on })}
@@ -90,7 +94,7 @@
     <div class="flex flex-col gap-4 p-3">
       <Field
         label="Sites"
-        description="A name covers the names under it. *.example.com, 10.0.0.0/8 and <local> work too."
+        description="example.com covers www.example.com too. *.example.com, 10.0.0.0/8 and <local> work as well."
       >
         {#snippet children(control: FieldControl)}
           <TagInput
@@ -177,14 +181,13 @@
       </div>
 
       <p class="text-small text-ink-muted">
-        A new download goes to the first claim that matches it: site, then file name, file type,
-        category and protocol. When two queues match it the same way, the one higher in the sidebar
-        takes it.
+        Claims are checked in this order: site, file name, file type, category, protocol. Between
+        queues, the one higher in the sidebar wins.
       </p>
     </div>
-  {/if}
 
-  <div class="p-3">
-    <TryLink {draft} draftName={name} />
-  </div>
+    <div class="p-3">
+      <TryLink {draft} draftName={name} />
+    </div>
+  {/if}
 </div>

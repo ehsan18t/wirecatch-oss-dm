@@ -1,5 +1,6 @@
 <script lang="ts">
   // Try a link: which queue the claims send a link to and why, a switched-off queue that would have taken it included (D72.5, D72.7). The core matches, so this and the downloads never disagree.
+  import { tick } from 'svelte';
   import type { DraftClaims, QueueId } from '@wirecatch/protocol';
   import { Button, Field, Input, type FieldControl } from '@wirecatch/ui';
   import { trialLines } from '$lib/queue-reasons';
@@ -22,6 +23,18 @@
   let lines = $state<string[]>([]);
   let problem = $state('');
   let busy = $state(false);
+  let result = $state<HTMLElement | null>(null);
+
+  // An answer is for the link and the claims it was given: a change to either takes it away.
+  $effect(() => {
+    void JSON.stringify(draft?.());
+    clear();
+  });
+
+  function clear() {
+    lines = [];
+    problem = '';
+  }
 
   function name(queue: QueueId | null): string {
     const drafted = draft?.();
@@ -45,10 +58,13 @@
     } finally {
       busy = false;
     }
+    // The form may be scrolled so the answer is below the fold.
+    await tick();
+    result?.scrollIntoView({ block: 'nearest' });
   }
 </script>
 
-<div class="flex flex-col gap-2">
+<div class="flex max-w-2xl flex-col gap-2">
   <div class="flex items-end gap-2">
     <Field label="Try a link" class="min-w-0 flex-1">
       {#snippet children(control: FieldControl)}
@@ -59,7 +75,10 @@
           invalid={problem !== ''}
           aria-describedby="{formId}-result"
           placeholder="https://example.com/file.zip"
-          onchange={(value: string) => (url = value)}
+          onchange={(value: string) => {
+            url = value;
+            clear();
+          }}
           onkeydown={(e: KeyboardEvent) => {
             // Inside the queue form, Enter tries the link instead of saving the queue.
             if (e.key !== 'Enter') return;
@@ -71,7 +90,12 @@
     </Field>
     <Button loading={busy} disabled={url.trim() === ''} onclick={run}>Try</Button>
   </div>
-  <div id="{formId}-result" role="status" class="flex flex-col gap-0.5 text-small">
+  <div
+    bind:this={result}
+    id="{formId}-result"
+    role="status"
+    class="flex flex-col gap-0.5 text-small"
+  >
     {#if problem}
       <p class="text-danger">{problem}</p>
     {:else}
