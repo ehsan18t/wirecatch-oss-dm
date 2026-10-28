@@ -647,11 +647,15 @@ pub async fn show_proxy_settings<R: Runtime>(
 
 #[tauri::command]
 pub async fn show_download_details<R: Runtime>(
-    app: AppHandle<R>,
+    window: WebviewWindow<R>,
     args: contract::show_download_details::Args,
 ) -> CommandResult<contract::show_download_details::Output> {
     let ShowDownloadDetailsArgs { id } = args;
-    crate::window::reveal(&app, &wirecatch_protocol::desktop::Reveal::details(id));
+    its_own(&window, Shows::Download(id))?;
+    crate::window::reveal(
+        window.app_handle(),
+        &wirecatch_protocol::desktop::Reveal::details(id),
+    );
     Ok(())
 }
 
