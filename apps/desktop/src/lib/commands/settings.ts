@@ -1,8 +1,9 @@
 // Commands for settings: opening any one of them, the switches people flip most, the theme,
-// and the media add-on, so it can be installed or removed without visiting Settings.
+// the app's proxy, and the media add-on, so it can be installed or removed without visiting Settings.
 
-import type { AddonInfo, Theme } from '@wirecatch/protocol';
+import type { AddonInfo, ProxyUse, Theme } from '@wirecatch/protocol';
 import { addonAction, isInstalled } from '../addons';
+import { sameUse, shownName } from '../proxy';
 import { SETTINGS, type SettingDef } from '../settings-schema';
 import { SECTIONS } from '../settings-sections';
 import type { AppState } from '../state/app.svelte';
@@ -103,6 +104,35 @@ const THEMES: readonly CommandSpec<AppState>[] = [
   },
 ];
 
+/** One proxy the app's could switch to (D73.4). */
+interface ProxyOption {
+  app: AppState;
+  proxy: ProxyUse;
+  /** Its name inside a sentence. */
+  name: string;
+}
+
+const PROXY: CommandSpec<ProxyOption> = {
+  id: ({ proxy }) => `proxy.use.${proxy.kind === 'profile' ? String(proxy.id) : proxy.kind}`,
+  title: ({ name }) => `Use ${name} for the app`,
+  keywords: 'proxy network switch socks http vpn direct',
+  when: ({ app, proxy }) => !app.settings || !sameUse(app.settings.proxy.proxy, proxy),
+  run: ({ app, proxy }) => app.updateSettings((d) => void (d.proxy.proxy = proxy)),
+};
+
+/** The proxies the app's could switch to, each named as a sentence takes it. */
+function proxyOptions(app: AppState): ProxyOption[] {
+  return [
+    { app, proxy: { kind: 'system' }, name: 'the computer’s proxy' },
+    { app, proxy: { kind: 'direct' }, name: 'no proxy' },
+    ...app.proxies.list.map((p) => ({
+      app,
+      proxy: { kind: 'profile' as const, id: p.id },
+      name: `the proxy ${shownName(p.settings)}`,
+    })),
+  ];
+}
+
 const ADDON_KEYWORDS = 'addon add-on yt-dlp ffmpeg deno youtube video media';
 
 /** One add-on as the palette offers it. */
@@ -169,6 +199,7 @@ export function settingsCommands(app: AppState): Command[] {
     ...SETTINGS.flatMap((s) => commandsFrom(GROUP, [SETTING], { app, s })),
     ...commandsFrom(GROUP, TOGGLES, switches),
     ...commandsFrom(GROUP, THEMES, app),
+    ...proxyOptions(app).flatMap((option) => commandsFrom(GROUP, [PROXY], option)),
   ];
 }
 

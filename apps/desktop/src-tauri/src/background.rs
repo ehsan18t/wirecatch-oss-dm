@@ -23,7 +23,7 @@ use crate::questions::{Attention, attention};
 use crate::window::MAIN_WINDOW;
 use crate::{
     RESYNC_EVENT, UI_EVENT, browser_notes, download_windows, finished_window, sleep,
-    system_notices, tray,
+    system_notices, tray, tray_proxy,
 };
 
 /// The tooltip changes at most this often.
@@ -286,6 +286,8 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
     let mut settings = manager.get_settings();
     let mut teller = Teller::default();
     teller.queues(&manager.list_queues());
+    let mut profiles = manager.list_proxy_profiles();
+    tray::set_proxies(&app, &tray_proxy::items(&settings.proxy, &profiles));
     sync_autostart(&app, &manager, settings.start_with_system, false);
 
     let mut shown = String::new();
@@ -305,7 +307,14 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
                             if new.start_with_system != settings.start_with_system {
                                 sync_autostart(&app, &manager, new.start_with_system, new.start_with_system);
                             }
+                            if new.proxy != settings.proxy {
+                                tray::set_proxies(&app, &tray_proxy::items(&new.proxy, &profiles));
+                            }
                             settings = *new;
+                        }
+                        UiEvent::ProxyProfilesChanged(list) => {
+                            profiles = list;
+                            tray::set_proxies(&app, &tray_proxy::items(&settings.proxy, &profiles));
                         }
                         UiEvent::QueuesChanged(queues) => teller.queues(&queues),
                         UiEvent::QueueFinished(report) => {
@@ -321,6 +330,8 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
                     activity.load(&manager.list_downloads());
                     settings = manager.get_settings();
                     teller.queues(&manager.list_queues());
+                    profiles = manager.list_proxy_profiles();
+                    tray::set_proxies(&app, &tray_proxy::items(&settings.proxy, &profiles));
                     tooltip_stale = true;
                 }
                 Err(RecvError::Closed) => return,
