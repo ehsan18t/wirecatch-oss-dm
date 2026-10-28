@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Adding downloads by hand: links pasted or typed, one per line, then where they are saved, in which queue, and whether they start now. The form is state (AddDraft), so links that reach the window while it is open join it. Opened with links, it starts on Download, so Enter sends them as they are; opened empty, on the links box.
+  // Adding downloads by hand: links pasted or typed, one per line, then where they are saved, in which queue (Automatic, where the claims send each, unless one is picked), and whether they start now. The form is state (AddDraft), so links that reach the window while it is open join it. Opened with links, it starts on Download, so Enter sends them as they are; opened empty, on the links box.
   import DownloadIcon from '~icons/lucide/download';
   import type { QueueId } from '@wirecatch/protocol';
   import { Button, Callout, Dialog, Field, type FieldControl, Kbd, TextArea } from '@wirecatch/ui';
@@ -23,6 +23,25 @@
 
   const count = $derived(draft.links.urls.length);
   const rows = $derived(count > 1 ? Math.min(LINK_ROWS_MAX, count + 1) : LINK_ROWS);
+  /** Where Automatic sends the links, asked again a moment after they stop changing. */
+  let placement = $state('');
+  const PLACEMENT_WAIT_MS = 250;
+  $effect(() => {
+    const { urls } = draft.links;
+    if (draft.queue !== null) return;
+    let current = true;
+    const timer = setTimeout(() => {
+      void app.queues.placement(urls).then((line) => {
+        if (current) placement = line;
+      });
+    }, PLACEMENT_WAIT_MS);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  });
+  const queueHint = $derived(draft.queue === null ? placement : 'For this add only.');
+
   /** Which button sent the links, for its spinner. */
   let sending = $state<'now' | 'paused' | null>(null);
 
@@ -104,8 +123,10 @@
       <QueueField
         class="flex-1 basis-48"
         queues={app.queues.list}
+        automatic
         value={draft.queue}
-        onchange={(queue: QueueId) => (draft.queue = queue)}
+        description={queueHint}
+        onchange={(queue: QueueId | null) => (draft.queue = queue)}
       />
     </div>
 

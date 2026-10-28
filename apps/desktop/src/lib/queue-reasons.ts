@@ -53,6 +53,20 @@ export function queueLine(name: string, reason: QueueReason): string {
   return `Queue: ${name}. ${reasonPhrase(reason)}`;
 }
 
+/** Where the claims send the Add dialog's links: why for one link, how many go to each queue for several (D72.8). */
+export function placementLine(placed: readonly { name: string; reason: QueueReason }[]): string {
+  const [first] = placed;
+  if (first === undefined) return "Each link goes where the queues' claims send it.";
+  if (placed.length === 1) return queueLine(first.name, first.reason);
+  const counts = new Map<string, number>();
+  for (const { name } of placed) counts.set(name, (counts.get(name) ?? 0) + 1);
+  if (counts.size === 1) return `Queue: ${first.name}, for all ${String(placed.length)} links.`;
+  const parts = [...counts].map(([name, n], i) =>
+    i === 0 ? `${String(n)} link${n === 1 ? '' : 's'} to ${name}` : `${String(n)} to ${name}`,
+  );
+  return `Queue: ${parts.join(', ')}.`;
+}
+
 /** What Try a link says: where the link goes and why, then the switched-off queue that would have taken it. `name` names a queue, `null` being the one not made yet; `fallback` is where a link nothing claims goes. */
 export function trialLines(
   found: LinkClaims,

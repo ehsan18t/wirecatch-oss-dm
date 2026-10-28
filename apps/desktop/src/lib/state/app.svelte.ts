@@ -409,7 +409,7 @@ export class AppState {
     this.addDraft = dialog.kind === 'add' ? this.#addDraft(dialog.urls, dialog.queue) : null;
   }
 
-  /** A new Add form with `urls`, for `queue`, else the queue on screen, else the default one. */
+  /** A new Add form with `urls`, for `queue`, else the queue on screen, else Automatic (D72.8). */
   #addDraft(urls: string[], queue: QueueId | undefined): AddDraft {
     const onScreen = this.view.kind === 'queue' ? this.view.id : undefined;
     const draft: AddDraft = new AddDraft(
@@ -424,7 +424,7 @@ export class AppState {
           if (this.addDraft === draft) this.closeDialog();
         },
       },
-      { urls, queue: queue ?? onScreen ?? this.queues.defaultQueue?.id ?? null },
+      { urls, queue: queue ?? onScreen ?? null },
     );
     return draft;
   }

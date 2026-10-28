@@ -6,10 +6,12 @@ import {
   type LinkTrial,
   type Queue,
   type QueueId,
+  type QueueReason,
   type QueueSettings,
 } from '@wirecatch/protocol';
 import { BackendError, type Backend } from '../backend';
 import { formatTime, scheduleAllows } from '../format';
+import { placementLine } from '../queue-reasons';
 import { errorMessage, type Runner } from './runner';
 import type { Toasts } from './toasts.svelte';
 import type { Counts } from './view';
@@ -123,6 +125,20 @@ export class Queues {
       const inLink = error instanceof BackendError && error.code === 'invalid_url';
       return { problem: errorMessage(error), inLink };
     }
+  }
+
+  /** Where the saved claims send each of `urls`, as the Add dialog's line says it; links that cannot be tried are left out. */
+  async placement(urls: readonly string[]): Promise<string> {
+    const fallback = this.defaultQueue?.settings.name ?? 'Main';
+    const found = await Promise.all(urls.map((url) => this.tryLink({ url, draft: null })));
+    const placed = found.flatMap((f): { name: string; reason: QueueReason }[] => {
+      if (typeof f === 'string') return [];
+      if (f.taken === null) return [{ name: fallback, reason: { kind: 'default_queue' } }];
+      const { queue } = f.taken;
+      const name = (queue === null ? undefined : this.byId(queue)?.settings.name) ?? fallback;
+      return [{ name, reason: { kind: 'claimed', claim: f.taken.claim } }];
+    });
+    return placementLine(placed);
   }
 
   /** Pauses or resumes a whole queue. Downloads paused one by one stay paused either way. */
