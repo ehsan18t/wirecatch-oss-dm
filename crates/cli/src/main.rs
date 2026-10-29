@@ -43,18 +43,18 @@ const PROGRESS_CHARS: &str = "=> ";
 struct Args {
     /// The URL to download: http, https, ftp, ftps or ftpes.
     ///
-    /// FTP links may carry a login, as in `ftp://user:password@host/path`; without one the download logs in anonymously. `ftps://` is encrypted from the start (port 990), or with AUTH TLS on port 21; `ftpes://` always uses AUTH TLS. An encrypted link never falls back to an unencrypted connection.
+    /// FTP links may include credentials, as in `ftp://user:password@host/path`; without them, the download signs in anonymously. `ftps://` is encrypted from the start (port 990), or with AUTH TLS on port 21; `ftpes://` always uses AUTH TLS. An encrypted link never falls back to an unencrypted connection.
     url: String,
 
-    /// Folder to save into.
-    #[arg(short = 'o', long, default_value = ".")]
+    /// Directory to save the file in.
+    #[arg(short = 'o', long, value_name = "DIR", default_value = ".")]
     output_dir: PathBuf,
 
     /// Save under this file name instead of the one the server suggests.
     #[arg(short = 'n', long)]
     name: Option<String>,
 
-    /// Most parallel connections.
+    /// Maximum number of parallel connections.
     #[arg(
         short = 'c',
         long,
@@ -63,29 +63,29 @@ struct Args {
     )]
     connections: u16,
 
-    /// Extra request header, for example -H "Cookie: a=b". Repeatable. HTTP and HTTPS only.
+    /// Add a request header, such as -H "Cookie: a=b". Can be repeated. HTTP and HTTPS only.
     ///
     /// Cookies, Authorization and other credentials are only sent to the URL's own site, never to another site it redirects to.
-    #[arg(short = 'H', long = "header")]
+    #[arg(short = 'H', long = "header", value_name = "HEADER")]
     headers: Vec<String>,
 
     /// Use HTTP/3 when the server offers it (experimental).
     ///
-    /// The other connections switch to HTTP/3 when the server's first answer advertises it, and switch back to HTTP/2 or HTTP/1.1 on any problem. Needs a wirecatch built with the http3 feature.
+    /// Once the server's first response advertises HTTP/3, the remaining connections switch to it, and fall back to HTTP/2 or HTTP/1.1 on any error. Requires a build with the `http3` feature.
     #[arg(long)]
     http3: bool,
 
-    /// Send every request through this proxy instead of the one the environment or the system sets.
+    /// Use this proxy instead of the one set by the environment or the system.
     ///
-    /// `http://`, `https://`, `socks5://` or `socks5h://` (the proxy resolves names), with a login as `user:password@` when it asks for one. Hosts named in `NO_PROXY` are still reached directly. FTP links go only through a SOCKS5 proxy.
+    /// `http://`, `https://`, `socks5://` or `socks5h://` (the proxy resolves names), with credentials as `user:password@` if the proxy requires them. Hosts named in `NO_PROXY` are still reached directly. FTP downloads can only use a SOCKS5 proxy.
     #[arg(long, value_name = "URL", conflicts_with = "no_proxy")]
     proxy: Option<String>,
 
-    /// Use no proxy, whatever the environment or the system sets.
+    /// Connect directly, ignoring any proxy set by the environment or the system.
     #[arg(long)]
     no_proxy: bool,
 
-    /// Print no progress bar.
+    /// Hide the progress bar.
     #[arg(short, long)]
     quiet: bool,
 }
@@ -152,7 +152,7 @@ fn build_request(args: Args) -> anyhow::Result<DownloadRequest> {
     };
     if is_ftp && !args.headers.is_empty() {
         bail!(
-            "request headers (-H) only apply to http and https links. For an FTP login, put it in the link: ftp://user:password@host/path"
+            "request headers (-H) only apply to http and https links. For FTP credentials, put them in the link: ftp://user:password@host/path"
         );
     }
     if args.http3 && !cfg!(feature = "http3") {
@@ -228,11 +228,11 @@ fn parse_header(raw: &str) -> anyhow::Result<(HeaderName, HeaderValue)> {
         .context("a -H header must look like 'Name: value'")?;
     let name = name.trim();
     let header = HeaderName::from_bytes(name.as_bytes()).ok().context(
-        "a -H header name may hold only letters, digits and the characters !#$%&'*+-.^_`|~",
+        "a -H header name can contain only letters, digits and the characters !#$%&'*+-.^_`|~",
     )?;
     let value = HeaderValue::from_str(value.trim()).map_err(|_| {
         anyhow::anyhow!(
-            "bad value for header {name}: it may hold only visible characters, spaces and tabs"
+            "invalid value for header {name}: it can contain only visible characters, spaces and tabs"
         )
     })?;
     Ok((header, value))
@@ -286,7 +286,7 @@ fn summary(outcome: &Outcome) -> (Ending, String) {
             ..
         } => {
             let kept = if *resumed_from > 0 {
-                format!(" ({} kept from earlier)", HumanBytes(*resumed_from))
+                format!(" ({} resumed from an earlier run)", HumanBytes(*resumed_from))
             } else {
                 String::new()
             };
