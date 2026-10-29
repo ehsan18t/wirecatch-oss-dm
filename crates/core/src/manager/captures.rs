@@ -404,7 +404,8 @@ impl Manager {
     fn join_unfinished(&self, capture: &NewDownload, url: &Url) -> Result<Option<AddedDownload>> {
         let mut state = self.lock_open()?;
         let Some(row) = state
-            .visible()
+            .unfinished()
+            .filter(|entry| !entry.hold.is_removing())
             .map(|entry| &entry.row)
             .find(|row| unfinished(row.status) && same_address(&row.url, url.as_str()))
             .cloned()

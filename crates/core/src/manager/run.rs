@@ -346,6 +346,8 @@ fn complete(claimed: &mut Claimed, entry: &mut Entry, bytes: u64, path: Option<P
 /// Puts a download in the completed state, its file `bytes` long.
 pub(super) fn mark_completed(entry: &mut Entry, bytes: u64, now: i64) {
     entry.row.status = DownloadStatus::Completed;
+    // The scheduler no longer visits it, so nothing would clear a reason left behind.
+    entry.row.waiting = None;
     entry.row.total = Some(bytes);
     entry.row.done = bytes;
     entry.row.completed_at = Some(now);
