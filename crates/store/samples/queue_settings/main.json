@@ -2,21 +2,21 @@
   "name": "Main",
   "description": "",
   "max_concurrent": {
-    "source": "follow_app"
+    "source": "global"
   },
   "speed_limit": {
-    "source": "follow_app"
+    "source": "global"
   },
   "connections": {
-    "source": "follow_app"
+    "source": "global"
   },
   "proxy": {
-    "source": "follow_app"
+    "source": "global"
   },
   "exceptions": {
-    "source": "follow_app"
+    "source": "global"
   },
-  "takes": {
+  "add_downloads": {
     "kind": "manual"
   },
   "schedule": null,

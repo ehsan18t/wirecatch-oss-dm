@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Network: the app's proxy, which every queue that follows it uses, the saved proxy profiles, and the hosts reached directly (D73). Each change applies to downloads that start after it.
+  // Network: the app's proxy, which every queue that follows it uses, the saved proxy servers, and the hosts reached directly (D73). Each change applies to downloads that start after it.
   import { MAX_PROXY_HOST_CHARS, type ProxyUse } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { Checkbox, Field, Select, TagInput, type FieldControl } from '@wirecatch/ui';
@@ -7,7 +7,7 @@
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
   import type { Row, SectionProps } from './row';
-  import ProxyProfileList from './ProxyProfileList.svelte';
+  import ProxyServerList from './ProxyServerList.svelte';
   import SettingRows from './SettingRows.svelte';
   import SettingToggle from './SettingToggle.svelte';
 
@@ -17,9 +17,9 @@
 
   const controls: Record<SettingIn<'network'>, Snippet<[Row]>> = {
     proxy: proxyChoice,
-    proxy_profiles: profileList,
+    proxy_servers: profileList,
     proxy_exceptions: exceptions,
-    ftp_direct: ftpDirect,
+    ftp_bypass_proxy: ftpBypassProxy,
   };
 
   const SYSTEM = 'system';
@@ -37,19 +37,19 @@
     settings.proxy.proxy.kind !== 'direct' ||
       app.queues.list.some(
         (q) =>
-          q.settings.exceptions.source === 'follow_app' &&
+          q.settings.exceptions.source === 'global' &&
           queueProxy(q, settings.proxy).kind !== 'direct',
       ),
   );
 
   function keyOf(proxy: ProxyUse): string {
-    return proxy.kind === 'profile' ? String(proxy.id) : proxy.kind;
+    return proxy.kind === 'server' ? String(proxy.id) : proxy.kind;
   }
 
   function proxyOf(key: string): ProxyUse {
     if (key === SYSTEM || key === DIRECT) return { kind: key };
     const profile = app.proxies.list.find((p) => String(p.id) === key);
-    return profile ? { kind: 'profile', id: profile.id } : { kind: 'system' };
+    return profile ? { kind: 'server', id: profile.id } : { kind: 'system' };
   }
 
   function normalizeException(text: string): string | null {
@@ -64,7 +64,7 @@
   {settings}
   {flash}
   {controls}
-  stacked={['proxy_profiles', 'proxy_exceptions']}
+  stacked={['proxy_servers', 'proxy_exceptions']}
 />
 
 {#snippet proxyChoice({ s, control }: Row)}
@@ -78,7 +78,7 @@
 {/snippet}
 
 {#snippet profileList()}
-  <ProxyProfileList />
+  <ProxyServerList />
 {/snippet}
 
 {#snippet exceptions({ def, s }: Row)}
@@ -116,11 +116,11 @@
   {/if}
 {/snippet}
 
-{#snippet ftpDirect({ def, s, control }: Row)}
+{#snippet ftpBypassProxy({ def, s, control }: Row)}
   <SettingToggle
     {control}
     label={def.label}
-    checked={s.proxy.ftp_direct}
-    onchange={(on: boolean) => save((d) => void (d.proxy.ftp_direct = on))}
+    checked={s.proxy.ftp_bypass_proxy}
+    onchange={(on: boolean) => save((d) => void (d.proxy.ftp_bypass_proxy = on))}
   />
 {/snippet}

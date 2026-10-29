@@ -1,11 +1,11 @@
 import {
   downloadId,
-  FOLLOW_APP,
+  GLOBAL,
   MANUAL_QUEUE,
   ownSetting,
   ownValue,
-  type QueueClaims,
-  type QueueTakes,
+  type QueueRules,
+  type AddDownloads,
   questionId,
   queueId,
   type DownloadSummary,
@@ -36,8 +36,8 @@ function make(opts: ConstructorParameters<typeof MockBackend>[0] = {}) {
   };
 }
 
-/** An auto queue's claims of the kinds the mock does not read. */
-const EMPTY_CLAIMS: Omit<QueueClaims, 'enabled' | 'sites'> = {
+/** An auto queue's rules of the kinds the mock does not read. */
+const EMPTY_RULES: Omit<QueueRules, 'enabled' | 'sites'> = {
   file_names: [],
   file_name_syntax: 'wildcards',
   file_types: [],
@@ -175,11 +175,11 @@ describe('MockBackend', () => {
       name: 'Weekend',
       description: '',
       max_concurrent: ownSetting(2),
-      speed_limit: FOLLOW_APP,
-      connections: FOLLOW_APP,
-      proxy: FOLLOW_APP,
-      exceptions: FOLLOW_APP,
-      takes: MANUAL_QUEUE,
+      speed_limit: GLOBAL,
+      connections: GLOBAL,
+      proxy: GLOBAL,
+      exceptions: GLOBAL,
+      add_downloads: MANUAL_QUEUE,
       schedule: null,
       notify: 'each_download',
     } as const;
@@ -194,10 +194,10 @@ describe('MockBackend', () => {
     expect((await mock.listQueues()).some((x) => x.id === q.id)).toBe(false);
   });
 
-  it('tries a link against saved and unsaved site claims', async () => {
+  it('tries a link against saved and unsaved site rules', async () => {
     const { mock } = make();
-    const takes = (enabled: boolean): QueueTakes => ({
-      ...EMPTY_CLAIMS,
+    const addDownloads = (enabled: boolean): AddDownloads => ({
+      ...EMPTY_RULES,
       kind: 'auto',
       enabled,
       sites: ['example.com'],
@@ -205,24 +205,27 @@ describe('MockBackend', () => {
     const videos = await mock.createQueue({
       name: 'Videos',
       description: '',
-      max_concurrent: FOLLOW_APP,
-      speed_limit: FOLLOW_APP,
-      connections: FOLLOW_APP,
-      proxy: FOLLOW_APP,
-      exceptions: FOLLOW_APP,
-      takes: takes(true),
+      max_concurrent: GLOBAL,
+      speed_limit: GLOBAL,
+      connections: GLOBAL,
+      proxy: GLOBAL,
+      exceptions: GLOBAL,
+      add_downloads: addDownloads(true),
       schedule: null,
       notify: 'each_download',
     });
     const link = 'https://cdn.example.com/a.mp4';
-    const site = { kind: 'site', claim: 'example.com' } as const;
+    const site = { kind: 'site', value: 'example.com' } as const;
     expect(await mock.tryLink({ url: link, draft: null })).toEqual({
-      taken: { queue: videos.id, claim: site },
+      matched: { queue: videos.id, rule: site },
       switched_off: null,
     });
     expect(
-      await mock.tryLink({ url: link, draft: { queue: videos.id, takes: takes(false) } }),
-    ).toEqual({ taken: null, switched_off: { queue: videos.id, claim: site } });
+      await mock.tryLink({
+        url: link,
+        draft: { queue: videos.id, add_downloads: addDownloads(false) },
+      }),
+    ).toEqual({ matched: null, switched_off: { queue: videos.id, rule: site } });
     await expect(mock.tryLink({ url: 'not a link', draft: null })).rejects.toThrow(/valid link/);
   });
 

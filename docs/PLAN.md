@@ -33,7 +33,7 @@ Wave 3  Packaging, installers, Linux verification, streams (HLS/DASH), media add
 
 ## Contracts already in place (Wave 0)
 
-- `wirecatch-protocol`: `Message`, `Call`, `Reply`, `Event`, `ExtensionSettings`, `NewDownload`, `DownloadSummary`, `Queue`, `Schedule`, `AppSettings`, `SettingsProfile` and the framing helpers in `frame`. TypeScript twins in `@wirecatch/protocol`.
+- `wirecatch-protocol`: `Message`, `Call`, `Reply`, `Event`, `ExtensionSettings`, `NewDownload`, `DownloadSummary`, `Queue`, `Schedule`, `AppSettings`, `SettingsFile` and the framing helpers in `frame`. TypeScript twins in `@wirecatch/protocol`.
 - `wirecatch-engine`: `download()`, `DownloadRequest` (including `exact_path` for manager-owned naming and link refresh), `DownloadOptions` (including `rate_limiters`), `RateLimiter`, `Progress`, `Outcome`, `Error::is_retryable`.
 
 ## WP1: Core (`crates/core`, `wirecatch-core`)

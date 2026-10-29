@@ -117,7 +117,7 @@ const PROXY_KEYWORDS = 'proxy network switch change turn off direct socks http v
 /** Switching to a proxy the app is not using, and the one it is using, which opens its setting. */
 const PROXY: readonly CommandSpec<ProxyOption>[] = [
   {
-    id: ({ proxy }) => `proxy.use.${proxy.kind === 'profile' ? String(proxy.id) : proxy.kind}`,
+    id: ({ proxy }) => `proxy.use.${proxy.kind === 'server' ? String(proxy.id) : proxy.kind}`,
     title: ({ proxy, name }) =>
       proxy.kind === 'direct' ? 'Proxy: turn off' : `Proxy: use ${name}`,
     keywords: PROXY_KEYWORDS,
@@ -140,7 +140,7 @@ function proxyOptions(app: AppState): ProxyOption[] {
     { app, proxy: { kind: 'direct' }, name: 'no proxy' },
     ...app.proxies.list.map((p) => ({
       app,
-      proxy: { kind: 'profile' as const, id: p.id },
+      proxy: { kind: 'server' as const, id: p.id },
       name: `“${shownName(p.settings)}”`,
     })),
   ];

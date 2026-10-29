@@ -24,7 +24,7 @@ import { DownloadActions } from './download-actions.svelte';
 import { DownloadStore } from './downloads.svelte';
 import { mainWindowEvents } from './app-events';
 import { dispatch, HeldEvents } from './events';
-import { ProxyProfiles } from './proxy-profiles.svelte';
+import { ProxyServers } from './proxy-servers.svelte';
 import { Questions } from './questions.svelte';
 import { revealDownloads } from './reveal';
 import { Queues } from './queues.svelte';
@@ -32,7 +32,7 @@ import { errorMessage, Runner } from './runner';
 import type { Dialog, Screen } from './screens';
 import { Selection } from './selection.svelte';
 import { changeSettings, SettingsWriter } from './settings-changes.svelte';
-import { SettingsTransfer } from './settings-transfer.svelte';
+import { ImportExport } from './import-export.svelte';
 import { Toasts } from './toasts.svelte';
 import { WindowFrameControls } from './window-frame';
 import {
@@ -90,7 +90,7 @@ export class AppState {
     runner: this.#runner,
     toasts: this.toasts,
   });
-  readonly proxies = new ProxyProfiles({
+  readonly proxies = new ProxyServers({
     backend: () => this.#backend,
     runner: this.#runner,
     toasts: this.toasts,
@@ -104,7 +104,7 @@ export class AppState {
     now: () => this.clock.now,
     counts: () => this.counts,
   });
-  readonly transfer = new SettingsTransfer({
+  readonly transfer = new ImportExport({
     backend: () => this.#backend,
     runner: this.#runner,
     imported: (settings, queues) => {
@@ -282,7 +282,7 @@ export class AppState {
       const [downloads, queues, proxies, settings, pending, name] = await Promise.all([
         this.#backend.listDownloads(),
         this.#backend.listQueues(),
-        this.#backend.listProxyProfiles(),
+        this.#backend.listProxyServers(),
         this.#backend.getSettings(),
         this.#backend.pendingConfirmations(),
         runningAppName(this.#backend),

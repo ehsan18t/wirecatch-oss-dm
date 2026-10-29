@@ -22,12 +22,12 @@ pub enum SettingsError {
     File(#[from] FileError),
 
     #[error(transparent)]
-    Profile(#[from] ProfileError),
+    Profile(#[from] SettingsFileError),
 }
 
 /// Why a settings file could not be imported.
 #[derive(Debug, thiserror::Error)]
-pub enum ProfileError {
+pub enum SettingsFileError {
     #[error(
         "This settings file was made by a newer version of Wirecatch (format {found}, this version reads up to {supported}). Update Wirecatch, then import it again."
     )]

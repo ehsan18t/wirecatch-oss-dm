@@ -11,8 +11,9 @@ use ts_rs::TS;
 
 use crate::QueueId;
 use crate::extension::{
-    AddedDownload, BrowserControls, BrowserControlsPatch, BrowserNote, ExtensionSettings,
-    ExtensionSettingsPatch, NewDownload, NotePressed, NoteShown, WithdrawOutcome, WithdrawRequest,
+    AddedDownload, BrowserControls, BrowserControlsPatch, BrowserNotice, ExtensionSettings,
+    ExtensionSettingsPatch, NewDownload, NoticePressed, NoticeShown, WithdrawOutcome,
+    WithdrawRequest,
 };
 use crate::version::{VersionError, VersionRange};
 
@@ -26,10 +27,10 @@ crate::exported::exported_consts! {
     /// start the app waits longer than this for the answer to `hello`.
     pub const BRIDGE_START_BUDGET_MS: u64 = 5_000;
 
-    /// How long the app waits, in milliseconds, for a browser to say it showed a note
-    /// ([`Call::NoteShown`]) before it shows the system notification instead (D65). A browser
-    /// gives no note that waited longer for its frame, since the person was told by then.
-    pub const NOTE_ANSWER_WAIT_MS: u64 = 1_000;
+    /// How long the app waits, in milliseconds, for a browser to say it showed a notice
+    /// ([`Call::NoticeShown`]) before it shows the system notification instead (D65). A browser
+    /// gives no notice that waited longer for its frame, since the person was told by then.
+    pub const NOTICE_ANSWER_WAIT_MS: u64 = 1_000;
 }
 
 /// One frame on a local connection.
@@ -142,11 +143,11 @@ pub enum Call {
     /// Brings the app's main window to the front on its browser settings, starting the app first
     /// like any call (the popup's settings button, D61); answered with [`Reply::Done`].
     ShowBrowserSettings,
-    /// Says the browser showed a note from [`Event::NoteRequested`] in the tab the person is
+    /// Says the browser showed a notice from [`Event::NoticeRequested`] in the tab the person is
     /// looking at (D65); answered with [`Reply::Done`].
-    NoteShown(NoteShown),
-    /// Says the person pressed one of a note's buttons (D65); answered with [`Reply::Done`].
-    NotePressed(NotePressed),
+    NoticeShown(NoticeShown),
+    /// Says the person pressed one of a notice's buttons (D65); answered with [`Reply::Done`].
+    NoticePressed(NoticePressed),
 }
 
 impl Call {
@@ -166,8 +167,8 @@ impl Call {
             Call::GetBrowserControls => CallMethod::GetBrowserControls,
             Call::UpdateBrowserControls(_) => CallMethod::UpdateBrowserControls,
             Call::ShowBrowserSettings => CallMethod::ShowBrowserSettings,
-            Call::NoteShown(_) => CallMethod::NoteShown,
-            Call::NotePressed(_) => CallMethod::NotePressed,
+            Call::NoticeShown(_) => CallMethod::NoticeShown,
+            Call::NoticePressed(_) => CallMethod::NoticePressed,
         }
     }
 }
@@ -202,10 +203,10 @@ pub enum CallMethod {
     UpdateBrowserControls,
     /// [`Call::ShowBrowserSettings`].
     ShowBrowserSettings,
-    /// [`Call::NoteShown`].
-    NoteShown,
-    /// [`Call::NotePressed`].
-    NotePressed,
+    /// [`Call::NoticeShown`].
+    NoticeShown,
+    /// [`Call::NoticePressed`].
+    NoticePressed,
     /// A method this build does not have, from a newer client.
     #[serde(other)]
     Unknown,
@@ -326,8 +327,8 @@ pub enum Event {
     BrowserControlsChanged(BrowserControls),
     /// Sent to every connected client when the person is to be told something in the browser
     /// (D65): the browser in front shows it in the tab the person is looking at and answers with
-    /// [`Call::NoteShown`]; the others leave it.
-    NoteRequested(BrowserNote),
+    /// [`Call::NoticeShown`]; the others leave it.
+    NoticeRequested(BrowserNotice),
 }
 
 impl Event {
@@ -338,7 +339,7 @@ impl Event {
             Event::ExtensionSettingsChanged(_) => EventKind::ExtensionSettingsChanged,
             Event::QueuesChanged(_) => EventKind::QueuesChanged,
             Event::BrowserControlsChanged(_) => EventKind::BrowserControlsChanged,
-            Event::NoteRequested(_) => EventKind::NoteRequested,
+            Event::NoticeRequested(_) => EventKind::NoticeRequested,
         }
     }
 }
@@ -354,8 +355,8 @@ pub enum EventKind {
     QueuesChanged,
     /// [`Event::BrowserControlsChanged`].
     BrowserControlsChanged,
-    /// [`Event::NoteRequested`].
-    NoteRequested,
+    /// [`Event::NoticeRequested`].
+    NoticeRequested,
 }
 
 /// The first call on a connection.
@@ -586,11 +587,11 @@ mod tests {
                 Call::UpdateBrowserControls(crate::extension::BrowserControlsPatch::default())
             }
             CallMethod::ShowBrowserSettings => Call::ShowBrowserSettings,
-            CallMethod::NoteShown => Call::NoteShown(NoteShown {
-                id: crate::extension::NoteId(1),
+            CallMethod::NoticeShown => Call::NoticeShown(NoticeShown {
+                id: crate::extension::NoticeId(1),
             }),
-            CallMethod::NotePressed => Call::NotePressed(NotePressed {
-                id: crate::extension::NoteId(1),
+            CallMethod::NoticePressed => Call::NoticePressed(NoticePressed {
+                id: crate::extension::NoticeId(1),
                 button: 0,
             }),
             CallMethod::Unknown => return None,
@@ -609,9 +610,9 @@ mod tests {
                 max_concurrent_downloads: 3,
                 media: crate::app::MediaDefaults::default(),
             }),
-            EventKind::NoteRequested => Event::NoteRequested(BrowserNote {
-                id: crate::extension::NoteId(1),
-                kind: crate::extension::NoteKind::Finished,
+            EventKind::NoticeRequested => Event::NoticeRequested(BrowserNotice {
+                id: crate::extension::NoticeId(1),
+                kind: crate::extension::NoticeKind::Finished,
                 title: "Download finished".into(),
                 body: "a.zip".into(),
                 buttons: vec!["Open".into()],

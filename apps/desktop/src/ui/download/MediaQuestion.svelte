@@ -22,7 +22,7 @@
   } from '@wirecatch/ui';
   import { isInstalled } from '$lib/addons';
   import { folderTail } from '$lib/file-names';
-  import { earlierNote, hostOf } from '$lib/format';
+  import { earlierNotice, hostOf } from '$lib/format';
   import {
     fitFor,
     kbpsFor,
@@ -176,7 +176,7 @@
     {/if}
     {#if win.earlier}
       <p class="flex items-center gap-1.5 text-small text-ink-muted" role="note">
-        <Icon icon={Info} size="sm" class="shrink-0" />{earlierNote(win.earlier, win.clock.now)}
+        <Icon icon={Info} size="sm" class="shrink-0" />{earlierNotice(win.earlier, win.clock.now)}
       </p>
     {/if}
 

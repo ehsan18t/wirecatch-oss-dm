@@ -15,7 +15,7 @@ use wirecatch_protocol::QuestionId;
 use wirecatch_protocol::app::{
     AddonRequestItem, DownloadSummary, MediaChoice, MediaReading, PendingCapture, Theme, UiEvent,
 };
-use wirecatch_protocol::extension::{NoteId, NotePressed};
+use wirecatch_protocol::extension::{NoticeId, NoticePressed};
 
 /// What a core event needs from the desktop besides reaching the open windows.
 #[derive(Debug, Clone, PartialEq)]
@@ -39,10 +39,10 @@ pub enum Attention {
     /// A video from the browser is read for its qualities without a window: told as added at
     /// once, by its title (D67).
     VideoAdded(String),
-    /// A browser showed the note with this id (D65).
-    NoteShown(NoteId),
-    /// The person pressed one of a browser note's buttons (D65).
-    NotePressed(NotePressed),
+    /// A browser showed the notice with this id (D65).
+    NoticeShown(NoticeId),
+    /// The person pressed one of a browser notice's buttons (D65).
+    NoticePressed(NoticePressed),
     /// The settings changed: every window takes on their theme (see [`crate::appearance`]).
     Theme(Theme),
     /// Something went wrong that the person must know about: a system notification when no
@@ -69,8 +69,8 @@ pub fn attention(event: &UiEvent) -> Attention {
         UiEvent::BrowserSettingsRequested => Attention::ShowBrowserSettings,
         UiEvent::Captured(row) => Attention::Started(Box::new(row.clone())),
         UiEvent::MediaCaptured { title, .. } => Attention::VideoAdded(title.clone()),
-        UiEvent::NoteShown(id) => Attention::NoteShown(*id),
-        UiEvent::NotePressed(pressed) => Attention::NotePressed(pressed.clone()),
+        UiEvent::NoticeShown(id) => Attention::NoticeShown(*id),
+        UiEvent::NoticePressed(pressed) => Attention::NoticePressed(pressed.clone()),
         UiEvent::SettingsChanged(settings) => Attention::Theme(settings.theme),
         UiEvent::StorageFailed(error) => Attention::Notify {
             title: format!(
@@ -120,7 +120,7 @@ mod tests {
             options: vec![],
             folder: "C:/Videos".into(),
             queue: QueueId(1),
-            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
             subtitles: Vec::new(),
             chapters: false,
             duration_ms: None,
@@ -163,7 +163,7 @@ mod tests {
             category: Category::Archive,
             size: None,
             queue: QueueId(1),
-            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
             page_url: None,
         }
     }
@@ -232,7 +232,7 @@ mod tests {
             file_name: "a.zip".into(),
             path: "C:/Downloads/a.zip".into(),
             queue: QueueId(1),
-            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
             category: Category::Archive,
             status: DownloadStatus::Downloading,
             total: None,

@@ -7,7 +7,7 @@ import {
 } from '../messages';
 import type { MediaCommands } from './deps';
 import { log } from '../diag/log';
-import { describeError } from './notices';
+import { describeError } from './alerts';
 
 export type PopupChannel = Channel<BackgroundMessage, unknown>;
 

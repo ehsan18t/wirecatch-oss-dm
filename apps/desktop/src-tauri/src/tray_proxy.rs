@@ -1,9 +1,9 @@
 //! The tray menu's Proxy submenu (D73.4): the app's proxy, switched with one click.
 
 use wirecatch_core::Manager;
-use wirecatch_protocol::ProxyProfileId;
+use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::AppSettingsPatch;
-use wirecatch_protocol::proxy::{ProxyProfile, ProxySettings, ProxyUse};
+use wirecatch_protocol::proxy::{ProxyServer, ProxySettings, ProxyUse};
 
 use crate::api;
 
@@ -20,14 +20,14 @@ pub struct ProxyItem {
 /// The submenu's entries: the computer's proxy, no proxy and each saved profile, the app's
 /// own checked.
 #[must_use]
-pub fn items(app: &ProxySettings, profiles: &[ProxyProfile]) -> Vec<ProxyItem> {
+pub fn items(app: &ProxySettings, profiles: &[ProxyServer]) -> Vec<ProxyItem> {
     let fixed = [
         (ProxyUse::System, "System proxy".to_owned()),
         (ProxyUse::Direct, "No proxy".to_owned()),
     ];
     let saved = profiles
         .iter()
-        .map(|p| (ProxyUse::Profile(p.id), p.settings.shown_name()));
+        .map(|p| (ProxyUse::Server(p.id), p.settings.shown_name()));
     fixed
         .into_iter()
         .chain(saved)
@@ -43,7 +43,7 @@ fn id_of(proxy: ProxyUse) -> String {
     match proxy {
         ProxyUse::System => format!("{ID_PREFIX}system"),
         ProxyUse::Direct => format!("{ID_PREFIX}direct"),
-        ProxyUse::Profile(id) => format!("{ID_PREFIX}{}", id.0),
+        ProxyUse::Server(id) => format!("{ID_PREFIX}{}", id.0),
     }
 }
 
@@ -53,7 +53,7 @@ pub fn proxy_of(id: &str) -> Option<ProxyUse> {
     match id.strip_prefix(ID_PREFIX)? {
         "system" => Some(ProxyUse::System),
         "direct" => Some(ProxyUse::Direct),
-        n => n.parse().ok().map(|n| ProxyUse::Profile(ProxyProfileId(n))),
+        n => n.parse().ok().map(|n| ProxyUse::Server(ProxyServerId(n))),
     }
 }
 
@@ -77,14 +77,14 @@ pub fn switch(manager: &Manager, proxy: ProxyUse) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use wirecatch_protocol::proxy::{ProxyKind, ProxyProfileSettings};
+    use wirecatch_protocol::proxy::{ProxyKind, ProxyServerSettings};
 
     use super::*;
 
-    fn profile(id: i64, name: &str) -> ProxyProfile {
-        ProxyProfile {
-            id: ProxyProfileId(id),
-            settings: ProxyProfileSettings {
+    fn profile(id: i64, name: &str) -> ProxyServer {
+        ProxyServer {
+            id: ProxyServerId(id),
+            settings: ProxyServerSettings {
                 name: name.into(),
                 kind: ProxyKind::Http,
                 host: "proxy.example".into(),
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn the_submenu_lists_every_proxy_and_checks_the_apps() {
         let app = ProxySettings {
-            proxy: ProxyUse::Profile(ProxyProfileId(4)),
+            proxy: ProxyUse::Server(ProxyServerId(4)),
             ..ProxySettings::default()
         };
         let items = items(&app, &[profile(4, "Office"), profile(5, "")]);
@@ -121,7 +121,7 @@ mod tests {
         }
         assert_eq!(
             proxy_of(&items[2].id),
-            Some(ProxyUse::Profile(ProxyProfileId(4)))
+            Some(ProxyUse::Server(ProxyServerId(4)))
         );
         assert_eq!(proxy_of("pause_all"), None);
         assert_eq!(proxy_of("proxy:nonsense"), None);

@@ -2,10 +2,10 @@
   // The queue editor's "Proxy" card: the queue's proxy, the app's or its own, with New proxy, and the hosts it reaches directly: the app's, or chosen from the computer's bypass list, the app's hosts and its own (D73.2, D73.7).
   import Plus from '~icons/lucide/plus';
   import {
-    FOLLOW_APP,
+    GLOBAL,
     MAX_PROXY_HOST_CHARS,
     ownSetting,
-    type ProxyProfileId,
+    type ProxyServerId,
     type ProxyUse,
     type QueueExceptions,
     type Setting,
@@ -14,7 +14,7 @@
   import { defaultProxySettings, proxyName, shownName } from '$lib/proxy';
   import { getApp } from '$lib/state/app.svelte';
   import ChoiceCard from './ChoiceCard.svelte';
-  import ProxyProfileDialog from './ProxyProfileDialog.svelte';
+  import ProxyServerDialog from './ProxyServerDialog.svelte';
 
   let {
     queueName,
@@ -55,20 +55,20 @@
   ]);
 
   function keyOf(setting: Setting<ProxyUse>): string {
-    if (setting.source === 'follow_app') return FOLLOW;
-    return setting.value.kind === 'profile' ? String(setting.value.id) : setting.value.kind;
+    if (setting.source === 'global') return FOLLOW;
+    return setting.value.kind === 'server' ? String(setting.value.id) : setting.value.kind;
   }
 
   function choose(key: string) {
     const profile = app.proxies.list.find((p) => String(p.id) === key);
-    if (key === FOLLOW) onchange(FOLLOW_APP, exceptions);
+    if (key === FOLLOW) onchange(GLOBAL, exceptions);
     else if (key === SYSTEM || key === DIRECT) onchange(ownSetting({ kind: key }), exceptions);
-    else if (profile) onchange(ownSetting({ kind: 'profile', id: profile.id }), exceptions);
+    else if (profile) onchange(ownSetting({ kind: 'server', id: profile.id }), exceptions);
   }
 
-  function created(id?: ProxyProfileId) {
+  function created(id?: ProxyServerId) {
     creating = false;
-    if (id !== undefined) onchange(ownSetting({ kind: 'profile', id }), exceptions);
+    if (id !== undefined) onchange(ownSetting({ kind: 'server', id }), exceptions);
   }
 
   /** The lists a queue starts from when it stops following the app's: the app's own choice. */
@@ -105,7 +105,7 @@
       </Field>
       <Button icon={Plus} onclick={() => (creating = true)}>New proxy</Button>
     </div>
-    {#if proxy.source === 'follow_app'}
+    {#if proxy.source === 'global'}
       <p class="text-small text-ink-muted">Follows the global proxy setting.</p>
     {/if}
   </div>
@@ -123,7 +123,7 @@
         { value: 'own', label: 'Custom' },
       ]}
       onchange={(next: 'app' | 'own') =>
-        onchange(proxy, next === 'app' ? FOLLOW_APP : ownSetting(fromApp()))}
+        onchange(proxy, next === 'app' ? GLOBAL : ownSetting(fromApp()))}
     />
     {#if own}
       <div class="flex flex-col gap-3 p-3">
@@ -171,5 +171,5 @@
 </div>
 
 {#if creating}
-  <ProxyProfileDialog id={null} forQueue={queueName.trim() || 'this queue'} onclose={created} />
+  <ProxyServerDialog id={null} forQueue={queueName.trim() || 'this queue'} onclose={created} />
 {/if}

@@ -75,7 +75,7 @@
     focused = document.hasFocus() && !!root && root.contains(document.activeElement);
   }
   /** Told in a window, a finished download stays in this one, which takes that window's place. */
-  const staysOpen = $derived(win.settings?.finish_notice === 'window');
+  const staysOpen = $derived(win.settings?.notify_on_finish === 'window');
   $effect(() => {
     if (!finished || staysOpen || hovered || focused || opening || asking !== null) return;
     const timer = setTimeout(() => win.close(), CLOSE_AFTER_MS);

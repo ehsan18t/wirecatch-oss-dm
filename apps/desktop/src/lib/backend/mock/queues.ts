@@ -2,14 +2,14 @@
 
 import type {
   DownloadSummary,
-  LinkClaims,
+  LinkMatch,
   LinkTrial,
   Queue,
   QueueId,
   QueueReason,
   QueueSettings,
-  QueueTakes,
-  TriedClaim,
+  AddDownloads,
+  RuleMatch,
 } from '@wirecatch/protocol';
 import { scheduleAllows } from '../../format';
 import { BackendError } from '../types';
@@ -98,8 +98,8 @@ export function setQueueOrder(state: MockState, order: QueueId[]): void {
   state.queuesChanged();
 }
 
-/** Test a link in the mock, by site claims alone: a name covers itself and the names under it; drafted regular expressions are checked by JavaScript's reader. The app matches every kind and pattern in `wirecatch-queues`; this stands in for it so the windows can be built against sample data. */
-export function tryLink(state: MockState, trial: LinkTrial): LinkClaims {
+/** Test a link in the mock, by site rules alone: a name covers itself and the names under it; drafted regular expressions are checked by JavaScript's reader. The app matches every kind and pattern in `wirecatch-queues`; this stands in for it so the windows can be built against sample data. */
+export function tryLink(state: MockState, trial: LinkTrial): LinkMatch {
   let host: string;
   try {
     host = new URL(trial.url).hostname;
@@ -110,25 +110,25 @@ export function tryLink(state: MockState, trial: LinkTrial): LinkClaims {
     );
   }
   const { draft } = trial;
-  if (draft?.takes.kind === 'auto' && draft.takes.file_name_syntax === 'regex') {
-    const unreadable = draft.takes.file_names.find((name) => !readsAsRegex(name));
+  if (draft?.add_downloads.kind === 'auto' && draft.add_downloads.file_name_syntax === 'regex') {
+    const unreadable = draft.add_downloads.file_names.find((name) => !readsAsRegex(name));
     if (unreadable !== undefined)
       throw new BackendError(`"${unreadable}" is not a regular expression Wirecatch can use.`);
   }
-  const queues: { id: QueueId | null; takes: QueueTakes }[] = state.queues.map((q) => ({
+  const queues: { id: QueueId | null; add_downloads: AddDownloads }[] = state.queues.map((q) => ({
     id: q.id,
-    takes: draft?.queue === q.id ? draft.takes : q.settings.takes,
+    add_downloads: draft?.queue === q.id ? draft.add_downloads : q.settings.add_downloads,
   }));
-  if (draft?.queue === null) queues.push({ id: null, takes: draft.takes });
-  const claimOf = (enabled: boolean): TriedClaim | null => {
-    for (const { id, takes } of queues) {
-      if (takes.kind !== 'auto' || takes.enabled !== enabled) continue;
-      const site = takes.sites.find((s) => host === s || host.endsWith(`.${s}`));
-      if (site !== undefined) return { queue: id, claim: { kind: 'site', claim: site } };
+  if (draft?.queue === null) queues.push({ id: null, add_downloads: draft.add_downloads });
+  const ruleOf = (enabled: boolean): RuleMatch | null => {
+    for (const { id, add_downloads: addDownloads } of queues) {
+      if (addDownloads.kind !== 'auto' || addDownloads.enabled !== enabled) continue;
+      const site = addDownloads.sites.find((s) => host === s || host.endsWith(`.${s}`));
+      if (site !== undefined) return { queue: id, rule: { kind: 'site', value: site } };
     }
     return null;
   };
-  return { taken: claimOf(true), switched_off: claimOf(false) };
+  return { matched: ruleOf(true), switched_off: ruleOf(false) };
 }
 
 function readsAsRegex(pattern: string): boolean {

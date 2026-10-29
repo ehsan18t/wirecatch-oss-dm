@@ -10,17 +10,17 @@ import {
   type MediaReading,
   type PendingCapture,
   type ProcessingStep,
-  type ProxyProfile,
-  type ProxyProfileId,
+  type ProxyServer,
+  type ProxyServerId,
   type Queue,
   type QuestionId,
   type QueueId,
-  type SettingsProfile,
+  type SettingsFile,
   type SuffixListInfo,
   type UiEvent,
   type UserError,
   downloadId,
-  proxyProfileId,
+  proxyServerId,
   questionId,
   queueId,
   type QueueReason,
@@ -122,19 +122,19 @@ export class MockState {
   mediaChoices: MediaChoice[] = [];
   addons: AddonInfo[] = [mediaAddon()];
   suffixList: SuffixListInfo = builtInSuffixList();
-  proxyProfiles: ProxyProfile[] = defaultProxies();
+  proxyServers: ProxyServer[] = defaultProxies();
   /** Pages being read for their qualities. */
   reading: MediaReading[] = [];
   /** Pages that asked for the media add-on; they continue once it is installed. */
   waitingForAddon: AddonPage[] = [];
   /** Settings files, by path: the mock writes none for real. */
-  readonly files = new Map<string, SettingsProfile>();
+  readonly files = new Map<string, SettingsFile>();
   /** What each add-on was before its install or update started, for Stop. */
   readonly beforeInstall = new Map<string, AddonInfo['state']>();
   readonly listeners = new Set<(e: UiEvent) => void>();
   #nextDownload = 1;
   #nextQueue = Math.max(...this.queues.map((q) => q.id)) + 1;
-  #nextProxy = Math.max(0, ...this.proxyProfiles.map((p) => p.id)) + 1;
+  #nextProxy = Math.max(0, ...this.proxyServers.map((p) => p.id)) + 1;
   /** Confirmations and media choices share one id space, as in the core. */
   #nextQuestion = 1;
 
@@ -154,9 +154,9 @@ export class MockState {
     return queueId(this.#nextQueue++);
   }
 
-  /** The id of the next proxy profile saved. */
-  newProxyId(): ProxyProfileId {
-    return proxyProfileId(this.#nextProxy++);
+  /** The id of the next proxy server saved. */
+  newProxyId(): ProxyServerId {
+    return proxyServerId(this.#nextProxy++);
   }
 
   /** The id of the next question asked: a file to confirm, a page being read or a quality to pick. */
@@ -189,10 +189,10 @@ export class MockState {
     this.emit({ type: 'queues_changed', data: this.queues.map((q) => structuredClone(q)) });
   }
 
-  proxyProfilesChanged(): void {
+  proxyServersChanged(): void {
     this.emit({
-      type: 'proxy_profiles_changed',
-      data: this.proxyProfiles.map((p) => structuredClone(p)),
+      type: 'proxy_servers_changed',
+      data: this.proxyServers.map((p) => structuredClone(p)),
     });
   }
 
@@ -248,8 +248,8 @@ export class MockState {
     const own = this.queues.find((q) => q.id === queue)?.settings.proxy;
     const proxy = own?.source === 'own' ? own.value : this.settings.proxy.proxy;
     // The sample computer sets no proxy, so the computer's goes directly too.
-    if (proxy.kind !== 'profile') return 'No proxy';
-    const profile = this.proxyProfiles.find((p) => p.id === proxy.id);
+    if (proxy.kind !== 'server') return 'No proxy';
+    const profile = this.proxyServers.find((p) => p.id === proxy.id);
     if (!profile) return 'No proxy';
     const address = proxyAddress(profile.settings);
     const name = profile.settings.name.trim();

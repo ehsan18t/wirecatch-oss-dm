@@ -10,7 +10,7 @@ import {
   isFirefox,
   liveTabs,
   mediaStore,
-  noticeStore,
+  alertStore,
   publishButtonSetting,
   retireLocalSettings,
   settingsCache,
@@ -30,9 +30,9 @@ import { MediaWatcher } from '@/lib/media/watch';
 import { acceptsPopupPort } from '@/lib/messages';
 import { NativeClient } from '@/lib/native/client';
 import { browserTransport } from '@/lib/native/port';
-import { NoteCenter } from '@/lib/notes/center';
-import { focusedWebTab } from '@/lib/notes/focus';
-import { NOTE_MOUNT, NOTE_UNMOUNT, NOTES_PORT, isMountAnswer } from '@/lib/notes/messages';
+import { NoticeCenter } from '@/lib/notices/center';
+import { focusedWebTab } from '@/lib/notices/focus';
+import { NOTICE_MOUNT, NOTICE_UNMOUNT, NOTICES_PORT, isMountAnswer } from '@/lib/notices/messages';
 
 const MENU_ID = 'wirecatch-download';
 
@@ -119,7 +119,7 @@ export default defineBackground(() => {
     ready: restored,
   });
 
-  const notes = new NoteCenter({
+  const notices = new NoticeCenter({
     focusedTab: () =>
       focusedWebTab({
         lastFocusedWindow: () => browser.windows.getLastFocused(),
@@ -129,16 +129,16 @@ export default defineBackground(() => {
     mount: async (tabId) => {
       const answer: unknown = await browser.tabs.sendMessage(
         tabId,
-        { type: NOTE_MOUNT },
+        { type: NOTICE_MOUNT },
         { frameId: 0 },
       );
       return isMountAnswer(answer) ? answer.token : null;
     },
     unmount: async (tabId) => {
-      await browser.tabs.sendMessage(tabId, { type: NOTE_UNMOUNT }, { frameId: 0 });
+      await browser.tabs.sendMessage(tabId, { type: NOTICE_UNMOUNT }, { frameId: 0 });
     },
-    shown: (id) => hub.noteShown(id),
-    pressed: (id, button) => hub.notePressed(id, button),
+    shown: (id) => hub.noticeShown(id),
+    pressed: (id, button) => hub.noticePressed(id, button),
     now: () => Date.now(),
   });
 
@@ -152,9 +152,9 @@ export default defineBackground(() => {
     hasSiteAccess,
     userAgent: navigator.userAgent,
     inFlight: inFlightStore(),
-    notice: noticeStore(),
+    alert: alertStore(),
     badge: toolbarBadge(),
-    notes,
+    notices,
   });
 
   // Every listener is registered synchronously so a sleeping background wakes up for it.
@@ -163,16 +163,16 @@ export default defineBackground(() => {
   registerContextMenu(hub);
   registerMedia(hub, media, watcher);
   browser.runtime.onConnect.addListener((port) => {
-    // The notes page proves itself with its frame's token; nothing else reaches the notes.
-    if (port.name === NOTES_PORT) {
-      notes.connect(port);
+    // The notices page proves itself with its frame's token; nothing else reaches the notices.
+    if (port.name === NOTICES_PORT) {
+      notices.connect(port);
       return;
     }
     // Only the extension's own popup, never a content script that knows the port name.
     if (!acceptsPopupPort(port, browser.runtime.id, browser.runtime.getURL('/'))) return;
     hub.addPopup(port);
   });
-  browser.tabs.onRemoved.addListener((tabId) => notes.tabRemoved(tabId));
+  browser.tabs.onRemoved.addListener((tabId) => notices.tabRemoved(tabId));
 
   browser.runtime.onInstalled.addListener(retireLocalSettings);
   void hub.start();

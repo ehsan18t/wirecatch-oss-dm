@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { CookieContext, CookieStore } from '../src/lib/cookies';
 import type { CachedSettings } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
-import { MEDIA_UNREACHABLE } from '../src/lib/hub/notices';
+import { MEDIA_UNREACHABLE } from '../src/lib/hub/alerts';
 import {
   MediaCenter,
   PRIVATE_WINDOW,

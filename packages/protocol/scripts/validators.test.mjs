@@ -63,7 +63,7 @@ test('a generic type is checked where it is used, with its type arguments', asyn
   writeFileSync(join(folder, 'Pair.ts'), 'export type Pair<A, B> = { first: A, second: B };\n');
   writeFileSync(
     join(folder, 'Setting.ts'),
-    'export type Setting<T> = { "source": "follow_app" } | { "source": "own", value: T };\n',
+    'export type Setting<T> = { "source": "global" } | { "source": "own", value: T };\n',
   );
   const { source, guards } = await guardsFor({
     Uses: '{ pair: Pair<string, number>, limit: Setting<number>, rows: Array<Setting<string>> }',
@@ -72,7 +72,7 @@ test('a generic type is checked where it is used, with its type arguments', asyn
   const { isUses } = guards;
   const uses = { pair: { first: 'a', second: 1 }, limit: { source: 'own', value: 3 }, rows: [] };
   assert.equal(isUses(uses), true);
-  assert.equal(isUses({ ...uses, limit: { source: 'follow_app' } }), true);
+  assert.equal(isUses({ ...uses, limit: { source: 'global' } }), true);
   assert.equal(isUses({ ...uses, rows: [{ source: 'own', value: 's' }] }), true);
   assert.equal(isUses({ ...uses, pair: { first: 1, second: 1 } }), false, 'a wrong first argument');
   assert.equal(

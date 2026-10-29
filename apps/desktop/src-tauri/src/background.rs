@@ -12,24 +12,24 @@ use tokio::time::Instant;
 use wirecatch_core::Manager;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
-    AppSettings, AppSettingsPatch, DownloadSummary, FinishNotice, Queue, QueueNotify, QueueReport,
-    StartNotice, UiEvent,
+    AppSettings, AppSettingsPatch, DownloadSummary, NotifyOnFinish, NotifyOnStart, Queue,
+    QueueNotify, QueueReport, UiEvent,
 };
-use wirecatch_protocol::extension::{MediaKind, NoteKind};
+use wirecatch_protocol::extension::{MediaKind, NoticeKind};
 
 use crate::activity::{Activity, Ended};
 use crate::autostart::{self, Action};
 use crate::questions::{Attention, attention};
 use crate::window::MAIN_WINDOW;
 use crate::{
-    RESYNC_EVENT, UI_EVENT, browser_notes, download_windows, finished_window, sleep,
-    system_notices, tray, tray_proxy,
+    RESYNC_EVENT, UI_EVENT, browser_notices, download_windows, finished_window, sleep,
+    system_notifications, tray, tray_proxy,
 };
 
 /// The tooltip changes at most this often.
 pub const TOOLTIP_EVERY: Duration = Duration::from_secs(1);
 
-/// Downloads finishing (or failing) within this long of the first one share one notice.
+/// Downloads finishing (or failing) within this long of the first one share one notification.
 pub const NOTIFY_BATCH: Duration = Duration::from_secs(3);
 
 /// Sends every core event to every open window (the main window and the download windows) on
@@ -59,8 +59,8 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
                     ),
                     Attention::Started(row) => started(&app, &row),
                     Attention::VideoAdded(title) => video_added(&app, &title),
-                    Attention::NoteShown(id) => browser_notes::shown(&app, id),
-                    Attention::NotePressed(pressed) => browser_notes::pressed(&app, &pressed),
+                    Attention::NoticeShown(id) => browser_notices::shown(&app, id),
+                    Attention::NoticePressed(pressed) => browser_notices::pressed(&app, &pressed),
                     Attention::Theme(theme) => crate::appearance::follow_theme(&app, theme),
                     Attention::Notify { title, body } => {
                         let unseen = app.get_webview_window(MAIN_WINDOW).is_none()
@@ -119,7 +119,7 @@ pub enum Tell {
 }
 
 /// Decides when to tell what: each queue's choice, and downloads that end close together
-/// sharing one notice. Holds no clock of its own, so tests give it the time.
+/// sharing one notification. Holds no clock of its own, so tests give it the time.
 #[derive(Debug, Default)]
 pub struct Teller {
     modes: HashMap<QueueId, QueueNotify>,
@@ -162,7 +162,7 @@ impl Teller {
         (!self.tells_each(report.queue)).then(|| Tell::Queue(report.clone()))
     }
 
-    /// When the next notice is due, if any waits.
+    /// When the next notification is due, if any waits.
     #[must_use]
     pub fn due(&self) -> Option<Instant> {
         match (self.finished_due, self.failed_due) {
@@ -171,7 +171,7 @@ impl Teller {
         }
     }
 
-    /// The notices due by `now`.
+    /// The notifications due by `now`.
     pub fn take_due(&mut self, now: Instant) -> Vec<Tell> {
         let mut tells = Vec::new();
         if self.finished_due.is_some_and(|due| due <= now) {
@@ -187,7 +187,7 @@ impl Teller {
 }
 
 /// Tells the person that a browser download started without a window, the way `settings` say
-/// (D65): a note in the browser for as long as they say, else a notification as brief.
+/// (D65): a notice in the browser for as long as they say, else a notification as brief.
 pub fn started<R: Runtime>(app: &AppHandle<R>, row: &DownloadSummary) {
     // A video read for its qualities was told when it was handed over (`video_added`, D67); one
     // added in the app is not the browser's.
@@ -198,28 +198,28 @@ pub fn started<R: Runtime>(app: &AppHandle<R>, row: &DownloadSummary) {
     {
         return;
     }
-    tell_added(app, |stays| crate::notices::started(row, stays));
+    tell_added(app, |stays| crate::notifications::started(row, stays));
 }
 
 /// Tells that a video from the browser was added, by its `title`, as soon as it is handed over
 /// to be read without a window (D67).
 pub fn video_added<R: Runtime>(app: &AppHandle<R>, title: &str) {
-    tell_added(app, |stays| crate::notices::video_added(title, stays));
+    tell_added(app, |stays| crate::notifications::video_added(title, stays));
 }
 
-/// Tells the notice `made` gives for how long the start note stays, the way the settings say.
+/// Tells the notification `made` gives for how long the start notice stays, the way the settings say.
 fn tell_added<R: Runtime>(
     app: &AppHandle<R>,
-    made: impl FnOnce(Duration) -> crate::notices::Notice,
+    made: impl FnOnce(Duration) -> crate::notifications::Notification,
 ) {
     let Some(settings) = settings_now(app) else {
         return;
     };
-    if settings.start_notice == StartNotice::Nothing {
+    if settings.notify_on_start == NotifyOnStart::Nothing {
         return;
     }
-    let stays = Duration::from_millis(settings.start_note_time.millis());
-    browser_notes::tell(app, made(stays), NoteKind::Started, Some(stays));
+    let stays = Duration::from_millis(settings.start_notice_time.millis());
+    browser_notices::tell(app, made(stays), NoticeKind::Started, Some(stays));
 }
 
 fn settings_now<R: Runtime>(app: &AppHandle<R>) -> Option<AppSettings> {
@@ -229,39 +229,39 @@ fn settings_now<R: Runtime>(app: &AppHandle<R>) -> Option<AppSettings> {
 
 /// Tells the person, the way `settings` say (D52, D65).
 pub fn tell<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings, tell: &Tell) {
-    let notice = || match tell {
-        Tell::Finished(rows) => crate::notices::finished(&rows.iter().collect::<Vec<_>>()),
-        Tell::Failed(rows) => crate::notices::failed(&rows.iter().collect::<Vec<_>>()),
-        Tell::Queue(report) => crate::notices::queue_done(report),
+    let notification = || match tell {
+        Tell::Finished(rows) => crate::notifications::finished(&rows.iter().collect::<Vec<_>>()),
+        Tell::Failed(rows) => crate::notifications::failed(&rows.iter().collect::<Vec<_>>()),
+        Tell::Queue(report) => crate::notifications::queue_done(report),
     };
-    match settings.finish_notice {
-        FinishNotice::Nothing => {}
-        FinishNotice::Notification => {
-            if let Some(notice) = notice() {
-                system_notices::show(app, notice);
+    match settings.notify_on_finish {
+        NotifyOnFinish::Nothing => {}
+        NotifyOnFinish::Notification => {
+            if let Some(notification) = notification() {
+                system_notifications::show(app, notification);
             }
         }
-        FinishNotice::Browser => {
+        NotifyOnFinish::Browser => {
             let failed = match tell {
                 Tell::Finished(_) => false,
                 Tell::Failed(_) => true,
                 Tell::Queue(report) => !report.failed.is_empty(),
             };
-            // A failure needs the person: its note stays until it is closed.
+            // A failure needs the person: its notice stays until it is closed.
             let (kind, stays) = if failed {
-                (NoteKind::Failed, None)
+                (NoticeKind::Failed, None)
             } else {
                 let stays = settings
-                    .finish_note_time
+                    .finish_notice_time
                     .millis()
                     .map(Duration::from_millis);
-                (NoteKind::Finished, stays)
+                (NoticeKind::Finished, stays)
             };
-            if let Some(notice) = notice() {
-                browser_notes::tell(app, notice, kind, stays);
+            if let Some(notification) = notification() {
+                browser_notices::tell(app, notification, kind, stays);
             }
         }
-        FinishNotice::Window => match tell {
+        NotifyOnFinish::Window => match tell {
             Tell::Finished(rows) | Tell::Failed(rows) => finished_window::add(app, None, rows),
             Tell::Queue(report) => {
                 let rows: Vec<DownloadSummary> = report
@@ -277,7 +277,7 @@ pub fn tell<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings, tell: &Tell)
     }
 }
 
-/// Keeps the tray tooltip, the notices of finished and failed downloads, and start-with-system
+/// Keeps the tray tooltip, the notifications of finished and failed downloads, and start-with-system
 /// up to date.
 pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
     let mut events = manager.subscribe();
@@ -286,7 +286,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
     let mut settings = manager.get_settings();
     let mut teller = Teller::default();
     teller.queues(&manager.list_queues());
-    let mut profiles = manager.list_proxy_profiles();
+    let mut profiles = manager.list_proxy_servers();
     tray::set_proxies(&app, &tray_proxy::items(&settings.proxy, &profiles));
     sync_autostart(&app, &manager, settings.start_with_system, false);
 
@@ -312,7 +312,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
                             }
                             settings = *new;
                         }
-                        UiEvent::ProxyProfilesChanged(list) => {
+                        UiEvent::ProxyServersChanged(list) => {
                             profiles = list;
                             tray::set_proxies(&app, &tray_proxy::items(&settings.proxy, &profiles));
                         }
@@ -330,7 +330,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
                     activity.load(&manager.list_downloads());
                     settings = manager.get_settings();
                     teller.queues(&manager.list_queues());
-                    profiles = manager.list_proxy_profiles();
+                    profiles = manager.list_proxy_servers();
                     tray::set_proxies(&app, &tray_proxy::items(&settings.proxy, &profiles));
                     tooltip_stale = true;
                 }
@@ -356,7 +356,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
 
 /// Shows a system notification with words only; a click shows the main window.
 pub fn show_notification<R: Runtime>(app: &AppHandle<R>, title: String, body: String) {
-    system_notices::show(app, system_notices::plain(title, body));
+    system_notifications::show(app, system_notifications::plain(title, body));
 }
 
 /// What changes the start-at-sign-in entry: the system's own (the autostart plugin), or a stand-in.

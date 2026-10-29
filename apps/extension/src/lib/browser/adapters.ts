@@ -22,18 +22,18 @@ import type {
   BrowserDownloads,
   InFlightEntry,
   InFlightStore,
-  NoticeStore,
+  AlertStore,
   SettingsCache,
 } from '../hub/deps';
 import type { MediaStore, TabInfo } from '../media/center';
 import { MEDIA_BUTTON_SETTING, type ButtonSetting } from '../media/messages';
-import { isNotice } from '../messages';
+import { isAlert } from '../messages';
 import type { HelloIdentity } from '../native/client';
 import { originPattern } from '../site-access';
 import { fields, isNumber, isString, itemsOf, object } from '../validate';
 
 const IN_FLIGHT_KEY = 'wirecatch.inFlight';
-const NOTICE_KEY = 'wirecatch.notices';
+const ALERT_KEY = 'wirecatch.alerts';
 const MEDIA_KEY = 'wirecatch.media.v1';
 
 interface FirefoxRuntime {
@@ -222,16 +222,16 @@ export function inFlightStore(): InFlightStore | undefined {
   };
 }
 
-export function noticeStore(): NoticeStore | undefined {
+export function alertStore(): AlertStore | undefined {
   const area = sessionArea();
   if (area === undefined) return undefined;
   return {
     async load() {
-      const items = await area.get(NOTICE_KEY);
-      return itemsOf(items[NOTICE_KEY], isNotice);
+      const items = await area.get(ALERT_KEY);
+      return itemsOf(items[ALERT_KEY], isAlert);
     },
-    async save(notices) {
-      await area.set({ [NOTICE_KEY]: notices });
+    async save(alerts) {
+      await area.set({ [ALERT_KEY]: alerts });
     },
   };
 }

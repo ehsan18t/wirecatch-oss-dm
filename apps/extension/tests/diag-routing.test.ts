@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cookieHeaderFor } from '../src/lib/browser/adapters';
 import { diagnostics, type DiagEntry } from '../src/lib/diag/log';
 import { Hub } from '../src/lib/hub/hub';
-import { NoticeBoard } from '../src/lib/hub/notice-board';
+import { AlertBoard } from '../src/lib/hub/alert-board';
 import { KnownSettings } from '../src/lib/hub/settings';
 import { MediaCenter } from '../src/lib/media/center';
 import { MediaRegistry } from '../src/lib/media/registry';
@@ -74,8 +74,8 @@ describe('routed errors', () => {
     ]);
   });
 
-  it('logs notices that cannot be read or saved', async () => {
-    const board = new NoticeBoard({
+  it('logs alerts that cannot be read or saved', async () => {
+    const board = new AlertBoard({
       now: () => 1,
       changed: () => undefined,
       store: { load: failing('unreadable'), save: failing('quota') },
@@ -85,8 +85,8 @@ describe('routed errors', () => {
       board.warn('Something to say.');
     });
     expect(entries).toEqual([
-      expect.objectContaining({ scope: 'notices', detail: 'Error: unreadable' }),
-      expect.objectContaining({ scope: 'notices', detail: 'Error: quota' }),
+      expect.objectContaining({ scope: 'alerts', detail: 'Error: unreadable' }),
+      expect.objectContaining({ scope: 'alerts', detail: 'Error: quota' }),
     ]);
   });
 

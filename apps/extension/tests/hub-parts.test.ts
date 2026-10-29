@@ -5,9 +5,9 @@ import { DuplicateWatch } from '../src/lib/hub/duplicates';
 import { AppCalls } from '../src/lib/hub/app';
 import { hubTiming } from '../src/lib/hub/deps';
 import { planMenuClick } from '../src/lib/hub/menu';
-import { MAX_NOTICES, NoticeBoard } from '../src/lib/hub/notice-board';
-import { keptInBrowser, mediaAnswer } from '../src/lib/hub/notices';
-import type { Notice } from '../src/lib/messages';
+import { MAX_ALERTS, AlertBoard } from '../src/lib/hub/alert-board';
+import { keptInBrowser, mediaAnswer } from '../src/lib/hub/alerts';
+import type { Alert } from '../src/lib/messages';
 import { KnownSettings } from '../src/lib/hub/settings';
 import { NativeClient, UNREADABLE_ANSWER } from '../src/lib/native/client';
 import { MemoryCache, FakeApp } from './fakes';
@@ -240,39 +240,39 @@ describe('mediaAnswer', () => {
   });
 });
 
-describe('NoticeBoard', () => {
-  it('keeps the newest notices, at most MAX_NOTICES', () => {
+describe('AlertBoard', () => {
+  it('keeps the newest alerts, at most MAX_ALERTS', () => {
     let now = 0;
-    const board = new NoticeBoard({ now: () => (now += 1), changed: () => undefined });
-    for (let i = 1; i <= MAX_NOTICES + 2; i += 1) board.warn(`Notice ${String(i)}.`);
+    const board = new AlertBoard({ now: () => (now += 1), changed: () => undefined });
+    for (let i = 1; i <= MAX_ALERTS + 2; i += 1) board.warn(`Alert ${String(i)}.`);
     const shown = board.current.map((n) => n.message);
-    expect(shown).toHaveLength(MAX_NOTICES);
-    expect(shown[0]).toBe(`Notice ${String(MAX_NOTICES + 2)}.`);
+    expect(shown).toHaveLength(MAX_ALERTS);
+    expect(shown[0]).toBe(`Alert ${String(MAX_ALERTS + 2)}.`);
   });
 
-  it('drops other notices before one that needs something done, however old', () => {
+  it('drops other alerts before one that needs something done, however old', () => {
     let now = 0;
-    const board = new NoticeBoard({ now: () => (now += 1), changed: () => undefined });
+    const board = new AlertBoard({ now: () => (now += 1), changed: () => undefined });
     board.error('big.zip is paused.', { downloadId: 3, untilResumed: true });
-    for (let i = 1; i <= MAX_NOTICES; i += 1) board.warn(`Notice ${String(i)}.`);
-    expect(board.current).toHaveLength(MAX_NOTICES);
+    for (let i = 1; i <= MAX_ALERTS; i += 1) board.warn(`Alert ${String(i)}.`);
+    expect(board.current).toHaveLength(MAX_ALERTS);
     expect(board.current.at(-1)?.message).toBe('big.zip is paused.');
-    expect(board.current[0]?.message).toBe(`Notice ${String(MAX_NOTICES)}.`);
+    expect(board.current[0]?.message).toBe(`Alert ${String(MAX_ALERTS)}.`);
   });
 
-  it('drops notices about a download that need nothing done before one that does', () => {
+  it('drops alerts about a download that need nothing done before one that does', () => {
     let now = 0;
-    const board = new NoticeBoard({ now: () => (now += 1), changed: () => undefined });
+    const board = new AlertBoard({ now: () => (now += 1), changed: () => undefined });
     board.error('big.zip is paused.', { downloadId: 3, untilResumed: true });
-    for (let i = 1; i <= MAX_NOTICES; i += 1) {
+    for (let i = 1; i <= MAX_ALERTS; i += 1) {
       board.warn(`file${String(i)}.zip stayed in the browser.`, { downloadId: 10 + i });
     }
-    expect(board.current).toHaveLength(MAX_NOTICES);
+    expect(board.current).toHaveLength(MAX_ALERTS);
     expect(board.current.at(-1)?.message).toBe('big.zip is paused.');
   });
 
-  it('leaves out a stored notice whose download moved or which was dismissed during the read', async () => {
-    const stored: Notice[] = [
+  it('leaves out a stored alert whose download moved or which was dismissed during the read', async () => {
+    const stored: Alert[] = [
       {
         id: 'd7',
         downloadId: 7,
@@ -295,7 +295,7 @@ describe('NoticeBoard', () => {
     let answer: (state: DownloadState) => void = () => undefined;
     const reading = new Promise<DownloadState>((resolve) => (answer = resolve));
     let now = 10;
-    const board = new NoticeBoard({
+    const board = new AlertBoard({
       now: () => (now += 1),
       changed: () => undefined,
       store: { load: () => Promise.resolve(stored), save: () => Promise.resolve() },
@@ -314,7 +314,7 @@ describe('NoticeBoard', () => {
   it('reads the copy again when it moves while a late answer is being judged', async () => {
     const reads: ((state: DownloadState) => void)[] = [];
     let now = 0;
-    const board = new NoticeBoard({
+    const board = new AlertBoard({
       now: () => (now += 1),
       changed: () => undefined,
       readCopy: () => new Promise<DownloadState>((resolve) => reads.push(resolve)),
@@ -330,9 +330,9 @@ describe('NoticeBoard', () => {
     expect(board.current[0]?.message).toContain('Wirecatch took it after all');
   });
 
-  it('dismisses one notice and leaves the others', () => {
+  it('dismisses one alert and leaves the others', () => {
     let now = 0;
-    const board = new NoticeBoard({ now: () => (now += 1), changed: () => undefined });
+    const board = new AlertBoard({ now: () => (now += 1), changed: () => undefined });
     board.warn('First.');
     board.error('Second.', { downloadId: 3 });
     board.dismiss(board.current[1]?.id ?? '');

@@ -13,7 +13,7 @@ use tauri::{
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
-    AppSettingsPatch, DownloadStatus, DownloadSummary, FinishNotice, UiEvent,
+    AppSettingsPatch, DownloadStatus, DownloadSummary, NotifyOnFinish, UiEvent,
 };
 use wirecatch_protocol::desktop::{
     DOWNLOAD_WINDOW_PAGE, FINISHED_EVENT, FINISHED_PARAMETER, FinishedGroup, FinishedList,
@@ -202,7 +202,7 @@ pub fn may_change(label: &str, patch: &AppSettingsPatch) -> bool {
     label == LABEL
         && *patch
             == AppSettingsPatch {
-                finish_notice: Some(FinishNotice::Notification),
+                notify_on_finish: Some(NotifyOnFinish::Notification),
                 ..AppSettingsPatch::default()
             }
 }
@@ -304,7 +304,7 @@ mod tests {
             file_name: format!("file-{id}"),
             path: String::new(),
             queue: QueueId(1),
-            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
             category: Category::Other,
             status,
             total: None,
@@ -411,13 +411,16 @@ mod tests {
 
     #[test]
     fn only_this_window_may_switch_to_notifications_and_nothing_else() {
-        let to = |notice| AppSettingsPatch {
-            finish_notice: Some(notice),
+        let to = |notification| AppSettingsPatch {
+            notify_on_finish: Some(notification),
             ..AppSettingsPatch::default()
         };
-        assert!(may_change(LABEL, &to(FinishNotice::Notification)));
-        assert!(!may_change(LABEL, &to(FinishNotice::Nothing)));
-        assert!(!may_change("download-d1", &to(FinishNotice::Notification)));
+        assert!(may_change(LABEL, &to(NotifyOnFinish::Notification)));
+        assert!(!may_change(LABEL, &to(NotifyOnFinish::Nothing)));
+        assert!(!may_change(
+            "download-d1",
+            &to(NotifyOnFinish::Notification)
+        ));
     }
 
     #[test]

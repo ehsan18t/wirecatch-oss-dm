@@ -1,4 +1,4 @@
-//! What the tray and the notices need to know about downloads: how many run, how fast, and
+//! What the tray and the notifications need to know about downloads: how many run, how fast, and
 //! which just finished or failed.
 //! Kept up to date from the core's events, so nothing is polled.
 
@@ -189,7 +189,7 @@ mod tests {
             file_name: format!("file-{id}.zip"),
             path: format!("C:/Downloads/file-{id}.zip"),
             queue: QueueId(1),
-            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
             category: Category::Archive,
             status,
             total: Some(100),

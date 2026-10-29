@@ -3,32 +3,32 @@ import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { DRAG_TYPE } from '$lib/dnd';
-import { claimsOf } from '$lib/queue-claims';
+import { rulesOf } from '$lib/queue-rules';
 import { renderApp, rowByName, settle } from '$lib/testing/setup';
 import { sidebarCollapsed } from '$lib/state/sidebar-preference';
 
 const nav = () => screen.getByRole('navigation', { name: 'Views and queues' });
 
 describe('the sidebar', () => {
-  it('marks auto queues, dims one whose claims are off, and marks the queues that use a proxy profile', async () => {
+  it('marks auto queues, dims one whose rules are off, and marks the queues that use a proxy server', async () => {
     const { app } = await renderApp();
     const item = (name: string) =>
       within(nav())
         .getByRole('button', { name: new RegExp(`^${name}`) })
         .closest('[draggable]');
-    const claim = async (name: string, enabled: boolean) => {
+    const rule = async (name: string, enabled: boolean) => {
       const queue = app.queues.list.find((q) => q.settings.name === name);
       if (!queue) throw new Error('no sample queue');
       const settings = JSON.parse(JSON.stringify(queue.settings)) as typeof queue.settings;
       await app.queues.save(queue.id, {
         ...settings,
-        takes: { kind: 'auto', ...claimsOf(undefined), enabled, sites: ['example.com'] },
+        add_downloads: { kind: 'auto', ...rulesOf(undefined), enabled, sites: ['example.com'] },
       });
       await settle();
     };
     expect(within(nav()).queryByText('Rules')).toBeNull();
-    await claim('Overnight', true);
-    await claim('Work files', false);
+    await rule('Overnight', true);
+    await rule('Work files', false);
     expect(item('Overnight')).toHaveTextContent('Rules');
     expect(item('Overnight')).not.toHaveClass('opacity-quiet');
     expect(item('Work files')).toHaveTextContent('Rules off');
@@ -39,7 +39,7 @@ describe('the sidebar', () => {
     if (!app.settings) throw new Error('no settings');
     const office = app.proxies.list[0];
     if (!office) throw new Error('no sample proxy');
-    app.settings.proxy.proxy = { kind: 'profile', id: office.id };
+    app.settings.proxy.proxy = { kind: 'server', id: office.id };
     await settle();
     expect(within(nav()).getAllByText('Proxy: Office')).toHaveLength(app.queues.list.length);
   });

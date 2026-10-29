@@ -4,9 +4,9 @@ use std::collections::BTreeSet;
 
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{Queue, QueueSettings, QueueStatus, Setting, UiEvent};
-use wirecatch_protocol::claims::{DraftClaims, LinkClaims, LinkTrial, QueueReason, QueueTakes};
+use wirecatch_protocol::rules::{AddDownloads, DraftRules, LinkMatch, LinkTrial, QueueReason};
 use wirecatch_protocol::wire::{Event, QueueSummary};
-use wirecatch_queues::claims;
+use wirecatch_queues::rules;
 
 use super::Manager;
 use super::downloads::parse_url;
@@ -26,8 +26,8 @@ impl Manager {
         self.lock().queue_summaries()
     }
 
-    /// Where `trial`'s link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7); drafted claims are checked as saving checks them.
-    pub fn try_link(&self, trial: &LinkTrial) -> Result<LinkClaims> {
+    /// Where `trial`'s link would go by the rules, saved or as one queue's editor has them (D72.5, D72.7); drafted rules are checked as saving checks them.
+    pub fn try_link(&self, trial: &LinkTrial) -> Result<LinkMatch> {
         let url = parse_url(&trial.url)?;
         let draft = trial.draft.clone().map(checked_draft).transpose()?;
         Ok(self.lock_open()?.try_link(&url, draft.as_ref()))
@@ -148,7 +148,7 @@ impl Manager {
         Ok(())
     }
 
-    /// Puts the queues in `order`, the sidebar's, which also settles ties between claims (D72.9); `order` names every queue once, the default queue first.
+    /// Puts the queues in `order`, the sidebar's, which also settles ties between rules (D72.9); `order` names every queue once, the default queue first.
     pub fn set_queue_order(&self, order: &[QueueId]) -> Result<()> {
         let mut state = self.lock_open()?;
         if order.first() != Some(&state.default_queue()) {
@@ -189,9 +189,9 @@ fn ensure_proxy_saved(state: &State, settings: &QueueSettings) -> Result<()> {
     match settings.proxy {
         Setting::Own(proxy) => Ok(wirecatch_settings::proxy::check_use(
             proxy,
-            &state.proxy_profiles,
+            &state.proxy_servers,
         )?),
-        Setting::FollowApp => Ok(()),
+        Setting::Global => Ok(()),
     }
 }
 
@@ -216,10 +216,11 @@ fn ensure_name_free(state: &State, name: &str, except: Option<QueueId>) -> Resul
     Ok(())
 }
 
-/// `draft` with its claims as saving keeps them, or why they cannot be kept.
-fn checked_draft(mut draft: DraftClaims) -> Result<DraftClaims> {
-    if let QueueTakes::Auto(written) = draft.takes {
-        draft.takes = QueueTakes::Auto(claims::checked(written).map_err(CoreError::Invalid)?);
+/// `draft` with its rules as saving keeps them, or why they cannot be kept.
+fn checked_draft(mut draft: DraftRules) -> Result<DraftRules> {
+    if let AddDownloads::Auto(written) = draft.add_downloads {
+        draft.add_downloads =
+            AddDownloads::Auto(rules::checked(written).map_err(CoreError::Invalid)?);
     }
     Ok(draft)
 }

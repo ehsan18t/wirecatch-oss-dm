@@ -52,17 +52,17 @@ export function addDownload(state: MockState, request: AddRequest): DownloadId {
   return row.id;
 }
 
-/** The queue a download added in the app joins, and why: the one picked, else the claims', else the default queue (D72.3). */
+/** The queue a download added in the app joins, and why: the one picked, else the rules', else the default queue (D72.3). */
 function placed(
   state: MockState,
   request: AddRequest,
 ): { queue: QueueId | null; queue_reason: QueueReason } {
   if (request.queue !== null) return { queue: request.queue, queue_reason: { kind: 'picked' } };
-  const { taken } = tryLink(state, { url: request.url, draft: null });
-  const queue = taken?.queue ?? null;
-  if (taken === null || queue === null)
+  const { matched } = tryLink(state, { url: request.url, draft: null });
+  const queue = matched?.queue ?? null;
+  if (matched === null || queue === null)
     return { queue: null, queue_reason: { kind: 'default_queue' } };
-  return { queue, queue_reason: { kind: 'claimed', claim: taken.claim } };
+  return { queue, queue_reason: { kind: 'matched', rule: matched.rule } };
 }
 
 export function pause(state: MockState, id: DownloadId): void {

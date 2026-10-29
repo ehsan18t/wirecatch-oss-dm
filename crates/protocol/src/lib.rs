@@ -5,7 +5,7 @@
 //! - [`wire`]: messages exchanged between the extension, the bridge and the app.
 //! - [`extension`]: what the extension sends and the settings it can change.
 //! - [`app`]: downloads, queues and settings as the desktop UI sees them.
-//! - [`claims`]: what an auto queue takes of the new downloads.
+//! - [`rules`]: what an auto queue takes of the new downloads.
 //! - [`media_start`]: where a video's quality window starts, and whether it opens at all.
 //! - [`desktop`]: the commands and events between the desktop UI and its Rust shell.
 //! - [`frame`]: length-prefixed JSON framing used on every local connection.
@@ -16,12 +16,12 @@
 mod exported;
 
 pub mod app;
-pub mod claims;
 pub mod desktop;
 pub mod extension;
 pub mod frame;
 pub mod media_start;
 pub mod proxy;
+pub mod rules;
 pub mod secret;
 pub mod secrets;
 pub mod version;
@@ -49,12 +49,10 @@ pub struct DownloadId(#[ts(type = "number & { readonly __brand: \"DownloadId\" }
 #[ts(export)]
 pub struct QueueId(#[ts(type = "number & { readonly __brand: \"QueueId\" }")] pub i64);
 
-/// Identifies one proxy profile (D73).
+/// Identifies one proxy server (D73).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct ProxyProfileId(
-    #[ts(type = "number & { readonly __brand: \"ProxyProfileId\" }")] pub i64,
-);
+pub struct ProxyServerId(#[ts(type = "number & { readonly __brand: \"ProxyServerId\" }")] pub i64);
 
 /// Identifies one question the app asks the person about a browser download: a file to
 /// confirm ([`app::PendingCapture`]), media being read ([`app::MediaReading`]), a quality to pick

@@ -42,9 +42,9 @@ describe('a queue’s proxy', () => {
     const overnight = app.queues.list.find((q) => q.settings.name === 'Overnight');
     expect(overnight?.settings.proxy).toEqual({
       source: 'own',
-      value: { kind: 'profile', id: app.proxies.list[0]?.id },
+      value: { kind: 'server', id: app.proxies.list[0]?.id },
     });
-    expect(overnight?.settings.exceptions).toEqual({ source: 'follow_app' });
+    expect(overnight?.settings.exceptions).toEqual({ source: 'global' });
   });
 
   it('chooses its own hosts to go directly to, starting from the app’s', async () => {

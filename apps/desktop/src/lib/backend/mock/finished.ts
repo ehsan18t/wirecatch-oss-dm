@@ -13,7 +13,7 @@ import {
   type FinishedQueue,
   type UiEvent,
 } from '@wirecatch/protocol';
-import { retryHelps } from '../../finish-notices';
+import { retryHelps } from '../../notify-options';
 import type { FinishedSource, Unsubscribe } from '../types';
 import type { MockState } from './state';
 
@@ -51,7 +51,8 @@ export class MockFinished implements FinishedSource {
         this.#state.queues.find((q) => q.id === row.queue)?.settings.notify !== 'when_done';
       if (row.status === 'failed' || (row.status === 'completed' && tellsEach)) ended.push(row);
     }
-    if (ended.length > 0 && this.#state.settings.finish_notice === 'window') this.add(null, ended);
+    if (ended.length > 0 && this.#state.settings.notify_on_finish === 'window')
+      this.add(null, ended);
   }
 
   /** Adds what ended, oldest first, and opens the window. */

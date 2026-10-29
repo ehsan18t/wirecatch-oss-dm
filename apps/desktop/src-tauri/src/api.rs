@@ -9,15 +9,15 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use wirecatch_core::{LinkFrom, Manager};
-use wirecatch_protocol::ProxyProfileId;
+use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
     CaptureConfirmation, DownloadStatus, DownloadSummary, ImportPreview, MediaChoice,
     MediaSelection, PendingCapture, Question, Queue, QueueSettings, SuffixListInfo,
 };
-use wirecatch_protocol::claims::{LinkClaims, LinkTrial};
 use wirecatch_protocol::desktop::SAFE_EXTENSIONS;
-use wirecatch_protocol::proxy::{ProxyProfile, ProxyProfileDraft, ProxyTestResult, ProxyUse};
+use wirecatch_protocol::proxy::{ProxyServer, ProxyServerDraft, ProxyTestResult, ProxyUse};
+use wirecatch_protocol::rules::{LinkMatch, LinkTrial};
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 
@@ -655,69 +655,66 @@ pub fn set_queue_order(m: &Manager, order: &[QueueId]) -> CommandResult<()> {
     plain(m.set_queue_order(order))
 }
 
-/// Where a link would go by the claims, saved or as one queue's editor has them.
+/// Where a link would go by the rules, saved or as one queue's editor has them.
 ///
 /// # Errors
 ///
 /// The link is not http, https or FTP ([`Manager::try_link`]).
-pub fn try_link(m: &Manager, trial: &LinkTrial) -> CommandResult<LinkClaims> {
+pub fn try_link(m: &Manager, trial: &LinkTrial) -> CommandResult<LinkMatch> {
     plain(m.try_link(trial))
 }
 
 #[must_use]
-pub fn list_proxy_profiles(m: &Manager) -> Vec<ProxyProfile> {
-    m.list_proxy_profiles()
+pub fn list_proxy_servers(m: &Manager) -> Vec<ProxyServer> {
+    m.list_proxy_servers()
 }
 
-/// Saves a new proxy profile and tests it in the background.
+/// Saves a new proxy server and tests it in the background.
 ///
 /// # Errors
 ///
-/// The profile cannot work, or there are as many as there can be ([`Manager::create_proxy_profile`]).
-pub fn create_proxy_profile(
-    m: &Manager,
-    draft: ProxyProfileDraft,
-) -> CommandResult<ProxyProfileId> {
-    plain(m.create_proxy_profile(draft))
+/// The profile cannot work, or there are as many as there can be ([`Manager::create_proxy_server`]).
+pub fn create_proxy_server(m: &Manager, draft: ProxyServerDraft) -> CommandResult<ProxyServerId> {
+    plain(m.create_proxy_server(draft))
 }
 
-/// Saves a proxy profile's new settings.
+/// Saves a proxy server's new settings.
 ///
 /// # Errors
 ///
-/// The profile is gone or cannot work ([`Manager::update_proxy_profile`]).
-pub fn update_proxy_profile(
+/// The profile is gone or cannot work ([`Manager::update_proxy_server`]).
+pub fn update_proxy_server(
     m: &Manager,
-    id: ProxyProfileId,
-    draft: ProxyProfileDraft,
+    id: ProxyServerId,
+    draft: ProxyServerDraft,
 ) -> CommandResult<()> {
-    plain(m.update_proxy_profile(id, draft))
+    plain(m.update_proxy_server(id, draft))
 }
 
-/// Deletes a proxy profile; what used it uses `replacement`.
+/// Deletes a proxy server; what used it uses `replacement`.
 ///
 /// # Errors
 ///
-/// The profile is gone, or `replacement` is it or not saved ([`Manager::delete_proxy_profile`]).
-pub fn delete_proxy_profile(
+/// The profile is gone, or `replacement` is it or not saved ([`Manager::delete_proxy_server`]).
+pub fn delete_proxy_server(
     m: &Manager,
-    id: ProxyProfileId,
+    id: ProxyServerId,
     replacement: ProxyUse,
 ) -> CommandResult<()> {
-    plain(m.delete_proxy_profile(id, replacement))
+    plain(m.delete_proxy_server(id, replacement))
 }
 
-/// Tries a proxy profile before it is saved.
+/// Tries a proxy server before it is saved.
 ///
 /// # Errors
 ///
-/// The profile cannot work, or `id` is not saved ([`Manager::test_proxy_profile`]).
-pub async fn test_proxy_profile(
+/// The profile cannot work, or `id` is not saved ([`Manager::test_proxy_server`]).
+pub async fn test_proxy_server(
     m: &Manager,
-    id: Option<ProxyProfileId>,
-    draft: ProxyProfileDraft,
+    id: Option<ProxyServerId>,
+    draft: ProxyServerDraft,
 ) -> CommandResult<ProxyTestResult> {
-    plain(m.test_proxy_profile(id, draft).await)
+    plain(m.test_proxy_server(id, draft).await)
 }
 
 /// Saves a profile for each server of the computer's proxy.
@@ -725,7 +722,7 @@ pub async fn test_proxy_profile(
 /// # Errors
 ///
 /// A server cannot be saved as a profile ([`Manager::copy_system_proxy`]).
-pub async fn copy_system_proxy(m: &Manager) -> CommandResult<Vec<ProxyProfileId>> {
+pub async fn copy_system_proxy(m: &Manager) -> CommandResult<Vec<ProxyServerId>> {
     plain(m.copy_system_proxy().await)
 }
 

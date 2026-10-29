@@ -29,8 +29,8 @@ import {
   type DownloadId,
   type FinishedList,
   type MediaSelection,
-  type ProxyProfileDraft,
-  type ProxyProfileId,
+  type ProxyServerDraft,
+  type ProxyServerId,
   type ProxyUse,
   type QuestionId,
   type QueueSettings,
@@ -303,20 +303,20 @@ export class TauriBackend implements DownloadWindowBackend {
     return this.#call('try_link', { trial });
   }
 
-  listProxyProfiles() {
-    return this.#call('list_proxy_profiles');
+  listProxyServers() {
+    return this.#call('list_proxy_servers');
   }
-  createProxyProfile(draft: ProxyProfileDraft) {
-    return this.#call('create_proxy_profile', { draft });
+  createProxyServer(draft: ProxyServerDraft) {
+    return this.#call('create_proxy_server', { draft });
   }
-  updateProxyProfile(id: ProxyProfileId, draft: ProxyProfileDraft) {
-    return this.#exec('update_proxy_profile', { id, draft });
+  updateProxyServer(id: ProxyServerId, draft: ProxyServerDraft) {
+    return this.#exec('update_proxy_server', { id, draft });
   }
-  deleteProxyProfile(id: ProxyProfileId, replacement: ProxyUse) {
-    return this.#exec('delete_proxy_profile', { id, replacement });
+  deleteProxyServer(id: ProxyServerId, replacement: ProxyUse) {
+    return this.#exec('delete_proxy_server', { id, replacement });
   }
-  testProxyProfile(id: ProxyProfileId | null, draft: ProxyProfileDraft) {
-    return this.#call('test_proxy_profile', { id, draft });
+  testProxyServer(id: ProxyServerId | null, draft: ProxyServerDraft) {
+    return this.#call('test_proxy_server', { id, draft });
   }
   copySystemProxy() {
     return this.#call('copy_system_proxy');

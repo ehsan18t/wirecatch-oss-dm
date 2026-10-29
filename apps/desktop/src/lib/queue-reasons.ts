@@ -1,6 +1,6 @@
 // Why a download is in its queue, in one line every window shares: "Queue: Videos. Its rules match youtube.com" (D72.5, D72.8).
 
-import type { Claim, LinkClaims, LinkProtocol, QueueId, QueueReason } from '@wirecatch/protocol';
+import type { Rule, LinkMatch, LinkProtocol, QueueId, QueueReason } from '@wirecatch/protocol';
 
 const PROTOCOL_LABEL: Record<LinkProtocol, string> = {
   http: 'HTTP',
@@ -18,19 +18,19 @@ const CATEGORY_TAKEN = {
   other: 'other files',
 } as const;
 
-/** What a queue takes by `claim`: "youtube.com", "files named *.iso". */
-export function claimPhrase(claim: Claim): string {
-  switch (claim.kind) {
+/** What `rule` matches: "youtube.com", "files named *.iso". */
+export function rulePhrase(rule: Rule): string {
+  switch (rule.kind) {
     case 'site':
-      return claim.claim;
+      return rule.value;
     case 'file_name':
-      return `files named ${claim.claim}`;
+      return `files named ${rule.value}`;
     case 'file_type':
-      return `.${claim.claim} files`;
+      return `.${rule.value} files`;
     case 'category':
-      return CATEGORY_TAKEN[claim.claim];
+      return CATEGORY_TAKEN[rule.value];
     case 'protocol':
-      return `${PROTOCOL_LABEL[claim.claim]} links`;
+      return `${PROTOCOL_LABEL[rule.value]} links`;
   }
 }
 
@@ -39,8 +39,8 @@ export function reasonPhrase(reason: QueueReason): string {
   switch (reason.kind) {
     case 'picked':
       return 'You picked it.';
-    case 'claimed':
-      return `Its rules match ${claimPhrase(reason.claim)}.`;
+    case 'matched':
+      return `Its rules match ${rulePhrase(reason.rule)}.`;
     case 'browser_queue':
       return 'It is the queue for browser downloads.';
     case 'default_queue':
@@ -53,7 +53,7 @@ export function queueLine(name: string, reason: QueueReason): string {
   return `Queue: ${name}. ${reasonPhrase(reason)}`;
 }
 
-/** Where the claims send the Add dialog's links: why for one link, how many go to each queue for several (D72.8). */
+/** Where the rules send the Add dialog's links: why for one link, how many go to each queue for several (D72.8). */
 export function placementLine(placed: readonly { name: string; reason: QueueReason }[]): string {
   const [first] = placed;
   if (first === undefined) return 'Each link goes to the queue whose rules match it.';
@@ -67,20 +67,20 @@ export function placementLine(placed: readonly { name: string; reason: QueueReas
   return `Queue: ${parts.join(', ')}.`;
 }
 
-/** What Test a link says: where the link goes and why, then the switched-off queue that would have taken it. `name` names a queue, `null` being the one not made yet; `fallback` is where a link nothing claims goes. */
+/** What Test a link says: where the link goes and why, then the switched-off queue that would have matched it. `name` names a queue, `null` being the one not made yet; `fallback` is where a link nothing rules goes. */
 export function trialLines(
-  found: LinkClaims,
+  found: LinkMatch,
   name: (queue: QueueId | null) => string,
   fallback: string,
 ): string[] {
   const lines = [
-    found.taken
-      ? queueLine(name(found.taken.queue), { kind: 'claimed', claim: found.taken.claim })
+    found.matched
+      ? queueLine(name(found.matched.queue), { kind: 'matched', rule: found.matched.rule })
       : queueLine(fallback, { kind: 'default_queue' }),
   ];
   if (found.switched_off) {
-    const { queue, claim } = found.switched_off;
-    lines.push(`${name(queue)} would match ${claimPhrase(claim)}, but its rules are off.`);
+    const { queue, rule } = found.switched_off;
+    lines.push(`${name(queue)} would match ${rulePhrase(rule)}, but its rules are off.`);
   }
   return lines;
 }

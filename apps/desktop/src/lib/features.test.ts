@@ -1,6 +1,6 @@
 // Acceptance item 1: every feature is reachable from visible UI, along the path that feels natural rather than within a click count (D36), and from the command palette. Each case below performs the visible path for real and checks the outcome, then checks that the palette offers the same action.
 
-import { downloadId, PROFILE_FORMAT_VERSION } from '@wirecatch/protocol';
+import { downloadId, SETTINGS_FILE_FORMAT_VERSION } from '@wirecatch/protocol';
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -370,7 +370,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     if (!app.settings) throw new Error('no settings');
     const before = plain(app.settings);
     const profile = {
-      format_version: PROFILE_FORMAT_VERSION,
+      format_version: SETTINGS_FILE_FORMAT_VERSION,
       app_version: '0.1.0',
       exported_at: 0,
       settings: {
@@ -379,7 +379,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
         connections_per_download: 3,
       },
       queues: plain(app.queues.list),
-      proxy_profiles: [],
+      proxy_servers: [],
       addons: [],
     };
     backend.putSettingsFile(String.raw`C:\Users\ada\Downloads\evil.json`, profile);

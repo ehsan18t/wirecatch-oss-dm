@@ -64,7 +64,7 @@ export const MAX_MEDIA_URL_LENGTH = 8 * KB;
 /**
  * Longest title a page sends, and longest answer shown on a page, in characters. Real page and
  * media titles are far shorter (browsers show about a hundred); the cap only keeps a page from
- * pushing long text through to the app or the notice, so its exact value matters little.
+ * pushing long text through to the app or the alert, so its exact value matters little.
  */
 export const MAX_TITLE_LENGTH = 1024;
 export const MEDIA_DOWNLOAD = 'wirecatch:media-download';

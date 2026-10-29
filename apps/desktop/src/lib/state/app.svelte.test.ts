@@ -1,6 +1,6 @@
 import {
   downloadId,
-  FOLLOW_APP,
+  GLOBAL,
   MANUAL_QUEUE,
   ownSetting,
   questionId,
@@ -49,7 +49,7 @@ describe('AppState', () => {
     if (!queue) throw new Error('The sample has no default queue.');
     const atOnce = (max_concurrent: QueueSettings['max_concurrent']) =>
       app.queues.describe({ ...queue, settings: { ...queue.settings, max_concurrent } });
-    expect(atOnce(FOLLOW_APP)).toBe('Idle');
+    expect(atOnce(GLOBAL)).toBe('Idle');
     expect(atOnce(ownSetting(2))).toBe('Idle, up to 2 at once');
   });
 
@@ -59,11 +59,11 @@ describe('AppState', () => {
       name: 'Night',
       description: '',
       max_concurrent: ownSetting(2),
-      speed_limit: FOLLOW_APP,
-      connections: FOLLOW_APP,
-      proxy: FOLLOW_APP,
-      exceptions: FOLLOW_APP,
-      takes: MANUAL_QUEUE,
+      speed_limit: GLOBAL,
+      connections: GLOBAL,
+      proxy: GLOBAL,
+      exceptions: GLOBAL,
+      add_downloads: MANUAL_QUEUE,
       schedule: null,
       notify: 'each_download' as const,
     };

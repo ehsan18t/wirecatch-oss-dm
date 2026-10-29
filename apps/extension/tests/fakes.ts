@@ -35,10 +35,10 @@ import type {
   CachedSettings,
   InFlightEntry,
   InFlightStore,
-  NoticeStore,
+  AlertStore,
   SettingsCache,
 } from '../src/lib/hub/deps';
-import type { Channel, Notice } from '../src/lib/messages';
+import type { Channel, Alert } from '../src/lib/messages';
 import type { NativePort, NativeTransport } from '../src/lib/native/client';
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -490,8 +490,8 @@ export class MemoryInFlight implements InFlightStore {
   }
 }
 
-export class MemoryNotice implements NoticeStore {
-  value: Notice[] = [];
+export class MemoryAlert implements AlertStore {
+  value: Alert[] = [];
   #gate: Promise<void> = Promise.resolve();
 
   /** Makes `load` answer only once the returned function is called, as a slow storage read does. */
@@ -504,13 +504,13 @@ export class MemoryNotice implements NoticeStore {
   }
 
   /** Reads the value when called, like storage does, and answers once any hold is released. */
-  async load(): Promise<Notice[]> {
+  async load(): Promise<Alert[]> {
     const value = this.value;
     await this.#gate;
     return value;
   }
-  save(notices: Notice[]): Promise<void> {
-    this.value = [...notices];
+  save(alerts: Alert[]): Promise<void> {
+    this.value = [...alerts];
     return Promise.resolve();
   }
 }

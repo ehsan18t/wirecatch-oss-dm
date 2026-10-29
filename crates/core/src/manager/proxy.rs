@@ -1,11 +1,11 @@
-//! Proxy profiles (D73): saving, testing and deleting them, and Copy from system.
+//! Proxy servers (D73): saving, testing and deleting them, and Copy from system.
 
 use wirecatch_protocol::app::{Setting, UiEvent};
 use wirecatch_protocol::proxy::{
-    ProxyProfile, ProxyProfileDraft, ProxyProfileSettings, ProxyTestResult, ProxyTestRun, ProxyUse,
+    ProxyServer, ProxyServerDraft, ProxyServerSettings, ProxyTestResult, ProxyTestRun, ProxyUse,
 };
-use wirecatch_protocol::{ProxyProfileId, Secret};
-use wirecatch_settings::proxy::{SavedProfile, UpdaterProxy};
+use wirecatch_protocol::{ProxyServerId, Secret};
+use wirecatch_settings::proxy::{SavedProxyServer, UpdaterProxy};
 
 use super::Manager;
 use super::state::State;
@@ -13,35 +13,35 @@ use crate::error::{CoreError, Result};
 
 impl Manager {
     #[must_use]
-    pub fn list_proxy_profiles(&self) -> Vec<ProxyProfile> {
-        self.lock().proxy_profile_list()
+    pub fn list_proxy_servers(&self) -> Vec<ProxyServer> {
+        self.lock().proxy_server_list()
     }
 
     /// Saves a new profile with its password and tests it in the background (D73.1); the
-    /// profiles arrive as `ProxyProfilesChanged`, again once the test has run.
+    /// profiles arrive as `ProxyServersChanged`, again once the test has run.
     ///
     /// # Errors
     ///
     /// [`CoreError::Invalid`] for a profile that cannot work, [`CoreError::LimitReached`] past
     /// the most profiles there can be, and [`CoreError::Closed`] once the manager has shut down.
-    pub fn create_proxy_profile(&self, draft: ProxyProfileDraft) -> Result<ProxyProfileId> {
+    pub fn create_proxy_server(&self, draft: ProxyServerDraft) -> Result<ProxyServerId> {
         let mut state = self.lock_open()?;
         let id = self.add_profile(&mut state, draft)?;
         self.inner.store.save_last_ids(state.ids.last());
-        self.proxy_profiles_changed(&state);
+        self.proxy_servers_changed(&state);
         drop(state);
         self.test_in_background(id);
         Ok(id)
     }
 
-    fn add_profile(&self, state: &mut State, draft: ProxyProfileDraft) -> Result<ProxyProfileId> {
-        wirecatch_settings::proxy::check_count(state.proxy_profiles.len() + 1)?;
-        let others: Vec<_> = state.proxy_profiles.iter().map(|p| &p.settings).collect();
-        let settings = wirecatch_settings::proxy::validate_profile(draft.settings, &others)?;
+    fn add_profile(&self, state: &mut State, draft: ProxyServerDraft) -> Result<ProxyServerId> {
+        wirecatch_settings::proxy::check_count(state.proxy_servers.len() + 1)?;
+        let others: Vec<_> = state.proxy_servers.iter().map(|p| &p.settings).collect();
+        let settings = wirecatch_settings::proxy::validate_settings_file(draft.settings, &others)?;
         let password =
             wirecatch_settings::proxy::merge_password(None, &draft.password, None, &settings)?;
-        let id = state.ids.proxy_profile();
-        state.proxy_profiles.push(SavedProfile {
+        let id = state.ids.proxy_server();
+        state.proxy_servers.push(SavedProxyServer {
             id,
             settings,
             last_test: None,
@@ -61,19 +61,19 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// [`CoreError::ProxyProfileNotFound`], the errors of
-    /// [`create_proxy_profile`](Self::create_proxy_profile), and nothing changes on an error.
-    pub fn update_proxy_profile(&self, id: ProxyProfileId, draft: ProxyProfileDraft) -> Result<()> {
+    /// [`CoreError::ProxyServerNotFound`], the errors of
+    /// [`create_proxy_server`](Self::create_proxy_server), and nothing changes on an error.
+    pub fn update_proxy_server(&self, id: ProxyServerId, draft: ProxyServerDraft) -> Result<()> {
         let mut state = self.lock_open()?;
         let index = profile_index(&state, id)?;
         let others: Vec<_> = state
-            .proxy_profiles
+            .proxy_servers
             .iter()
             .filter(|p| p.id != id)
             .map(|p| &p.settings)
             .collect();
-        let settings = wirecatch_settings::proxy::validate_profile(draft.settings, &others)?;
-        let saved = &state.proxy_profiles[index];
+        let settings = wirecatch_settings::proxy::validate_settings_file(draft.settings, &others)?;
+        let saved = &state.proxy_servers[index];
         let password = wirecatch_settings::proxy::merge_password(
             state.proxy_logins.get(&id),
             &draft.password,
@@ -82,7 +82,7 @@ impl Manager {
         )?;
         let retest = !wirecatch_settings::proxy::same_proxy(&saved.settings, &settings)
             || !draft.password.is_keep();
-        let profile = &mut state.proxy_profiles[index];
+        let profile = &mut state.proxy_servers[index];
         profile.settings = settings;
         if retest {
             profile.last_test = None;
@@ -96,7 +96,7 @@ impl Manager {
                 .store
                 .save_proxy_logins(state.proxy_logins.clone());
         }
-        self.proxy_profiles_changed(&state);
+        self.proxy_servers_changed(&state);
         drop(state);
         if retest {
             self.test_in_background(id);
@@ -109,19 +109,19 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// [`CoreError::ProxyProfileNotFound`], [`CoreError::Invalid`] when `replacement` is the
+    /// [`CoreError::ProxyServerNotFound`], [`CoreError::Invalid`] when `replacement` is the
     /// profile itself or one that is not saved, and [`CoreError::Closed`] once the manager has
     /// shut down.
-    pub fn delete_proxy_profile(&self, id: ProxyProfileId, replacement: ProxyUse) -> Result<()> {
+    pub fn delete_proxy_server(&self, id: ProxyServerId, replacement: ProxyUse) -> Result<()> {
         let mut state = self.lock_open()?;
         let index = profile_index(&state, id)?;
-        if replacement == ProxyUse::Profile(id) {
+        if replacement == ProxyUse::Server(id) {
             return Err(CoreError::Invalid(
                 "Choose another proxy for what uses the one being deleted.".into(),
             ));
         }
-        wirecatch_settings::proxy::check_use(replacement, &state.proxy_profiles)?;
-        let gone = ProxyUse::Profile(id);
+        wirecatch_settings::proxy::check_use(replacement, &state.proxy_servers)?;
+        let gone = ProxyUse::Server(id);
         let mut queues_changed = false;
         for slot in &mut state.queues {
             if slot.queue.settings.proxy == Setting::Own(gone) {
@@ -129,13 +129,13 @@ impl Manager {
                 queues_changed = true;
             }
         }
-        state.proxy_profiles.remove(index);
+        state.proxy_servers.remove(index);
         if state.proxy_logins.remove(&id).is_some() {
             self.inner
                 .store
                 .save_proxy_logins(state.proxy_logins.clone());
         }
-        self.proxy_profiles_changed(&state);
+        self.proxy_servers_changed(&state);
         if queues_changed {
             self.queues_changed(&mut state);
         }
@@ -154,17 +154,17 @@ impl Manager {
     /// # Errors
     ///
     /// [`CoreError::Invalid`] for a profile that cannot work, and
-    /// [`CoreError::ProxyProfileNotFound`] for an `id` that is not saved.
-    pub async fn test_proxy_profile(
+    /// [`CoreError::ProxyServerNotFound`] for an `id` that is not saved.
+    pub async fn test_proxy_server(
         &self,
-        id: Option<ProxyProfileId>,
-        draft: ProxyProfileDraft,
+        id: Option<ProxyServerId>,
+        draft: ProxyServerDraft,
     ) -> Result<ProxyTestResult> {
         let (saved, password) = {
             let state = self.lock();
             match id {
                 Some(id) => {
-                    let saved = state.proxy_profiles[profile_index(&state, id)?]
+                    let saved = state.proxy_servers[profile_index(&state, id)?]
                         .settings
                         .clone();
                     (Some(saved), state.proxy_logins.get(&id).cloned())
@@ -172,7 +172,7 @@ impl Manager {
                 None => (None, None),
             }
         };
-        let settings = wirecatch_settings::proxy::validate_profile(draft.settings, &[])?;
+        let settings = wirecatch_settings::proxy::validate_settings_file(draft.settings, &[])?;
         let password = wirecatch_settings::proxy::merge_password(
             password.as_ref(),
             &draft.password,
@@ -194,17 +194,17 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// The errors of [`create_proxy_profile`](Self::create_proxy_profile).
-    pub async fn copy_system_proxy(&self) -> Result<Vec<ProxyProfileId>> {
+    /// The errors of [`create_proxy_server`](Self::create_proxy_server).
+    pub async fn copy_system_proxy(&self) -> Result<Vec<ProxyServerId>> {
         let found = self
             .blocking(|| Ok(wirecatch_settings::proxy::from_system()))
             .await?;
         let mut state = self.lock_open()?;
-        let copies = wirecatch_settings::proxy::copies(found.clone(), &state.proxy_profiles)?;
+        let copies = wirecatch_settings::proxy::copies(found.clone(), &state.proxy_servers)?;
         let mut added = Vec::with_capacity(copies.len());
         for settings in copies {
-            let id = state.ids.proxy_profile();
-            state.proxy_profiles.push(SavedProfile {
+            let id = state.ids.proxy_server();
+            state.proxy_servers.push(SavedProxyServer {
                 id,
                 settings,
                 last_test: None,
@@ -215,7 +215,7 @@ impl Manager {
             .iter()
             .filter_map(|server| {
                 state
-                    .proxy_profiles
+                    .proxy_servers
                     .iter()
                     .find(|p| wirecatch_settings::proxy::same_proxy(&p.settings, server))
                     .map(|p| p.id)
@@ -223,7 +223,7 @@ impl Manager {
             .collect();
         if !added.is_empty() {
             self.inner.store.save_last_ids(state.ids.last());
-            self.proxy_profiles_changed(&state);
+            self.proxy_servers_changed(&state);
         }
         drop(state);
         for id in added {
@@ -239,15 +239,15 @@ impl Manager {
     }
 
     /// Saves the profiles and tells the windows.
-    pub(super) fn proxy_profiles_changed(&self, state: &State) {
+    pub(super) fn proxy_servers_changed(&self, state: &State) {
         self.inner
             .store
-            .save_proxy_profiles(state.proxy_profiles.clone());
-        self.emit(UiEvent::ProxyProfilesChanged(state.proxy_profile_list()));
+            .save_proxy_servers(state.proxy_servers.clone());
+        self.emit(UiEvent::ProxyServersChanged(state.proxy_server_list()));
     }
 
     /// Tests saved profile `id` once, keeping the result as its last test.
-    pub(super) fn test_in_background(&self, id: ProxyProfileId) {
+    pub(super) fn test_in_background(&self, id: ProxyServerId) {
         let manager = self.clone();
         self.spawn(async move {
             let (settings, password) = {
@@ -256,7 +256,7 @@ impl Manager {
                     return;
                 };
                 (
-                    state.proxy_profiles[index].settings.clone(),
+                    state.proxy_servers[index].settings.clone(),
                     state.proxy_logins.get(&id).cloned(),
                 )
             };
@@ -267,7 +267,7 @@ impl Manager {
 
     async fn run_test(
         &self,
-        settings: &ProxyProfileSettings,
+        settings: &ProxyServerSettings,
         password: Option<&Secret>,
     ) -> ProxyTestResult {
         let Some(url) = self.inner.proxy_test_url.clone() else {
@@ -289,8 +289,8 @@ impl Manager {
     /// so a test that ends after a newer one never replaces its result.
     fn keep_test(
         &self,
-        id: ProxyProfileId,
-        tested: &ProxyProfileSettings,
+        id: ProxyServerId,
+        tested: &ProxyServerSettings,
         password: Option<&Secret>,
         result: ProxyTestResult,
     ) {
@@ -300,19 +300,19 @@ impl Manager {
             return;
         };
         let current = state.proxy_logins.get(&id) == password;
-        let profile = &mut state.proxy_profiles[index];
+        let profile = &mut state.proxy_servers[index];
         if !current || !wirecatch_settings::proxy::same_proxy(&profile.settings, tested) {
             return;
         }
         profile.last_test = Some(ProxyTestRun { at, result });
-        self.proxy_profiles_changed(&state);
+        self.proxy_servers_changed(&state);
     }
 }
 
-fn profile_index(state: &State, id: ProxyProfileId) -> Result<usize> {
+fn profile_index(state: &State, id: ProxyServerId) -> Result<usize> {
     state
-        .proxy_profiles
+        .proxy_servers
         .iter()
         .position(|p| p.id == id)
-        .ok_or(CoreError::ProxyProfileNotFound(id))
+        .ok_or(CoreError::ProxyServerNotFound(id))
 }

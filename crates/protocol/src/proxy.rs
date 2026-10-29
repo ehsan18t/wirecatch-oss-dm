@@ -1,4 +1,4 @@
-//! Proxies (D73): the proxy profiles the person saves, the app's proxy with the hosts it
+//! Proxies (D73): the proxy servers the person saves, the app's proxy with the hosts it
 //! reaches directly ([`ProxySettings`], in [`AppSettings::proxy`](crate::app::AppSettings::proxy)),
 //! and a queue's ([`QueueSettings`](crate::app::QueueSettings)). Passwords never leave the app.
 
@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::app::{Update, known_or_default};
-use crate::{ProxyProfileId, Secret};
+use crate::{ProxyServerId, Secret};
 
 crate::exported::exported_consts! {
     /// Most characters in a proxy's host name.
@@ -15,10 +15,10 @@ crate::exported::exported_consts! {
     pub const MAX_PROXY_LOGIN_BYTES: usize = 255;
     /// Most hosts in one list of exceptions.
     pub const MAX_PROXY_EXCEPTIONS: usize = 256;
-    /// Most characters in a proxy profile's name.
+    /// Most characters in a proxy server's name.
     pub const MAX_PROXY_NAME_CHARS: usize = 60;
-    /// Most proxy profiles there can be.
-    pub const MAX_PROXY_PROFILES: usize = 100;
+    /// Most proxy servers there can be.
+    pub const MAX_PROXY_SERVERS: usize = 100;
 }
 
 /// What a proxy speaks.
@@ -36,10 +36,10 @@ pub enum ProxyKind {
     Socks5,
 }
 
-/// A proxy profile as the person edits it (D73.1).
+/// A proxy server as the person edits it (D73.1).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct ProxyProfileSettings {
+pub struct ProxyServerSettings {
     /// Unique among the profiles; empty shows the server's address instead.
     pub name: String,
     #[serde(default, with = "known_or_default")]
@@ -52,7 +52,7 @@ pub struct ProxyProfileSettings {
     pub user: String,
 }
 
-impl ProxyProfileSettings {
+impl ProxyServerSettings {
     /// Its name, or its server's address when it has none.
     #[must_use]
     pub fn shown_name(&self) -> String {
@@ -75,12 +75,12 @@ impl ProxyProfileSettings {
     }
 }
 
-/// A saved proxy profile.
+/// A saved proxy server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct ProxyProfile {
-    pub id: ProxyProfileId,
-    pub settings: ProxyProfileSettings,
+pub struct ProxyServer {
+    pub id: ProxyServerId,
+    pub settings: ProxyServerSettings,
     /// Whether a password is saved for it. The password itself stays in the app (D71.2).
     pub has_password: bool,
     /// Its last Test connection, kept apart from its settings; `None` before the first.
@@ -108,7 +108,7 @@ pub enum ProxyUse {
     System,
     /// No proxy: everything goes directly.
     Direct,
-    Profile(ProxyProfileId),
+    Server(ProxyServerId),
 }
 
 /// The hosts the app reaches directly (D73.7).
@@ -157,7 +157,7 @@ pub struct ProxySettings {
     pub exceptions: AppExceptions,
     /// An FTP link whose proxy cannot carry FTP (anything but SOCKS5) goes directly
     /// instead of failing (D71.4).
-    pub ftp_direct: bool,
+    pub ftp_bypass_proxy: bool,
 }
 
 /// A profile's settings with a change to its password: a missing `password` keeps the saved
@@ -166,8 +166,8 @@ pub struct ProxySettings {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 #[ts(export, optional_fields)]
-pub struct ProxyProfileDraft {
-    pub settings: ProxyProfileSettings,
+pub struct ProxyServerDraft {
+    pub settings: ProxyServerSettings,
     #[serde(default, skip_serializing_if = "Update::is_keep")]
     #[ts(optional, as = "Option<Option<String>>")]
     pub password: Update<Option<Secret>>,

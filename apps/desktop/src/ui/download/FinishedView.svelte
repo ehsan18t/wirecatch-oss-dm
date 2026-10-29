@@ -3,7 +3,7 @@
   import FolderOpen from '~icons/lucide/folder-open';
   import { MAX_FINISHED_LISTED, type FinishedGroup } from '@wirecatch/protocol';
   import { Button, Callout } from '@wirecatch/ui';
-  import { finishedTitle, retryHelps } from '$lib/finish-notices';
+  import { finishedTitle, retryHelps } from '$lib/notify-options';
   import { folderOf, formatSize, statusShort } from '$lib/format';
   import type { FinishedWindowState } from '$lib/window/finished-window.svelte';
   import CategoryIcon from '../CategoryIcon.svelte';
@@ -81,7 +81,7 @@
       {/each}
     </div>
   {/if}
-  {#if win.settings?.finish_notice === 'window'}
+  {#if win.settings?.notify_on_finish === 'window'}
     <p class="mt-4 text-small text-ink-muted">
       Prefer notifications?
       <Button variant="link" size="sm" onclick={() => void win.useNotifications()}

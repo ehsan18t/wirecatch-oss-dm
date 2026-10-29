@@ -1,11 +1,11 @@
-// What the mock core does with proxy profiles (D73): save, test and delete them, and Copy from system.
+// What the mock core does with proxy servers (D73): save, test and delete them, and Copy from system.
 
 import {
   MAX_PROXY_NAME_CHARS,
-  type ProxyProfile,
-  type ProxyProfileDraft,
-  type ProxyProfileId,
-  type ProxyProfileSettings,
+  type ProxyServer,
+  type ProxyServerDraft,
+  type ProxyServerId,
+  type ProxyServerSettings,
   type ProxyTestResult,
   type ProxyUse,
 } from '@wirecatch/protocol';
@@ -17,8 +17,8 @@ function invalid(message: string): BackendError {
   return new BackendError(message, 'invalid_request');
 }
 
-function find(state: MockState, id: ProxyProfileId): ProxyProfile {
-  const profile = state.proxyProfiles.find((p) => p.id === id);
+function find(state: MockState, id: ProxyServerId): ProxyServer {
+  const profile = state.proxyServers.find((p) => p.id === id);
   if (!profile)
     throw new BackendError('That proxy no longer exists. It may have been deleted.', 'not_found');
   return profile;
@@ -26,9 +26,9 @@ function find(state: MockState, id: ProxyProfileId): ProxyProfile {
 
 /** The profile trimmed, or the core's refusal of one that cannot work or takes a saved name. */
 function checked(
-  settings: ProxyProfileSettings,
-  others: readonly ProxyProfile[],
-): ProxyProfileSettings {
+  settings: ProxyServerSettings,
+  others: readonly ProxyServer[],
+): ProxyServerSettings {
   const profile = { ...settings, name: settings.name.trim(), host: settings.host.trim() };
   if (profile.name.length > MAX_PROXY_NAME_CHARS) {
     throw invalid(`Proxy names can be at most ${String(MAX_PROXY_NAME_CHARS)} characters.`);
@@ -50,7 +50,7 @@ function checked(
 }
 
 /** Whether the profile will have a password after `draft`, as the core's rule keeps one only with its proxy. */
-function keepsPassword(draft: ProxyProfileDraft, saved: ProxyProfile | undefined): boolean {
+function keepsPassword(draft: ProxyServerDraft, saved: ProxyServer | undefined): boolean {
   if (draft.password === undefined) {
     return saved !== undefined && saved.has_password && sameProxy(saved.settings, draft.settings);
   }
@@ -65,7 +65,7 @@ function keepsPassword(draft: ProxyProfileDraft, saved: ProxyProfile | undefined
  * What the mock's test finds, by the proxy's host: one containing `refuse` turns the login away
  * unless a password is set, `slow` never answers, `nowhere` cannot be reached, and any other works.
  */
-function testResult(settings: ProxyProfileSettings, hasPassword: boolean): ProxyTestResult {
+function testResult(settings: ProxyServerSettings, hasPassword: boolean): ProxyTestResult {
   const host = settings.host;
   if (host.includes('refuse') && !hasPassword) return { outcome: 'login_refused' };
   if (host.includes('slow')) return { outcome: 'timed_out' };
@@ -75,30 +75,30 @@ function testResult(settings: ProxyProfileSettings, hasPassword: boolean): Proxy
   return { outcome: 'works' };
 }
 
-export function createProxyProfile(state: MockState, draft: ProxyProfileDraft): ProxyProfileId {
-  const settings = checked(draft.settings, state.proxyProfiles);
+export function createProxyServer(state: MockState, draft: ProxyServerDraft): ProxyServerId {
+  const settings = checked(draft.settings, state.proxyServers);
   const hasPassword = keepsPassword({ ...draft, settings }, undefined);
   const id = state.newProxyId();
   // The core tests a new profile in the background; the mock's answer is at hand.
-  state.proxyProfiles.push({
+  state.proxyServers.push({
     id,
     settings,
     has_password: hasPassword,
     last_test: { at: state.now(), result: testResult(settings, hasPassword) },
   });
-  state.proxyProfilesChanged();
+  state.proxyServersChanged();
   return id;
 }
 
-export function updateProxyProfile(
+export function updateProxyServer(
   state: MockState,
-  id: ProxyProfileId,
-  draft: ProxyProfileDraft,
+  id: ProxyServerId,
+  draft: ProxyServerDraft,
 ): void {
   const saved = find(state, id);
   const settings = checked(
     draft.settings,
-    state.proxyProfiles.filter((p) => p.id !== id),
+    state.proxyServers.filter((p) => p.id !== id),
   );
   const hasPassword = keepsPassword({ ...draft, settings }, saved);
   const retest = !sameProxy(saved.settings, settings) || draft.password !== undefined;
@@ -109,24 +109,24 @@ export function updateProxyProfile(
       ? { at: state.now(), result: testResult(settings, hasPassword) }
       : saved.last_test,
   });
-  state.proxyProfilesChanged();
+  state.proxyServersChanged();
 }
 
-export function deleteProxyProfile(
+export function deleteProxyServer(
   state: MockState,
-  id: ProxyProfileId,
+  id: ProxyServerId,
   replacement: ProxyUse,
 ): void {
   find(state, id);
-  if (replacement.kind === 'profile') {
+  if (replacement.kind === 'server') {
     if (replacement.id === id) {
       throw invalid('Choose another proxy for what uses the one being deleted.');
     }
     find(state, replacement.id);
   }
-  const uses = (proxy: ProxyUse) => proxy.kind === 'profile' && proxy.id === id;
-  state.proxyProfiles = state.proxyProfiles.filter((p) => p.id !== id);
-  state.proxyProfilesChanged();
+  const uses = (proxy: ProxyUse) => proxy.kind === 'server' && proxy.id === id;
+  state.proxyServers = state.proxyServers.filter((p) => p.id !== id);
+  state.proxyServersChanged();
   let queuesChanged = false;
   for (const queue of state.queues) {
     if (queue.settings.proxy.source === 'own' && uses(queue.settings.proxy.value)) {
@@ -144,10 +144,10 @@ export function deleteProxyProfile(
   }
 }
 
-export function testProxyProfile(
+export function testProxyServer(
   state: MockState,
-  id: ProxyProfileId | null,
-  draft: ProxyProfileDraft,
+  id: ProxyServerId | null,
+  draft: ProxyServerDraft,
 ): ProxyTestResult {
   const saved = id === null ? undefined : find(state, id);
   const settings = checked(draft.settings, []);
@@ -159,21 +159,21 @@ export function testProxyProfile(
     JSON.stringify(saved.settings) === JSON.stringify(settings)
   ) {
     saved.last_test = { at: state.now(), result };
-    state.proxyProfilesChanged();
+    state.proxyServersChanged();
   }
   return result;
 }
 
 /** The proxy a believable office computer sets, saved once as a profile without a name. */
-export function copySystemProxy(state: MockState): ProxyProfileId[] {
-  const system: ProxyProfileSettings = {
+export function copySystemProxy(state: MockState): ProxyServerId[] {
+  const system: ProxyServerSettings = {
     name: '',
     kind: 'http',
     host: 'proxy.corp.example',
     port: 3128,
     user: '',
   };
-  const saved = state.proxyProfiles.find((p) => sameProxy(p.settings, system));
+  const saved = state.proxyServers.find((p) => sameProxy(p.settings, system));
   if (saved) return [saved.id];
-  return [createProxyProfile(state, { settings: system })];
+  return [createProxyServer(state, { settings: system })];
 }

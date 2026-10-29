@@ -9,7 +9,7 @@ use wirecatch_records::batch::StoredBatch;
 use wirecatch_records::media::output::{Container, Extras, OutputJob};
 use wirecatch_records::media::{FormatId, MediaJob, StoredMedia};
 use wirecatch_records::origin::Origin;
-use wirecatch_records::proxy::{Logins, SavedProfile};
+use wirecatch_records::proxy::{Logins, SavedProxyServer};
 use wirecatch_store::LastIds;
 
 type Check = fn(&str) -> Result<(), String>;
@@ -21,7 +21,7 @@ const KINDS: &[(&str, Check)] = &[
     ("last_ids", loads::<LastIds>),
     ("batches", loads::<Vec<StoredBatch>>),
     ("proxy_logins", loads::<Logins>),
-    ("proxy_profiles", loads::<Vec<SavedProfile>>),
+    ("proxy_servers", loads::<Vec<SavedProxyServer>>),
     ("origin", loads::<Origin>),
     ("download_error", loads::<UserError>),
     ("media", loads::<StoredMedia>),

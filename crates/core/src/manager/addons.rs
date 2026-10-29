@@ -517,7 +517,7 @@ impl Manager {
             )),
             size: (!plan.is_empty())
                 .then(|| plan.iter().map(|p| p.component.release().size()).sum()),
-            note: self.addon_note(slot),
+            note: self.addon_notice(slot),
         }
     }
 
@@ -526,7 +526,7 @@ impl Manager {
     }
 
     /// What the add-on says besides its state: the latest refusal while it still concerns the installed yt-dlp (no newer one is installed), and a newer release that waits.
-    fn addon_note(&self, slot: &AddonSlot) -> Option<String> {
+    fn addon_notice(&self, slot: &AddonSlot) -> Option<String> {
         let installed = slot.record.version(ComponentId::YtDlp);
         let refusal = slot
             .refused
@@ -534,13 +534,16 @@ impl Manager {
             .rev()
             .find(|r| installed.is_none_or(|have| !addons::newer(have, &r.version)))
             .map(|r| r.message.clone());
-        let notes: Vec<String> = refusal.into_iter().chain(self.waiting_note(slot)).collect();
+        let notes: Vec<String> = refusal
+            .into_iter()
+            .chain(self.waiting_notice(slot))
+            .collect();
         (!notes.is_empty()).then(|| notes.join(" "))
     }
 
     /// Says so when the newest yt-dlp is not installed yet because it is
     /// younger than two days.
-    fn waiting_note(&self, slot: &AddonSlot) -> Option<String> {
+    fn waiting_notice(&self, slot: &AddonSlot) -> Option<String> {
         let now = self.inner.clock.unix_millis();
         let newest = slot.ytdlp_releases.first()?;
         if newest.mature(now) {

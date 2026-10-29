@@ -4,7 +4,7 @@
   import type { PendingCapture, QueueId } from '@wirecatch/protocol';
   import { formatBytes } from '@wirecatch/units';
   import { Button, Callout, textIfCut, tooltip } from '@wirecatch/ui';
-  import { earlierNote, hostOf, linkForDisplay } from '$lib/format';
+  import { earlierNotice, hostOf, linkForDisplay } from '$lib/format';
   import { queueLine } from '$lib/queue-reasons';
   import type { DownloadWindowState } from '$lib/window/download-window.svelte';
   import { enterSubmits } from '$lib/window/keys';
@@ -79,7 +79,7 @@
 
     {#if win.earlier}
       <div role="note">
-        <Callout tone="info">{earlierNote(win.earlier, win.clock.now)}</Callout>
+        <Callout tone="info">{earlierNotice(win.earlier, win.clock.now)}</Callout>
       </div>
     {/if}
 

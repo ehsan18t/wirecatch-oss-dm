@@ -4,16 +4,16 @@ import {
   DEFAULT_CONNECTIONS_PER_DOWNLOAD,
   DEFAULT_MAX_CONCURRENT_DOWNLOADS,
   DEFAULT_QUEUE_ID,
-  FOLLOW_APP,
+  GLOBAL,
   MANUAL_QUEUE,
   ownSetting,
-  proxyProfileId,
+  proxyServerId,
   queueId,
   type AddonInfo,
   type AppSettings,
   type Category,
   type CategoryRule,
-  type ProxyProfile,
+  type ProxyServer,
   type Queue,
   type QueueStatus,
   type StartupNotice,
@@ -119,10 +119,10 @@ export function defaultSettings(): AppSettings {
     accent: 'cyan',
     start_with_system: true,
     close_to_tray: true,
-    finish_notice: 'browser',
-    finish_note_time: 'eight_seconds',
-    start_notice: 'browser',
-    start_note_time: 'three_seconds',
+    notify_on_finish: 'browser',
+    finish_notice_time: 'eight_seconds',
+    notify_on_start: 'browser',
+    start_notice_time: 'three_seconds',
     notify_during_do_not_disturb: true,
     auto_update_addons: true,
     show_progress_windows: true,
@@ -167,11 +167,11 @@ const MAIN_AT_ONCE = 3;
 const OVERNIGHT_SPEED_LIMIT = 4 * MB;
 const WORK_CONNECTIONS = 4;
 
-/** The sample's proxy profiles: one that works, with a password, and one that cannot be reached. */
-export const OFFICE_PROXY_ID = proxyProfileId(1);
-const BACKUP_PROXY_ID = proxyProfileId(2);
+/** The sample's proxy servers: one that works, with a password, and one that cannot be reached. */
+export const OFFICE_PROXY_ID = proxyServerId(1);
+const BACKUP_PROXY_ID = proxyServerId(2);
 const SAMPLE_TESTED_AT = Date.parse('2026-10-28T09:30:00Z');
-const SAMPLE_PROXIES: readonly ProxyProfile[] = [
+const SAMPLE_PROXIES: readonly ProxyServer[] = [
   {
     id: OFFICE_PROXY_ID,
     settings: { name: 'Office', kind: 'socks5', host: '10.0.0.5', port: 1080, user: 'alice' },
@@ -192,8 +192,8 @@ const SAMPLE_PROXIES: readonly ProxyProfile[] = [
   },
 ];
 
-/** The sample proxy profiles, as a fresh copy the mock may change. */
-export function defaultProxies(): ProxyProfile[] {
+/** The sample proxy servers, as a fresh copy the mock may change. */
+export function defaultProxies(): ProxyServer[] {
   return SAMPLE_PROXIES.map((p) => structuredClone(p));
 }
 
@@ -205,11 +205,11 @@ const DEFAULT_QUEUES: readonly Queue[] = [
       name: 'Main',
       description: '',
       max_concurrent: ownSetting(MAIN_AT_ONCE),
-      speed_limit: FOLLOW_APP,
-      connections: FOLLOW_APP,
-      proxy: FOLLOW_APP,
-      exceptions: FOLLOW_APP,
-      takes: MANUAL_QUEUE,
+      speed_limit: GLOBAL,
+      connections: GLOBAL,
+      proxy: GLOBAL,
+      exceptions: GLOBAL,
+      add_downloads: MANUAL_QUEUE,
       schedule: null,
       notify: 'each_download',
     },
@@ -223,10 +223,10 @@ const DEFAULT_QUEUES: readonly Queue[] = [
       description: 'Large files, while nobody is using the connection',
       max_concurrent: ownSetting(2),
       speed_limit: ownSetting(OVERNIGHT_SPEED_LIMIT),
-      connections: FOLLOW_APP,
-      proxy: FOLLOW_APP,
-      exceptions: FOLLOW_APP,
-      takes: MANUAL_QUEUE,
+      connections: GLOBAL,
+      proxy: GLOBAL,
+      exceptions: GLOBAL,
+      add_downloads: MANUAL_QUEUE,
       schedule: { start: { hour: 1, minute: 0 }, stop: { hour: 7, minute: 0 }, days: [] },
       notify: 'when_done',
     },
@@ -241,9 +241,9 @@ const DEFAULT_QUEUES: readonly Queue[] = [
       max_concurrent: ownSetting(1),
       speed_limit: ownSetting(1 * MB),
       connections: ownSetting(WORK_CONNECTIONS),
-      proxy: ownSetting({ kind: 'profile', id: OFFICE_PROXY_ID }),
-      exceptions: FOLLOW_APP,
-      takes: MANUAL_QUEUE,
+      proxy: ownSetting({ kind: 'server', id: OFFICE_PROXY_ID }),
+      exceptions: GLOBAL,
+      add_downloads: MANUAL_QUEUE,
       schedule: null,
       notify: 'each_download',
     },

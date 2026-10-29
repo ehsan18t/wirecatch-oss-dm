@@ -24,6 +24,6 @@ export const SECTION_ICON: Record<SectionId, IconComponent> = {
   speed: Gauge,
   queues: ListOrdered,
   network: Network,
-  transfer: ArrowRightLeft,
+  import_export: ArrowRightLeft,
   advanced: Wrench,
 };

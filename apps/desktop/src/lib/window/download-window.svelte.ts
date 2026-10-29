@@ -233,7 +233,7 @@ export class DownloadWindowState {
       }
     },
     // A download window shows no proxy.
-    proxy_profiles_changed: ignore,
+    proxy_servers_changed: ignore,
     queues_changed: (e) => {
       this.queues = e.data;
     },
@@ -271,8 +271,8 @@ export class DownloadWindowState {
     browser_settings_requested: ignore,
     queue_finished: ignore,
     // Between the shell and the browsers (D65).
-    note_shown: ignore,
-    note_pressed: ignore,
+    notice_shown: ignore,
+    notice_pressed: ignore,
     // The shell tells it in a note (D67); its download arrives in the list when it starts.
     media_captured: ignore,
   };

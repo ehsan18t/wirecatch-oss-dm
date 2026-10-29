@@ -8,8 +8,8 @@ use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_protocol::app::{
     AddRequest, Category, DownloadStatus, DownloadSummary, PortablePath, UiEvent,
 };
-use wirecatch_protocol::claims::QueueReason;
 use wirecatch_protocol::extension::{AddAction, AddedDownload};
+use wirecatch_protocol::rules::QueueReason;
 use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_sites::local_network::ChosenBy;
 use wirecatch_store::NameChoice;

@@ -202,12 +202,12 @@ async fn handle(manager: &Manager, version: u32, call: Call) -> Outcome {
             manager.request_browser_settings();
             Ok(Reply::Done)
         }
-        Call::NoteShown(shown) => {
-            manager.note_shown(shown.id);
+        Call::NoticeShown(shown) => {
+            manager.notice_shown(shown.id);
             Ok(Reply::Done)
         }
-        Call::NotePressed(pressed) => {
-            manager.note_pressed(pressed);
+        Call::NoticePressed(pressed) => {
+            manager.notice_pressed(pressed);
             Ok(Reply::Done)
         }
     };

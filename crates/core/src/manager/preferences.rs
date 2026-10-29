@@ -10,7 +10,7 @@ use wirecatch_protocol::extension::{
 };
 use wirecatch_protocol::wire::Event;
 
-use wirecatch_settings::profile::{Current, NewIds};
+use wirecatch_settings::settings_file::{Current, NewIds};
 
 use super::Manager;
 use super::queues::apply_to_slot;
@@ -35,13 +35,13 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// [`CoreError::Invalid`] for a value out of range or a queue or proxy profile that does not exist,
+    /// [`CoreError::Invalid`] for a value out of range or a queue or proxy server that does not exist,
     /// [`CoreError::Path`] for a folder that does not resolve, and
     /// [`CoreError::Closed`] once the manager has shut down. Nothing changes on an
     /// error.
     pub fn update_settings(&self, new: AppSettings) -> Result<()> {
         let mut state = self.lock_open()?;
-        wirecatch_settings::proxy::check_use(new.proxy.proxy, &state.proxy_profiles)?;
+        wirecatch_settings::proxy::check_use(new.proxy.proxy, &state.proxy_servers)?;
         let new = wirecatch_settings::validate(
             new,
             &state.queue_list(),
@@ -64,7 +64,7 @@ impl Manager {
         let mut state = self.lock_open()?;
         let mut new = state.settings.clone();
         new.apply(patch);
-        wirecatch_settings::proxy::check_use(new.proxy.proxy, &state.proxy_profiles)?;
+        wirecatch_settings::proxy::check_use(new.proxy.proxy, &state.proxy_servers)?;
         let new = wirecatch_settings::validate(
             new,
             &state.queue_list(),
@@ -131,10 +131,10 @@ impl Manager {
     pub async fn export_settings(&self, path: &Path) -> Result<()> {
         let profile = {
             let state = self.lock();
-            let mut profile = wirecatch_settings::profile::export(
+            let mut profile = wirecatch_settings::settings_file::export(
                 &state.settings,
                 &state.queue_list(),
-                &state.proxy_profiles,
+                &state.proxy_servers,
                 &self.inner.folders,
                 self.inner.clock.unix_millis(),
             );
@@ -168,7 +168,7 @@ impl Manager {
     /// range, and [`CoreError::Closed`] once the manager has shut down. Nothing changes
     /// on an error.
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
-        let localized = self.read_profile(path).await?;
+        let localized = self.read_settings_file(path).await?;
         let wants_media = localized.profile.addons.contains(&AddonId::Media);
 
         let retest: Vec<_> = {
@@ -177,17 +177,17 @@ impl Manager {
             // Ids for added queues and proxies come from a copy of the counters, kept only
             // once the profile is accepted, so a refused one uses up none.
             let ids = std::cell::RefCell::new(state.ids.clone());
-            let imported = wirecatch_settings::profile::merge_localized(
+            let imported = wirecatch_settings::settings_file::merge_localized(
                 localized,
                 Current {
                     queues: &current,
-                    proxies: &state.proxy_profiles,
+                    proxies: &state.proxy_servers,
                 },
                 &self.inner.folders,
                 &state.suffixes,
                 NewIds {
                     queue: || ids.borrow_mut().queue(),
-                    proxy: || ids.borrow_mut().proxy_profile(),
+                    proxy: || ids.borrow_mut().proxy_server(),
                 },
             )?;
             let mut imported = imported;
@@ -203,7 +203,7 @@ impl Manager {
             let kept: wirecatch_settings::proxy::Logins = std::mem::take(&mut state.proxy_logins)
                 .into_iter()
                 .filter(|(id, _)| {
-                    let was = state.proxy_profiles.iter().find(|p| p.id == *id);
+                    let was = state.proxy_servers.iter().find(|p| p.id == *id);
                     let now = imported.proxies.iter().find(|p| p.id == *id);
                     matches!((was, now), (Some(was), Some(now))
                         if wirecatch_settings::proxy::same_proxy(&was.settings, &now.settings))
@@ -212,7 +212,7 @@ impl Manager {
             let mut retest = Vec::new();
             for profile in &mut imported.proxies {
                 let unchanged = state
-                    .proxy_profiles
+                    .proxy_servers
                     .iter()
                     .any(|p| p.id == profile.id && p.settings == profile.settings);
                 if !unchanged {
@@ -222,8 +222,8 @@ impl Manager {
             }
             self.inner.store.save_proxy_logins(kept.clone());
             state.proxy_logins = kept;
-            state.proxy_profiles = imported.proxies;
-            self.proxy_profiles_changed(&state);
+            state.proxy_servers = imported.proxies;
+            self.proxy_servers_changed(&state);
             // Queues first: the new settings may name a queue that was just added.
             self.queues_changed(&mut state);
             self.apply_settings(&mut state, imported.settings);
@@ -250,24 +250,24 @@ impl Manager {
     ///
     /// The errors of [`import_settings`](Self::import_settings).
     pub async fn preview_import(&self, path: &Path) -> Result<ImportPreview> {
-        let localized = self.read_profile(path).await?;
+        let localized = self.read_settings_file(path).await?;
         let wants_media = localized.profile.addons.contains(&AddonId::Media);
         let state = self.lock_open()?;
         let current = state.queue_list();
         // Ids for queues and proxies that would be added; they are never used.
         let mut ids = state.ids.clone();
         let mut proxy_ids = state.ids.clone();
-        let imported = wirecatch_settings::profile::merge_localized(
+        let imported = wirecatch_settings::settings_file::merge_localized(
             localized,
             Current {
                 queues: &current,
-                proxies: &state.proxy_profiles,
+                proxies: &state.proxy_servers,
             },
             &self.inner.folders,
             &state.suffixes,
             NewIds {
                 queue: || ids.queue(),
-                proxy: || proxy_ids.proxy_profile(),
+                proxy: || proxy_ids.proxy_server(),
             },
         )?;
         let mut addons_to_offer = Vec::new();
@@ -284,13 +284,16 @@ impl Manager {
 
     /// Reads and checks the profile at `path` and resolves its folders here,
     /// off the async threads.
-    async fn read_profile(&self, path: &Path) -> Result<wirecatch_settings::profile::Localized> {
+    async fn read_settings_file(
+        &self,
+        path: &Path,
+    ) -> Result<wirecatch_settings::settings_file::Localized> {
         let path = path.to_path_buf();
         let folders = self.inner.folders.clone();
         self.blocking(move || {
-            let bytes = wirecatch_settings::profile::read_file(&path)?;
-            Ok(wirecatch_settings::profile::localize(
-                wirecatch_settings::profile::parse(&bytes)?,
+            let bytes = wirecatch_settings::settings_file::read_file(&path)?;
+            Ok(wirecatch_settings::settings_file::localize(
+                wirecatch_settings::settings_file::parse(&bytes)?,
                 &folders,
             ))
         })

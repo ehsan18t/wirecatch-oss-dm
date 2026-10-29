@@ -2,7 +2,7 @@
 
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import {
-  FOLLOW_APP,
+  GLOBAL,
   MAX_CONCURRENT_DOWNLOADS,
   MAX_CONNECTIONS_PER_DOWNLOAD,
   ownSetting,
@@ -51,9 +51,9 @@ describe('the queue dialog', () => {
     const made = app.queues.list.find((q) => q.settings.name === 'Plain');
     expect(made?.settings).toMatchObject({
       description: 'Everything else',
-      max_concurrent: FOLLOW_APP,
-      speed_limit: FOLLOW_APP,
-      connections: FOLLOW_APP,
+      max_concurrent: GLOBAL,
+      speed_limit: GLOBAL,
+      connections: GLOBAL,
     });
   });
 

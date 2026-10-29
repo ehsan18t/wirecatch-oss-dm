@@ -9,7 +9,7 @@
   import DownloadsSection from './DownloadsSection.svelte';
   import MediaList from './MediaList.svelte';
   import MediaSection from './MediaSection.svelte';
-  import Notices from './Notices.svelte';
+  import Alerts from './Alerts.svelte';
   import PopupFooter from './PopupFooter.svelte';
   import PopupHeader from './PopupHeader.svelte';
 
@@ -81,10 +81,10 @@
     {#if !hasSiteAccess}
       <AccessNotice onallow={allowAccess} />
     {/if}
-    <Notices
-      notices={snapshot?.notices ?? []}
+    <Alerts
+      alerts={snapshot?.alerts ?? []}
       ondismiss={(id: string) => {
-        model.dismissNotice(id);
+        model.dismissAlert(id);
       }}
       fallback={() => mainArea}
     />

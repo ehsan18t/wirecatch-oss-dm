@@ -56,7 +56,7 @@ export class AddDraft {
   fileName = $state('');
   /** The folder to save in; null for the one Settings picks by file type. */
   folder = $state<string | null>(null);
-  /** The queue every link goes to; null for Automatic, where the claims place each one. */
+  /** The queue every link goes to; null for Automatic, where the rules place each one. */
   queue = $state<QueueId | null>(null);
   /** Why the links cannot be sent as they are. */
   invalid = $state<string | null>(null);

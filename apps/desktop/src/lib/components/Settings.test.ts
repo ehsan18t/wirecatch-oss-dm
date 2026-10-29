@@ -163,7 +163,7 @@ describe('how downloads are told', () => {
     await settle();
     await fireEvent.click(screen.getByRole('option', { name: /Open a summary window/ }));
     await settle();
-    expect(app.settings?.finish_notice).toBe('window');
+    expect(app.settings?.notify_on_finish).toBe('window');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Change when Main notifies you' }));
     await settle();
@@ -184,8 +184,8 @@ describe('how downloads are told', () => {
     expect(finishFor).toBeEnabled();
 
     await app.updateSettings((d) => {
-      d.start_notice = 'nothing';
-      d.finish_notice = 'notification';
+      d.notify_on_start = 'nothing';
+      d.notify_on_finish = 'notification';
     });
     await settle();
     expect(screen.getByRole('combobox', { name: 'Hide the start notice after' })).toBeDisabled();
@@ -203,7 +203,7 @@ describe('how downloads are told', () => {
 
   it('leaves out when the queue tells while nothing is told', async () => {
     const { app } = await openSettings('notifications');
-    await app.updateSettings((d) => void (d.finish_notice = 'nothing'));
+    await app.updateSettings((d) => void (d.notify_on_finish = 'nothing'));
     await settle();
     expect(screen.queryByText(/notifies you each time/)).toBeNull();
   });

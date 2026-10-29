@@ -5,10 +5,10 @@ import type { DownloadId } from './DownloadId';
 import type { DownloadSummary } from './DownloadSummary';
 import type { ImportSummary } from './ImportSummary';
 import type { MediaChoice } from './MediaChoice';
-import type { NoteId } from './NoteId';
-import type { NotePressed } from './NotePressed';
+import type { NoticeId } from './NoticeId';
+import type { NoticePressed } from './NoticePressed';
 import type { PendingCapture } from './PendingCapture';
-import type { ProxyProfile } from './ProxyProfile';
+import type { ProxyServer } from './ProxyServer';
 import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
 import type { QueueReport } from './QueueReport';
@@ -23,7 +23,7 @@ export type UiEvent =
   | { type: 'downloads_changed'; data: Array<DownloadSummary> }
   | { type: 'downloads_removed'; data: Array<DownloadId> }
   | { type: 'queues_changed'; data: Array<Queue> }
-  | { type: 'proxy_profiles_changed'; data: Array<ProxyProfile> }
+  | { type: 'proxy_servers_changed'; data: Array<ProxyServer> }
   | { type: 'settings_changed'; data: AppSettings }
   | { type: 'captured'; data: DownloadSummary }
   | { type: 'confirmation_requested'; data: PendingCapture }
@@ -88,6 +88,6 @@ export type UiEvent =
     }
   | { type: 'window_requested' }
   | { type: 'browser_settings_requested' }
-  | { type: 'note_shown'; data: NoteId }
-  | { type: 'note_pressed'; data: NotePressed }
+  | { type: 'notice_shown'; data: NoticeId }
+  | { type: 'notice_pressed'; data: NoticePressed }
   | { type: 'queue_finished'; data: QueueReport };

@@ -50,7 +50,7 @@ pub mod appimage;
 pub mod autostart;
 pub mod background;
 pub mod bridge;
-pub mod browser_notes;
+pub mod browser_notices;
 mod commands;
 pub mod download_windows;
 pub mod elevation;
@@ -61,10 +61,10 @@ pub mod host;
 pub mod lifecycle;
 #[cfg(windows)]
 mod maximize_overlay;
-pub mod notices;
+pub mod notifications;
 pub mod questions;
 pub mod sleep;
-pub mod system_notices;
+pub mod system_notifications;
 pub mod tray;
 pub mod tray_proxy;
 pub mod updates;
@@ -126,7 +126,7 @@ pub fn run() {
     let app = with_plugins(tauri::Builder::default())
         .manage(LaunchLinks::default())
         .manage(window::PendingSelection::default())
-        .manage(browser_notes::BrowserNotes::default())
+        .manage(browser_notices::BrowserNotices::default())
         .manage(finished_window::FinishedWindow::default())
         .manage(Lifecycle::default())
         .manage(sleep::MainAsleep::default())
@@ -188,7 +188,7 @@ fn with_plugins(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
 
 fn setup(app: &mut tauri::App, launch: &Launch) -> Result<(), Box<dyn std::error::Error>> {
     let handle = app.handle().clone();
-    app.manage(system_notices::SystemNotices::new(
+    app.manage(system_notifications::SystemNotifications::new(
         &handle,
         host::CHANNEL.name(),
         &app.config().identifier,
@@ -296,9 +296,13 @@ async fn start(app: tauri::AppHandle, listener: Option<wirecatch_ipc::Listener>)
             return;
         }
     };
-    for notice in manager.startup_notices() {
-        tracing::warn!("{}: {}", notice.title, notice.message);
-        background::show_notification(&app, notice.title.clone(), notice.message.clone());
+    for notification in manager.startup_notices() {
+        tracing::warn!("{}: {}", notification.title, notification.message);
+        background::show_notification(
+            &app,
+            notification.title.clone(),
+            notification.message.clone(),
+        );
     }
     let life = app.state::<Lifecycle>();
     // Subscribed before looking at open questions, so none falls between the two.

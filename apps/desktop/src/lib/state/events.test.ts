@@ -35,7 +35,7 @@ describe('event handler tables', () => {
       downloads_changed: vi.fn(),
       downloads_removed: vi.fn(),
       queues_changed: vi.fn(),
-      proxy_profiles_changed: vi.fn(),
+      proxy_servers_changed: vi.fn(),
       settings_changed: vi.fn(),
       captured: vi.fn(),
       confirmation_requested: vi.fn(),
@@ -50,8 +50,8 @@ describe('event handler tables', () => {
       window_requested: vi.fn(),
       browser_settings_requested: vi.fn(),
       queue_finished: vi.fn(),
-      note_shown: vi.fn(),
-      note_pressed: vi.fn(),
+      notice_shown: vi.fn(),
+      notice_pressed: vi.fn(),
       media_captured: vi.fn(),
     };
     dispatch(handlers, STORAGE);
