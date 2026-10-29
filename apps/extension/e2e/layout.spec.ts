@@ -32,6 +32,9 @@ interface Font {
 async function open(page: Page, query: string, font: Font): Promise<void> {
   await page.goto(`/?${query}${font.query}`);
   await page.locator('main').waitFor();
+  // `fonts.ready` waits only for loads already started, which the page may not have asked for yet.
+  if (font.bundled !== null)
+    await page.evaluate((family) => document.fonts.load(`16px "${family}"`), font.bundled);
   await page.evaluate(() => document.fonts.ready);
   if (font.bundled !== null) {
     // A font that failed to load leaves the system's in its place, and the check would measure that.
