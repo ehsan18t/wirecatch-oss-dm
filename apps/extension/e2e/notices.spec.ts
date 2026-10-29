@@ -21,10 +21,24 @@ async function noticesFrame(page: Page, query: string): Promise<Frame> {
   const frame = find();
   if (!frame) throw new Error('no notices frame');
   await frame.locator('[data-toast]').first().waitFor();
-  // The notices have slid in and the frame took their size.
+  // The notices have slid in.
   await frame.evaluate(() =>
     Promise.all(document.getAnimations().map((animation) => animation.finished)),
   );
+  // The page around sizes the frame from a message the notices send, which can come later still.
+  await expect
+    .poll(() =>
+      frame.evaluate(() => {
+        const notices = document.body.firstElementChild;
+        const { clientWidth, clientHeight } = document.documentElement;
+        return (
+          notices instanceof HTMLElement &&
+          clientWidth >= notices.offsetWidth &&
+          clientHeight >= notices.offsetHeight
+        );
+      }),
+    )
+    .toBe(true);
   return frame;
 }
 
