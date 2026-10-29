@@ -12,8 +12,8 @@ use tokio::time::Instant;
 use wirecatch_engine::{CancellationToken, Url};
 use wirecatch_media::StoredMedia;
 use wirecatch_protocol::app::{
-    CaptureConfirmation, Category, DownloadSummary, MediaSummary, PendingCapture, PortablePath,
-    UiEvent,
+    CaptureConfirmation, Category, DownloadStatus, DownloadSummary, MediaSummary, PendingCapture,
+    PortablePath, Repeated, UiEvent,
 };
 use wirecatch_protocol::extension::{
     AddAction, AddedDownload, MediaKind, NewDownload, WithdrawOutcome,
@@ -87,6 +87,9 @@ impl Manager {
             return Err(CoreError::NotStarted(
                 wirecatch_messages::CAPTURE_TO_OWN_NETWORK.into(),
             ));
+        }
+        if let Some(joined) = self.join_unfinished(&capture, &url)? {
+            return Ok(joined);
         }
         if capture
             .media
@@ -374,6 +377,34 @@ impl Manager {
             .map(super::state::Entry::summary)
     }
 
+    /// A capture of a link that is already a download not finished yet (queued, running or
+    /// paused) joins that download instead of starting another, and its window comes to the
+    /// front (D89). `None` when there is no such download.
+    fn join_unfinished(&self, capture: &NewDownload, url: &Url) -> Result<Option<AddedDownload>> {
+        let mut state = self.lock_open()?;
+        let Some(row) = state
+            .visible()
+            .map(|entry| &entry.row)
+            .find(|row| unfinished(row.status) && same_address(&row.url, url.as_str()))
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        let reply = AddedDownload {
+            id: Some(row.id),
+            action: capture_action(&row),
+        };
+        // Confirmed, not the capture's own: withdrawing this handover never takes the download back.
+        let handover = Handover {
+            reply: reply.clone(),
+            target: Target::Confirmed(row.id),
+            deciding: None,
+        };
+        state.handovers.insert(&capture.handover_id, handover);
+        self.emit(UiEvent::CaptureRepeated(Repeated::Download(row.id)));
+        Ok(Some(reply))
+    }
+
     /// How a capture arrives, read from the state in one go.
     fn arrival(&self, capture: &NewDownload, url: &Url) -> Result<Arrival> {
         let state = self.lock_open()?;
@@ -414,12 +445,14 @@ impl Manager {
                 ));
             }
             existing.handovers.push(capture.handover_id.clone());
+            let id = existing.capture.id;
             let handover = Handover {
                 reply: reply.clone(),
-                target: Target::Pending(existing.capture.id),
+                target: Target::Pending(id),
                 deciding: None,
             };
             state.handovers.insert(&capture.handover_id, handover);
+            self.emit(UiEvent::CaptureRepeated(Repeated::Question(id)));
             return Ok(reply);
         }
         if state.pending.len() >= MAX_PENDING {
@@ -510,6 +543,18 @@ impl Manager {
             )),
         }
     }
+}
+
+/// Whether a download in `status` is still to finish: queued, running or paused.
+fn unfinished(status: DownloadStatus) -> bool {
+    matches!(
+        status,
+        DownloadStatus::Queued
+            | DownloadStatus::Connecting
+            | DownloadStatus::Downloading
+            | DownloadStatus::Paused
+            | DownloadStatus::Processing
+    )
 }
 
 /// Whether two links are the same address, ignoring a `#fragment` (which never

@@ -43,6 +43,7 @@ describe('event handler tables', () => {
       settings_imported: vi.fn(),
       media_choice_requested: vi.fn(),
       file_exists_requested: vi.fn(),
+      capture_repeated: vi.fn(),
       media_analysing: vi.fn(),
       addons_changed: vi.fn(),
       suffix_list_checked: vi.fn(),

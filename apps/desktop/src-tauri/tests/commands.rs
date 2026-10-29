@@ -452,7 +452,12 @@ async fn a_download_window_finds_its_question_and_its_download() -> TestResult {
     let row = api::get_download(&manager, id)?;
     assert_eq!(row.status, DownloadStatus::Paused);
 
-    manager.add_capture(capture("second")).await?;
+    // While it waits, paused, the same link joins it instead of asking again (D89).
+    let joined = manager.add_capture(capture("second")).await?;
+    assert_eq!(joined.id, Some(id));
+    // Cancelled, it is asked about again, and the question names the earlier download.
+    manager.cancel(id)?;
+    manager.add_capture(capture("third")).await?;
     let again = api::pending_confirmations(&manager).remove(0);
     assert_eq!(
         api::earlier_download(&manager, again.id).map(|r| r.id),

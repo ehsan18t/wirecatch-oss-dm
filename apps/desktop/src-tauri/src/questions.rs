@@ -15,7 +15,7 @@
 use wirecatch_protocol::QuestionId;
 use wirecatch_protocol::app::{
     AddonRequestItem, DownloadSummary, FileExistsQuestion, MediaChoice, MediaReading,
-    PendingCapture, Theme, UiEvent,
+    PendingCapture, Repeated, Theme, UiEvent,
 };
 use wirecatch_protocol::extension::{NoticeId, NoticePressed};
 
@@ -29,6 +29,9 @@ pub enum Attention {
     Ask(QuestionId),
     /// The question with this id is no longer open; it no longer waits for a window.
     Closed(QuestionId),
+    /// The browser sent a link again that is still this question or download: its window comes
+    /// to the front, opening again if the person closed it (D89).
+    ShowAgain(Repeated),
     /// A client asked to see Wirecatch: the main window comes to the front.
     ShowMain,
     /// A client asked for the browser settings (D61): the main window comes to the front on
@@ -68,6 +71,7 @@ pub fn attention(event: &UiEvent) -> Attention {
         UiEvent::MediaChoiceRequested(choice) => Attention::Ask(choice.id),
         UiEvent::FileExistsRequested(question) => Attention::Ask(question.id),
         UiEvent::ConfirmationClosed { id } => Attention::Closed(*id),
+        UiEvent::CaptureRepeated(repeated) => Attention::ShowAgain(*repeated),
         UiEvent::WindowRequested => Attention::ShowMain,
         UiEvent::BrowserSettingsRequested => Attention::ShowBrowserSettings,
         UiEvent::Captured(row) => Attention::Started(Box::new(row.clone())),
