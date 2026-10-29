@@ -13,4 +13,12 @@ export default defineConfig({
   define: buildDefines(),
   resolve: { alias: { '@': fileURLToPath(new URL('../src', import.meta.url)) } },
   server: { port: 5181, strictPort: true },
+  // Every page, so a build serves what the dev server does (the browser tests run on a build).
+  build: {
+    rollupOptions: {
+      input: ['index.html', 'notices.html', 'notices-frame.html'].map((page) =>
+        fileURLToPath(new URL(page, import.meta.url)),
+      ),
+    },
+  },
 });
