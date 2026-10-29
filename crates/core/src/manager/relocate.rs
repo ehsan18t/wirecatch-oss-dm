@@ -76,7 +76,7 @@ impl Manager {
     }
 
     /// Records how moving download `id` from `old_path` to `dir` ended.
-    fn finish_move(
+    pub(super) fn finish_move(
         &self,
         id: DownloadId,
         dir: &Path,
@@ -140,7 +140,12 @@ impl Manager {
 
     /// Checks `dir`, reserves a free path in it and moves the download's files
     /// there. Returns the new path.
-    async fn move_files(&self, id: DownloadId, old_path: &Path, dir: PathBuf) -> Result<PathBuf> {
+    pub(super) async fn move_files(
+        &self,
+        id: DownloadId,
+        old_path: &Path,
+        dir: PathBuf,
+    ) -> Result<PathBuf> {
         let name = naming::file_name_of(old_path);
         let claimed = self.lock().claimed.clone();
         let new_path = self

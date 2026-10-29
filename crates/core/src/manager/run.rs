@@ -9,7 +9,8 @@ use tokio::runtime::Handle;
 use tracing::{debug, warn};
 
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error as EngineError, Outcome, PathResolver, Progress, Url,
+    CancellationToken, DownloadRequest, Error as EngineError, ExistingFile, Outcome, PathResolver,
+    Progress, Url,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
@@ -17,10 +18,11 @@ use wirecatch_protocol::app::{DownloadStatus, UserError};
 use super::added_pages::AnsweredPage;
 use super::policy::RunPolicy;
 use super::settle::path_resolver;
-use super::state::{Entry, Gauge, Run, State, Stop};
+use super::state::{Entry, Gauge, OnExisting, Run, State, Stop};
 use super::{Inner, Manager};
 use crate::headers;
 use crate::headers::Origin;
+use crate::naming::Claimed;
 use crate::speed::SpeedMeter;
 use wirecatch_sites::local_network;
 
@@ -207,6 +209,7 @@ impl Manager {
             gauge,
             marked: false,
             stop: None,
+            found: None,
             meter: SpeedMeter::default(),
             task: task.abort_handle(),
         });
@@ -229,7 +232,7 @@ impl Manager {
         if entry.run.as_ref().is_none_or(|run| run.id != run_id) {
             return;
         }
-        let Some(run) = entry.run.take() else {
+        let Some(mut run) = entry.run.take() else {
             return;
         };
         state.running.remove(&id);
@@ -241,30 +244,23 @@ impl Manager {
             entry.row.total = reading.total;
         }
         entry.clear_live_fields();
+        // A file saved under its name meanwhile holds the path: it moves to the next free name.
+        if run.stop.is_none() && matches!(end, RunEnd::Engine(Err(EngineError::TargetTaken { .. })))
+        {
+            entry.held_for_another_name();
+            self.save(state, id);
+            drop(guard);
+            self.take_next_free_name(id);
+            return;
+        }
+        let found = run.found.take();
 
         let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
         let ended = Ended::of(end, id, &folder, worked_before, entry);
         let mut answered_page = None;
         match (ended, run.stop) {
             (Ended::Completed { bytes, path }, _) => {
-                // The finished file now holds the name on disk.
-                state.claimed.remove(entry.path());
-                if let Some(path) = path {
-                    entry.row.file_name = crate::naming::file_name_of(&path);
-                    entry.row.path = path.to_string_lossy().into_owned();
-                    // Reserved by the media job while it put the file in place.
-                    state.claimed.remove(entry.path());
-                }
-                // Already marked as downloaded from the internet: the run did
-                // that before it reported the file (see `download_marked` and
-                // the media job's `finish`).
-                entry.row.status = DownloadStatus::Completed;
-                entry.row.total = Some(bytes);
-                entry.row.done = bytes;
-                entry.row.completed_at = Some(now);
-                // Cookies and headers were only needed to download it.
-                entry.origin = Origin::default();
-                entry.row.error = None;
+                complete(&mut state.claimed, entry, bytes, path, now);
             }
             // A cancelled run that was not asked to stop, or an outcome added to the
             // engine later: keep it paused, so nothing is lost.
@@ -274,6 +270,8 @@ impl Manager {
             (_, Some(Stop::Requeue)) => entry.row.status = DownloadStatus::Queued,
             // Its server answered with a web page: the download gives way to reading the page.
             (_, Some(Stop::ReadAsVideo)) => answered_page = AnsweredPage::of(entry),
+            // Its file is already in the folder: handled below, with the whole state.
+            (_, Some(Stop::FileExists)) => {}
             // The status stays as it was, so the next start continues it.
             (_, Some(Stop::Shutdown)) => {
                 if entry.row.status == DownloadStatus::Processing {
@@ -299,6 +297,9 @@ impl Manager {
                 entry.row.error = Some(wirecatch_messages::stopped_unexpectedly());
             }
         }
+        if let Some(found) = found {
+            self.on_found(state, id, &found);
+        }
         self.save(state, id);
         self.reconcile(state);
         drop(guard);
@@ -319,6 +320,32 @@ impl Manager {
             deleted.cancel();
         });
     }
+}
+
+/// Records a run that finished its file, `bytes` long, at `path` when that is not the planned one.
+fn complete(claimed: &mut Claimed, entry: &mut Entry, bytes: u64, path: Option<PathBuf>, now: i64) {
+    // The finished file now holds the name on disk.
+    claimed.remove(entry.path());
+    if let Some(path) = path {
+        entry.row.file_name = crate::naming::file_name_of(&path);
+        entry.row.path = path.to_string_lossy().into_owned();
+        // Reserved by the media job while it put the file in place.
+        claimed.remove(entry.path());
+    }
+    // Already marked as downloaded from the internet: the run did that before it reported the
+    // file (see `download_marked` and the media job's `finish`).
+    mark_completed(entry, bytes, now);
+}
+
+/// Puts a download in the completed state, its file `bytes` long.
+pub(super) fn mark_completed(entry: &mut Entry, bytes: u64, now: i64) {
+    entry.row.status = DownloadStatus::Completed;
+    entry.row.total = Some(bytes);
+    entry.row.done = bytes;
+    entry.row.completed_at = Some(now);
+    entry.row.error = None;
+    // Cookies and headers were only needed to download it.
+    entry.origin = Origin::default();
 }
 
 /// Puts a download in the cancelled state, with nothing kept.
@@ -438,6 +465,13 @@ fn engine_request(
         Target::Exact => request.exact_path = Some(path),
         Target::Resolve(resolver) => request.resolve_path = Some(resolver),
     }
+    // Never over a file the person did not choose to replace (D88), which ENG-11's file saved
+    // under its name meanwhile would otherwise be.
+    request.if_exists = if entry.on_existing == Some(OnExisting::Replace) {
+        ExistingFile::Replace
+    } else {
+        ExistingFile::Refuse
+    };
     request.options = headers::download_options(entry.chosen_by.private_network(), policy.proxy);
     let options = &mut request.options;
     options.connections = policy.connections;

@@ -983,6 +983,24 @@ pub enum NotifyOnFinish {
     Nothing,
 }
 
+/// What a download does when the file it would save is already in the folder: same name, and the
+/// same size and source where those are known (D88). A file that only shares the name gets a new
+/// one whatever this says.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum WhenFileExists {
+    /// Ask with a [`FileExistsQuestion`].
+    #[default]
+    Ask,
+    /// Download it again over the file there.
+    Replace,
+    /// Download nothing: the file there is the download, completed.
+    KeepExisting,
+    /// Download it under a new name, `file (1).zip`.
+    KeepBoth,
+}
+
 /// How the person is told that a browser download started without a window of its own (D65).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -1153,6 +1171,8 @@ pub struct AppSettingsPatch {
     pub auto_update_addons: Option<bool>,
     /// The new [`AppSettings::show_progress_windows`].
     pub show_progress_windows: Option<bool>,
+    /// The new [`AppSettings::when_file_exists`].
+    pub when_file_exists: Option<WhenFileExists>,
     /// Changes to [`AppSettings::media`].
     pub media: Option<MediaDefaultsPatch>,
     /// The new [`AppSettings::local_sites`], replacing the list.
@@ -1392,6 +1412,10 @@ pub struct AppSettings {
     /// (D23). Off: the window closes when the download starts.
     #[serde(default = "default_true")]
     pub show_progress_windows: bool,
+    /// What a download does when its file is already in the folder (D88).
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "WhenFileExists")]
+    pub when_file_exists: WhenFileExists,
     /// What the quality window for a video starts from (D24).
     #[serde(default)]
     pub media: MediaDefaults,
@@ -1435,6 +1459,7 @@ impl AppSettings {
             notify_during_do_not_disturb,
             auto_update_addons,
             show_progress_windows,
+            when_file_exists,
             media,
             local_sites,
             update_suffix_list,
@@ -1458,6 +1483,7 @@ impl AppSettings {
             notify_during_do_not_disturb: new_notify_during_do_not_disturb,
             auto_update_addons: new_auto_update_addons,
             show_progress_windows: new_show_progress_windows,
+            when_file_exists: new_when_file_exists,
             media: media_patch,
             local_sites: new_local_sites,
             update_suffix_list: new_update_suffix_list,
@@ -1485,6 +1511,7 @@ impl AppSettings {
         );
         set(auto_update_addons, new_auto_update_addons);
         set(show_progress_windows, new_show_progress_windows);
+        set(when_file_exists, new_when_file_exists);
         if let Some(media_patch) = media_patch {
             media.apply(media_patch);
         }
@@ -1655,6 +1682,8 @@ pub enum UiEvent {
     SettingsImported(ImportSummary),
     /// Media with several qualities: the UI shows the picker.
     MediaChoiceRequested(MediaChoice),
+    /// A download found its file already in the folder and asks what to do (D88).
+    FileExistsRequested(FileExistsQuestion),
     /// A video or stream from the browser was handed over and is read for its qualities
     /// without a window (D50): the desktop tells the person it was added at once, before the
     /// read ends (D67). Its download is not told again when it starts.
@@ -1774,6 +1803,53 @@ pub struct ImportPreview {
     pub addons_to_offer: Vec<AddonId>,
 }
 
+/// A download found the file it would save already in the folder and asks what to do (D88). The
+/// download is paused until the answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FileExistsQuestion {
+    /// Identifies this question.
+    pub id: QuestionId,
+    /// The download that asks.
+    pub download: DownloadId,
+    /// Where it is downloaded from, with any password removed.
+    pub url: String,
+    /// The name of the file in the folder, which the download would save as.
+    pub file_name: String,
+    /// The folder.
+    pub folder: String,
+    /// Size of the file in the folder, in bytes.
+    #[ts(type = "number")]
+    pub size: u64,
+    /// When the file in the folder was last changed, in Unix time in milliseconds.
+    #[ts(type = "number | null")]
+    pub saved_at: Option<i64>,
+}
+
+/// The person's answer to a [`FileExistsQuestion`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum FileExistsChoice {
+    /// Download it again over the file in the folder.
+    Replace,
+    /// Download it under a new name.
+    KeepBoth,
+    /// Cancel the download; the file in the folder stays.
+    Cancel,
+}
+
+/// The answer to a [`FileExistsQuestion`], and whether it becomes [`AppSettings::when_file_exists`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FileExistsAnswer {
+    /// What to do.
+    pub choice: FileExistsChoice,
+    /// Do the same every time: saves [`FileExistsChoice::Replace`] or [`FileExistsChoice::KeepBoth`]
+    /// as the setting; ignored with [`FileExistsChoice::Cancel`], which is never remembered.
+    pub remember: bool,
+}
+
 /// A captured stream or page still being read for its qualities.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -1811,6 +1887,8 @@ pub enum Question {
     Choice(MediaChoice),
     /// A video page waiting for the media add-on.
     Addon(AddonRequestItem),
+    /// A download whose file is already in the folder (D88).
+    FileExists(FileExistsQuestion),
 }
 
 impl Question {
@@ -1822,6 +1900,7 @@ impl Question {
             Question::Reading(reading) => reading.id,
             Question::Choice(choice) => choice.id,
             Question::Addon(page) => page.id,
+            Question::FileExists(question) => question.id,
         }
     }
 }

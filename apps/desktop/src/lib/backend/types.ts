@@ -37,6 +37,8 @@ import type {
   WindowFrame,
   LinkMatch,
   LinkTrial,
+  FileExistsAnswer,
+  FileExistsQuestion,
 } from '@wirecatch/protocol';
 import type { WindowRegistry } from '../sample-windows';
 
@@ -154,6 +156,10 @@ export interface Backend {
   dismissMediaChoice: (id: QuestionId) => Promise<void>;
   /** Media choices still open, so a new or reloaded window asks them again. */
   pendingMediaChoices: () => Promise<MediaChoice[]>;
+  /** Answers a download whose file is already in its folder (D88); the download's id. */
+  answerFileExists: (id: QuestionId, answer: FileExistsAnswer) => Promise<DownloadId>;
+  /** Downloads waiting for an answer about the file already in their folder. */
+  pendingFileExists: () => Promise<FileExistsQuestion[]>;
   /** Pages waiting for an add-on, oldest first, so a new or reloaded window offers it again. */
   pendingAddonRequests: () => Promise<AddonRequestItem[]>;
 

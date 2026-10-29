@@ -11,6 +11,7 @@ export interface Scenarios {
   simulateAddonRequired: () => void;
   simulateAnsweredElsewhere: () => void;
   simulateSlowReading: () => void;
+  simulateFileExists: () => void;
 }
 
 export function sampleCommands(mock: Scenarios, finished: MockFinished): SampleData['commands'] {
@@ -50,6 +51,12 @@ export function sampleCommands(mock: Scenarios, finished: MockFinished): SampleD
       title: 'Pretend the browser sent a video page that takes a while to read',
       keywords: 'simulate reading analysing page media',
       run: () => mock.simulateSlowReading(),
+    },
+    {
+      id: 'mock.file-exists',
+      title: 'Pretend a download found its file already in the folder',
+      keywords: 'simulate duplicate file exists replace keep both',
+      run: () => mock.simulateFileExists(),
     },
     {
       id: 'mock.finished',

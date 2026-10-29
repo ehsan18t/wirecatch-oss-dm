@@ -480,6 +480,7 @@ pub fn open_questions(manager: &Manager) -> Vec<QuestionId> {
         &manager.pending_media_choices(),
         &manager.pending_addon_requests(),
         &manager.media_being_read(),
+        &manager.pending_file_exists(),
     )
 }
 

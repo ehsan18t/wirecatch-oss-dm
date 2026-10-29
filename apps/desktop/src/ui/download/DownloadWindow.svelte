@@ -3,6 +3,7 @@
   import { Button } from '@wirecatch/ui';
   import type { DownloadWindowState } from '$lib/window/download-window.svelte';
   import AddonView from './AddonView.svelte';
+  import FileExistsView from './FileExistsView.svelte';
   import FileQuestion from './FileQuestion.svelte';
   import MediaQuestion from './MediaQuestion.svelte';
   import ProgressView from './ProgressView.svelte';
@@ -44,6 +45,8 @@
         {/key}
       {:else if question?.kind === 'addon'}
         <AddonView {win} addon={win.addon ?? question.data.addon} url={question.data.url} />
+      {:else if question?.kind === 'file_exists'}
+        <FileExistsView {win} question={question.data} />
       {/if}
     </div>
   {/key}

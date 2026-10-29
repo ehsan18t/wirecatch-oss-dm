@@ -132,6 +132,13 @@ const DEFS = [
     keywords: 'location directory path save destination',
   },
   {
+    id: 'when_file_exists',
+    section: 'files',
+    label: 'If the file is already in the folder',
+    help: 'A file counts as already there when it has the same name and size, and came from the same link when Wirecatch downloaded it. A file that only shares the name is always saved under a new name.',
+    keywords: 'duplicate exists existing same file overwrite replace skip rename keep both ask',
+  },
+  {
     id: 'categories',
     section: 'files',
     label: 'Folders by file type',

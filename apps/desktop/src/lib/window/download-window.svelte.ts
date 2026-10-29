@@ -10,6 +10,7 @@ import type {
   CaptureConfirmation,
   DownloadId,
   DownloadSummary,
+  FileExistsChoice,
   MediaChoice,
   MediaSelection,
   Question,
@@ -250,6 +251,8 @@ export class DownloadWindowState {
     media_choice_requested: (e) => {
       if (this.#asking(e.data.id)) this.#choiceArrived(e.data);
     },
+    // A window opens for each such question and loads it by its id.
+    file_exists_requested: ignore,
     addon_required: (e) => {
       if (!this.#asking(e.data.id)) return;
       this.addon = e.data.addon;
@@ -364,6 +367,27 @@ export class DownloadWindowState {
     }
     await this.#started(id, selection.later);
     return true;
+  }
+
+  /**
+   * The answer to a download whose file is already in its folder (D88): Replace and Keep both
+   * show its progress as any started download does; Cancel closes the window.
+   */
+  async answerFileExists(choice: FileExistsChoice, remember: boolean): Promise<void> {
+    const question = this.question;
+    if (question?.kind !== 'file_exists' || this.busy) return;
+    this.busy = true;
+    this.#answered = true;
+    const id = await this.#runner.run(() =>
+      this.#host.backend().answerFileExists(question.data.id, { choice, remember }),
+    );
+    this.busy = false;
+    if (id === undefined) {
+      this.#answered = false;
+      return;
+    }
+    if (choice === 'cancel') this.close();
+    else await this.#started(id, false);
   }
 
   /**

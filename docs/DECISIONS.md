@@ -805,6 +805,16 @@ Decided by the lead on 2026-10-29, finishing the revamp (D36) on the look D84 an
 4. The in-page media button is drawn in the dark scheme's graphite and text with Wirecatch's cyan under the pointer and round keyboard focus, over any page. Its colours are read from `tokens.css` when the extension is built, as the toolbar badge's are.
 5. General has an "Open log folder" button under Troubleshooting (D40), which opens the folder the shell logs to; the page names no path.
 
+### D88. A download whose file is already in its folder
+
+Decided with the maintainer on 2026-10-29. A download used to take the next free name whenever its name was taken, so the same file downloaded twice piled up copies, and a finished download replaced any file saved under its name while it ran (core's half of ENG-11).
+
+1. When the server answers, before anything is written, a finished file at the download's path is compared with what the server offers: its size, and, when a finished download in the list has that path, whether it came from the same link and has the same size. A file that differs in anything known only shares the name, and the download takes the next free name as before.
+2. A duplicate does what "If the file is already in the folder" (`when_file_exists`, on Saving files) says: Ask me (the default for a new install), Replace the file, Keep the existing file (the download is completed with that file, nothing downloaded) or Keep both (the next free name). The wording follows the choices Windows Explorer and the Finder offer for a file that is already there.
+3. Asking pauses the download and opens its window (D23) with Replace, Keep both and Cancel. "Do this every time" saves Replace or Keep both as the setting; Cancel is never remembered, so no later download is dropped unseen. Resuming, cancelling or removing the download closes the question.
+4. Replace and Keep both restart the download with that decision, so its next run takes the path at once. The engine replaces a file only on a run the person chose Replace for (`ExistingFile::Replace`); every other run refuses (`ExistingFile::Refuse`), and a file saved under its name meanwhile makes the finished download move its part and resume files to the next free name and finish there (D30.7).
+5. Videos keep taking the next free name for now: their file is placed when their job ends, not when a server answers, and get this setting in a change of their own.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

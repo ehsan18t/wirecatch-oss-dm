@@ -126,6 +126,7 @@ export function defaultSettings(): AppSettings {
     notify_during_do_not_disturb: true,
     auto_update_addons: true,
     show_progress_windows: true,
+    when_file_exists: 'ask',
     media: {
       video: defaultOutput(),
       audio: defaultOutput(),

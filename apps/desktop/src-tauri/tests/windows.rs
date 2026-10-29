@@ -56,6 +56,7 @@ const DOWNLOAD_WINDOW: &[(&str, ActsOn)] = &[
     ("reject_capture", ActsOn::Question),
     ("choose_media", ActsOn::Question),
     ("dismiss_media_choice", ActsOn::Question),
+    ("answer_file_exists", ActsOn::Question),
     ("get_question", ActsOn::Question),
     ("earlier_download", ActsOn::Question),
     ("list_queues", ActsOn::Neither),
@@ -81,6 +82,7 @@ const DOWNLOAD_WINDOW_ONLY: &[&str] = &[
     "reject_capture",
     "choose_media",
     "dismiss_media_choice",
+    "answer_file_exists",
     "close_download_window",
     "fit_download_window",
     "finished_list",
@@ -233,6 +235,9 @@ fn aimed_at(command: &str, id: &Value) -> TestResult<Value> {
         "set_download_folder" => json!({ "id": id, "folder": "folder" }),
         "confirm_capture" => json!({ "id": id, "confirmation": {} }),
         "choose_media" => json!({ "id": id, "selection": { "option_id": "best" } }),
+        "answer_file_exists" => {
+            json!({ "id": id, "answer": { "choice": "keep_both", "remember": false } })
+        }
         "pause"
         | "resume"
         | "retry"

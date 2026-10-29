@@ -192,6 +192,8 @@ impl Manager {
                 "This download has already finished, so there is nothing to cancel.",
             ));
         }
+        self.close_file_exists(&mut state, id);
+        let entry = state.entry_mut(id)?;
         if self.stop_run(entry, Stop::Cancel) {
             return Ok(());
         }
@@ -257,6 +259,7 @@ impl Manager {
                 if !state.downloads.get(id).is_some_and(|e| e.removing) {
                     continue;
                 }
+                self.close_file_exists(&mut state, *id);
                 let Some(entry) = state.remove_entry(*id) else {
                     continue;
                 };
@@ -469,6 +472,7 @@ impl Manager {
     fn requeue(&self, id: DownloadId) -> Result<()> {
         let mut state = self.lock_open()?;
         state.entry_mut(id)?;
+        self.close_file_exists(&mut state, id);
         // Trying again means the person has dealt with files a failed move left.
         state.release_stranded(id);
         let entry = state.entry_mut(id)?;
@@ -624,6 +628,7 @@ impl Manager {
             cleanup: None,
             removing: false,
             moving: None,
+            on_existing: None,
             stranded: None,
             media_job,
             video_check,

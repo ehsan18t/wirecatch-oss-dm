@@ -1,7 +1,7 @@
 // The downloads waiting for the person's answer (D23). Each is asked in its own window; the
 // main window only counts them ("Waiting for you") and never asks them itself.
 
-import type { MediaChoice, PendingCapture } from '@wirecatch/protocol';
+import type { FileExistsQuestion, MediaChoice, PendingCapture } from '@wirecatch/protocol';
 import type { Backend } from '../backend';
 
 /** What the questions need from the window they are counted in. */
@@ -16,6 +16,8 @@ export class Questions {
   mediaChoices = $state<MediaChoice[]>([]);
   /** Video pages waiting for the media add-on, by question id. */
   addonPages = $state<number[]>([]);
+  /** Downloads waiting for an answer about the file already in their folder (D88). */
+  fileExists = $state<FileExistsQuestion[]>([]);
 
   readonly #host: QuestionsHost;
 
@@ -24,14 +26,15 @@ export class Questions {
   }
 
   /**
-   * How many downloads wait for an answer: browser files, videos waiting for a quality, and
-   * video pages waiting for the media add-on. Each counts once.
+   * How many downloads wait for an answer: browser files, videos waiting for a quality, video
+   * pages waiting for the media add-on, and files already in their folder. Each counts once.
    */
   waitingCount = $derived.by(() => {
     const ids = [
       ...this.pending.map((p) => p.id),
       ...this.mediaChoices.map((c) => c.id),
       ...this.addonPages,
+      ...this.fileExists.map((q) => q.id),
     ];
     return ids.filter((id, i) => ids.indexOf(id) === i).length;
   });
@@ -52,6 +55,17 @@ export class Questions {
       this.addonPages = pages.map((p) => p.id);
     } catch {
       // Same: the events still bring new pages.
+    }
+    try {
+      this.fileExists = await backend.pendingFileExists();
+    } catch {
+      // Same: the events still bring new questions.
+    }
+  }
+
+  fileExistsRequested(question: FileExistsQuestion): void {
+    if (this.fileExists.every((q) => q.id !== question.id)) {
+      this.fileExists = [...this.fileExists, question];
     }
   }
 
@@ -82,6 +96,7 @@ export class Questions {
   closed(id: number): void {
     this.pending = this.pending.filter((p) => p.id !== id);
     this.mediaChoices = this.mediaChoices.filter((c) => c.id !== id);
+    this.fileExists = this.fileExists.filter((q) => q.id !== id);
     this.#notWaitingForAddon(id);
   }
 

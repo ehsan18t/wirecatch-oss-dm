@@ -41,6 +41,7 @@ import {
   type WindowAction,
   type WindowFrame,
   type LinkTrial,
+  type FileExistsAnswer,
 } from '@wirecatch/protocol';
 import { keysOf } from '../keys';
 import {
@@ -267,6 +268,12 @@ export class TauriBackend implements DownloadWindowBackend {
   }
   pendingMediaChoices() {
     return this.#call('pending_media_choices');
+  }
+  answerFileExists(id: QuestionId, answer: FileExistsAnswer) {
+    return this.#call('answer_file_exists', { id, answer });
+  }
+  pendingFileExists() {
+    return this.#call('pending_file_exists');
   }
   pendingAddonRequests() {
     return this.#call('pending_addon_requests');

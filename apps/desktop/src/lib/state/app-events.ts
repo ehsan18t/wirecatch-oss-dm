@@ -27,7 +27,12 @@ export interface MainWindowEventsHost {
   settingsArrived: (settings: AppSettings) => void;
   readonly questions: Pick<
     Questions,
-    'confirmationRequested' | 'mediaChoiceRequested' | 'analysing' | 'addonRequired' | 'closed'
+    | 'confirmationRequested'
+    | 'mediaChoiceRequested'
+    | 'fileExistsRequested'
+    | 'analysing'
+    | 'addonRequired'
+    | 'closed'
   >;
   readonly addons: Pick<Addons, 'changed'>;
   readonly suffixList: Pick<SuffixList, 'checked'>;
@@ -59,6 +64,7 @@ export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
     captured: (e) => app.downloads.apply([e.data]),
     confirmation_requested: (e) => app.questions.confirmationRequested(e.data),
     media_choice_requested: (e) => app.questions.mediaChoiceRequested(e.data),
+    file_exists_requested: (e) => app.questions.fileExistsRequested(e.data),
     media_analysing: (e) => app.questions.analysing(e.data.id),
     addon_required: (e) => app.questions.addonRequired(e.data.id),
     confirmation_closed: (e) => app.questions.closed(e.data.id),

@@ -3,6 +3,7 @@
 
 mod addons;
 mod common;
+mod file_exists;
 mod ftp;
 mod lifecycle;
 mod limits;

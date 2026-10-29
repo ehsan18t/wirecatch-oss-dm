@@ -3,6 +3,7 @@ import type { AddDownloadArgs } from './AddDownloadArgs';
 import type { AddVideoPageArgs } from './AddVideoPageArgs';
 import type { AddonInfo } from './AddonInfo';
 import type { AddonRequestItem } from './AddonRequestItem';
+import type { AnswerFileExistsArgs } from './AnswerFileExistsArgs';
 import type { AppSettings } from './AppSettings';
 import type { CancelAddonOperationArgs } from './CancelAddonOperationArgs';
 import type { CancelArgs } from './CancelArgs';
@@ -20,6 +21,7 @@ import type { DownloadId } from './DownloadId';
 import type { DownloadSummary } from './DownloadSummary';
 import type { EarlierDownloadArgs } from './EarlierDownloadArgs';
 import type { ExportSettingsArgs } from './ExportSettingsArgs';
+import type { FileExistsQuestion } from './FileExistsQuestion';
 import type { FinishedList } from './FinishedList';
 import type { FitDownloadWindowArgs } from './FitDownloadWindowArgs';
 import type { GetDownloadArgs } from './GetDownloadArgs';
@@ -221,6 +223,15 @@ export type CommandMap = {
    * Media choices still open, so a new or reloaded window asks them again.
    */
   pending_media_choices: Command<null, Array<MediaChoice>>;
+  /**
+   * Answers a download whose file is already in its folder (D88); answers with the download,
+   * which runs again unless cancelled.
+   */
+  answer_file_exists: Command<AnswerFileExistsArgs, DownloadId>;
+  /**
+   * Downloads waiting for an answer about the file already in their folder, oldest first.
+   */
+  pending_file_exists: Command<null, Array<FileExistsQuestion>>;
   /**
    * Pages waiting for an add-on, oldest first, so a new or reloaded window offers it again.
    */
