@@ -42,6 +42,12 @@ const FAKE_APP_STARTED: &str = "WIRECATCH_TEST_FAKE_APP_STARTED";
 /// How long the fake app stays after the bridge has left, for the test's last check, which may never come; a helper process must not outlive its test by long.
 const LINGER: Duration = Duration::from_secs(10);
 
+/// How long the fake app takes to come up, as a real app takes a moment to.
+const COMING_UP: Duration = Duration::from_millis(300);
+
+/// How long a connected bridge is left idle before its memory is read.
+const IDLE: Duration = Duration::from_secs(1);
+
 /// The most memory an idle bridge may hold, resident or private.
 const IDLE_MEMORY_LIMIT: usize = 10 * 1024 * 1024;
 
@@ -319,8 +325,7 @@ fn fake_app_process() {
         .build()
         .unwrap();
     runtime.block_on(async move {
-        // A real app takes a moment to come up.
-        sleep(Duration::from_millis(300)).await;
+        sleep(COMING_UP).await;
         let mut listener = Listener::bind(&Endpoint::from_raw(endpoint)).unwrap();
         let Ok(Ok(mut conn)) = timeout(PATIENCE, listener.accept()).await else {
             return;
@@ -611,7 +616,7 @@ async fn idle_memory_stays_under_10_mb() -> TestResult {
         .ok_or("the stream ended")?;
 
     // Connected and idle.
-    sleep(Duration::from_secs(1)).await;
+    sleep(IDLE).await;
     let pid = bridge.child.id().unwrap();
     let (resident, private) = memory_of(pid)?;
     eprintln!(

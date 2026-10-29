@@ -128,6 +128,14 @@ function shortWaitsIn(body, { wait, deadline }) {
   return found;
 }
 
+/** Where in `body` a sleep is given a duration written in place outside a loop: a window in which nothing must happen is named (`QUIET`), and only a wait loop's poll interval may be written in place. */
+function unnamedSleepsIn(body) {
+  const loops = bracedRegions(body, /\b(?:while|loop|for)\b[^{;]*\{/g);
+  return [...body.matchAll(/\bsleep\(\s*(?:[\w:]+::)?Duration::from_\w+\(/g)]
+    .map((match) => match.index)
+    .filter((index) => !inside(loops, index));
+}
+
 /**
  * The places in one Rust file where a test races the machine, as `{ line, code }`: an upper bound on a measured duration, or a fixed `Duration` written into a wait that has to succeed. A `while` condition, and a wait whose test is that nothing came (`is_err()`, `is_none()`), are windows in which something must not happen, which can only miss a fault, so they are not races. Each statement is read on one line for the bounds, and duration names are read one function at a time.
  */
@@ -153,7 +161,9 @@ export function timingRaces(file, text) {
       if (bound.test(line) && !/\bwhile\b/.test(line)) report(start + offset);
       offset += line.length + 1;
     }
-    for (const index of shortWaitsIn(body, short)) report(start + index);
+    for (const index of [...shortWaitsIn(body, short), ...unnamedSleepsIn(body)]) {
+      report(start + index);
+    }
   }
   return [...found].sort(([a], [b]) => a - b).map(([line, codeLine]) => ({ line, code: codeLine }));
 }
@@ -166,7 +176,7 @@ function testTiming() {
   );
   if (hits.length > 0) {
     throw new GateError(
-      `Tests that race the machine: they bound how long something took from above, or give a wait that has to succeed a short fixed time. A test that takes a second alone takes many times that on a busy CI runner, so it fails there whatever the change (docs/ENGINEERING.md, section 7). Wait for the event under PATIENCE, make the slow path outlast PATIENCE (a held server, a long timeout), count what was sent or tried, or run on tokio's paused clock. A lower bound (it took at least the limit) is fine, and so is a short window in which something must not happen (\`while start.elapsed() < window\`, a wait expected to time out):\n${hits.join('\n')}`,
+      `Tests that race the machine: they bound how long something took from above, or give a wait that has to succeed a short fixed time. A test that takes a second alone takes many times that on a busy CI runner, so it fails there whatever the change (docs/ENGINEERING.md, section 7). Wait for the event under PATIENCE, make the slow path outlast PATIENCE (a held server, a long timeout), count what was sent or tried, or run on tokio's paused clock. A lower bound (it took at least the limit) is fine, and so is a short, named window in which something must not happen (\`sleep(QUIET)\`, \`while start.elapsed() < window\`, a wait expected to time out); a sleep with a duration written in place belongs only in a wait loop, as its poll interval:\n${hits.join('\n')}`,
     );
   }
 }
