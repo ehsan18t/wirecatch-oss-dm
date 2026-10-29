@@ -18,6 +18,7 @@ import { noTypeArgumentAssertion } from './rules/no-type-argument-assertion.js';
 import { noValueOfType } from './rules/no-value-of-type.js';
 import { tokensOnly } from './rules/tokens-only.js';
 import { useUiPrimitives } from './rules/use-ui-primitives.js';
+import { waitWithPatience } from './rules/wait-with-patience.js';
 import {
   CORE_RULES,
   IMPORT_RULES,
@@ -39,6 +40,7 @@ const plugin = {
     'no-value-of-type': noValueOfType,
     'tokens-only': tokensOnly,
     'use-ui-primitives': useUiPrimitives,
+    'wait-with-patience': waitWithPatience,
   },
 };
 
@@ -160,6 +162,7 @@ const TEST_RULES = {
   'max-lines-per-function': 'off',
   'max-lines': 'off',
   'unicorn/error-message': 'off',
+  'wirecatch/wait-with-patience': 'error',
 };
 
 /** Browser specs take `test` from the design system's testing module, which fails a test on a Svelte warning. */

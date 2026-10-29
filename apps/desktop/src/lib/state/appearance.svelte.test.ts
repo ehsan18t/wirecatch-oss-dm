@@ -5,6 +5,7 @@
 import type { SystemAppearance } from '@wirecatch/protocol';
 import { flushSync } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
+import { PATIENCE_MS } from '@wirecatch/ui/testing/jsdom';
 import { appState, mockBackend } from '$lib/testing/setup';
 import { SAMPLE_SYSTEM_ACCENT } from '$lib/backend/mock';
 import {
@@ -166,7 +167,10 @@ describe('the main window', () => {
     const app = appState(backend);
     const cleanup = $effect.root(() => followLook(app.appearance, () => app.settings));
     await app.init();
-    await vi.waitFor(() => expect(app.appearance.systemAccent).toBe(SAMPLE_SYSTEM_ACCENT));
+    await vi.waitFor(
+      () => expect(app.appearance.systemAccent).toBe(SAMPLE_SYSTEM_ACCENT),
+      PATIENCE_MS,
+    );
     const root = document.documentElement;
 
     // Another window (a download window, say) changes the settings: every window gets them.

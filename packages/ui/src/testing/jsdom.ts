@@ -1,6 +1,13 @@
 // The browser features the design system uses that jsdom leaves out, for every test setup that renders its components: this package's own and the apps'. The DOM types declare every one of them, so each is checked with `in` or `typeof`, not for truthiness.
 
+import { configure } from '@testing-library/svelte';
 import { vi } from 'vitest';
+
+/** How long a test waits for something before it fails: two minutes, as `PATIENCE` in crates/test-support. A wait bounds a hang, not the work, which a busy machine slows many times over (docs/ENGINEERING.md, section 7). Give it to every `vi.waitFor`, which has no default of its own to set. */
+export const PATIENCE_MS = 120_000;
+
+// Testing Library's `waitFor` and `findBy*` give up after one second unless told otherwise.
+configure({ asyncUtilTimeout: PATIENCE_MS });
 
 if (typeof HTMLDialogElement !== 'undefined' && !('showModal' in HTMLDialogElement.prototype)) {
   Object.assign(HTMLDialogElement.prototype, {

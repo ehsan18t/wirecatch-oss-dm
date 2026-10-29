@@ -3,6 +3,7 @@
  * called exactly once on every path or the download hangs.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PATIENCE_MS } from '@wirecatch/ui/testing/jsdom';
 import type { DownloadItemLike } from '../src/lib/capture/candidate';
 import {
   registerCapture,
@@ -167,7 +168,7 @@ describe('registerCapture on Chromium', () => {
     const { events, fire } = chromiumEvents();
     registerCapture(events, hub);
     const { suggest } = fire(downloadItem());
-    await vi.waitFor(() => expect(suggest).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(suggest).toHaveBeenCalledTimes(1), PATIENCE_MS);
     await flush();
     expect(suggest).toHaveBeenCalledTimes(1);
   });

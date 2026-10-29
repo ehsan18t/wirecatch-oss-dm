@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { PATIENCE_MS } from '@wirecatch/ui/testing/jsdom';
 import { installDiagnostics } from '../src/lib/diag/install';
 import { Diagnostics, type DiagEntry } from '../src/lib/diag/log';
 import { DIAG_KEY_PREFIX, type ErrorEvents } from '../src/lib/diag/persist';
@@ -49,7 +50,7 @@ describe('diagnostics and private windows, in the background', () => {
     diag.log('warn', 'hub', 'after');
     await vi.waitFor(async () => {
       expect(await savedMessages()).toContain('after');
-    });
+    }, PATIENCE_MS);
     expect(await savedMessages()).toEqual(['before', 'after']);
     expect(diag.entries().map((e) => e.message)).toEqual(['before', 'after']);
   });
@@ -63,7 +64,7 @@ describe('diagnostics and private windows, in the background', () => {
     await fakeBrowser.windows.remove(window);
     await vi.waitFor(() => {
       expect(diag.entries()).toEqual([]);
-    });
+    }, PATIENCE_MS);
   });
 
   it('keeps what it logged before it knew of the windows, when none of them is private', async () => {
@@ -72,7 +73,7 @@ describe('diagnostics and private windows, in the background', () => {
     diag.log('warn', 'hub', 'at start');
     await vi.waitFor(async () => {
       expect(await savedMessages()).toEqual(['at start']);
-    });
+    }, PATIENCE_MS);
     expect(diag.entries()).toEqual([expect.objectContaining({ private: false })]);
   });
 
@@ -83,15 +84,15 @@ describe('diagnostics and private windows, in the background', () => {
     diag.log('warn', 'hub', 'private');
     await vi.waitFor(async () => {
       expect(await savedMessages()).toEqual(['private']);
-    });
+    }, PATIENCE_MS);
     await fakeBrowser.windows.remove(window);
     await vi.waitFor(() => {
       expect(diag.entries()).toEqual([]);
-    });
+    }, PATIENCE_MS);
     diag.log('warn', 'hub', 'after');
     await vi.waitFor(async () => {
       expect(await savedMessages()).toEqual(['after']);
-    });
+    }, PATIENCE_MS);
     expect(diag.entries().map((e) => e.message)).toEqual(['after']);
   });
 });
@@ -116,7 +117,7 @@ describe('diagnostics and private windows, in the popup', () => {
     diag.log('warn', 'popup', 'at start');
     await vi.waitFor(() => {
       expect(getCurrent).toHaveBeenCalled();
-    });
+    }, PATIENCE_MS);
     await getCurrent.mock.results[0]?.value;
     await flush();
     diag.log('warn', 'popup', 'later');
@@ -130,7 +131,7 @@ describe('diagnostics and private windows, in the popup', () => {
     diag.log('warn', 'popup', 'at start');
     await vi.waitFor(() => {
       expect(diag.entries()).toEqual([expect.objectContaining({ private: false })]);
-    });
+    }, PATIENCE_MS);
   });
 
   it('takes its window as private when the browser cannot say', async () => {
@@ -141,7 +142,7 @@ describe('diagnostics and private windows, in the popup', () => {
       expect(diag.entries().map((e) => e.message)).toContain(
         'Could not tell whether this window is private',
       );
-    });
+    }, PATIENCE_MS);
     diag.log('warn', 'popup', 'later');
     expect(diag.entries().every((e) => e.private)).toBe(true);
   });

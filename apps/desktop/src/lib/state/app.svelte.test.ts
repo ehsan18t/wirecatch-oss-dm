@@ -9,6 +9,7 @@ import {
 } from '@wirecatch/protocol';
 import { PRODUCT_NAME } from '@wirecatch/product';
 import { describe, expect, it, vi } from 'vitest';
+import { PATIENCE_MS } from '@wirecatch/ui/testing/jsdom';
 import { appState, mockBackend } from '$lib/testing/setup';
 import { BackendError } from '../backend';
 import { buildCommands, fuzzyScore, searchCommands } from '../commands';
@@ -145,7 +146,7 @@ describe('AppState', () => {
     vi.spyOn(backend, 'takeReveal').mockResolvedValue({ queue: null, ids: [first.id] });
     const app = appState(backend);
     await app.init();
-    await vi.waitFor(() => expect(app.selection.list).toEqual([first.id]));
+    await vi.waitFor(() => expect(app.selection.list).toEqual([first.id]), PATIENCE_MS);
   });
 
   it('opens the browser settings the extension asked for, even while the page was loading (D61)', async () => {
@@ -157,7 +158,7 @@ describe('AppState', () => {
     });
     const app = appState(backend);
     await app.init();
-    await vi.waitFor(() => expect(app.screen).toBe('settings'));
+    await vi.waitFor(() => expect(app.screen).toBe('settings'), PATIENCE_MS);
     expect(app.settingsSection).toBe('browser');
   });
 
@@ -219,7 +220,7 @@ describe('AppState', () => {
     app.openDetails(id);
     expect(app.detailsOpen).toBe(true);
     await backend.remove([id], false);
-    await vi.waitFor(() => expect(app.downloads.get(id)).toBeUndefined());
+    await vi.waitFor(() => expect(app.downloads.get(id)).toBeUndefined(), PATIENCE_MS);
     expect(app.details).toBeNull();
   });
 

@@ -2,6 +2,7 @@
 
 import { queueId } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
+import { PATIENCE_MS } from '@wirecatch/ui/testing/jsdom';
 import { appState, mockBackend } from '$lib/testing/setup';
 import type { ShellSignal } from '../backend';
 import { linksHint, NO_LINK, readLinks } from './add-draft.svelte';
@@ -79,11 +80,13 @@ describe('the Add dialog in state', () => {
       'https://launched.example/two.zip',
     ]);
     signal('links');
-    await vi.waitFor(() =>
-      expect(draft.links.urls).toEqual([
-        'https://typed.example/one.zip',
-        'https://launched.example/two.zip',
-      ]),
+    await vi.waitFor(
+      () =>
+        expect(draft.links.urls).toEqual([
+          'https://typed.example/one.zip',
+          'https://launched.example/two.zip',
+        ]),
+      PATIENCE_MS,
     );
     // The same form, still open, with what was typed in it.
     expect(app.addDraft).toBe(draft);
@@ -234,7 +237,7 @@ describe('what changes while the form sends', () => {
     signal('links');
     await vi.waitFor(() => {
       expect(draft.text).toContain('launched.example');
-    });
+    }, PATIENCE_MS);
     gate.resolve();
     expect(await sent).toBe(false);
     expect(add.mock.calls.map(([r]) => r.url)).toEqual(['https://a.org/x.zip']);
