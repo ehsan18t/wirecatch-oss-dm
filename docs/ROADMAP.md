@@ -19,6 +19,20 @@ As of 2026-10-15 (main at e18e845f) the code quality audit has W0 to W5, W7, W8 
 2. W9 (core manager), W10 (IPC, bridge and CLI) and W11 (desktop shell, with the gaps D43 records), then what is left of W12 (desktop interface) and W13 (extension, with D44.6, the cookie scope the app decides).
 3. W15 last: comments only where they earn their place.
 
+## Before the first release
+
+W9 is finished before the release. Features that close a gap in the app come first when building them fixes W9 findings on the way; [AUDIT](AUDIT.md) W9 has each finding's state. In priority order:
+
+1. **What a download does when its file already exists** (feature). A setting with three choices: replace the existing file, mark the download complete without downloading, or download it under a new name (`file (1).zip`, today's only behaviour). The check happens when the server answers, not when the download is added, which also closes core's half of ENG-11: a finished download never replaces a file another program saved under its name meanwhile.
+2. **CORE-9:** moving a download to another folder never replaces a file there, and a move that cannot delete the original leaves no duplicate behind; core uses the engine's no-replace move.
+3. **CORE-4:** withdrawing a browser capture while it is being confirmed never downloads it twice.
+4. **Dropped downloads' file work:** a stopped run's queued file work cannot delete a new run's files (the drain handle in AUDIT's carried items).
+5. **One state for a download (CORE-12), one kind of question (rest of CORE-5) and cancel safety (CORE-6):** the flags become one phase, which removes the class of bug behind 3 and 4.
+6. **Saves and scans:** progress saves write only the progress (CORE-7), state changes stop scanning every download (CORE-10), and the system proxy is read off the manager's lock.
+7. **The rest of W9:** split the long modules (CORE-11), typed add-on errors (CORE-13, CMD-8), no logic on a person's fix (CORE-14), named layout strings (CORE-19), no bool parameters (CORE-25), `UnixMillis` (CORE-26), the latest write per row kept (CORE-8), the small-file cap in the engine (CORE-23), and the small items AUDIT lists for W9.
+
+Release setup, beside the list: the four `TODO-PRODUCT-` values in `config/product.toml` (the maintainer's), a Chrome Web Store package from the release workflow, and the store listings (ROADMAP item 7).
+
 For the maintainer:
 
 - Left for release, as before: the GitHub organization, code signing, the updater signing key and the extension store listings.
