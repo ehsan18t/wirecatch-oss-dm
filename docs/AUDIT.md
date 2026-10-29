@@ -96,7 +96,7 @@ Every check proposed during the audit run, so none lives only in a reviewer's no
 - Linux compiled and tested for the crates with native dependencies: `clippy-linux` skips the engine, streams and core, so Linux-only code (the no-replace rename, the `/tmp` endpoint fallback) is never compiled by the local gate. A check or a CI run on the branch before it lands, as W4's landing did by hand with a Docker container and a dispatched CI run. The Linux run must be as a non-root user, or `a_link_whose_old_name_stays_is_undone` does not run.
 - The desktop's Playwright specs run a second time in a bundled DejaVu Sans, as the extension's do, so a Windows run catches what Linux fonts break (the extension popup overflowed only in DejaVu Sans on CI).
 - The product name written literally in the desktop's rebuilt screens, outside comments, is refused, beside D29's check for the rest; it must come from `@wirecatch/product`. `apps/desktop/src/ui/download/ReadingView.svelte` and `MediaQuestion.svelte` had it, and the occurrences outside the rebuilt screens are still listed under W2's carried prose.
-- Svelte dev-mode warnings in the browser specs fail the gate. `state_proxy_equality_mismatch` from `same()` (see the revamp's carried list) warns about 50 times a run today and goes first.
+- Svelte dev-mode warnings in the browser specs fail the gate. `state_proxy_equality_mismatch` from `same()`, which went first, is fixed (2026-10-29).
 - Every cut label has a tooltip, checked once over every page of the desktop and the extension, with an extension preview flag that makes every button and label about 2.5 times longer so cutting happens.
 - A layout check counts as a guard only once it has been shown failing on the code before its fix: U-S4's two layout checks passed on the old code. A mutation step in review, or a check that runs the spec against the parent of the fixing commit.
 - The `e2e-desktop` description in the gate names every spec it runs: `a11y.spec.ts` and `layout.spec.ts`, and also `add.spec.ts` and `download-window.spec.ts` (`scripts/gate/browser.mjs`).
@@ -213,7 +213,7 @@ Parts of the interface revamp's phase 1 carried into later work:
 - A window's first frames have no automated check in the real app (D45); the Windows smoke step that would catch a flash is proposed under W6.
 - With `overflow-anchor` off in the desktop's download list, the rows on screen may shift by one when a row above the visible part leaves or joins the list (suspected, not reproduced; phase 2, or W12).
 - In the extension popup while the app is offline, a label cut short shows only the offline reason in its tooltip, not the whole label (`apps/extension/src/ui/cut-label.ts`; W13).
-- `same()` in `apps/desktop/src/lib/state/downloads.svelte.ts` compares a row's state proxy with a plain value, so Svelte warns `state_proxy_equality_mismatch` about 50 times a run in development (the structural fallback still answers correctly; W12).
+- Fixed (2026-10-29): `same()` in `apps/desktop/src/lib/state/downloads.svelte.ts` compares a row's state proxy with a plain value, so Svelte warns `state_proxy_equality_mismatch` about 50 times a run in development (the structural fallback still answers correctly; W12). It now compares objects by their fields only, never a proxy with `===`; the dev server's console shows no such warning on the tour.
 - Real-app checks attached through Playwright's `connectOverCDP` see a light `prefers-color-scheme` whatever the system's; check the theme or take screenshots through raw CDP or with `colorScheme: null`.
 - The protocol's doc of `remove`'s `delete_file` should say that an unfinished download's partial files always go (W9).
 - A link that failed after its add dialog was closed with Escape has nowhere to show the failure (`apps/desktop/src/ui/add`; phase 2, with the dialogs).
@@ -221,32 +221,32 @@ Parts of the interface revamp's phase 1 carried into later work:
 
 Found while reviewing the queue editor of D72 (2026-10-25), in shared parts it did not change (W12, or phase 2 of the revamp):
 
-- In the dark theme, white text on the cyan primary buttons ("Create queue", "Save", "New download") has a contrast near 2:1; give the primary button dark text or a darker fill in that theme (`packages/ui`).
-- An off switch looks heavier than an on one in the light theme (its knob is dark); an off switch wants a muted knob and an outlined track.
+- Fixed (2026-10-29): In the dark theme, white text on the cyan primary buttons ("Create queue", "Save", "New download") has a contrast near 2:1; give the primary button dark text or a darker fill in that theme (`packages/ui`). The dark theme's primary buttons already carry dark text (`--wc-accent-fg`).
+- Fixed (2026-10-29): An off switch looks heavier than an on one in the light theme (its knob is dark); an off switch wants a muted knob and an outlined track. Its knob is `line-strong` now, on the outlined track.
 - The selected option of a segmented control (KB/s or MB/s, the day patterns) is hard to tell apart in both themes, and the control is slightly shorter than a number field beside it.
-- A dialog whose content scrolls shows no sign of it at the footer; add a shadow or fade at the edge that has more content.
-- A queue's header line puts its settings and what it is doing now in one line (`apps/desktop/src/ui/list/ListHeader.svelte`); split them, or show the live part as a chip.
-- The sidebar's "1 of 1 running" reads as one download of one (`apps/desktop/src/lib/state/queues.svelte.ts`).
-- The edit dialog of a queue has no intro line where New queue has one.
+- Fixed (2026-10-29): A dialog whose content scrolls shows no sign of it at the footer; add a shadow or fade at the edge that has more content. The footer casts `shadow-scroll-edge` while more content lies below.
+- Fixed (2026-10-29): A queue's header line puts its settings and what it is doing now in one line (`apps/desktop/src/ui/list/ListHeader.svelte`); split them, or show the live part as a chip. The settings and the live state are two lines, the live one in the primary text colour.
+- Fixed (2026-10-29): The sidebar's "1 of 1 running" reads as one download of one (`apps/desktop/src/lib/state/queues.svelte.ts`). It reads "1 running, at most 3".
+- Fixed (2026-10-29): The edit dialog of a queue has no intro line where New queue has one. Neither dialog has one since D84 cut it.
 
 Found while building the rest of D72's windows (2026-10-29), outside what they change:
 
 - The queue editor is long once Auto is on: the claims push the hours and the notices far down. Tabs or folded sections for its cards would shorten it (phase 2 of the revamp).
-- A switched-on limit's number field reads as disabled in the queue editor's light theme (its value is grey).
-- The three queues in the icon rail share one icon and cannot be told apart; give each its initial or a colour (`apps/desktop/src/ui/sidebar`).
+- Fixed (2026-10-29): A switched-on limit's number field reads as disabled in the queue editor's light theme (its value is grey). Fixed with the field recipe's disabled rule (#58).
+- Fixed (2026-10-29): The three queues in the icon rail share one icon and cannot be told apart; give each its initial or a colour (`apps/desktop/src/ui/sidebar`). Each shows its initials in the rail.
 - The "Sample data" badge in the title bar competes with the total speed beside it.
-- "Across all queues. A queue can run fewer, set in the queue." under Downloads at the same time reads clumsily (`apps/desktop/src/lib/settings-schema.ts`).
+- Fixed (2026-10-29): "Across all queues. A queue can run fewer, set in the queue." under Downloads at the same time reads clumsily (`apps/desktop/src/lib/settings-schema.ts`). The help was rewritten under D84.
 - A regular expression in a queue's file name claims is checked only when a link is tried or the queue saved, not as it is typed; checking it as typed needs a core command that checks claims alone (W12).
 - Core's public methods still carry `# Errors` doc sections that restate the error type (`crates/core/src/manager/*.rs`, about 40); the comment rules allow one line where the signature is unclear.
 
 Found while building D73 (2026-10-29), outside what it changes:
 
-- Toasts sit over the controls at the bottom right of a page, Proxy servers' Test, Edit and Delete among them, and info toasts stay until closed (`apps/desktop/src/lib/state/toasts.svelte.ts`, the shared toaster).
+- Fixed (2026-10-29): Toasts sit over the controls at the bottom right of a page, Proxy servers' Test, Edit and Delete among them, and info toasts stay until closed (`apps/desktop/src/lib/state/toasts.svelte.ts`, the shared toaster). Info toasts go after 4 s; only a startup notice stays until closed, by design, and the corner is kept.
 - A toast breaks a host name at its hyphen (`backup-` / `proxy.example`), which reads as two names.
-- A dialog is centred on its height, so it moves when a line appears in it, such as a proxy's test result.
-- A tooltip always opens above what it describes, so a queue's proxy mark in the sidebar covers the queue's own name (`packages/ui/src/attachments/tooltip.svelte.ts`); a placement option would let it open beside the mark.
-- The sidebar's icon rail shows nothing of a queue's second line (Auto, Auto off, the proxy mark), and its tooltip is only the name.
-- A dialog opened over another, such as New proxy over the queue editor, is the same width and lines up with it, so the one below shows round its edges.
+- Fixed (2026-10-29): A dialog is centred on its height, so it moves when a line appears in it, such as a proxy's test result. A dialog hangs from a fixed space at the top, which gives way in a short window.
+- Fixed (2026-10-29): A tooltip always opens above what it describes, so a queue's proxy mark in the sidebar covers the queue's own name (`packages/ui/src/attachments/tooltip.svelte.ts`); a placement option would let it open beside the mark. `tooltip(text, { beside: true })` opens it after its node; the proxy mark and the rail use it.
+- Fixed (2026-10-29): The sidebar's icon rail shows nothing of a queue's second line (Auto, Auto off, the proxy mark), and its tooltip is only the name. The rail's tooltip names the queue, its state and its proxy.
+- Fixed (2026-10-29): A dialog opened over another, such as New proxy over the queue editor, is the same width and lines up with it, so the one below shows round its edges. One opened over another sits lower.
 - A select has no groups or dividers, so following the app, the fixed choices and the saved proxies run together in the queue's proxy list.
 - The palette ranks a setting that only opens Settings ("Network: Proxy") above commands that act on the same word, and shows no mark on the one in use among a group of choices.
 - "<local> for names without a dot" in the help of the hosts to go directly to is jargon.
