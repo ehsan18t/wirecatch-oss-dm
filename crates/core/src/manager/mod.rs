@@ -55,6 +55,7 @@ use crate::naming;
 pub use downloads::LinkFrom;
 use state::{Entry, State, Stop};
 pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
+pub use ticker::PROGRESS_TICK;
 
 /// How many UI events may wait for a slow subscriber before it starts missing some.
 const UI_EVENT_BUFFER: usize = 1024;
