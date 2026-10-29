@@ -503,7 +503,6 @@ fn sample_streams(ffmpeg: &Path, dir: &Path) -> TestResult<(Vec<u8>, Vec<u8>)> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn real_ffmpeg_saves_a_page_video_as_mp4() -> TestResult {
     let Some(ffmpeg) = real_ffmpeg() else {
-        eprintln!("skipped: set WIRECATCH_TEST_FFMPEG to a real ffmpeg to run this test");
         return Ok(());
     };
     let scratch = tempfile::tempdir()?;

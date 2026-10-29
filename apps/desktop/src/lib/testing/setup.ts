@@ -1,5 +1,6 @@
 import type { DownloadId } from '@wirecatch/protocol';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import { flushSync, tick } from 'svelte';
 import { onTestFinished, vi } from 'vitest';
 import type { Backend } from '$lib/backend';
@@ -85,3 +86,20 @@ export function rowByName(name: string): HTMLElement {
   if (!el) throw new Error(`no row named ${name}`);
   return el;
 }
+
+/** The app rendered with a user whose `click` waits for the page to settle. */
+export async function setupWithUser(options: MockOptions = {}) {
+  const r = await renderApp(options);
+  const user = userEvent.setup();
+  const click = async (el: HTMLElement) => {
+    await user.click(el);
+    await settle();
+  };
+  return { ...r, user, click };
+}
+
+export const button = (name: RegExp | string): HTMLElement => screen.getByRole('button', { name });
+
+/** The details dialog, open for the download whose name starts with `name`. */
+export const detailsOf = (name: string) =>
+  within(screen.getByRole('dialog', { name: new RegExp(`^${name}`) }));

@@ -178,11 +178,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      # `pnpm protocol:generate` runs the wirecatch-protocol tests to export the types, and the Tauri version check reads Cargo.lock through cargo.
+      # `pnpm protocol:generate` runs the wirecatch-protocol tests to export the types, and the Tauri version check reads Cargo.lock through cargo. Both run on Linux only, where they answer the same as anywhere, so Windows needs no Rust here.
       - name: Install Rust
+        if: runner.os == 'Linux'
         run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: runner.os == 'Linux'
         with:
           prefix-key: ${{ env.CACHE_PREFIX }}
           cache-on-failure: true
@@ -201,7 +203,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Gate (JavaScript)
-        run: node scripts/gate.mjs js
+        run: node scripts/gate.mjs js ${{ runner.os != 'Linux' && '--skip=protocol' || '' }}
 
       # The commits the commit check covers: a pull request's own, or the ones a push brought. A new branch or a manual run has no earlier commit to compare with, so it checks against main. After a force push the earlier commit is in no branch, so it is fetched by its hash; when GitHub no longer has it, only the newest commit is checked.
       - name: Choose the commits to check

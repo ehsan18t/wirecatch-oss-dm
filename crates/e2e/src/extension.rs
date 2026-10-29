@@ -76,7 +76,8 @@ pub enum Launch {
 pub struct FakeExtension {
     child: Child,
     stdin: Option<ChildStdin>,
-    inbox: mpsc::UnboundedReceiver<Message>,
+    /// Each frame the bridge wrote, or why one could not be read.
+    inbox: mpsc::UnboundedReceiver<Result<Message, String>>,
     stderr: Arc<Mutex<String>>,
     /// Reads the bridge's standard error into `stderr` until it closes.
     stderr_reader: Option<tokio::task::JoinHandle<()>>,
@@ -160,12 +161,17 @@ impl FakeExtension {
             loop {
                 match frame::read_async::<Message>(&mut stdout).await {
                     Ok(Some(message)) => {
-                        if to_inbox.send(message).is_err() {
+                        if to_inbox.send(Ok(message)).is_err() {
                             return;
                         }
                     }
                     Ok(None) => return,
-                    Err(e) => panic!("the bridge wrote something that is not a frame: {e}"),
+                    // A panic here would end this task unseen and read as stdout closing.
+                    Err(e) => {
+                        // A test that stopped listening has nothing left to tell.
+                        let (Ok(()) | Err(_)) = to_inbox.send(Err(e.to_string()));
+                        return;
+                    }
                 }
             }
         });
@@ -242,18 +248,23 @@ impl FakeExtension {
                 self.stdout_closed = true;
                 false
             }
-            Ok(Some(Message::Response { id, outcome })) => {
+            Ok(Some(Err(e))) => panic!(
+                "the bridge wrote something that is not a frame: {e}
+{}",
+                self.stderr()
+            ),
+            Ok(Some(Ok(Message::Response { id, outcome }))) => {
                 assert!(
                     self.responses.insert(id, outcome).is_none(),
                     "request {id} was answered twice"
                 );
                 true
             }
-            Ok(Some(Message::Event { event })) => {
+            Ok(Some(Ok(Message::Event { event }))) => {
                 self.events.push_back(event);
                 true
             }
-            Ok(Some(other)) => panic!("the bridge sent a request: {other:?}"),
+            Ok(Some(Ok(other))) => panic!("the bridge sent a request: {other:?}"),
         }
     }
 

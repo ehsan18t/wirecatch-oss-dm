@@ -5,7 +5,9 @@ use chrono::TimeDelta;
 use wirecatch_core::DEFAULT_QUEUE_ID;
 use wirecatch_protocol::app::{DownloadStatus, Schedule, TimeOfDay, Weekday};
 
-use crate::common::{Harness, TestResult, fast_server, is_running, monday, throttled_server};
+use crate::common::{
+    Harness, QUIET, TestResult, fast_server, is_running, monday, throttled_server,
+};
 use wirecatch_engine::units::KIB;
 
 fn schedule_default_queue(h: &Harness, schedule: Schedule) -> TestResult {
@@ -45,7 +47,7 @@ async fn a_window_starts_and_stops_its_queue() -> TestResult {
     );
 
     h.clock.set(monday(1, 59)?);
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    tokio::time::sleep(QUIET).await;
     assert_eq!(h.row(row.id).status, DownloadStatus::Queued);
 
     h.clock.set(monday(2, 0)?);
@@ -60,7 +62,7 @@ async fn a_window_starts_and_stops_its_queue() -> TestResult {
 
     // Tuesday is not a scheduled day, so it stays queued.
     h.clock.set(monday(2, 30)? + TimeDelta::days(1));
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    tokio::time::sleep(QUIET).await;
     assert_eq!(h.row(row.id).status, DownloadStatus::Queued);
     assert_eq!(
         server.stats.seen().len(),

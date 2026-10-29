@@ -980,7 +980,6 @@ pub(crate) fn as_an_elevated_program<T: Send>(work: impl FnOnce() -> T + Send) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
 
     use windows_sys::Win32::Foundation::{
         CloseHandle, GENERIC_READ, GENERIC_WRITE, GetLastError, INVALID_HANDLE_VALUE,
@@ -1003,16 +1002,13 @@ mod tests {
     };
     use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadToken};
 
+    /// A pipe name no other test uses: the one test-support gives every test endpoint. A pipe needs no folder, so the folder goes at once.
     fn unique_endpoint() -> Endpoint {
-        static NEXT: AtomicU32 = AtomicU32::new(0);
-        let n = NEXT.fetch_add(1, Ordering::Relaxed);
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.subsec_nanos());
-        Endpoint::from_raw(format!(
-            r"\\.\pipe\wirecatch-test-{}-{n}-{nanos}",
-            std::process::id()
-        ))
+        Endpoint::from_raw(
+            wirecatch_test_support::private_dir("ipc-pipe")
+                .unwrap()
+                .endpoint_name(),
+        )
     }
 
     #[derive(Debug, PartialEq, Eq)]

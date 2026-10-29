@@ -4,7 +4,7 @@
 use wirecatch_protocol::app::{AddonId, AddonState, UiEvent};
 use wirecatch_protocol::wire::ErrorCode;
 
-use crate::common::TestResult;
+use crate::common::{QUIET, TestResult};
 use crate::media_support::{
     FileServer, Releases, addon_dir, digest, exe, harness, install, next_event, path_exists,
     publish, release_file, sha256, sign, tar_xz, wait_addon, ytdlp_asset,
@@ -88,7 +88,7 @@ async fn install_downloads_checks_and_unpacks_only_the_expected_files() -> TestR
     let before = server.requests("r1/yt-dlp");
     h.manager.install_addon(AddonId::Media).await.unwrap();
     assert_eq!(h.manager.list_addons()[0].state, AddonState::Installed);
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    tokio::time::sleep(QUIET).await;
     assert_eq!(server.requests("r1/yt-dlp"), before);
 
     // It survives a restart.
@@ -1060,7 +1060,7 @@ async fn importing_settings_offers_the_add_on_without_downloading_it() -> TestRe
     })
     .await;
     assert_eq!(summary.addons_to_offer, vec![AddonId::Media]);
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    tokio::time::sleep(QUIET).await;
     assert_eq!(
         second.manager.list_addons()[0].state,
         AddonState::NotInstalled

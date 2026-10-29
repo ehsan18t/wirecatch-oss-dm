@@ -14,13 +14,7 @@ The tests need a bridge built with its `test-overrides` feature, which lets them
 cargo build -p wirecatch-bridge --features test-overrides
 ```
 
-When nothing changed this takes well under a second. To use a bridge you built yourself instead, set `WIRECATCH_E2E_BRIDGE` to its path. The workspace test command in `CLAUDE.md` (with `--features wirecatch-bridge/test-overrides`) works too. Never ship a bridge built with that feature.
-
-Two tests are ignored until the protocol server handles each request in its own task (see the `#[ignore]` reasons). Run them with:
-
-```bash
-cargo test -p wirecatch-e2e -- --include-ignored
-```
+When nothing changed this takes well under a second. To use a bridge you built yourself instead, set `WIRECATCH_TEST_BRIDGE` to its path, as the gate does with the one its workspace test build made. Never ship a bridge built with that feature.
 
 ## Layout
 
