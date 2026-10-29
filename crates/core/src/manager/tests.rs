@@ -12,7 +12,7 @@ use wirecatch_engine::{Error as EngineError, PathRejected, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, CaptureConfirmation, DownloadStatus};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
-use wirecatch_test_support::PATIENCE;
+use wirecatch_test_support::{PATIENCE, QUIET};
 
 use super::fake::{EngineFuture, FakeEngine, FakeRun};
 use super::settle::ServerAnswer;
@@ -222,7 +222,7 @@ async fn a_download_being_removed_cannot_be_brought_back() {
     );
 
     removal.await.unwrap().unwrap();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(QUIET).await;
     assert!(manager.lock().downloads.is_empty());
     assert_eq!(
         runs.load(Ordering::SeqCst),

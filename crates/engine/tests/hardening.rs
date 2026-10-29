@@ -12,7 +12,7 @@ use wirecatch_engine::header::{
 use wirecatch_engine::units::{KIB, KIB_USIZE, MIB, MIB_USIZE};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Outcome, Progress, download};
 use wirecatch_test_support::http::{Busy, Config, Refuse, TestServer};
-use wirecatch_test_support::{PATIENCE, TestResult, private_dir, test_data};
+use wirecatch_test_support::{PATIENCE, QUIET, TestResult, private_dir, test_data};
 
 mod common;
 use common::{request, run};
@@ -428,8 +428,8 @@ async fn cancel_when(
         assert!(Instant::now() < deadline, "the expected state never came");
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    // Let the engine settle into its wait.
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Let the engine settle into its wait; a cancel that comes sooner only tests an earlier one.
+    tokio::time::sleep(QUIET).await;
     cancel.cancel();
     let stopped = tokio::time::timeout(PATIENCE, task)
         .await

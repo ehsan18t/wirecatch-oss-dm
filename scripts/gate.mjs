@@ -14,6 +14,7 @@
 // Options, before or after the names:
 //   --no-desktop    leave out the desktop crate, for machines without its system libraries (it says so when it does)
 //   --no-fail-fast  run every Rust test binary even after one fails
+//   --skip=CHECK    leave out one check the named groups hold (repeatable), as CI's Windows JavaScript job leaves out `protocol`, which Linux runs
 //
 // The commit range for `commits` is GATE_COMMIT_RANGE when set, otherwise `origin/main..HEAD`. Written for Node 18 and later, so it also runs where only an older Node is installed (scripts/linux-test.sh).
 
@@ -111,10 +112,16 @@ const COMMANDS = {
 
 async function main(rawArgs) {
   const names = [];
+  const skipped = new Set();
   for (const arg of rawArgs) {
     if (arg === '--no-desktop') options.desktop = false;
     else if (arg === '--no-fail-fast') options.failFast = false;
+    else if (arg.startsWith('--skip=')) skipped.add(arg.slice('--skip='.length));
     else names.push(arg);
+  }
+  for (const name of skipped) {
+    if (!CHECKS[name])
+      throw new GateError(`Unknown check "${name}" in --skip. Run with --list to see them.`);
   }
   if (!options.desktop)
     console.log(
@@ -125,7 +132,10 @@ async function main(rawArgs) {
     command(names[1]);
     return;
   }
-  const checks = [...new Set(expand(names.length > 0 ? names : DEFAULT))];
+  const checks = [...new Set(expand(names.length > 0 ? names : DEFAULT))].filter(
+    (name) => !skipped.has(name),
+  );
+  if (skipped.size > 0) console.log(`Leaving out ${[...skipped].join(', ')} (--skip).`);
   for (const name of checks) {
     console.log(`\n=== ${name}`);
     // Checks that need a package from `pnpm install` (the ESLint API, the product generator) are async and load it when they run: CI runs the Rust and supply-chain groups without installing them.

@@ -142,23 +142,9 @@ pub(crate) async fn remove(path: &Path) {
 pub(crate) mod test_support {
     //! A real ffmpeg for the tests that need one, and a way to make media with it.
 
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
-    /// A real ffmpeg from `WIRECATCH_TEST_FFMPEG`. Without one the test is skipped with a note, unless `WIRECATCH_REQUIRE_FFMPEG=1`.
-    pub(crate) fn real_ffmpeg() -> Option<PathBuf> {
-        let found = std::env::var_os("WIRECATCH_TEST_FFMPEG")
-            .map(PathBuf::from)
-            .filter(|p| p.is_file());
-        if found.is_none() {
-            let required = std::env::var("WIRECATCH_REQUIRE_FFMPEG").is_ok_and(|v| v == "1");
-            assert!(
-                !required,
-                "WIRECATCH_REQUIRE_FFMPEG=1 but WIRECATCH_TEST_FFMPEG is not a file"
-            );
-            eprintln!("skipped: set WIRECATCH_TEST_FFMPEG to a real ffmpeg to run this test");
-        }
-        found
-    }
+    pub(crate) use wirecatch_test_support::real_ffmpeg;
 
     /// Makes `path` with `ffmpeg` and `args`, failing the test if it cannot.
     pub(crate) fn make(ffmpeg: &Path, args: &[&str], path: &Path) {

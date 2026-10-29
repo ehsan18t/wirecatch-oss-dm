@@ -70,6 +70,16 @@ XC-13, XC-18, XC-20, XC-21, STR-10, STR-11, STR-19, STR-20, STR-21, DRS-24, IPB-
 
 IPB-16 moved here from W2: a test-only bridge binary only helps once the overrides are chosen by the binary rather than by a package feature, and its variable names belong with XC-13's shared test support.
 
+Where each stands (2026-10-29):
+
+- Done: STR-10 and DRS-24 (one local server in `crates/test-support`), CORE-29 (every window in which nothing must happen is `QUIET`, from test-support), STR-11 (the HLS resume test hangs segments instead of slowing them), STR-19 (`crates/streams/tests/common`), STR-20 (the fake extension reports a frame it cannot read), STR-21 (the e2e README).
+- XC-13: one `real_ffmpeg` in test-support, which honours `WIRECATCH_REQUIRE_FFMPEG` everywhere, and the bridge's test variables in one place. The bridge's own `src/app.rs` keeps its names, since product code cannot use test-support.
+- IPB-16: the variable names are shared; a test-only bridge binary that never overwrites `wirecatch-bridge` is still to build.
+- XC-18 and DUI-18: a11y and layout run in CI's browser job, which keeps a failed run's results. `e2e:perf` still runs nowhere: it asserts frame times, which a shared runner cannot promise, so it belongs in a scheduled run that reports them rather than in every pull request's gate.
+- XC-21: done; Windows runs the JavaScript checks with `--skip=protocol` and installs no Rust.
+- IPB-20: every test endpoint is named through `private_dir`; still untested are `accept` recovering after a failed `new_instance`, the `ERROR_MORE_DATA` branch and the `OpenProcess` fallback.
+- Open: XC-20 (no release or packaging workflow), DUI-17 (the mock is not checked against the real core), DUI-27 (`review-fixes.test.ts` and `features.test.ts` still hold component tests).
+
 #### Proposed gate checks
 
 Every check proposed during the audit run, so none lives only in a reviewer's notes. Each is cheap to run and would have caught a defect found by hand; none is built yet. Proposals already written in the carried lists below (fixed sleeps in tests, `Result<_, String>`, a bare `vi.waitFor`, the `RuleTester` check, `cargo doc` of private items, a log line that formats an error with `%` alone, and history words in comments, W15) are not repeated here. A check of every commit in `origin/main..HEAD` is not proposed: on 2026-10-15 the maintainer decided that regrouped commits are not checked one by one, and only the final tree is gated before a merge.

@@ -28,7 +28,8 @@ use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION, QuestionId};
 use wirecatch_server::serve_connection;
 
 use crate::common::{
-    Config, Harness, PATIENCE, SilentServer, TestResult, TestServer, fast_server, test_data, tune,
+    Config, Harness, PATIENCE, QUIET, SilentServer, TestResult, TestServer, fast_server, test_data,
+    tune,
 };
 use wirecatch_engine::units::KIB_USIZE;
 
@@ -1639,7 +1640,7 @@ async fn a_download_unfinished_after_a_week_forgets_its_sign_in() -> TestResult 
 
     // Six days on, it is all still there.
     h.clock.advance(chrono::TimeDelta::days(6));
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(QUIET).await;
     wait_until_stored(&h, old, |o| o.contains("session=abc")).await;
 
     // A week on, the sign-in is gone; harmless headers stay.

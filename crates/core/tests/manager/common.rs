@@ -16,7 +16,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, AppSettings, DownloadStatus, DownloadSummary};
 pub use wirecatch_test_support::http::{Config, Seen, TestServer};
 pub use wirecatch_test_support::silent::SilentServer;
-pub use wirecatch_test_support::{PATIENCE, TestResult, test_data};
+pub use wirecatch_test_support::{PATIENCE, QUIET, TestResult, test_data};
 
 /// A ranged server with an `ETag` for `len` bytes of [`test_data`], sending
 /// `bps` bytes per second per connection.

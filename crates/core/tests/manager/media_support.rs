@@ -43,12 +43,7 @@ pub fn ytdlp_release(version: &str) -> TestResult<Vec<u8>> {
     .concat())
 }
 
-/// A real ffmpeg for the join test, from `WIRECATCH_TEST_FFMPEG`.
-pub fn real_ffmpeg() -> Option<PathBuf> {
-    std::env::var_os("WIRECATCH_TEST_FFMPEG")
-        .map(PathBuf::from)
-        .filter(|p| p.is_file())
-}
+pub use wirecatch_test_support::real_ffmpeg;
 
 /// The SHA-256 of `bytes` in lower-case hex, worked out here rather than by
 /// the add-on code under test.

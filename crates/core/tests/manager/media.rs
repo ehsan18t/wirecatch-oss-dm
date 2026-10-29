@@ -12,7 +12,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::{AddAction, MediaKind, NewDownload};
 
-use crate::common::{Harness, TestResult, extension, test_data, wait_until};
+use crate::common::{Harness, PATIENCE, QUIET, TestResult, extension, test_data, wait_until};
 use crate::media_support::{
     FileServer, Releases, args, harness, harness_refreshing, install, media_capture, next_event,
     publish, real_ffmpeg, tell_tool, use_real_ffmpeg, ytdlp_calls,
@@ -932,7 +932,7 @@ async fn pausing_while_waiting_to_read_the_page_again_stops_it() -> TestResult {
     // Far sooner than the two minutes it was waiting for.
     h.wait_status(id, DownloadStatus::Paused).await;
     assert_eq!(h.manager.list_downloads().remove(0).waiting, None);
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(QUIET).await;
     assert_eq!(
         ytdlp_calls(&h)?.len(),
         2,
@@ -1212,11 +1212,10 @@ async fn a_direct_media_file_downloads_like_any_file() -> TestResult {
     Ok(())
 }
 
-/// The real ffmpeg (set `WIRECATCH_TEST_FFMPEG`) joins real video and audio.
+/// A real ffmpeg joins real video and audio.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn real_ffmpeg_joins_real_video_and_audio() -> TestResult {
     let Some(ffmpeg) = real_ffmpeg() else {
-        eprintln!("skipped: set WIRECATCH_TEST_FFMPEG to a real ffmpeg to run this test");
         return Ok(());
     };
     let scratch = tempfile::tempdir().unwrap();
@@ -1457,14 +1456,19 @@ async fn stopping_yt_dlp_stops_what_it_started() -> TestResult {
     wait_until("the started program beats", || beat().filter(|b| *b > 2)).await;
     // The browser takes the capture back while yt-dlp is still reading.
     h.manager.withdraw_capture(&capture.handover_id).unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-    let before = beat();
-    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-    assert_eq!(
-        beat(),
-        before,
-        "the program yt-dlp started is still running"
-    );
+    // Stopped, it beats no more: two readings a quiet window apart agree, which a beat every 50 ms never gives.
+    let deadline = tokio::time::Instant::now() + PATIENCE;
+    loop {
+        let before = beat();
+        tokio::time::sleep(QUIET).await;
+        if beat() == before {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the program yt-dlp started is still running"
+        );
+    }
 
     // yt-dlp ran in Wirecatch's own folder, without plugins.
     let call = ytdlp_calls(&h)?.remove(0);
@@ -1566,7 +1570,7 @@ async fn a_stale_wait_never_pops_a_question_later() -> TestResult {
         h.manager.pending_media_choices(),
         [] as [wirecatch_protocol::app::MediaChoice; 0]
     );
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    tokio::time::sleep(QUIET).await;
     while let Ok(event) = ui.try_recv() {
         assert!(
             !matches!(event, UiEvent::MediaChoiceRequested(_)),
