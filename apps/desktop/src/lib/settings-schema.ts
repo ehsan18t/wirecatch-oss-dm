@@ -132,6 +132,13 @@ const DEFS = [
     keywords: 'location directory path save destination',
   },
   {
+    id: 'when_file_exists',
+    section: 'files',
+    label: 'If the file is already in the folder',
+    help: 'A file counts as already there when it has the same name and size, and came from the same link when Wirecatch downloaded it. A file that only shares the name is always saved under a new name.',
+    keywords: 'duplicate exists existing same file overwrite replace skip rename keep both ask',
+  },
+  {
     id: 'categories',
     section: 'files',
     label: 'Folders by file type',
@@ -400,16 +407,6 @@ export interface SettingDef extends SettingText {
 }
 
 export const SETTINGS: readonly SettingDef[] = DEFS;
-
-/** Settings whose label, explanation or keywords contain every word typed. */
-export function searchSettings(query: string): SettingDef[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [...SETTINGS];
-  return SETTINGS.filter((s) => {
-    const hay = `${s.label} ${s.help} ${s.keywords}`.toLowerCase();
-    return words.every((w) => hay.includes(w));
-  });
-}
 
 export function settingAnchor(id: SettingId): string {
   return `setting-${id}`;

@@ -1,5 +1,6 @@
 //! Questions the core asks the person (confirm a browser download, pick a video quality,
-//! install the media add-on), and what each core event means for the desktop.
+//! install the media add-on, what to do with a file already in the folder), and what each core
+//! event means for the desktop.
 //!
 //! Every question follows something the person just did in the browser, and the browser has
 //! already handed the download over, so each one opens its own window in front (D23, see
@@ -13,7 +14,8 @@
 
 use wirecatch_protocol::QuestionId;
 use wirecatch_protocol::app::{
-    AddonRequestItem, DownloadSummary, MediaChoice, MediaReading, PendingCapture, Theme, UiEvent,
+    AddonRequestItem, DownloadSummary, FileExistsQuestion, MediaChoice, MediaReading,
+    PendingCapture, Repeated, Theme, UiEvent,
 };
 use wirecatch_protocol::extension::{NoticeId, NoticePressed};
 
@@ -27,6 +29,9 @@ pub enum Attention {
     Ask(QuestionId),
     /// The question with this id is no longer open; it no longer waits for a window.
     Closed(QuestionId),
+    /// The browser sent a link again that is still this question or download: its window comes
+    /// to the front, opening again if the person closed it (D89).
+    ShowAgain(Repeated),
     /// A client asked to see Wirecatch: the main window comes to the front.
     ShowMain,
     /// A client asked for the browser settings (D61): the main window comes to the front on
@@ -64,7 +69,9 @@ pub fn attention(event: &UiEvent) -> Attention {
             Attention::Ask(*id)
         }
         UiEvent::MediaChoiceRequested(choice) => Attention::Ask(choice.id),
+        UiEvent::FileExistsRequested(question) => Attention::Ask(question.id),
         UiEvent::ConfirmationClosed { id } => Attention::Closed(*id),
+        UiEvent::CaptureRepeated(repeated) => Attention::ShowAgain(*repeated),
         UiEvent::WindowRequested => Attention::ShowMain,
         UiEvent::BrowserSettingsRequested => Attention::ShowBrowserSettings,
         UiEvent::Captured(row) => Attention::Started(Box::new(row.clone())),
@@ -90,6 +97,7 @@ pub fn open_question_ids(
     choices: &[MediaChoice],
     addon_pages: &[AddonRequestItem],
     reading: &[MediaReading],
+    files: &[FileExistsQuestion],
 ) -> Vec<QuestionId> {
     let mut ids: Vec<QuestionId> = captures
         .iter()
@@ -97,6 +105,7 @@ pub fn open_question_ids(
         .chain(choices.iter().map(|c| c.id))
         .chain(addon_pages.iter().map(|a| a.id))
         .chain(reading.iter().map(|r| r.id))
+        .chain(files.iter().map(|f| f.id))
         .collect();
     ids.sort_unstable();
     ids.dedup();
@@ -275,7 +284,22 @@ mod tests {
             addon: addon(AddonState::NotInstalled),
             url: "https://youtube.com/x".into(),
         }];
-        let ids = open_question_ids(&[capture(4), capture(1)], &[choice(2)], &pages, &reading);
-        assert_eq!(ids, [1, 2, 3, 4, 5].map(QuestionId));
+        let files = [FileExistsQuestion {
+            id: QuestionId(6),
+            download: DownloadId(1),
+            url: "https://example.com/report.pdf".into(),
+            file_name: "report.pdf".into(),
+            folder: "Downloads".into(),
+            size: 1,
+            saved_at: None,
+        }];
+        let ids = open_question_ids(
+            &[capture(4), capture(1)],
+            &[choice(2)],
+            &pages,
+            &reading,
+            &files,
+        );
+        assert_eq!(ids, [1, 2, 3, 4, 5, 6].map(QuestionId));
     }
 }

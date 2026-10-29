@@ -26,7 +26,7 @@ use wirecatch_media::choice::{self, Offer, Plan, Resolved};
 use wirecatch_media::{MediaJob, Pick, StoredMedia, describe, output, ytdlp};
 use wirecatch_protocol::app::{
     AddonRequestItem, Category, MediaChoice, MediaReading, MediaSelection, MediaSubtitle,
-    MediaSummary, OutputFormat, PortablePath, UiEvent, UserError, VideoQuality,
+    MediaSummary, OutputFormat, PortablePath, Repeated, UiEvent, UserError, VideoQuality,
 };
 use wirecatch_protocol::extension::{AddAction, AddedDownload, MediaKind, NewDownload};
 use wirecatch_protocol::{QuestionId, QueueId};
@@ -228,6 +228,7 @@ impl Manager {
                 deciding: None,
             };
             state.handovers.insert(&capture.handover_id, handover);
+            self.emit(UiEvent::CaptureRepeated(Repeated::Question(id)));
             return Ok(reply);
         }
         check_room(&state)?;

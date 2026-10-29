@@ -10,6 +10,7 @@ import type { PortablePath } from './PortablePath';
 import type { ProxySettings } from './ProxySettings';
 import type { StartNoticeTime } from './StartNoticeTime';
 import type { Theme } from './Theme';
+import type { WhenFileExists } from './WhenFileExists';
 
 /**
  * Every user setting. The app is the only store (D5).
@@ -87,6 +88,10 @@ export type AppSettings = {
    * (D23). Off: the window closes when the download starts.
    */
   show_progress_windows: boolean;
+  /**
+   * What a download does when its file is already in the folder (D88).
+   */
+  when_file_exists: WhenFileExists;
   /**
    * What the quality window for a video starts from (D24).
    */

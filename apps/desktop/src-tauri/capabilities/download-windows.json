@@ -27,6 +27,7 @@
     "allow-set-download-folder",
     "allow-choose-media",
     "allow-dismiss-media-choice",
+    "allow-answer-file-exists",
     "allow-list-addons",
     "allow-install-addon",
     "allow-cancel-addon-operation",

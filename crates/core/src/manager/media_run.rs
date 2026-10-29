@@ -965,10 +965,7 @@ async fn fetch_part(
             }
         }
     };
-    let name = file
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let name = crate::naming::file_name_of(&file);
     tokio::fs::write(&marker, name)
         .await
         .map_err(|e| disk(&e, &job.output))?;
@@ -1108,10 +1105,7 @@ fn final_path(file: &Path, planned: &Path) -> PathBuf {
 fn place(file: &Path, planned: &Path, reserve: &Reserve) -> std::io::Result<PathBuf> {
     let wanted = final_path(file, planned);
     let dir = wanted.parent().unwrap_or(Path::new(""));
-    let name = wanted
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let name = crate::naming::file_name_of(&wanted);
     for n in 0..10_000 {
         let candidate = crate::naming::candidate(dir, &name, n);
         if !crate::naming::is_free_on_disk(&candidate) {

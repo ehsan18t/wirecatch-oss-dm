@@ -42,6 +42,7 @@
     "allow-set-download-folder",
     "allow-take-launch-links",
     "allow-pending-media-choices",
+    "allow-pending-file-exists",
     "allow-pending-addon-requests",
     "allow-list-addons",
     "allow-install-addon",

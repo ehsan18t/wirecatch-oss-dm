@@ -3,6 +3,7 @@ import type { AddonInfo } from './AddonInfo';
 import type { AppSettings } from './AppSettings';
 import type { DownloadId } from './DownloadId';
 import type { DownloadSummary } from './DownloadSummary';
+import type { FileExistsQuestion } from './FileExistsQuestion';
 import type { ImportSummary } from './ImportSummary';
 import type { MediaChoice } from './MediaChoice';
 import type { NoticeId } from './NoticeId';
@@ -12,6 +13,7 @@ import type { ProxyServer } from './ProxyServer';
 import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
 import type { QueueReport } from './QueueReport';
+import type { Repeated } from './Repeated';
 import type { SuffixListInfo } from './SuffixListInfo';
 import type { UserError } from './UserError';
 
@@ -30,6 +32,8 @@ export type UiEvent =
   | { type: 'storage_failed'; data: UserError }
   | { type: 'settings_imported'; data: ImportSummary }
   | { type: 'media_choice_requested'; data: MediaChoice }
+  | { type: 'file_exists_requested'; data: FileExistsQuestion }
+  | { type: 'capture_repeated'; data: Repeated }
   | {
       type: 'media_captured';
       data: {

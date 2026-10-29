@@ -71,7 +71,7 @@ test('every settings row is as tall as what it holds, in each section', async ({
   const sections = page.getByRole('navigation', { name: 'Settings sections' });
   const names = (await sections.getByRole('button').allInnerTexts())
     .map((t) => t.trim())
-    .filter((t) => t !== '' && t !== 'Back to downloads');
+    .filter((t) => t !== '' && t !== 'Downloads');
   expect(names.length).toBeGreaterThan(5);
   for (const name of names) {
     await sections.getByRole('button', { name: new RegExp(`^${name}`) }).click();

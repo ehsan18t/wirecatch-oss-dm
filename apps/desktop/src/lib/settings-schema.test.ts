@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSettings } from './backend/mock';
-import { SETTINGS, searchSettings } from './settings-schema';
+import { SETTINGS } from './settings-schema';
+import { searchSettings } from './settings-search';
 import { SECTIONS } from './settings-sections';
 
 describe('settings schema', () => {

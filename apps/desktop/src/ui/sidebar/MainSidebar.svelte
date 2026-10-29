@@ -1,8 +1,7 @@
 <script lang="ts">
-  // The main window's navigation. On the downloads screen: the list by state, and the queues (the first three, the rest folded away), each with how many it holds, and at its foot Settings, with every action and the shortcuts as icons. On the settings screen the same navigation becomes the list of settings sections, with the way back at its top (D47). Docked with labels in a wide window, as an icon rail when collapsed, and as a drawer in a narrow one.
+  // The main window's navigation. On the downloads screen: the list by state, and the queues (the first three, the rest folded away), each with how many it holds, and at its foot Settings, with every action and the shortcuts as icons. On the settings screen the same navigation becomes the list of settings sections, and its foot shows Downloads where Settings was, so one place switches between the two (D91). Docked with labels in a wide window, as an icon rail when collapsed, and as a drawer in a narrow one.
   import Ban from '~icons/lucide/ban';
   import ChevronDown from '~icons/lucide/chevron-down';
-  import ChevronLeft from '~icons/lucide/chevron-left';
   import CircleAlert from '~icons/lucide/circle-alert';
   import CircleCheck from '~icons/lucide/circle-check';
   import CirclePause from '~icons/lucide/circle-pause';
@@ -10,6 +9,7 @@
   import Download from '~icons/lucide/download';
   import Keyboard from '~icons/lucide/keyboard';
   import Layers from '~icons/lucide/layers';
+  import LayoutList from '~icons/lucide/layout-list';
   import Plus from '~icons/lucide/plus';
   import SlidersHorizontal from '~icons/lucide/sliders-horizontal';
   import TextSearch from '~icons/lucide/text-search';
@@ -25,7 +25,7 @@
     type SidebarState,
   } from '@wirecatch/ui';
   import { ariaShortcut, shortcutLabel } from '$lib/keymap';
-  import { searchSettings } from '$lib/settings-schema';
+  import { searchSettings } from '$lib/settings-search';
   import { SECTIONS, type SectionId } from '$lib/settings-sections';
   import { getApp } from '$lib/state/app.svelte';
   import {
@@ -79,16 +79,6 @@
 </script>
 
 <Sidebar {sidebar} label={app.screen === 'settings' ? 'Settings sections' : 'Views and queues'}>
-  {#snippet header()}
-    {#if app.screen === 'settings'}
-      <SidebarItem
-        label="Back to downloads"
-        icon={ChevronLeft}
-        onclick={() => (app.screen = 'downloads')}
-      />
-    {/if}
-  {/snippet}
-
   {#if app.screen === 'settings'}
     <SidebarSection title="Settings">
       {#each SECTIONS as section (section.id)}
@@ -164,7 +154,13 @@
   {#snippet footer()}
     <div class={cn('flex items-center gap-0.5', !sidebar.showLabels && 'flex-col')}>
       <div class={cn(sidebar.showLabels && 'min-w-0 flex-1')}>
-        {#if app.screen !== 'settings'}
+        {#if app.screen === 'settings'}
+          <SidebarItem
+            label="Downloads"
+            icon={LayoutList}
+            onclick={() => (app.screen = 'downloads')}
+          />
+        {:else}
           <SidebarItem
             label="Settings"
             icon={SlidersHorizontal}
