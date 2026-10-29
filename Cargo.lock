@@ -7283,6 +7283,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "futures-util",
  "lzma-rust2",
  "pgp",
  "rand 0.8.8",

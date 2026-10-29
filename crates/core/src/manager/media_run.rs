@@ -404,7 +404,7 @@ async fn fetch_parts(
         .zip(ROLES)
         .zip(rules)
         .map(|((f, role), rule)| fetch_part(job, f, role, rule, work, progress, cancel));
-    let results = futures_join(parts.collect()).await;
+    let results = futures_util::future::join_all(parts).await;
     // Stopped wins over any error, and an error a fresh address would not fix
     // wins over a refused address.
     let mut files = Vec::new();
@@ -889,19 +889,6 @@ async fn subtitle_files(
         }
     }
     Ok(Some(made))
-}
-
-/// Runs the part downloads side by side.
-async fn futures_join<F: std::future::Future>(parts: Vec<F>) -> Vec<F::Output> {
-    let mut parts = parts.into_iter();
-    match (parts.next(), parts.next()) {
-        (Some(a), Some(b)) => {
-            let (a, b) = tokio::join!(a, b);
-            vec![a, b]
-        }
-        (Some(a), None) => vec![a.await],
-        _ => Vec::new(),
-    }
 }
 
 /// Downloads one format into the work folder: `Ok(None)` when stopped. A part
