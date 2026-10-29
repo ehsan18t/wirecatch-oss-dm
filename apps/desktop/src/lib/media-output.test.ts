@@ -117,6 +117,7 @@ const choice: MediaChoice = {
     audio_kbps: null,
     subtitles: [],
     subtitle_files: false,
+    unembedded_subtitles: 'files' as const,
     chapters: true,
     every_video: null,
   },
@@ -263,6 +264,7 @@ function defaults() {
     subtitle_languages: [],
     auto_subtitles: false,
     subtitle_files: false,
+    unembedded_subtitles: 'files' as const,
     chapters: false,
   };
 }

@@ -362,6 +362,7 @@ async fn media_and_addon_commands_reach_the_core() -> TestResult {
         audio_kbps: None,
         subtitles: Vec::new(),
         subtitle_files: false,
+        unembedded_subtitles: wirecatch_protocol::app::UnembeddedSubtitles::Files,
         chapters: false,
         every_video: None,
     };

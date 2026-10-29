@@ -43,24 +43,28 @@ export const SETTING_WORDS = {
     help: 'Original keeps the site’s format. Other formats convert only when needed.',
   },
   media_subtitles: {
-    label: 'Subtitle languages for videos',
+    label: 'Subtitle languages',
     help: 'The creator’s subtitles, or auto-generated ones if allowed. Languages a video doesn’t have are skipped.',
     brief: 'Languages a video doesn’t have are skipped.',
   },
   media_auto_subtitles: {
-    label: 'Use auto-generated subtitles for videos',
+    label: 'Use auto-generated subtitles',
     help: 'Used when a language has no subtitles written by people.',
   },
   media_subtitle_files: {
-    label: 'Save subtitles as separate files',
-    help: 'Saves subtitles as .srt files next to the video instead of inside it.',
+    label: 'Subtitles',
+    help: 'Inside the video file, where players show them, or as .srt files next to it.',
+  },
+  media_unembedded_subtitles: {
+    label: 'If the format can’t hold subtitles',
+    help: 'MP4, MKV and WebM hold subtitles. Original keeps the site’s file as it is, which may not, and audio files hold none.',
   },
   media_chapters: {
-    label: 'Add chapters to videos',
+    label: 'Add chapters',
     help: 'Adds a video’s chapters to MP4, MKV and WebM files, so players can jump between them.',
   },
   media_audio: {
     label: 'Save audio as',
-    help: 'MP3, M4A and FLAC files include the title, artist and cover art.',
+    help: 'Downloaded audio is converted to this format. MP3, M4A and FLAC files include the title, artist and cover art.',
   },
 } as const satisfies Record<string, SettingWords>;

@@ -108,6 +108,7 @@ function selectionOf(
     audio_kbps: null,
     subtitles: preselectedSubtitles(subtitles, last.subtitle_languages, last.auto_subtitles),
     subtitle_files: last.subtitle_files,
+    unembedded_subtitles: last.unembedded_subtitles,
     chapters: chapters && last.chapters,
     every_video: null,
   };

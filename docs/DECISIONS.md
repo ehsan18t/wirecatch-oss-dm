@@ -839,6 +839,14 @@ Decided with the maintainer on 2026-10-29, from a mockup of four styles. It amen
 2. Every part of the title bar that is not a control drags the window, and a double-click there maximizes it: Tauri's drag region covers the whole bar (`data-tauri-drag-region="deep"`), and controls refuse the drag by themselves, in the CSS app region too. Wrappers around the controls no longer block the space beside them.
 3. The search box shows no keyboard shortcut, and the speed readout is hidden while nothing runs, keeping its place.
 
+### D93. Where a video's subtitles go
+
+Decided with the maintainer on 2026-10-29.
+
+1. "Save subtitles as separate files" becomes "Subtitles": inside the video, or as separate files (`OutputDefaults::subtitle_files`, unchanged underneath).
+2. With subtitles inside the video, "If the format can’t hold subtitles" (`unembedded_subtitles`) says what happens when the chosen format holds none, as an audio file or an Original file whose container cannot: save them as separate files, as before, or leave them out. It shows only while subtitles go inside. A video's quality window follows the same choice, from the saved defaults.
+3. The Media page has a Video group and an Audio group, so their settings drop "for videos" and "for audio"; "Save audio as" heads the Audio group and says it converts. The command palette names a grouped setting with its group ("Media › Video: Subtitle languages"), so two settings of one name stay apart.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

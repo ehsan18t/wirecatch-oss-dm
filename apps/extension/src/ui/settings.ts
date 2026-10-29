@@ -45,6 +45,7 @@ export const SETTINGS = {
   subtitles: shared('media_subtitles'),
   autoSubtitles: shared('media_auto_subtitles'),
   subtitleFiles: shared('media_subtitle_files'),
+  unembeddedSubtitles: shared('media_unembedded_subtitles'),
   chapters: shared('media_chapters'),
   audioFormat: shared('media_audio'),
   audioQuality: {

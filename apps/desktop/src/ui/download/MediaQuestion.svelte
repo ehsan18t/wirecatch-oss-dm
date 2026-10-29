@@ -147,6 +147,7 @@
       queue: queue === choice.queue ? null : queue,
       later,
       ...outputSelection(picked, choice, output),
+      unembedded_subtitles: choice.start.unembedded_subtitles,
       every_video: win.settings ? everyVideoShown : null,
     });
     sending = null;

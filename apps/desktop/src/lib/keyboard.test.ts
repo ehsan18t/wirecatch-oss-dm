@@ -91,7 +91,9 @@ describe('keyboard only', () => {
     await press('window before');
     const option = screen
       .getAllByRole('option')
-      .find((o) => o.textContent.includes('Browser: Show a window before each download'));
+      .find((o) =>
+        o.textContent.includes('Browser › Download window: Show a window before each download'),
+      );
     expect(option).toBeDefined();
     while (
       screen

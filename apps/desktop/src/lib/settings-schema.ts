@@ -2,6 +2,7 @@
 // and the command palette all read this one list.
 
 import { DEFAULT_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
+import { MEDIA_SETTINGS } from './settings-media';
 import { words, type SettingText } from './setting-text';
 import type { SectionId } from './settings-sections';
 
@@ -197,109 +198,7 @@ const DEFS = [
     keywords: 'progress window close speed popup',
     group: 'Download window',
   },
-  {
-    id: 'media_addon',
-    section: 'media',
-    label: 'Media add-on',
-    help: 'Downloads video from YouTube and about 1,800 other sites.',
-    keywords: 'addon add-on youtube video stream yt-dlp ffmpeg deno install media extractor',
-  },
-  {
-    id: 'media_ask',
-    section: 'media',
-    label: 'When you download a video',
-    help: 'Ask for a quality each time, or start at once with the settings below.',
-    keywords: 'ask quality window prompt automatic remember preference without asking every time',
-    group: 'Videos',
-  },
-  {
-    id: 'media_quality',
-    section: 'media',
-    ...words('media_quality'),
-    keywords: 'resolution quality 4k 2160p 1440p 1080p 720p 480p height best audio only preferred',
-    group: 'Videos',
-  },
-  {
-    id: 'media_fallback',
-    section: 'media',
-    ...words('media_fallback'),
-    keywords: 'fallback missing unavailable lower higher closest ask resolution',
-    group: 'Videos',
-  },
-  {
-    id: 'media',
-    section: 'media',
-    ...words('media'),
-    keywords: 'format container convert mp4 mkv webm save as video h264 vp9 av1',
-    group: 'Videos',
-  },
-  {
-    id: 'media_subtitles',
-    section: 'media',
-    ...words('media_subtitles'),
-    keywords: 'subtitles captions cc languages srt',
-    group: 'Videos',
-  },
-  {
-    id: 'media_auto_subtitles',
-    section: 'media',
-    ...words('media_auto_subtitles'),
-    keywords: 'subtitles captions automatic auto-generated speech recognition',
-    group: 'Videos',
-  },
-  {
-    id: 'media_subtitle_files',
-    section: 'media',
-    ...words('media_subtitle_files'),
-    keywords: 'subtitles srt sidecar files embed',
-    group: 'Videos',
-  },
-  {
-    id: 'media_chapters',
-    section: 'media',
-    ...words('media_chapters'),
-    keywords: 'chapters markers sections',
-    group: 'Videos',
-  },
-  {
-    id: 'video_sites',
-    section: 'media',
-    label: 'Additional video sites',
-    help: 'Wirecatch also looks for video on pages from these sites. YouTube, Vimeo, TikTok and many others work already.',
-    keywords: 'video sites pages websites platforms youtube add paste link extractor supported',
-    group: 'Videos',
-  },
-  {
-    id: 'media_audio',
-    section: 'media',
-    ...words('media_audio'),
-    keywords: 'audio music mp3 m4a aac opus flac wav bitrate kbps quality format',
-    group: 'Audio only',
-  },
-  {
-    id: 'media_audio_subtitles',
-    section: 'media',
-    label: 'Subtitle languages for audio',
-    help: 'Saved as .srt files next to the audio file.',
-    keywords: 'subtitles lyrics captions languages srt audio',
-    group: 'Audio only',
-  },
-  {
-    id: 'media_audio_auto_subtitles',
-    section: 'media',
-    label: 'Use auto-generated subtitles for audio',
-    help: 'Used when a language has no subtitles written by people.',
-    keywords: 'subtitles captions automatic auto-generated audio',
-    group: 'Audio only',
-  },
-  {
-    id: 'media_audio_chapters',
-    section: 'media',
-    label: 'Add chapters to M4A audio',
-    help: 'Adds the video’s chapters to M4A files.',
-    keywords: 'chapters markers audio m4a',
-    group: 'Audio only',
-  },
+  ...MEDIA_SETTINGS,
   {
     id: 'global_speed_limit',
     section: 'speed',

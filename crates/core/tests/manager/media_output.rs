@@ -101,6 +101,7 @@ fn selection(option: &str, output: OutputFormat) -> MediaSelection {
         audio_kbps: None,
         subtitles: Vec::new(),
         subtitle_files: false,
+        unembedded_subtitles: wirecatch_protocol::app::UnembeddedSubtitles::Files,
         chapters: false,
         every_video: None,
     }

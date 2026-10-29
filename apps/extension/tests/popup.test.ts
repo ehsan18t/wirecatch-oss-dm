@@ -324,7 +324,7 @@ describe('popup', () => {
     await waitFor(() => expect(app.controls.media.audio.format).toBe('m4a'));
     expect(app.controls.media.audio.audio_kbps).toBe(256);
 
-    await user.click(screen.getByRole('switch', { name: 'Add chapters to videos' }));
+    await user.click(screen.getByRole('switch', { name: 'Add chapters' }));
     await waitFor(() => expect(app.controls.media.video.chapters).toBe(true));
   });
 

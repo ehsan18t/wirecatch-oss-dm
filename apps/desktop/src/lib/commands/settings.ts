@@ -29,7 +29,7 @@ const SETTING: CommandSpec<{ app: AppState; s: SettingDef }> = {
   title: ({ s }) =>
     isTransfer(s.id)
       ? s.label
-      : `${SECTIONS.find((x) => x.id === s.section)?.title ?? ''}: ${s.label}`,
+      : `${SECTIONS.find((x) => x.id === s.section)?.title ?? ''}${s.group ? ` › ${s.group}` : ''}: ${s.label}`,
   keywords: ({ s }) => `${s.help} ${s.keywords}`,
   run: ({ app, s }) => (isTransfer(s.id) ? app.openDialog({ kind: s.id }) : app.openSettings(s.id)),
 };

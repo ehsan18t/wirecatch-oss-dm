@@ -176,6 +176,7 @@ describe('the quality window with output formats', () => {
         subtitle_languages: ['en'],
         auto_subtitles: false,
         subtitle_files: true,
+        unembedded_subtitles: 'files' as const,
         chapters: true,
       };
       settings.media.audio = {

@@ -1281,6 +1281,7 @@ async fn the_add_on_is_not_removed_while_in_use() -> TestResult {
                 audio_kbps: None,
                 subtitles: Vec::new(),
                 subtitle_files: false,
+                unembedded_subtitles: wirecatch_protocol::app::UnembeddedSubtitles::Files,
                 chapters: false,
                 every_video: None,
             },

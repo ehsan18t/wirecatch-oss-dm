@@ -11,12 +11,15 @@
     languageChoices,
     qualityChoices,
     qualityValue,
+    SUBTITLE_PLACEMENT_CHOICES,
+    UNEMBEDDED_CHOICES,
     videoQuality,
     type BrowserControls,
     type ExtensionSettings,
     type OutputFormat,
     type QualityFallback,
     type QualityValue,
+    type UnembeddedSubtitles,
   } from '@wirecatch/protocol';
   import {
     Button,
@@ -165,15 +168,40 @@
       onchange={(on: boolean) =>
         void model.updateControls({ media: { video: { auto_subtitles: on } } })}
     />
-    <SettingSwitch
-      id="subtitle-files"
-      label={SETTINGS.subtitleFiles.label}
-      help={SETTINGS.subtitleFiles.help}
-      checked={media.video.subtitle_files}
-      disabled={!editable}
-      onchange={(on: boolean) =>
-        void model.updateControls({ media: { video: { subtitle_files: on } } })}
-    />
+    <SettingRow label={SETTINGS.subtitleFiles.label} help={SETTINGS.subtitleFiles.help} stacked>
+      {#snippet children(control)}
+        <Select
+          {...control}
+          class="w-full"
+          value={media.video.subtitle_files ? 'files' : 'inside'}
+          options={SUBTITLE_PLACEMENT_CHOICES}
+          disabled={!editable}
+          onchange={(placed: 'inside' | 'files') =>
+            void model.updateControls({
+              media: { video: { subtitle_files: placed === 'files' } },
+            })}
+        />
+      {/snippet}
+    </SettingRow>
+    {#if !media.video.subtitle_files}
+      <SettingRow
+        label={SETTINGS.unembeddedSubtitles.label}
+        help={SETTINGS.unembeddedSubtitles.help}
+        stacked
+      >
+        {#snippet children(control)}
+          <Select
+            {...control}
+            class="w-full"
+            value={media.video.unembedded_subtitles}
+            options={UNEMBEDDED_CHOICES}
+            disabled={!editable}
+            onchange={(when: UnembeddedSubtitles) =>
+              void model.updateControls({ media: { video: { unembedded_subtitles: when } } })}
+          />
+        {/snippet}
+      </SettingRow>
+    {/if}
     <SettingSwitch
       id="chapters"
       label={SETTINGS.chapters.label}
