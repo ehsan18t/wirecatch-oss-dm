@@ -25,6 +25,7 @@ wirecatch-sites.workspace = true
 wirecatch-store.workspace = true
 wirecatch-streams.workspace = true
 chrono = { workspace = true, features = ["clock"] }
+futures-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

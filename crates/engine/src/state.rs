@@ -37,6 +37,12 @@ pub(crate) enum LoadError {
     Version(u32),
 }
 
+/// The link the resume file at `path` was made for (the one asked for, before redirects), when it is a resume file this version of the engine reads. Lets a caller tell whose partial download a part file belongs to without knowing the file's format.
+#[must_use]
+pub fn resume_file_url(path: &Path) -> Option<String> {
+    ResumeState::load(path).ok().map(|state| state.url)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResumeState {
     pub version: u32,
@@ -188,6 +194,30 @@ mod tests {
         assert!(!loaded.can_resume(true, Some(101), &v));
         assert!(!loaded.can_resume(true, Some(100), &validators(Some("\"def\""))));
         assert!(!loaded.can_resume(true, Some(100), &validators(None)));
+        dir.remove().unwrap();
+    }
+
+    #[test]
+    fn a_resume_file_names_the_link_it_was_made_for() {
+        let dir = wirecatch_test_support::private_dir("state-url").unwrap();
+        let path = dir.path().join("f.bin.wcstate");
+        assert_eq!(resume_file_url(&path), None, "no file");
+        ResumeState::new(
+            "https://x/f",
+            Some(100),
+            true,
+            &validators(None),
+            Vec::new(),
+        )
+        .save(&path, &Abandonment::new().flag())
+        .unwrap();
+        assert_eq!(resume_file_url(&path).as_deref(), Some("https://x/f"));
+        std::fs::write(&path, b"{\"url\": \"https://x/f\"}").unwrap();
+        assert_eq!(
+            resume_file_url(&path),
+            None,
+            "not a resume file of this version"
+        );
         dir.remove().unwrap();
     }
 
