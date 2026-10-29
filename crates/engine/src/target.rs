@@ -422,11 +422,16 @@ mod tests {
         // A folder where the resume file should be: opening works, reading does not.
         let state = dir.join("f.bin.wcstate");
         std::fs::create_dir(&state).unwrap();
-        let reason = std::fs::read(&state).unwrap_err().to_string();
         let (logs, _capturing) = wirecatch_test_support::logs::Logs::capture();
         assert!(saved_state(&state).is_none());
-        let logged = logs.text();
-        assert!(logged.contains(&reason), "{logged}");
+        // The reason this read got, not one from a second read: another process (an antivirus) can open a new folder in between and change it.
+        let events = logs.events();
+        let error = events
+            .iter()
+            .find(|e| e.message == "the resume file cannot be read; starting over")
+            .and_then(|e| e.field("error"))
+            .unwrap_or_else(|| panic!("{}", logs.text()));
+        assert!(error.contains("(os error "), "{error}");
         dir.remove().unwrap();
     }
 }
