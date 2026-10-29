@@ -36,7 +36,6 @@ describe('settings schema', () => {
     ]);
     expect(in_('general', 'Updates')).toEqual(['auto_update_addons', 'update_suffix_list']);
     expect(in_('general', 'Backup')).toEqual(['export', 'import']);
-    expect(in_('network', 'Local network')).toEqual(['local_sites']);
     expect(SETTINGS.find((d) => d.section === 'media')?.id).toBe('media_addon');
   });
 

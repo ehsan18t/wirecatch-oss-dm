@@ -26,9 +26,9 @@ const DEFS = [
   {
     id: 'theme',
     section: 'general',
-    label: 'Appearance',
+    label: 'Theme',
     help: 'Follow your system, or always use light or dark.',
-    keywords: 'theme dark mode light mode colors',
+    keywords: 'theme appearance dark mode light mode colors',
     group: 'Appearance',
   },
   {
@@ -339,7 +339,6 @@ const DEFS = [
     help: 'Edit a queue to change its limits, rules, schedule or notifications.',
     keywords:
       'queue queues schedule overnight limit at once concurrent notify notification all done finished batch auto claim claims site try link',
-    group: 'Queues',
   },
   {
     id: 'proxy',
@@ -368,7 +367,7 @@ const DEFS = [
   {
     id: 'ftp_bypass_proxy',
     section: 'network',
-    label: 'Bypass proxy for FTP links',
+    label: 'FTP links skip the proxy',
     help: 'Only SOCKS5 proxies carry FTP. On, FTP links go direct past other proxies; off, they fail.',
     keywords: 'ftp ftps proxy direct',
     group: 'Proxy',
@@ -379,7 +378,6 @@ const DEFS = [
     label: 'Local network sites',
     help: 'Links from these sites may reach devices on your network, like a NAS or router. IP addresses and one-word names always count as local.',
     keywords: 'local network intranet nas router private lan trusted hosts',
-    group: 'Local network',
   },
 ] as const satisfies readonly SettingText[];
 

@@ -44,7 +44,7 @@ describe('proxy servers in settings', () => {
 
   it('saves a new profile after testing it, and keeps its password out of sight', async () => {
     const { app } = await openNetwork();
-    await click(screen.getByRole('button', { name: 'Add proxy' }));
+    await click(screen.getByRole('button', { name: 'New proxy' }));
     await type(dialog().getByLabelText('Name (optional)'), 'Lab');
     await type(dialog().getByLabelText('Server'), 'refuse.lab.example');
     await click(dialog().getByRole('button', { name: 'Test connection' }));

@@ -170,7 +170,7 @@ describe('keyboard only', () => {
     const { app, press } = await setup();
     app.openSettings('theme');
     await settle();
-    const group = screen.getByRole('radiogroup', { name: 'Appearance' });
+    const group = screen.getByRole('radiogroup', { name: 'Theme' });
     within(group).getByRole('radio', { name: 'System' }).focus();
     await press('{ArrowRight}');
     expect(app.settings?.theme).toBe('light');

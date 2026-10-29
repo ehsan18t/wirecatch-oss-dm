@@ -133,7 +133,7 @@
                 class="flex flex-col gap-2"
               >
                 {#if searching}
-                  <h2 id="sec-{s.id}" class="px-1 text-ui font-semibold text-ink-muted">
+                  <h2 id="sec-{s.id}" class="px-1 text-ui font-semibold text-ink">
                     {s.title}
                   </h2>
                 {/if}

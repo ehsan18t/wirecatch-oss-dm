@@ -43,7 +43,9 @@
   {#each groups as run, index (`${String(index)}-${run.group ?? ''}`)}
     <div class="flex flex-col gap-2">
       {#if run.group}
-        <svelte:element this={searching() ? 'h3' : 'h2'} class="px-1 text-ui font-semibold text-ink"
+        <svelte:element
+          this={searching() ? 'h3' : 'h2'}
+          class={cn('px-1 text-ui font-semibold', searching() ? 'text-ink-muted' : 'text-ink')}
           >{run.group}</svelte:element
         >
       {/if}

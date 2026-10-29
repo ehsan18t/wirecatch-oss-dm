@@ -121,7 +121,7 @@
     ? 'Downloads already running keep the proxy they started with.'
     : forQueue
       ? `Available to all queues, and used by ${forQueue}.`
-      : 'Save a proxy server once; the app and each queue can then choose it.'}
+      : 'Save a proxy server once; the global proxy and each queue can then use it.'}
   onclose={() => onclose()}
 >
   <form
@@ -134,7 +134,7 @@
       void save();
     }}
   >
-    <Field label="Name (optional)" description="If left empty, the proxy’s address is shown.">
+    <Field label="Name (optional)" help="If left empty, the proxy’s address is shown.">
       {#snippet children(control: FieldControl)}
         <Input
           {...control}

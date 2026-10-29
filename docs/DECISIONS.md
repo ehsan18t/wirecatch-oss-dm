@@ -781,8 +781,8 @@ Decided with the maintainer on 2026-10-29. Eleven pages held 47 settings, four o
 2. General holds Appearance (theme, accent), Startup (start when signing in, keep downloading when the window is closed), Updates (the add-on updates and the Public Suffix List updates, where the app's own updater goes later) and Backup (export, import).
 3. Media starts with the media add-on (install, update, remove), then Videos and Audio only. Messages that send a person to install or fix the add-on say "Settings > Media".
 4. Browser holds Capture (what is taken from the browser and into which queue) and Download window (the window before a download, and whether it stays for progress).
-5. Speed and queues holds Limits (speed, downloads at once, connections per download, each naming the queues that use their own value) and Your queues.
-6. Network holds Proxy (the global proxy, proxy servers, the bypass list, FTP) and Local network (the sites that may reach the person's own network).
+5. Speed and queues holds Limits (speed, downloads at once, connections per download, each naming the queues that use their own value), then the list of queues.
+6. Network holds Proxy (the global proxy, proxy servers, the bypass list, FTP), then the local network sites (the sites that may reach the person's own network). A heading names a group of rows, never a single row it would repeat.
 7. The bypass setting is "Hosts that skip the proxy", in Settings > Network and in the queue editor. The list typed in Settings > Network is "Global hosts" in both places ("Global hosts (N)" in the queue editor), and a queue's own list is "This queue's hosts". This replaces D84.7.
 8. A page's line under its title is a few words. No setting key changes: saved settings and export files are read as before.
 9. The accent swatches leave out teal and indigo, too close to cyan, green and blue to tell apart; a person who chose one keeps it, offered while it is the choice.

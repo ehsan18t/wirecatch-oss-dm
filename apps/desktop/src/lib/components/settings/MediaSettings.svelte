@@ -140,7 +140,7 @@
 {#snippet quality({ s, control }: Row)}
   <Select
     {...control}
-    class="w-44"
+    class="w-56"
     value={qualityValue(s.media.quality)}
     options={qualityChoices(s.media.quality)}
     onchange={(v: QualityValue) => save((d) => void (d.media.quality = videoQuality(v)))}
@@ -161,7 +161,7 @@
 {#snippet videoFormat({ s, control }: Row)}
   <Select
     {...control}
-    class="w-44"
+    class="w-56"
     value={s.media.video.format}
     options={VIDEO_FORMATS}
     onchange={(format: OutputFormat) => save((d) => void (d.media.video.format = format))}
@@ -173,7 +173,7 @@
   {const kbps = $derived(kbpsChoices(audio.format))}
   <Select
     {...control}
-    class="w-36"
+    class="w-56"
     value={audio.format}
     options={AUDIO_FORMATS}
     onchange={setAudioFormat}
@@ -181,7 +181,7 @@
   {#if kbps.length > 0}
     <Select
       label="Audio quality"
-      class="w-36"
+      class="w-56"
       value={audio.audio_kbps ?? 'usual'}
       options={kbps}
       onchange={(kbps: number | 'usual') =>
@@ -194,7 +194,7 @@
   {const kind = $derived(kindOf(def.id))}
   <MultiSelect
     {...control}
-    class="w-64"
+    class="w-56"
     label={def.label}
     searchPlaceholder="Search languages"
     values={s.media[kind].subtitle_languages}

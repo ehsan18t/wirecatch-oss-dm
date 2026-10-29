@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Speed and queues: a limit on all downloads together, how many run at once across the queues, and how many connections each opens, in the ranges the core accepts, each with the queues that use their own value; then Test a link and every queue, with when it runs, its own limits and its rules, Edit opening its dialog.
+  // Speed and queues: a limit on all downloads together, how many run at once across the queues, and how many connections each opens, in the ranges the core accepts, each with the queues that use their own value; then every queue, with when it runs, its own limits and its rules, Edit opening its dialog, and Test a link under them.
   import Pencil from '~icons/lucide/pencil';
   import Plus from '~icons/lucide/plus';
   import { MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
@@ -106,9 +106,6 @@
 
 {#snippet queues({ control }: Row)}
   <div class="flex w-full flex-col items-start gap-3">
-    <div class="w-full rounded-md border border-line p-3">
-      <TryLink />
-    </div>
     <ul
       aria-label="Your queues"
       aria-describedby={control['aria-describedby']}
@@ -145,5 +142,8 @@
     <Button size="sm" icon={Plus} onclick={() => app.openDialog({ kind: 'queue', id: null })}
       >New queue</Button
     >
+    <div class="w-full rounded-md border border-line p-3">
+      <TryLink />
+    </div>
   </div>
 {/snippet}
