@@ -400,9 +400,17 @@ impl Manager {
 
     /// A capture of a link that is already a download not finished yet (queued, running or
     /// paused) joins that download instead of starting another, and its window comes to the
-    /// front (D89). `None` when there is no such download.
-    fn join_unfinished(&self, capture: &NewDownload, url: &Url) -> Result<Option<AddedDownload>> {
+    /// front (D89). `None` when there is no such download, or when its handover is already known.
+    pub(super) fn join_unfinished(
+        &self,
+        capture: &NewDownload,
+        url: &Url,
+    ) -> Result<Option<AddedDownload>> {
         let mut state = self.lock_open()?;
+        // Registered since `arrival` looked: the add that did so answers it.
+        if state.handovers.get(&capture.handover_id).is_some() {
+            return Ok(None);
+        }
         let Some(row) = state
             .unfinished()
             .filter(|entry| !entry.hold.is_removing())
