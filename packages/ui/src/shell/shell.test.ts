@@ -145,6 +145,21 @@ describe('toasts while a modal layer is open', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Background failure', hidden: true }));
     expect(within(dialog).getByRole('alert').textContent).toContain('ubuntu.iso failed');
   });
+
+  it('shows the toasts inside an open modal layer, where they can be read and pressed', async () => {
+    render(ToastDialogHost);
+    await fireEvent.click(screen.getByRole('button', { name: 'Earlier news' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add a download' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add a download' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Background failure', hidden: true }));
+    const inLayer = within(dialog).getByRole('region', { name: 'Notifications' });
+    expect(inLayer.textContent).toContain('notes.txt finished');
+    expect(inLayer.textContent).toContain('ubuntu.iso failed');
+    // The window's own stack stands aside, so each toast shows once.
+    expect(document.querySelectorAll('[data-toast]')).toHaveLength(2);
+    await userEvent.click(within(inLayer).getAllByRole('button', { name: 'Dismiss' })[0]!);
+    expect(within(dialog).queryByText('notes.txt finished')).toBeNull();
+  });
 });
 
 describe('Sidebar', () => {

@@ -14,6 +14,8 @@
     stacked?: boolean;
     /** False for a row whose end shows a value or an action rather than a control the label names, such as a button with its own name: the label is then plain text. */
     labelled?: boolean;
+    /** Buttons at the end of a stacked row's name line, such as a list's New: they stay put however long the control under them grows. */
+    actions?: Snippet | undefined;
     class?: string | undefined;
     children: Snippet<[FieldControl]>;
   }
@@ -24,6 +26,7 @@
     error,
     stacked = false,
     labelled = true,
+    actions,
     class: className,
     children,
   }: Props = $props();
@@ -52,15 +55,21 @@
     className,
   )}
 >
-  <div class={nameClass}>
-    {#if labelled}
-      <label for={id} class={labelClass}>{label}</label>
-    {:else}
-      <p class={labelClass}>{label}</p>
-    {/if}
-    {#if help}
-      <InfoTip {label} text={help} />
-      <span id={hintId} class="sr-only">{help}</span>
+  <!-- Without actions it is no box of its own, so the name keeps its place in the row. -->
+  <div class={actions ? 'flex flex-wrap items-center justify-between gap-2' : 'contents'}>
+    <div class={nameClass}>
+      {#if labelled}
+        <label for={id} class={labelClass}>{label}</label>
+      {:else}
+        <p class={labelClass}>{label}</p>
+      {/if}
+      {#if help}
+        <InfoTip {label} text={help} />
+        <span id={hintId} class="sr-only">{help}</span>
+      {/if}
+    </div>
+    {#if actions}
+      <div class="flex flex-wrap items-center gap-2">{@render actions()}</div>
     {/if}
   </div>
   <div

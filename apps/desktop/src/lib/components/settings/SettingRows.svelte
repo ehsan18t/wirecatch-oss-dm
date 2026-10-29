@@ -13,6 +13,7 @@
     stacked = [],
     unlabelled = [],
     notes = {},
+    actions = {},
   }: Omit<SectionProps, 'save'> & {
     /** Each setting's control. */
     controls: Partial<Record<SettingId, Snippet<[Row]>>>;
@@ -22,6 +23,8 @@
     unlabelled?: readonly SettingId[];
     /** A line under a setting's row, across it. */
     notes?: Partial<Record<SettingId, Snippet>>;
+    /** Buttons at the end of a stacked setting's name line. */
+    actions?: Partial<Record<SettingId, Snippet>>;
   } = $props();
 
   // Under a search result's section heading (h2), a group's heading is one level down.
@@ -66,6 +69,7 @@
               help={def.help}
               stacked={stacked.includes(def.id)}
               labelled={!unlabelled.includes(def.id)}
+              actions={actions[def.id]}
             >
               {#snippet children(field: FieldControl)}
                 {#if control}{@render control({ def, s: settings, control: field })}{/if}
