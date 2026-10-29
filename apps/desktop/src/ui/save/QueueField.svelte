@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Which queue a download joins, the default one marked in the list (not in the chosen value, where it would be noise). With `automatic`, Automatic comes first and stands for `null`: each link goes where the rules send it (D72.8). The Add dialog and the download windows' questions use it.
+  // Which queue a download joins, the default one marked in the list (not in the chosen value, where it would be noise). With `automatic`, Automatic comes first and stands for `null`: each link goes where the rules send it (D72.8), which its info icon says (D84.2). The Add dialog and the download windows' questions use it.
   import type { Queue, QueueId } from '@wirecatch/protocol';
   import { Field, type FieldControl, Select, type SelectOption } from '@wirecatch/ui';
   import { rulesFact } from '$lib/queue-rules';
@@ -44,7 +44,12 @@
   ]);
 </script>
 
-<Field label="Queue" {description} class={className}>
+<Field
+  label="Queue"
+  help={automatic ? 'Automatic sends each link to the queue whose rules match it.' : undefined}
+  {description}
+  class={className}
+>
   {#snippet children(control: FieldControl)}
     <Select
       {...control}

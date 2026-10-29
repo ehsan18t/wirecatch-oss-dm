@@ -56,7 +56,7 @@ export function queueLine(name: string, reason: QueueReason): string {
 /** Where the rules send the Add dialog's links: why for one link, how many go to each queue for several (D72.8). */
 export function placementLine(placed: readonly { name: string; reason: QueueReason }[]): string {
   const [first] = placed;
-  if (first === undefined) return 'Each link goes to the queue whose rules match it.';
+  if (first === undefined) return '';
   if (placed.length === 1) return queueLine(first.name, first.reason);
   const counts = new Map<string, number>();
   for (const { name } of placed) counts.set(name, (counts.get(name) ?? 0) + 1);

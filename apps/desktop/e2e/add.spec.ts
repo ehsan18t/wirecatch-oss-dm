@@ -59,9 +59,9 @@ test('the whole flow by keyboard: open, type, choose, download, and the focus co
   await grid.focus();
   await openAdd(page);
   await page.keyboard.type(LINKS[0] ?? '');
-  // Tab reaches the file name, the folder's Change, the queue and the two buttons, then wraps.
+  // Tab reaches the file name, the folder's Change, the queue's info icon and the queue, and the two buttons, then wraps.
   const stops: string[] = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 8; i++) {
     await page.keyboard.press('Tab');
     stops.push(
       await page.evaluate(() => {
@@ -71,9 +71,10 @@ test('the whole flow by keyboard: open, type, choose, download, and the focus co
       }),
     );
   }
-  expect(stops.slice(0, 6)).toEqual([
+  expect(stops.slice(0, 7)).toEqual([
     'File name',
     'Change',
+    'About Queue',
     'Automatic',
     'Add paused',
     'Download',
@@ -148,17 +149,23 @@ async function checkFits(page: Page, label: string) {
       .map((e) => e.getAttribute('class') ?? e.tagName),
   );
   expect(spill, `${label}: nothing scrolls sideways`).toEqual([]);
-  // The buttons at the bottom are always in view, whatever the body scrolls.
-  const footer = addDialog(page).locator('footer').getByRole('button');
-  for (const button of await footer.all()) {
-    const b = await box(button);
-    expect(b.y + b.height, `${label}: ${await button.innerText()} in view`).toBeLessThanOrEqual(
-      outer.y + outer.height + 0.5,
-    );
-    expect(b.x, `${label}: ${await button.innerText()} inside`).toBeGreaterThanOrEqual(outer.x);
-    expect(b.x + b.width, `${label}: ${await button.innerText()} inside`).toBeLessThanOrEqual(
-      outer.x + outer.width + 0.5,
-    );
+  // The buttons at the bottom are always in view, whatever the body scrolls: read with the panel in one go, so a line that appears in between cannot set them apart.
+  const footer = await panel.evaluate((el) => {
+    const p = el.getBoundingClientRect();
+    return [...el.querySelectorAll(':scope > footer button')].map((b) => {
+      const r = b.getBoundingClientRect();
+      return {
+        text: b.textContent.trim(),
+        past: r.bottom - p.bottom,
+        left: r.left - p.left,
+        right: r.right - p.right,
+      };
+    });
+  });
+  for (const b of footer) {
+    expect(b.past, `${label}: ${b.text} in view`).toBeLessThanOrEqual(0.5);
+    expect(b.left, `${label}: ${b.text} inside`).toBeGreaterThanOrEqual(0);
+    expect(b.right, `${label}: ${b.text} inside`).toBeLessThanOrEqual(0.5);
   }
   // Nothing drawn in the body runs past the dialog's sides, whether or not its box would scroll.
   const past = await panel.evaluate((el): string[] => {
