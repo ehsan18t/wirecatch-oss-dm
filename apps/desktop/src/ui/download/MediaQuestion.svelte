@@ -70,8 +70,8 @@
   /** What ticking it saves: from a video without the saved resolution, that resolution stays saved, not the one picked here. */
   const everyVideoNote = $derived(
     choice.missing_quality
-      ? `Videos then download at once, at ${choice.missing_quality} as saved. Change it in Settings, Media.`
-      : 'Videos then download at once with these choices. Change it in Settings, Media.',
+      ? `Videos will then download right away at ${choice.missing_quality}, as saved. You can change this in Settings > Media.`
+      : 'Videos will then download right away with these choices. You can change this in Settings > Media.',
   );
   /** Which button sent the answer, for its spinner. */
   let sending = $state<'now' | 'later' | null>(null);
@@ -84,11 +84,11 @@
     if (!picked?.needs_ffmpeg) return null;
     if (!needsInstall) {
       return output.format === 'original'
-        ? `Comes as separate video and audio, joined into one file when it finishes.`
+        ? `Video and audio download separately and are merged into one file at the end.`
         : null;
     }
     const size = win.addon?.size ? ` (${formatBytes(win.addon.size)})` : '';
-    return `Comes as separate video and audio: ${PRODUCT_NAME} first installs the media add-on${size} to join them.`;
+    return `Video and audio download separately: ${PRODUCT_NAME} first installs the media add-on${size} to merge them.`;
   });
   const qualities = $derived<SelectOption[]>(
     choice.options.map((option) => ({ value: option.id, label: rowLabel(option) })),

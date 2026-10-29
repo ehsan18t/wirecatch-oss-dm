@@ -186,7 +186,7 @@ describe('connection problems', () => {
       title: 'This copy of the extension is not the one Wirecatch trusts.',
       fix: 'Install the extension from the Wirecatch website or store, or update Wirecatch.',
     });
-    expect(describeProblem('disconnected').fix).toContain('reconnects by itself');
+    expect(describeProblem('disconnected').fix).toContain('reconnects automatically');
     const kinds: ProblemKind[] = [
       'host_missing',
       'host_untrusted',

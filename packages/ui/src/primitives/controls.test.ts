@@ -382,8 +382,8 @@ describe('ProgressBar', () => {
   });
 
   it('runs indeterminate without a value', () => {
-    render(ProgressBar, { value: null, label: 'Reading the video' });
-    const bar = screen.getByRole('progressbar', { name: 'Reading the video' });
+    render(ProgressBar, { value: null, label: 'Getting video details' });
+    const bar = screen.getByRole('progressbar', { name: 'Getting video details' });
     expect(bar.hasAttribute('aria-valuenow')).toBe(false);
     expect(bar.getAttribute('aria-busy')).toBe('true');
   });

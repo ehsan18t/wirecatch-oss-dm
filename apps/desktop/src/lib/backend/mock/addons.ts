@@ -30,7 +30,7 @@ export function checkAddonUpdates(state: MockState, finds: UpdateCheck): AddonIn
   // As the core says it (D21.1): a release younger than two days waits.
   addon.note =
     installed && finds === 'too-new'
-      ? 'A newer version came out today; Wirecatch installs it once it is two days old.'
+      ? 'A newer version was released today; Wirecatch installs it after two days.'
       : null;
   state.addonsChanged();
   if (installed && finds === 'newer') {

@@ -152,10 +152,10 @@ describe('6. queues pause for real and scheduled queues can start now', () => {
     const { app, backend, click } = await setup();
     expect(app.queues.isOutsideSchedule(app.queues.byId(queueId(2)) as never)).toBe(true);
     await click(button('Actions for Overnight'));
-    await click(screen.getByRole('menuitem', { name: 'Start now, outside its hours' }));
+    await click(screen.getByRole('menuitem', { name: 'Start now (ignore schedule)' }));
     expect(app.queues.byId(queueId(2))?.status.running_outside_schedule).toBe(true);
     expect(screen.getByRole('button', { name: /^Overnight/ })).toHaveTextContent(
-      'Started by hand, outside its hours',
+      'Started manually, ignoring schedule',
     );
     backend.tick(250);
     await settle();

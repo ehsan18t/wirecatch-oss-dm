@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Move to another PC: settings saved to a file, and loaded from one (which shows what it would change first).
+  // Import and export: settings saved to a file, and loaded from one (which shows what it would change first).
   import type { Snippet } from 'svelte';
   import { Button } from '@wirecatch/ui';
   import type { SettingIn } from '$lib/settings-schema';

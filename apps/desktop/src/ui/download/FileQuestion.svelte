@@ -49,7 +49,11 @@
   }
 </script>
 
-<WindowFrame title="Download this file?" description="Caught from your browser." error={win.error}>
+<WindowFrame
+  title="Download this file?"
+  description="Captured from your browser."
+  error={win.error}
+>
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions (Enter in any field, checkboxes included, is Download now: see keys.ts) -->
   <form
     id={formId}
@@ -64,7 +68,7 @@
       <CategoryIcon category={capture.category} />
       <div class="flex min-w-0 flex-col gap-0.5">
         <p class="flex min-w-0 flex-wrap gap-x-3 text-ui text-ink-muted tabular-nums">
-          <span>{capture.size === null ? 'Size not known yet' : formatBytes(capture.size)}</span>
+          <span>{capture.size === null ? 'Size unknown' : formatBytes(capture.size)}</span>
           <span class="wrap-anywhere">from {hostOf(capture.page_url ?? capture.url)}</span>
         </p>
         <p class="truncate text-small text-ink-subtle" {@attach tooltip(() => textIfCut(link))}>

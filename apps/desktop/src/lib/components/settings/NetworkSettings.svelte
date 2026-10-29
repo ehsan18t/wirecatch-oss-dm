@@ -25,9 +25,9 @@
   const SYSTEM = 'system';
   const DIRECT = 'direct';
 
-  /** Every proxy to choose from; the saved ones are listed, with their tests, under Saved proxies. */
+  /** Every proxy to choose from; the saved ones are listed, with their tests, under Proxy servers. */
   const options = $derived([
-    { value: SYSTEM, label: 'The computer’s proxy' },
+    { value: SYSTEM, label: 'System proxy' },
     { value: DIRECT, label: 'No proxy' },
     ...app.proxies.list.map((p) => ({ value: String(p.id), label: shownName(p.settings) })),
   ]);
@@ -85,14 +85,14 @@
   {#if exceptionsMatter}
     <div class="flex w-full flex-col gap-3">
       <Checkbox
-        label="The hosts the computer’s proxy skips"
-        description="The bypass list in your network settings, or in the environment."
+        label="System proxy exceptions"
+        description="The bypass list from your system proxy settings or environment variables."
         checked={s.proxy.exceptions.system}
         onchange={(on: boolean) => save((d) => void (d.proxy.exceptions.system = on))}
       />
       <Checkbox
         label="These hosts"
-        description="A name also covers the names under it. Also addresses, networks like 10.0.0.0/8, and <local> for names without a dot."
+        description="A domain also matches its subdomains. IP addresses, ranges like 10.0.0.0/8, and <local> (names without a dot) work too."
         checked={s.proxy.exceptions.use_hosts}
         onchange={(on: boolean) => save((d) => void (d.proxy.exceptions.use_hosts = on))}
       />
@@ -101,7 +101,7 @@
           {#snippet children(control: FieldControl)}
             <TagInput
               {...control}
-              label="Hosts to go directly to"
+              label="Hosts to bypass"
               placeholder="Add a host, like intranet.example.com"
               values={s.proxy.exceptions.hosts}
               normalize={normalizeException}
@@ -112,9 +112,7 @@
       {/if}
     </div>
   {:else}
-    <p class="text-small text-ink-muted">
-      Nothing goes through a proxy now, so there is nothing to go around.
-    </p>
+    <p class="text-small text-ink-muted">No proxy is in use, so there is nothing to bypass.</p>
   {/if}
 {/snippet}
 

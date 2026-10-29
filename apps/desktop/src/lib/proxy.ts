@@ -73,7 +73,7 @@ export function profileOf(
 export function proxyName(proxy: ProxyUse, profiles: readonly ProxyProfile[]): string {
   switch (proxy.kind) {
     case 'system':
-      return 'The computer’s proxy';
+      return 'System proxy';
     case 'direct':
       return 'No proxy';
     case 'profile': {
@@ -85,7 +85,7 @@ export function proxyName(proxy: ProxyUse, profiles: readonly ProxyProfile[]): s
 
 const TEST_OUTCOME: Record<ProxyTestResult['outcome'], string> = {
   works: 'Works',
-  login_refused: 'Login refused',
+  login_refused: 'Authentication failed',
   unreachable: 'Could not be reached',
   timed_out: 'Did not answer in time',
 };
@@ -135,8 +135,8 @@ export function testResultText(
       return {
         tone: 'danger',
         text: loginEntered
-          ? 'The proxy refused the login. Check the user name and password.'
-          : 'The proxy needs a login. Enter its user name and password.',
+          ? 'The proxy rejected the user name or password. Check them and try again.'
+          : 'The proxy requires a user name and password. Enter them and try again.',
       };
     case 'unreachable':
       return {

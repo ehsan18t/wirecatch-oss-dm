@@ -34,7 +34,7 @@ function runningPhrase(running: number, atOnce: number | null): string {
     : `${String(running)} of ${String(atOnce)} running`;
 }
 
-/** Why Try a link could not answer. */
+/** Why Test a link could not answer. */
 export interface TrialProblem {
   problem: string;
   /** The link is at fault, not the claims. */
@@ -77,7 +77,7 @@ export class Queues {
     if (schedule && this.isOutsideSchedule(queue)) {
       return `Starts at ${formatTime(schedule.start)}`;
     }
-    if (queue.status.running_outside_schedule) return 'Started by hand, outside its hours';
+    if (queue.status.running_outside_schedule) return 'Started manually, ignoring schedule';
     if (c && c.running > 0) return runningPhrase(c.running, atOnce);
     if (c && c.waiting > 0) return `${c.waiting} waiting`;
     if (c && c.paused > 0) return `${c.paused} paused`;
@@ -152,7 +152,7 @@ export class Queues {
     const name = this.byId(queue)?.settings.name ?? 'The queue';
     if (ok)
       this.#host.toasts.notify(
-        `${name} is running now. Its schedule applies again once it is empty.`,
+        `${name} started. Its schedule applies again once the queue is empty.`,
       );
   }
 }

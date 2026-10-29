@@ -241,7 +241,7 @@ Found while building the rest of D72's windows (2026-10-29), outside what they c
 
 Found while building D73 (2026-10-29), outside what it changes:
 
-- Toasts sit over the controls at the bottom right of a page, Saved proxies' Test, Edit and Delete among them, and info toasts stay until closed (`apps/desktop/src/lib/state/toasts.svelte.ts`, the shared toaster).
+- Toasts sit over the controls at the bottom right of a page, Proxy servers' Test, Edit and Delete among them, and info toasts stay until closed (`apps/desktop/src/lib/state/toasts.svelte.ts`, the shared toaster).
 - A toast breaks a host name at its hyphen (`backup-` / `proxy.example`), which reads as two names.
 - A dialog is centred on its height, so it moves when a line appears in it, such as a proxy's test result.
 - A tooltip always opens above what it describes, so a queue's proxy mark in the sidebar covers the queue's own name (`packages/ui/src/attachments/tooltip.svelte.ts`); a placement option would let it open beside the mark.

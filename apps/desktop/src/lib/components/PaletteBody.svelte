@@ -144,7 +144,7 @@
       </div>
     {:else}
       <p class="px-3 py-5 text-ui text-ink-muted">
-        No action or setting matches “{query}”. Try fewer letters.
+        No action or setting matches “{query}”. Try a shorter search.
       </p>
     {/each}
   </div>

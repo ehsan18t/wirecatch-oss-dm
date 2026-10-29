@@ -121,7 +121,7 @@ describe('the Add dialog', () => {
     app.openDialog({ kind: 'add', urls: ['https://a.example/1.zip'] });
     await settle();
     const saveTo = inDialog().getByRole('group', { name: 'Save to' });
-    expect(saveTo).toHaveTextContent('By file type, as set in Settings');
+    expect(saveTo).toHaveTextContent('By file type (from Settings)');
     expect(within(saveTo).queryByRole('button', { name: 'Use default' })).toBeNull();
     await click(within(saveTo).getByRole('button', { name: 'Change' }));
     expect(saveTo).toHaveTextContent(String.raw`E:\Media`);
@@ -176,7 +176,9 @@ describe('the Add dialog', () => {
     await settle();
     const queue = inDialog().getByRole('combobox', { name: 'Queue' });
     await waitFor(() => {
-      expect(queue).toHaveAccessibleDescription('Queue: Work files. It takes share.example.com.');
+      expect(queue).toHaveAccessibleDescription(
+        'Queue: Work files. Its rules match share.example.com.',
+      );
     });
     await user.type(linksBox(), '{End}{Enter}https://elsewhere.example/b.zip');
     await waitFor(() => {

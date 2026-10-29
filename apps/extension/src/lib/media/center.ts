@@ -113,9 +113,9 @@ export interface MediaCenterDeps {
 const SAVE_DELAY_MS = 250;
 
 export const PRIVATE_WINDOW =
-  'Wirecatch is set to leave private windows to the browser. Turn on "Work in private windows" in the Wirecatch popup to download here.';
+  'Wirecatch is turned off in private windows. Turn on "Work in private windows" in the Wirecatch popup to download here.';
 export const IGNORED_SITE =
-  'This site is on your list of sites to ignore. Remove it from that list in the Wirecatch popup to download from it.';
+  'This site is on your list of ignored sites. Remove it from that list in the Wirecatch popup to download from it.';
 const NOTHING_FOUND =
   'Wirecatch has not found anything to download here yet. Play the video for a moment, then try again.';
 const TAB_GONE = 'This tab is closed.';

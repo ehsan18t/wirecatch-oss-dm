@@ -90,9 +90,7 @@ export class DownloadActions {
     // A video that asks shows its reading in its own window; one that does not would show nothing until it starts.
     if (videos > 0 && !this.#host.videosAsk()) {
       this.#host.toasts.notify(
-        videos === 1
-          ? 'Reading the video for its qualities.'
-          : `Reading ${videos} videos for their qualities.`,
+        videos === 1 ? 'Getting the video’s qualities.' : `Getting qualities for ${videos} videos.`,
       );
     }
     return { ids, videos, failed };
@@ -180,7 +178,7 @@ export class DownloadActions {
       this.#host.toasts.notify('Link copied.');
     } catch {
       this.#host.toasts.fail(
-        'Could not copy the link. Select it in the detail panel and copy it by hand.',
+        'Could not copy the link. Select it in the details panel and copy it manually.',
       );
     }
   }

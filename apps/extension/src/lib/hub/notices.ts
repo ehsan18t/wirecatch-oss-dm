@@ -13,7 +13,7 @@ export const MEDIA_NO_SITE_ACCESS =
   'Wirecatch needs access to websites to send media with its cookies. Open the Wirecatch popup and click Allow access.';
 
 export const MENU_PRIVATE_WINDOW =
-  'Wirecatch is set to leave private windows to the browser. Turn on "Work in private windows" in the Wirecatch popup, or use the browser\'s own "Save as" option.';
+  'Wirecatch is turned off in private windows. Turn on "Work in private windows" in the Wirecatch popup, or use the browser\'s own "Save as" option.';
 
 export const MENU_NOT_WEB =
   'Wirecatch can only take web links, so the browser is downloading this item instead.';

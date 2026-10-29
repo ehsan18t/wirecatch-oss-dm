@@ -108,7 +108,7 @@ describe('the settings screen', () => {
 
   it('reads the total speed limit in megabytes per second', async () => {
     const { app } = await openSettings('speed');
-    await fireEvent.click(screen.getByRole('switch', { name: 'Limit total speed' }));
+    await fireEvent.click(screen.getByRole('switch', { name: 'Global speed limit' }));
     await settle();
     const field = spin('Total speed limit');
     await change(field, '2.5');
@@ -125,14 +125,14 @@ describe('the settings screen', () => {
 
   it('keeps a site on the network as its host, the way the app keeps it', async () => {
     const { app } = await openSettings('advanced');
-    const field = screen.getByRole('textbox', { name: 'Sites on your own network' });
+    const field = screen.getByRole('textbox', { name: 'Local network sites' });
     await fireEvent.input(field, { target: { value: 'https://Wiki.Corp.Example.com/start' } });
     await fireEvent.keyDown(field, { key: 'Enter' });
     await settle();
     expect(app.settings?.local_sites).toEqual(['wiki.corp.example.com']);
     expect(
       screen.getByRole('button', {
-        name: 'Remove wiki.corp.example.com from sites on your own network',
+        name: 'Remove wiki.corp.example.com from local network sites',
       }),
     ).toBeInTheDocument();
   });
@@ -155,15 +155,17 @@ describe('how downloads are told', () => {
   it('is picked from a list, and names when the default queue tells, with a way to change it', async () => {
     const { app } = await openSettings('notifications');
     const pick = screen.getByRole('combobox', { name: 'When a download finishes' });
-    expect(pick).toHaveTextContent('Show a note in the browser');
-    expect(screen.getByText('Main tells you each time a download finishes.')).toBeVisible();
+    expect(pick).toHaveTextContent('Show a notice in the browser');
+    expect(
+      screen.getByText('The Main queue notifies you each time a download finishes.'),
+    ).toBeVisible();
     await fireEvent.click(pick);
     await settle();
-    await fireEvent.click(screen.getByRole('option', { name: /Open a window/ }));
+    await fireEvent.click(screen.getByRole('option', { name: /Open a summary window/ }));
     await settle();
     expect(app.settings?.finish_notice).toBe('window');
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Change when Main tells you' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Change when Main notifies you' }));
     await settle();
     expect(app.dialog).toEqual({ kind: 'queue', id: app.queues.defaultQueue?.id });
   });
@@ -171,13 +173,13 @@ describe('how downloads are told', () => {
   it('notes a started download in the browser for 3 seconds, and a finished one for 8 (D65, D67)', async () => {
     const { app } = await openSettings('notifications');
     expect(screen.getByRole('combobox', { name: 'When a download starts' })).toHaveTextContent(
-      'Show a note in the browser',
+      'Show a notice in the browser',
     );
-    const startFor = screen.getByRole('combobox', { name: 'Show the start note for' });
+    const startFor = screen.getByRole('combobox', { name: 'Hide the start notice after' });
     expect(startFor).toHaveTextContent('3 seconds');
     expect(startFor).toBeEnabled();
     // D67: a finished download is told in the browser too, unless the person chose otherwise.
-    const finishFor = screen.getByRole('combobox', { name: 'Show the finish note for' });
+    const finishFor = screen.getByRole('combobox', { name: 'Hide the finish notice after' });
     expect(finishFor).toHaveTextContent('8 seconds');
     expect(finishFor).toBeEnabled();
 
@@ -186,8 +188,8 @@ describe('how downloads are told', () => {
       d.finish_notice = 'notification';
     });
     await settle();
-    expect(screen.getByRole('combobox', { name: 'Show the start note for' })).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Show the finish note for' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Hide the start notice after' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Hide the finish notice after' })).toBeDisabled();
   });
 
   it('shows notifications during Do Not Disturb unless turned off (D64)', async () => {
@@ -203,7 +205,7 @@ describe('how downloads are told', () => {
     const { app } = await openSettings('notifications');
     await app.updateSettings((d) => void (d.finish_notice = 'nothing'));
     await settle();
-    expect(screen.queryByText(/tells you each time/)).toBeNull();
+    expect(screen.queryByText(/notifies you each time/)).toBeNull();
   });
 });
 

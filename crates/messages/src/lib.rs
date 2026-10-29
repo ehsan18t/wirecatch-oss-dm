@@ -146,7 +146,7 @@ pub fn describe_run(
         // Through a proxy, the first connection is the proxy's (D73.4).
         (EngineError::Network(e), Some(proxy)) if e.is_connect() => fix(
             format!(
-                "Could not reach the proxy {proxy}. Move the download to a queue with another proxy, or check the proxy in Settings, Network."
+                "Could not reach the proxy {proxy}. Move the download to a queue with another proxy, or check the proxy in Settings > Network."
             ),
             FixAction::ChangeQueue,
         ),
@@ -191,7 +191,7 @@ fn ftp_tls_unavailable(host: &str) -> UserError {
 /// A proxy that wants a login it was not given, or refused the one it was.
 fn proxy_login_refused() -> UserError {
     fix(
-        "The proxy asked for a user name and password, or did not accept the ones it was given. Move the download to a queue with another proxy, or check the proxy's login in Settings, Network.",
+        "The proxy asked for a user name and password, or did not accept the ones it was given. Move the download to a queue with another proxy, or check the proxy's user name and password in Settings > Network.",
         FixAction::ChangeQueue,
     )
 }
@@ -210,7 +210,7 @@ fn ftp_proxy_unsupported(setting: &ProxySetting) -> UserError {
             FixAction::ProxySettings,
         ),
         ProxySetting::Given => fix(
-            "FTP downloads can only go through a SOCKS5 proxy, and the proxy in the proxy settings is another kind. Turn on Download FTP links directly, add this server to the proxy's exceptions, or use a SOCKS5 proxy, then try again.",
+            "FTP downloads can only go through a SOCKS5 proxy, and the proxy in the proxy settings is another kind. Turn on Bypass proxy for FTP links, add this server to the proxy's exceptions, or use a SOCKS5 proxy, then try again.",
             FixAction::ProxySettings,
         ),
         // A kind of setting added to the engine after this was written.
@@ -452,7 +452,7 @@ mod tests {
         assert!(system.message.contains("network settings"));
         assert!(system.message.contains("exceptions"));
         let given = ftp_proxy_unsupported(&ProxySetting::Given);
-        assert!(given.message.contains("Download FTP links directly"));
+        assert!(given.message.contains("Bypass proxy for FTP links"));
         // A proxy that refuses the login is another queue's to avoid (D73.4).
         let login = describe(&EngineError::ProxyLoginRefused, Path::new(""), false);
         assert!(login.message.contains("user name and password"));

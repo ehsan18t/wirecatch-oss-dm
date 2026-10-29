@@ -41,22 +41,22 @@ export function queueLimitFacts(settings: QueueSettings): string[] {
       ? ''
       : `${String(connections)} ${connections === 1 ? 'connection' : 'connections'} each`,
   ].filter(Boolean);
-  if (facts.length === 0) return ["Follows the app's limits"];
+  if (facts.length === 0) return ['Uses global limits'];
   const follows = [concurrent, limit, connections].some((own) => own === null);
-  return follows ? [...facts, 'Other limits follow the app'] : facts;
+  return follows ? [...facts, 'Other limits are global'] : facts;
 }
 
 /** What a queue's downloads at the same time are: the app's (`own` `null`), or its own, which the app's limit still caps. */
 export function concurrentLimitHelp(own: number | null, app: number | undefined): string {
   if (own === null)
     return app === undefined
-      ? "Uses the app's limit."
-      : `Uses the app's limit: ${String(app)} at once.`;
+      ? 'Uses the global limit.'
+      : `Uses the global limit: ${String(app)} at once.`;
   const line = 'Up to this many of its downloads run at once, and the rest wait their turn.';
   if (app === undefined) return line;
   return own > app
-    ? `${line} The app's limit of ${String(app)} is lower, so at most ${String(app)} run at once.`
-    : `${line} The app's limit of ${String(app)} still applies to all downloads.`;
+    ? `${line} The global limit of ${String(app)} is lower, so at most ${String(app)} run at once.`
+    : `${line} The global limit of ${String(app)} still applies across all queues.`;
 }
 
 /** Where a queue's own downloads at the same time start: below the app's limit, so switching it on changes something. */
@@ -68,16 +68,16 @@ export function firstConcurrent(app: number): number {
 export function speedLimitHelp(own: boolean, app: number | null): string {
   if (own)
     return app === null
-      ? 'Shared by everything running in this queue.'
-      : `Shared by everything running in this queue. The app's limit of ${formatRate(app)} still applies.`;
-  return `Uses the app's limit: ${app === null ? 'none' : formatRate(app)}.`;
+      ? 'Shared by all downloads in this queue.'
+      : `Shared by all downloads in this queue. The global limit of ${formatRate(app)} still applies.`;
+  return `Uses the global limit: ${app === null ? 'none' : formatRate(app)}.`;
 }
 
 /** What a queue's connections per download are: its own replace the app's. */
 export function ownConnectionsHelp(own: boolean, app: number): string {
   return own
-    ? `Each download in this queue opens up to this many, instead of the app's ${String(app)}.`
-    : `Uses the app's setting: ${String(app)} per download.`;
+    ? `Each download in this queue uses up to this many connections instead of the global ${String(app)}.`
+    : `Uses the global setting: ${String(app)} per download.`;
 }
 
 /** The queue settings that may follow an app setting or have their own value (D72.1). */

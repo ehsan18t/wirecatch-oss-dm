@@ -20,7 +20,7 @@
   /** The second line: its address when its name is not the address, and its login. */
   function detailLine(profile: ProxyProfile): string {
     const { name, user } = profile.settings;
-    let login = 'no login';
+    let login = 'no authentication';
     if (user !== '') {
       login = `user ${user}, ${profile.has_password ? 'password saved' : 'no password saved'}`;
     }
@@ -53,12 +53,12 @@
 <div class="flex w-full flex-col gap-3">
   {#if profiles.length === 0}
     <p class="text-small text-ink-muted">
-      No proxies saved yet. Add the proxy servers you use, or copy the one your computer sets.
+      No proxy servers yet. Add one, or copy your system proxy.
     </p>
   {:else}
     <ul
       class="flex flex-col divide-y divide-line rounded-md border border-line"
-      aria-label="Saved proxies"
+      aria-label="Proxy servers"
     >
       {#each profiles as profile (profile.id)}
         {const status = lastTestLine(profile.last_test, app.clock.now)}

@@ -167,7 +167,7 @@ export function describeProblem(kind: ProblemKind): ProblemText {
     case 'disconnected':
       return {
         title: 'The connection to Wirecatch was lost.',
-        fix: 'Wirecatch reconnects by itself. If this keeps happening, restart the Wirecatch app.',
+        fix: 'Wirecatch reconnects automatically. If this keeps happening, restart the Wirecatch app.',
       };
   }
 }

@@ -18,9 +18,9 @@ import type { SelectOption } from '@wirecatch/ui';
 export const FINISH_NOTICE_OPTIONS: readonly SelectOption<FinishNotice>[] = [
   {
     value: 'browser',
-    label: 'Show a note in the browser',
+    label: 'Show a notice in the browser',
     description:
-      'In the tab you are looking at, with the same buttons. A notification when the browser is not in front.',
+      'In the current tab, with the same buttons. A system notification appears instead when the browser is in the background.',
   },
   {
     value: 'notification',
@@ -29,13 +29,13 @@ export const FINISH_NOTICE_OPTIONS: readonly SelectOption<FinishNotice>[] = [
   },
   {
     value: 'window',
-    label: 'Open a window',
-    description: 'A small window in the corner that collects what finished until you close it.',
+    label: 'Open a summary window',
+    description: 'A small window in the corner that lists finished downloads until you close it.',
   },
   {
     value: 'nothing',
-    label: 'Do nothing',
-    description: 'Not even for failures. The download list shows how each download ended.',
+    label: 'Don’t notify',
+    description: 'Not even for failed downloads. The download list still shows how each one ended.',
   },
 ];
 
@@ -43,10 +43,11 @@ export const FINISH_NOTICE_OPTIONS: readonly SelectOption<FinishNotice>[] = [
 export const START_NOTICE_OPTIONS: readonly SelectOption<StartNotice>[] = [
   {
     value: 'browser',
-    label: 'Show a note in the browser',
-    description: 'In the tab you are looking at. A notification when the browser is not in front.',
+    label: 'Show a notice in the browser',
+    description:
+      'In the current tab, or a system notification when the browser is in the background.',
   },
-  { value: 'nothing', label: 'Do nothing', description: 'The download list shows it.' },
+  { value: 'nothing', label: 'Don’t notify', description: 'The download list shows it.' },
 ];
 
 /** How long a note about a download that started stays, from the protocol's seconds (`START_NOTE_TIMES`). */
@@ -73,17 +74,17 @@ export function queueNotifyHelp(
   finishNotice: FinishNotice | undefined,
 ): string {
   if (finishNotice === 'nothing')
-    return 'Settings, Notifications, says to tell you nothing, so this applies once you change that.';
+    return 'Finish notifications are turned off in Settings > Notifications. This applies once you turn them back on.';
   return notify === 'each_download'
     ? 'Downloads that finish a few seconds apart are grouped together.'
-    : 'Tells you once, when nothing in it downloads or waits to start. You still hear about a failed download right away.';
+    : 'Notifies you once, when nothing in the queue is downloading or waiting. Failed downloads are still reported right away.';
 }
 
 /** What a queue's choice means, in a sentence about the queue `name`. */
 export function queueNotifyLine(name: string, notify: QueueNotify): string {
   return notify === 'each_download'
-    ? `${name} tells you each time a download finishes.`
-    : `${name} tells you once, when all its downloads are done.`;
+    ? `The ${name} queue notifies you each time a download finishes.`
+    : `The ${name} queue notifies you once, when all its downloads are done.`;
 }
 
 /** "1 download" or "3 downloads". */

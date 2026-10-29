@@ -41,7 +41,7 @@ export function addonStatus(addon: AddonInfo): string {
       const fraction = installFraction(state);
       if (fraction === null) return 'Installing.';
       // Everything is downloaded; the files are being checked and unpacked.
-      if (fraction >= 1) return 'Installing, checking the files.';
+      if (fraction >= 1) return 'Installing: verifying files.';
       return `Installing, ${percentOf(fraction)}%.`;
     }
     case 'installed':

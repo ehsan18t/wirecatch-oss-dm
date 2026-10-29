@@ -130,7 +130,7 @@ export function formatSize(done: number, total: number | null, status: DownloadS
   if (total === null) {
     if (done > 0) return formatBytes(done);
     // A download that stopped before the server said its size will not learn it now.
-    return status === 'failed' || status === 'cancelled' ? '' : 'Size not known yet';
+    return status === 'failed' || status === 'cancelled' ? '' : 'Size unknown';
   }
   if (status === 'completed' || done >= total) return formatBytes(total);
   if (done === 0) return formatBytes(total);
@@ -145,7 +145,7 @@ export const STATUS_LABEL: Record<DownloadStatus, string> = {
   completed: 'Finished',
   failed: 'Needs attention',
   cancelled: 'Cancelled',
-  processing: 'Joining video and audio',
+  processing: 'Merging video and audio',
 };
 
 /** Where a media download came from, in plain words. */
@@ -249,7 +249,7 @@ export function daysInPhrase(days: readonly Weekday[]): string {
 
 /** A schedule in one short phrase, for example `01:00 to 07:00, weekdays`. */
 export function formatSchedule(schedule: Schedule | null): string {
-  if (!schedule) return 'Runs any time';
+  if (!schedule) return 'No schedule';
   const window = schedule.stop
     ? `${formatTime(schedule.start)} to ${formatTime(schedule.stop)}`
     : `From ${formatTime(schedule.start)} until empty`;
@@ -389,7 +389,7 @@ export const FIX_LABEL: Record<FixAction, string> = {
 
 /** What ffmpeg does to a downloaded video, in a couple of words (D24). */
 export const PROCESSING_LABEL: Record<ProcessingStep, string> = {
-  joining: 'Joining video and audio',
+  joining: 'Merging video and audio',
   finishing: 'Finishing the file',
   converting: 'Converting',
 };
@@ -400,12 +400,12 @@ export function waitShort(w: WaitReason): string {
     case 'queue_paused':
       return 'Queue paused';
     case 'queue_schedule':
-      return w.data.starts_at ? `Starts ${formatTime(w.data.starts_at)}` : 'Outside its hours';
+      return w.data.starts_at ? `Starts ${formatTime(w.data.starts_at)}` : 'Outside schedule';
     case 'queue_full':
       // Said as waiting, not as a fault: the queue runs as many as it may, and this is next.
       return 'Waiting for a slot';
     case 'global_limit':
-      return 'Overall limit';
+      return 'Global limit';
     case 'in_line':
       return `${ordinal(w.data.position)} in line`;
     case 'server_refused':
@@ -443,11 +443,11 @@ export function statusShort(
 
 /** What each processing step is, in a sentence. */
 const PROCESSING_DETAIL: Record<ProcessingStep, string> = {
-  joining: 'The video and audio are downloaded; Wirecatch is joining them into one file.',
+  joining: 'The video and audio are downloaded; Wirecatch is merging them into one file.',
   finishing:
-    'The download is done; Wirecatch is putting it into its file with what you chose to add. This takes seconds.',
+    'The download is done; Wirecatch is adding the extras you chose, such as subtitles or chapters. This takes a few seconds.',
   converting:
-    'The download is done; Wirecatch is converting it to the format you chose. Pause stops it, and it starts again from the download, which is kept.',
+    'The download is done; Wirecatch is converting it to the format you chose. Pausing stops the conversion; the downloaded file is kept, and conversion starts over when you resume.',
 };
 
 /**
@@ -480,8 +480,8 @@ export function suffixListNote(info: SuffixListInfo, now: Date): string {
   const checked =
     info.checked === null
       ? 'not checked yet'
-      : `${info.check_failed ? 'the last check failed' : 'checked'} ${whenSaid(info.checked, now)}`;
-  return `List of ${calendarDay(info.published)}, ${checked}.`;
+      : `${info.check_failed ? 'last check failed' : 'checked'} ${whenSaid(info.checked, now)}`;
+  return `Version of ${calendarDay(info.published)} · ${checked.charAt(0).toUpperCase()}${checked.slice(1)}`;
 }
 
 /**
@@ -515,15 +515,15 @@ export function waitLong(w: WaitReason, queueName: string): string {
     case 'queue_schedule':
       return w.data.starts_at
         ? `Waiting for ${queueName}, which starts at ${formatTime(w.data.starts_at)}.`
-        : `${queueName} is outside its hours.`;
+        : `${queueName} is outside its schedule.`;
     case 'queue_full':
       return `${queueName} is running ${w.data.running} of ${w.data.limit}. This starts when one of them finishes.`;
     case 'global_limit':
-      return `Overall limit: ${w.data.running} of ${w.data.limit} downloads are running. This starts when one of them finishes.`;
+      return `Global limit: ${w.data.running} of ${w.data.limit} downloads are running. This starts when one of them finishes.`;
     case 'in_line':
       return `${ordinal(w.data.position)} in line in ${queueName}.`;
     case 'server_refused':
-      return `The video's server refused it for now, which sites sometimes do for a few minutes. Wirecatch tries again by itself at ${clockTime(w.data.retry_at)} and keeps what was already downloaded.`;
+      return `The video's server refused it for now, which sites sometimes do for a few minutes. Wirecatch tries again automatically at ${clockTime(w.data.retry_at)} and keeps what was already downloaded.`;
   }
 }
 

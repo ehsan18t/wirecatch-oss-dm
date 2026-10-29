@@ -109,7 +109,7 @@ for (const theme of ['light', 'dark'] as const) {
       await open(page, 'capture=0', { theme });
       await page.getByRole('button', { name: /^Overnight/ }).hover();
       await page.getByRole('button', { name: 'Actions for Overnight' }).click();
-      await page.getByRole('menuitem', { name: 'Edit name, hours and limits' }).click();
+      await page.getByRole('menuitem', { name: 'Edit queue' }).click();
       await page.waitForTimeout(400);
       await page.screenshot({ path: `${dir}/${theme}-09-queue-editor.png` });
     });
@@ -200,7 +200,7 @@ for (const theme of ['light', 'dark'] as const) {
         .filter({ hasText: 'Northern lights' })
         .filter({ hasNotText: 'Needs attention' });
       await video.click();
-      await expect(video).toContainText('Joining video and audio', { timeout: 60_000 });
+      await expect(video).toContainText('Merging video and audio', { timeout: 60_000 });
       await page.screenshot({ path: `${dir}/${theme}-19-joining.png` });
     });
 

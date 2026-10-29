@@ -148,7 +148,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(button('Pause queue')).toBeInTheDocument();
     await click(button('Edit queue'));
     const d = dialog();
-    expect(within(d).getByLabelText('Only run at certain times')).toBeChecked();
+    expect(within(d).getByLabelText('Run on a schedule')).toBeChecked();
     expect(within(d).getByRole('switch', { name: 'Speed limit' })).toBeChecked();
     expect(
       within(d).getByRole('spinbutton', { name: 'Downloads at the same time' }),
@@ -190,7 +190,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
         expect(screen.getAllByText(def.label).length).toBeGreaterThan(0);
       }
     }
-    await click(nav().getByRole('button', { name: /^Move to another PC/ }));
+    await click(nav().getByRole('button', { name: /^Import and export/ }));
     await click(button('Export settings…'));
     expect(within(dialog()).getByText('In the file')).toBeInTheDocument();
     expect(palette('setting.export') && palette('setting.import') && palette('setting.theme')).toBe(
@@ -245,13 +245,13 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     expect(app.downloads.size).toBe(before + 1);
   });
 
-  it('a progress window for any download: its details, then More, Open in its own window, 3 clicks', async () => {
+  it('a progress window for any download: its details, then More, Open in a separate window, 3 clicks', async () => {
     const { click, palette } = await setup();
     await click(rowByName('ubuntu-24.04.3'));
     expect(palette('sel.progress')).toBe(true);
     const panel = within(details('ubuntu-24.04.3'));
     await click(panel.getByRole('button', { name: 'More actions' }));
-    await click(screen.getByRole('menuitem', { name: 'Open in its own window' }));
+    await click(screen.getByRole('menuitem', { name: 'Open in a separate window' }));
     const window = within(await downloadWindow());
     expect(window.getByRole('heading', { level: 1 })).toHaveTextContent('ubuntu-24.04.3');
   });
@@ -289,8 +289,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     // D21.1: a release younger than two days waits, and the result says so plainly.
     backend.nextUpdateCheck = 'too-new';
     await click(button('Check for updates'));
-    const waiting =
-      'A newer version came out today; Wirecatch installs it once it is two days old.';
+    const waiting = 'A newer version was released today; Wirecatch installs it after two days.';
     expect(note()).toMatchObject({ kind: 'info', message: waiting });
     expect(app.addons.list?.[0]?.state.type).toBe('installed');
     const card = document.getElementById(settingAnchor('media_addon'));
@@ -307,7 +306,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     const { app, backend, click } = await setup();
     await openSection(click, 'Advanced');
     // The month as the system writes it short: "Sep", or "Sept" with newer locale data.
-    expect(screen.getByText(/^List of 15 Sept? 2026, not checked yet\.$/)).toBeInTheDocument();
+    expect(screen.getByText(/^Version of 15 Sept? 2026 · Not checked yet$/)).toBeInTheDocument();
     const note = () => app.toasts.items.at(-1);
 
     await click(button('Check now'));
@@ -315,14 +314,14 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
       kind: 'info',
       message: 'The list of public domains is up to date.',
     });
-    expect(screen.getByText(/^List of 15 Sept? 2026, checked today at /)).toBeInTheDocument();
+    expect(screen.getByText(/^Version of 15 Sept? 2026 · Checked today at /)).toBeInTheDocument();
 
     backend.nextSuffixCheck = 'unreachable';
     await click(button('Check now'));
     expect(note()?.kind).toBe('error');
     expect(note()?.message).toMatch(/^Wirecatch could not update its list of public domains/);
     expect(
-      screen.getByText(/^List of 15 Sept? 2026, the last check failed today at /),
+      screen.getByText(/^Version of 15 Sept? 2026 · Last check failed today at /),
     ).toBeInTheDocument();
 
     backend.nextSuffixCheck = 'newer';
@@ -331,7 +330,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
       kind: 'info',
       message: 'Wirecatch now uses a newer list of public domains.',
     });
-    expect(screen.getByText(/^List of 1 Oct 2026, checked today at /)).toBeInTheDocument();
+    expect(screen.getByText(/^Version of 1 Oct 2026 · Checked today at /)).toBeInTheDocument();
   });
 
   it('the list of public domains: the weekly check shows on an open settings page', async () => {
@@ -339,7 +338,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     await openSection(click, 'Advanced');
     backend.simulateWeeklySuffixCheck('newer');
     await settle();
-    expect(screen.getByText(/^List of 1 Oct 2026, checked today at /)).toBeInTheDocument();
+    expect(screen.getByText(/^Version of 1 Oct 2026 · Checked today at /)).toBeInTheDocument();
 
     backend.nextSuffixCheck = 'up-to-date';
     await click(button('Check now'));
@@ -421,7 +420,9 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     await click(button('Choose a settings file'));
     await settle();
     // First what the file would change; nothing is applied until Import.
-    expect(within(dialog()).getByText(/Wirecatch offers it after the import/)).toBeInTheDocument();
+    expect(
+      within(dialog()).getByText(/Wirecatch offers to install it after the import/),
+    ).toBeInTheDocument();
     await click(button('Replace my settings'));
     await settle();
     const offer = within(dialog());

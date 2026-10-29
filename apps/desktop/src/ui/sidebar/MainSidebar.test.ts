@@ -26,12 +26,12 @@ describe('the sidebar', () => {
       });
       await settle();
     };
-    expect(within(nav()).queryByText('Auto')).toBeNull();
+    expect(within(nav()).queryByText('Rules')).toBeNull();
     await claim('Overnight', true);
     await claim('Work files', false);
-    expect(item('Overnight')).toHaveTextContent('Auto');
+    expect(item('Overnight')).toHaveTextContent('Rules');
     expect(item('Overnight')).not.toHaveClass('opacity-quiet');
-    expect(item('Work files')).toHaveTextContent('Auto off');
+    expect(item('Work files')).toHaveTextContent('Rules off');
     expect(item('Work files')).toHaveClass('opacity-quiet');
     // The sample's Work files has the Office profile of its own; the others follow the app's.
     expect(item('Work files')).toHaveTextContent('Proxy: Office');
@@ -74,7 +74,7 @@ describe('the sidebar', () => {
     expect(app.queues.byId(queueId(2))?.status.paused).toBe(true);
     expect(within(nav()).getByRole('button', { name: /^Overnight/ })).toHaveTextContent('Paused');
     await user.click(within(nav()).getByRole('button', { name: 'Actions for Overnight' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Edit name, hours and limits' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Edit queue' }));
     expect(app.dialog).toEqual({ kind: 'queue', id: queueId(2) });
   });
 

@@ -76,7 +76,7 @@ describe('the download complete window', () => {
     await shown(b);
     expect(screen.getByRole('heading', { name: 'Download failed' })).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
-    expect(screen.getByText('Fix it from the download list in Wirecatch.')).toBeVisible();
+    expect(screen.getByText('Open the download list in Wirecatch to fix it.')).toBeVisible();
   });
 
   it('lets go of a download removed from the list', async () => {

@@ -40,7 +40,7 @@ const MEDIA_ADDON: AddonInfo = {
   // As the core describes it.
   name: 'Media add-on',
   description:
-    'Downloads video and audio from sites such as YouTube (yt-dlp), and joins separate video and audio into one file (ffmpeg).',
+    'Downloads video and audio from sites such as YouTube (yt-dlp), and merges separate video and audio into one file (ffmpeg).',
   state: { type: 'not_installed' },
   installed_version: null,
   latest_version: 'yt-dlp 2026.08.19, ffmpeg 9.0.2, Deno 2.9.7',

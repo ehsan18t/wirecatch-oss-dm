@@ -28,7 +28,7 @@
   const AUTOMATIC_OPTION: SelectOption<Choice> = {
     value: AUTOMATIC,
     label: 'Automatic',
-    description: 'To the queue that takes it',
+    description: 'Automatic (by queue rules)',
   };
 
   const options = $derived<SelectOption<Choice>[]>([

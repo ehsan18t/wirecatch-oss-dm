@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Deleting a proxy profile: what uses it (the app's proxy, queues with it as their own) and what they use instead (D73.4). Downloads running through it finish on it.
+  // Deleting a proxy profile: what uses it (the app's proxy, queues with it as their own) and what they use instead (D73.4). Downloads already using it finish through it.
   import type { ProxyProfileId, ProxyUse } from '@wirecatch/protocol';
   import { Button, Dialog, Field, Select, type FieldControl } from '@wirecatch/ui';
   import { shownName } from '$lib/proxy';
@@ -18,7 +18,7 @@
   const DIRECT = 'direct';
   let choice = $state(SYSTEM);
   const options = $derived([
-    { value: SYSTEM, label: 'The computer’s proxy' },
+    { value: SYSTEM, label: 'System proxy' },
     { value: DIRECT, label: 'No proxy' },
     ...app.proxies.list
       .filter((p) => p.id !== id)
@@ -43,10 +43,10 @@
 <Dialog open role="alertdialog" title={`Delete “${label}”?`} onclose={() => app.closeDialog()}>
   <div class="flex flex-col gap-4">
     <p class="text-ui text-ink-muted">
-      {used ? `${usersLine(users)}.` : 'Nothing uses it.'} Downloads running through it finish on it.
+      {used ? `${usersLine(users)}.` : 'Nothing uses it.'} Downloads already using it finish through it.
     </p>
     {#if used}
-      <Field label="Switch what uses it to">
+      <Field label="Switch everything that uses it to">
         {#snippet children(control: FieldControl)}
           <Select {...control} value={choice} {options} onchange={(v: string) => (choice = v)} />
         {/snippet}
@@ -55,7 +55,7 @@
   </div>
 
   {#snippet footer()}
-    <Button data-autofocus onclick={() => app.closeDialog()}>Keep it</Button>
+    <Button data-autofocus onclick={() => app.closeDialog()}>Keep proxy</Button>
     <Button variant="danger" onclick={remove}>Delete proxy</Button>
   {/snippet}
 </Dialog>

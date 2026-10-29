@@ -27,7 +27,7 @@ import { nonBlank, type MockState } from './state';
 
 /** The core's answer for a quality that needs the media add-on while it is missing. */
 export const ADDON_REQUIRED =
-  'This needs the media add-on, which joins video and audio and reads video pages. Install it from Settings, Add-ons (it is offered right away), then try again.';
+  'This needs the media add-on, which merges video and audio and reads video pages. Install it from Settings > Add-ons (it is offered right away), then try again.';
 
 /** A sample page that needs the media add-on, and one that takes a while to read. */
 export const ADDON_SAMPLE_PAGE = 'https://www.youtube.com/watch?v=sample';

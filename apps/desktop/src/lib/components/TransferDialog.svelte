@@ -18,7 +18,7 @@
     'All settings, including the browser extension settings',
     'Queues with their schedules and speed limits',
     'Folders by file type',
-    'Sites to leave to the browser',
+    'Sites to ignore',
     'Which add-ons are installed (on import, Wirecatch asks before installing them)',
   ];
   const excluded = ['Download history', 'Saved site passwords'];
@@ -132,7 +132,7 @@
             <h3 class="text-ui font-medium text-ink">{addon.name}</h3>
             <p class="text-small text-ink-muted" id="offer-{addon.id}">
               The file lists the {addon.name.toLowerCase()}, which is not installed here. Nothing
-              was downloaded. Install it now, or later from Settings, Add-ons.
+              was downloaded. Install it now, or later from Settings > Add-ons.
             </p>
             <AddonCard {addon} align="start" describedby="offer-{addon.id}" />
           </section>
@@ -140,7 +140,7 @@
         {#if moved.length > 0}
           <section class="flex flex-col gap-1.5">
             <h3 class="text-small font-semibold text-ink-muted">
-              Folders changed to fit this computer
+              Folders adjusted for this computer
             </h3>
             <FolderList rows={movedRows} />
           </section>
@@ -148,7 +148,7 @@
       {/if}
     {:else if preview}
       <Callout tone="info"
-        >Nothing has changed yet. Importing this file replaces your settings like this.</Callout
+        >Nothing has changed yet. Importing this file makes the changes below.</Callout
       >
       <section class="flex flex-col gap-1.5">
         <h3 class="text-small font-semibold text-ink-muted">Folders</h3>
@@ -160,7 +160,7 @@
       {#each previewAddons as addon (addon.id)}
         <p class="text-ui text-ink-muted">
           The file lists the {addon.name.toLowerCase()}, which is not installed here. {app.name} offers
-          it after the import; nothing is downloaded without you.
+          to install it after the import; nothing is downloaded without your approval.
         </p>
       {/each}
     {:else}

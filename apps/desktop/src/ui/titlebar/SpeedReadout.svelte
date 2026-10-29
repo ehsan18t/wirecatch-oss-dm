@@ -22,7 +22,7 @@
     const downloading = active - joining;
     return [
       downloading > 0 || joining === 0 ? `${String(downloading)} downloading` : '',
-      joining > 0 ? `${String(joining)} being joined or converted` : '',
+      joining > 0 ? `${String(joining)} being merged or converted` : '',
       waiting > 0 ? `${String(waiting)} waiting` : '',
     ]
       .filter(Boolean)

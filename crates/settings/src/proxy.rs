@@ -76,7 +76,7 @@ fn clean_hosts(hosts: &[String]) -> Result<Vec<String>> {
 pub fn check_count(count: usize) -> Result<()> {
     if count > MAX_PROXY_PROFILES {
         return Err(SettingsError::LimitReached(format!(
-            "There can be at most {MAX_PROXY_PROFILES} proxy profiles. Delete one first."
+            "There can be at most {MAX_PROXY_PROFILES} proxy servers. Delete one first."
         )));
     }
     Ok(())

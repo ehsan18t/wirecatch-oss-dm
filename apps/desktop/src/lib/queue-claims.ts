@@ -37,10 +37,10 @@ export function toggled<T>(list: readonly T[], item: T, on: boolean): T[] {
   return list.includes(item) ? [...list] : [...list, item];
 }
 
-/** An auto queue's claims in a few words, for a list of queues: "Takes youtube.com and 2 more". Null for a manual queue. */
+/** An auto queue's claims in a few words, for a list of queues: "Adds youtube.com and 2 more". Null for a manual queue. */
 export function claimsFact(takes: QueueTakes): string | null {
   if (takes.kind === 'manual') return null;
-  if (!takes.enabled) return 'Auto, claims off';
+  if (!takes.enabled) return 'Rules off';
   const all: Claim[] = [
     ...takes.sites.map((claim) => ({ kind: 'site' as const, claim })),
     ...takes.file_names.map((claim) => ({ kind: 'file_name' as const, claim })),
@@ -49,11 +49,11 @@ export function claimsFact(takes: QueueTakes): string | null {
     ...takes.protocols.map((claim) => ({ kind: 'protocol' as const, claim })),
   ];
   const [first] = all;
-  if (first === undefined) return 'Auto, claims nothing yet';
+  if (first === undefined) return 'No rules yet';
   const more = all.length - 1;
   return more === 0
-    ? `Takes ${claimPhrase(first)}`
-    : `Takes ${claimPhrase(first)} and ${String(more)} more`;
+    ? `Adds ${claimPhrase(first)}`
+    : `Adds ${claimPhrase(first)} and ${String(more)} more`;
 }
 
 /** Whether `claims` name anything to claim by. */

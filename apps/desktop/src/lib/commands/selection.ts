@@ -93,7 +93,7 @@ const ONE: readonly CommandSpec<Selected & { only: DownloadSummary }>[] = [
   },
   {
     id: 'sel.progress',
-    title: (s) => `Open ${s.n} in its own window`,
+    title: (s) => `Open ${s.n} in a separate window`,
     keywords: 'window progress speed open',
     run: (s) => s.app.showProgressWindow(s.only.id),
   },

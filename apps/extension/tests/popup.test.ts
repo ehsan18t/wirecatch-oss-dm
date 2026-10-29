@@ -287,7 +287,7 @@ describe('popup', () => {
     await user.click(screen.getByRole('option', { name: 'Night' }));
     await waitFor(() => expect(app.settings.default_queue).toBe(queueId(2)));
 
-    await user.click(screen.getByRole('switch', { name: 'Limit total speed' }));
+    await user.click(screen.getByRole('switch', { name: 'Global speed limit' }));
     await waitFor(() => expect(app.controls.global_speed_limit).toBe(FIRST_TOTAL_SPEED_LIMIT));
     expect(screen.getByRole('spinbutton', { name: 'Total speed limit' })).toHaveProperty(
       'value',

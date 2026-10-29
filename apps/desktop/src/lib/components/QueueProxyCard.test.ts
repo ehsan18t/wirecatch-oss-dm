@@ -35,7 +35,7 @@ describe('a queue’s proxy', () => {
   it('follows the app’s by default and saves one of its own', async () => {
     const { app } = await openQueueDialog('Overnight');
     expect(screen.getByRole('combobox', { name: 'Proxy' })).toHaveTextContent(
-      'Same as the app (now the computer’s proxy)',
+      'Global proxy (System proxy)',
     );
     await pickProxy('Office');
     await click(queueDialog().getByRole('button', { name: 'Save' }));
@@ -49,12 +49,10 @@ describe('a queue’s proxy', () => {
 
   it('chooses its own hosts to go directly to, starting from the app’s', async () => {
     const { app } = await openQueueDialog('Work files');
-    await click(screen.getByRole('radio', { name: 'Choose' }));
-    expect(
-      screen.getByRole('checkbox', { name: 'The hosts the computer’s proxy skips' }),
-    ).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: /^The app’s hosts \(none yet/ })).toBeChecked();
-    await click(screen.getByRole('checkbox', { name: 'This queue’s hosts' }));
+    await click(screen.getByRole('radio', { name: 'Custom' }));
+    expect(screen.getByRole('checkbox', { name: 'System proxy exceptions' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /^Global bypass list \(empty/ })).toBeChecked();
+    await click(screen.getByRole('checkbox', { name: 'These hosts' }));
     const hosts = screen.getByPlaceholderText('Add a host, like intranet.example.com');
     await fireEvent.input(hosts, { target: { value: 'intranet.example' } });
     await fireEvent.keyDown(hosts, { key: 'Enter' });
@@ -69,9 +67,9 @@ describe('a queue’s proxy', () => {
 
   it('has no hosts to go around while it uses no proxy', async () => {
     await openQueueDialog('Work files');
-    expect(screen.getByRole('radio', { name: 'Same as the app' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Same as global' })).toBeInTheDocument();
     await pickProxy('No proxy');
-    expect(screen.queryByRole('radio', { name: 'Same as the app' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'Same as global' })).toBeNull();
   });
 
   it('saves a new proxy from the editor and picks it', async () => {
@@ -81,7 +79,7 @@ describe('a queue’s proxy', () => {
     await type(created.getByLabelText('Name (optional)'), 'Night proxy');
     await type(created.getByLabelText('Server'), 'night.example');
     expect(
-      created.getByText('Saved for the whole app, and used by Overnight.'),
+      created.getByText('Available to all queues, and used by Overnight.'),
     ).toBeInTheDocument();
     await click(created.getByRole('button', { name: 'Save and use' }));
     expect(screen.getAllByRole('dialog')).toHaveLength(1);

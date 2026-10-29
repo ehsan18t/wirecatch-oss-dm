@@ -15,7 +15,9 @@ describe('the add-on offer', () => {
     expect(window.getByRole('heading', { level: 1 })).toHaveTextContent(
       'Install the media add-on?',
     );
-    expect(window.getByText(/^Downloading from www\.youtube\.com needs it\./)).toBeInTheDocument();
+    expect(
+      window.getByText(/^It is needed to download from www\.youtube\.com\./),
+    ).toBeInTheDocument();
     const live = window.getByTestId('addon-live');
     expect(live).toHaveAttribute('aria-live', 'polite');
     expect(live.textContent.trim()).toBe('');

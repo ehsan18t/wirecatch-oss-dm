@@ -12,12 +12,10 @@ describe('the palette’s proxy commands', () => {
     const search = screen.getByRole('combobox');
     await fireEvent.input(search, { target: { value: 'proxy' } });
     await settle();
-    expect(screen.queryByRole('option', { name: /use the computer’s proxy/ })).toBeNull();
-    expect(
-      screen.getByRole('option', { name: /the app uses the computer’s proxy now/ }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /turn it off for the app/ })).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('option', { name: /use “Office” for the app/ }));
+    expect(screen.queryByRole('option', { name: /use the system proxy/ })).toBeNull();
+    expect(screen.getByRole('option', { name: /system proxy is in use/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Proxy: turn off/ })).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('option', { name: /Proxy: use “Office”/ }));
     await settle();
     expect(app.settings?.proxy.proxy).toEqual({ kind: 'profile', id: app.proxies.list[0]?.id });
   });

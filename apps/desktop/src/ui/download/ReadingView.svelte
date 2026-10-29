@@ -9,7 +9,7 @@
   let { win, url }: { win: DownloadWindowState; url: string } = $props();
 </script>
 
-<WindowFrame title="Reading the video" error={win.error}>
+<WindowFrame title="Getting video details" error={win.error}>
   <div class="flex items-start gap-3" role="status">
     <Spinner size="lg" class="mt-0.5" />
     <p class="text-body text-ink">
