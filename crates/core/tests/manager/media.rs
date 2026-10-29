@@ -912,8 +912,11 @@ async fn pausing_while_waiting_to_read_the_page_again_stops_it() -> TestResult {
     })
     .await;
     // Waiting: the row says it is connecting, not that it failed.
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    let waiting = h.manager.list_downloads().remove(0);
+    let waiting = wait_until("the wait for the refused address", || {
+        let row = h.manager.list_downloads().remove(0);
+        row.waiting.is_some().then_some(row)
+    })
+    .await;
     assert_eq!(waiting.status, DownloadStatus::Connecting);
     assert_eq!(waiting.error, None);
     assert_eq!(ytdlp_calls(&h)?.len(), 2);
