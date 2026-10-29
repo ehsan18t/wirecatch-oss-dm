@@ -9,8 +9,8 @@ use tokio::runtime::Handle;
 use tracing::{debug, warn};
 
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error as EngineError, ExistingFile, Outcome, PathResolver,
-    Progress, Url,
+    CancellationToken, DownloadRequest, Error as EngineError, ExistingFile, FileWork, Outcome,
+    PathResolver, Progress, Url,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
@@ -140,20 +140,23 @@ impl Manager {
             Ok(request) if self.fake_engine().is_some() => {
                 let fake = self.fake_engine();
                 let rule = request.options.private_network;
-                self.launch(state, id, run_id, answered, move |cancel| {
+                self.launch(state, id, run_id, answered, move |cancel, _| {
                     let work = super::fake::run(fake, settle, cancel, rule);
                     (Gauge::Engine(Arc::default()), async move {
                         RunEnd::Engine(work.await)
                     })
                 });
             }
-            Ok(request) => self.launch(state, id, run_id, answered, move |cancel| {
-                let progress = Arc::new(Progress::default());
-                let work = download_marked(request, progress.clone(), cancel, mark);
-                (Gauge::Engine(progress), async move {
-                    RunEnd::Engine(work.await)
-                })
-            }),
+            Ok(mut request) => {
+                self.launch(state, id, run_id, answered, move |cancel, file_work| {
+                    request.file_work = file_work;
+                    let progress = Arc::new(Progress::default());
+                    let work = download_marked(request, progress.clone(), cancel, mark);
+                    (Gauge::Engine(progress), async move {
+                        RunEnd::Engine(work.await)
+                    })
+                });
+            }
             Err(error) => self.fail_to_start(state, id, error),
         }
     }
@@ -167,8 +170,9 @@ impl Manager {
         self.save(state, id);
     }
 
-    /// Runs `work` as the run of `id`. `work` gets the run's cancellation token
-    /// and returns where its progress is read and the future that does the work.
+    /// Runs `work` as the run of `id`. `work` gets the run's cancellation token and the
+    /// file work its engine downloads share, and returns where its progress is read and the
+    /// future that does the work.
     pub(super) fn launch<F, Fut>(
         &self,
         state: &mut State,
@@ -177,29 +181,31 @@ impl Manager {
         answered: CancellationToken,
         work: F,
     ) where
-        F: FnOnce(CancellationToken) -> (Gauge, Fut),
+        F: FnOnce(CancellationToken, FileWork) -> (Gauge, Fut),
         Fut: Future<Output = RunEnd> + Send + 'static,
     {
         let Some(entry) = state.downloads.get_mut(&id) else {
             return;
         };
         let (cancel, exited) = (CancellationToken::new(), CancellationToken::new());
+        let file_work = FileWork::new();
         let guard = RunGuard {
             manager: Arc::downgrade(&self.inner),
             runtime: self.inner.runtime.clone(),
             id,
             run_id,
             exited: exited.clone(),
+            file_work: file_work.clone(),
             reported: false,
         };
-        let (gauge, work) = work(cancel.clone());
+        let (gauge, work) = work(cancel.clone(), file_work);
         let cleanup = entry.cleanup.take();
         let task = self.spawn(async move {
             if let Some(deleted) = cleanup {
                 deleted.cancelled().await;
             }
             let end = work.await;
-            guard.report(end);
+            guard.report(end).await;
         });
         entry.run = Some(Run {
             id: run_id,
@@ -368,19 +374,22 @@ pub(super) fn delete_files(paths: &[PathBuf]) {
 
 /// Reports the end of a run exactly once, however its task ends. If the task
 /// panics or is aborted, dropping the guard reports the run as vanished, so the
-/// download never stays "running" with nothing behind it.
+/// download never stays "running" with nothing behind it. Either way only once the
+/// run's file work has finished: until then a new run or a deletion could meet it.
 struct RunGuard {
     manager: Weak<Inner>,
     runtime: Handle,
     id: DownloadId,
     run_id: u64,
     exited: CancellationToken,
+    file_work: FileWork,
     reported: bool,
 }
 
 impl RunGuard {
     /// Records the engine's result and wakes everyone waiting for the run to end.
-    fn report(mut self, end: RunEnd) {
+    async fn report(mut self, end: RunEnd) {
+        self.file_work.finished().await;
         self.reported = true;
         if let Some(manager) = Manager::from_weak(&self.manager) {
             manager.finish(self.id, self.run_id, end);
@@ -398,8 +407,9 @@ impl Drop for RunGuard {
         // held (a task dropped on a runtime that is shutting down), and then the
         // fresh task is simply never run.
         let (manager, id, run_id) = (self.manager.clone(), self.id, self.run_id);
-        let exited = self.exited.clone();
+        let (exited, file_work) = (self.exited.clone(), self.file_work.clone());
         self.runtime.spawn(async move {
+            file_work.finished().await;
             if let Some(manager) = Manager::from_weak(&manager) {
                 manager.finish(id, run_id, RunEnd::Vanished);
             }
@@ -589,7 +599,7 @@ mod tests {
             let mut state = manager.lock();
             let run_id = state.ids.run();
             let answered = CancellationToken::new();
-            manager.launch(&mut state, id, run_id, answered, |_| {
+            manager.launch(&mut state, id, run_id, answered, |_, _| {
                 (Gauge::Engine(Arc::default()), panicking_engine())
             });
             state.downloads[&id].run.as_ref().unwrap().exited.clone()
@@ -606,5 +616,46 @@ mod tests {
             entry.row.error,
             Some(wirecatch_messages::stopped_unexpectedly())
         );
+    }
+
+    /// A run that ends abruptly while its file work still runs is not over until that work is: a new run or a deletion would meet it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_run_ends_only_once_its_file_work_has() {
+        let (manager, id, _dir) = paused_download().await;
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let (started_tx, started) = tokio::sync::oneshot::channel();
+        let (exited, task) = {
+            let mut state = manager.lock();
+            let run_id = state.ids.run();
+            let answered = CancellationToken::new();
+            manager.launch(&mut state, id, run_id, answered, |_, file_work| {
+                drop(file_work.spawn_blocking(move || {
+                    started_tx.send(()).unwrap();
+                    held.recv().unwrap();
+                }));
+                (Gauge::Engine(Arc::default()), panicking_engine())
+            });
+            let run = state.downloads[&id].run.as_ref().unwrap();
+            (run.exited.clone(), run.task.clone())
+        };
+        started.await.unwrap();
+        tokio::time::timeout(wirecatch_test_support::PATIENCE, async {
+            while !task.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the run's task never ended");
+        assert!(
+            tokio::time::timeout(wirecatch_test_support::QUIET, exited.cancelled())
+                .await
+                .is_err(),
+            "the run was reported over while its file work still ran"
+        );
+        release.send(()).unwrap();
+        tokio::time::timeout(wirecatch_test_support::PATIENCE, exited.cancelled())
+            .await
+            .expect("waiters were never told the run ended");
+        assert!(manager.lock().downloads[&id].run.is_none());
     }
 }

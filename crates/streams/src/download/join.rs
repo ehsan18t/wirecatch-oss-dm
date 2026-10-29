@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-use wirecatch_engine::naming;
 use wirecatch_engine::units::MIB;
+use wirecatch_engine::{FileWork, naming};
 
 use super::{blocking, discarded};
 use crate::codec::Container;
@@ -38,22 +38,27 @@ pub(super) async fn join(
             continue;
         }
         let (work, cancel) = (work.clone(), cancel.clone());
-        if !blocking(move || concat(&work, track, count, CONCAT_BATCH, &cancel)).await? {
+        if !blocking(&request.file_work, move || {
+            concat(&work, track, count, CONCAT_BATCH, &cancel)
+        })
+        .await?
+        {
             return Ok(Outcome::Paused { segments_left: 0 });
         }
     }
 
     let saved = match &request.ffmpeg {
-        Some(program) => match mux(plan, &work, program, output, cancel).await? {
+        Some(program) => match mux(plan, &work, program, output, &request.file_work, cancel).await?
+        {
             Some(saved) => saved,
             None => return Ok(Outcome::Paused { segments_left: 0 }),
         },
-        None => move_single_track(&work, output).await?,
+        None => move_single_track(&work, output, &request.file_work).await?,
     };
 
     let bytes = {
         let (saved, work) = (saved.clone(), work.clone());
-        blocking(move || {
+        blocking(&request.file_work, move || {
             let bytes = fs::metadata(&saved)?.len();
             work.remove()?;
             Ok(bytes)
@@ -72,12 +77,13 @@ async fn mux(
     work: &WorkDir,
     program: &Path,
     output: &Path,
+    file_work: &FileWork,
     cancel: &CancellationToken,
 ) -> Result<Option<PathBuf>> {
     let first = container_for(plan);
     // MP4 can still refuse codecs the stream did not name, or named wrongly.
     let containers = [Some(first), first.fallback()];
-    let tracks = track_formats(plan, work).await?;
+    let tracks = track_formats(plan, work, file_work).await?;
     let mut inputs = Vec::with_capacity(tracks.len());
     for (path, role, format) in &tracks {
         let Some(format) = format else {
@@ -94,14 +100,20 @@ async fn mux(
         match ffmpeg::run(program, &args, &muxed, cancel).await {
             Ok(true) => {
                 let output = output.to_path_buf();
-                let target =
-                    blocking(move || move_to_free_name(&muxed, &output, extension)).await?;
+                let target = blocking(file_work, move || {
+                    move_to_free_name(&muxed, &output, extension)
+                })
+                .await?;
                 return Ok(Some(target));
             }
             Ok(false) => return Ok(None),
             Err(Error::Ffmpeg(message)) => {
                 warn!(%message, ?container, "ffmpeg failed");
-                discarded(&muxed, tokio::fs::remove_file(&muxed).await);
+                let doomed = muxed.clone();
+                let deleted = file_work
+                    .spawn_blocking(move || fs::remove_file(doomed))
+                    .await;
+                discarded(&muxed, deleted.unwrap_or_else(|e| Err(io::Error::other(e))));
                 failures.push((container, message));
             }
             Err(e) => return Err(e),
@@ -116,6 +128,7 @@ async fn mux(
 async fn track_formats(
     plan: &Plan,
     work: &WorkDir,
+    file_work: &FileWork,
 ) -> Result<Vec<(PathBuf, Role, Option<InputFormat>)>> {
     let tracks: Vec<(PathBuf, Role)> = plan
         .tracks
@@ -123,7 +136,7 @@ async fn track_formats(
         .enumerate()
         .map(|(i, t)| (work.track_path(i), t.role))
         .collect();
-    blocking(move || {
+    blocking(file_work, move || {
         tracks
             .into_iter()
             .map(|(path, role)| {
@@ -136,9 +149,9 @@ async fn track_formats(
 }
 
 /// Moves the only track, joined without ffmpeg, to a free name beside `output`.
-async fn move_single_track(work: &WorkDir, output: &Path) -> Result<PathBuf> {
+async fn move_single_track(work: &WorkDir, output: &Path, file_work: &FileWork) -> Result<PathBuf> {
     let (from, output) = (work.track_path(0), output.to_path_buf());
-    blocking(move || {
+    blocking(file_work, move || {
         // Saved as is, never read by ffmpeg: an unknown format only needs an
         // extension, and `.ts` is the most likely one.
         let extension = InputFormat::detect(&from)?

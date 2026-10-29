@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use url::Url;
-use wirecatch_engine::{DownloadOptions, PrivateNetwork};
+use wirecatch_engine::{DownloadOptions, FileWork, PrivateNetwork};
 
 use crate::codec::{Codec, Container};
 use crate::extension;
@@ -259,6 +259,8 @@ pub struct StreamRequest {
     /// [`DownloadOptions::connections`] is how many segments are downloaded at
     /// once (default 8).
     pub options: DownloadOptions,
+    /// The download's file work, to wait for after dropping it; see [`FileWork`].
+    pub file_work: FileWork,
 }
 
 impl StreamRequest {
@@ -275,6 +277,7 @@ impl StreamRequest {
             ffmpeg: None,
             private_network,
             options: DownloadOptions::default(),
+            file_work: FileWork::new(),
         }
     }
 }

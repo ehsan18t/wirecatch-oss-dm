@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
-use wirecatch_engine::Fetcher;
+use wirecatch_engine::{Fetcher, FileWork};
 
 use crate::error::{Error, Result};
 use crate::model::{Outcome, Stage, StreamProgress, StreamRequest};
@@ -80,7 +80,12 @@ async fn run(
     let total: usize = counts.iter().sum();
     let work = {
         let (output, fingerprint, counts) = (output.clone(), plan.fingerprint(), counts.clone());
-        Arc::new(blocking(move || WorkDir::open(&output, fingerprint, &counts)).await?)
+        Arc::new(
+            blocking(&request.file_work, move || {
+                WorkDir::open(&output, fingerprint, &counts)
+            })
+            .await?,
+        )
     };
 
     let Queue { jobs, done, bytes } = queue(&mut plan, &work);
@@ -98,6 +103,7 @@ async fn run(
         progress: progress.clone(),
         keys: Keys::default(),
         queue: Mutex::new(jobs),
+        file_work: request.file_work.clone(),
         total,
         stop,
     });
@@ -108,13 +114,12 @@ async fn run(
     join(&plan, &counts, work, request, &output, cancel).await
 }
 
-/// Runs file system work off the async threads.
+/// Runs file system work off the async threads, as part of the download's `file_work`.
 async fn blocking<T: Send + 'static>(
+    file_work: &FileWork,
     f: impl FnOnce() -> io::Result<T> + Send + 'static,
 ) -> Result<T> {
-    Ok(tokio::task::spawn_blocking(f)
-        .await
-        .map_err(Error::Task)??)
+    Ok(file_work.spawn_blocking(f).await.map_err(Error::Task)??)
 }
 
 /// Logs a failure to delete a file the download no longer needs. It stops nothing: the file is in the download's temporary folder, which goes when the download ends.

@@ -11,7 +11,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 use url::Url;
-use wirecatch_engine::Fetcher;
+use wirecatch_engine::{Fetcher, FileWork};
 
 use super::{blocking, discarded};
 use crate::crypto;
@@ -130,6 +130,7 @@ pub(super) struct Shared {
     pub(super) progress: Arc<StreamProgress>,
     pub(super) keys: Keys,
     pub(super) queue: Mutex<VecDeque<Job>>,
+    pub(super) file_work: FileWork,
     pub(super) total: usize,
     pub(super) stop: CancellationToken,
 }
@@ -185,7 +186,7 @@ async fn fetch_piece(shared: &Shared, job: &Job, buffer: &mut Vec<u8>) -> Result
     let work = shared.work.clone();
     let (track, index) = (job.track, job.index);
     let mut memory = std::mem::take(buffer);
-    let (decrypted, memory) = blocking(move || {
+    let (decrypted, memory) = blocking(&shared.file_work, move || {
         let path = work.segment_path(track, index);
         // Each segment is on disk before it gets its final name and its line
         // in the log, so a power cut can never leave a logged segment whose

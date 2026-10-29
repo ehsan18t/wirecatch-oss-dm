@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 use crate::error::{Error, IoAction, IoContext, Result};
+use crate::file_work::FileWork;
 use crate::segment::{ByteRange, SharedTable};
 use crate::storage;
 
@@ -44,11 +45,12 @@ pub(crate) struct Writer {
     unwritten: u64,
     /// Bytes taken and then dropped because a write failed; see [`Writer::take_dropped`].
     dropped: u64,
+    file_work: FileWork,
 }
 
 impl Writer {
     /// Writes into `file`, the part file at `path`, `capacity` bytes at a time.
-    pub fn new(file: Arc<File>, path: PathBuf, capacity: usize) -> Self {
+    pub fn new(file: Arc<File>, path: PathBuf, capacity: usize, file_work: FileWork) -> Self {
         Self {
             file,
             path,
@@ -61,6 +63,7 @@ impl Writer {
             failed: false,
             unwritten: 0,
             dropped: 0,
+            file_work,
         }
     }
 
@@ -106,7 +109,7 @@ impl Writer {
             end: self.offset + full.len() as u64,
         };
         self.offset = range.end;
-        self.in_flight = Some(tokio::task::spawn_blocking(move || {
+        self.in_flight = Some(self.file_work.spawn_blocking(move || {
             storage::write_all_at(&file, &full, range.start)?;
             full.clear();
             Ok(Written {
@@ -171,7 +174,7 @@ mod tests {
         table.lock().acquire(0).unwrap();
         table.lock().claim(0, 8);
 
-        let mut writer = Writer::new(Arc::clone(&file), path.clone(), CAPACITY);
+        let mut writer = Writer::new(Arc::clone(&file), path.clone(), CAPACITY, FileWork::new());
         writer.start(0, 0);
         // The first buffer, [0, 4), went out and its write fails.
         writer.offset = 4;

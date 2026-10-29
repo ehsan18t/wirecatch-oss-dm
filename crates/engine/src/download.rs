@@ -11,6 +11,7 @@ use url::Url;
 use crate::abandon::{Abandoned, Abandonment};
 use crate::checkpoint::{Checkpoints, ResumeSaver};
 use crate::error::{Chain, Error, IoAction, IoContext, Result};
+use crate::file_work::FileWork;
 use crate::http::Clients;
 use crate::net_guard::{PrivateGuard, private_guard};
 use crate::numeric::saturating_cast;
@@ -124,6 +125,8 @@ pub struct DownloadRequest {
     /// [`ExistingFile::Refuse`]. A download into [`dest_dir`](Self::dest_dir)
     /// never replaces anything, whatever this says.
     pub if_exists: ExistingFile,
+    /// The download's file work, to wait for after dropping it; see [`FileWork`].
+    pub file_work: FileWork,
 }
 
 /// What a download that saves to a path of the caller's does with a file that
@@ -161,6 +164,7 @@ impl std::fmt::Debug for DownloadRequest {
             )
             .field("options", &self.options)
             .field("if_exists", &self.if_exists)
+            .field("file_work", &self.file_work)
             .finish()
     }
 }
@@ -176,6 +180,7 @@ impl DownloadRequest {
             resolve_path: None,
             options: DownloadOptions::default(),
             if_exists: ExistingFile::Replace,
+            file_work: FileWork::new(),
         }
     }
 }
@@ -224,6 +229,7 @@ pub(crate) struct Shared {
     pub opts: DownloadOptions,
     /// Connections currently streaming a response body.
     pub receiving: worker::Receivers,
+    pub file_work: FileWork,
 }
 
 impl Shared {
@@ -346,6 +352,7 @@ pub(crate) async fn download_guarded(
         described,
         opts.min_split,
         &abandoned,
+        &request.file_work,
     )
     .await?;
     progress.start(&target.file, &target.name(), total, resumed_from);
@@ -365,6 +372,7 @@ pub(crate) async fn download_guarded(
         progress,
         opts,
         receiving: worker::Receivers::default(),
+        file_work: request.file_work.clone(),
     });
     let saver = Arc::new(ResumeSaver::new(
         shared.clone(),
@@ -375,7 +383,7 @@ pub(crate) async fn download_guarded(
     ));
     {
         let saver = saver.clone();
-        storage::blocking(move || saver.save()).await?;
+        storage::blocking(&shared.file_work, move || saver.save()).await?;
     }
 
     let first = first_work(&shared, resumed, &mut connection, body).await;
@@ -383,7 +391,22 @@ pub(crate) async fn download_guarded(
     let checkpoints = Checkpoints::spawn(saver.clone());
     let first_error = join_workers(workers).await;
     drop(checkpoints);
-    storage::blocking(move || finish(&shared, &saver, target, resumed_from, first_error)).await
+    end(shared, saver, target, resumed_from, first_error).await
+}
+
+/// [`finish`] on the blocking pool.
+async fn end(
+    shared: Arc<Shared>,
+    saver: Arc<ResumeSaver>,
+    target: Target,
+    resumed_from: u64,
+    first_error: Option<Error>,
+) -> Result<Outcome> {
+    let file_work = shared.file_work.clone();
+    storage::blocking(&file_work, move || {
+        finish(&shared, &saver, target, resumed_from, first_error)
+    })
+    .await
 }
 
 /// Makes `destination` ready on the blocking pool, unless the download is
@@ -394,9 +417,10 @@ async fn prepare(
     described: Described,
     min_split: u64,
     abandoned: &Abandoned,
+    file_work: &FileWork,
 ) -> Result<Prepared> {
     let (saved_url, abandoned) = (saved_url.to_string(), abandoned.clone());
-    storage::blocking(move || {
+    storage::blocking(file_work, move || {
         abandoned.check()?;
         destination.prepare(&saved_url, &described, min_split, &abandoned)
     })
@@ -450,7 +474,7 @@ async fn spawn_workers(
         return Ok(workers);
     }
     let part = shared.part_path.clone();
-    let files = storage::blocking(move || {
+    let files = storage::blocking(&shared.file_work, move || {
         (0..worker_count)
             .map(|_| storage::open_for_write(&part).context(IoAction::OpenFile, &part))
             .collect::<Result<Vec<_>>>()

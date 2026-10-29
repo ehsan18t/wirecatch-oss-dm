@@ -244,6 +244,7 @@ mod checkpoint;
 mod download;
 mod error;
 mod fetch;
+mod file_work;
 mod ftp;
 mod http;
 #[cfg(feature = "http3")]
@@ -277,6 +278,7 @@ pub use download::{
 };
 pub use error::{Error, IoAction, NetworkError, Result};
 pub use fetch::{Fetched, Fetcher};
+pub use file_work::FileWork;
 pub use limiter::RateLimiter;
 pub use net_guard::{AddressKind, PrivateNetwork};
 pub use options::{DownloadOptions, MAX_BUFFER_SIZE, MAX_CONNECTIONS};
