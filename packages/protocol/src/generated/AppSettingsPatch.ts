@@ -10,6 +10,7 @@ import type { PortablePath } from './PortablePath';
 import type { ProxySettings } from './ProxySettings';
 import type { StartNoticeTime } from './StartNoticeTime';
 import type { Theme } from './Theme';
+import type { WhenFileExists } from './WhenFileExists';
 
 /**
  * A change to some of [`AppSettings`]: only the fields that are present change, and a group (`extension`, `media`) changes only in the fields its own patch holds. A window sends only what the person changed, applied to the app's current settings, so two windows changing different settings never undo each other.
@@ -83,6 +84,10 @@ export type AppSettingsPatch = {
    * The new [`AppSettings::show_progress_windows`].
    */
   show_progress_windows?: boolean;
+  /**
+   * The new [`AppSettings::when_file_exists`].
+   */
+  when_file_exists?: WhenFileExists;
   /**
    * Changes to [`AppSettings::media`].
    */

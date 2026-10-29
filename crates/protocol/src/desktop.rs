@@ -14,8 +14,9 @@ use ts_rs::TS;
 
 use crate::app::{
     AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
-    CaptureConfirmation, DownloadSummary, ImportPreview, MediaChoice, MediaSelection,
-    PendingCapture, Question, Queue, QueueSettings, StartupNotice, SuffixListInfo,
+    CaptureConfirmation, DownloadSummary, FileExistsAnswer, FileExistsQuestion, ImportPreview,
+    MediaChoice, MediaSelection, PendingCapture, Question, Queue, QueueSettings, StartupNotice,
+    SuffixListInfo,
 };
 use crate::proxy::{ProxyServer, ProxyServerDraft, ProxyTestResult, ProxyUse};
 use crate::rules::{LinkMatch, LinkTrial};
@@ -481,6 +482,16 @@ commands! {
     } -> ();
     /// Media choices still open, so a new or reloaded window asks them again.
     pending_media_choices -> Vec<MediaChoice>;
+    /// Answers a download whose file is already in its folder (D88); answers with the download,
+    /// which runs again unless cancelled.
+    answer_file_exists: AnswerFileExistsArgs {
+        /// The question.
+        id: QuestionId,
+        /// What to do, and whether to do it every time.
+        answer: FileExistsAnswer,
+    } -> DownloadId;
+    /// Downloads waiting for an answer about the file already in their folder, oldest first.
+    pending_file_exists -> Vec<FileExistsQuestion>;
     /// Pages waiting for an add-on, oldest first, so a new or reloaded window offers it again.
     pending_addon_requests -> Vec<AddonRequestItem>;
     /// Every add-on and its state (D2, D20).

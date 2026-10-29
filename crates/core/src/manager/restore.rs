@@ -114,6 +114,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         running: BTreeSet::default(),
         pending: BTreeMap::new(),
         media: BTreeMap::new(),
+        file_exists: BTreeMap::new(),
         addon: AddonSlot::default(),
         suffixes: around.suffixes.clone(),
         suffix_check: SuffixCheck::default(),
@@ -200,6 +201,7 @@ fn restore_entry(
         cleanup: None,
         removing: false,
         moving: None,
+        on_existing: None,
         stranded: stored.stranded,
     };
     let mut fixed = false;

@@ -8,6 +8,7 @@ mod captures;
 mod downloads;
 #[cfg(test)]
 mod fake;
+mod file_exists;
 mod handovers;
 mod media;
 

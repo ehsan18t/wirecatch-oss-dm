@@ -13,7 +13,7 @@ use wirecatch_protocol::app::{
     DEFAULT_MAX_CONCURRENT_DOWNLOADS, FinishNoticeTime, MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD, MAX_QUEUE_DESCRIPTION_CHARS, MediaDefaults, NotifyOnFinish,
     NotifyOnStart, OutputDefaults, PortablePath, Queue, QueueSettings, QueueStatus, Setting,
-    StartNoticeTime, Theme, VideoQuality,
+    StartNoticeTime, Theme, VideoQuality, WhenFileExists,
 };
 use wirecatch_protocol::extension::{
     ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, MAX_VIDEO_SITES,
@@ -119,6 +119,7 @@ pub fn default_settings() -> AppSettings {
         notify_during_do_not_disturb: true,
         auto_update_addons: true,
         show_progress_windows: true,
+        when_file_exists: WhenFileExists::Ask,
         // Original: nobody's downloads change until they choose (D24).
         media: MediaDefaults::default(),
         local_sites: Vec::new(),

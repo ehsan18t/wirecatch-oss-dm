@@ -293,6 +293,8 @@
   --width-popup: 22.5rem;
 
   --container-menu: 11rem;
+  /* A tooltip wraps here, so a long help fits a download window. */
+  --container-tip: 20rem;
   --container-dialog-sm: 25rem;
   --container-dialog-md: 32.5rem;
   --container-dialog-lg: 42.5rem;

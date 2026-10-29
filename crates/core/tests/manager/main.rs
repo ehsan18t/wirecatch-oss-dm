@@ -4,6 +4,7 @@
 mod addons;
 mod again;
 mod common;
+mod file_exists;
 mod ftp;
 mod lifecycle;
 mod limits;

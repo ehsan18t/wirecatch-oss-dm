@@ -11,7 +11,7 @@ export type TooltipText =
 
 // The tip takes the pointer, so it can be hovered (WCAG 1.4.13): the pointer may move from the anchor onto it to read it.
 const TIP_CLASS =
-  'fixed inset-auto m-0 z-popover max-w-prose rounded-sm border border-line bg-overlay px-2 py-1 text-small text-ink shadow-flyout animate-pop-in';
+  'fixed inset-auto m-0 z-popover max-w-tip rounded-sm border border-line bg-overlay px-2 py-1 text-small text-ink shadow-flyout animate-pop-in';
 
 /** `text` only while `target` (the node by default) is cut short, for a truncated label: cut at its end (`truncate`), or below its last line (`line-clamp-*`). */
 export const textIfCut =

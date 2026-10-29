@@ -245,3 +245,16 @@ describe('shell signals', () => {
     expect(app.storageProblem).toBeNull();
   });
 });
+
+describe('files already in their folder (D88)', () => {
+  it('counts a download that asks, also after a reload, until it is answered', async () => {
+    const { app, backend: b } = await make();
+    b.simulateFileExists();
+    await vi.waitFor(() => expect(app.questions.waitingCount).toBe(1), PATIENCE_MS);
+    const reloaded = (await make(b)).app;
+    expect(reloaded.questions.waitingCount).toBe(1);
+    const [asked] = await b.pendingFileExists();
+    await b.answerFileExists(asked?.id ?? questionId(0), { choice: 'keep_both', remember: false });
+    await vi.waitFor(() => expect(app.questions.waitingCount).toBe(0), PATIENCE_MS);
+  });
+});

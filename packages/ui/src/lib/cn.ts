@@ -58,7 +58,7 @@ export const THEME_NAMES = {
     'invalid-field',
   ],
   blur: ['scrim'],
-  container: ['menu', 'dialog-sm', 'dialog-md', 'dialog-lg', 'prose', 'page'],
+  container: ['menu', 'tip', 'dialog-sm', 'dialog-md', 'dialog-lg', 'prose', 'page'],
   breakpoint: ['sm', 'md', 'lg', 'nav'],
   ease: ['out', 'in', 'in-out', 'spring'],
   animate: [

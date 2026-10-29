@@ -132,6 +132,9 @@ impl Manager {
             (dir, name, category, entry.path().to_path_buf())
         };
 
+        let first = naming::candidate(&dir, &name, 0);
+        self.stop_for_duplicate(id, run_id, remote, &first, &provisional)?;
+
         // The disk is checked without the lock, which a folder that is slow to
         // answer (an unreachable network share) would otherwise keep from every
         // command. Each name is claimed before its check, so no other download can
@@ -179,7 +182,7 @@ impl Manager {
         };
         state.claimed.settle(&path);
         entry.row.path = path.to_string_lossy().into_owned();
-        entry.row.file_name = naming_of(&path);
+        entry.row.file_name = naming::file_name_of(&path);
         entry.row.category = category;
         entry.naming.settled = true;
         entry.expect = None;
@@ -193,8 +196,33 @@ const REMOVED: &str = "The download was removed before the server answered.";
 /// Ends a run whose web page is read for its video instead (D51); never shown,
 /// as the download is removed.
 const READ_AS_VIDEO: &str = "The link is a web page, read for its video instead.";
+/// Ends a run whose file is already in the folder (D88); never shown, as the download is
+/// replaced, kept or asked about instead.
+const FILE_EXISTS: &str = "The file is already in the folder.";
 
 impl Manager {
+    /// Stops run `run_id` of download `id` when the file at `path`, where it would save, seems to
+    /// be the one the server offers (D88); `finish` then does what the setting says.
+    fn stop_for_duplicate(
+        &self,
+        id: DownloadId,
+        run_id: u64,
+        remote: &ServerAnswer,
+        path: &Path,
+        provisional: &Path,
+    ) -> Result<(), String> {
+        let Some(found) = self.found_duplicate(id, remote, path, provisional) else {
+            return Ok(());
+        };
+        let mut state = self.lock();
+        current_run(&state, id, run_id)?;
+        if let Some(run) = state.downloads.get_mut(&id).and_then(|e| e.run.as_mut()) {
+            run.stop = Some(Stop::FileExists);
+            run.found = Some(found);
+        }
+        Err(FILE_EXISTS.into())
+    }
+
     /// Whether download `id`, added in the app, answered run `run_id` with a web
     /// page that the media add-on can read for its video (D51); if so its run is
     /// stopped for that, so the download is removed once it has ended and the
@@ -276,10 +304,4 @@ fn is_stopping(entry: &Entry) -> bool {
     entry.removing
         || entry.moving.is_some()
         || entry.run.as_ref().is_some_and(|run| run.stop.is_some())
-}
-
-fn naming_of(path: &std::path::Path) -> String {
-    path.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default()
 }

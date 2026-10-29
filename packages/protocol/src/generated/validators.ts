@@ -11,6 +11,7 @@ import type { AddonId } from './AddonId';
 import type { AddonInfo } from './AddonInfo';
 import type { AddonRequestItem } from './AddonRequestItem';
 import type { AddonState } from './AddonState';
+import type { AnswerFileExistsArgs } from './AnswerFileExistsArgs';
 import type { AppExceptions } from './AppExceptions';
 import type { AppSettings } from './AppSettings';
 import type { AppSettingsPatch } from './AppSettingsPatch';
@@ -46,6 +47,9 @@ import type { Event } from './Event';
 import type { ExportSettingsArgs } from './ExportSettingsArgs';
 import type { ExtensionSettings } from './ExtensionSettings';
 import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
+import type { FileExistsAnswer } from './FileExistsAnswer';
+import type { FileExistsChoice } from './FileExistsChoice';
+import type { FileExistsQuestion } from './FileExistsQuestion';
 import type { FinishNoticeTime } from './FinishNoticeTime';
 import type { FinishedGroup } from './FinishedGroup';
 import type { FinishedList } from './FinishedList';
@@ -164,6 +168,7 @@ import type { UserError } from './UserError';
 import type { VideoQuality } from './VideoQuality';
 import type { WaitReason } from './WaitReason';
 import type { Weekday } from './Weekday';
+import type { WhenFileExists } from './WhenFileExists';
 import type { WindowAction } from './WindowAction';
 import type { WindowFrame } from './WindowFrame';
 import type { WithdrawOutcome } from './WithdrawOutcome';
@@ -292,6 +297,12 @@ export function isAddonState(value: unknown): value is AddonState {
   );
 }
 
+/** Whether `value` has the shape of a {@link AnswerFileExistsArgs}; fields it does not name are not checked. */
+export function isAnswerFileExistsArgs(value: unknown): value is AnswerFileExistsArgs {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && isQuestionId(value1['id']) && isFileExistsAnswer(value1['answer']))(value);
+}
+
 /** Whether `value` has the shape of a {@link AppExceptions}; fields it does not name are not checked. */
 export function isAppExceptions(value: unknown): value is AppExceptions {
   return ((value1: unknown): boolean =>
@@ -322,6 +333,7 @@ export function isAppSettings(value: unknown): value is AppSettings {
     typeof value1['notify_during_do_not_disturb'] === 'boolean' &&
     typeof value1['auto_update_addons'] === 'boolean' &&
     typeof value1['show_progress_windows'] === 'boolean' &&
+    isWhenFileExists(value1['when_file_exists']) &&
     isMediaDefaults(value1['media']) &&
     isArrayOf(value1['local_sites'], (value2: unknown) => typeof value2 === 'string') &&
     typeof value1['update_suffix_list'] === 'boolean' &&
@@ -358,6 +370,7 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
       typeof value1['auto_update_addons'] === 'boolean') &&
     (value1['show_progress_windows'] === undefined ||
       typeof value1['show_progress_windows'] === 'boolean') &&
+    (value1['when_file_exists'] === undefined || isWhenFileExists(value1['when_file_exists'])) &&
     (value1['media'] === undefined || isMediaDefaultsPatch(value1['media'])) &&
     (value1['local_sites'] === undefined ||
       isArrayOf(value1['local_sites'], (value2: unknown) => typeof value2 === 'string')) &&
@@ -731,6 +744,32 @@ export function isExtensionSettingsPatch(value: unknown): value is ExtensionSett
     (value1['private_windows'] === undefined ||
       typeof value1['private_windows'] === 'boolean' ||
       value1['private_windows'] === null))(value);
+}
+
+/** Whether `value` has the shape of a {@link FileExistsAnswer}; fields it does not name are not checked. */
+export function isFileExistsAnswer(value: unknown): value is FileExistsAnswer {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isFileExistsChoice(value1['choice']) &&
+    typeof value1['remember'] === 'boolean')(value);
+}
+
+/** Whether `value` has the shape of a {@link FileExistsChoice}; fields it does not name are not checked. */
+export function isFileExistsChoice(value: unknown): value is FileExistsChoice {
+  return value === 'replace' || value === 'keep_both' || value === 'cancel';
+}
+
+/** Whether `value` has the shape of a {@link FileExistsQuestion}; fields it does not name are not checked. */
+export function isFileExistsQuestion(value: unknown): value is FileExistsQuestion {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isQuestionId(value1['id']) &&
+    isDownloadId(value1['download']) &&
+    typeof value1['url'] === 'string' &&
+    typeof value1['file_name'] === 'string' &&
+    typeof value1['folder'] === 'string' &&
+    typeof value1['size'] === 'number' &&
+    (typeof value1['saved_at'] === 'number' || value1['saved_at'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link FinishNoticeTime}; fields it does not name are not checked. */
@@ -1328,7 +1367,13 @@ export function isQuestion(value: unknown): value is Question {
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['kind'] === 'choice' && isMediaChoice(value1['data']))(value) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) && value1['kind'] === 'addon' && isAddonRequestItem(value1['data']))(value)
+      isRecord(value1) && value1['kind'] === 'addon' && isAddonRequestItem(value1['data']))(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'file_exists' && isFileExistsQuestion(value1['data']))(
+      value,
+    )
   );
 }
 
@@ -1780,6 +1825,10 @@ export function isUiEvent(value: unknown): value is UiEvent {
       value1['type'] === 'media_choice_requested' &&
       isMediaChoice(value1['data']))(value) ||
     ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['type'] === 'file_exists_requested' &&
+      isFileExistsQuestion(value1['data']))(value) ||
+    ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'capture_repeated' && isRepeated(value1['data']))(
       value,
     ) ||
@@ -1926,6 +1975,13 @@ export function isWeekday(value: unknown): value is Weekday {
   );
 }
 
+/** Whether `value` has the shape of a {@link WhenFileExists}; fields it does not name are not checked. */
+export function isWhenFileExists(value: unknown): value is WhenFileExists {
+  return (
+    value === 'ask' || value === 'replace' || value === 'keep_existing' || value === 'keep_both'
+  );
+}
+
 /** Whether `value` has the shape of a {@link WindowAction}; fields it does not name are not checked. */
 export function isWindowAction(value: unknown): value is WindowAction {
   return value === 'minimize' || value === 'toggle_maximize' || value === 'close';
@@ -2009,6 +2065,10 @@ export const COMMAND_OUTPUTS: {
     value === null,
   pending_media_choices: (value: unknown): value is CommandMap['pending_media_choices']['output'] =>
     isArrayOf(value, isMediaChoice),
+  answer_file_exists: (value: unknown): value is CommandMap['answer_file_exists']['output'] =>
+    isDownloadId(value),
+  pending_file_exists: (value: unknown): value is CommandMap['pending_file_exists']['output'] =>
+    isArrayOf(value, isFileExistsQuestion),
   pending_addon_requests: (
     value: unknown,
   ): value is CommandMap['pending_addon_requests']['output'] =>

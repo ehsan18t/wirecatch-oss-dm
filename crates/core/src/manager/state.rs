@@ -10,7 +10,8 @@ use tokio::task::AbortHandle;
 use wirecatch_engine::{CancellationToken, Progress, ProxyChoice, ProxyRoute, RateLimiter, Url};
 use wirecatch_media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use wirecatch_protocol::app::{
-    AppSettings, DownloadStatus, DownloadSummary, PendingCapture, Queue, Setting,
+    AppSettings, DownloadStatus, DownloadSummary, FileExistsQuestion, PendingCapture, Queue,
+    Setting, WhenFileExists,
 };
 use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::proxy::{ProxyServer, ProxyUse};
@@ -48,6 +49,9 @@ pub(super) struct State {
     /// for the user's choice of quality. Their ids come from the same counter as
     /// `pending`, so the two never share one.
     pub media: BTreeMap<QuestionId, MediaPending>,
+    /// Downloads paused until the person says what to do with the file already in their
+    /// folder (D88). Ids from the same counter as `pending`.
+    pub file_exists: BTreeMap<QuestionId, Asked>,
     /// The media add-on.
     pub addon: AddonSlot,
     /// The Public Suffix List every decision about sites reads (D39, D44).
@@ -96,7 +100,7 @@ impl Counters {
         ProxyServerId(self.proxy_server)
     }
 
-    /// A fresh question id, shared by pending captures and media.
+    /// A fresh question id, shared by pending captures, media and files already in a folder.
     pub fn pending(&mut self) -> QuestionId {
         self.pending += 1;
         QuestionId(self.pending)
@@ -175,10 +179,39 @@ pub(super) struct Entry {
     /// For a stream or a page read by yt-dlp: what to download. `None` for every
     /// other download, including direct media files.
     pub media_job: Option<MediaJob>,
+    /// What the person chose for the file already in its folder (D88), for its next run. Not
+    /// saved: after a restart a duplicate is judged again.
+    pub on_existing: Option<OnExisting>,
     /// Added in the app itself: if the server first answers with a web page while
     /// the media add-on is installed, that page is read for its video instead
     /// (D51). Not saved, so a download restored after a restart is not checked.
     pub video_check: bool,
+}
+
+/// A [`FileExistsQuestion`] and the file it is about, whose path its words may not hold exactly
+/// (a name that is not valid Unicode).
+pub(super) struct Asked {
+    pub question: FileExistsQuestion,
+    pub path: PathBuf,
+}
+
+/// What a download does about the file already in its folder, once decided (D88).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum OnExisting {
+    /// Its run finishes over the file at its path.
+    Replace,
+    /// Its path is the next free name.
+    KeepBoth,
+}
+
+/// A file found where a download would save, that seems to be the same file (D88), and what the
+/// download does about it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Found {
+    pub path: PathBuf,
+    pub size: u64,
+    pub saved_at: Option<i64>,
+    pub then: WhenFileExists,
 }
 
 /// What the browser saw of a captured download, so the app can tell when its own
@@ -206,6 +239,8 @@ pub(super) struct Run {
     pub marked: bool,
     /// Why the run is being stopped, once it is.
     pub stop: Option<Stop>,
+    /// The file already in the folder, with [`Stop::FileExists`].
+    pub found: Option<Found>,
     pub meter: SpeedMeter,
     /// The run's task, so a run that ignores its stop request can be abandoned.
     pub task: AbortHandle,
@@ -252,6 +287,16 @@ pub(super) enum Stop {
     /// The server answered with a web page, which is read for its video instead
     /// of downloaded (D51).
     ReadAsVideo,
+    /// Its file is already in the folder (D88): what was found is [`Run::found`].
+    FileExists,
+}
+
+impl Entry {
+    /// Queued but not started while its files move to another name (see `moving`).
+    pub fn held_for_another_name(&mut self) {
+        self.moving = Some(CancellationToken::new());
+        self.row.status = DownloadStatus::Queued;
+    }
 }
 
 impl Stop {
@@ -631,6 +676,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         cleanup: None,
         removing: false,
         moving: None,
+        on_existing: None,
         stranded: None,
         media_job: None,
         video_check: false,
@@ -679,6 +725,7 @@ mod tests {
                 gauge: Gauge::Engine(Arc::new(Progress::default())),
                 marked: false,
                 stop: None,
+                found: None,
                 meter: SpeedMeter::default(),
                 task: idle_task(),
             }),
@@ -687,6 +734,7 @@ mod tests {
             cleanup: None,
             removing: false,
             moving: None,
+            on_existing: None,
             stranded: None,
             media_job: None,
             video_check: false,
