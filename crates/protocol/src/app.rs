@@ -1655,6 +1655,9 @@ pub enum UiEvent {
     SettingsImported(ImportSummary),
     /// Media with several qualities: the UI shows the picker.
     MediaChoiceRequested(MediaChoice),
+    /// The browser sent a link that is already a question or a download in progress, which it
+    /// joined instead of starting again: its window comes to the front (D89).
+    CaptureRepeated(Repeated),
     /// A video or stream from the browser was handed over and is read for its qualities
     /// without a window (D50): the desktop tells the person it was added at once, before the
     /// read ends (D67). Its download is not told again when it starts.
@@ -1772,6 +1775,18 @@ pub struct ImportPreview {
     /// Add-ons the profile lists that are not installed here, to offer
     /// after the import. Nothing is downloaded on import.
     pub addons_to_offer: Vec<AddonId>,
+}
+
+/// What a link the browser sent again joined (D89).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
+#[ts(export)]
+pub enum Repeated {
+    /// A question still open: a file waiting for confirmation, or a video being read or
+    /// waiting for its quality.
+    Question(QuestionId),
+    /// A download not finished yet: queued, running or paused.
+    Download(DownloadId),
 }
 
 /// A captured stream or page still being read for its qualities.

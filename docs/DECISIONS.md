@@ -805,6 +805,15 @@ Decided by the lead on 2026-10-29, finishing the revamp (D36) on the look D84 an
 4. The in-page media button is drawn in the dark scheme's graphite and text with Wirecatch's cyan under the pointer and round keyboard focus, over any page. Its colours are read from `tokens.css` when the extension is built, as the toolbar badge's are.
 5. General has an "Open log folder" button under Troubleshooting (D40), which opens the folder the shell logs to; the page names no path.
 
+### D89. A link sent again shows the window it already has
+
+Decided with the maintainer on 2026-10-29. Clicking a link again while its download window was open opened a second window and a second download, and clicking a video's button again while it was read gave no sign of anything, so people clicked on.
+
+1. A link the browser sends while it is still a question (a file waiting for confirmation, a video being read or waiting for its quality) joins that question, as before, and now its window comes to the front, opening again if the person had closed it (`UiEvent::CaptureRepeated`).
+2. A link that is a download not finished yet (queued, running, paused or being processed) joins that download instead of starting another: the browser is answered with that download, and its progress window comes to the front. Withdrawing the joining handover never takes the download back.
+3. A finished, failed or cancelled download does not join: the link is asked about or downloaded again, the question still notes the earlier download (D23), and a finished file is then judged as D88 says.
+4. The in-page media button stays as it is; a second click is what brings the window forward.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

@@ -144,6 +144,7 @@ export class FinishedWindowState {
     suffix_list_checked: ignore,
     media_analysing: ignore,
     media_choice_requested: ignore,
+    capture_repeated: ignore,
     addon_required: ignore,
     confirmation_closed: ignore,
     captured: ignore,

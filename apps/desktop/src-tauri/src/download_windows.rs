@@ -276,6 +276,16 @@ impl Registry {
         steps
     }
 
+    /// The person asked for question `id` again (the browser sent its link again): its window
+    /// comes to the front, or opens again even if they had put it aside (D89).
+    pub fn show_question(&mut self, id: QuestionId) -> Option<Step> {
+        self.put_aside.remove(&id);
+        match self.window_showing(Shows::Question(id)) {
+            Some(window) => Some(Step::Focus(window.label.clone())),
+            None => self.place_question(id),
+        }
+    }
+
     /// Question `id` is no longer open in the core. Its window, if any, says so itself.
     pub fn closed(&mut self, id: QuestionId) {
         self.waiting.retain(|w| *w != id);
@@ -509,6 +519,11 @@ pub fn became_download<R: Runtime>(app: &AppHandle<R>, label: &str, id: Download
 /// The window `label` was destroyed.
 pub fn window_gone<R: Runtime>(app: &AppHandle<R>, label: &str) {
     update(app, |r| r.gone(label));
+}
+
+/// Brings question `id`'s window forward, opening it again if it was closed.
+pub fn show_question<R: Runtime>(app: &AppHandle<R>, id: QuestionId) {
+    update(app, |r| r.show_question(id).into_iter().collect());
 }
 
 /// Opens (or brings forward) the progress window of download `id`.
@@ -858,6 +873,22 @@ mod tests {
         // The core moving a put-aside question on (its quality list is ready) opens it.
         assert_eq!(r.gone("download-q1"), []);
         opened(r.ask(q(1)));
+    }
+
+    /// The browser sent the link again (D89): an open window comes forward, a closed one opens.
+    #[test]
+    fn a_link_sent_again_shows_its_question() {
+        let mut r = Registry::default();
+        opened(r.ask(q(1)));
+        assert_eq!(
+            r.show_question(q(1)),
+            Some(Step::Focus("download-q1".into()))
+        );
+        assert_eq!(r.gone("download-q1"), []);
+        assert!(matches!(
+            r.show_question(q(1)),
+            Some(Step::Open(w)) if w.shows == Shows::Question(q(1))
+        ));
     }
 
     #[test]

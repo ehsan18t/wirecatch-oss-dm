@@ -128,6 +128,7 @@ import type { RejectCaptureArgs } from './RejectCaptureArgs';
 import type { RemoveAddonArgs } from './RemoveAddonArgs';
 import type { RemoveArgs } from './RemoveArgs';
 import type { ReorderArgs } from './ReorderArgs';
+import type { Repeated } from './Repeated';
 import type { Reply } from './Reply';
 import type { ReportUnreadableEventArgs } from './ReportUnreadableEventArgs';
 import type { ResumeArgs } from './ResumeArgs';
@@ -1495,6 +1496,16 @@ export function isReorderArgs(value: unknown): value is ReorderArgs {
     isArrayOf(value1['ids_in_order'], isDownloadId))(value);
 }
 
+/** Whether `value` has the shape of a {@link Repeated}; fields it does not name are not checked. */
+export function isRepeated(value: unknown): value is Repeated {
+  return (
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'question' && isQuestionId(value1['data']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'download' && isDownloadId(value1['data']))(value)
+  );
+}
+
 /** Whether `value` has the shape of a {@link Reply}; fields it does not name are not checked. */
 export function isReply(value: unknown): value is Reply {
   return (
@@ -1768,6 +1779,10 @@ export function isUiEvent(value: unknown): value is UiEvent {
       isRecord(value1) &&
       value1['type'] === 'media_choice_requested' &&
       isMediaChoice(value1['data']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['type'] === 'capture_repeated' && isRepeated(value1['data']))(
+      value,
+    ) ||
     ((value1: unknown): boolean =>
       isRecord(value1) &&
       value1['type'] === 'media_captured' &&

@@ -250,6 +250,8 @@ export class DownloadWindowState {
     media_choice_requested: (e) => {
       if (this.#asking(e.data.id)) this.#choiceArrived(e.data);
     },
+    // The shell brings the window forward (D89).
+    capture_repeated: ignore,
     addon_required: (e) => {
       if (!this.#asking(e.data.id)) return;
       this.addon = e.data.addon;
