@@ -167,7 +167,7 @@ describe('how downloads are told', () => {
   it('is picked from a list, and names when the default queue tells, with a way to change it', async () => {
     const { app } = await openSettings('notifications');
     const pick = screen.getByRole('combobox', { name: 'When a download finishes' });
-    expect(pick).toHaveTextContent('Show a notice in the browser');
+    expect(pick).toHaveTextContent('Show a notification');
     expect(
       screen.getByText('The Main queue notifies you each time a download finishes.'),
     ).toBeVisible();
@@ -182,7 +182,7 @@ describe('how downloads are told', () => {
     expect(app.dialog).toEqual({ kind: 'queue', id: app.queues.defaultQueue?.id });
   });
 
-  it('notes a started download in the browser for 3 seconds, and a finished one for 8 (D65, D67)', async () => {
+  it('notes a started download in the browser for 3 seconds, and a finished one there for 8 once chosen (D65, D90)', async () => {
     const { app } = await openSettings('notifications');
     expect(screen.getByRole('combobox', { name: 'When a download starts' })).toHaveTextContent(
       'Show a notice in the browser',
@@ -190,10 +190,13 @@ describe('how downloads are told', () => {
     const startFor = screen.getByRole('combobox', { name: 'Hide the start notice after' });
     expect(startFor).toHaveTextContent('3 seconds');
     expect(startFor).toBeEnabled();
-    // D67: a finished download is told in the browser too, unless the person chose otherwise.
+    // D90: a finished download is told in a system notification unless the person chose the browser.
     const finishFor = screen.getByRole('combobox', { name: 'Hide the finish notice after' });
     expect(finishFor).toHaveTextContent('8 seconds');
-    expect(finishFor).toBeEnabled();
+    expect(finishFor).toBeDisabled();
+    await app.updateSettings((d) => void (d.notify_on_finish = 'browser'));
+    await settle();
+    expect(screen.getByRole('combobox', { name: 'Hide the finish notice after' })).toBeEnabled();
 
     await app.updateSettings((d) => {
       d.notify_on_start = 'nothing';
