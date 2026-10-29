@@ -17,20 +17,11 @@ use wirecatch_store::{Snapshot, StoredDownload};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::questions::Questions;
+use super::run::mark_completed;
 use super::state::{Counters, Entry, Hold, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
-use crate::headers::Origin;
 use crate::naming::Claimed;
-
-fn mark_completed(entry: &mut Entry, size: u64, now_millis: i64) {
-    entry.row.status = DownloadStatus::Completed;
-    entry.row.total = Some(size);
-    entry.row.done = size;
-    entry.row.completed_at = Some(now_millis);
-    entry.row.error = None;
-    entry.origin = Origin::default();
-}
 
 /// The rebuilt state, plus downloads whose stored row needed fixing.
 pub(super) struct Restored {
@@ -256,6 +247,7 @@ pub(super) fn first_start() -> State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::headers::Origin;
     use wirecatch_protocol::app::{Category, DownloadSummary, Setting};
     use wirecatch_protocol::{DownloadId, QueueId};
     use wirecatch_sites::local_network::ChosenBy;
