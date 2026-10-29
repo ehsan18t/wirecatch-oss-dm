@@ -10,7 +10,7 @@
     initialFocus,
     restoreFocus,
   } from '../lib/focus';
-  import ModalAnnouncer from './ModalAnnouncer.svelte';
+  import ModalToasts from './ModalToasts.svelte';
   import { glide } from '../motion/motion';
   import { CHROME } from '../recipes/control';
   import { PANEL_SURFACE } from '../recipes/surface';
@@ -148,6 +148,6 @@
         {@render footer()}
       </div>
     {/if}
-    {#if sidebar.drawerOpen}<ModalAnnouncer />{/if}
+    {#if sidebar.drawerOpen}<ModalToasts />{/if}
   </div>
 </nav>

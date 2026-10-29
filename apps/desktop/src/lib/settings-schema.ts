@@ -1,26 +1,9 @@
 // Every setting, in plain words, with a one-line explanation. The settings screen, its search
 // and the command palette all read this one list.
 
-import { DEFAULT_CONNECTIONS_PER_DOWNLOAD, SETTING_WORDS } from '@wirecatch/protocol';
+import { DEFAULT_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
+import { words, type SettingText } from './setting-text';
 import type { SectionId } from './settings-sections';
-
-/** The name and help of a setting the extension's popup shows too, in the words both share (D61). */
-function words(id: keyof typeof SETTING_WORDS): { label: string; help: string } {
-  const { label, help } = SETTING_WORDS[id];
-  return { label, help };
-}
-
-/** What every setting says about itself. */
-interface SettingText {
-  id: string;
-  section: SectionId;
-  label: string;
-  help: string;
-  /** Extra words people might search for. */
-  keywords: string;
-  /** The heading the setting sits under within its section. */
-  group?: string;
-}
 
 const DEFS = [
   {
@@ -345,7 +328,14 @@ const DEFS = [
     label: 'Your queues',
     help: 'Edit a queue to change its limits, rules, schedule or notifications.',
     keywords:
-      'queue queues schedule overnight limit at once concurrent notify notification all done finished batch auto claim claims site try link',
+      'queue queues schedule overnight limit at once concurrent notify notification all done finished batch auto claim claims site',
+  },
+  {
+    id: 'try_link',
+    section: 'speed',
+    label: 'Test a link',
+    help: 'Shows which queue a link would go to, and why.',
+    keywords: 'try test link url queue rules match which claim',
   },
   {
     id: 'proxy',
