@@ -827,6 +827,8 @@ Decided with the maintainer on 2026-10-29. Clicking a link again while its downl
 
 Decided with the maintainer on 2026-10-29. It amends D65.4: a notice in the browser about a finished download now offers the system notification's buttons, Open included. A website can still lay a decoy over the notice so a press lands on Open unseen, but Open opens a document, picture, video or audio file directly and anything else, a program, a script or a file of unknown type, only after the shell's own warning (`files::open_download`), which no page can cover. So a decoy can at most open a harmless file.
 
+It also amends D65.1 (D67): "When a download finishes" is a system notification by default again, listed first. A notice in the browser shows only while the browser is the program in front, and a download usually finishes while its own window or another program is; the browser notice stays one choice away. Settings saved with another choice keep it.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
