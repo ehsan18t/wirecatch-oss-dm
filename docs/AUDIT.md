@@ -147,6 +147,13 @@ CMD-1, CMD-2, CMD-3, CMD-4, CMD-5, CMD-6, CMD-7, CMD-8, CMD-9, CMD-10, CMD-12, C
 
 CORE-4, CORE-5, CORE-6, CORE-7, CORE-8, CORE-9, CORE-10, CORE-11, CORE-12, CORE-13, CORE-14, CORE-16, CORE-17, CORE-18, CORE-19, CORE-20, CORE-23, CORE-24, CORE-25, CORE-27, CORE-28
 
+Where each stands (2026-10-29):
+
+- Done: CORE-16 (`wirecatch_messages::invalid_link`), CORE-17 (`wirecatch_engine::resume_file_url`), CORE-18 (every rollback and cleanup failure is logged), CORE-24 (`join_all`).
+- Answered: CORE-28. A panic leaves the state's sets out of step only in a build that keeps running after it; release builds abort on panic (`panic = "abort"`), so a poisoned lock is never seen there, as `Manager::lock` says.
+- Partly: CORE-9 (the engine's no-replace move exists; core's relocate and media placement do not use it, and neither handles another drive), CORE-11 (media logic moved out; `media_run.rs` and `addons.rs` are still long), CORE-13 (cancelling is typed; install failures are still strings), CORE-14 (texts moved to crates/messages; the refresh decision still reads a `FixAction`), CORE-19 (some numbers named; the work-folder and add-on layout names are not), CORE-20 (tests come with CORE-4 to CORE-8), CORE-25 (five bool parameters left), CORE-27 (the link schemes are still listed in three places).
+- Open: CORE-4 (withdraw against confirm), CORE-5 (one kind of question), CORE-6 (cancel safety), CORE-7 (progress-only updates), CORE-8 (retry only what can pass), CORE-10 (scans of every download), CORE-12 (a phase per download), CORE-23 (a size cap in the engine).
+
 ### W10. IPC, bridge and CLI
 
 IPB-6, IPB-7, IPB-17, IPB-18, IPB-19, CORE-21
