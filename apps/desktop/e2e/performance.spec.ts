@@ -25,9 +25,18 @@ test('10,000 downloads stay smooth while updating and scrolling', async ({ page 
   await open(page, process.env.PERF_QUERY ?? 'count=10000&active=60&capture=0');
   await rows(page).first().waitFor();
   const firstRowsMs = Date.now() - navStart;
+  // Finished starts folded, last in the list; opened, every download is in the list that scrolls.
+  const grid = page.getByRole('grid', { name: 'Downloads' });
+  await page.locator('#download-list').evaluate((list) => {
+    list.scrollTop = list.scrollHeight;
+  });
+  await grid.getByRole('button', { name: /^Finished/ }).click();
+  await page.locator('#download-list').evaluate((list) => {
+    list.scrollTop = 0;
+  });
 
   const domRows = await rows(page).count();
-  const total = await page.getByRole('grid', { name: 'Downloads' }).getAttribute('aria-rowcount');
+  const total = Number(await grid.getAttribute('aria-rowcount'));
 
   const measure = (scroll: boolean) =>
     page.evaluate(async (doScroll): Promise<FrameStats> => {
@@ -101,7 +110,8 @@ test('10,000 downloads stay smooth while updating and scrolling', async ({ page 
   mkdirSync('test-results', { recursive: true });
   writeFileSync('test-results/performance.json', report);
 
-  expect(total).toBe('10000');
+  // Every download, and the headings and the column header with them.
+  expect(total).toBeGreaterThan(10_000);
   // Virtualized: only a screenful of rows exists in the page.
   expect(domRows).toBeLessThan(60);
   expect(scrolling.p95).toBeLessThan(34);
