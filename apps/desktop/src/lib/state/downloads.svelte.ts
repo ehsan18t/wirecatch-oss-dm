@@ -52,8 +52,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** Structural equality for the plain data in a row, without allocating (it runs on every progress tick). */
 function same(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (!isRecord(a) || !isRecord(b)) return false;
+  // Objects compare by their fields only: `===` between a row's state proxy and a plain value makes Svelte warn (state_proxy_equality_mismatch).
+  if (!isRecord(a) || !isRecord(b)) return a === b;
   for (const key in a) if (!same(a[key], b[key])) return false;
   for (const key in b) if (!(key in a)) return false;
   return true;
