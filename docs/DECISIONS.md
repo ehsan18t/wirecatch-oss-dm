@@ -823,6 +823,10 @@ Decided with the maintainer on 2026-10-29. Clicking a link again while its downl
 3. A finished, failed or cancelled download does not join: the link is asked about or downloaded again, the question still notes the earlier download (D23), and a finished file is then judged as D88 says.
 4. The in-page media button stays as it is; a second click is what brings the window forward.
 
+### D91. Settings and Downloads switch at the sidebar's foot
+
+Decided with the maintainer on 2026-10-29. It amends D47: on the settings screen the "Back to downloads" item at the top of the settings list goes, and the foot of the sidebar shows Downloads where the downloads screen shows Settings. One place switches between the two screens, in the docked sidebar, the icon rail and the drawer. Escape and the palette's "Back to downloads" still leave settings.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
