@@ -20,6 +20,9 @@ const MAX_ID_LEN: usize = 128;
 pub(super) enum Target {
     /// Waiting for the user's confirmation (a pending capture id).
     Pending(QuestionId),
+    /// The user said yes to question `QuestionId` and its download is being added (CORE-4): it is
+    /// the app's already, so a withdrawal finds it started.
+    Confirming(QuestionId),
     /// A download in the list.
     Download(DownloadId),
     /// The user confirmed it, so it is the app's from then on.
@@ -42,7 +45,8 @@ pub(super) struct Handover {
 impl Handover {
     /// Whether this handover's outcome is known, so it may be forgotten.
     fn may_forget(&self) -> bool {
-        self.deciding.is_none() && !matches!(self.target, Target::Pending(_))
+        self.deciding.is_none()
+            && !matches!(self.target, Target::Pending(_) | Target::Confirming(_))
     }
 }
 
