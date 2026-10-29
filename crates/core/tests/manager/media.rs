@@ -161,6 +161,32 @@ async fn an_hls_capture_becomes_a_choice_and_then_a_file() -> TestResult {
     Ok(())
 }
 
+/// A video waiting for its quality whose queue is deleted goes to the default queue, as a waiting download does, rather than failing once it is chosen.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_choice_whose_queue_is_deleted_goes_to_the_default_queue() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    let later = h
+        .manager
+        .create_queue(wirecatch_protocol::app::QueueSettings::new("Later"))?;
+    let mut capture = media_capture(server.url("hls/master.m3u8"), MediaKind::Hls, None);
+    capture.queue = Some(later.id);
+    h.manager.add_capture(capture).await.unwrap();
+    let choice = choice_requested(&mut ui).await;
+
+    h.manager.delete_queue(later.id)?;
+    h.manager
+        .choose_media(choice.id, select(&choice.options[0].id))
+        .await
+        .unwrap();
+    let row = h.manager.list_downloads().remove(0);
+    assert_eq!(row.queue, wirecatch_core::DEFAULT_QUEUE_ID);
+    h.wait_status(row.id, DownloadStatus::Completed).await;
+    Ok(())
+}
+
 /// Saves "Use my choices" (D50) with `quality` and `fallback`.
 fn without_asking(h: &Harness, quality: VideoQuality, fallback: QualityFallback) -> TestResult {
     let mut settings = h.manager.get_settings();

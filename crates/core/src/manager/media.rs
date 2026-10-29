@@ -1002,13 +1002,7 @@ impl Manager {
                     }),
                     hint_name: None,
                 },
-                placed: Placed::answered(
-                    Placed {
-                        queue: choice.queue,
-                        reason: choice.queue_reason.clone(),
-                    },
-                    selection.queue,
-                ),
+                placed: Placed::answered(pending.placed.clone(), selection.queue),
                 start: !selection.later,
                 kind: Kind::Media(StoredMedia {
                     summary: MediaSummary {

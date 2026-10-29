@@ -281,7 +281,11 @@ const KEEP_COPIES_FOR: Duration = Duration::from_hours(720);
 pub type FailureHandler = Box<dyn Fn(String) + Send>;
 
 /// How long a write waits for a lock held by someone else (a backup tool, say).
+#[cfg(not(test))]
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+/// Short in this crate's tests, which hold a lock to make a write fail as a busy database does.
+#[cfg(test)]
+const BUSY_TIMEOUT: Duration = Duration::from_millis(50);
 /// Pauses before each retry of a failed batch of writes.
 const RETRY_PAUSES: [Duration; 3] = [
     Duration::from_millis(50),
@@ -570,7 +574,7 @@ fn write_until_closed(
             && let Err(e) = apply_with_retries(&mut conn, &writes, pauses, inbox)
         {
             error!(error = %e, "could not save changes to the database");
-            let fresh = writes.len() > retried;
+            let fresh = retried == 0;
             kept = apply_one_by_one(&mut conn, writes);
             if kept.len() > MAX_KEPT {
                 error!(
@@ -579,7 +583,7 @@ fn write_until_closed(
                 );
                 kept.drain(..kept.len() - MAX_KEPT);
             }
-            // A quiet retry of writes already reported is not news.
+            // Reported once per spell of failures: while writes are kept, new ones failing too is not news, and how a spell splits into batches depends on timing.
             if fresh {
                 on_failure(e.to_string());
             }
@@ -621,10 +625,17 @@ fn apply_one_by_one(conn: &mut Connection, writes: Vec<Op>) -> Vec<Op> {
             failed.push(write);
             continue;
         }
-        if let Err(e) = apply(conn, std::slice::from_ref(&write)) {
-            warn!(error = %e, ?write, "a change could not be saved; keeping it to try again");
-            blocked.push(target);
-            failed.push(write);
+        match apply(conn, std::slice::from_ref(&write)) {
+            Ok(()) => {}
+            Err(e) if may_pass_later(&e) => {
+                warn!(error = %e, ?write, "a change could not be saved; keeping it to try again");
+                blocked.push(target);
+                failed.push(write);
+            }
+            // Kept, it would fail every batch again and hold up the writes after it.
+            Err(e) => {
+                error!(error = %e, ?write, "a change could not be saved and never will be; dropping it");
+            }
         }
     }
     failed
@@ -687,6 +698,9 @@ fn apply_with_retries(
         let Err(e) = apply(conn, writes) else {
             return Ok(());
         };
+        if !may_pass_later(&e) {
+            return Err(e);
+        }
         let Some(pause) = pauses.next() else {
             return Err(e);
         };
@@ -867,6 +881,21 @@ fn check_integrity(conn: &Connection) -> rusqlite::Result<()> {
             Some(verdict),
         ))
     }
+}
+
+/// Whether a write that failed with `error` may pass when tried again: the database was busy or locked, or the disk failed, filled up or refused the file for now. A refused row or a missing table fails the same way every time.
+fn may_pass_later(error: &rusqlite::Error) -> bool {
+    matches!(
+        error.sqlite_error_code(),
+        Some(
+            rusqlite::ErrorCode::DatabaseBusy
+                | rusqlite::ErrorCode::DatabaseLocked
+                | rusqlite::ErrorCode::SystemIoFailure
+                | rusqlite::ErrorCode::DiskFull
+                | rusqlite::ErrorCode::ReadOnly
+                | rusqlite::ErrorCode::CannotOpen
+        )
+    )
 }
 
 /// Whether an error means the file itself is damaged, as opposed to a full disk or a locked file, which a later start can get past.
@@ -1541,9 +1570,9 @@ mod tests {
         });
         let (store, _) = Store::open_watched(dir.path(), ignore_failures(), hook).unwrap();
 
-        // Something outside the app breaks the database, so every try of the next write fails.
+        // Something outside the app holds the database, so every try of the next write fails as busy.
         let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
-        other.execute("DROP TABLE downloads", []).unwrap();
+        other.execute_batch("BEGIN EXCLUSIVE").unwrap();
         store.save_downloads(vec![download(2)]);
         entered
             .recv_timeout(PATIENCE)
@@ -1577,12 +1606,7 @@ mod tests {
         });
         let (store, _) = Store::open_watched(dir.path(), ignore_failures(), hook).unwrap();
         let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
-        other
-            .execute_batch(
-                "CREATE TRIGGER refuse_two BEFORE INSERT ON downloads WHEN NEW.id = 2
-                 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
-            )
-            .unwrap();
+        other.execute_batch("BEGIN EXCLUSIVE").unwrap();
 
         store.save_downloads(vec![download(2)]);
         entered
@@ -1592,7 +1616,7 @@ mod tests {
         store.delete_downloads(vec![DownloadId(3)]);
         store.save_downloads(vec![download(1)]);
         store.delete_downloads(vec![DownloadId(5)]);
-        other.execute_batch("DROP TRIGGER refuse_two").unwrap();
+        other.execute_batch("COMMIT").unwrap();
         let (done, closed) = oneshot::channel();
         store.send(Op::Close(done));
         release.send(()).unwrap();
@@ -1616,7 +1640,7 @@ mod tests {
     /// with it, and is itself kept and tried again later rather than dropped: a
     /// lost delete would bring back a removed download, cookies and all.
     #[tokio::test]
-    async fn a_failing_write_is_kept_and_the_others_are_saved() {
+    async fn a_write_that_can_never_pass_is_dropped_and_the_others_are_saved() {
         let dir = tempfile::tempdir().unwrap();
         let reports = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = reports.clone();
@@ -1628,7 +1652,7 @@ mod tests {
         store.save_downloads(vec![download(3)]);
         store.flush().await;
 
-        // Something outside the app makes saving download 2 fail.
+        // Something outside the app makes saving download 2 fail, the same way every time.
         let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         other
             .execute_batch(
@@ -1638,8 +1662,6 @@ mod tests {
             .unwrap();
         store.save_downloads(vec![download(1), download(2)]);
         store.delete_downloads(vec![DownloadId(3)]);
-        store.delete_downloads(vec![DownloadId(2)]);
-        store.save_downloads(vec![download(2)]);
         store.flush().await;
         assert_eq!(stored_ids(&other), vec![1], "the other writes were lost");
         assert!(
@@ -1647,8 +1669,37 @@ mod tests {
             "{reports:?}"
         );
 
-        // Once the problem is gone, the kept writes land, in their order.
+        // It is not kept to fail every later batch: gone, it is not tried again.
         other.execute_batch("DROP TRIGGER refuse_two").unwrap();
+        store.save_last_ids(LastIds::default());
+        store.flush().await;
+        assert_eq!(stored_ids(&other), vec![1]);
+    }
+
+    #[tokio::test]
+    async fn writes_that_fail_while_the_database_is_busy_are_kept_until_they_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let reports = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = reports.clone();
+        let (store, _) = Store::open(
+            dir.path(),
+            Box::new(move |reason| sink.lock().unwrap().push(reason)),
+        )
+        .unwrap();
+        store.save_downloads(vec![download(3)]);
+        store.flush().await;
+
+        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        other.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        store.save_downloads(vec![download(1), download(2)]);
+        store.flush().await;
+        // A second batch failing in the same spell is not reported again.
+        store.delete_downloads(vec![DownloadId(3)]);
+        store.flush().await;
+        assert_eq!(reports.lock().unwrap().len(), 1, "{reports:?}");
+
+        // Once the database is free, the kept writes land, in their order.
+        other.execute_batch("COMMIT").unwrap();
         store.save_last_ids(LastIds::default());
         store.flush().await;
         assert_eq!(stored_ids(&other), vec![1, 2]);
