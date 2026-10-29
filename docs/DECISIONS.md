@@ -773,6 +773,19 @@ Decided with the maintainer on 2026-10-29. Help under every option, rewritten fo
 6. A schedule's days are one row of seven day buttons, Monday to Sunday, all pressed by default, with no presets and no summary; none pressed is an error. Stopping is "At" a time or "When the queue is empty", one choice, the time shown only for "At".
 7. A queue's own bypass list is "Custom hosts", in the queue editor and in Settings > Network alike.
 
+### D85. Settings has seven pages, each a subject a person looks for
+
+Decided with the maintainer on 2026-10-29. Eleven pages held 47 settings, four of them one or two each, and the media add-on sat apart from the media settings that need it. It amends D47's list of sections and D84.7.
+
+1. The pages, in order: General, Notifications, Saving files, Browser, Media, Speed and queues, Network. Add-ons, Queues, Import and export and Advanced are gone as pages.
+2. General holds Appearance (theme, accent), Startup (start when signing in, keep downloading when the window is closed), Updates (the add-on updates and the Public Suffix List updates, where the app's own updater goes later) and Backup (export, import).
+3. Media starts with the media add-on (install, update, remove, keep up to date), then Videos and Audio only. Messages that send a person to install or fix the add-on say "Settings > Media".
+4. Browser holds Capture (what is taken from the browser and into which queue) and Download window (the window before a download, and whether it stays for progress).
+5. Speed and queues holds Limits (speed, downloads at once, connections per download, each naming the queues that use their own value) and Your queues.
+6. Network holds Proxy (the global proxy, proxy servers, the bypass list, FTP) and Local network (the sites that may reach the person's own network).
+7. The bypass list is "Hosts that skip the proxy" in Settings > Network. In the queue editor the choices are "Global list (N)" and "This queue's list". This replaces D84.7.
+8. A page's line under its title is a few words. No setting key changes: saved settings and export files are read as before.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
