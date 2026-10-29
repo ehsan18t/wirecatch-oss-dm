@@ -55,6 +55,7 @@ pub(crate) async fn run(
         Arc::new(file),
         shared.part_path.clone(),
         shared.opts.buffer_size,
+        shared.file_work.clone(),
     );
 
     loop {

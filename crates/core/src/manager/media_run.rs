@@ -19,7 +19,7 @@ use wirecatch_addons::Check;
 use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_engine::units::MIB;
 use wirecatch_engine::{
-    CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, Outcome,
+    CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, FileWork, Outcome,
     PrivateNetwork, Progress, Url,
 };
 use wirecatch_media::MediaTools;
@@ -66,6 +66,8 @@ struct Job {
     /// Reserves a path for the finished file among the paths other downloads
     /// hold; `false` if one of them holds it already.
     reserve: Reserve,
+    /// The run's, shared by its engine downloads.
+    file_work: FileWork,
 }
 
 /// Reserves a path for a finished file (`true` to reserve, `false` to give a
@@ -135,8 +137,10 @@ impl Manager {
                     })
                 })
             },
+            file_work: FileWork::new(),
         };
-        self.launch(state, id, run_id, answered, move |cancel| {
+        self.launch(state, id, run_id, answered, move |cancel, file_work| {
+            let work = Job { file_work, ..work };
             let progress = Arc::new(MediaProgress::default());
             let gauge = Gauge::Media(progress.clone());
             (gauge, async move {
@@ -230,6 +234,7 @@ fn stream_request(job: &Job, staged: &Path, video: Pick, audio: Pick) -> StreamR
     request.audio = choice(audio);
     request.ffmpeg = job.tools.as_ref().map(|t| t.ffmpeg.clone());
     request.options = job.options.clone();
+    request.file_work = job.file_work.clone();
     request
 }
 
@@ -680,6 +685,7 @@ async fn fetch_small(
     let mut request = DownloadRequest::new(url.clone(), path.parent().unwrap_or(Path::new(".")));
     request.exact_path = Some(path.to_path_buf());
     request.options = options;
+    request.file_work = job.file_work.clone();
     let progress = Arc::new(Progress::default());
     let stop = cancel.child_token();
     let download = wirecatch_engine::download(request, progress.clone(), stop.clone());
@@ -941,6 +947,7 @@ async fn fetch_part(
         let mut request = DownloadRequest::new(url, work);
         request.exact_path = Some(path.clone());
         request.options = options;
+        request.file_work = job.file_work.clone();
         let file = Arc::new(Progress::default());
         progress.add_file(file.clone(), format.size());
         match Box::pin(wirecatch_engine::download(request, file, cancel.clone())).await {
@@ -991,27 +998,29 @@ async fn finish(
     );
     let reserve = job.reserve.clone();
     let sidecars = sidecars.to_vec();
-    let moved = tokio::task::spawn_blocking(move || -> std::io::Result<(PathBuf, u64)> {
-        // Marked before it is put in place, so it is never there unmarked.
-        wirecatch_files::zone::mark(&file, &url, referrer.as_deref());
-        let target = place(&file, &planned, &reserve)?;
-        let bytes = std::fs::metadata(&target)?.len();
-        let anywhere: Reserve = Arc::new(|_: &Path, _| true);
-        for (subtitle, language) in &sidecars {
-            wirecatch_files::zone::mark(subtitle, &url, referrer.as_deref());
-            let beside = sidecar_path(&target, language);
-            if let Err(e) = place(subtitle, &beside, &anywhere) {
-                warn!(error = %e, "could not put a subtitle file next to the video");
+    let moved = job
+        .file_work
+        .spawn_blocking(move || -> std::io::Result<(PathBuf, u64)> {
+            // Marked before it is put in place, so it is never there unmarked.
+            wirecatch_files::zone::mark(&file, &url, referrer.as_deref());
+            let target = place(&file, &planned, &reserve)?;
+            let bytes = std::fs::metadata(&target)?.len();
+            let anywhere: Reserve = Arc::new(|_: &Path, _| true);
+            for (subtitle, language) in &sidecars {
+                wirecatch_files::zone::mark(subtitle, &url, referrer.as_deref());
+                let beside = sidecar_path(&target, language);
+                if let Err(e) = place(subtitle, &beside, &anywhere) {
+                    warn!(error = %e, "could not put a subtitle file next to the video");
+                }
             }
-        }
-        wirecatch_files::discard::dir(&work);
-        Ok((target, bytes))
-    })
-    .await
-    .map_err(|e| UserError {
-        message: format!("Something went wrong inside Wirecatch ({e}). Try again."),
-        fix: Some(FixAction::Retry),
-    })?;
+            wirecatch_files::discard::dir(&work);
+            Ok((target, bytes))
+        })
+        .await
+        .map_err(|e| UserError {
+            message: format!("Something went wrong inside Wirecatch ({e}). Try again."),
+            fix: Some(FixAction::Retry),
+        })?;
     let (path, bytes) = moved.map_err(|e| disk(&e, output))?;
     Ok(MediaDone::Completed { path, bytes })
 }
@@ -1414,6 +1423,7 @@ mod tests {
                 refresh_delays: Arc::new([]),
                 clock: Arc::new(crate::clock::SystemClock),
                 reserve: Arc::new(|_: &Path, _| true),
+                file_work: FileWork::new(),
             };
             let request = stream_request(&job, Path::new("/v/w/out"), Pick::Auto, Pick::Auto);
             assert_eq!(request.private_network, rule, "{chosen_by:?}");
@@ -1438,6 +1448,7 @@ mod tests {
             refresh_delays: Arc::new([]),
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
+            file_work: FileWork::new(),
         };
         let options = part_options(&job, &format, PrivateNetwork::Block);
         assert_eq!(options.private_network, PrivateNetwork::Block);
@@ -1468,6 +1479,7 @@ mod tests {
             refresh_delays: Arc::new([]),
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
+            file_work: FileWork::new(),
         };
         let progress = MediaProgress::default();
         let ended = run(
@@ -1517,6 +1529,7 @@ mod tests {
             refresh_delays: Arc::new([]),
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
+            file_work: FileWork::new(),
         };
         let done = run_stream(
             &job,
@@ -1561,6 +1574,7 @@ mod tests {
             refresh_delays: Arc::new([]),
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
+            file_work: FileWork::new(),
         };
         let done = finish(&part, &job, &work, &[]).await.unwrap();
         let MediaDone::Completed { path, .. } = done else {

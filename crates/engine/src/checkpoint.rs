@@ -161,7 +161,9 @@ impl Checkpoints {
                     () = cancel.cancelled() => return,
                 }
                 let save = saver.clone();
-                if let Err(e) = storage::blocking(move || save.save()).await {
+                if let Err(e) =
+                    storage::blocking(&saver.shared.file_work, move || save.save()).await
+                {
                     warn!(error = %Chain(&e), "could not save resume state; the next checkpoint tries again");
                 }
             }
