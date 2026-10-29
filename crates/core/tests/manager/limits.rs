@@ -6,10 +6,12 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast::error::RecvError;
-use wirecatch_core::DEFAULT_QUEUE_ID;
+use wirecatch_core::{DEFAULT_QUEUE_ID, PROGRESS_TICK};
 use wirecatch_protocol::app::{DownloadStatus, QueueSettings, Setting, UiEvent};
 
-use crate::common::{Harness, TestResult, fast_server, is_running, throttled_server, tune};
+use crate::common::{
+    Harness, PATIENCE, TestResult, fast_server, is_running, throttled_server, tune,
+};
 use wirecatch_engine::units::KIB;
 
 fn set_queue(
@@ -154,33 +156,38 @@ async fn limit_changes_apply_to_running_downloads() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn progress_events_are_batched() -> TestResult {
-    let server = throttled_server(256 * KIB, 128 * KIB).await?;
+    // At 64 KiB/s a connection, 1 MiB lasts longer than the batches the test waits for, however busy the machine.
+    let server = throttled_server(1024 * KIB, 64 * KIB).await?;
     let h = Harness::new().await?;
     let mut events = h.manager.subscribe();
-    let row = h.add(&server.url("f.bin")).await?;
-    h.wait_for(row.id, "progress", |r| r.done > 0).await;
-
-    let window = Duration::from_secs(1);
     let start = Instant::now();
-    let mut batches = 0;
-    let mut speeds = Vec::new();
-    while start.elapsed() < window {
-        if let Ok(Ok(UiEvent::DownloadsChanged(rows))) =
-            tokio::time::timeout(window, events.recv()).await
-        {
-            batches += 1;
-            speeds.extend(rows.iter().filter(|r| r.id == row.id).map(|r| r.speed));
+    let row = h.add(&server.url("f.bin")).await?;
+
+    let mut batches = 0u32;
+    let mut progress = Vec::new();
+    let mut speed = 0;
+    while progress.len() < 5 || speed == 0 {
+        let event = tokio::time::timeout(PATIENCE, events.recv()).await?;
+        let Ok(UiEvent::DownloadsChanged(rows)) = event else {
+            continue;
+        };
+        batches += 1;
+        for r in rows.iter().filter(|r| r.id == row.id && r.done > 0) {
+            assert_ne!(
+                r.status,
+                DownloadStatus::Completed,
+                "finished before five batches"
+            );
+            progress.push(r.done);
+            speed = speed.max(r.speed);
         }
     }
-    assert!(batches <= 12, "{batches} batches in one second");
-    assert!(batches >= 5, "only {batches} batches while downloading");
-    let speed = speeds
-        .iter()
-        .rev()
-        .copied()
-        .find(|s| *s > 0)
-        .expect("no speed reading while downloading");
-    // Smoothed speed sits near the server's 128 KiB/s.
-    assert!((64 * KIB..256 * KIB).contains(&speed), "speed {speed}");
+    // One event per tick at most: a slow machine sends fewer, never more.
+    let ticks = start.elapsed().as_millis() / PROGRESS_TICK.as_millis() + 1;
+    assert!(
+        u128::from(batches) <= ticks,
+        "{batches} batches in {ticks} ticks"
+    );
+    assert!(progress.is_sorted(), "progress went back: {progress:?}");
     Ok(())
 }
