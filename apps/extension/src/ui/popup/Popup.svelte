@@ -4,7 +4,8 @@
   import type { PopupModel } from '../../lib/popup/model.svelte';
   import AccessNotice from '../common/AccessNotice.svelte';
   import ConnectionNotice from '../common/ConnectionNotice.svelte';
-  import { waitingNote } from '../connection';
+  import { connectionBadge, waitingNote } from '../connection';
+  import { describeError } from '../../lib/diag/redact';
   import CaptureCard from './CaptureCard.svelte';
   import DownloadsSection from './DownloadsSection.svelte';
   import MediaList from './MediaList.svelte';
@@ -27,6 +28,8 @@
     openShortcuts?: (() => void) | null;
     /** Closes the popup, once the app's settings are opening. */
     close?: () => void;
+    /** The text "Copy diagnostics" copies, given the connection as the badge says it (EXT-7); null hides the action. */
+    diagnostics?: ((connection: string) => Promise<string>) | null;
   }
 
   let {
@@ -37,7 +40,20 @@
     mediaShortcut = null,
     openShortcuts = null,
     close = () => undefined,
+    diagnostics = null,
   }: Props = $props();
+
+  async function copyDiagnostics(read: (connection: string) => Promise<string>): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(await read(connectionBadge(status).label));
+      model.feedback = { tone: 'success', text: 'Diagnostics copied.' };
+    } catch (error) {
+      model.feedback = {
+        tone: 'error',
+        text: `Diagnostics were not copied. ${describeError(error)}`,
+      };
+    }
+  }
 
   async function openSettings(): Promise<void> {
     if (await model.openSettings()) close();
@@ -61,7 +77,11 @@
 
 <!-- Browsers stop a popup at 600px: only the middle scrolls, so the state and the Pause all and Resume all buttons stay in view. -->
 <div class="flex max-h-popup w-popup flex-col">
-  <PopupHeader {status} onsettings={() => void openSettings()} />
+  <PopupHeader
+    {status}
+    onsettings={() => void openSettings()}
+    oncopy={diagnostics ? () => void copyDiagnostics(diagnostics) : null}
+  />
 
   <main
     aria-busy={snapshot === null}

@@ -795,6 +795,16 @@ Decided with the maintainer on 2026-10-29. A closed app opened its window in fro
 2. The popup's status line under Pause all and Resume all takes no room while it has nothing to say.
 3. This amends D25.6 and D61.2, where the button was Open Wirecatch and showed the window.
 
+### D87. Phase 2 of the revamp: dialogs, the rail, diagnostics and the media button
+
+Decided by the lead on 2026-10-29, finishing the revamp (D36) on the look D84 and D85 settled.
+
+1. A dialog hangs from a fixed space at the top of the window instead of being centred, so a line that appears in it never moves its title; the space gives way in a short window, so the buttons stay in view. A dialog opened over another sits lower. While its content scrolls on below, its footer casts a shadow.
+2. In the sidebar's icon rail a queue shows its initials, and its tooltip, beside the rail, names the queue, what it is doing and its proxy.
+3. "Copy diagnostics" in the popup copies the extension's version, the browser, the connection and the saved diagnostics (EXT-7). Entries made while a private window was open are left out and counted, as private browsing leaves nothing behind.
+4. The in-page media button is drawn in the dark scheme's graphite and text with Wirecatch's cyan under the pointer and round keyboard focus, over any page. Its colours are read from `tokens.css` when the extension is built, as the toolbar badge's are.
+5. General has an "Open log folder" button under Troubleshooting (D40), which opens the folder the shell logs to; the page names no path.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

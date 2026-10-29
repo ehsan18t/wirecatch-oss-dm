@@ -46,7 +46,7 @@
       'group-enabled:group-hover:size-4 group-enabled:group-active:w-5',
       checked
         ? 'translate-x-5 bg-accent-fg group-enabled:group-active:translate-x-3.5 forced-colors:bg-sys-highlight-text'
-        : 'translate-x-0 bg-ink-muted forced-colors:bg-sys-text',
+        : 'translate-x-0 bg-line-strong forced-colors:bg-sys-text',
     )}
   >
     {#if loading}<Spinner size="xs" tone="current" class="text-accent" />{/if}

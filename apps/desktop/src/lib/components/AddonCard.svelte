@@ -1,5 +1,5 @@
 <script lang="ts">
-  // An add-on's state and what can be done with it: one main button that installs, updates, tries again or stops, so the keyboard focus stays on it as the state changes, and the checks and removal once installed. `align` is where it sits: at a settings row's end, or after text in a dialog.
+  // An add-on's state and what can be done with it: one main button that installs, updates, tries again or stops, so the keyboard focus stays on it as the state changes, and the checks and removal once installed, on one line with the state. `align` is where it sits: at a settings row's end, or after text in a dialog.
   import type { AddonInfo } from '@wirecatch/protocol';
   import { formatBytes } from '@wirecatch/units';
   import { Button, cn, ProgressBar } from '@wirecatch/ui';
@@ -74,17 +74,10 @@
     if (e.relatedTarget instanceof Node && !card?.contains(e.relatedTarget)) hadFocus = false;
   }}
 >
-  <p class={cn('text-small', addon.state.type === 'failed' ? 'text-danger' : 'text-ink-muted')}>
-    {addonStatus(addon)}
-  </p>
-  {#if addon.note}
-    <p class="max-w-80 text-small text-ink-muted">{addon.note}</p>
-  {/if}
-  <p class="sr-only" aria-live="polite">{addonAnnouncement(addon)}</p>
-  {#if installing}
-    <ProgressBar value={fraction} size="sm" label="Installing {addon.name}" class="w-56" />
-  {/if}
-  <div class="flex flex-wrap gap-2">
+  <div class={cn('flex flex-wrap items-center gap-x-3 gap-y-2', align === 'end' && 'justify-end')}>
+    <p class={cn('text-small', addon.state.type === 'failed' ? 'text-danger' : 'text-ink-muted')}>
+      {addonStatus(addon)}
+    </p>
     {#if isInstalled(addon)}
       <Button
         size="sm"
@@ -115,4 +108,11 @@
       </Button>
     {/if}
   </div>
+  {#if addon.note}
+    <p class="max-w-80 text-small text-ink-muted">{addon.note}</p>
+  {/if}
+  <p class="sr-only" aria-live="polite">{addonAnnouncement(addon)}</p>
+  {#if installing}
+    <ProgressBar value={fraction} size="sm" label="Installing {addon.name}" class="w-56" />
+  {/if}
 </div>

@@ -123,6 +123,18 @@ describe('the settings screen', () => {
     expect(app.settings?.global_speed_limit).toBe(Math.round(SPEED_FIELD.MB.min * MB));
   });
 
+  it('opens the log folder from General, and says so when it cannot', async () => {
+    const { backend, app } = await openSettings('general');
+    const open = vi.spyOn(backend, 'openLogFolder');
+    await fireEvent.click(screen.getByRole('button', { name: 'Open log folder' }));
+    await settle();
+    expect(open).toHaveBeenCalledOnce();
+    open.mockRejectedValueOnce(new Error('No folder.'));
+    await fireEvent.click(screen.getByRole('button', { name: 'Open log folder' }));
+    await settle();
+    expect(app.toasts.items.at(-1)?.message).toContain('No folder.');
+  });
+
   it('keeps a site on the network as its host, the way the app keeps it', async () => {
     const { app } = await openSettings('network');
     const field = screen.getByRole('textbox', { name: 'Local network sites' });

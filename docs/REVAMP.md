@@ -24,16 +24,17 @@ For the maintainer: these were built and compile, but nobody has seen them in th
 - Windows 10. Every real-app check ran on Windows 11.
 - The solid themed background on Linux. The desktop crate's Linux side is compiled only by CI's Ubuntu job; the app has not been run on Linux with the revamp.
 
-## Phase 2
+## Phase 2: done (2026-10-29)
 
-It starts once phase 1 is on main and the maintainer has reviewed it, and rebuilds the remaining screens on the approved look, in parallel.
+Rebuilt on the approved look, on main with D84, D85, D86 and D87.
 
-- Settings pages, including a "Sites on your network" list (D39) and an "Open log folder" action (D40). Offering to add a site adds the exact page host, never its registrable domain: multi-tenant domains such as sharepoint.com are not on the Public Suffix List.
-- The add-ons page.
-- Every dialog still styled by the old stylesheet, among them the queue form and the file type editor (which calls `normalizeFileType`).
-- The command palette.
-- The in-page media button.
-- The tray menu and the installer pages, as far as the platforms allow.
-- The "already running" experience: a second copy of the app that finds the list open (`AlreadyOpen`, D41) says Wirecatch is already running instead of showing an "unavailable" notice.
-- "Copy diagnostics" in the extension popup, reading `readDiagnostics(browser.storage.session)` (EXT-7).
-- What phase 1 left open, listed in [AUDIT](AUDIT.md) under "Parts of the interface revamp's phase 1 carried into later work".
+- Settings pages: seven pages (D85), every option's help behind an info icon (D84), "Local network sites" on Network (D39), and "Open log folder" under Troubleshooting on General (D40).
+- The add-ons page: the media add-on's card heads the Media page, its state on one line with its buttons.
+- Dialogs: no old stylesheet is left; every dialog is the design system's, hangs from the top, shows when more lies below its footer, and one opened over another sits lower (D87).
+- The command palette, on the design system's dialog surface.
+- The in-page media button, in the dark scheme's graphite with the cyan accent, its colours read from the tokens at build time (D87).
+- The tray menu (Open, Pause all, Resume all, Proxy, Quit) and the Windows installer's header and sidebar pictures; Linux packages have no pages of their own.
+- The "already running" experience: a second copy that finds the list open says Wirecatch is already running and closes (`Unopened::another_copy`).
+- "Copy diagnostics" in the extension popup (EXT-7, D87).
+
+Left from the carried list in [AUDIT](AUDIT.md), for W12 and W13: a link that failed after its Add dialog was closed with Escape, the queue editor's length once Auto is on, groups in a select, a host name a toast breaks at its hyphen, and the theme review's open lows.

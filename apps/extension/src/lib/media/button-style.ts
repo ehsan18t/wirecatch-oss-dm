@@ -39,18 +39,21 @@ const HOST_RULES = [
   .map((rule) => `${rule}!important`)
   .join(';');
 
+const { surface, ink, accent, danger } = __MEDIA_BUTTON_COLORS__;
+
+/** The button's look is the app's dark scheme over any page: graphite and its text, the cyan accent under the pointer and round keyboard focus (D36). */
 export const SHADOW_CSS = `
 :host{${HOST_RULES}}
 .w{all:initial;position:relative;display:block;pointer-events:none}
-.b{all:initial;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;height:${String(BUTTON_HEIGHT)}px;padding:0 12px 0 10px;border-radius:16px;background:rgba(17,19,24,.88);color:#fff;font:600 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.01em;white-space:nowrap;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.2);transition:opacity .15s,background-color .15s;pointer-events:auto}
-.b:hover{background:#1d4ed8}
-.b:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:0 0 0 5px #1d4ed8}
+.b{all:initial;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;height:${String(BUTTON_HEIGHT)}px;padding:0 12px 0 10px;border-radius:16px;background:${surface}e6;color:${ink};font:600 13px/1 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.01em;white-space:nowrap;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35),inset 0 0 0 1px ${ink}33;transition:opacity .15s,background-color .15s;pointer-events:auto}
+.b:hover{background:${accent};color:${surface}}
+.b:focus-visible{outline:2px solid ${accent};outline-offset:2px}
 .b[aria-busy=true]{cursor:progress}
 .b svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .w.idle .b:not(:focus-visible){opacity:0;pointer-events:none}
-.s{all:initial;position:absolute;top:38px;right:0;width:max-content;max-width:260px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#fff;border-radius:6px}
-.s:not(:empty){padding:6px 10px;background:rgba(17,19,24,.94);box-shadow:0 2px 10px rgba(0,0,0,.35)}
-.s.err:not(:empty){background:#991b1b}
+.s{all:initial;position:absolute;top:38px;right:0;width:max-content;max-width:260px;font:12px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:${ink};border-radius:6px}
+.s:not(:empty){padding:6px 10px;background:${surface}f0;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.s.err:not(:empty){background:${danger};color:#fff}
 .w.msg .b{visibility:hidden}
 @media (prefers-reduced-motion:reduce){.b{transition:none}}
 @media (forced-colors:active){.b,.s:not(:empty){border:1px solid CanvasText;forced-color-adjust:auto}}

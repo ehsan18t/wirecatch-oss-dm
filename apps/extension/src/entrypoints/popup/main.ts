@@ -3,6 +3,9 @@ import { mount } from 'svelte';
 import { browser } from 'wxt/browser';
 import { installDiagnostics } from '@/lib/diag/install';
 import { fallback } from '@/lib/diag/log';
+import { readDiagnostics } from '@/lib/diag/persist';
+import { diagnosticsReport } from '@/lib/diag/report';
+import { helloFromExtension, sessionArea } from '@/lib/browser/adapters';
 import {
   activeTab,
   connectPage,
@@ -15,6 +18,15 @@ import Popup from '@/ui/popup/Popup.svelte';
 
 /** Chromium's page for extension shortcuts. Firefox has none a page can open: its shortcuts are under the add-ons manager's menu. */
 const CHROMIUM_SHORTCUTS = 'chrome://extensions/shortcuts';
+
+async function diagnostics(connection: string): Promise<string> {
+  const area = sessionArea();
+  const [identity, entries] = await Promise.all([
+    helloFromExtension(),
+    area ? readDiagnostics(area) : Promise.resolve([]),
+  ]);
+  return diagnosticsReport({ identity, connection, now: Date.now(), entries });
+}
 
 function openShortcuts(): void {
   void browser.tabs
@@ -41,6 +53,7 @@ async function start(): Promise<void> {
       requestSiteAccess,
       mediaShortcut: shortcut,
       openShortcuts: import.meta.env.FIREFOX ? null : openShortcuts,
+      diagnostics,
       // The app's settings open in its window; the popup closes, as it would when the person clicks away.
       close: () => {
         window.close();

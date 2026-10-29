@@ -323,6 +323,8 @@
     inset 0 1px 0 var(--wc-edge), 0 24px 64px light-dark(rgb(21 26 35 / 0.22), rgb(0 0 0 / 0.55)),
     0 4px 16px light-dark(rgb(21 26 35 / 0.08), rgb(0 0 0 / 0.3));
   --shadow-thumb: 0 1px 3px light-dark(rgb(21 26 35 / 0.3), rgb(0 0 0 / 0.5));
+  /* Cast up from a dialog's footer while its content scrolls on below. */
+  --shadow-scroll-edge: 0 -10px 16px -8px light-dark(rgb(21 26 35 / 0.3), rgb(0 0 0 / 0.85));
   /* A focused field's halo, and an invalid one's, round its outline. */
   --shadow-focus-field: 0 0 0 3px color-mix(in srgb, var(--wc-accent) 22%, transparent);
   --shadow-invalid-field: 0 0 0 3px color-mix(in srgb, var(--wc-danger) 22%, transparent);

@@ -625,6 +625,8 @@ commands! {
     startup_notices -> Vec<StartupNotice>;
     /// Shows the download list set aside at this start (`StartupNotice::set_aside`) selected in its folder. The shell knows the path; the page sends none, so no page can open a path of its choosing.
     show_set_aside_list -> ();
+    /// Opens the folder the app logs to (D40), for a person asked to send a log. The shell knows the folder; the page sends none.
+    open_log_folder -> ();
     /// What the download complete window shows; later changes arrive on `FINISHED_EVENT`. Only
     /// that window may call it.
     finished_list -> FinishedList;

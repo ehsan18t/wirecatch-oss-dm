@@ -379,6 +379,14 @@ const DEFS = [
     help: 'Links from these sites may reach devices on your network, like a NAS or router. IP addresses and one-word names always count as local.',
     keywords: 'local network intranet nas router private lan trusted hosts',
   },
+  {
+    id: 'log_folder',
+    section: 'general',
+    label: 'Log folder',
+    help: 'What Wirecatch did, for a support request. Logs leave out passwords and other secrets.',
+    keywords: 'log logs diagnostics troubleshooting support debug folder problem report',
+    group: 'Troubleshooting',
+  },
 ] as const satisfies readonly SettingText[];
 
 /** Every setting, by the id the screen, the palette and the core's field names share. */

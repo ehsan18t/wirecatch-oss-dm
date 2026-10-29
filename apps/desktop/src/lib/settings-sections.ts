@@ -4,7 +4,7 @@ export type SectionId =
   'general' | 'notifications' | 'files' | 'browser' | 'media' | 'speed' | 'network';
 
 export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[] = [
-  { id: 'general', title: 'General', blurb: 'Appearance, startup, updates and backup.' },
+  { id: 'general', title: 'General', blurb: 'Appearance, startup, updates, backup and logs.' },
   {
     id: 'notifications',
     title: 'Notifications',

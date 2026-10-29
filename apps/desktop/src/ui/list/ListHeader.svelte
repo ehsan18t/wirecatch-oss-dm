@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Above the list: what it shows, one line on what is happening right now, and on one row the actions for what is on screen: a queue's own (start now, pause, edit) in a queue, else Pause all or Resume all where one applies. The total speed is the title bar's to say; problems are the sidebar's and the Needs attention group's.
+  // Above the list: what it shows, a queue's settings on a line of their own, one line on what is happening right now, and on one row the actions for what is on screen: a queue's own (start now, pause, edit) in a queue, else Pause all or Resume all where one applies. The total speed is the title bar's to say; problems are the sidebar's and the Needs attention group's.
   import Pause from '~icons/lucide/pause';
   import Pencil from '~icons/lucide/pencil';
   import Play from '~icons/lucide/play';
@@ -82,7 +82,6 @@
     }
     return next ? `Nothing downloading · ${next}` : downloads;
   });
-  const line = $derived([...queueFacts, summary].join(' · '));
   /** Nothing downloaded yet: the empty list explains itself, and there is nothing to pause or show. */
   const firstRun = $derived(count === 0);
   /** The one of Pause all and Resume all that applies, outside a queue: pausing while anything runs or waits, else resuming what is paused. Neither in a view of finished, failed or cancelled downloads. */
@@ -103,8 +102,11 @@
     {#if queue?.settings.description}
       <p class="truncate text-ui text-ink-muted">{queue.settings.description}</p>
     {/if}
+    {#if queueFacts.length > 0}
+      <p class="truncate text-small text-ink-muted">{queueFacts.join(' · ')}</p>
+    {/if}
     {#if !firstRun}
-      <p class="truncate text-small text-ink-muted tabular-nums">{line}</p>
+      <p class="truncate text-small text-ink tabular-nums">{summary}</p>
     {/if}
   </div>
   <div

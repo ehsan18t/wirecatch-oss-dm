@@ -4,6 +4,9 @@
   /** The longest a double click takes, near enough: a press this soon after opening finishes the click that opened it. */
   const DOUBLE_CLICK = 500;
 
+  /** Dialogs open now: one opened over another sits lower, so it never lines up with the one below. */
+  let openDialogs = 0;
+
   const WIDTH: Record<DialogSize, string> = {
     sm: 'max-w-dialog-sm',
     md: 'max-w-dialog-md',
@@ -12,7 +15,7 @@
 </script>
 
 <script lang="ts">
-  // A modal dialog on the native <dialog>: shown in the top layer, with the page behind it inert. On top of that it starts focus on its first control, keeps Tab inside, closes on Escape (only the topmost dialog does) and on a click on the veil, and gives focus back to what opened it. It is controlled: `onclose` asks to close, and the owner sets `open`.
+  // A modal dialog on the native <dialog>: shown in the top layer, with the page behind it inert. On top of that it starts focus on its first control, keeps Tab inside, closes on Escape (only the topmost dialog does) and on a click on the veil, and gives focus back to what opened it. It is controlled: `onclose` asks to close, and the owner sets `open`. It hangs from a fixed height rather than centring, so a line appearing in it never moves its title.
   import X from '~icons/lucide/x';
   import type { Snippet } from 'svelte';
   import { cn } from '../lib/cn';
@@ -67,15 +70,36 @@
   let pressedVeil = false;
   /** When it opened: the second click of the double click that opened it is not a click outside. */
   let shownAt = 0;
+  let stacked = $state(false);
+  /** More of the content lies below what shows, which the footer's edge says. */
+  let more = $state(false);
+
+  function measure(body: HTMLElement) {
+    const update = () => {
+      more = body.scrollHeight - body.scrollTop - body.clientHeight > 1;
+    };
+    update();
+    const resized = new ResizeObserver(update);
+    resized.observe(body);
+    for (const child of body.children) resized.observe(child);
+    body.addEventListener('scroll', update, { passive: true });
+    return () => {
+      resized.disconnect();
+      body.removeEventListener('scroll', update);
+    };
+  }
 
   function show(dialog: HTMLDialogElement) {
     shownAt = performance.now();
+    stacked = openDialogs > 0;
+    openDialogs += 1;
     const opener = focusedElement();
     if (!dialog.open) dialog.showModal();
     // A dialog with nothing to answer but Close starts on its panel, so it opens without a ring on Close; Tab reaches Close from there.
     const first = initialFocus(dialog);
     (first.hasAttribute('data-dialog-close') && panel ? panel : first).focus();
     return () => {
+      openDialogs -= 1;
       restoreFocus(opener, dialog);
     };
   }
@@ -103,7 +127,7 @@
     aria-modal="true"
     aria-labelledby={titleId}
     aria-describedby={description ? descriptionId : undefined}
-    class="fixed inset-0 m-0 flex size-full max-h-none max-w-none items-center justify-center overflow-hidden border-0 bg-transparent p-4 text-ink backdrop:bg-transparent"
+    class="fixed inset-0 m-0 flex size-full max-h-none max-w-none flex-col items-center overflow-hidden border-0 bg-transparent p-4 text-ink backdrop:bg-transparent"
     {@attach show}
     {onkeydown}
     oncancel={(event) => {
@@ -123,12 +147,14 @@
         pressedVeil = false;
       }}
     ></div>
+    <!-- The space above the panel, which gives way first when the window is short, so a tall dialog keeps its buttons in view. -->
+    <div class={cn('shrink', stacked ? 'h-20' : 'h-10')} aria-hidden="true"></div>
     <section
       bind:this={panel}
       tabindex="-1"
       class={cn(
         DIALOG_SURFACE,
-        'relative flex max-h-full w-full flex-col overflow-hidden outline-none',
+        'relative flex max-h-full w-full shrink-0 flex-col overflow-hidden outline-none',
         WIDTH[size],
         className,
       )}
@@ -156,11 +182,16 @@
         {@render meta?.()}
       </header>
       {#if children}
-        <div class="min-h-0 flex-1 overflow-y-auto px-6 py-3 text-body">{@render children()}</div>
+        <div class="min-h-0 flex-1 overflow-y-auto px-6 py-3 text-body" {@attach measure}>
+          {@render children()}
+        </div>
       {/if}
       {#if footer}
         <footer
-          class="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-wash px-6 py-4"
+          class={cn(
+            'relative flex flex-wrap items-center justify-end gap-2 border-t border-line bg-wash px-6 py-4 transition-shadow duration-fast',
+            more && 'shadow-scroll-edge',
+          )}
         >
           {@render footer()}
         </footer>

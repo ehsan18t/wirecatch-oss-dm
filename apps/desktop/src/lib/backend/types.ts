@@ -145,6 +145,8 @@ export interface Backend {
   startupNotices: () => Promise<StartupNotice[]>;
   /** Shows the download list set aside at this start selected in its folder (`StartupNotice.set_aside`). */
   showSetAsideList: () => Promise<void>;
+  /** Opens the folder the app logs to (D40). */
+  openLogFolder: () => Promise<void>;
 
   /** Downloads (or with `later`, adds paused) the chosen quality; the new download's id. */
   chooseMedia: (id: QuestionId, selection: MediaSelection) => Promise<DownloadId>;

@@ -30,6 +30,8 @@ const headerAdd = () =>
     name: 'New download',
   });
 
+const QUEUE_HELP = 'Automatic sends each link to the queue whose rules match it.';
+
 describe('the Add dialog', () => {
   it('opens on the links box, and Escape gives the focus back to what opened it', async () => {
     const { click, press } = await setup();
@@ -157,7 +159,7 @@ describe('the Add dialog', () => {
     expect(screen.getByRole('option', { name: /^Main/ })).toHaveTextContent('The default queue');
     await click(screen.getByRole('option', { name: /^Overnight/ }));
     expect(queue).toHaveAccessibleDescription(
-      'Queue: Overnight. You picked it. For this add only.',
+      `${QUEUE_HELP} Queue: Overnight. You picked it. For this add only.`,
     );
     await click(inDialog().getByRole('button', { name: 'Add paused' }));
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ queue: queueId(2), start: false }));
@@ -177,12 +179,14 @@ describe('the Add dialog', () => {
     const queue = inDialog().getByRole('combobox', { name: 'Queue' });
     await waitFor(() => {
       expect(queue).toHaveAccessibleDescription(
-        'Queue: Work files. Its rules match share.example.com.',
+        `${QUEUE_HELP} Queue: Work files. Its rules match share.example.com.`,
       );
     });
     await user.type(linksBox(), '{End}{Enter}https://elsewhere.example/b.zip');
     await waitFor(() => {
-      expect(queue).toHaveAccessibleDescription('Queue: 1 link to Work files, 1 to Main.');
+      expect(queue).toHaveAccessibleDescription(
+        `${QUEUE_HELP} Queue: 1 link to Work files, 1 to Main.`,
+      );
     });
     await press('{Control>}{Enter}{/Control}');
     const [added] = app.selection.rows;
@@ -201,7 +205,9 @@ describe('the Add dialog', () => {
     await settle();
     const queue = inDialog().getByRole('combobox', { name: 'Queue' });
     expect(queue).toHaveTextContent('Overnight');
-    expect(queue).toHaveAccessibleDescription('Queue: Overnight. It is the queue you had open.');
+    expect(queue).toHaveAccessibleDescription(
+      `${QUEUE_HELP} Queue: Overnight. It is the queue you had open.`,
+    );
   });
 
   it('keeps a link the app refused in the box and says why there, in the dialog', async () => {

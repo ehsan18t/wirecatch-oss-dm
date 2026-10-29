@@ -393,6 +393,9 @@ export class TauriBackend implements DownloadWindowBackend {
   showSetAsideList() {
     return this.#exec('show_set_aside_list');
   }
+  openLogFolder() {
+    return this.#exec('open_log_folder');
+  }
   systemAppearance() {
     return this.#call('system_appearance');
   }

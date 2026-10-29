@@ -5,17 +5,20 @@
  */
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { BADGE_TOKEN, cssColor } from './src/lib/theme';
+import { BADGE_TOKEN, cssColor, mediaButtonColors } from './src/lib/theme';
 
 /** The design system's tokens, where every colour of the extension comes from. */
 export const TOKENS_CSS = createRequire(import.meta.url).resolve('@wirecatch/ui/tokens.css');
 
 /** The toolbar badge's colour, read from the tokens; a missing token stops the build here. */
-const badgeColor = cssColor(BADGE_TOKEN, readFileSync(TOKENS_CSS, 'utf8'));
+const tokens = readFileSync(TOKENS_CSS, 'utf8');
+const badgeColor = cssColor(BADGE_TOKEN, tokens);
+const mediaButton = mediaButtonColors(tokens);
 
 /** The globals `src/env.d.ts` declares, as Vite's `define` takes them. */
 export function buildDefines(): Record<string, string> {
   return {
     __BADGE_COLOR__: JSON.stringify(badgeColor),
+    __MEDIA_BUTTON_COLORS__: JSON.stringify(mediaButton),
   };
 }

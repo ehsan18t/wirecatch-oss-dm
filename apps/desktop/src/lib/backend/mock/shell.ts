@@ -18,6 +18,11 @@ export abstract class MockShell {
     return this.answer(() => undefined);
   }
 
+  openLogFolder() {
+    // The sample app writes no logs; the call answers as the shell's would.
+    return this.answer(() => undefined);
+  }
+
   takeReveal() {
     // A browser tab gets no system notifications to click.
     return this.answer((): Reveal | null => null);

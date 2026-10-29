@@ -31,7 +31,7 @@ export interface QueuesHost {
 function runningPhrase(running: number, atOnce: number | null): string {
   return atOnce === null
     ? `${String(running)} running`
-    : `${String(running)} of ${String(atOnce)} running`;
+    : `${String(running)} running, at most ${String(atOnce)}`;
 }
 
 /** Why Test a link could not answer. */

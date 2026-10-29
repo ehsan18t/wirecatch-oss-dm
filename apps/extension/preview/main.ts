@@ -41,6 +41,7 @@ mount(Popup, {
     mediaShortcut: 'Alt+Shift+D',
     openShortcuts: noop,
     siteAccess: state !== 'no-access',
+    diagnostics: (connection: string) => Promise.resolve(`Connection: ${connection}`),
   },
 });
 

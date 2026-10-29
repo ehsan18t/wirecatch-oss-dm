@@ -372,6 +372,10 @@ export type CommandMap = {
    */
   show_set_aside_list: Command<null, null>;
   /**
+   * Opens the folder the app logs to (D40), for a person asked to send a log. The shell knows the folder; the page sends none.
+   */
+  open_log_folder: Command<null, null>;
+  /**
    * What the download complete window shows; later changes arrive on `FINISHED_EVENT`. Only
    * that window may call it.
    */

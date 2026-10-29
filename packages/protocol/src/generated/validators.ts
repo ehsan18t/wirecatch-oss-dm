@@ -2059,6 +2059,8 @@ export const COMMAND_OUTPUTS: {
     isArrayOf(value, isStartupNotice),
   show_set_aside_list: (value: unknown): value is CommandMap['show_set_aside_list']['output'] =>
     value === null,
+  open_log_folder: (value: unknown): value is CommandMap['open_log_folder']['output'] =>
+    value === null,
   finished_list: (value: unknown): value is CommandMap['finished_list']['output'] =>
     isFinishedList(value),
   take_reveal: (value: unknown): value is CommandMap['take_reveal']['output'] =>

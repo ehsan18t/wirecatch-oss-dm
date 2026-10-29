@@ -56,6 +56,16 @@
   const proxyNote = $derived(profile ? `Proxy: ${shownName(profile.settings)}` : '');
   const status = $derived(app.queues.describe(queue));
   const outside = $derived(app.queues.isOutsideSchedule(queue) && !queue.status.paused);
+  // In the rail every queue shares the list icon: its initials and its state tell them apart.
+  const initials = $derived(
+    queue.settings.name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word.charAt(0).toUpperCase())
+      .join(''),
+  );
+  const railTip = $derived([queue.settings.name, status, proxyNote].filter(Boolean).join(' · '));
 
   const entries = $derived<MenuEntry[]>([
     ...(outside
@@ -185,6 +195,8 @@
   <SidebarItem
     label={queue.settings.name}
     icon={ListOrdered}
+    mark={initials}
+    {railTip}
     active={shown}
     count={speed > 0 ? undefined : count}
     description={doing}
@@ -218,7 +230,10 @@
       <Badge size="sm">{addDownloads.enabled ? 'Rules' : 'Rules off'}</Badge>
     {/if}
     {#if profile}
-      <span class="flex shrink-0 text-ink-muted" {@attach tooltip(() => proxyNote)}>
+      <span
+        class="flex shrink-0 text-ink-muted"
+        {@attach tooltip(() => proxyNote, { beside: true })}
+      >
         <Icon icon={Network} size="xs" />
         <span class="sr-only">{proxyNote}</span>
       </span>

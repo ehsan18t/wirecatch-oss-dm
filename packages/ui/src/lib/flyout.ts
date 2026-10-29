@@ -53,6 +53,20 @@ export function placeFlyout(
   return { top: Math.max(inset, Math.min(top, maxTop)), left, above };
 }
 
+/** Where a fixed flyout goes after `anchor` in reading order, centred on it; null when it does not fit there. */
+export function placeBeside(
+  anchor: Box,
+  size: Size,
+  viewport: Size,
+  { gap, inset }: Pick<Placement, 'gap' | 'inset'>,
+): Position | null {
+  const left = anchor.right + gap;
+  if (left + size.width > viewport.width - inset) return null;
+  const middle = anchor.top + (anchor.bottom - anchor.top - size.height) / 2;
+  const top = Math.max(inset, Math.min(middle, viewport.height - inset - size.height));
+  return { top, left, above: false };
+}
+
 /** A zero-size anchor at a point, for a menu opened where the pointer is. */
 export function pointBox(x: number, y: number): Box {
   return { top: y, bottom: y, left: x, right: x };
