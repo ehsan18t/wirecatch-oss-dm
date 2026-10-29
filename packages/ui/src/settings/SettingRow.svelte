@@ -39,7 +39,7 @@
     invalid: Boolean(error),
   });
   // Beside the control, the name's line is a control's height whatever the control, so every row keeps one rhythm.
-  const labelClass = $derived(!stacked ? 'flex min-h-control items-center' : undefined);
+  const labelClass = $derived(stacked ? undefined : 'flex min-h-control items-center');
   const nameClass = $derived(
     cn('flex min-w-0 items-center gap-1 text-ui font-medium text-ink', !stacked && 'flex-1'),
   );
