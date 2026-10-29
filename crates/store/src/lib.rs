@@ -299,6 +299,7 @@ const MAX_KEPT: usize = 10_000;
 
 enum Op {
     SaveDownloads(Vec<StoredDownload>),
+    SaveProgress(Vec<Progress>),
     DeleteDownloads(Vec<DownloadId>),
     SaveQueues(Vec<Queue>),
     SaveSettings(Box<AppSettings>),
@@ -324,6 +325,7 @@ impl std::fmt::Debug for Op {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Op::SaveDownloads(_) => "SaveDownloads",
+            Op::SaveProgress(_) => "SaveProgress",
             Op::DeleteDownloads(_) => "DeleteDownloads",
             Op::SaveQueues(_) => "SaveQueues",
             Op::SaveSettings(_) => "SaveSettings",
@@ -425,6 +427,15 @@ impl Store {
     pub fn save_downloads(&self, downloads: Vec<StoredDownload>) {
         if !downloads.is_empty() {
             self.send(Op::SaveDownloads(downloads));
+        }
+    }
+
+    /// Saves how far these downloads are, and nothing else of them: a running download's
+    /// progress changes every few seconds, its other fields (cookies among them) only when they
+    /// are saved whole (CORE-7). A download not saved yet is left to its first whole save.
+    pub fn save_progress(&self, progress: Vec<Progress>) {
+        if !progress.is_empty() {
+            self.send(Op::SaveProgress(progress));
         }
     }
 
@@ -641,12 +652,26 @@ fn apply_one_by_one(conn: &mut Connection, writes: Vec<Op>) -> Vec<Op> {
     failed
 }
 
+/// How far a running download is, saved without the rest of its row ([`Store::save_progress`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Progress {
+    pub id: DownloadId,
+    /// Bytes downloaded so far.
+    pub done: u64,
+    /// Size in bytes, once the server said.
+    pub total: Option<u64>,
+}
+
 /// Splits a write about several downloads into one write per download.
 fn split(op: Op) -> Vec<Op> {
     match op {
         Op::SaveDownloads(rows) => rows
             .into_iter()
             .map(|row| Op::SaveDownloads(vec![row]))
+            .collect(),
+        Op::SaveProgress(rows) => rows
+            .into_iter()
+            .map(|row| Op::SaveProgress(vec![row]))
             .collect(),
         Op::DeleteDownloads(ids) => ids
             .into_iter()
@@ -672,6 +697,7 @@ enum Target {
 fn target_of(op: &Op) -> Target {
     match op {
         Op::SaveDownloads(rows) => Target::Download(rows.first().map(|r| r.summary.id)),
+        Op::SaveProgress(rows) => Target::Download(rows.first().map(|r| r.id)),
         Op::DeleteDownloads(ids) => Target::Download(ids.first().copied()),
         Op::SaveQueues(_) => Target::Queues,
         Op::SaveSettings(_) => Target::Settings,
@@ -771,6 +797,17 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
     for op in writes {
         match op {
             Op::SaveDownloads(rows) => rows.iter().try_for_each(|row| save_download(&tx, row))?,
+            Op::SaveProgress(rows) => {
+                let mut stmt =
+                    tx.prepare_cached("UPDATE downloads SET done = ?2, total = ?3 WHERE id = ?1")?;
+                for row in rows {
+                    stmt.execute(params![
+                        row.id.0,
+                        saturating_cast::<i64, _>(row.done),
+                        row.total.map(saturating_cast::<i64, u64>),
+                    ])?;
+                }
+            }
             Op::DeleteDownloads(ids) => {
                 let mut stmt = tx.prepare_cached("DELETE FROM downloads WHERE id = ?1")?;
                 for id in ids {
@@ -1731,6 +1768,35 @@ mod tests {
         drop(store);
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.downloads, vec![row]);
+    }
+
+    /// CORE-7: a running download's progress is saved alone, leaving the rest of its row as it
+    /// was saved; progress for a download not saved yet makes no row.
+    #[tokio::test]
+    async fn progress_is_saved_without_the_rest_of_the_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let row = download(1);
+        store.save_downloads(vec![row.clone()]);
+        store.save_progress(vec![
+            Progress {
+                id: DownloadId(1),
+                done: 500,
+                total: Some(1000),
+            },
+            Progress {
+                id: DownloadId(9),
+                done: 1,
+                total: None,
+            },
+        ]);
+        store.flush().await;
+        drop(store);
+        let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let mut expected = row;
+        expected.summary.done = 500;
+        expected.summary.total = Some(1000);
+        assert_eq!(snapshot.downloads, vec![expected]);
     }
 
     // The list holds cookies (D17), yet a data folder that could not be made private was

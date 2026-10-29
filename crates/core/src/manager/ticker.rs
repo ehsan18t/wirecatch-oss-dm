@@ -13,6 +13,7 @@ use wirecatch_engine::CancellationToken;
 use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, QueueReport, UiEvent, WaitReason};
 use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_store::Progress;
 
 use super::state::{Entry, Gauge, State};
 use super::{Inner, Manager};
@@ -74,13 +75,18 @@ impl Manager {
         let running = !state.running.is_empty();
 
         if running && now.duration_since(*last_saved) >= SAVE_PROGRESS_EVERY {
-            let rows = state
+            // How far each is, not its whole row: the rest is saved when it changes (CORE-7).
+            let progress = state
                 .running
                 .iter()
                 .filter_map(|id| state.downloads.get(id))
-                .map(Entry::stored)
+                .map(|entry| Progress {
+                    id: entry.row.id,
+                    done: entry.row.done,
+                    total: entry.row.total,
+                })
                 .collect();
-            self.inner.store.save_downloads(rows);
+            self.inner.store.save_progress(progress);
             *last_saved = now;
         }
 
