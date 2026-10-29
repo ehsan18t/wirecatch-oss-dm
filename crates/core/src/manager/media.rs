@@ -124,14 +124,6 @@ struct Taken {
     resolved: Resolved,
 }
 
-/// A choice taken off the questions, with what was chosen, until its download is added.
-struct Taken {
-    pending: MediaPending,
-    plan: Plan,
-    choice: Box<MediaChoice>,
-    resolved: Resolved,
-}
-
 /// Who picked a video's quality.
 enum Picker {
     /// The person, in the quality window: the choices are remembered for next time.
