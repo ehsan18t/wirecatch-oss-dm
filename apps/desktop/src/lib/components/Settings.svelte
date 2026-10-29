@@ -10,12 +10,8 @@
   import { tick, type Component } from 'svelte';
   import { Button, cn, EmptyState } from '@wirecatch/ui';
   import { findElement } from '$lib/dom';
-  import {
-    searchSettings,
-    settingAnchor,
-    type SettingDef,
-    type SettingId,
-  } from '$lib/settings-schema';
+  import { settingAnchor, type SettingDef, type SettingId } from '$lib/settings-schema';
+  import { searchSettings } from '$lib/settings-search';
   import { SECTIONS, type SectionId } from '$lib/settings-sections';
   import { getApp } from '$lib/state/app.svelte';
   import BrowserSettings from './settings/BrowserSettings.svelte';
