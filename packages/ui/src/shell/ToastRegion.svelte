@@ -69,6 +69,14 @@
     if (toaster.list.length === 0 || !region?.contains(document.activeElement)) release();
   });
 
+  // A region that goes away with its dialog fires no pointerleave or focusout, which would hold every countdown.
+  $effect(() => () => {
+    if (hovered || focused) {
+      hovered = false;
+      release();
+    }
+  });
+
   function onfocusin(event: FocusEvent) {
     if (
       !focused &&
@@ -126,60 +134,63 @@
   {onfocusin}
   {onfocusout}
 >
-  {#each shown ? toaster.list : [] as toast (toast.id)}
-    <div
-      data-toast={toast.id}
-      class={cn(
-        FLYOUT_SURFACE,
-        'pointer-events-auto relative flex items-start gap-3 overflow-hidden py-3 pr-2 pl-4',
-      )}
-      in:shift={{ from: 'right', by: 'lg' }}
-      out:shift={{ from: 'right', by: 'lg', speed: 'normal' }}
-      animate:reflow
-    >
-      <span class={cn('absolute inset-y-0 left-0 w-1', TONE_FILL[toast.tone])} aria-hidden="true"
-      ></span>
-      <Icon icon={ICON[toast.tone]} size="lg" class={cn('mt-px', TONE_TEXT[toast.tone])} />
-      <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-        {#if toast.title}
-          <p class="truncate text-ui font-semibold text-ink">{toast.title}</p>
-        {/if}
-        <p class="text-ui wrap-break-word text-ink-muted">{toast.message}</p>
-        {#if toast.actions.length > 0}
-          <div class="mt-1 flex flex-wrap gap-x-3">
-            {#each toast.actions as action (action.label)}
-              <Button
-                variant="link"
-                size="sm"
-                onclick={() => {
-                  action.run();
-                  dismiss(toast.id);
-                }}
-              >
-                {action.label}
-              </Button>
-            {/each}
-          </div>
-        {/if}
+  <!-- One block for the stack, so a toast handed between layers as one closes appears in place: local transitions play only for a toast added to a shown stack. -->
+  {#if shown}
+    {#each toaster.list as toast (toast.id)}
+      <div
+        data-toast={toast.id}
+        class={cn(
+          FLYOUT_SURFACE,
+          'pointer-events-auto relative flex items-start gap-3 overflow-hidden py-3 pr-2 pl-4',
+        )}
+        in:shift={{ from: 'right', by: 'lg' }}
+        out:shift={{ from: 'right', by: 'lg', speed: 'normal' }}
+        animate:reflow
+      >
+        <span class={cn('absolute inset-y-0 left-0 w-1', TONE_FILL[toast.tone])} aria-hidden="true"
+        ></span>
+        <Icon icon={ICON[toast.tone]} size="lg" class={cn('mt-px', TONE_TEXT[toast.tone])} />
+        <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+          {#if toast.title}
+            <p class="truncate text-ui font-semibold text-ink">{toast.title}</p>
+          {/if}
+          <p class="text-ui wrap-break-word text-ink-muted">{toast.message}</p>
+          {#if toast.actions.length > 0}
+            <div class="mt-1 flex flex-wrap gap-x-3">
+              {#each toast.actions as action (action.label)}
+                <Button
+                  variant="link"
+                  size="sm"
+                  onclick={() => {
+                    action.run();
+                    dismiss(toast.id);
+                  }}
+                >
+                  {action.label}
+                </Button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+        <IconButton
+          icon={X}
+          label="Dismiss"
+          tooltip={null}
+          size="xs"
+          data-toast-dismiss
+          onclick={() => dismiss(toast.id)}
+        />
       </div>
-      <IconButton
-        icon={X}
-        label="Dismiss"
-        tooltip={null}
-        size="xs"
-        data-toast-dismiss
-        onclick={() => dismiss(toast.id)}
-      />
-    </div>
-  {/each}
-  {#if shown && toaster.list.length > 1}
-    <!-- Last, below the newest toast, so it stays in the same corner however many toasts there are and comes last with Tab as on screen; on the toasts' own surface, so it reads on whatever is behind the region, a website included. -->
-    <div
-      class={cn(FLYOUT_SURFACE, 'pointer-events-auto self-end')}
-      in:shift={{ from: 'right', by: 'lg' }}
-    >
-      <Button variant="ghost" size="sm" onclick={clearAll}>Clear all</Button>
-    </div>
+    {/each}
+    {#if toaster.list.length > 1}
+      <!-- Last, below the newest toast, so it stays in the same corner however many toasts there are and comes last with Tab as on screen; on the toasts' own surface, so it reads on whatever is behind the region, a website included. -->
+      <div
+        class={cn(FLYOUT_SURFACE, 'pointer-events-auto self-end')}
+        in:shift={{ from: 'right', by: 'lg' }}
+      >
+        <Button variant="ghost" size="sm" onclick={clearAll}>Clear all</Button>
+      </div>
+    {/if}
   {/if}
 </div>
 
