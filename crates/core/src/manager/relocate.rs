@@ -265,19 +265,75 @@ fn move_together(
     Ok(())
 }
 
-/// Renames a file, copying it when the target is on another drive.
+/// Moves a file to `to`, never over a file there (CORE-9): renamed in one step where it can be,
+/// else copied to a new file and the original deleted. When the original cannot be deleted (open
+/// in another program, say), the copy goes again, so the file is never left in two places.
 fn move_file(from: &Path, to: &Path) -> io::Result<()> {
-    if let Ok(()) = std::fs::rename(from, to) {
-        Ok(())
-    } else {
-        std::fs::copy(from, to)?;
-        std::fs::remove_file(from)
+    match wirecatch_engine::naming::rename_no_replace(from, to) {
+        Ok(()) => return Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => return Err(e),
+        // Another drive, or a file that cannot be renamed: copied instead.
+        Err(_) => {}
+    }
+    {
+        let mut source = std::fs::File::open(from)?;
+        let mut copy = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(to)?;
+        if let Err(e) = io::copy(&mut source, &mut copy).and_then(|_| copy.sync_all()) {
+            drop(copy);
+            discard(to);
+            return Err(e);
+        }
+    }
+    std::fs::remove_file(from).inspect_err(|_| discard(to))
+}
+
+/// Deletes the copy `move_file` made, which must not stay beside the original.
+fn discard(copy: &Path) {
+    if let Err(error) = std::fs::remove_file(copy) {
+        warn!(path = %copy.display(), %error, "could not delete the copy of a file that could not be moved");
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// CORE-9: a move never replaces a file at its target, which a download took its free name
+    /// before another program saved there.
+    #[test]
+    fn a_move_never_replaces_a_file_at_its_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let (from, to) = (dir.path().join("a.zip"), dir.path().join("b.zip"));
+        std::fs::write(&from, b"downloaded").unwrap();
+        std::fs::write(&to, b"someone else's").unwrap();
+        let error = move_file(&from, &to).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&to).unwrap(), b"someone else's");
+        assert_eq!(std::fs::read(&from).unwrap(), b"downloaded");
+    }
+
+    /// CORE-9: a file that cannot be taken from where it is (open in another program without
+    /// sharing) stays there alone; no copy is left at the target.
+    #[cfg(windows)]
+    #[test]
+    fn a_file_held_open_is_not_copied_and_left_twice() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let (from, to) = (dir.path().join("a.zip"), dir.path().join("b.zip"));
+        std::fs::write(&from, b"downloaded").unwrap();
+        // Shared for reading only: it can be copied, but neither renamed nor deleted.
+        let _held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&from)
+            .unwrap();
+        assert!(move_file(&from, &to).is_err());
+        assert!(!to.exists(), "a second copy was left at the target");
+        assert!(from.exists());
+    }
 
     #[test]
     fn a_folder_that_is_a_file_cannot_be_used() {
