@@ -1,5 +1,5 @@
 // A download whose file is already in its folder, asked in its window (D88): Keep both is the main
-// button, each answer reaches the core, and "Do this every time" saves Replace or Keep both.
+// button, each answer reaches the core, and "Remember my choice" saves Replace or Keep both.
 
 import { questionId } from '@wirecatch/protocol';
 import { render, screen } from '@testing-library/svelte';
@@ -37,7 +37,7 @@ describe('a download whose file is already in its folder', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(asked?.file_name ?? '')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Keep both' })).toHaveFocus();
-    expect(screen.getByRole('checkbox', { name: 'Do this every time' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Remember my choice' })).not.toBeChecked();
   });
 
   it('keeps both under a new name and shows the progress', async () => {
@@ -52,14 +52,14 @@ describe('a download whose file is already in its folder', () => {
 
   it('remembers Replace when asked to', async () => {
     const { b } = await ask();
-    await userEvent.setup().click(screen.getByRole('checkbox', { name: 'Do this every time' }));
+    await userEvent.setup().click(screen.getByRole('checkbox', { name: 'Remember my choice' }));
     await press('Replace');
     expect((await b.getSettings()).when_file_exists).toBe('replace');
   });
 
   it('cancels the download and closes, remembering nothing', async () => {
     const { b, host, asked } = await ask();
-    await userEvent.setup().click(screen.getByRole('checkbox', { name: 'Do this every time' }));
+    await userEvent.setup().click(screen.getByRole('checkbox', { name: 'Remember my choice' }));
     await press('Cancel');
     expect(host.close).toHaveBeenCalledTimes(1);
     expect((await rowOf(b, asked?.download))?.status).toBe('cancelled');
