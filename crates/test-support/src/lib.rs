@@ -79,6 +79,9 @@ pub type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>
 /// How long any wait in a test may take before the test fails: a bound on a hang, never a measure of the work. A test that finishes in a second alone can take many times that on a machine busy with other builds, and must still pass there, so this is far above any honest wait. A limit the code under test enforces (an idle limit, a time limit) is not a wait: a test that expects such a limit not to run out drives a paused clock rather than racing the machine (docs/ENGINEERING.md, section 7).
 pub const PATIENCE: Duration = Duration::from_secs(120);
 
+/// A window in which something must not happen: a test that checks nothing came (no request, no event, no rerun) waits this long first. Short, since it can only miss a fault, never fail a correct run (docs/ENGINEERING.md, section 7).
+pub const QUIET: Duration = Duration::from_millis(300);
+
 /// A new, empty folder for one test that only its owner can enter, removed on
 /// drop, so a test that fails leaves nothing behind. It dereferences to its
 /// [`Path`].

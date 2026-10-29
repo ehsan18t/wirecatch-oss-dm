@@ -12,7 +12,7 @@ use wirecatch_engine::{
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
 use wirecatch_test_support::resume::{asked_again, kept_ranges};
-use wirecatch_test_support::{PATIENCE, TestResult, files_in, private_dir, test_data};
+use wirecatch_test_support::{PATIENCE, QUIET, TestResult, files_in, private_dir, test_data};
 
 mod common;
 use common::{request, run};
@@ -592,12 +592,10 @@ async fn a_dropped_download_never_writes_its_resume_file_again() {
     )
     .await;
     let dir = private_dir("dropped").unwrap();
+    let req = request(&server, "d.bin", &dir, 2);
+    let twenty_checkpoints = req.options.checkpoint_interval * 20;
     let progress = Arc::new(Progress::default());
-    let task = tokio::spawn(download(
-        request(&server, "d.bin", &dir, 2),
-        progress.clone(),
-        CancellationToken::new(),
-    ));
+    let task = tokio::spawn(download(req, progress.clone(), CancellationToken::new()));
     let deadline = Instant::now() + PATIENCE;
     while progress.done() < 64 * KIB {
         assert!(Instant::now() < deadline, "the download never started");
@@ -617,7 +615,7 @@ async fn a_dropped_download_never_writes_its_resume_file_again() {
     std::fs::remove_file(&state).unwrap();
 
     // Twenty checkpoint intervals later, nothing came back.
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    tokio::time::sleep(twenty_checkpoints).await;
     assert!(
         !state.exists(),
         "the dropped download wrote its resume file again"
@@ -687,7 +685,7 @@ async fn slow_to_answer(content_disposition: &str) -> TestServer {
 async fn run_watching_path(req: DownloadRequest) -> TestResult<(Outcome, Option<PathBuf>)> {
     let progress = Arc::new(Progress::default());
     let task = tokio::spawn(download(req, progress.clone(), CancellationToken::new()));
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(QUIET).await;
     assert_eq!(
         progress.path(),
         None,
