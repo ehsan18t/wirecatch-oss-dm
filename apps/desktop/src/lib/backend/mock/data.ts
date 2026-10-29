@@ -119,7 +119,7 @@ export function defaultSettings(): AppSettings {
     accent: 'cyan',
     start_with_system: true,
     close_to_tray: true,
-    notify_on_finish: 'browser',
+    notify_on_finish: 'notification',
     finish_notice_time: 'eight_seconds',
     notify_on_start: 'browser',
     start_notice_time: 'three_seconds',

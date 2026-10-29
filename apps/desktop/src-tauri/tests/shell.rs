@@ -270,7 +270,8 @@ fn a_note_goes_to_the_browser_that_shows_it_or_to_a_notification() -> TestResult
         shown.kind,
         wirecatch_protocol::extension::NoticeKind::Finished
     );
-    assert_eq!(shown.buttons, ["Show in folder"], "no Open in a page");
+    // The notification's buttons, Open included (D90).
+    assert_eq!(shown.buttons, ["Open", "Show in folder"]);
     assert_eq!(shown.stays_ms, Some(8000));
     browser_notices::shown(&handle, shown.id);
     // Asked after the one shown, so its notification can only come after the other's would.
