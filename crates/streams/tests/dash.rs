@@ -1,40 +1,18 @@
 //! DASH downloads end to end, from a local server.
 
-use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
 
-use wirecatch_engine::{CancellationToken, DownloadOptions};
+use wirecatch_engine::CancellationToken;
 use wirecatch_streams::{
-    Choice, DrmSystem, Error, Feature, ManifestError, Outcome, PrivateNetwork, StreamKind,
-    StreamProgress, StreamRequest, download, inspect,
+    Choice, DrmSystem, Error, Feature, ManifestError, Outcome, PrivateNetwork, StreamKind, inspect,
 };
 use wirecatch_test_support::files::FileServer;
 use wirecatch_test_support::{TestResult, private_dir, ts_segment};
 
+mod common;
+use common::{options, request, run};
+
 const DASH: &str = "application/dash+xml";
-
-fn options() -> DownloadOptions {
-    let mut options = DownloadOptions::default();
-    options.stall_timeout = Duration::from_secs(5);
-    options.max_retries = 2;
-    options
-}
-
-fn request(server: &FileServer, manifest: &str, output: &Path) -> StreamRequest {
-    let mut request = StreamRequest::new(server.url(manifest), output, PrivateNetwork::Auto);
-    request.options = options();
-    request
-}
-
-async fn run(request: StreamRequest) -> Result<Outcome, Error> {
-    download(
-        request,
-        Arc::new(StreamProgress::default()),
-        CancellationToken::new(),
-    )
-    .await
-}
 
 /// The bytes of the file a completed download saved.
 fn saved(outcome: Outcome) -> TestResult<Vec<u8>> {
@@ -112,10 +90,10 @@ async fn number_templates_download_the_chosen_representation() {
     let dir = private_dir("dash-number").unwrap();
     // Separate audio needs ffmpeg; video alone does not.
     assert!(matches!(
-        run(request(&server, "dash/manifest.mpd", &dir.join("x.mp4"))).await,
+        run(request(server.url("dash/manifest.mpd"), dir.join("x.mp4"))).await,
         Err(Error::NeedsFfmpeg)
     ));
-    let mut req = request(&server, "dash/manifest.mpd", &dir.join("best.mp4"));
+    let mut req = request(server.url("dash/manifest.mpd"), dir.join("best.mp4"));
     req.audio = Choice::Skip;
     assert_eq!(
         saved(run(req).await.unwrap()).unwrap(),
@@ -123,12 +101,12 @@ async fn number_templates_download_the_chosen_representation() {
         "the best quality by default"
     );
 
-    let mut req = request(&server, "dash/manifest.mpd", &dir.join("low.mp4"));
+    let mut req = request(server.url("dash/manifest.mpd"), dir.join("low.mp4"));
     req.video = Choice::Track(info.video[0].id.clone());
     req.audio = Choice::Skip;
     assert_eq!(saved(run(req).await.unwrap()).unwrap(), expected["v1"]);
 
-    let mut req = request(&server, "dash/manifest.mpd", &dir.join("audio.mp4"));
+    let mut req = request(server.url("dash/manifest.mpd"), dir.join("audio.mp4"));
     req.video = Choice::Skip;
     assert_eq!(saved(run(req).await.unwrap()).unwrap(), expected["a1"]);
     dir.remove().unwrap();
@@ -165,7 +143,7 @@ async fn timelines_use_times_in_addresses() {
     let dir = private_dir("dash-timeline").unwrap();
     assert_eq!(
         saved(
-            run(request(&server, "tl/manifest.mpd", &dir.join("v.mp4")))
+            run(request(server.url("tl/manifest.mpd"), dir.join("v.mp4")))
                 .await
                 .unwrap()
         )
@@ -214,7 +192,7 @@ async fn segment_base_files_are_split_through_their_index() {
         DASH,
     );
     let dir = private_dir("dash-sidx").unwrap();
-    let mut req = request(&server, "sb/manifest.mpd", &dir.join("v.mp4"));
+    let mut req = request(server.url("sb/manifest.mpd"), dir.join("v.mp4"));
     req.options.connections = 4;
     assert_eq!(saved(run(req).await.unwrap()).unwrap(), file);
     // The index read, then the head and three subsegments, each by range.
@@ -262,18 +240,18 @@ async fn live_drm_and_several_periods_are_refused() {
     .unwrap();
     assert!(info.live);
     let dir = private_dir("dash-refused").unwrap();
-    let error = run(request(&server, "live.mpd", &dir.join("a.mp4")))
+    let error = run(request(server.url("live.mpd"), dir.join("a.mp4")))
         .await
         .unwrap_err();
     assert!(matches!(error, Error::Live), "{error}");
-    let error = run(request(&server, "drm.mpd", &dir.join("b.mp4")))
+    let error = run(request(server.url("drm.mpd"), dir.join("b.mp4")))
         .await
         .unwrap_err();
     assert!(
         matches!(&error, Error::Drm(DrmSystem::PlayReady)),
         "{error}"
     );
-    let error = run(request(&server, "periods.mpd", &dir.join("c.mp4")))
+    let error = run(request(server.url("periods.mpd"), dir.join("c.mp4")))
         .await
         .unwrap_err();
     assert!(
@@ -298,7 +276,7 @@ async fn a_base_url_into_the_local_network_is_refused() {
         DASH,
     );
     let dir = private_dir("dash-private").unwrap();
-    let mut req = request(&server, "lan.mpd", &dir.join("v.mp4"));
+    let mut req = request(server.url("lan.mpd"), dir.join("v.mp4"));
     req.private_network = PrivateNetwork::Block;
     let error = run(req).await.unwrap_err();
     assert!(matches!(error, Error::PrivateNetwork), "{error}");
@@ -356,7 +334,9 @@ async fn a_track_without_segments_is_refused_not_saved_empty() -> TestResult {
     let dir = private_dir("dash-empty")?;
     for (manifest, name) in [("empty-list.mpd", "a.mp4"), ("no-length.mpd", "b.mp4")] {
         let output = dir.join(name);
-        let error = run(request(&server, manifest, &output)).await.unwrap_err();
+        let error = run(request(server.url(manifest), &output))
+            .await
+            .unwrap_err();
         assert!(
             matches!(
                 &error,
