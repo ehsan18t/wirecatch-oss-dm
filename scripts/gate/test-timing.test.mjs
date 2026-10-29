@@ -200,3 +200,20 @@ test('a deadline written in place is a race only when the test asserts it is not
   ].join('\n');
   assert.deepEqual(lines(text), [2]);
 });
+
+test('a sleep given a duration in place is refused outside a wait loop; a named one is not', () => {
+  const text = [
+    'async fn quiet() {',
+    '    run().await;',
+    '    tokio::time::sleep(Duration::from_millis(200)).await;',
+    '    sleep(QUIET).await;',
+    '    while !ready() {',
+    '        tokio::time::sleep(Duration::from_millis(10)).await;',
+    '    }',
+    '    loop {',
+    '        sleep(std::time::Duration::from_millis(5)).await;',
+    '    }',
+    '}',
+  ].join('\n');
+  assert.deepEqual(lines(text), [3]);
+});

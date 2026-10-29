@@ -286,7 +286,7 @@ mod tests {
 
     use tokio::io::{AsyncReadExt, DuplexStream};
     use wirecatch_protocol::wire::{Call, Event, Reply};
-    use wirecatch_test_support::PATIENCE;
+    use wirecatch_test_support::{PATIENCE, QUIET};
 
     fn request(id: u64) -> RawFrame {
         RawFrame::encode(&Message::Request {
@@ -413,7 +413,8 @@ mod tests {
         for id in 1..=3 {
             h.to_relay.send(request(id)).await.unwrap();
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Time for the requests to queue up behind the connection still being made.
+        tokio::time::sleep(QUIET).await;
         release.send(()).unwrap();
         for id in 1..=3 {
             assert_eq!(read_frame(&mut app).await, request(id));

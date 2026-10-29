@@ -364,6 +364,9 @@ mod tests {
     /// A wait as long as a refusal's `Retry-After` may ask for.
     const LONG_WAIT: Duration = Duration::from_secs(300);
 
+    /// When the other connection starts receiving, on the paused clock.
+    const ANOTHER_STARTS_AFTER: Duration = Duration::from_secs(1);
+
     /// The connection that owns segment `mine` waits as a refused one would,
     /// while another connection starts receiving a second in. How the wait
     /// ended, and how long it took.
@@ -372,7 +375,7 @@ mod tests {
         let cancel = CancellationToken::new();
         let started = Instant::now();
         let another_starts = async {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(ANOTHER_STARTS_AFTER).await;
             receiving.start()
         };
         let (waited, _receiving) = tokio::join!(
@@ -394,11 +397,7 @@ mod tests {
         let (waited, took) = refused_while_another_starts(&table, mine).await;
 
         assert_eq!(waited, Waited::SteppedBack);
-        assert_eq!(
-            took,
-            Duration::from_secs(1),
-            "held its segment for the wait"
-        );
+        assert_eq!(took, ANOTHER_STARTS_AFTER, "held its segment for the wait");
         let next = table.lock().acquire(1).map(|a| a.index);
         assert_eq!(next, Some(mine), "the segment was not handed back");
     }

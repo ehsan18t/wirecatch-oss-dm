@@ -886,7 +886,7 @@ mod tests {
         );
         ffmpeg::remove(&out).await;
         // The file can be removed (no ffmpeg holds it), and nothing writes it again.
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(wirecatch_test_support::QUIET).await;
         assert!(!out.exists(), "ffmpeg kept writing after it was cancelled");
     }
 }
