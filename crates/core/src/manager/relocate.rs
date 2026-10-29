@@ -159,11 +159,13 @@ impl Manager {
         dir: PathBuf,
     ) -> Result<PathBuf> {
         let name = naming::file_name_of(old_path);
-        let claimed = self.lock().claimed.clone();
+        let manager = self.clone();
         let new_path = self
             .blocking(move || {
                 prepare_folder(&dir)?;
-                Ok(naming::unique_path(&dir, &name, &claimed))
+                Ok(naming::unique_path(&dir, &name, |path| {
+                    manager.lock().claimed.contains(path)
+                }))
             })
             .await?;
         let completed = {

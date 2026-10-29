@@ -124,13 +124,13 @@ fn checked(name: String) -> Result<String> {
 }
 
 /// The first of `name`, `name (1)`, `name (2)`... in `dir` that is free on disk
-/// (no file, part file or resume file) and not claimed by another download.
+/// (no file, part file or resume file) and not `claimed` by another download.
 /// Touches the file system, so call it off async threads.
-pub(crate) fn unique_path(dir: &Path, name: &str, claimed: &Claimed) -> PathBuf {
+pub(crate) fn unique_path(dir: &Path, name: &str, claimed: impl Fn(&Path) -> bool) -> PathBuf {
     let mut n = 0;
     loop {
         let candidate = candidate(dir, name, n);
-        if !claimed.contains(&candidate) && is_free_on_disk(&candidate) {
+        if !claimed(&candidate) && is_free_on_disk(&candidate) {
             return candidate;
         }
         n += 1;
@@ -287,11 +287,11 @@ mod tests {
         let mut claimed = Claimed::default();
         claimed.insert(&dir.path().join("a (2).zip"));
         assert_eq!(
-            unique_path(dir.path(), "a.zip", &claimed),
+            unique_path(dir.path(), "a.zip", |p| claimed.contains(p)),
             dir.path().join("a (3).zip")
         );
         assert_eq!(
-            unique_path(dir.path(), ".bashrc", &claimed),
+            unique_path(dir.path(), ".bashrc", |p| claimed.contains(p)),
             dir.path().join(".bashrc")
         );
     }

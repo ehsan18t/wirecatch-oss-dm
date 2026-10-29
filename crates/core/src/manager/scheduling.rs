@@ -35,6 +35,7 @@ impl Manager {
         if state.closed {
             return;
         }
+        state.prune_finished();
         let gates = self.evaluate_gates(state);
         let queues: Vec<QueueView> = gates
             .iter()
@@ -44,7 +45,7 @@ impl Manager {
                 open: g.closed.is_none(),
             })
             .collect();
-        let downloads: Vec<DownloadView> = state.downloads.values().filter_map(view_of).collect();
+        let downloads: Vec<DownloadView> = state.unfinished().filter_map(view_of).collect();
         let plan = plan::plan(&queues, &downloads, state.settings.max_concurrent_downloads);
         for id in plan.stop {
             if let Some(entry) = state.downloads.get_mut(&id) {
@@ -63,8 +64,7 @@ impl Manager {
         let now = self.inner.clock.local_now();
         let since = std::mem::replace(&mut state.last_checked, now);
         let busy: HashSet<QueueId> = state
-            .downloads
-            .values()
+            .unfinished()
             .filter_map(view_of)
             .map(|d| d.queue)
             .collect();
@@ -119,7 +119,7 @@ impl Manager {
             }
         }
         let mut lines: HashMap<QueueId, Vec<&Entry>> = HashMap::new();
-        for entry in state.downloads.values().filter(|e| is_waiting(e)) {
+        for entry in state.unfinished().filter(|e| is_waiting(e)) {
             lines.entry(entry.row.queue).or_default().push(entry);
         }
 
@@ -135,7 +135,10 @@ impl Manager {
         }
 
         let mut changed = Vec::new();
-        for entry in state.downloads.values_mut() {
+        for id in &state.unfinished {
+            let Some(entry) = state.downloads.get_mut(id) else {
+                continue;
+            };
             let reason = reasons.remove(&entry.row.id);
             // A running video waiting to try again keeps the time of its next try;
             // the run sets and clears that one itself.

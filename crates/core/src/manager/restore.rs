@@ -17,20 +17,11 @@ use wirecatch_store::{Snapshot, StoredDownload};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::questions::Questions;
+use super::run::mark_completed;
 use super::state::{Counters, Entry, Hold, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
-use crate::headers::Origin;
 use crate::naming::Claimed;
-
-fn mark_completed(entry: &mut Entry, size: u64, now_millis: i64) {
-    entry.row.status = DownloadStatus::Completed;
-    entry.row.total = Some(size);
-    entry.row.done = size;
-    entry.row.completed_at = Some(now_millis);
-    entry.row.error = None;
-    entry.origin = Origin::default();
-}
 
 /// The rebuilt state, plus downloads whose stored row needed fixing.
 pub(super) struct Restored {
@@ -113,6 +104,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         downloads: BTreeMap::new(),
         claimed: Claimed::default(),
         running: BTreeSet::default(),
+        unfinished: BTreeSet::default(),
         pending: Questions::new(
             "downloads are already waiting for your confirmation. Answer some of them first.",
             "This link was captured many times and is already waiting for your confirmation. Answer that first.",
@@ -256,6 +248,7 @@ pub(super) fn first_start() -> State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::headers::Origin;
     use wirecatch_protocol::app::{Category, DownloadSummary, Setting};
     use wirecatch_protocol::{DownloadId, QueueId};
     use wirecatch_sites::local_network::ChosenBy;
@@ -291,6 +284,30 @@ mod tests {
         assert_eq!(row(2).status, DownloadStatus::Cancelled);
         assert!(!restored.state.downloads[&DownloadId(1)].resume_first);
         assert_eq!(restored.changed.len(), 2);
+    }
+
+    /// The scheduler visits only unfinished downloads: a finished one is never in the set, and one that finishes leaves it at the next prune.
+    #[test]
+    fn only_unfinished_downloads_are_visited() {
+        let snapshot = Snapshot {
+            downloads: vec![
+                stored(1, 1, DownloadStatus::Completed),
+                stored(2, 1, DownloadStatus::Queued),
+                stored(3, 1, DownloadStatus::Paused),
+            ],
+            ..Snapshot::default()
+        };
+        let mut state = restore(snapshot, &nowhere(&|_| None)).state;
+        let visited = |state: &State| state.unfinished().map(|e| e.row.id.0).collect::<Vec<_>>();
+        assert_eq!(visited(&state), [2, 3]);
+        let finished = state.downloads.get_mut(&DownloadId(3)).unwrap();
+        mark_completed(finished, 10, 8);
+        assert_eq!(visited(&state), [2]);
+        state.prune_finished();
+        assert_eq!(
+            state.unfinished.iter().map(|id| id.0).collect::<Vec<_>>(),
+            [2]
+        );
     }
 
     fn stored(id: i64, queue: i64, status: DownloadStatus) -> StoredDownload {

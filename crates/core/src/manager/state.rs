@@ -45,6 +45,8 @@ pub(super) struct State {
     pub claimed: Claimed,
     /// Downloads with a run, so the ticker visits only those.
     pub running: BTreeSet<DownloadId>,
+    /// Every unfinished download, and any finished since [`State::prune_finished`] last ran: the scheduler visits these, not the whole history (CORE-10). A finished download never becomes unfinished again, so only adding one puts it here.
+    pub unfinished: BTreeSet<DownloadId>,
     pub pending: Questions<Pending>,
     /// Media captures being looked at, waiting for the media add-on, or waiting
     /// for the user's choice of quality. Their ids come from the same counter as
@@ -532,6 +534,7 @@ impl State {
     pub fn insert_entry(&mut self, entry: Entry) {
         if entry.row.status != DownloadStatus::Completed {
             self.claimed.insert(entry.path());
+            self.unfinished.insert(entry.row.id);
         }
         if let Some(stranded) = &entry.stranded {
             self.claimed.reserve(stranded);
@@ -559,9 +562,28 @@ impl State {
             self.claimed.release(stranded);
         }
         self.running.remove(&id);
+        self.unfinished.remove(&id);
         self.dirty.remove(&id);
         self.batches.forget(id);
         Some(entry)
+    }
+
+    /// Drops downloads that have finished from [`unfinished`](Self::unfinished).
+    pub fn prune_finished(&mut self) {
+        let downloads = &self.downloads;
+        self.unfinished.retain(|id| {
+            downloads
+                .get(id)
+                .is_some_and(|e| e.row.status != DownloadStatus::Completed)
+        });
+    }
+
+    /// Every unfinished download.
+    pub fn unfinished(&self) -> impl Iterator<Item = &Entry> {
+        self.unfinished
+            .iter()
+            .filter_map(|id| self.downloads.get(id))
+            .filter(|e| e.row.status != DownloadStatus::Completed)
     }
 
     /// Checks that the maintained sets agree with the downloads. Debug builds only;
@@ -591,6 +613,13 @@ impl State {
                 .into_iter()
                 .all(|e| self.claimed.contains(e.path())),
             "an unfinished download's path is not claimed"
+        );
+        assert!(
+            self.downloads
+                .values()
+                .filter(|e| e.row.status != DownloadStatus::Completed)
+                .all(|e| self.unfinished.contains(&e.row.id)),
+            "an unfinished download is missing from the unfinished set"
         );
     }
 

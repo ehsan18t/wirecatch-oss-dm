@@ -530,10 +530,15 @@ impl Manager {
         // Checking the disk blocks, so it happens off the lock and off async threads;
         // if another add claimed the same path meanwhile, look again.
         loop {
-            let claimed = self.lock_open()?.claimed.clone();
-            let (dir, name) = (dir.clone(), name.clone());
+            // Asked of the live set, under a short lock per name tried: a copy of the set for
+            // each add makes a bulk add quadratic (CORE-10).
+            let (dir, name, manager) = (dir.clone(), name.clone(), self.clone());
             let path = self
-                .blocking(move || Ok(naming::unique_path(&dir, &name, &claimed)))
+                .blocking(move || {
+                    Ok(naming::unique_path(&dir, &name, |path| {
+                        manager.lock().claimed.contains(path)
+                    }))
+                })
                 .await?;
 
             let mut state = self.lock_open()?;
