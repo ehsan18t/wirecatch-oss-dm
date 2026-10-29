@@ -310,16 +310,18 @@ export class AppState {
   /** How the app started, when the person must know: the system notification may be long gone, or off (CORE-1). */
   async #takeStartupNotices(): Promise<void> {
     const notices = await this.#backend.startupNotices().catch(() => []);
-    for (const notice of notices) this.toasts.notice(notice, () => void this.#showSetAsideList());
-  }
-
-  async #showSetAsideList(): Promise<void> {
-    try {
-      await this.#backend.showSetAsideList();
-    } catch (error) {
-      this.toasts.fail(errorMessage(error));
+    for (const notice of notices) {
+      this.toasts.notice(notice, () => void this.#orSay(this.#backend.showSetAsideList()));
     }
   }
+
+  /** Opens the log folder, saying so when it cannot. */
+  openLogFolder = (): Promise<void> => this.#orSay(this.#backend.openLogFolder());
+
+  readonly #orSay = (action: Promise<void>): Promise<void> =>
+    action.catch((error: unknown) => {
+      this.toasts.fail(errorMessage(error));
+    });
 
   /** Links from the command line (`wirecatch-app https://...`) open the Add dialog, or join it when it is open. */
   async #takeLaunchLinks(): Promise<void> {

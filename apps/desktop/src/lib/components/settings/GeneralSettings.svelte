@@ -68,6 +68,7 @@
     update_suffix_list: suffixList,
     export: exportButton,
     import: importButton,
+    log_folder: logFolder,
   };
 </script>
 
@@ -77,7 +78,7 @@
   {flash}
   {controls}
   notes={{ update_suffix_list: suffixListState }}
-  unlabelled={['export', 'import']}
+  unlabelled={['export', 'import', 'log_folder']}
 />
 
 {#snippet theme({ def, s }: Row)}
@@ -185,5 +186,13 @@
     size="sm"
     aria-describedby={control['aria-describedby']}
     onclick={() => app.openDialog({ kind: 'import' })}>Import settings…</Button
+  >
+{/snippet}
+
+{#snippet logFolder({ control }: Row)}
+  <Button
+    size="sm"
+    aria-describedby={control['aria-describedby']}
+    onclick={() => void app.openLogFolder()}>Open log folder</Button
   >
 {/snippet}

@@ -67,6 +67,7 @@
     "allow-set-maximize-button",
     "allow-system-appearance",
     "allow-startup-notices",
+    "allow-open-log-folder",
     "allow-show-set-aside-list",
     "allow-take-reveal",
     "allow-report-unreadable-event"

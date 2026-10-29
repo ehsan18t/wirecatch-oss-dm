@@ -723,6 +723,30 @@ pub async fn show_set_aside_list<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn open_log_folder<R: Runtime>(
+    app: AppHandle<R>,
+) -> CommandResult<contract::open_log_folder::Output> {
+    let Some(folder) = crate::host::log_folder(std::env::var_os(crate::host::DATA_DIR_VAR)) else {
+        return Err(api::failed(
+            "This system names no folder for Wirecatch's logs.",
+        ));
+    };
+    // Logging makes the folder only once something is logged.
+    std::fs::create_dir_all(&folder)
+        .and_then(|()| {
+            app.opener()
+                .open_path(folder.to_string_lossy(), None::<&str>)
+                .map_err(std::io::Error::other)
+        })
+        .map_err(|e| {
+            api::failed(format!(
+                "Could not open the log folder ({e}). It is {}.",
+                folder.display()
+            ))
+        })
+}
+
+#[tauri::command]
 pub async fn take_reveal(
     selection: State<'_, crate::window::PendingSelection>,
 ) -> CommandResult<contract::take_reveal::Output> {
@@ -826,6 +850,7 @@ handler![
     system_appearance,
     startup_notices,
     show_set_aside_list,
+    open_log_folder,
     take_reveal,
     finished_list,
     report_unreadable_event,
