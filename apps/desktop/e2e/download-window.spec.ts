@@ -53,52 +53,52 @@ async function qualityQuestion(page: Page) {
   return windowWith(page, 'Pick a quality');
 }
 
+// One test per view, each with the whole budget: an axe pass takes many seconds on a busy runner.
 for (const theme of ['light', 'dark'] as const) {
-  test(`the download window passes axe in each of its views, ${theme} theme`, async ({ page }) => {
+  test.describe(`the download window passes axe, ${theme} theme`, () => {
     // Downloads hold still: a progress line that wraps while axe reads the page would show a body
     // that scrolls before the window has made it a tab stop.
-    await open(page, 'capture=0&tick=0', { theme });
-    const file = await fileQuestion(page);
-    await audit(page, 'file question');
-    await file.getByRole('combobox', { name: 'Queue' }).click();
-    await audit(page, 'file question, queue list open');
-    await page.keyboard.press('Escape');
-    await file.getByRole('button', { name: 'Download now' }).click();
-    await expect(file.getByRole('progressbar')).toBeVisible();
-    await audit(page, 'progress');
-    await file.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(file.getByRole('button', { name: 'Keep downloading' })).toBeFocused();
-    await audit(page, 'progress, asking before cancelling');
-    await file.getByRole('button', { name: 'Hide' }).click();
-    await expect(file).toBeHidden();
+    test.beforeEach(async ({ page }) => {
+      await open(page, 'capture=0&tick=0', { theme });
+    });
 
-    const quality = await qualityQuestion(page);
-    await audit(page, 'quality question');
-    await quality.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(quality).toBeHidden();
+    test('a file question, its queue list and its progress', async ({ page }) => {
+      const file = await fileQuestion(page);
+      await audit(page, 'file question');
+      await file.getByRole('combobox', { name: 'Queue' }).click();
+      await audit(page, 'file question, queue list open');
+      await page.keyboard.press('Escape');
+      await file.getByRole('button', { name: 'Download now' }).click();
+      await expect(file.getByRole('progressbar')).toBeVisible();
+      await audit(page, 'progress');
+      await file.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await expect(file.getByRole('button', { name: 'Keep downloading' })).toBeFocused();
+      await audit(page, 'progress, asking before cancelling');
+    });
 
-    await pretend(page, 'takes a while to read');
-    const reading = await windowWith(page, 'Getting video details');
-    await audit(page, 'reading a video');
-    await reading.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(reading).toBeHidden();
+    test('a quality question', async ({ page }) => {
+      await qualityQuestion(page);
+      await audit(page, 'quality question');
+    });
 
-    // Before the add-on: "answered somewhere else" closes the oldest open question, and an add-on
-    // question closed while it installs may still be open, depending on how fast the install goes.
-    await fileQuestion(page);
-    await pretend(page, 'answered somewhere else');
-    await windowWith(page, 'Nothing to do here');
-    await audit(page, 'answered somewhere else');
+    test('a video being read', async ({ page }) => {
+      await pretend(page, 'takes a while to read');
+      await windowWith(page, 'Getting video details');
+      await audit(page, 'reading a video');
+    });
 
-    await pretend(page, 'needs the media add-on');
-    const addon = await windowWith(page, /Install the media add-on/);
-    await audit(page, 'add-on offer');
-    await addon.getByRole('button', { name: /^Install \(/ }).click();
-    await expect(addon.getByRole('progressbar')).toBeVisible();
-    await audit(page, 'add-on installing');
-    // The install may finish meanwhile and the window move on, so it goes by its title bar's Close.
-    await addon.getByRole('button', { name: 'Close', exact: true }).first().click();
-    await expect(addon).toBeHidden();
+    test('a question answered elsewhere, and the add-on', async ({ page }) => {
+      await fileQuestion(page);
+      await pretend(page, 'answered somewhere else');
+      await windowWith(page, 'Nothing to do here');
+      await audit(page, 'answered somewhere else');
+      await pretend(page, 'needs the media add-on');
+      const addon = await windowWith(page, /Install the media add-on/);
+      await audit(page, 'add-on offer');
+      await addon.getByRole('button', { name: /^Install \(/ }).click();
+      await expect(addon.getByRole('progressbar')).toBeVisible();
+      await audit(page, 'add-on installing');
+    });
   });
 }
 
