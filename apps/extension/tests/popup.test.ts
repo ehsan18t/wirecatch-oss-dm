@@ -35,6 +35,7 @@ async function openPopup(
     siteAccess?: boolean;
     requestSiteAccess?: () => Promise<boolean>;
     mediaShortcut?: string | null;
+    diagnostics?: ((connection: string) => Promise<string>) | null;
   } = {},
 ): Promise<Opened> {
   const wired = await wirePage(options.configure);
@@ -50,6 +51,7 @@ async function openPopup(
       mediaShortcut: options.mediaShortcut ?? null,
       openShortcuts,
       close,
+      diagnostics: options.diagnostics ?? null,
     },
   });
   return { ...wired, container, close, openShortcuts };
@@ -356,6 +358,24 @@ describe('popup', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: 'Allow access' }));
     expect(asked).toBe(1);
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Allow access' })).toBeNull());
+  });
+
+  it('copies the diagnostics with the connection as the badge says it, and says so', async () => {
+    const diagnostics = vi.fn((connection: string) => Promise.resolve(`Connection: ${connection}`));
+    await openPopup({ diagnostics });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Copy diagnostics' }));
+    const status = within(screen.getByRole('contentinfo')).getByRole('status');
+    await waitFor(() => expect(status.textContent.trim()).toBe('Diagnostics copied.'));
+    expect(diagnostics).toHaveBeenCalledWith('Connected');
+    expect(await navigator.clipboard.readText()).toBe('Connection: Connected');
+  });
+
+  it('says why the diagnostics were not copied', async () => {
+    await openPopup({ diagnostics: () => Promise.reject(new Error('storage is gone')) });
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Copy diagnostics' }));
+    const status = within(screen.getByRole('contentinfo')).getByRole('status');
+    await waitFor(() => expect(status.textContent).toContain('Diagnostics were not copied.'));
   });
 
   it('pauses and resumes all downloads and says so', async () => {
