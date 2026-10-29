@@ -1,5 +1,6 @@
 //! Proxy servers (D73): saving, testing and deleting them, and Copy from system.
 
+use wirecatch_engine::{CancellationToken, ManualProxies};
 use wirecatch_protocol::app::{Setting, UiEvent};
 use wirecatch_protocol::proxy::{
     ProxyServer, ProxyServerDraft, ProxyServerSettings, ProxyTestResult, ProxyTestRun, ProxyUse,
@@ -315,4 +316,27 @@ fn profile_index(state: &State, id: ProxyServerId) -> Result<usize> {
         .iter()
         .position(|p| p.id == id)
         .ok_or(CoreError::ProxyServerNotFound(id))
+}
+
+/// How often the system's proxy setting is read again for [`State::system_proxy`].
+const READ_SYSTEM_PROXY_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Keeps [`State::system_proxy`] up to date, reading the setting off the manager's lock.
+pub(super) async fn run_system_proxy_reads(
+    weak: std::sync::Weak<super::Inner>,
+    stopped: CancellationToken,
+) {
+    loop {
+        tokio::select! {
+            () = tokio::time::sleep(READ_SYSTEM_PROXY_EVERY) => {}
+            () = stopped.cancelled() => return,
+        }
+        let Ok(read) = tokio::task::spawn_blocking(ManualProxies::from_system).await else {
+            return;
+        };
+        let Some(manager) = Manager::from_weak(&weak) else {
+            return;
+        };
+        manager.lock().system_proxy = read;
+    }
 }

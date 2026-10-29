@@ -36,6 +36,22 @@ pub(super) enum Withdrawn<T> {
     Closed(T),
 }
 
+/// Browser captures waiting for confirmation.
+pub(super) fn captures<T: Waiting>() -> Questions<T> {
+    Questions::new(
+        "downloads are already waiting for your confirmation. Answer some of them first.",
+        "This link was captured many times and is already waiting for your confirmation. Answer that first.",
+    )
+}
+
+/// Videos waiting for a choice of quality.
+pub(super) fn videos<T: Waiting>() -> Questions<T> {
+    Questions::new(
+        "videos are already waiting for your choice. Answer some of them first.",
+        "This video was sent many times and is already waiting for your choice. Answer that first.",
+    )
+}
+
 impl<T: Waiting> Questions<T> {
     pub fn new(full: &'static str, crowded: &'static str) -> Self {
         Self {
