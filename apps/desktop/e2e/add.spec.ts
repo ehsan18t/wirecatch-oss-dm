@@ -1,8 +1,8 @@
 // The Add dialog in a real browser: axe in both themes in each of its states, the whole flow by keyboard, and its layout at 100%, 125% and 150% display scale and with enlarged text: nothing scrolls sideways, every control stays within the window, and the buttons at the bottom stay in view.
 
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Locator, type Page } from '@playwright/test';
-import { open } from './helpers';
+import { expect, type Locator, type Page } from '@playwright/test';
+import { open, test } from './helpers';
 
 const LINKS = [
   'https://download.example.org/releases/app-2.4.1-x64.msi',

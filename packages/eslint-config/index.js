@@ -162,6 +162,26 @@ const TEST_RULES = {
   'unicorn/error-message': 'off',
 };
 
+/** Browser specs take `test` from the design system's testing module, which fails a test on a Svelte warning. */
+const BROWSER_SPECS = {
+  files: ['e2e/**/*.ts'],
+  rules: {
+    'no-restricted-imports': [
+      'error',
+      {
+        paths: [
+          {
+            name: '@playwright/test',
+            importNames: ['test'],
+            message:
+              "Import `test` from '@wirecatch/ui/testing/playwright', which fails a test whose page logged a Svelte warning.",
+          },
+        ],
+      },
+    ],
+  },
+};
+
 /** What eslint-plugin-import-x reads other modules with: TypeScript's parser, never on Svelte components, which it cannot parse. */
 const IMPORT_SETTINGS = {
   'import-x/parsers': { '@typescript-eslint/parser': ['.ts', '.mts', '.cts', '.d.ts'] },
@@ -231,6 +251,7 @@ export function wirecatch({
       files: TEST_FILES,
       rules: TEST_RULES,
     },
+    BROWSER_SPECS,
     {
       files: TOOLING_FILES,
       languageOptions: { globals: globals.node },

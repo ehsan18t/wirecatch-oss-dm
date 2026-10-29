@@ -1,7 +1,7 @@
 // What floats over the window is solid, and what lays out a page leaves no empty room: every dialog (the design system's and the older ones), the command palette and the menus have an opaque surface, since the one blur behind a dialog must never show through it (D46); and every settings row is as tall as what it holds, in each section.
 
-import { expect, test, type Locator, type Page } from '@playwright/test';
-import { open, row, showDetails } from './helpers';
+import { expect, type Locator, type Page } from '@playwright/test';
+import { open, row, showDetails, test } from './helpers';
 
 /** The alpha of an element's own background colour, from 0 to 1. */
 function backgroundAlpha(target: Locator): Promise<number> {

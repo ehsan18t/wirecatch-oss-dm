@@ -2,8 +2,8 @@
 // keyboard-only walk with visible focus.
 
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '@playwright/test';
-import { open, row, showDetails } from './helpers';
+import { expect, type Page } from '@playwright/test';
+import { open, row, showDetails, test } from './helpers';
 
 async function audit(page: Page, label: string) {
   const result = await new AxeBuilder({ page })

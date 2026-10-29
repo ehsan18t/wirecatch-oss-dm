@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./tokens.css": "./src/tokens.css",
     "./base.css": "./src/base.css",
-    "./testing/jsdom": "./src/testing/jsdom.ts"
+    "./testing/jsdom": "./src/testing/jsdom.ts",
+    "./testing/playwright": "./src/testing/playwright.ts"
   },
   "scripts": {
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@iconify-json/lucide": "catalog:",
+    "@playwright/test": "catalog:",
     "@sveltejs/vite-plugin-svelte": "catalog:",
     "@tailwindcss/node": "catalog:",
     "@tailwindcss/oxide": "catalog:",

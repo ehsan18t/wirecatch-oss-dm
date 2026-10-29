@@ -1,7 +1,7 @@
 // The main window works at 960x600, 1280x800, 1440x900 and 1600x1000, in both themes: names keep real room, the tools above the list stay on one line, nothing scrolls sideways, the navigation is a rail in a narrow window and docks with its labels in a wide one, a download's details open in a dialog over the list at every size (D47), and a row's buttons have a column of their own rather than lying over its figures.
 
-import { expect, test, type Page } from '@playwright/test';
-import { keepScreenshot, open, row, rows, showDetails } from './helpers';
+import { expect, type Page } from '@playwright/test';
+import { keepScreenshot, open, row, rows, showDetails, test } from './helpers';
 
 const SIZES = [
   { width: 960, height: 600 },

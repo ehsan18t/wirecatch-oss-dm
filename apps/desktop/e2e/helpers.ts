@@ -1,4 +1,7 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
+import { test } from '@wirecatch/ui/testing/playwright';
+
+export { test };
 
 /** Where the pictures for review go, tracked in the repository. */
 export const SCREENSHOTS = 'docs/screenshots';

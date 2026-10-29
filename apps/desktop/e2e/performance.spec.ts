@@ -5,8 +5,8 @@
 // list continuously, and records long tasks. Results go to test-results/performance.json and the test's attachments.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
-import { open, rows } from './helpers';
+import { expect } from '@playwright/test';
+import { open, rows, test } from './helpers';
 
 interface FrameStats {
   frames: number;
