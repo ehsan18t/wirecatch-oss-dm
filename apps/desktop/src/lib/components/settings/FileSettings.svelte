@@ -1,12 +1,13 @@
 <script lang="ts">
-  // Saving files: the download folder, and a folder for each type of file.
-  import type { Category } from '@wirecatch/protocol';
+  // Saving files: the download folder, what a download does when its file is already there, and a folder for each type of file.
+  import type { Category, WhenFileExists } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
-  import { Button, TagInput, textIfCut, tooltip } from '@wirecatch/ui';
+  import { Button, Select, TagInput, textIfCut, tooltip } from '@wirecatch/ui';
   import { CATEGORIES, CATEGORY_LABEL, displayPath } from '$lib/format';
   import { typedExtension } from '$lib/file-names';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
+  import { WHEN_FILE_EXISTS_OPTIONS } from '$lib/when-file-exists';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
 
@@ -43,6 +44,7 @@
 
   const controls: Record<SettingIn<'files'>, Snippet<[Row]>> = {
     default_folder: defaultFolder,
+    when_file_exists: whenFileExists,
     categories,
   };
 </script>
@@ -67,6 +69,16 @@
     aria-describedby={control['aria-describedby']}
     onclick={pickDefaultFolder}>Change</Button
   >
+{/snippet}
+
+{#snippet whenFileExists({ s, control }: Row)}
+  <Select
+    {...control}
+    class="w-56"
+    value={s.when_file_exists}
+    options={WHEN_FILE_EXISTS_OPTIONS}
+    onchange={(when: WhenFileExists) => save((d) => void (d.when_file_exists = when))}
+  />
 {/snippet}
 
 {#snippet categories({ control }: Row)}

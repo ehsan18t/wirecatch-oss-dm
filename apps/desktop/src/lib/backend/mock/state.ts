@@ -24,6 +24,7 @@ import {
   questionId,
   queueId,
   type QueueReason,
+  type FileExistsQuestion,
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { fileNameFromUrl } from '../../format';
@@ -120,6 +121,8 @@ export class MockState {
   settings: AppSettings = defaultSettings();
   pending: PendingCapture[] = [];
   mediaChoices: MediaChoice[] = [];
+  /** Downloads waiting for an answer about the file already in their folder (D88). */
+  fileExists: FileExistsQuestion[] = [];
   addons: AddonInfo[] = [mediaAddon()];
   suffixList: SuffixListInfo = builtInSuffixList();
   proxyServers: ProxyServer[] = defaultProxies();
@@ -171,7 +174,8 @@ export class MockState {
       event.type === 'confirmation_requested' ||
       event.type === 'media_choice_requested' ||
       event.type === 'media_analysing' ||
-      event.type === 'addon_required'
+      event.type === 'addon_required' ||
+      event.type === 'file_exists_requested'
     ) {
       this.windows.ask(event.data.id);
     } else if (event.type === 'confirmation_closed') {
@@ -239,6 +243,7 @@ export class MockState {
       ...this.mediaChoices.map((c) => c.id),
       ...this.waitingForAddon.map((w) => w.id),
       ...this.reading.map((r) => r.id),
+      ...this.fileExists.map((q) => q.id),
     ];
     return ids.filter((id, i) => ids.indexOf(id) === i).sort((a, b) => a - b);
   }

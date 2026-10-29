@@ -19,6 +19,7 @@ import type {
   StartupNotice,
   UiEvent,
   LinkTrial,
+  FileExistsAnswer,
 } from '@wirecatch/protocol';
 import { folderOf } from '../../format';
 import { WindowRegistry } from '../../sample-windows';
@@ -30,6 +31,7 @@ import * as suffixList from './suffix-list';
 import * as data from './data';
 import * as downloads from './downloads';
 import * as proxies from './proxies';
+import * as fileExists from './file-exists';
 import * as media from './media';
 import { populate } from './populate';
 import * as queues from './queues';
@@ -363,6 +365,19 @@ export class MockBackend extends MockShell implements Backend {
 
   pendingMediaChoices() {
     return this.#call(() => structuredClone(this.#state.mediaChoices));
+  }
+
+  /** Sample data only: a download finds its file already in its folder. */
+  simulateFileExists(): void {
+    fileExists.simulateFileExists(this.#state);
+  }
+
+  answerFileExists(id: QuestionId, answer: FileExistsAnswer) {
+    return this.#call(() => fileExists.answerFileExists(this.#state, id, answer));
+  }
+
+  pendingFileExists() {
+    return this.#call(() => structuredClone(this.#state.fileExists));
   }
 
   pendingAddonRequests() {

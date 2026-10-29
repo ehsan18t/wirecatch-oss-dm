@@ -72,6 +72,8 @@ export function getQuestion(state: MockState, id: QuestionId): Question | null {
   }
   const reading = state.reading.find((r) => r.id === id);
   if (reading) return { kind: 'reading', data: { ...reading } };
+  const exists = state.fileExists.find((q) => q.id === id);
+  if (exists) return { kind: 'file_exists', data: { ...exists } };
   return null;
 }
 

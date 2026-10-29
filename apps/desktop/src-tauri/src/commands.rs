@@ -5,18 +5,20 @@
 use tauri::{AppHandle, Manager as _, Runtime, State, WebviewWindow};
 use tauri_plugin_opener::OpenerExt as _;
 use wirecatch_core::LinkFrom;
+use wirecatch_protocol::app::FileExistsChoice;
 use wirecatch_protocol::desktop::commands as contract;
 use wirecatch_protocol::desktop::{
-    AddDownloadArgs, AddVideoPageArgs, CancelAddonOperationArgs, CancelArgs, ChangeSettingsArgs,
-    ChooseMediaArgs, ConfirmCaptureArgs, ControlWindowArgs, CreateProxyServerArgs, CreateQueueArgs,
-    DeleteProxyServerArgs, DeleteQueueArgs, DismissMediaChoiceArgs, EarlierDownloadArgs,
-    ExportSettingsArgs, FitDownloadWindowArgs, GetDownloadArgs, GetQuestionArgs,
-    ImportSettingsArgs, InstallAddonArgs, KeepOriginalArgs, MoveToQueueArgs, OpenFileArgs,
-    OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs, RejectCaptureArgs,
-    RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs, ResumeArgs, RetryArgs,
-    SetDownloadFolderArgs, SetMaximizeButtonArgs, SetQueueOrderArgs, SetQueuePausedArgs,
-    ShowDownloadDetailsArgs, ShowProgressWindowArgs, StartQueueNowArgs, SystemAppearance,
-    TestProxyServerArgs, TryLinkArgs, UpdateAddonArgs, UpdateProxyServerArgs, UpdateQueueArgs,
+    AddDownloadArgs, AddVideoPageArgs, AnswerFileExistsArgs, CancelAddonOperationArgs, CancelArgs,
+    ChangeSettingsArgs, ChooseMediaArgs, ConfirmCaptureArgs, ControlWindowArgs,
+    CreateProxyServerArgs, CreateQueueArgs, DeleteProxyServerArgs, DeleteQueueArgs,
+    DismissMediaChoiceArgs, EarlierDownloadArgs, ExportSettingsArgs, FitDownloadWindowArgs,
+    GetDownloadArgs, GetQuestionArgs, ImportSettingsArgs, InstallAddonArgs, KeepOriginalArgs,
+    MoveToQueueArgs, OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs,
+    RejectCaptureArgs, RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs,
+    ResumeArgs, RetryArgs, SetDownloadFolderArgs, SetMaximizeButtonArgs, SetQueueOrderArgs,
+    SetQueuePausedArgs, ShowDownloadDetailsArgs, ShowProgressWindowArgs, StartQueueNowArgs,
+    SystemAppearance, TestProxyServerArgs, TryLinkArgs, UpdateAddonArgs, UpdateProxyServerArgs,
+    UpdateQueueArgs,
 };
 
 use crate::api::{self, CommandResult};
@@ -496,6 +498,28 @@ pub async fn dismiss_media_choice<R: Runtime>(
 }
 
 #[tauri::command]
+pub async fn answer_file_exists<R: Runtime>(
+    window: WebviewWindow<R>,
+    core: CoreState<'_>,
+    args: contract::answer_file_exists::Args,
+) -> CommandResult<contract::answer_file_exists::Output> {
+    let AnswerFileExistsArgs { id, answer } = args;
+    its_own(&window, Shows::Question(id))?;
+    let download = api::answer_file_exists(core.manager().await?, id, answer)?;
+    if answer.choice != FileExistsChoice::Cancel {
+        download_windows::became_download(window.app_handle(), window.label(), download);
+    }
+    Ok(download)
+}
+
+#[tauri::command]
+pub async fn pending_file_exists(
+    core: CoreState<'_>,
+) -> CommandResult<contract::pending_file_exists::Output> {
+    Ok(api::pending_file_exists(core.manager().await?))
+}
+
+#[tauri::command]
 pub async fn pending_media_choices(
     core: CoreState<'_>,
 ) -> CommandResult<contract::pending_media_choices::Output> {
@@ -817,6 +841,8 @@ handler![
     choose_media,
     dismiss_media_choice,
     pending_media_choices,
+    answer_file_exists,
+    pending_file_exists,
     pending_addon_requests,
     list_addons,
     install_addon,

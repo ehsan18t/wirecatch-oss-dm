@@ -202,6 +202,13 @@ fn split_ext(name: &str) -> (&str, &str) {
     }
 }
 
+/// The file name of `path`, without its folder.
+pub(crate) fn file_name_of(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
 /// Whether `a` and `b` name the same file, compared the way claims are.
 pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
     key(a) == key(b)

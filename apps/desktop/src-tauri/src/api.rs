@@ -12,8 +12,9 @@ use wirecatch_core::{LinkFrom, Manager};
 use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
-    CaptureConfirmation, DownloadStatus, DownloadSummary, ImportPreview, MediaChoice,
-    MediaSelection, PendingCapture, Question, Queue, QueueSettings, SuffixListInfo,
+    CaptureConfirmation, DownloadStatus, DownloadSummary, FileExistsAnswer, FileExistsQuestion,
+    ImportPreview, MediaChoice, MediaSelection, PendingCapture, Question, Queue, QueueSettings,
+    SuffixListInfo,
 };
 use wirecatch_protocol::desktop::SAFE_EXTENSIONS;
 use wirecatch_protocol::proxy::{ProxyServer, ProxyServerDraft, ProxyTestResult, ProxyUse};
@@ -545,6 +546,9 @@ pub fn question(m: &Manager, id: QuestionId) -> Option<Question> {
     if let Some(page) = m.pending_addon_requests().into_iter().find(|p| p.id == id) {
         return Some(Question::Addon(page));
     }
+    if let Some(found) = m.pending_file_exists().into_iter().find(|q| q.id == id) {
+        return Some(Question::FileExists(found));
+    }
     m.media_being_read()
         .into_iter()
         .find(|r| r.id == id)
@@ -580,6 +584,26 @@ pub fn dismiss_media_choice(m: &Manager, id: QuestionId) -> CommandResult<()> {
 #[must_use]
 pub fn pending_media_choices(m: &Manager) -> Vec<MediaChoice> {
     m.pending_media_choices()
+}
+
+/// Answers a download whose file is already in its folder (D88).
+///
+/// # Errors
+///
+/// The question was already answered, or closed when its download was resumed, cancelled or
+/// removed; or the manager has shut down ([`Manager::answer_file_exists`]).
+pub fn answer_file_exists(
+    m: &Manager,
+    id: QuestionId,
+    answer: FileExistsAnswer,
+) -> CommandResult<DownloadId> {
+    plain(m.answer_file_exists(id, answer))
+}
+
+/// Downloads waiting for an answer about the file already in their folder.
+#[must_use]
+pub fn pending_file_exists(m: &Manager) -> Vec<FileExistsQuestion> {
+    m.pending_file_exists()
 }
 
 /// Pages waiting for the media add-on, so a new or reloaded window offers the install again.
