@@ -761,6 +761,18 @@ Decided on 2026-10-29. Labels and help text use the terms people know from other
 9. Video and audio that come separately are "merged", not "joined".
 10. Code follows the same names: queue rules are `QueueRules`, `Rule` and `AddDownloads` (a queue's `add_downloads`); a value a queue inherits has the source `global`; saved proxies are `ProxyServer`s and the commands that change them `*_proxy_server`; the settings file is `SettingsFile` (`settings_file.rs`); the setting keys are `start_notice_time`, `finish_notice_time` and `ftp_bypass_proxy`; the settings section is `import_export`. Nothing is released, so the store, the settings file and the protocol change without a migration or a version bump. The engine keeps `ManualProxies::ftp_direct`, part of its published interface. The card in the browser tab is a notice everywhere (`BrowserNotice`, `NoticeId`, `notice_shown`, `lib/notices`, `browser_notices.rs`); one system notification is a `Notification` (`notifications.rs`, `system_notifications.rs`); the popup's list is `alerts` (`AlertBoard`, `dismiss_alert`); how a start or a finish is told is `notify_on_start` and `notify_on_finish` (`NotifyOnStart`, `NotifyOnFinish`). `StartupNotice` keeps its name: it is shown as a notification and in the main window alike.
 
+### D84. A control's label and help never change with its value; explanations sit behind an info icon
+
+Decided with the maintainer on 2026-10-29. Help under every option, rewritten for each choice, made forms long and made the text move as the person clicked. It applies to both apps and amends D72.4, D72.7 and D83.1.
+
+1. A label and its explanation are fixed: no description, caption or label reads differently because of the option chosen. A line that reports a result (where a link goes, how many links were found) is output, not a description, and stays.
+2. An option's explanation is not shown under it. An info icon after the label opens it on hover, on keyboard focus and on click; it is one or two short sentences. The design system has one such icon, and every control that takes a label takes it.
+3. Shown inline under a control: input syntax hints (what a field accepts) and errors and warnings. Nothing else.
+4. The queue editor's rules card is one switch, "Add matching downloads automatically". Off, the queue takes only what the person adds; rules it had are kept for when it is turned on again, and the sidebar shows "Auto off" for it, as D72.4 had. Manual and Automatically as a choice are gone.
+5. Each kind of rule (sites, file names, file types, categories, protocols) is a checkbox, and its input shows only while it is checked. A kind is checked when it has values; unchecking it hides them, checking it again in the same edit brings them back, and saving with it unchecked clears them. The saved rules do not change shape.
+6. A schedule's days are one row of seven day buttons, Monday to Sunday, all pressed by default, with no presets and no summary; none pressed is an error. Stopping is "At" a time or "When the queue is empty", one choice, the time shown only for "At".
+7. A queue's own bypass list is "Custom hosts", in the queue editor and in Settings > Network alike.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

@@ -14,6 +14,10 @@ import {
 } from '@wirecatch/protocol';
 import { whenSaid } from './format';
 
+/** What a host list accepts, under the list's field in Settings and in the queue editor. */
+export const HOSTS_HINT =
+  'A host covers its subdomains. IP addresses, ranges (10.0.0.0/8) and <local> (names without a dot) work too.';
+
 /** The app's proxy on a fresh install: the computer's, with its bypass list. */
 export function defaultProxySettings(): ProxySettings {
   return {

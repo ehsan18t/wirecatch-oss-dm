@@ -5,7 +5,12 @@ export * from './appearance';
 export { cn, tv, type ClassValue, type VariantProps } from './lib/cn';
 export { token } from './lib/css-token';
 export { keyGlyph, shortcutText } from './lib/keys';
-export { textIfCut, tooltip, type TooltipText } from './attachments/tooltip.svelte';
+export {
+  textIfCut,
+  tooltip,
+  type TooltipOptions,
+  type TooltipText,
+} from './attachments/tooltip.svelte';
 export {
   delay,
   duration,
@@ -43,6 +48,7 @@ export { default as Field } from './primitives/Field.svelte';
 export type { FieldControl } from './primitives/field-control';
 export { default as Icon } from './primitives/Icon.svelte';
 export { default as IconButton } from './primitives/IconButton.svelte';
+export { default as InfoTip } from './primitives/InfoTip.svelte';
 export { default as Input } from './primitives/Input.svelte';
 export { default as Kbd } from './primitives/Kbd.svelte';
 export { default as MultiSelect } from './primitives/MultiSelect.svelte';

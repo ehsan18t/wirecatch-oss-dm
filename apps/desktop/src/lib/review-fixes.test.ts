@@ -213,17 +213,12 @@ describe('7. Try again does not double the listeners', () => {
 });
 
 describe('8. the days picker says what it does', () => {
-  it('offers every day, weekdays and weekends, and single days starting from those it runs on', async () => {
+  it('shows every day pressed, and saves the days left pressed', async () => {
     const { app, click } = await setup();
     app.openDialog({ kind: 'queue', id: queueId(2) });
     await settle();
-    const patterns = screen.getByRole('radiogroup', { name: 'Days' });
-    expect(within(patterns).getByRole('radio', { name: 'Every day' })).toBeChecked();
-    await click(within(patterns).getByRole('radio', { name: 'Pick days' }));
-    const days = screen.getByRole('group', { name: 'Only on these days' });
-    // Every day, as single days, is all seven ticked.
+    const days = screen.getByRole('group', { name: 'Days' });
     expect(within(days).getAllByRole('button', { pressed: true })).toHaveLength(7);
-    expect(screen.getByText('Runs every day.')).toBeInTheDocument();
     for (const day of ['Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) {
       await click(within(days).getByRole('button', { name: day }));
     }
@@ -232,9 +227,17 @@ describe('8. the days picker says what it does', () => {
         .getAllByRole('button', { pressed: true })
         .map((b) => b.textContent.trim()),
     ).toEqual(['Mon']);
-    expect(screen.getByText('Runs only on Mon.')).toBeInTheDocument();
     await click(within(days).getByRole('button', { name: 'Mon' }));
     expect(screen.getByText('Pick at least one day.')).toBeInTheDocument();
+  });
+
+  it('stops at a time, or when the queue is empty', async () => {
+    const { app, click } = await setup();
+    app.openDialog({ kind: 'queue', id: queueId(2) });
+    await settle();
+    expect(screen.getByLabelText('Stop time')).toBeInTheDocument();
+    await click(screen.getByRole('radio', { name: 'When the queue is empty' }));
+    expect(screen.queryByLabelText('Stop time')).toBeNull();
   });
 });
 

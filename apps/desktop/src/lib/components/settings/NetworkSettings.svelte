@@ -3,7 +3,7 @@
   import { MAX_PROXY_HOST_CHARS, type ProxyUse } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { Checkbox, Field, Select, TagInput, type FieldControl } from '@wirecatch/ui';
-  import { queueProxy, shownName } from '$lib/proxy';
+  import { HOSTS_HINT, queueProxy, shownName } from '$lib/proxy';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
   import type { Row, SectionProps } from './row';
@@ -86,22 +86,21 @@
     <div class="flex w-full flex-col gap-3">
       <Checkbox
         label="System proxy exceptions"
-        description="The bypass list from your system proxy settings or environment variables."
+        help="The bypass list from your system proxy settings or environment variables."
         checked={s.proxy.exceptions.system}
         onchange={(on: boolean) => save((d) => void (d.proxy.exceptions.system = on))}
       />
       <Checkbox
-        label="These hosts"
-        description="A domain also matches its subdomains. IP addresses, ranges like 10.0.0.0/8, and <local> (names without a dot) work too."
+        label="Custom hosts"
         checked={s.proxy.exceptions.use_hosts}
         onchange={(on: boolean) => save((d) => void (d.proxy.exceptions.use_hosts = on))}
       />
       {#if s.proxy.exceptions.use_hosts}
-        <Field label={def.label} hideLabel>
+        <Field label={def.label} hideLabel description={HOSTS_HINT}>
           {#snippet children(control: FieldControl)}
             <TagInput
               {...control}
-              label="Hosts to bypass"
+              label="Custom hosts"
               placeholder="Add a host, like intranet.example.com"
               values={s.proxy.exceptions.hosts}
               normalize={normalizeException}

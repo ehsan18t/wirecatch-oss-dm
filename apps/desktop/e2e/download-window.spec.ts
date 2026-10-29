@@ -110,7 +110,7 @@ test('the file question by keyboard: the order of its controls, Enter to downloa
   await expect(window.getByRole('button', { name: 'Download now' })).toBeFocused();
   // Back through the window from its main button: every control once, in reading order.
   const stops: string[] = [];
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 9; i++) {
     await page.keyboard.press('Shift+Tab');
     stops.push(
       await page.evaluate(() => {
@@ -130,6 +130,7 @@ test('the file question by keyboard: the order of its controls, Enter to downloa
     'Download later',
     'Cancel',
     'Keep the download window open to show progress',
+    'About Don’t ask again for files from the browser',
     'Don’t ask again for files from the browser',
     'Main',
     'Change',

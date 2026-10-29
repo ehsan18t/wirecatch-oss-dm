@@ -98,7 +98,7 @@ describe('the queue dialog', () => {
     await settle();
     const start = dialog.getByLabelText('Starts at');
     if (!(start instanceof HTMLInputElement)) throw new Error('no start time field');
-    await typeInto(dialog.getByLabelText('Stops at'), start.value);
+    await typeInto(dialog.getByLabelText('Stop time'), start.value);
     await save();
     expect(
       dialog
@@ -134,7 +134,11 @@ describe('the queue dialog', () => {
     expect(dialog.getByRole('radio', { name: 'Each download' })).toBeChecked();
     await fireEvent.click(dialog.getByRole('radio', { name: 'When the queue is done' }));
     await settle();
-    expect(dialog.getByText(/Failed downloads are still reported right away\.$/)).toBeVisible();
+    expect(
+      dialog.getByRole('radiogroup', {
+        name: 'Notify me when downloads finish',
+      }),
+    ).toBeVisible();
     await save();
     expect(app.queues.list.find((q) => q.settings.name === 'Main')?.settings.notify).toBe(
       'when_done',

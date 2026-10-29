@@ -25,7 +25,7 @@
       <Checkbox
         checked={startWithoutAsking}
         label="Don’t ask again for files from the browser"
-        description="Browser downloads will start right away (videos follow Settings > Media). You can turn this back on in Settings > Browser."
+        help="Browser downloads start right away; videos follow Settings > Media. Turn it back on in Settings > Browser."
         onchange={(on: boolean) => void win.setStartWithoutAsking(on)}
       />
     {/if}

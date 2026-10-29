@@ -3,10 +3,12 @@
   import type { Snippet } from 'svelte';
   import { cn } from '../lib/cn';
   import type { FieldControl } from '../primitives/field-control';
+  import InfoTip from '../primitives/InfoTip.svelte';
 
   interface Props {
     label: string;
-    description?: string | undefined;
+    /** What the setting does, behind an info icon after the label (D84). */
+    help?: string | undefined;
     /** What is wrong with the value: shown under the control and announced as it appears, and it marks the control invalid. */
     error?: string | null | undefined;
     stacked?: boolean;
@@ -18,7 +20,7 @@
 
   let {
     label,
-    description,
+    help,
     error,
     stacked = false,
     labelled = true,
@@ -32,17 +34,14 @@
   const control = $derived<FieldControl>({
     id,
     'aria-describedby':
-      [description ? hintId : null, error ? errorId : null]
-        .filter((part) => part !== null)
-        .join(' ') || undefined,
+      [help ? hintId : null, error ? errorId : null].filter((part) => part !== null).join(' ') ||
+      undefined,
     invalid: Boolean(error),
   });
   // Beside the control, the name's line is a control's height whatever the control, so every row keeps one rhythm.
+  const labelClass = $derived(stacked ? undefined : 'flex min-h-control items-center');
   const nameClass = $derived(
-    cn(
-      'text-ui font-medium text-ink',
-      !stacked && 'flex min-h-control min-w-0 flex-1 items-center',
-    ),
+    cn('flex min-w-0 items-center gap-1 text-ui font-medium text-ink', !stacked && 'flex-1'),
   );
 </script>
 
@@ -53,17 +52,15 @@
     className,
   )}
 >
-  <!-- Beside the control, its parts sit in the row itself: the name on the control's line, taking the room the control leaves, and the description under both. -->
-  <div class={cn('flex min-w-0 flex-col gap-0.5', !stacked && 'contents')}>
+  <div class={nameClass}>
     {#if labelled}
-      <label for={id} class={nameClass}>{label}</label>
+      <label for={id} class={labelClass}>{label}</label>
     {:else}
-      <p class={nameClass}>{label}</p>
+      <p class={labelClass}>{label}</p>
     {/if}
-    {#if description}
-      <p id={hintId} class={cn('text-small text-ink-muted', !stacked && 'order-2 basis-full')}>
-        {description}
-      </p>
+    {#if help}
+      <InfoTip {label} text={help} />
+      <span id={hintId} class="sr-only">{help}</span>
     {/if}
   </div>
   <div

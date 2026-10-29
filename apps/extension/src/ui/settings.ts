@@ -1,30 +1,29 @@
-// The name and description of each setting the popup shows. Those the app's settings show too come from the words both share (`SETTING_WORDS`, D61), so the two say the same.
+// The name and help of each setting the popup shows. Those the app's settings show too come from the words both share (`SETTING_WORDS`, D61), so the two say the same.
 import { SETTING_WORDS } from '@wirecatch/protocol';
 
 interface SettingText {
   label: string;
-  description: string;
+  help: string;
 }
 
 /** A shared setting's name, with the popup's short help where the app's names parts of its own screen. */
 function shared(id: keyof typeof SETTING_WORDS): SettingText {
   const words = SETTING_WORDS[id];
-  return { label: words.label, description: 'brief' in words ? words.brief : words.help };
+  return { label: words.label, help: 'brief' in words ? words.brief : words.help };
 }
 
 export const SETTINGS = {
   captureEnabled: {
     label: 'Capture downloads',
-    description: 'Send downloads from this browser to Wirecatch.',
+    help: 'Send downloads from this browser to Wirecatch.',
   },
   askBeforeDownload: {
     label: 'Show a window before each download',
-    description: 'Choose where each file goes before it starts.',
+    help: 'Choose where each file goes before it starts.',
   },
   askEachVideo: {
     label: 'Ask about each video',
-    description:
-      'Choose a quality for each video. When off, videos use your Video and audio settings.',
+    help: 'Choose a quality for each video. When off, videos use your Video and audio settings.',
   },
   defaultQueue: shared('default_queue'),
   speedLimit: shared('global_speed_limit'),
@@ -33,13 +32,12 @@ export const SETTINGS = {
   privateWindows: shared('private_windows'),
   shortcut: {
     label: 'Keyboard shortcut',
-    description: "Sends a page's video or audio to Wirecatch.",
+    help: "Sends a page's video or audio to Wirecatch.",
   },
   /** Firefox has no shortcuts page the popup can open, so the row says where it is. */
   shortcutFirefox: {
     label: 'Keyboard shortcut',
-    description:
-      "Sends a page's video or audio to Wirecatch. Set it in the add-ons manager, under Manage Extension Shortcuts.",
+    help: "Sends a page's video or audio to Wirecatch. Set it in the add-ons manager, under Manage Extension Shortcuts.",
   },
   quality: shared('media_quality'),
   fallback: shared('media_fallback'),
@@ -51,6 +49,6 @@ export const SETTINGS = {
   audioFormat: shared('media_audio'),
   audioQuality: {
     label: 'Audio quality',
-    description: 'Higher sounds better and takes more space.',
+    help: 'Higher sounds better and takes more space.',
   },
 } as const satisfies Record<string, SettingText>;

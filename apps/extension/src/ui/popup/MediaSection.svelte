@@ -75,12 +75,12 @@
   <SettingSwitch
     id="media-button"
     label={SETTINGS.mediaButton.label}
-    description={SETTINGS.mediaButton.description}
+    help={SETTINGS.mediaButton.help}
     checked={settings.show_media_button}
     disabled={!editable}
     onchange={(on: boolean) => void model.update({ show_media_button: on })}
   />
-  <SettingRow label={shortcutText.label} description={shortcutText.description} labelled={false}>
+  <SettingRow label={shortcutText.label} help={shortcutText.help} labelled={false}>
     {#if keys.length > 0}
       <Kbd {keys} />
     {:else}
@@ -100,7 +100,7 @@
   {:else}
     {const media = $derived(controls.media)}
     {const kbps = $derived(kbpsChoices(media.audio.format))}
-    <SettingRow label={SETTINGS.quality.label} description={SETTINGS.quality.description} stacked>
+    <SettingRow label={SETTINGS.quality.label} help={SETTINGS.quality.help} stacked>
       {#snippet children(control)}
         <Select
           {...control}
@@ -114,11 +114,7 @@
       {/snippet}
     </SettingRow>
     {#if typeof media.quality !== 'string'}
-      <SettingRow
-        label={SETTINGS.fallback.label}
-        description={SETTINGS.fallback.description}
-        stacked
-      >
+      <SettingRow label={SETTINGS.fallback.label} help={SETTINGS.fallback.help} stacked>
         {#snippet children(control)}
           <Select
             {...control}
@@ -132,11 +128,7 @@
         {/snippet}
       </SettingRow>
     {/if}
-    <SettingRow
-      label={SETTINGS.videoFormat.label}
-      description={SETTINGS.videoFormat.description}
-      stacked
-    >
+    <SettingRow label={SETTINGS.videoFormat.label} help={SETTINGS.videoFormat.help} stacked>
       {#snippet children(control)}
         <Select
           {...control}
@@ -149,11 +141,7 @@
         />
       {/snippet}
     </SettingRow>
-    <SettingRow
-      label={SETTINGS.subtitles.label}
-      description={SETTINGS.subtitles.description}
-      stacked
-    >
+    <SettingRow label={SETTINGS.subtitles.label} help={SETTINGS.subtitles.help} stacked>
       {#snippet children(control)}
         <MultiSelect
           {...control}
@@ -171,7 +159,7 @@
     <SettingSwitch
       id="auto-subtitles"
       label={SETTINGS.autoSubtitles.label}
-      description={SETTINGS.autoSubtitles.description}
+      help={SETTINGS.autoSubtitles.help}
       checked={media.video.auto_subtitles}
       disabled={!editable}
       onchange={(on: boolean) =>
@@ -180,7 +168,7 @@
     <SettingSwitch
       id="subtitle-files"
       label={SETTINGS.subtitleFiles.label}
-      description={SETTINGS.subtitleFiles.description}
+      help={SETTINGS.subtitleFiles.help}
       checked={media.video.subtitle_files}
       disabled={!editable}
       onchange={(on: boolean) =>
@@ -189,16 +177,12 @@
     <SettingSwitch
       id="chapters"
       label={SETTINGS.chapters.label}
-      description={SETTINGS.chapters.description}
+      help={SETTINGS.chapters.help}
       checked={media.video.chapters}
       disabled={!editable}
       onchange={(on: boolean) => void model.updateControls({ media: { video: { chapters: on } } })}
     />
-    <SettingRow
-      label={SETTINGS.audioFormat.label}
-      description={SETTINGS.audioFormat.description}
-      stacked
-    >
+    <SettingRow label={SETTINGS.audioFormat.label} help={SETTINGS.audioFormat.help} stacked>
       {#snippet children(control)}
         <Select
           {...control}
@@ -211,11 +195,7 @@
       {/snippet}
     </SettingRow>
     {#if kbps.length > 0}
-      <SettingRow
-        label={SETTINGS.audioQuality.label}
-        description={SETTINGS.audioQuality.description}
-        stacked
-      >
+      <SettingRow label={SETTINGS.audioQuality.label} help={SETTINGS.audioQuality.help} stacked>
         {#snippet children(control)}
           <Select
             {...control}

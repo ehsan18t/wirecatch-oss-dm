@@ -56,7 +56,7 @@
           >
             <SettingRow
               label={def.label}
-              description={def.help}
+              help={def.help}
               stacked={stacked.includes(def.id)}
               labelled={!unlabelled.includes(def.id)}
             >

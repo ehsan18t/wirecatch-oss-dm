@@ -62,7 +62,7 @@ async function unfold(label: 'Downloads' | 'Video and audio'): Promise<void> {
 }
 
 const captureSwitch = (): HTMLElement => screen.getByRole('switch', { name: 'Capture downloads' });
-const siteSwitch = (): HTMLElement => screen.getByRole('switch', { name: 'Ignore this site' });
+const siteSwitch = (): HTMLElement => screen.getByRole('switch', { name: /^Ignore / });
 
 afterEach(() => {
   cleanup();
@@ -83,8 +83,8 @@ describe('popup', () => {
     expect(site.getAttribute('aria-checked')).toBe('false');
     expect(
       screen.getByRole('switch', {
-        name: 'Ignore this site',
-        description: 'Downloads from example.com stay in the browser.',
+        name: 'Ignore example.com',
+        description: 'Downloads from this site stay in the browser.',
       }),
     ).toBe(site);
     expect(isUnavailable(screen.getByRole('button', { name: 'Pause all' }))).toBe(false);
@@ -186,25 +186,19 @@ describe('popup', () => {
 
   it('cannot ignore a browser page', async () => {
     await openPopup({ currentUrl: 'chrome://newtab/' });
-    const site = screen.getByRole('switch', {
-      name: 'Ignore this site',
-      description: 'Open a web page to ignore its site.',
-    });
+    const site = screen.getByRole('switch', { name: 'Ignore this site' });
     expect(isUnavailable(site)).toBe(true);
     expect(site.getAttribute('aria-checked')).toBe('false');
   });
 
-  it('names the entry that ignores a page under it in the description, and turning it off removes that entry', async () => {
+  it('names the entry that ignores a page in its label, and turning it off removes that entry', async () => {
     const { app } = await openPopup({
       currentUrl: 'https://video.example.com/watch',
       configure: (fake) => {
         fake.settings = { ...fake.settings, ignored_sites: ['example.com'] };
       },
     });
-    const site = screen.getByRole('switch', {
-      name: 'Ignore this site',
-      description: 'Downloads from example.com stay in the browser.',
-    });
+    const site = screen.getByRole('switch', { name: 'Ignore example.com' });
     expect(site.getAttribute('aria-checked')).toBe('true');
     await userEvent.setup().click(site);
     await waitFor(() => expect(app.settings.ignored_sites).toEqual([]));
@@ -586,22 +580,25 @@ describe('popup accessibility', () => {
   it('reaches every control with Tab, in reading order', async () => {
     await openPopup();
     const user = userEvent.setup();
-    const order: string[] = [];
-    for (let i = 0; i < 9; i += 1) {
-      await user.tab();
-      order.push(describeFocus(document.activeElement));
-    }
-    expect(order).toEqual([
+    const expected = [
       'button:Open Wirecatch settings',
+      'button:About Capture downloads',
       'switch:Capture downloads',
+      'button:About Show a window before each download',
       'switch:Show a window before each download',
+      'button:About Ask about each video',
       'switch:Ask about each video',
-      'switch:Ignore this site',
+      'button:About Ignore example.com',
+      'switch:Ignore example.com',
       'button:Downloads No speed limit · 3 at once · Main',
       'button:Video and audio Best available · Original',
       'button:Pause all',
       'button:Resume all',
-    ]);
+    ];
+    for (const control of expected) {
+      await user.tab();
+      expect(describeFocus(document.activeElement)).toBe(control);
+    }
     // Nothing else takes focus: the next Tab leaves the popup content.
     await user.tab();
     expect(document.activeElement).toBe(document.body);
@@ -612,12 +609,11 @@ describe('popup accessibility', () => {
     const user = userEvent.setup();
     await user.tab();
     await user.tab();
+    await user.tab();
     expect(document.activeElement).toBe(captureSwitch());
     await user.keyboard(' ');
     await waitFor(() => expect(app.settings.capture_enabled).toBe(false));
-    await user.tab();
-    await user.tab();
-    await user.tab();
+    for (let i = 0; i < 6; i += 1) await user.tab();
     expect(document.activeElement).toBe(siteSwitch());
     await user.keyboard('{Enter}');
     await waitFor(() => expect(app.settings.ignored_sites).toEqual(['example.com']));

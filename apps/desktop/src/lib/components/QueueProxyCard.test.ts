@@ -51,8 +51,8 @@ describe('a queue’s proxy', () => {
     const { app } = await openQueueDialog('Work files');
     await click(screen.getByRole('radio', { name: 'Custom' }));
     expect(screen.getByRole('checkbox', { name: 'System proxy exceptions' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: /^Global bypass list \(empty/ })).toBeChecked();
-    await click(screen.getByRole('checkbox', { name: 'These hosts' }));
+    expect(screen.getByRole('checkbox', { name: /^Global custom hosts \(empty/ })).toBeChecked();
+    await click(screen.getByRole('checkbox', { name: 'Custom hosts' }));
     const hosts = screen.getByPlaceholderText('Add a host, like intranet.example.com');
     await fireEvent.input(hosts, { target: { value: 'intranet.example' } });
     await fireEvent.keyDown(hosts, { key: 'Enter' });
