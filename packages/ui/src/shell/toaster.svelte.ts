@@ -1,4 +1,4 @@
-import { createContext } from 'svelte';
+import { createContext, untrack } from 'svelte';
 import { PausableTimers } from './toast-timers';
 
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger';
@@ -55,6 +55,8 @@ export class Toaster {
   #next = 0;
   /** The toast holding focus, kept when a new one would push it out. */
   #held: string | null = null;
+  /** The modal layers open now, oldest first; the top one shows the toasts, since the page behind it is inert. */
+  #layers = $state.raw<symbol[]>([]);
   readonly #timers = new PausableTimers((id) => {
     this.dismiss(id);
   });
@@ -121,6 +123,27 @@ export class Toaster {
 
   hold(id: string | null): void {
     this.#held = id;
+  }
+
+  /** Whether a modal layer covers the window, so the window's own toasts stand aside. */
+  get covered(): boolean {
+    return this.#layers.length > 0;
+  }
+
+  /** A modal layer opened over the window; it shows the toasts while it is the top one. */
+  openLayer(): symbol {
+    const layer = Symbol('layer');
+    // Untracked: a layer opens from an effect, which must not depend on the list it changes.
+    this.#layers = [...untrack(() => this.#layers), layer];
+    return layer;
+  }
+
+  closeLayer(layer: symbol): void {
+    this.#layers = untrack(() => this.#layers).filter((open) => open !== layer);
+  }
+
+  isTop(layer: symbol): boolean {
+    return this.#layers.at(-1) === layer;
   }
 
   /** Stops every timer, for a window that is going away. */

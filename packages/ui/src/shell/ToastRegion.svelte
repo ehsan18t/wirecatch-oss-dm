@@ -15,7 +15,7 @@
 </script>
 
 <script lang="ts">
-  // The window's toasts, stacked at the bottom right with the newest nearest the corner, each with its actions and a close button, and one button to clear them all while there are several, always at the bottom. Screen readers hear each new toast once, through two live regions that are always on the page (a region must exist before its text arrives): failures interrupt, the rest wait their turn. While a modal layer is open the page behind it is inert, toasts included; the layer repeats new toasts inside itself, for the toaster the window's root provided (`provideToaster`).
+  // The window's toasts, stacked at the bottom right with the newest nearest the corner, each with its actions and a close button, and one button to clear them all while there are several, always at the bottom. Screen readers hear each new toast once, through two live regions that are always on the page (a region must exist before its text arrives): failures interrupt, the rest wait their turn. While a modal layer is open the page behind it is inert, toasts included: the top layer shows the toasts inside itself (`ModalToasts`), and the window's own stand aside.
   import X from '~icons/lucide/x';
   import { cn } from '../lib/cn';
   import { closestElement, findElement } from '../lib/dom';
@@ -26,7 +26,7 @@
   import { TONE_FILL, TONE_TEXT } from '../recipes/control';
   import { FLYOUT_SURFACE } from '../recipes/surface';
   import LiveRegions from '../internal/LiveRegions.svelte';
-  import type { Toaster } from './toaster.svelte';
+  import type { Announcement, Toaster } from './toaster.svelte';
 
   interface Props {
     toaster: Toaster;
@@ -34,9 +34,21 @@
     label?: string;
     /** Laid out where it is placed instead of fixed to the window's corner: for a frame that is itself in the corner, and is as tall as its toasts. */
     inPlace?: boolean;
+    /** The modal layer this region is in, which shows the toasts while it is the top one; none for the window's own, which shows them while no layer covers it. */
+    layer?: symbol;
+    /** What the region says, when not every announcement of the toaster. */
+    announcement?: Announcement | null;
   }
 
-  let { toaster, label = 'Notifications', inPlace = false }: Props = $props();
+  let {
+    toaster,
+    label = 'Notifications',
+    inPlace = false,
+    layer,
+    announcement = toaster.announcement,
+  }: Props = $props();
+
+  const shown = $derived(layer === undefined ? !toaster.covered : toaster.isTop(layer));
 
   let region = $state<HTMLElement | null>(null);
   let hovered = false;
@@ -114,7 +126,7 @@
   {onfocusin}
   {onfocusout}
 >
-  {#each toaster.list as toast (toast.id)}
+  {#each shown ? toaster.list : [] as toast (toast.id)}
     <div
       data-toast={toast.id}
       class={cn(
@@ -160,7 +172,7 @@
       />
     </div>
   {/each}
-  {#if toaster.list.length > 1}
+  {#if shown && toaster.list.length > 1}
     <!-- Last, below the newest toast, so it stays in the same corner however many toasts there are and comes last with Tab as on screen; on the toasts' own surface, so it reads on whatever is behind the region, a website included. -->
     <div
       class={cn(FLYOUT_SURFACE, 'pointer-events-auto self-end')}
@@ -171,4 +183,4 @@
   {/if}
 </div>
 
-<LiveRegions announcement={toaster.announcement} />
+<LiveRegions {announcement} />
