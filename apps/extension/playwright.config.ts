@@ -2,10 +2,13 @@ import { defineConfig } from '@playwright/test';
 
 // Lays the extension's pages out in a real browser, which jsdom cannot: the preview page
 // (`preview/`, sample data, every word pseudo-translated longer), built and served on a port of its own.
-// Built, not the dev server: on a busy Windows runner the dev server refused one of its hundreds of
-// module requests, and a page whose module fails to load never draws. Run with `pnpm e2e`; the gate runs it as `e2e-extension`.
+// Run with `pnpm e2e`; the gate runs it as `e2e-extension`.
 const PORT = 4329;
 const OUT = '../.output/e2e-preview';
+// An address, not `localhost`: on Windows that name is both `::1` and `127.0.0.1`, and the server
+// listens on one, so a request the browser sends to the other is refused and the page never draws.
+const HOST = '127.0.0.1';
+const ORIGIN = `http://${HOST}:${String(PORT)}`;
 
 export default defineConfig({
   testDir: 'e2e',
@@ -13,14 +16,16 @@ export default defineConfig({
   fullyParallel: true,
   reporter: 'list',
   use: {
-    baseURL: `http://localhost:${String(PORT)}`,
+    baseURL: ORIGIN,
     // The same browser as the desktop's checks: Edge, installed with Windows, unless PW_CHANNEL names another.
     channel: process.env.PW_CHANNEL ?? 'msedge',
   },
   webServer: {
-    command: `pnpm exec vite build --config preview/vite.config.ts --outDir ${OUT} --emptyOutDir && pnpm exec vite preview --config preview/vite.config.ts --outDir ${OUT} --port ${String(PORT)} --strictPort`,
-    url: `http://localhost:${String(PORT)}/`,
+    command: `pnpm exec vite build --config preview/vite.config.ts --outDir ${OUT} --emptyOutDir && pnpm exec vite preview --config preview/vite.config.ts --outDir ${OUT} --host ${HOST} --port ${String(PORT)} --strictPort`,
+    url: `${ORIGIN}/`,
     reuseExistingServer: process.env.PW_REUSE === '1',
+    // The server's own lines, with the address it listens on, go to the log.
+    stdout: 'pipe',
     timeout: 120_000,
   },
 });
