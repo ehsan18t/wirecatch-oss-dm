@@ -694,3 +694,29 @@ async fn a_move_finishes_after_its_caller_gives_up() {
     })
     .await;
 }
+
+/// A repeat of a handover that was still being added waits for that add's outcome: joining the download would answer it early and make the first capture's download the app's (D89.2).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_repeated_handover_never_joins_its_own_download() {
+    let (manager, _dir) = manager_with(deaf, Duration::from_secs(1), 2 * PATIENCE).await;
+    let first = capture("https://example.com/held.pdf");
+    let url = Url::parse(&first.url).unwrap();
+    let adding = tokio::spawn({
+        let manager = manager.clone();
+        let first = first.clone();
+        async move { manager.add_capture(first).await }
+    });
+    wait_until("the first capture to be added", || {
+        !manager.lock().downloads.is_empty()
+    })
+    .await;
+    // As a repeat does that checked for its handover before the first add registered it.
+    assert!(manager.join_unfinished(&first, &url).unwrap().is_none());
+    let handovers = &manager.lock().handovers;
+    let target = &handovers.get(&first.handover_id).unwrap().target;
+    assert!(
+        matches!(target, super::handovers::Target::Download(_)),
+        "{target:?}"
+    );
+    adding.abort();
+}
