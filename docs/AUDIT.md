@@ -149,11 +149,11 @@ CORE-4, CORE-5, CORE-6, CORE-7, CORE-8, CORE-9, CORE-10, CORE-11, CORE-12, CORE-
 
 Where each stands (2026-10-29):
 
-- Done: CORE-9 (a move to another folder never replaces a file there and, when the original cannot be deleted, leaves no copy behind; a video's placement already took a free name by hard link), CORE-16 (`wirecatch_messages::invalid_link`), CORE-17 (`wirecatch_engine::resume_file_url`), CORE-18 (every rollback and cleanup failure is logged), CORE-24 (`join_all`).
+- Done: CORE-4 (a withdrawal while a capture or a video is being confirmed finds it started, so the browser drops its copy), CORE-9 (a move to another folder never replaces a file there and, when the original cannot be deleted, leaves no copy behind; a video's placement already took a free name by hard link), CORE-16 (`wirecatch_messages::invalid_link`), CORE-17 (`wirecatch_engine::resume_file_url`), CORE-18 (every rollback and cleanup failure is logged), CORE-24 (`join_all`).
 - Answered: CORE-13. Where the add-on code branches on why something failed it has typed cases (`PartError::Stopped`, `Refusal`, `Lookup`); the strings left are the sentences the person is shown, and a signature check that could not run is now `Lookup::Unreachable`, tried again later, rather than read as a refused release.
 - Answered: CORE-28. A panic leaves the state's sets out of step only in a build that keeps running after it; release builds abort on panic (`panic = "abort"`), so a poisoned lock is never seen there, as `Manager::lock` says.
 - Partly: CORE-11 (media logic moved out; `media_run.rs` and `addons.rs` are still long), CORE-14 (texts moved to crates/messages; the refresh decision still reads a `FixAction`), CORE-19 (some numbers named; the work-folder and add-on layout names are not), CORE-20 (tests come with CORE-4 to CORE-8), CORE-25 (five bool parameters left), CORE-8 (only a write that may pass later is retried and kept; past `MAX_KEPT` the oldest is still dropped rather than all but each row's latest), CORE-27 (the link schemes are one list in `wirecatch_engine::url` and a path's file name is `naming::file_name_of`; the user-agent lookup is inline).
-- Open: CORE-4 (withdraw against confirm), CORE-5 (one kind of question), CORE-6 (cancel safety), CORE-7 (progress-only updates), CORE-10 (scans of every download), CORE-12 (a phase per download), CORE-23 (a size cap in the engine).
+- Open: CORE-5 (one kind of question), CORE-6 (cancel safety), CORE-7 (progress-only updates), CORE-10 (scans of every download), CORE-12 (a phase per download), CORE-23 (a size cap in the engine).
 
 ### W10. IPC, bridge and CLI
 

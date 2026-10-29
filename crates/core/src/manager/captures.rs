@@ -243,7 +243,9 @@ impl Manager {
             match known.target {
                 Target::Dismissed => return Ok(WithdrawOutcome::NotFound),
                 // The user said yes in the app; the browser no longer needs its copy.
-                Target::Confirmed(_) => return Ok(WithdrawOutcome::AlreadyStarted),
+                Target::Confirmed(_) | Target::Confirming(_) => {
+                    return Ok(WithdrawOutcome::AlreadyStarted);
+                }
                 Target::Pending(pending) => {
                     // Other tabs may still be waiting on the same question.
                     if let Some(waiting) = state.pending.get_mut(&pending) {
@@ -305,11 +307,17 @@ impl Manager {
         id: QuestionId,
         answer: CaptureConfirmation,
     ) -> Result<DownloadId> {
-        let pending = self
-            .lock_open()?
-            .pending
-            .remove(&id)
-            .ok_or(CoreError::ConfirmationNotFound(id))?;
+        let pending = {
+            let mut state = self.lock_open()?;
+            let pending = state
+                .pending
+                .remove(&id)
+                .ok_or(CoreError::ConfirmationNotFound(id))?;
+            for handover in &pending.handovers {
+                state.handovers.retarget(handover, Target::Confirming(id));
+            }
+            pending
+        };
         match self.insert_confirmed(&pending, answer).await {
             Ok(row) => {
                 let mut state = self.lock();
@@ -324,6 +332,9 @@ impl Manager {
             Err(e) => {
                 // Keep it so the user can fix the problem (another folder, say) and confirm again.
                 if let Ok(mut state) = self.lock_open() {
+                    for handover in &pending.handovers {
+                        state.handovers.retarget(handover, Target::Pending(id));
+                    }
                     state.pending.insert(id, pending);
                 }
                 Err(e)

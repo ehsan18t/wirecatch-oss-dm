@@ -118,3 +118,33 @@ async fn a_confirmed_link_shows_its_download() -> TestResult {
     assert_eq!(h.manager.list_downloads().len(), 1);
     Ok(())
 }
+
+/// CORE-4: the browser gives up waiting while the person confirms in the app. The app has it from
+/// the moment they said yes, so the browser is told so and drops its copy; never both download.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_withdrawal_while_confirming_finds_it_taken() -> TestResult {
+    let server = slow_server().await;
+    let h = Harness::new().await?;
+    tune(&h.manager, |s| s.extension.ask_before_download = true)?;
+    let url = server.url("report.pdf").to_string();
+    let capture = click(&url, 1);
+    h.manager.add_capture(capture.clone()).await?;
+    let [asked] = h
+        .manager
+        .pending_confirmations()
+        .try_into()
+        .map_err(|_| "not one question")?;
+
+    // The withdrawal comes while the confirmation waits for its first step to finish.
+    let (confirmed, withdrawn) = tokio::join!(biased;
+        h.manager.confirm_capture(asked.id, wirecatch_protocol::app::CaptureConfirmation::default()),
+        async { h.manager.withdraw_capture(&capture.handover_id) },
+    );
+    confirmed?;
+    assert_eq!(
+        withdrawn?,
+        wirecatch_protocol::extension::WithdrawOutcome::AlreadyStarted
+    );
+    assert_eq!(h.manager.list_downloads().len(), 1);
+    Ok(())
+}
