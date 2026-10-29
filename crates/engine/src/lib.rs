@@ -282,5 +282,6 @@ pub use net_guard::{AddressKind, PrivateNetwork};
 pub use options::{DownloadOptions, MAX_BUFFER_SIZE, MAX_CONNECTIONS};
 pub use progress::Progress;
 pub use proxy::{ManualProxies, ProxyChoice, ProxyRoute, ProxySetting};
+pub use state::resume_file_url;
 pub use storage::{PART_EXT, STATE_EXT};
 pub use tokio_util::sync::CancellationToken;

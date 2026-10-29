@@ -180,14 +180,8 @@ pub(crate) fn left_by(path: &Path, url: &str) -> bool {
     if path.exists() || !part.is_file() {
         return false;
     }
-    // The resume file is small JSON that names the link it was made for.
-    let Ok(json) = std::fs::read(&state) else {
-        return false;
-    };
-    let saved = serde_json::from_slice::<serde_json::Value>(&json)
-        .ok()
-        .and_then(|v| v.get("url")?.as_str().map(normalized_url));
-    saved.is_some_and(|saved| saved == normalized_url(url))
+    wirecatch_engine::resume_file_url(&state)
+        .is_some_and(|saved| normalized_url(&saved) == normalized_url(url))
 }
 
 fn normalized_url(url: &str) -> String {
@@ -303,7 +297,7 @@ mod tests {
         std::fs::write(&part, b"x").unwrap();
         std::fs::write(
             &state,
-            br#"{"version":1,"url":"https://example.com/a.zip"}"#,
+            br#"{"version":1,"url":"https://example.com/a.zip","total":1,"ranged":true,"remaining":[]}"#,
         )
         .unwrap();
         assert!(left_by(&path, "https://example.com/a.zip"));
