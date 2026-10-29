@@ -10,6 +10,8 @@ use wirecatch_queues::rules;
 
 use super::Manager;
 use super::downloads::parse_url;
+use super::media::MediaStage;
+use super::placement::{Placed, QueueRequest};
 use super::state::{QueueSlot, State, Stop};
 use crate::error::{CoreError, Result};
 
@@ -101,7 +103,7 @@ impl Manager {
     }
 
     /// Deletes a queue. Its downloads move to the end of the default queue, and
-    /// captures waiting for confirmation that were meant for it go there too.
+    /// captures and videos waiting for an answer that were meant for it go there too.
     ///
     /// # Errors
     ///
@@ -138,6 +140,23 @@ impl Manager {
                 waiting.capture.queue = fallback;
                 waiting.capture.queue_reason = QueueReason::DefaultQueue;
             }
+        }
+        for waiting in state.media.values_mut() {
+            if waiting.placed.queue == id {
+                waiting.placed = Placed {
+                    queue: fallback,
+                    reason: QueueReason::DefaultQueue,
+                };
+                if let MediaStage::Ready { choice, .. } = &mut waiting.stage {
+                    choice.queue = fallback;
+                    choice.queue_reason = QueueReason::DefaultQueue;
+                }
+            }
+            waiting.request = match waiting.request {
+                QueueRequest::Picked(queue) if queue == id => QueueRequest::App,
+                QueueRequest::Browser(Some(queue)) if queue == id => QueueRequest::Browser(None),
+                other => other,
+            };
         }
         if state.settings.extension.default_queue == id {
             let mut settings = state.settings.clone();
