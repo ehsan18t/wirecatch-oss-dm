@@ -2,18 +2,21 @@
   // Test a link: which queue the rules send a link to and why, a switched-off queue that would have matched it included (D72.5, D72.7). The core matches, so this and the downloads never disagree.
   import { tick } from 'svelte';
   import type { DraftRules, QueueId } from '@wirecatch/protocol';
-  import { Button, Field, Input, type FieldControl } from '@wirecatch/ui';
+  import { Button, cn, Field, Input, type FieldControl } from '@wirecatch/ui';
   import { trialLines } from '$lib/queue-reasons';
   import { getApp } from '$lib/state/app.svelte';
 
   let {
     draft,
     draftName = 'This queue',
+    inRow = false,
   }: {
     /** One queue's rules as its form has them, tried in its place; none tries the saved rules. */
     draft?: (() => DraftRules) | undefined;
     /** The name of the queue `draft` stands for. */
     draftName?: string;
+    /** On a settings row of its own, which shows the name: the field takes the row's width. */
+    inRow?: boolean;
   } = $props();
 
   const app = getApp();
@@ -67,9 +70,9 @@
   }
 </script>
 
-<div class="flex max-w-prose flex-col gap-2">
+<div class={cn('flex flex-col gap-2', inRow ? 'w-full' : 'max-w-prose')}>
   <div class="flex items-end gap-2">
-    <Field label="Test a link" class="min-w-0 flex-1">
+    <Field label="Test a link" hideLabel={inRow} class="min-w-0 flex-1">
       {#snippet children(control: FieldControl)}
         <Input
           {...control}
