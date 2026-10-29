@@ -4,8 +4,10 @@
 //! They rely on the overrides `WIRECATCH_BRIDGE_TEST_ENDPOINT`,
 //! `WIRECATCH_BRIDGE_TEST_LAUNCH` and `WIRECATCH_BRIDGE_TEST_START_BUDGET_MS`
 //! (see `src/app.rs`), which exist only with the
-//! `test-overrides` feature; Cargo.toml makes this test require it. Run with
+//! `test-overrides` feature, so the file is empty without it and
+//! `needs_overrides.rs` fails instead. Run with
 //! `cargo test -p wirecatch-bridge --features test-overrides`.
+#![cfg(feature = "test-overrides")]
 
 use std::ffi::OsString;
 use std::process::Stdio;
