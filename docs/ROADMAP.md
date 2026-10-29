@@ -27,12 +27,13 @@ W9 is finished before the release. Features that close a gap in the app come fir
 2. **One download window per link** (bug). Clicking the same link again while its download window is open brings that window to the front instead of opening a second one.
 3. **The in-page media button cannot start a video twice** (bug). Clicking the button again for a video that is being read or whose window is open brings that window to the front; the button stays as it is. Today repeated clicks start several reads, and none gets past reading.
 4. **Settings and downloads switch at the sidebar's foot** (change to D47). On the settings screen the foot of the sidebar shows "Downloads" where the downloads screen shows "Settings", and the "Back to downloads" item at the top goes; Escape leaves settings when its search is empty.
-5. **CORE-9:** moving a download to another folder never replaces a file there, and a move that cannot delete the original leaves no duplicate behind; core uses the engine's no-replace move.
-6. **CORE-4:** withdrawing a browser capture while it is being confirmed never downloads it twice.
-7. **Dropped downloads' file work:** a stopped run's queued file work cannot delete a new run's files (the drain handle in AUDIT's carried items).
-8. **One state for a download (CORE-12), one kind of question (rest of CORE-5) and cancel safety (CORE-6):** the flags become one phase, which removes the class of bug behind 6 and 7.
-9. **Saves and scans:** progress saves write only the progress (CORE-7), state changes stop scanning every download (CORE-10), and the system proxy is read off the manager's lock.
-10. **The rest of W9:** split the long modules (CORE-11), typed add-on errors (CORE-13, CMD-8), no logic on a person's fix (CORE-14), named layout strings (CORE-19), no bool parameters (CORE-25), `UnixMillis` (CORE-26), the latest write per row kept (CORE-8), the small-file cap in the engine (CORE-23), and the small items AUDIT lists for W9.
+5. **Where a video's subtitles go** (settings change). "Save subtitles as separate files" becomes a choice: embed them in the video, or save them as separate files. With embedding chosen, a second choice says what happens when the format cannot hold subtitles (the "Original" format, or audio only): save them as separate files (today's behaviour) or leave them out. The quality question follows the same rule.
+6. **CORE-9:** moving a download to another folder never replaces a file there, and a move that cannot delete the original leaves no duplicate behind; core uses the engine's no-replace move.
+7. **CORE-4:** withdrawing a browser capture while it is being confirmed never downloads it twice.
+8. **Dropped downloads' file work:** a stopped run's queued file work cannot delete a new run's files (the drain handle in AUDIT's carried items).
+9. **One state for a download (CORE-12), one kind of question (rest of CORE-5) and cancel safety (CORE-6):** the flags become one phase, which removes the class of bug behind 7 and 8.
+10. **Saves and scans:** progress saves write only the progress (CORE-7), state changes stop scanning every download (CORE-10), and the system proxy is read off the manager's lock.
+11. **The rest of W9:** split the long modules (CORE-11), typed add-on errors (CORE-13, CMD-8), no logic on a person's fix (CORE-14), named layout strings (CORE-19), no bool parameters (CORE-25), `UnixMillis` (CORE-26), the latest write per row kept (CORE-8), the small-file cap in the engine (CORE-23), and the small items AUDIT lists for W9.
 
 Release setup, beside the list: the four `TODO-PRODUCT-` values in `config/product.toml` (the maintainer's), a Chrome Web Store package from the release workflow, and the store listings (ROADMAP item 7).
 
