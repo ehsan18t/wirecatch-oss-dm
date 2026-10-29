@@ -44,7 +44,7 @@ describe('proxy servers in settings', () => {
 
   it('saves a new profile after testing it, and keeps its password out of sight', async () => {
     const { app } = await openNetwork();
-    await click(screen.getByRole('button', { name: 'Add proxy' }));
+    await click(screen.getByRole('button', { name: 'New proxy' }));
     await type(dialog().getByLabelText('Name (optional)'), 'Lab');
     await type(dialog().getByLabelText('Server'), 'refuse.lab.example');
     await click(dialog().getByRole('button', { name: 'Test connection' }));
@@ -96,18 +96,18 @@ describe('proxy servers in settings', () => {
 
   it('leaves out the hosts to go around while nothing uses a proxy', async () => {
     const { app } = await openNetwork();
-    expect(screen.getByRole('checkbox', { name: /^Custom hosts/ })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /^Global hosts/ })).toBeInTheDocument();
     if (!app.settings) throw new Error('no settings');
     app.settings.proxy.proxy = { kind: 'direct' };
     await settle();
     // Work files still has the Office profile of its own and follows the app's exceptions.
-    expect(screen.getByRole('checkbox', { name: /^Custom hosts/ })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /^Global hosts/ })).toBeInTheDocument();
     const work = app.queues.list.find((q) => q.settings.name === 'Work files');
     if (!work) throw new Error('no sample queue');
     const settings = JSON.parse(JSON.stringify(work.settings)) as typeof work.settings;
     await app.queues.save(work.id, { ...settings, proxy: { source: 'global' } });
     await settle();
-    expect(screen.queryByRole('checkbox', { name: /^Custom hosts/ })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: /^Global hosts/ })).toBeNull();
     expect(screen.getByText(/nothing to bypass/)).toBeInTheDocument();
   });
 });

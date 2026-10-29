@@ -210,7 +210,7 @@ fn ftp_proxy_unsupported(setting: &ProxySetting) -> UserError {
             FixAction::ProxySettings,
         ),
         ProxySetting::Given => fix(
-            "FTP downloads can only go through a SOCKS5 proxy, and the proxy in the proxy settings is another kind. Turn on Bypass proxy for FTP links, add this server to the proxy's exceptions, or use a SOCKS5 proxy, then try again.",
+            "FTP downloads can only go through a SOCKS5 proxy, and the proxy in the proxy settings is another kind. Turn on “FTP links skip the proxy” in Settings > Network, add this server to the hosts that skip the proxy, or use a SOCKS5 proxy, then try again.",
             FixAction::ProxySettings,
         ),
         // A kind of setting added to the engine after this was written.
@@ -452,7 +452,7 @@ mod tests {
         assert!(system.message.contains("network settings"));
         assert!(system.message.contains("exceptions"));
         let given = ftp_proxy_unsupported(&ProxySetting::Given);
-        assert!(given.message.contains("Bypass proxy for FTP links"));
+        assert!(given.message.contains("FTP links skip the proxy"));
         // A proxy that refuses the login is another queue's to avoid (D73.4).
         let login = describe(&EngineError::ProxyLoginRefused, Path::new(""), false);
         assert!(login.message.contains("user name and password"));

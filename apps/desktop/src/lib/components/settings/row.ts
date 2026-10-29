@@ -1,6 +1,7 @@
 // What the settings sections share: what each setting's control is given, and what each section is given.
 
 import type { AppSettings } from '@wirecatch/protocol';
+import { createContext } from 'svelte';
 import type { FieldControl } from '@wirecatch/ui';
 import type { SettingDef, SettingId } from '$lib/settings-schema';
 
@@ -23,4 +24,16 @@ export interface SectionProps {
   flash: SettingId | null;
   /** Changes settings, saving only what changed. */
   save: SaveSettings;
+}
+
+const [searchingContext, setSearchingContext, hasSearchingContext] = createContext<() => boolean>();
+
+/** Tells the sections below whether search results show, which puts each under a heading of its section's name. */
+export function setSettingsSearching(searching: () => boolean): void {
+  setSearchingContext(searching);
+}
+
+/** Whether search results show; a section shown on its own (tests, the gallery) is not one. */
+export function settingsSearching(): () => boolean {
+  return hasSearchingContext() ? searchingContext() : () => false;
 }

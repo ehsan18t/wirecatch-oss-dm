@@ -18,7 +18,7 @@ interface SettingText {
   help: string;
   /** Extra words people might search for. */
   keywords: string;
-  /** A heading the setting sits under within its section, for a section that holds two kinds of thing (Media: videos and audio only). */
+  /** The heading the setting sits under within its section. */
   group?: string;
 }
 
@@ -26,9 +26,10 @@ const DEFS = [
   {
     id: 'theme',
     section: 'general',
-    label: 'Appearance',
+    label: 'Theme',
     help: 'Follow your system, or always use light or dark.',
-    keywords: 'theme dark mode light mode colors',
+    keywords: 'theme appearance dark mode light mode colors',
+    group: 'Appearance',
   },
   {
     id: 'accent',
@@ -36,6 +37,7 @@ const DEFS = [
     label: 'Accent colour',
     help: 'Marks what is selected and what is downloading. System uses your Windows accent colour.',
     keywords: 'accent color colour highlight tint',
+    group: 'Appearance',
   },
   {
     id: 'start_with_system',
@@ -43,6 +45,7 @@ const DEFS = [
     label: 'Start Wirecatch when you sign in',
     help: 'Runs in the tray so browser downloads are captured right away.',
     keywords: 'windows startup boot login sign in autostart launch',
+    group: 'Startup',
   },
   {
     id: 'close_to_tray',
@@ -50,6 +53,39 @@ const DEFS = [
     label: 'Keep downloading when the window is closed',
     help: 'Closing the window leaves Wirecatch in the tray instead of quitting.',
     keywords: 'tray background minimize quit exit',
+    group: 'Startup',
+  },
+  {
+    id: 'auto_update_addons',
+    section: 'general',
+    label: 'Keep add-ons up to date',
+    help: 'Installs new versions of the media add-on automatically.',
+    keywords: 'addon add-on update ffmpeg yt-dlp media automatic',
+    group: 'Updates',
+  },
+  {
+    id: 'update_suffix_list',
+    section: 'general',
+    label: 'Update the Public Suffix List automatically',
+    help: 'Weekly, while nothing downloads. The list tells Wirecatch which sites share an owner; publicsuffix.org sees only your IP address and Wirecatch’s version.',
+    keywords: 'public suffix list psl domains owner privacy update publicsuffix.org',
+    group: 'Updates',
+  },
+  {
+    id: 'export',
+    section: 'general',
+    label: 'Export settings',
+    help: 'Saves your settings, queues, schedules and folder rules to a single file.',
+    keywords: 'backup save profile export migrate',
+    group: 'Backup',
+  },
+  {
+    id: 'import',
+    section: 'general',
+    label: 'Import settings',
+    help: 'Shows what will change before replacing your settings and queues.',
+    keywords: 'restore load profile import migrate',
+    group: 'Backup',
   },
   {
     id: 'notify_on_start',
@@ -108,32 +144,7 @@ const DEFS = [
     label: 'Capture downloads from the browser',
     help: 'Wirecatch takes over downloads you start in Chrome, Edge, Firefox and other browsers.',
     keywords: 'capture extension intercept integration chrome firefox edge',
-  },
-  {
-    id: 'ask_before_download',
-    section: 'browser',
-    label: 'Show a window before each download',
-    help: 'Rename the file, pick its folder and queue, or save it for later. Videos follow Settings > Media.',
-    keywords: 'confirm prompt dialog question ask window start without asking',
-  },
-  {
-    id: 'show_progress_windows',
-    section: 'browser',
-    label: 'Keep the download window open to show progress',
-    help: 'After you click Download now, the window stays open and shows the download’s progress.',
-    keywords: 'progress window close speed popup',
-  },
-  {
-    id: 'show_media_button',
-    section: 'browser',
-    ...words('show_media_button'),
-    keywords: 'media video audio overlay button stream',
-  },
-  {
-    id: 'private_windows',
-    section: 'browser',
-    ...words('private_windows'),
-    keywords: 'private incognito inprivate window tab',
+    group: 'Capture',
   },
   {
     id: 'ignored_sites',
@@ -141,6 +152,7 @@ const DEFS = [
     label: 'Sites to ignore',
     help: 'Downloads from these sites are left to the browser.',
     keywords: 'ignore exclude block skip leave domains websites',
+    group: 'Capture',
   },
   {
     id: 'capture_extensions',
@@ -148,6 +160,7 @@ const DEFS = [
     label: 'Only capture these file types',
     help: 'Leave empty to capture all file types.',
     keywords: 'extensions formats filter types',
+    group: 'Capture',
   },
   {
     id: 'min_capture_size',
@@ -155,12 +168,51 @@ const DEFS = [
     label: 'Skip files smaller than',
     help: 'Smaller files, like images on a page, stay in the browser. 0 captures every size.',
     keywords: 'minimum size small threshold',
+    group: 'Capture',
+  },
+  {
+    id: 'private_windows',
+    section: 'browser',
+    ...words('private_windows'),
+    keywords: 'private incognito inprivate window tab',
+    group: 'Capture',
+  },
+  {
+    id: 'show_media_button',
+    section: 'browser',
+    ...words('show_media_button'),
+    keywords: 'media video audio overlay button stream',
+    group: 'Capture',
   },
   {
     id: 'default_queue',
     section: 'browser',
     ...words('default_queue'),
     keywords: 'queue default capture',
+    group: 'Capture',
+  },
+  {
+    id: 'ask_before_download',
+    section: 'browser',
+    label: 'Show a window before each download',
+    help: 'Rename the file, pick its folder and queue, or save it for later. Videos follow Settings > Media.',
+    keywords: 'confirm prompt dialog question ask window start without asking',
+    group: 'Download window',
+  },
+  {
+    id: 'show_progress_windows',
+    section: 'browser',
+    label: 'Keep the download window open to show progress',
+    help: 'After you click Download now, the window stays open and shows the download’s progress.',
+    keywords: 'progress window close speed popup',
+    group: 'Download window',
+  },
+  {
+    id: 'media_addon',
+    section: 'media',
+    label: 'Media add-on',
+    help: 'Downloads video from YouTube and about 1,800 other sites.',
+    keywords: 'addon add-on youtube video stream yt-dlp ffmpeg deno install media extractor',
   },
   {
     id: 'media_ask',
@@ -259,44 +311,18 @@ const DEFS = [
     group: 'Audio only',
   },
   {
-    id: 'media_addon',
-    section: 'addons',
-    label: 'Media add-on',
-    help: 'Downloads video from YouTube and about 1,800 other sites.',
-    keywords: 'addon add-on youtube video stream yt-dlp ffmpeg deno install media extractor',
-  },
-  {
-    id: 'auto_update_addons',
-    section: 'addons',
-    label: 'Keep add-ons up to date',
-    help: 'Installs new versions of the media add-on automatically.',
-    keywords: 'addon add-on update ffmpeg yt-dlp media automatic',
-  },
-  {
     id: 'global_speed_limit',
     section: 'speed',
     ...words('global_speed_limit'),
     keywords: 'bandwidth throttle cap limit rate',
-  },
-  {
-    id: 'export',
-    section: 'import_export',
-    label: 'Export settings',
-    help: 'Saves your settings, queues, schedules and folder rules to a single file.',
-    keywords: 'backup save profile export migrate',
-  },
-  {
-    id: 'import',
-    section: 'import_export',
-    label: 'Import settings',
-    help: 'Shows what will change before replacing your settings and queues.',
-    keywords: 'restore load profile import migrate',
+    group: 'Limits',
   },
   {
     id: 'max_concurrent_downloads',
     section: 'speed',
     ...words('max_concurrent_downloads'),
     keywords: 'concurrent simultaneous parallel limit',
+    group: 'Limits',
   },
   {
     id: 'connections_per_download',
@@ -304,6 +330,15 @@ const DEFS = [
     label: 'Connections per download',
     help: `More connections can be faster on servers that allow it. ${DEFAULT_CONNECTIONS_PER_DOWNLOAD} suits most servers.`,
     keywords: 'threads segments parts parallel connections speed',
+    group: 'Limits',
+  },
+  {
+    id: 'queues',
+    section: 'speed',
+    label: 'Your queues',
+    help: 'Edit a queue to change its limits, rules, schedule or notifications.',
+    keywords:
+      'queue queues schedule overnight limit at once concurrent notify notification all done finished batch auto claim claims site try link',
   },
   {
     id: 'proxy',
@@ -311,6 +346,7 @@ const DEFS = [
     label: 'Global proxy',
     help: 'Used by every queue without a proxy of its own. Updates and add-ons use the Main queue’s proxy.',
     keywords: 'proxy socks socks5 http https firewall vpn corporate office no proxy direct system',
+    group: 'Proxy',
   },
   {
     id: 'proxy_servers',
@@ -318,42 +354,30 @@ const DEFS = [
     label: 'Proxy servers',
     help: 'Saved proxies and their sign-in details, for the global proxy and any queue.',
     keywords: 'proxy servers servers login password user name test connection copy from system',
+    group: 'Proxy',
   },
   {
     id: 'proxy_exceptions',
     section: 'network',
-    label: 'Bypass proxy for',
-    help: 'Hosts that every queue using the global list connects to directly.',
-    keywords: 'proxy exceptions bypass no_proxy direct intranet local hosts',
+    label: 'Hosts that skip the proxy',
+    help: 'Queues using the global list connect to these hosts directly.',
+    keywords: 'proxy exceptions bypass skip no_proxy direct intranet local hosts global list',
+    group: 'Proxy',
   },
   {
     id: 'ftp_bypass_proxy',
     section: 'network',
-    label: 'Bypass proxy for FTP links',
+    label: 'FTP links skip the proxy',
     help: 'Only SOCKS5 proxies carry FTP. On, FTP links go direct past other proxies; off, they fail.',
     keywords: 'ftp ftps proxy direct',
+    group: 'Proxy',
   },
   {
     id: 'local_sites',
-    section: 'advanced',
+    section: 'network',
     label: 'Local network sites',
     help: 'Links from these sites may reach devices on your network, like a NAS or router. IP addresses and one-word names always count as local.',
     keywords: 'local network intranet nas router private lan trusted hosts',
-  },
-  {
-    id: 'update_suffix_list',
-    section: 'advanced',
-    label: 'Update the Public Suffix List automatically',
-    help: 'Weekly, while nothing downloads. The list tells Wirecatch which sites share an owner; publicsuffix.org sees only your IP address and Wirecatch’s version.',
-    keywords: 'public suffix list psl domains owner privacy update publicsuffix.org',
-  },
-  {
-    id: 'queues',
-    section: 'queues',
-    label: 'Your queues',
-    help: 'Edit a queue to change its limits, rules, schedule or notifications.',
-    keywords:
-      'queue queues schedule overnight limit at once concurrent notify notification all done finished batch auto claim claims site try link',
   },
 ] as const satisfies readonly SettingText[];
 

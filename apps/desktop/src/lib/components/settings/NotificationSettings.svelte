@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Notifications: how Wirecatch tells you a download started (a note in the browser, D65), finished or failed (D52), and whether notifications show during the system's Do Not Disturb (D64). When it tells about finished downloads is each queue's choice, so the default queue's is named under the dropdown, with a way to change it.
+  // Notifications: how Wirecatch tells you a download started (a note in the browser, D65), finished or failed (D52), and whether notifications show during the system's Do Not Disturb (D64). When it tells about finished downloads is each queue's choice, so the default queue's is named under the row, with a way to change it; a notice time that does not apply says why.
   import type {
     NotifyOnFinish,
     FinishNoticeTime,
@@ -18,6 +18,7 @@
   import { getApp } from '$lib/state/app.svelte';
   import type { SettingIn } from '$lib/settings-schema';
   import type { Row, SectionProps } from './row';
+  import RowNote from './RowNote.svelte';
   import SettingRows from './SettingRows.svelte';
   import SettingToggle from './SettingToggle.svelte';
 
@@ -32,10 +33,42 @@
     notify_during_do_not_disturb: notifyDuringDoNotDisturb,
   };
 
+  const notes: Partial<Record<SettingIn<'notifications'>, Snippet>> = {
+    start_notice_time: startTimeNote,
+    notify_on_finish: finishQueueNote,
+    finish_notice_time: finishTimeNote,
+  };
+
   const defaultQueue = $derived(app.queues.defaultQueue);
 </script>
 
-<SettingRows {items} {settings} {flash} {controls} stacked={['notify_on_finish']} />
+<SettingRows {items} {settings} {flash} {controls} {notes} />
+
+{#snippet startTimeNote()}
+  {#if settings.notify_on_start !== 'browser'}
+    <RowNote>Used only with “Show a notice in the browser”.</RowNote>
+  {/if}
+{/snippet}
+
+{#snippet finishTimeNote()}
+  {#if settings.notify_on_finish !== 'browser'}
+    <RowNote>Used only with “Show a notice in the browser”.</RowNote>
+  {/if}
+{/snippet}
+
+{#snippet finishQueueNote()}
+  {#if defaultQueue && settings.notify_on_finish !== 'nothing'}
+    <RowNote>
+      {queueNotifyLine(defaultQueue.settings.name, defaultQueue.settings.notify)}
+      <Button
+        variant="link"
+        size="sm"
+        aria-label="Change when {defaultQueue.settings.name} notifies you"
+        onclick={() => app.openDialog({ kind: 'queue', id: defaultQueue.id })}>Change</Button
+      >
+    </RowNote>
+  {/if}
+{/snippet}
 
 {#snippet notifyOnStart({ s, control }: Row)}
   <Select
@@ -59,26 +92,13 @@
 {/snippet}
 
 {#snippet notifyOnFinish({ s, control }: Row)}
-  <div class="flex flex-col items-start gap-1.5">
-    <Select
-      {...control}
-      class="w-56"
-      value={s.notify_on_finish}
-      options={NOTIFY_ON_FINISH_OPTIONS}
-      onchange={(notice: NotifyOnFinish) => save((d) => void (d.notify_on_finish = notice))}
-    />
-    {#if defaultQueue && s.notify_on_finish !== 'nothing'}
-      <p class="flex flex-wrap items-baseline gap-x-1.5 text-small text-ink-muted">
-        <span>{queueNotifyLine(defaultQueue.settings.name, defaultQueue.settings.notify)}</span>
-        <Button
-          variant="link"
-          size="sm"
-          aria-label="Change when {defaultQueue.settings.name} notifies you"
-          onclick={() => app.openDialog({ kind: 'queue', id: defaultQueue.id })}>Change</Button
-        >
-      </p>
-    {/if}
-  </div>
+  <Select
+    {...control}
+    class="w-56"
+    value={s.notify_on_finish}
+    options={NOTIFY_ON_FINISH_OPTIONS}
+    onchange={(notice: NotifyOnFinish) => save((d) => void (d.notify_on_finish = notice))}
+  />
 {/snippet}
 
 {#snippet finishNoticeTime({ s, control }: Row)}

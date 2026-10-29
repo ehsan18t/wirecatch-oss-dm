@@ -1,7 +1,6 @@
 <script lang="ts">
   // One choice of several that can each be on or off, as a chip that stays pressed: the days a queue runs, the subtitles to save. A row of them wraps; it never scrolls inside the page.
   import Check from '~icons/lucide/check';
-  import Plus from '~icons/lucide/plus';
   import { cn } from '../lib/cn';
   import Icon from './Icon.svelte';
   import { FOCUS_RING } from '../recipes/control';
@@ -30,9 +29,5 @@
     className,
   )}
   onclick={() => onchange(!pressed)}
-  ><Icon
-    icon={pressed ? Check : Plus}
-    size="xs"
-    class={pressed ? undefined : 'opacity-quiet'}
-  />{label}</button
+  >{#if pressed}<Icon icon={Check} size="xs" />{/if}{label}</button
 >
