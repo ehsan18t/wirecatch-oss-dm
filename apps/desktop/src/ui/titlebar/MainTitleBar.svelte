@@ -4,19 +4,11 @@
   import PanelLeft from '~icons/lucide/panel-left';
   import Search from '~icons/lucide/search';
   import X from '~icons/lucide/x';
-  import {
-    AppMark,
-    Badge,
-    IconButton,
-    Input,
-    Kbd,
-    TitleBar,
-    type SidebarState,
-  } from '@wirecatch/ui';
+  import { AppMark, Badge, IconButton, Input, TitleBar, type SidebarState } from '@wirecatch/ui';
   import { CATEGORY_LABEL } from '$lib/format';
   import { runKey } from '$lib/commands';
   import { SEARCH_ID } from '$lib/dom';
-  import { ariaShortcut, shortcutParts } from '$lib/keymap';
+  import { ariaShortcut } from '$lib/keymap';
   import { getApp } from '$lib/state/app.svelte';
   import { STATUS_GROUP_LABEL } from '$lib/state/view';
   import SpeedReadout from './SpeedReadout.svelte';
@@ -98,7 +90,6 @@
   {#snippet center()}
     <Input
       id={SEARCH_ID}
-      class="group/search"
       type="search"
       size="sm"
       icon={Search}
@@ -121,8 +112,6 @@
               document.getElementById(SEARCH_ID)?.focus();
             }}
           />
-        {:else}
-          <Kbd keys={shortcutParts('search')} class="shrink-0 group-focus-within/search:hidden" />
         {/if}
       {/snippet}
     </Input>

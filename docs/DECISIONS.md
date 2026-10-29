@@ -823,6 +823,14 @@ Decided with the maintainer on 2026-10-29. Clicking a link again while its downl
 3. A finished, failed or cancelled download does not join: the link is asked about or downloaded again, the question still notes the earlier download (D23), and a finished file is then judged as D88 says.
 4. The in-page media button stays as it is; a second click is what brings the window forward.
 
+### D92. The title bar: small window buttons, drag from anywhere
+
+Decided with the maintainer on 2026-10-29, from a mockup of four styles. It amends D47 (the "wire" caption glyphs).
+
+1. The window buttons are small rounded buttons set in from the window's edge, with Windows 11's minimize, maximize, restore and close shapes in a muted colour and no background; only the one under the pointer fills, grey, or red for Close.
+2. Every part of the title bar that is not a control drags the window, and a double-click there maximizes it: Tauri's drag region covers the whole bar (`data-tauri-drag-region="deep"`), and controls refuse the drag by themselves, in the CSS app region too. Wrappers around the controls no longer block the space beside them.
+3. The search box shows no keyboard shortcut, and the speed readout is hidden while nothing runs, keeping its place.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
