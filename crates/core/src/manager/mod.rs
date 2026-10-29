@@ -543,6 +543,18 @@ impl Manager {
         self.inner.runtime.spawn(task)
     }
 
+    /// Runs `work` on the manager's runtime and waits for it. A caller that stops waiting (a timeout, a `select!`) leaves it running to the end: a method that changes state in steps across awaits is never left half done (CORE-6).
+    async fn to_the_end<T: Send + 'static>(
+        &self,
+        work: impl Future<Output = Result<T>> + Send + 'static,
+    ) -> Result<T> {
+        match self.spawn(work).await {
+            Ok(done) => done,
+            Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
+            Err(_) => Err(CoreError::Closed),
+        }
+    }
+
     /// Runs blocking work (disk access) on the manager's runtime and waits for it.
     async fn blocking<T: Send + 'static>(
         &self,

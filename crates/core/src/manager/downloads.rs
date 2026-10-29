@@ -214,7 +214,15 @@ impl Manager {
     ///
     /// [`CoreError::Closed`] once the manager has shut down. Files that cannot be
     /// deleted are logged, not reported.
+    ///
+    /// Runs to the end even when the caller stops waiting.
     pub async fn remove(&self, ids: &[DownloadId], delete_file: bool) -> Result<()> {
+        let (manager, ids) = (self.clone(), ids.to_vec());
+        self.to_the_end(async move { manager.remove_now(&ids, delete_file).await })
+            .await
+    }
+
+    async fn remove_now(&self, ids: &[DownloadId], delete_file: bool) -> Result<()> {
         // From here on nothing can resume, move or start them, so once their runs
         // have stopped they stay stopped.
         {

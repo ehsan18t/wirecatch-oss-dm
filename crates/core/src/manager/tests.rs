@@ -633,3 +633,64 @@ async fn a_queue_with_its_own_connections_runs_its_downloads_with_them() {
     );
     assert_ne!(manager.app_policy(&state).connections, usize::from(OWN));
 }
+
+/// A run that ignores being asked to stop until `let_go` is notified, then ends as cancelled.
+fn held_until(let_go: &Arc<Notify>) -> impl Fn(FakeRun) -> EngineFuture + use<> {
+    let let_go = let_go.clone();
+    move |_run: FakeRun| -> EngineFuture {
+        let let_go = let_go.clone();
+        Box::pin(async move {
+            let_go.notified().await;
+            Err(EngineError::Cancelled)
+        })
+    }
+}
+
+/// Polls `work` once, then drops it, as a caller that stops waiting (a timeout, a `select!`) does.
+async fn give_up_on<F: Future>(work: F) {
+    let mut work = std::pin::pin!(work);
+    let first = std::future::poll_fn(|cx| std::task::Poll::Ready(work.as_mut().poll(cx))).await;
+    assert!(first.is_pending(), "finished before the caller gave up");
+}
+
+/// A held run and a manager whose stop timeout outlasts the test: the run stops only when the test lets it go.
+async fn running_download(let_go: &Arc<Notify>) -> (Manager, DownloadId, tempfile::TempDir) {
+    let (manager, dir) =
+        manager_with(held_until(let_go), 2 * PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/big.iso"))
+        .await
+        .unwrap();
+    wait_until("the download to run", || {
+        manager.lock().downloads[&id].run.is_some()
+    })
+    .await;
+    (manager, id, dir)
+}
+
+/// A removal whose caller stops waiting still removes: the download is not left hidden for good.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_removal_finishes_after_its_caller_gives_up() {
+    let let_go = Arc::new(Notify::new());
+    let (manager, id, _dir) = running_download(&let_go).await;
+    give_up_on(manager.remove(&[id], false)).await;
+    let_go.notify_one();
+    wait_until("the download to be removed", || {
+        !manager.lock().downloads.contains_key(&id)
+    })
+    .await;
+}
+
+/// A move whose caller stops waiting still ends: the download is not left marked as moving, which would keep it from ever starting again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_move_finishes_after_its_caller_gives_up() {
+    let let_go = Arc::new(Notify::new());
+    let (manager, id, dir) = running_download(&let_go).await;
+    let elsewhere = dir.path().join("elsewhere");
+    give_up_on(manager.set_download_folder(id, &elsewhere.to_string_lossy())).await;
+    let_go.notify_one();
+    wait_until("the move to end", || {
+        manager.lock().downloads[&id].moving.is_none()
+    })
+    .await;
+}

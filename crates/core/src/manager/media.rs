@@ -365,12 +365,16 @@ impl Manager {
     /// described above; errors adding the download (its name, folder or queue), in
     /// which case the choice stays open; and [`CoreError::Closed`] once the manager has
     /// shut down.
+    ///
+    /// Runs to the end even when the caller stops waiting.
     pub async fn choose_media(
         &self,
         id: QuestionId,
         selection: MediaSelection,
     ) -> Result<wirecatch_protocol::DownloadId> {
-        self.choose(id, selection, Picker::Person).await
+        let manager = self.clone();
+        self.to_the_end(async move { manager.choose(id, selection, Picker::Person).await })
+            .await
     }
 
     /// Downloads what the saved choices pick for a video, without asking (D50),

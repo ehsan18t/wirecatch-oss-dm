@@ -302,11 +302,19 @@ impl Manager {
     /// [`CoreError::Path`] or [`CoreError::QueueNotFound`] when the answer's link,
     /// name, folder or queue cannot be used, in which case the question stays open; and
     /// [`CoreError::Closed`] once the manager has shut down.
+    ///
+    /// Runs to the end even when the caller stops waiting.
     pub async fn confirm_capture(
         &self,
         id: QuestionId,
         answer: CaptureConfirmation,
     ) -> Result<DownloadId> {
+        let manager = self.clone();
+        self.to_the_end(async move { manager.confirm(id, answer).await })
+            .await
+    }
+
+    async fn confirm(&self, id: QuestionId, answer: CaptureConfirmation) -> Result<DownloadId> {
         let pending = {
             let mut state = self.lock_open()?;
             let pending = state
