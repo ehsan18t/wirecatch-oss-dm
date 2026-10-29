@@ -95,7 +95,7 @@ impl Manager {
         }
         match moved {
             Ok(new_path) => {
-                let new_name = file_name_of(&new_path);
+                let new_name = naming::file_name_of(&new_path);
                 if !entry.naming.settled {
                     // The server has not answered yet, so its answer will choose the
                     // path: it must use the folder the user chose now, and the
@@ -141,10 +141,7 @@ impl Manager {
     /// Checks `dir`, reserves a free path in it and moves the download's files
     /// there. Returns the new path.
     async fn move_files(&self, id: DownloadId, old_path: &Path, dir: PathBuf) -> Result<PathBuf> {
-        let name = old_path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let name = naming::file_name_of(old_path);
         let claimed = self.lock().claimed.clone();
         let new_path = self
             .blocking(move || {
@@ -271,12 +268,6 @@ fn move_file(from: &Path, to: &Path) -> io::Result<()> {
         std::fs::copy(from, to)?;
         std::fs::remove_file(from)
     }
-}
-
-fn file_name_of(path: &Path) -> String {
-    path.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]

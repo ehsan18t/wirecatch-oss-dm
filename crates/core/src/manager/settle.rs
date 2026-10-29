@@ -179,7 +179,7 @@ impl Manager {
         };
         state.claimed.settle(&path);
         entry.row.path = path.to_string_lossy().into_owned();
-        entry.row.file_name = naming_of(&path);
+        entry.row.file_name = naming::file_name_of(&path);
         entry.row.category = category;
         entry.naming.settled = true;
         entry.expect = None;
@@ -276,10 +276,4 @@ fn is_stopping(entry: &Entry) -> bool {
     entry.removing
         || entry.moving.is_some()
         || entry.run.as_ref().is_some_and(|run| run.stop.is_some())
-}
-
-fn naming_of(path: &std::path::Path) -> String {
-    path.file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default()
 }

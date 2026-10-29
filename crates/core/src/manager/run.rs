@@ -250,10 +250,7 @@ impl Manager {
                 // The finished file now holds the name on disk.
                 state.claimed.remove(entry.path());
                 if let Some(path) = path {
-                    entry.row.file_name = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default();
+                    entry.row.file_name = crate::naming::file_name_of(&path);
                     entry.row.path = path.to_string_lossy().into_owned();
                     // Reserved by the media job while it put the file in place.
                     state.claimed.remove(entry.path());

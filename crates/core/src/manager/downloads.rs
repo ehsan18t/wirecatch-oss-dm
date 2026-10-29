@@ -580,10 +580,7 @@ impl Manager {
         let row = DownloadSummary {
             id,
             url: fetch.url.to_string(),
-            file_name: path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
+            file_name: crate::naming::file_name_of(path),
             path: path.to_string_lossy().into_owned(),
             queue: placed.queue,
             queue_reason: placed.reason,
