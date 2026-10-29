@@ -193,10 +193,7 @@ fn wait_reason(
 
 /// Queued and not running, moving or being removed.
 fn is_waiting(entry: &Entry) -> bool {
-    entry.run.is_none()
-        && !entry.removing
-        && entry.moving.is_none()
-        && entry.row.status == DownloadStatus::Queued
+    entry.run.is_none() && entry.hold.is_free() && entry.row.status == DownloadStatus::Queued
 }
 
 /// How the planner sees a download; `None` for ones that neither run nor wait.

@@ -301,7 +301,5 @@ fn check_expectation(expect: &Expectation, remote: &ServerAnswer) -> Result<(), 
 
 /// Whether the download's run has been asked to stop, or it is being moved or removed.
 fn is_stopping(entry: &Entry) -> bool {
-    entry.removing
-        || entry.moving.is_some()
-        || entry.run.as_ref().is_some_and(|run| run.stop.is_some())
+    !entry.hold.is_free() || entry.run.as_ref().is_some_and(|run| run.stop.is_some())
 }

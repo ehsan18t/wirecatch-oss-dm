@@ -690,7 +690,7 @@ async fn a_move_finishes_after_its_caller_gives_up() {
     give_up_on(manager.set_download_folder(id, &elsewhere.to_string_lossy())).await;
     let_go.notify_one();
     wait_until("the move to end", || {
-        manager.lock().downloads[&id].moving.is_none()
+        manager.lock().downloads[&id].hold.is_free()
     })
     .await;
 }

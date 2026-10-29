@@ -17,7 +17,7 @@ use wirecatch_store::{Snapshot, StoredDownload};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::questions::Questions;
-use super::state::{Counters, Entry, QueueSlot, State};
+use super::state::{Counters, Entry, Hold, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
 use crate::headers::Origin;
@@ -206,8 +206,7 @@ fn restore_entry(
         resume_first: false,
         through_proxy: None,
         cleanup: None,
-        removing: false,
-        moving: None,
+        hold: Hold::Free,
         on_existing: None,
         stranded: stored.stranded,
     };
