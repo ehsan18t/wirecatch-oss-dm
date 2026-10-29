@@ -227,8 +227,9 @@ pub async fn run(
         program: program.to_path_buf(),
         source,
     };
-    let (mut child, mut tree) =
-        tree::spawn(command(program, args, dir, &options.environment)).map_err(start)?;
+    let (mut child, mut tree) = tree::spawn(command(program, args, dir, &options.environment))
+        .await
+        .map_err(start)?;
     let mut readers = read_outputs(&mut child, options.stdout);
     let deadline = sleep_for(options.timeout);
     tokio::pin!(deadline);

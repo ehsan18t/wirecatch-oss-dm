@@ -4,6 +4,37 @@ use std::io;
 
 use tokio::process::{Child, Command};
 
+/// How often a start that failed with `ETXTBSY` is tried again, and the pause before each.
+const BUSY_TRIES: u32 = 20;
+const BUSY_PAUSE: std::time::Duration = std::time::Duration::from_millis(25);
+
+/// Runs `start` again while it fails with `ETXTBSY`. A program written just before it starts (an add-on
+/// unpacked, then asked its version) is "busy" while a child forked meanwhile by another thread still holds
+/// the writer's handle, until that child execs; the race is the kernel's, so it is waited out, as Cargo does.
+async fn while_text_file_busy<T>(mut start: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    let mut tries = 1;
+    loop {
+        match start() {
+            Err(e) if text_file_busy(&e) && tries < BUSY_TRIES => {
+                tries += 1;
+                tokio::time::sleep(BUSY_PAUSE).await;
+            }
+            result => return result,
+        }
+    }
+}
+
+#[cfg(unix)]
+fn text_file_busy(error: &io::Error) -> bool {
+    error.raw_os_error() == Some(libc::ETXTBSY)
+}
+
+/// Windows has no `ETXTBSY`: a program being written cannot be started at all, which is not a race.
+#[cfg(windows)]
+fn text_file_busy(_: &io::Error) -> bool {
+    false
+}
+
 /// A program and everything it starts.
 ///
 /// On Unix the group is the leader's process id. A group id is free for reuse once its last member is reaped, and the leader is reaped only by `Child::wait`, so the group is killed at most once ([`Tree::kill`] takes it) and always before the leader is reaped: [`Tree::exited`] tells that the leader exited without reaping it, and [`Tree::disarm`] is called once it has been reaped.
@@ -19,12 +50,12 @@ pub(super) struct Tree {
 /// Starts `command` in a group of its own.
 ///
 /// On Windows the program starts suspended, is put in its job, and only then resumed, so nothing it starts can escape the job; when it cannot be put in a job it is killed and this fails, rather than run ungrouped.
-pub(super) fn spawn(mut command: Command) -> io::Result<(Child, Tree)> {
+pub(super) async fn spawn(mut command: Command) -> io::Result<(Child, Tree)> {
     #[cfg(unix)]
     {
         // Leader of a new process group whose id is its own.
         command.process_group(0);
-        let child = command.spawn()?;
+        let child = while_text_file_busy(|| command.spawn()).await?;
         let group = child
             .id()
             .and_then(|id| libc::pid_t::try_from(id).ok())
@@ -43,7 +74,7 @@ pub(super) fn spawn(mut command: Command) -> io::Result<(Child, Tree)> {
         use windows_sys::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
         // No console window flashing up from a desktop app.
         command.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
-        let mut child = command.spawn()?;
+        let mut child = while_text_file_busy(|| command.spawn()).await?;
         let grouped = child
             .raw_handle()
             .ok_or_else(|| io::Error::other("the started program has no handle"))
@@ -287,5 +318,45 @@ mod job {
             ));
         }
         Ok(())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn a_start_refused_as_text_file_busy_is_tried_again() {
+        let mut tries = 0;
+        let started = while_text_file_busy(|| {
+            tries += 1;
+            if tries < 3 {
+                Err(io::Error::from_raw_os_error(libc::ETXTBSY))
+            } else {
+                Ok(tries)
+            }
+        })
+        .await;
+        assert_eq!(started.unwrap(), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn other_failures_and_a_start_that_stays_busy_are_given_up() {
+        let mut tries = 0;
+        let missing = while_text_file_busy::<()>(|| {
+            tries += 1;
+            Err(io::Error::from(io::ErrorKind::NotFound))
+        })
+        .await;
+        assert_eq!(missing.unwrap_err().kind(), io::ErrorKind::NotFound);
+        assert_eq!(tries, 1);
+        tries = 0;
+        let busy = while_text_file_busy::<()>(|| {
+            tries += 1;
+            Err(io::Error::from_raw_os_error(libc::ETXTBSY))
+        })
+        .await;
+        assert_eq!(busy.unwrap_err().raw_os_error(), Some(libc::ETXTBSY));
+        assert_eq!(tries, BUSY_TRIES);
     }
 }
