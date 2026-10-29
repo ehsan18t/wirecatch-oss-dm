@@ -148,11 +148,6 @@ export class PopupModel {
     void this.#send({ type: 'reconnect' });
   }
 
-  /** Starts Wirecatch if it is closed and shows its window. */
-  async openApp(): Promise<void> {
-    await this.#simple({ type: 'open_app' }, 'Wirecatch is open.');
-  }
-
   dismissAlert(id: string): void {
     void this.#send({ type: 'dismiss_alert', id });
   }

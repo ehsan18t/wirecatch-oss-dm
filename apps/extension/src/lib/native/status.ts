@@ -157,7 +157,7 @@ export function describeProblem(kind: ProblemKind): ProblemText {
     case 'app_closed':
       return {
         title: 'Wirecatch is not running.',
-        fix: 'It starts automatically when the browser has a download for it. You can also open it now.',
+        fix: 'It starts automatically when the browser has a download for it. You can also connect it now.',
       };
     case 'version_mismatch':
       return {

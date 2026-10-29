@@ -20,7 +20,7 @@
   const labelTip = wholeLabel(() => reason);
 </script>
 
-<footer class="flex flex-col gap-1.5 border-t border-line px-4 pt-3 pb-2">
+<footer class="flex flex-col gap-1.5 border-t border-line px-4 py-3">
   <!-- Each button starts at its label's width, so a longer label (a translation) puts each on a line of its own rather than cut it; only a label wider than the whole row is cut, and offered whole in a tooltip. -->
   <div class="flex flex-wrap gap-2">
     <Button
@@ -42,10 +42,12 @@
       {@attach labelTip}><span class="truncate">Resume all</span></Button
     >
   </div>
+  <!-- Kept in the page while empty, so a screen reader hears the next outcome; it takes no room until then. -->
   <p
     role="status"
     class={cn(
-      'min-h-4.5 text-small',
+      'text-small',
+      feedback === null && 'sr-only',
       feedback?.tone === 'error' ? 'text-danger' : 'text-ink-muted',
     )}
   >

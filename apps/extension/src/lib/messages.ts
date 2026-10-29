@@ -105,8 +105,6 @@ export type PopupCommand =
   | { type: 'pause_all' }
   | { type: 'resume_all' }
   | { type: 'reconnect' }
-  /** Start Wirecatch if it is closed, and show its window. */
-  | { type: 'open_app' }
   | { type: 'dismiss_alert'; id: string }
   /** Start sending `media` messages for this tab's "Media on this page" list. */
   | { type: 'watch_media'; tabId: number }
@@ -198,7 +196,6 @@ const isCommand = variants<PopupCommand>({
   pause_all: fields<Command<'pause_all'>>({ type: literal('pause_all') }),
   resume_all: fields<Command<'resume_all'>>({ type: literal('resume_all') }),
   reconnect: fields<Command<'reconnect'>>({ type: literal('reconnect') }),
-  open_app: fields<Command<'open_app'>>({ type: literal('open_app') }),
   dismiss_alert: fields<Command<'dismiss_alert'>>({
     type: literal('dismiss_alert'),
     id: isString,

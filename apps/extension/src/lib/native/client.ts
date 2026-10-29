@@ -226,7 +226,7 @@ export class NativeClient {
     this.#rejectAll(new RequestError('disconnected', 'The connection to Wirecatch was closed.'));
   }
 
-  /** Skips the remaining backoff and connects right away, starting the app if it is closed (the popup's "Try again" and "Open Wirecatch", and every request). */
+  /** Skips the remaining backoff and connects right away, starting the app if it is closed (the popup's "Try again" and "Connect Wirecatch", and every request). */
   reconnectNow(): void {
     if (this.#stopped || this.#status.state === 'connected') return;
     if (this.#isAttempting()) {

@@ -72,7 +72,9 @@
     {#if problem !== null}
       <ConnectionNotice
         {problem}
-        onopen={() => void model.openApp()}
+        onconnect={() => {
+          model.reconnect();
+        }}
         onretry={() => {
           model.reconnect();
         }}
