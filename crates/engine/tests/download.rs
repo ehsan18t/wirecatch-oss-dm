@@ -445,10 +445,7 @@ async fn rate_limiter_caps_combined_speed() {
     dir.remove().unwrap();
 }
 
-/// How long a pause may take to come back, far less than the limiter's wait.
-const PROMPT: Duration = Duration::from_secs(3);
-
-/// At 1 KiB/s the first chunk alone puts the limiter many seconds in debt. A pause must not wait for that, nor must a raised limit.
+/// At 1 byte/s the first chunk alone puts the limiter hours in debt, far longer than `PATIENCE`. A pause must not wait for that, nor must a lifted limit.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn pausing_or_lifting_the_limit_never_waits_out_the_rate_limiter() {
     let server = TestServer::start(
@@ -460,20 +457,20 @@ async fn pausing_or_lifting_the_limit_never_waits_out_the_rate_limiter() {
     )
     .await;
     let dir = private_dir("limited-pause").unwrap();
-    let limiter = Arc::new(wirecatch_engine::RateLimiter::new(Some(KIB)));
+    let limiter = Arc::new(wirecatch_engine::RateLimiter::new(Some(1)));
     let mut req = request(&server, "slow.bin", &dir, 2);
     req.options.rate_limiters = vec![limiter.clone()];
 
     let progress = Arc::new(Progress::default());
     let cancel = CancellationToken::new();
     let task = tokio::spawn(download(req.clone(), progress.clone(), cancel.clone()));
-    let deadline = tokio::time::Instant::now() + PROMPT;
+    let deadline = tokio::time::Instant::now() + PATIENCE;
     while progress.done() == 0 {
         assert!(tokio::time::Instant::now() < deadline, "nothing arrived");
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     cancel.cancel();
-    let paused = tokio::time::timeout(PROMPT, task).await;
+    let paused = tokio::time::timeout(PATIENCE, task).await;
     let outcome = paused
         .expect("the pause waited for the rate limiter")
         .unwrap()
@@ -487,7 +484,7 @@ async fn pausing_or_lifting_the_limit_never_waits_out_the_rate_limiter() {
     // the limiter in debt: the download finishes at once.
     let progress = Arc::new(Progress::default());
     let task = tokio::spawn(download(req, progress.clone(), CancellationToken::new()));
-    let deadline = tokio::time::Instant::now() + PROMPT;
+    let deadline = tokio::time::Instant::now() + PATIENCE;
     while progress.done() <= kept {
         assert!(
             tokio::time::Instant::now() < deadline,
@@ -496,7 +493,7 @@ async fn pausing_or_lifting_the_limit_never_waits_out_the_rate_limiter() {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     limiter.set_limit(None);
-    let finished = tokio::time::timeout(PROMPT, task).await;
+    let finished = tokio::time::timeout(PATIENCE, task).await;
     let outcome = finished
         .expect("lifting the limit did not wake the download")
         .unwrap()
