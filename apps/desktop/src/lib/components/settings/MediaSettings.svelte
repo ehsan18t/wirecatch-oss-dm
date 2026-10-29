@@ -15,6 +15,9 @@
     type OutputFormat,
     type QualityFallback,
     type QualityValue,
+    SUBTITLE_PLACEMENT_CHOICES,
+    UNEMBEDDED_CHOICES,
+    type UnembeddedSubtitles,
   } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import {
@@ -69,6 +72,13 @@
     { value: 'saved', label: 'Use my choices' },
   ];
 
+  // Asked only while subtitles go inside the video (D93).
+  const shown = $derived(
+    items.filter(
+      (def) => def.id !== 'media_unembedded_subtitles' || !settings.media.video.subtitle_files,
+    ),
+  );
+
   const VIDEO_FORMATS = formatChoices(VIDEO_OUTPUT_FORMATS);
   const AUDIO_FORMATS = formatChoices(AUDIO_OUTPUT_FORMATS);
 
@@ -81,6 +91,7 @@
     media_subtitles: subtitles,
     media_auto_subtitles: autoSubtitles,
     media_subtitle_files: subtitleFiles,
+    media_unembedded_subtitles: unembedded,
     media_chapters: chapters,
     video_sites: videoSites,
     media_audio: audioFormat,
@@ -91,7 +102,7 @@
 </script>
 
 <SettingRows
-  {items}
+  items={shown}
   {settings}
   {flash}
   {controls}
@@ -223,11 +234,24 @@
   />
 {/snippet}
 
-{#snippet subtitleFiles({ def, s, control }: Row)}
-  <SettingToggle
-    {control}
-    label={def.label}
-    checked={s.media.video.subtitle_files}
-    onchange={(v: boolean) => save((d) => void (d.media.video.subtitle_files = v))}
+{#snippet subtitleFiles({ s, control }: Row)}
+  <Select
+    {...control}
+    class="w-56"
+    value={s.media.video.subtitle_files ? 'files' : 'inside'}
+    options={SUBTITLE_PLACEMENT_CHOICES}
+    onchange={(v: 'inside' | 'files') =>
+      save((d) => void (d.media.video.subtitle_files = v === 'files'))}
+  />
+{/snippet}
+
+{#snippet unembedded({ s, control }: Row)}
+  <Select
+    {...control}
+    class="w-56"
+    value={s.media.video.unembedded_subtitles}
+    options={UNEMBEDDED_CHOICES}
+    onchange={(v: UnembeddedSubtitles) =>
+      save((d) => void (d.media.video.unembedded_subtitles = v))}
   />
 {/snippet}

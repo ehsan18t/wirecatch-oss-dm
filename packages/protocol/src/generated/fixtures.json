@@ -12,7 +12,8 @@
             "chapters": false,
             "format": "original",
             "subtitle_files": false,
-            "subtitle_languages": []
+            "subtitle_languages": [],
+            "unembedded_subtitles": "files"
           },
           "fallback": "lower",
           "quality": "best",
@@ -22,7 +23,8 @@
             "chapters": false,
             "format": "original",
             "subtitle_files": false,
-            "subtitle_languages": []
+            "subtitle_languages": [],
+            "unembedded_subtitles": "files"
           }
         }
       },
@@ -37,7 +39,8 @@
             "chapters": false,
             "format": "original",
             "subtitle_files": false,
-            "subtitle_languages": []
+            "subtitle_languages": [],
+            "unembedded_subtitles": "files"
           },
           "fallback": "lower",
           "quality": "best",
@@ -47,7 +50,8 @@
             "chapters": false,
             "format": "original",
             "subtitle_files": false,
-            "subtitle_languages": []
+            "subtitle_languages": [],
+            "unembedded_subtitles": "files"
           }
         }
       },
@@ -65,7 +69,8 @@
             "chapters": false,
             "format": "mp3",
             "subtitle_files": false,
-            "subtitle_languages": []
+            "subtitle_languages": [],
+            "unembedded_subtitles": "files"
           },
           "fallback": "higher",
           "quality": {
@@ -77,7 +82,8 @@
             "chapters": false,
             "format": "mkv",
             "subtitle_files": true,
-            "subtitle_languages": ["en", "pt-br"]
+            "subtitle_languages": ["en", "pt-br"],
+            "unembedded_subtitles": "files"
           }
         }
       },
@@ -92,7 +98,8 @@
             "chapters": false,
             "format": "original",
             "subtitle_files": false,
-            "subtitle_languages": []
+            "subtitle_languages": [],
+            "unembedded_subtitles": "files"
           },
           "fallback": "lower",
           "quality": "best",
@@ -102,7 +109,8 @@
             "chapters": false,
             "format": "original",
             "subtitle_files": false,
-            "subtitle_languages": []
+            "subtitle_languages": [],
+            "unembedded_subtitles": "files"
           }
         }
       },
@@ -141,7 +149,8 @@
             "chapters": false,
             "format": "original",
             "subtitle_files": false,
-            "subtitle_languages": []
+            "subtitle_languages": [],
+            "unembedded_subtitles": "files"
           },
           "fallback": "lower",
           "quality": "best",
@@ -151,7 +160,8 @@
             "chapters": false,
             "format": "original",
             "subtitle_files": false,
-            "subtitle_languages": []
+            "subtitle_languages": [],
+            "unembedded_subtitles": "files"
           }
         }
       },
@@ -166,7 +176,8 @@
             "chapters": false,
             "format": "original",
             "subtitle_files": false,
-            "subtitle_languages": []
+            "subtitle_languages": [],
+            "unembedded_subtitles": "files"
           },
           "fallback": "lower",
           "quality": "best",
@@ -176,7 +187,8 @@
             "chapters": false,
             "format": "original",
             "subtitle_files": false,
-            "subtitle_languages": []
+            "subtitle_languages": [],
+            "unembedded_subtitles": "files"
           }
         }
       },
@@ -499,7 +511,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": "best",
@@ -509,7 +522,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -726,7 +740,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -741,7 +756,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": "best",
@@ -751,7 +767,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -968,7 +985,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -983,7 +1001,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": "best",
@@ -993,7 +1012,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -1210,7 +1230,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -1225,7 +1246,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": "best",
@@ -1235,7 +1257,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -1452,7 +1475,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -1467,7 +1491,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": "best",
@@ -1477,7 +1502,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -1694,7 +1720,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -1709,7 +1736,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": "best",
@@ -1719,7 +1747,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -1936,7 +1965,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -1951,7 +1981,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": "audio_only",
@@ -1961,7 +1992,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -2178,7 +2210,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -2193,7 +2226,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": "audio_only",
@@ -2203,7 +2237,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -2420,7 +2455,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -2435,7 +2471,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": "audio_only",
@@ -2445,7 +2482,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -2662,7 +2700,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -2677,7 +2716,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": "audio_only",
@@ -2687,7 +2727,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -2904,7 +2945,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -2919,7 +2961,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": "audio_only",
@@ -2929,7 +2972,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -3146,7 +3190,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -3161,7 +3206,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": "audio_only",
@@ -3171,7 +3217,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -3388,7 +3435,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -3403,7 +3451,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": {
@@ -3415,7 +3464,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -3632,7 +3682,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -3647,7 +3698,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": {
@@ -3659,7 +3711,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -3876,7 +3929,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -3891,7 +3945,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": {
@@ -3903,7 +3958,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -4120,7 +4176,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -4135,7 +4192,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": {
@@ -4147,7 +4205,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -4364,7 +4423,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -4379,7 +4439,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": {
@@ -4391,7 +4452,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -4608,7 +4670,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -4623,7 +4686,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": {
@@ -4635,7 +4699,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -4852,7 +4917,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -4867,7 +4933,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": {
@@ -4879,7 +4946,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -5096,7 +5164,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -5111,7 +5180,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": {
@@ -5123,7 +5193,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -5340,7 +5411,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -5355,7 +5427,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": {
@@ -5367,7 +5440,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -5584,7 +5658,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -5599,7 +5674,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": {
@@ -5611,7 +5687,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -5828,7 +5905,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -5843,7 +5921,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": {
@@ -5855,251 +5934,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
-        }
-      },
-      "options": [
-        {
-          "audio_only": false,
-          "height": 2160,
-          "id": "q-2160p",
-          "label": "2160p",
-          "needs_ffmpeg": false,
-          "outputs": [
-            {
-              "audio": "copy",
-              "audio_codec": null,
-              "audio_kbps": 160,
-              "chapters": true,
-              "embeds_subtitles": true,
-              "ext": "x",
-              "format": "original",
-              "lossless_source": false,
-              "size": null,
-              "video": "copy",
-              "video_codec": null
-            },
-            {
-              "audio": "copy",
-              "audio_codec": null,
-              "audio_kbps": 160,
-              "chapters": true,
-              "embeds_subtitles": true,
-              "ext": "x",
-              "format": "mkv",
-              "lossless_source": false,
-              "size": null,
-              "video": "copy",
-              "video_codec": null
-            }
-          ],
-          "quality": "2160p",
-          "size": null
-        },
-        {
-          "audio_only": false,
-          "height": 1080,
-          "id": "q-1080p",
-          "label": "1080p",
-          "needs_ffmpeg": false,
-          "outputs": [
-            {
-              "audio": "copy",
-              "audio_codec": null,
-              "audio_kbps": 160,
-              "chapters": true,
-              "embeds_subtitles": true,
-              "ext": "x",
-              "format": "original",
-              "lossless_source": false,
-              "size": null,
-              "video": "copy",
-              "video_codec": null
-            },
-            {
-              "audio": "copy",
-              "audio_codec": null,
-              "audio_kbps": 160,
-              "chapters": true,
-              "embeds_subtitles": true,
-              "ext": "x",
-              "format": "mkv",
-              "lossless_source": false,
-              "size": null,
-              "video": "copy",
-              "video_codec": null
-            }
-          ],
-          "quality": "1080p",
-          "size": null
-        },
-        {
-          "audio_only": false,
-          "height": 720,
-          "id": "q-720p",
-          "label": "720p",
-          "needs_ffmpeg": false,
-          "outputs": [
-            {
-              "audio": "copy",
-              "audio_codec": null,
-              "audio_kbps": 160,
-              "chapters": true,
-              "embeds_subtitles": true,
-              "ext": "x",
-              "format": "original",
-              "lossless_source": false,
-              "size": null,
-              "video": "copy",
-              "video_codec": null
-            },
-            {
-              "audio": "copy",
-              "audio_codec": null,
-              "audio_kbps": 160,
-              "chapters": true,
-              "embeds_subtitles": true,
-              "ext": "x",
-              "format": "mkv",
-              "lossless_source": false,
-              "size": null,
-              "video": "copy",
-              "video_codec": null
-            }
-          ],
-          "quality": "720p",
-          "size": null
-        },
-        {
-          "audio_only": false,
-          "height": 360,
-          "id": "q-360p",
-          "label": "360p",
-          "needs_ffmpeg": false,
-          "outputs": [
-            {
-              "audio": "copy",
-              "audio_codec": null,
-              "audio_kbps": 160,
-              "chapters": true,
-              "embeds_subtitles": true,
-              "ext": "x",
-              "format": "original",
-              "lossless_source": false,
-              "size": null,
-              "video": "copy",
-              "video_codec": null
-            },
-            {
-              "audio": "copy",
-              "audio_codec": null,
-              "audio_kbps": 160,
-              "chapters": true,
-              "embeds_subtitles": true,
-              "ext": "x",
-              "format": "mkv",
-              "lossless_source": false,
-              "size": null,
-              "video": "copy",
-              "video_codec": null
-            }
-          ],
-          "quality": "360p",
-          "size": null
-        },
-        {
-          "audio_only": true,
-          "height": null,
-          "id": "q-Audio only",
-          "label": "Audio only",
-          "needs_ffmpeg": false,
-          "outputs": [
-            {
-              "audio": "copy",
-              "audio_codec": null,
-              "audio_kbps": 160,
-              "chapters": true,
-              "embeds_subtitles": true,
-              "ext": "x",
-              "format": "original",
-              "lossless_source": false,
-              "size": null,
-              "video": "none",
-              "video_codec": null
-            },
-            {
-              "audio": "encode",
-              "audio_codec": null,
-              "audio_kbps": 160,
-              "chapters": true,
-              "embeds_subtitles": true,
-              "ext": "x",
-              "format": "mp3",
-              "lossless_source": false,
-              "size": null,
-              "video": "none",
-              "video_codec": null
-            },
-            {
-              "audio": "copy",
-              "audio_codec": null,
-              "audio_kbps": 160,
-              "chapters": true,
-              "embeds_subtitles": true,
-              "ext": "x",
-              "format": "opus",
-              "lossless_source": false,
-              "size": null,
-              "video": "none",
-              "video_codec": null
-            }
-          ],
-          "quality": "Audio only",
-          "size": null
-        }
-      ],
-      "start": {
-        "asks": true,
-        "missing": "1440p",
-        "selection": {
-          "audio_kbps": null,
-          "chapters": false,
-          "every_video": null,
-          "file_name": null,
-          "folder": null,
-          "later": false,
-          "option_id": "q-1080p",
-          "output": "original",
-          "queue": null,
-          "subtitle_files": false,
-          "subtitles": []
-        }
-      },
-      "subtitles": []
-    },
-    {
-      "chapters": false,
-      "defaults": {
-        "ask_each_time": false,
-        "audio": {
-          "audio_kbps": null,
-          "auto_subtitles": true,
-          "chapters": false,
-          "format": "original",
-          "subtitle_files": false,
-          "subtitle_languages": []
-        },
-        "fallback": "ask",
-        "quality": {
-          "height": 1440
-        },
-        "video": {
-          "audio_kbps": null,
-          "auto_subtitles": true,
-          "chapters": false,
-          "format": "original",
-          "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -6316,7 +6152,255 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
+        }
+      },
+      "subtitles": []
+    },
+    {
+      "chapters": false,
+      "defaults": {
+        "ask_each_time": false,
+        "audio": {
+          "audio_kbps": null,
+          "auto_subtitles": true,
+          "chapters": false,
+          "format": "original",
+          "subtitle_files": false,
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
+        },
+        "fallback": "ask",
+        "quality": {
+          "height": 1440
+        },
+        "video": {
+          "audio_kbps": null,
+          "auto_subtitles": true,
+          "chapters": false,
+          "format": "original",
+          "subtitle_files": false,
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
+        }
+      },
+      "options": [
+        {
+          "audio_only": false,
+          "height": 2160,
+          "id": "q-2160p",
+          "label": "2160p",
+          "needs_ffmpeg": false,
+          "outputs": [
+            {
+              "audio": "copy",
+              "audio_codec": null,
+              "audio_kbps": 160,
+              "chapters": true,
+              "embeds_subtitles": true,
+              "ext": "x",
+              "format": "original",
+              "lossless_source": false,
+              "size": null,
+              "video": "copy",
+              "video_codec": null
+            },
+            {
+              "audio": "copy",
+              "audio_codec": null,
+              "audio_kbps": 160,
+              "chapters": true,
+              "embeds_subtitles": true,
+              "ext": "x",
+              "format": "mkv",
+              "lossless_source": false,
+              "size": null,
+              "video": "copy",
+              "video_codec": null
+            }
+          ],
+          "quality": "2160p",
+          "size": null
+        },
+        {
+          "audio_only": false,
+          "height": 1080,
+          "id": "q-1080p",
+          "label": "1080p",
+          "needs_ffmpeg": false,
+          "outputs": [
+            {
+              "audio": "copy",
+              "audio_codec": null,
+              "audio_kbps": 160,
+              "chapters": true,
+              "embeds_subtitles": true,
+              "ext": "x",
+              "format": "original",
+              "lossless_source": false,
+              "size": null,
+              "video": "copy",
+              "video_codec": null
+            },
+            {
+              "audio": "copy",
+              "audio_codec": null,
+              "audio_kbps": 160,
+              "chapters": true,
+              "embeds_subtitles": true,
+              "ext": "x",
+              "format": "mkv",
+              "lossless_source": false,
+              "size": null,
+              "video": "copy",
+              "video_codec": null
+            }
+          ],
+          "quality": "1080p",
+          "size": null
+        },
+        {
+          "audio_only": false,
+          "height": 720,
+          "id": "q-720p",
+          "label": "720p",
+          "needs_ffmpeg": false,
+          "outputs": [
+            {
+              "audio": "copy",
+              "audio_codec": null,
+              "audio_kbps": 160,
+              "chapters": true,
+              "embeds_subtitles": true,
+              "ext": "x",
+              "format": "original",
+              "lossless_source": false,
+              "size": null,
+              "video": "copy",
+              "video_codec": null
+            },
+            {
+              "audio": "copy",
+              "audio_codec": null,
+              "audio_kbps": 160,
+              "chapters": true,
+              "embeds_subtitles": true,
+              "ext": "x",
+              "format": "mkv",
+              "lossless_source": false,
+              "size": null,
+              "video": "copy",
+              "video_codec": null
+            }
+          ],
+          "quality": "720p",
+          "size": null
+        },
+        {
+          "audio_only": false,
+          "height": 360,
+          "id": "q-360p",
+          "label": "360p",
+          "needs_ffmpeg": false,
+          "outputs": [
+            {
+              "audio": "copy",
+              "audio_codec": null,
+              "audio_kbps": 160,
+              "chapters": true,
+              "embeds_subtitles": true,
+              "ext": "x",
+              "format": "original",
+              "lossless_source": false,
+              "size": null,
+              "video": "copy",
+              "video_codec": null
+            },
+            {
+              "audio": "copy",
+              "audio_codec": null,
+              "audio_kbps": 160,
+              "chapters": true,
+              "embeds_subtitles": true,
+              "ext": "x",
+              "format": "mkv",
+              "lossless_source": false,
+              "size": null,
+              "video": "copy",
+              "video_codec": null
+            }
+          ],
+          "quality": "360p",
+          "size": null
+        },
+        {
+          "audio_only": true,
+          "height": null,
+          "id": "q-Audio only",
+          "label": "Audio only",
+          "needs_ffmpeg": false,
+          "outputs": [
+            {
+              "audio": "copy",
+              "audio_codec": null,
+              "audio_kbps": 160,
+              "chapters": true,
+              "embeds_subtitles": true,
+              "ext": "x",
+              "format": "original",
+              "lossless_source": false,
+              "size": null,
+              "video": "none",
+              "video_codec": null
+            },
+            {
+              "audio": "encode",
+              "audio_codec": null,
+              "audio_kbps": 160,
+              "chapters": true,
+              "embeds_subtitles": true,
+              "ext": "x",
+              "format": "mp3",
+              "lossless_source": false,
+              "size": null,
+              "video": "none",
+              "video_codec": null
+            },
+            {
+              "audio": "copy",
+              "audio_codec": null,
+              "audio_kbps": 160,
+              "chapters": true,
+              "embeds_subtitles": true,
+              "ext": "x",
+              "format": "opus",
+              "lossless_source": false,
+              "size": null,
+              "video": "none",
+              "video_codec": null
+            }
+          ],
+          "quality": "Audio only",
+          "size": null
+        }
+      ],
+      "start": {
+        "asks": true,
+        "missing": "1440p",
+        "selection": {
+          "audio_kbps": null,
+          "chapters": false,
+          "every_video": null,
+          "file_name": null,
+          "folder": null,
+          "later": false,
+          "option_id": "q-1080p",
+          "output": "original",
+          "queue": null,
+          "subtitle_files": false,
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -6331,7 +6415,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": {
@@ -6343,7 +6428,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -6560,7 +6646,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -6575,7 +6662,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": {
@@ -6587,7 +6675,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -6804,7 +6893,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -6819,7 +6909,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": {
@@ -6831,7 +6922,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -7048,7 +7140,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -7063,7 +7156,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": {
@@ -7075,7 +7169,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -7292,7 +7387,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -7307,7 +7403,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": {
@@ -7319,7 +7416,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -7536,7 +7634,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -7551,7 +7650,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": {
@@ -7563,7 +7663,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -7780,7 +7881,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -7795,7 +7897,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": {
@@ -7807,7 +7910,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -8024,7 +8128,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -8039,7 +8144,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": {
@@ -8051,7 +8157,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -8268,7 +8375,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -8283,7 +8391,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": {
@@ -8295,7 +8404,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -8512,7 +8622,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -8527,7 +8638,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "higher",
         "quality": {
@@ -8539,7 +8651,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -8756,7 +8869,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -8771,7 +8885,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": {
@@ -8783,7 +8898,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -9000,7 +9116,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -9015,7 +9132,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": {
@@ -9027,7 +9145,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -9244,7 +9363,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -9259,7 +9379,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": "audio_only",
@@ -9269,7 +9390,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -9436,7 +9558,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -9451,7 +9574,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": {
@@ -9463,7 +9587,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -9630,7 +9755,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -9645,7 +9771,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": "audio_only",
@@ -9655,7 +9782,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -9761,7 +9889,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -9776,7 +9905,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": {
@@ -9788,7 +9918,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -9894,7 +10025,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -9909,7 +10041,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": "audio_only",
@@ -9919,7 +10052,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -9988,7 +10122,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -10003,7 +10138,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         },
         "fallback": "ask",
         "quality": {
@@ -10015,7 +10151,8 @@
           "chapters": false,
           "format": "original",
           "subtitle_files": false,
-          "subtitle_languages": []
+          "subtitle_languages": [],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -10084,7 +10221,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": []
+          "subtitles": [],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": []
@@ -10099,7 +10237,8 @@
           "chapters": false,
           "format": "mp3",
           "subtitle_files": false,
-          "subtitle_languages": ["pt"]
+          "subtitle_languages": ["pt"],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": {
@@ -10111,7 +10250,8 @@
           "chapters": true,
           "format": "mkv",
           "subtitle_files": true,
-          "subtitle_languages": ["bn", "en", "fr"]
+          "subtitle_languages": ["bn", "en", "fr"],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -10328,7 +10468,8 @@
           "output": "mkv",
           "queue": null,
           "subtitle_files": true,
-          "subtitles": ["auto:bn", "en"]
+          "subtitles": ["auto:bn", "en"],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": [
@@ -10374,7 +10515,8 @@
           "chapters": false,
           "format": "mp3",
           "subtitle_files": false,
-          "subtitle_languages": ["pt"]
+          "subtitle_languages": ["pt"],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": {
@@ -10386,7 +10528,8 @@
           "chapters": true,
           "format": "mkv",
           "subtitle_files": true,
-          "subtitle_languages": ["bn", "en", "fr"]
+          "subtitle_languages": ["bn", "en", "fr"],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -10603,7 +10746,8 @@
           "output": "mkv",
           "queue": null,
           "subtitle_files": true,
-          "subtitles": ["auto:bn", "en"]
+          "subtitles": ["auto:bn", "en"],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": [
@@ -10649,7 +10793,8 @@
           "chapters": false,
           "format": "mp3",
           "subtitle_files": false,
-          "subtitle_languages": ["pt"]
+          "subtitle_languages": ["pt"],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": "audio_only",
@@ -10659,7 +10804,8 @@
           "chapters": true,
           "format": "mkv",
           "subtitle_files": true,
-          "subtitle_languages": ["bn", "en", "fr"]
+          "subtitle_languages": ["bn", "en", "fr"],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -10876,7 +11022,8 @@
           "output": "mp3",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": ["pt"]
+          "subtitles": ["pt"],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": [
@@ -10922,7 +11069,8 @@
           "chapters": false,
           "format": "mp3",
           "subtitle_files": false,
-          "subtitle_languages": ["pt"]
+          "subtitle_languages": ["pt"],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": "audio_only",
@@ -10932,7 +11080,8 @@
           "chapters": true,
           "format": "mkv",
           "subtitle_files": true,
-          "subtitle_languages": ["bn", "en", "fr"]
+          "subtitle_languages": ["bn", "en", "fr"],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -11149,7 +11298,8 @@
           "output": "mp3",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": ["pt"]
+          "subtitles": ["pt"],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": [
@@ -11195,7 +11345,8 @@
           "chapters": false,
           "format": "mp3",
           "subtitle_files": false,
-          "subtitle_languages": ["pt"]
+          "subtitle_languages": ["pt"],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": {
@@ -11207,7 +11358,8 @@
           "chapters": true,
           "format": "webm",
           "subtitle_files": true,
-          "subtitle_languages": ["bn", "en", "fr"]
+          "subtitle_languages": ["bn", "en", "fr"],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -11424,7 +11576,8 @@
           "output": "original",
           "queue": null,
           "subtitle_files": true,
-          "subtitles": ["en"]
+          "subtitles": ["en"],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": [
@@ -11470,7 +11623,8 @@
           "chapters": false,
           "format": "opus",
           "subtitle_files": false,
-          "subtitle_languages": ["pt"]
+          "subtitle_languages": ["pt"],
+          "unembedded_subtitles": "files"
         },
         "fallback": "lower",
         "quality": "audio_only",
@@ -11480,7 +11634,8 @@
           "chapters": true,
           "format": "mkv",
           "subtitle_files": true,
-          "subtitle_languages": ["bn", "en", "fr"]
+          "subtitle_languages": ["bn", "en", "fr"],
+          "unembedded_subtitles": "files"
         }
       },
       "options": [
@@ -11697,7 +11852,8 @@
           "output": "opus",
           "queue": null,
           "subtitle_files": false,
-          "subtitles": ["pt"]
+          "subtitles": ["pt"],
+          "unembedded_subtitles": "files"
         }
       },
       "subtitles": [

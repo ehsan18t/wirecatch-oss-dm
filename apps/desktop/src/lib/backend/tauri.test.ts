@@ -52,6 +52,7 @@ describe('TauriBackend', () => {
       audio_kbps: null,
       subtitles: ['sub:en'],
       subtitle_files: false,
+      unembedded_subtitles: 'files' as const,
       chapters: true,
       every_video: null,
     });
@@ -100,6 +101,7 @@ describe('TauriBackend', () => {
               audio_kbps: null,
               subtitles: ['sub:en'],
               subtitle_files: false,
+              unembedded_subtitles: 'files' as const,
               chapters: true,
               every_video: null,
             },

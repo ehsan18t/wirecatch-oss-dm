@@ -141,6 +141,7 @@ impl OutputDefaults {
                 self.auto_subtitles,
             ),
             subtitle_files: self.subtitle_files,
+            unembedded_subtitles: self.unembedded_subtitles,
             chapters: chapters && self.chapters,
             every_video: None,
         }

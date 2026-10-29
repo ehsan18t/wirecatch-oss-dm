@@ -9,7 +9,7 @@ use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
 
 use wirecatch_protocol::app::{
     FixAction, MediaChoice, MediaOption, MediaSelection, OutputFit, OutputFormat, StreamAction,
-    UserError,
+    UnembeddedSubtitles, UserError,
 };
 use wirecatch_streams::{AudioTrack, Choice, StreamInfo, VideoTrack};
 
@@ -137,7 +137,18 @@ impl Plan {
         choice: &MediaChoice,
         selection: &MediaSelection,
     ) -> Result<Resolved, ResolveError> {
-        let picks = subtitle_picks(choice, selection)?;
+        let mut picks = subtitle_picks(choice, selection)?;
+        let holds_subtitles = self
+            .variants
+            .iter()
+            .find(|v| v.fit.format == selection.output)
+            .is_some_and(|v| v.fit.embeds_subtitles);
+        if !selection.subtitle_files
+            && !holds_subtitles
+            && selection.unembedded_subtitles == UnembeddedSubtitles::Skip
+        {
+            picks.clear();
+        }
         let plain = selection.output == OutputFormat::Original
             && picks.is_empty()
             && !(selection.chapters && choice.chapters);
@@ -762,6 +773,7 @@ mod tests {
             audio_kbps: None,
             subtitles: Vec::new(),
             subtitle_files: false,
+            unembedded_subtitles: UnembeddedSubtitles::Files,
             chapters: false,
             every_video: None,
         }
@@ -955,6 +967,34 @@ mod tests {
         assert!(output.extras.tags && output.sidecar_subtitles());
         assert!(!output.extras.chapters, "an MP3 holds no chapters");
         assert_eq!(resolved.ext, "mp3");
+    }
+
+    /// Subtitles meant for inside a file whose format cannot hold them are saved as files, or
+    /// left out when the person asked (D93); asked for as files, they are files whatever the format.
+    #[test]
+    fn subtitles_a_format_cannot_hold_are_files_or_left_out() {
+        let offers = youtube_like();
+        let choice = choice_for(&offers);
+        let (audio, plan) = offers.last().unwrap();
+        let mut mp3 = selection(&audio.id, OutputFormat::Mp3);
+        mp3.subtitles = vec!["sub:en".into()];
+        let output = |selection: &MediaSelection| {
+            let resolved = plan.resolve(&choice, selection).unwrap();
+            let MediaJob::Page {
+                output: Some(output),
+                ..
+            } = resolved.job
+            else {
+                panic!("no output");
+            };
+            *output
+        };
+        assert!(output(&mp3).sidecar_subtitles());
+        mp3.unembedded_subtitles = UnembeddedSubtitles::Skip;
+        let skipped = output(&mp3);
+        assert!(skipped.subtitles.is_empty() && !skipped.sidecar_subtitles());
+        mp3.subtitle_files = true;
+        assert!(output(&mp3).sidecar_subtitles());
     }
 
     #[test]

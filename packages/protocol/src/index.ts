@@ -173,6 +173,7 @@ export type { Theme } from './generated/Theme';
 export type { TimeOfDay } from './generated/TimeOfDay';
 export type { TryLinkArgs } from './generated/TryLinkArgs';
 export type { UiEvent } from './generated/UiEvent';
+export type { UnembeddedSubtitles } from './generated/UnembeddedSubtitles';
 export type { UpdateAddonArgs } from './generated/UpdateAddonArgs';
 export type { UpdateProxyServerArgs } from './generated/UpdateProxyServerArgs';
 export type { UpdateQueueArgs } from './generated/UpdateQueueArgs';

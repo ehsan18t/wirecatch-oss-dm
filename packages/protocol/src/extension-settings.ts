@@ -138,6 +138,7 @@ function applyOutputPatch(
     subtitle_languages: patch.subtitle_languages ?? defaults.subtitle_languages,
     auto_subtitles: patch.auto_subtitles ?? defaults.auto_subtitles,
     subtitle_files: patch.subtitle_files ?? defaults.subtitle_files,
+    unembedded_subtitles: patch.unembedded_subtitles ?? defaults.unembedded_subtitles,
     chapters: patch.chapters ?? defaults.chapters,
   };
 }

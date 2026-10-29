@@ -148,6 +148,7 @@ export function defaultOutput(): AppSettings['media']['video'] {
     subtitle_languages: [],
     auto_subtitles: true,
     subtitle_files: false,
+    unembedded_subtitles: 'files',
     chapters: false,
   };
 }

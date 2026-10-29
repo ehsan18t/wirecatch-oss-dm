@@ -3,6 +3,7 @@
 import { AUDIO_KBPS_CHOICES } from './generated/constants';
 import type { OutputFormat } from './generated/OutputFormat';
 import type { QualityFallback } from './generated/QualityFallback';
+import type { UnembeddedSubtitles } from './generated/UnembeddedSubtitles';
 import type { VideoQuality } from './generated/VideoQuality';
 
 /** One entry of a menu: what it saves, what it reads, and other words that find it in a search. */
@@ -88,6 +89,18 @@ export const FALLBACK_CHOICES: readonly Choice<QualityFallback>[] = [
   { value: 'lower', label: 'Next lower' },
   { value: 'higher', label: 'Next higher' },
   { value: 'ask', label: 'Ask me' },
+];
+
+/** Where a video's subtitles go: `true` is `OutputDefaults.subtitle_files`. */
+export const SUBTITLE_PLACEMENT_CHOICES: readonly Choice<'inside' | 'files'>[] = [
+  { value: 'inside', label: 'Inside the video' },
+  { value: 'files', label: 'As separate files' },
+];
+
+/** What happens to subtitles a format cannot hold (D93). */
+export const UNEMBEDDED_CHOICES: readonly Choice<UnembeddedSubtitles>[] = [
+  { value: 'files', label: 'Save them as separate files' },
+  { value: 'skip', label: 'Leave them out' },
 ];
 
 // Every two-letter ISO 639-1 code, named in English by the system's own language data, so this list holds no names of its own.

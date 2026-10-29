@@ -827,6 +827,14 @@ Decided with the maintainer on 2026-10-29. Clicking a link again while its downl
 
 Decided with the maintainer on 2026-10-29. It amends D47: on the settings screen the "Back to downloads" item at the top of the settings list goes, and the foot of the sidebar shows Downloads where the downloads screen shows Settings. One place switches between the two screens, in the docked sidebar, the icon rail and the drawer. Escape and the palette's "Back to downloads" still leave settings.
 
+### D93. Where a video's subtitles go
+
+Decided with the maintainer on 2026-10-29.
+
+1. "Save subtitles as separate files" becomes "Subtitles": inside the video, or as separate files (`OutputDefaults::subtitle_files`, unchanged underneath).
+2. With subtitles inside the video, "If the format can’t hold subtitles" (`unembedded_subtitles`) says what happens when the chosen format holds none, as an audio file or an Original file whose container cannot: save them as separate files, as before, or leave them out. It shows only while subtitles go inside. A video's quality window follows the same choice, from the saved defaults.
+3. The Media page has a Video group and an Audio group, so their settings drop "for videos" and "for audio"; "Save audio as" heads the Audio group and says it converts. The command palette names a grouped setting with its group ("Media › Video: Subtitle languages"), so two settings of one name stay apart.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

@@ -591,6 +591,11 @@ pub struct MediaSelection {
     /// always save them as files.
     #[serde(default)]
     pub subtitle_files: bool,
+    /// With subtitles inside the video, what happens to them when the format cannot hold any
+    /// (Original, or audio only) (D93).
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "UnembeddedSubtitles")]
+    pub unembedded_subtitles: UnembeddedSubtitles,
     /// Add the video's chapters to the file, when the format can hold them.
     #[serde(default)]
     pub chapters: bool,
@@ -687,6 +692,10 @@ pub struct OutputDefaults {
     /// Save subtitles as `.srt` files next to a video instead of inside it.
     #[serde(default)]
     pub subtitle_files: bool,
+    /// With subtitles inside the video, what happens to them when the format cannot hold any (D93).
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "UnembeddedSubtitles")]
+    pub unembedded_subtitles: UnembeddedSubtitles,
     /// Add chapters to the file.
     #[serde(default)]
     pub chapters: bool,
@@ -700,9 +709,23 @@ impl Default for OutputDefaults {
             subtitle_languages: Vec::new(),
             auto_subtitles: true,
             subtitle_files: false,
+            unembedded_subtitles: UnembeddedSubtitles::Files,
             chapters: false,
         }
     }
+}
+
+/// What happens to subtitles that were to go inside a file whose format cannot hold them: the
+/// Original format, which keeps the site's file as it is, or audio only (D93).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum UnembeddedSubtitles {
+    /// Saved as `.srt` files next to it.
+    #[default]
+    Files,
+    /// Left out.
+    Skip,
 }
 
 /// Identifies an optional component (D2). Since D20 there is one: the media add-on, which
@@ -1228,6 +1251,9 @@ pub struct OutputDefaultsPatch {
     /// The new [`OutputDefaults::subtitle_files`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subtitle_files: Option<bool>,
+    /// The new [`OutputDefaults::unembedded_subtitles`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unembedded_subtitles: Option<UnembeddedSubtitles>,
     /// The new [`OutputDefaults::chapters`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chapters: Option<bool>,
@@ -1559,6 +1585,7 @@ impl OutputDefaults {
             subtitle_languages,
             auto_subtitles,
             subtitle_files,
+            unembedded_subtitles,
             chapters,
         } = self;
         let OutputDefaultsPatch {
@@ -1567,6 +1594,7 @@ impl OutputDefaults {
             subtitle_languages: new_subtitle_languages,
             auto_subtitles: new_auto_subtitles,
             subtitle_files: new_subtitle_files,
+            unembedded_subtitles: new_unembedded_subtitles,
             chapters: new_chapters,
         } = patch;
         set(format, new_format);
@@ -1574,6 +1602,7 @@ impl OutputDefaults {
         set(subtitle_languages, new_subtitle_languages);
         set(auto_subtitles, new_auto_subtitles);
         set(subtitle_files, new_subtitle_files);
+        set(unembedded_subtitles, new_unembedded_subtitles);
         set(chapters, new_chapters);
     }
 }

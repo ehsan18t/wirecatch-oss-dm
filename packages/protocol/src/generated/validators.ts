@@ -161,6 +161,7 @@ import type { Theme } from './Theme';
 import type { TimeOfDay } from './TimeOfDay';
 import type { TryLinkArgs } from './TryLinkArgs';
 import type { UiEvent } from './UiEvent';
+import type { UnembeddedSubtitles } from './UnembeddedSubtitles';
 import type { UpdateAddonArgs } from './UpdateAddonArgs';
 import type { UpdateProxyServerArgs } from './UpdateProxyServerArgs';
 import type { UpdateQueueArgs } from './UpdateQueueArgs';
@@ -1027,6 +1028,7 @@ export function isMediaSelection(value: unknown): value is MediaSelection {
     (typeof value1['audio_kbps'] === 'number' || value1['audio_kbps'] === null) &&
     isArrayOf(value1['subtitles'], (value2: unknown) => typeof value2 === 'string') &&
     typeof value1['subtitle_files'] === 'boolean' &&
+    isUnembeddedSubtitles(value1['unembedded_subtitles']) &&
     typeof value1['chapters'] === 'boolean' &&
     (typeof value1['every_video'] === 'boolean' || value1['every_video'] === null))(value);
 }
@@ -1164,6 +1166,7 @@ export function isOutputDefaults(value: unknown): value is OutputDefaults {
     isArrayOf(value1['subtitle_languages'], (value2: unknown) => typeof value2 === 'string') &&
     typeof value1['auto_subtitles'] === 'boolean' &&
     typeof value1['subtitle_files'] === 'boolean' &&
+    isUnembeddedSubtitles(value1['unembedded_subtitles']) &&
     typeof value1['chapters'] === 'boolean')(value);
 }
 
@@ -1179,6 +1182,8 @@ export function isOutputDefaultsPatch(value: unknown): value is OutputDefaultsPa
       isArrayOf(value1['subtitle_languages'], (value2: unknown) => typeof value2 === 'string')) &&
     (value1['auto_subtitles'] === undefined || typeof value1['auto_subtitles'] === 'boolean') &&
     (value1['subtitle_files'] === undefined || typeof value1['subtitle_files'] === 'boolean') &&
+    (value1['unembedded_subtitles'] === undefined ||
+      isUnembeddedSubtitles(value1['unembedded_subtitles'])) &&
     (value1['chapters'] === undefined || typeof value1['chapters'] === 'boolean'))(value);
 }
 
@@ -1884,6 +1889,11 @@ export function isUiEvent(value: unknown): value is UiEvent {
       value,
     )
   );
+}
+
+/** Whether `value` has the shape of a {@link UnembeddedSubtitles}; fields it does not name are not checked. */
+export function isUnembeddedSubtitles(value: unknown): value is UnembeddedSubtitles {
+  return value === 'files' || value === 'skip';
 }
 
 /** Whether `value` has the shape of a {@link UpdateAddonArgs}; fields it does not name are not checked. */

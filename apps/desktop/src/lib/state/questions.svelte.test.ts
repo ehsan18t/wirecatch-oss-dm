@@ -32,6 +32,7 @@ const select = (option: string, later = false) => ({
   audio_kbps: null,
   subtitles: [],
   subtitle_files: false,
+  unembedded_subtitles: 'files' as const,
   chapters: false,
   every_video: null,
 });
