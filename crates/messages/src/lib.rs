@@ -110,6 +110,16 @@ pub fn describe(error: &EngineError, folder: &Path, previously_worked: bool) -> 
     }
 }
 
+/// A download's saved link that no longer parses, `reason` being the parser's: the same words a link refused when it was added gets.
+#[must_use]
+pub fn invalid_link(reason: &str) -> UserError {
+    describe(
+        &EngineError::InvalidUrl(reason.to_owned()),
+        Path::new(""),
+        false,
+    )
+}
+
 /// Why a link was refused for leading to a device on the person's own network,
 /// in the words for whoever chose it (D34.5, D39).
 #[must_use]
@@ -384,6 +394,19 @@ fn fix(message: impl Into<String>, action: FixAction) -> UserError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_link_that_no_longer_parses_reads_as_one_refused_when_added() {
+        let given = invalid_link("relative URL without a base");
+        assert_eq!(
+            given,
+            describe(
+                &EngineError::InvalidUrl("relative URL without a base".into()),
+                Path::new(""),
+                false,
+            )
+        );
+    }
 
     fn status(code: u16) -> EngineError {
         EngineError::HttpStatus {

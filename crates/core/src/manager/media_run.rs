@@ -89,12 +89,7 @@ impl Manager {
         let url = match Url::parse(&entry.row.url) {
             Ok(url) => url,
             Err(e) => {
-                let error = wirecatch_messages::describe(
-                    &EngineError::InvalidUrl(e.to_string()),
-                    Path::new(""),
-                    false,
-                );
-                self.fail_to_start(state, id, error);
+                self.fail_to_start(state, id, wirecatch_messages::invalid_link(&e.to_string()));
                 return;
             }
         };

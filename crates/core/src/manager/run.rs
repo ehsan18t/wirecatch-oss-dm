@@ -429,13 +429,8 @@ fn engine_request(
     policy: RunPolicy,
     target: Target,
 ) -> Result<DownloadRequest, UserError> {
-    let url = Url::parse(&entry.row.url).map_err(|e| {
-        wirecatch_messages::describe(
-            &EngineError::InvalidUrl(e.to_string()),
-            Path::new(""),
-            false,
-        )
-    })?;
+    let url =
+        Url::parse(&entry.row.url).map_err(|e| wirecatch_messages::invalid_link(&e.to_string()))?;
     if local_network::refuses_address(entry.chosen_by, &url) {
         return Err(wirecatch_messages::private_network(entry.chosen_by));
     }
