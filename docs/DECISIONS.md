@@ -773,6 +773,14 @@ Decided with the maintainer on 2026-10-29. Help under every option, rewritten fo
 6. A schedule's days are one row of seven day buttons, Monday to Sunday, all pressed by default, with no presets and no summary; none pressed is an error. Stopping is "At" a time or "When the queue is empty", one choice, the time shown only for "At".
 7. A queue's own bypass list is "Custom hosts", in the queue editor and in Settings > Network alike.
 
+### D86. The popup connects a closed Wirecatch in the tray
+
+Decided with the maintainer on 2026-10-29. A closed app opened its window in front of the person, when all they wanted was the popup's settings back.
+
+1. The popup's button for a closed app is "Connect Wirecatch". It connects with the app allowed to start, so the bridge starts it with `--background`: in the tray, with no window. The popup then shows its settings, which says it is connected; no line says so.
+2. The popup's status line under Pause all and Resume all takes no room while it has nothing to say.
+3. This amends D25.6 and D61.2, where the button was Open Wirecatch and showed the window.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
