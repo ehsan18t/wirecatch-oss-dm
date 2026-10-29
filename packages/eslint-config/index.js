@@ -56,8 +56,8 @@ const MAX_PARAMS = 4;
 
 const TEST_FILES = ['**/*.test.ts', '**/*.spec.ts', 'tests/**', 'e2e/**', 'src/**/testing/**'];
 const TOOLING_FILES = ['*.config.ts', '*.config.js', 'scripts/**'];
-/** The development console writer of a package's logger: the one source file that may call `console` (docs/ENGINEERING.md, section 6). */
-const CONSOLE_SINK_FILES = ['src/lib/diag/console.ts'];
+/** The files that may call `console`: a package logger's development writer (docs/ENGINEERING.md, section 6), and the browser specs' fixture, which prints what a failed test's page reported into the CI log. */
+const CONSOLE_SINK_FILES = ['src/lib/diag/console.ts', 'src/testing/playwright.ts'];
 /** What an `untyped` pattern must end with: a JavaScript extension, so it can never match TypeScript or Svelte. */
 const UNTYPED_PATTERN = /\.[mc]?js$/;
 const UNTYPED_FILES = ['eslint.config.js', 'svelte.config.js', '**/*.mjs'];
