@@ -263,7 +263,7 @@ describe('the sidebar', () => {
     expect(within(nav()).queryByRole('button', { name: /more queue/ })).toBeNull();
   });
 
-  it('becomes the list of settings sections, with the way back on top', async () => {
+  it('becomes the list of settings sections, with Downloads where Settings was', async () => {
     const { app } = await renderApp();
     const user = userEvent.setup();
     app.openSettings();
@@ -275,7 +275,8 @@ describe('the sidebar', () => {
     );
     await user.click(within(sections).getByRole('button', { name: /^Speed/ }));
     expect(app.settingsSection).toBe('speed');
-    await user.click(within(sections).getByRole('button', { name: 'Back to downloads' }));
+    expect(within(sections).queryByRole('button', { name: 'Settings' })).toBeNull();
+    await user.click(within(sections).getByRole('button', { name: 'Downloads' }));
     expect(app.screen).toBe('downloads');
   });
 });
