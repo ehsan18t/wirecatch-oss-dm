@@ -11,6 +11,10 @@
   interface Props {
     label: string;
     icon: IconComponent;
+    /** In the rail, a letter or two in place of the icon, so places that share an icon (queues) are told apart. */
+    mark?: string | undefined;
+    /** The rail's tooltip when the name alone says too little, such as what a queue is doing. */
+    railTip?: string | undefined;
     /** This is the page being shown. */
     active?: boolean;
     /** A number after the label: how many downloads are in this view. */
@@ -29,6 +33,8 @@
   let {
     label,
     icon,
+    mark,
+    railTip,
     active = false,
     count,
     countTone = 'neutral',
@@ -63,13 +69,23 @@
         ? 'bg-wash-strong font-medium text-ink before:absolute before:top-1/2 before:left-0 before:h-4 before:w-0.75 before:-translate-y-1/2 before:rounded-full before:bg-accent forced-colors:before:bg-sys-highlight'
         : 'text-ink-muted hover:bg-wash hover:text-ink active:bg-wash-strong',
     )}
-    {@attach tooltip(() => (sidebar.showLabels ? null : label))}
+    {@attach tooltip(() => (sidebar.showLabels ? null : (railTip ?? label)), { beside: true })}
     onclick={() => {
       onclick?.();
       sidebar.chose();
     }}
   >
-    <Icon {icon} size="lg" class={cn(active && 'text-accent')} />
+    {#if mark && !sidebar.showLabels}
+      <span
+        aria-hidden="true"
+        class={cn(
+          'flex size-icon-2xl -mx-0.75 shrink-0 items-center justify-center rounded-xs border text-small font-semibold',
+          active ? 'border-accent text-accent' : 'border-line-strong',
+        )}>{mark}</span
+      >
+    {:else}
+      <Icon {icon} size="lg" class={cn(active && 'text-accent')} />
+    {/if}
     <!-- In the rail the count shows as a dot at most, so screen readers get it with the name ("Failed, 3"). -->
     <span class={cn('flex min-w-0 flex-1 flex-col text-left', !sidebar.showLabels && 'sr-only')}>
       <span class="truncate"
