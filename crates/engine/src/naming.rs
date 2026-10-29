@@ -278,6 +278,18 @@ pub fn move_to_free_name(from: &Path, dir: &Path, name: &str) -> io::Result<Path
     }
 }
 
+/// Renames `from` to `to` unless something is already at `to`, in one step where the system has
+/// one, so a file another program saves at `to` meanwhile is never replaced. `from` and `to`
+/// must be on the same volume.
+///
+/// # Errors
+///
+/// [`io::ErrorKind::AlreadyExists`] when something is at `to`; otherwise the error renaming,
+/// such as `from` missing or another volume. `from` is then where it was.
+pub fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+    storage::rename_no_replace(from, to)
+}
+
 /// Creates, empty, the part file of the first name of `name`, `name (1)`... in
 /// `dir` that has no file, part file or resume file, and returns that name's
 /// final path with the open part file. The part file is created only if it is

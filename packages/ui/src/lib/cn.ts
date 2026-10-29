@@ -25,7 +25,6 @@ export const THEME_NAMES = {
   leading: ['none', 'tight', 'normal'],
   spacing: [
     'titlebar',
-    'caption',
     'control-xs',
     'control-sm',
     'control',

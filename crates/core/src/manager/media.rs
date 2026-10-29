@@ -459,6 +459,10 @@ impl Manager {
             let Some(pending) = state.media.remove(&id) else {
                 return Err(CoreError::ConfirmationNotFound(id));
             };
+            // The app's from now on: a withdrawal while it is added finds it started (CORE-4).
+            for handover in &pending.handovers {
+                state.handovers.retarget(handover, Target::Confirming(id));
+            }
             (pending, plan, choice, resolved)
         };
         let instead_of = match &picker {
@@ -492,6 +496,9 @@ impl Manager {
             Err(e) => {
                 // Kept, so the user can fix the problem and choose again.
                 if let Ok(mut state) = self.lock_open() {
+                    for handover in &pending.handovers {
+                        state.handovers.retarget(handover, Target::Pending(id));
+                    }
                     state.media.insert(id, pending);
                 }
                 Err(e)

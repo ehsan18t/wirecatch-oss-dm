@@ -3,9 +3,9 @@
 //! browser is asked; the one in front shows the notice and says so, and when none does within
 //! [`ANSWER_WAIT`] (no browser runs, or it is not in front, or its tab cannot show one) the system
 //! notification shows instead. The app keeps what each button does, so the extension and the page
-//! never hold a download's id. A notice offers no Open: a website can lay a decoy over the notice so
-//! the person presses it unseen, and opening runs the file the website may just have had them
-//! download; Show in folder and Try again run nothing.
+//! never hold a download's id. A notice offers the system notification's buttons, Open included: a
+//! website can lay a decoy over the notice so the person presses it unseen, but Open runs a program,
+//! a script or a file of unknown type only after the shell's own warning, which no page can cover.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, PoisonError};
@@ -17,7 +17,7 @@ use wirecatch_protocol::extension::{BrowserNotice, NoticeId, NoticeKind, NoticeP
 use wirecatch_protocol::wire::NOTICE_ANSWER_WAIT_MS;
 
 use crate::host::Core;
-use crate::notifications::{Act, Notification};
+use crate::notifications::Notification;
 use crate::system_notifications;
 
 /// How long the app waits for a browser to say it showed a notice before it shows the system
@@ -100,20 +100,8 @@ pub fn tell<R: Runtime>(
         system_notifications::show(app, notification);
         return;
     };
-    let in_browser = without_open(&notification);
-    let (id, answer) = notices.register(&in_browser);
-    let notice = BrowserNotice {
-        id,
-        kind,
-        title: in_browser.title,
-        body: in_browser.body,
-        buttons: in_browser
-            .buttons
-            .iter()
-            .map(|b| b.label.to_owned())
-            .collect(),
-        stays_ms: stays.map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
-    };
+    let (id, answer) = notices.register(&notification);
+    let notice = browser_notice(id, kind, &notification, stays);
     if manager.request_notice(notice) == 0 {
         notices.give_up(id);
         system_notifications::show(app, notification);
@@ -134,11 +122,25 @@ pub fn tell<R: Runtime>(
     });
 }
 
-/// `notification` as a notice in the browser offers it: without Open (see the module documentation).
-fn without_open(notification: &Notification) -> Notification {
-    let mut notice = notification.clone();
-    notice.buttons.retain(|b| !matches!(b.act, Act::Open(_)));
-    notice
+/// `notification` as notice `id` in the browser offers it, with the same buttons.
+fn browser_notice(
+    id: NoticeId,
+    kind: NoticeKind,
+    notification: &Notification,
+    stays: Option<Duration>,
+) -> BrowserNotice {
+    BrowserNotice {
+        id,
+        kind,
+        title: notification.title.clone(),
+        body: notification.body.clone(),
+        buttons: notification
+            .buttons
+            .iter()
+            .map(|b| b.label.to_owned())
+            .collect(),
+        stays_ms: stays.map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
+    }
 }
 
 /// A browser showed the notice `id`.
@@ -166,6 +168,7 @@ pub fn pressed<R: Runtime>(app: &AppHandle<R>, pressed: &NoticePressed) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::notifications::Act;
     use crate::system_notifications::plain;
 
     #[test]
@@ -185,8 +188,10 @@ mod tests {
         );
     }
 
+    /// Open runs nothing a website chose unseen: a program, a script or an unknown type opens
+    /// only after the shell's own warning, which no page can cover (D65.4).
     #[test]
-    fn a_note_in_the_browser_offers_no_open() {
+    fn a_notice_in_the_browser_offers_the_same_buttons() {
         use crate::notifications::Button;
         use wirecatch_protocol::DownloadId;
         let notification = Notification {
@@ -202,9 +207,12 @@ mod tests {
             ],
             ..plain("Download finished".into(), "a.zip".into())
         };
-        let labels = |n: &Notification| n.buttons.iter().map(|b| b.label).collect::<Vec<_>>();
-        assert_eq!(labels(&notification), ["Open", "Show in folder"]);
-        assert_eq!(labels(&without_open(&notification)), ["Show in folder"]);
+        let notice = browser_notice(NoticeId(7), NoticeKind::Finished, &notification, None);
+        assert_eq!(notice.buttons, ["Open", "Show in folder"]);
+        assert_eq!(
+            system_notifications::chosen(&notification, Some(0)),
+            Some(Act::Open(DownloadId(1)))
+        );
     }
 
     #[test]

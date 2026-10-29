@@ -55,11 +55,13 @@ describe('the title bar', () => {
     expect(within(bar()).getByRole('button', { name: 'Restore' })).toBeInTheDocument();
   });
 
-  it('drags the window from its empty parts only', async () => {
+  it('drags the window from every part that is not a control', async () => {
     await setup();
-    expect(bar()).toHaveAttribute('data-tauri-drag-region');
+    // Tauri's deep region: any click in the bar drags, except on a control, which refuses by itself.
+    expect(bar()).toHaveAttribute('data-tauri-drag-region', 'deep');
+    // Nothing wraps the search in a box that refuses the drag, so the bar around it drags too.
     const search = screen.getByRole('searchbox', { name: 'Search downloads' });
-    expect(search.closest('.no-drag')).not.toBeNull();
+    expect(search.closest('.no-drag')).toBeNull();
   });
 
   it('searches the list, clears with Escape, and hands the keyboard to the list with the down arrow', async () => {
