@@ -115,8 +115,8 @@
 
 <div
   bind:this={region}
-  role="region"
-  aria-label={label}
+  role={shown ? 'region' : undefined}
+  aria-label={shown ? label : undefined}
   class={cn(
     'pointer-events-none flex w-toast max-w-full flex-col gap-2',
     inPlace ? 'p-2' : 'fixed right-4 bottom-4 z-toast',
