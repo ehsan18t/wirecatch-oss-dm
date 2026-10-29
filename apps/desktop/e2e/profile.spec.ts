@@ -2,8 +2,7 @@
 // summarized by self time per function and attached to the test report. Run with PROFILE=1 to
 // investigate slow frames.
 
-import { test } from '@playwright/test';
-import { open, rows } from './helpers';
+import { open, rows, test } from './helpers';
 
 interface Node {
   id: number;

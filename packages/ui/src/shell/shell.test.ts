@@ -9,6 +9,7 @@ import TitleBar from './TitleBar.svelte';
 import ToastRegion from './ToastRegion.svelte';
 import { MAX_TOASTS, TOAST_DURATION, Toaster } from './toaster.svelte';
 import type { ButtonRect, MaximizeState, WindowControls } from './window-controls';
+import { PATIENCE_MS } from '../testing/jsdom';
 
 describe('Toaster', () => {
   afterEach(() => {
@@ -287,7 +288,7 @@ describe('TitleBar', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Close' }));
     await vi.waitFor(() => {
       expect(onerror).toHaveBeenCalledWith('close', expect.any(Error));
-    });
+    }, PATIENCE_MS);
   });
 
   it('tells the window where its maximize button is, and draws the look the window reports', async () => {
@@ -310,7 +311,7 @@ describe('TitleBar', () => {
     ]);
     await vi.waitFor(() => {
       expect(report).toBeDefined();
-    });
+    }, PATIENCE_MS);
     report?.('hover');
     flushSync();
     expect(maximize.classList.contains('bg-wash')).toBe(true);

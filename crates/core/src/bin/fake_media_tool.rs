@@ -1,5 +1,5 @@
 //! A stand-in for the media add-on's programs, used by this crate's tests
-//! (`cargo test` builds it). The tests install it as yt-dlp, ffmpeg and Deno
+//! (cargo builds it for them). The tests install it as yt-dlp, ffmpeg and Deno
 //! through the real add-on installer; it acts according to the name it runs
 //! under, and is driven by files in a `fake-tools` folder next to the `addons`
 //! folder it is installed in (so a test can prepare them before the install),

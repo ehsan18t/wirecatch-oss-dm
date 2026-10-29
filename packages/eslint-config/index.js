@@ -18,6 +18,7 @@ import { noTypeArgumentAssertion } from './rules/no-type-argument-assertion.js';
 import { noValueOfType } from './rules/no-value-of-type.js';
 import { tokensOnly } from './rules/tokens-only.js';
 import { useUiPrimitives } from './rules/use-ui-primitives.js';
+import { waitWithPatience } from './rules/wait-with-patience.js';
 import {
   CORE_RULES,
   IMPORT_RULES,
@@ -39,6 +40,7 @@ const plugin = {
     'no-value-of-type': noValueOfType,
     'tokens-only': tokensOnly,
     'use-ui-primitives': useUiPrimitives,
+    'wait-with-patience': waitWithPatience,
   },
 };
 
@@ -54,8 +56,8 @@ const MAX_PARAMS = 4;
 
 const TEST_FILES = ['**/*.test.ts', '**/*.spec.ts', 'tests/**', 'e2e/**', 'src/**/testing/**'];
 const TOOLING_FILES = ['*.config.ts', '*.config.js', 'scripts/**'];
-/** The development console writer of a package's logger: the one source file that may call `console` (docs/ENGINEERING.md, section 6). */
-const CONSOLE_SINK_FILES = ['src/lib/diag/console.ts'];
+/** The files that may call `console`: a package logger's development writer (docs/ENGINEERING.md, section 6), and the browser specs' fixture, which prints what a failed test's page reported into the CI log. */
+const CONSOLE_SINK_FILES = ['src/lib/diag/console.ts', 'src/testing/playwright.ts'];
 /** What an `untyped` pattern must end with: a JavaScript extension, so it can never match TypeScript or Svelte. */
 const UNTYPED_PATTERN = /\.[mc]?js$/;
 const UNTYPED_FILES = ['eslint.config.js', 'svelte.config.js', '**/*.mjs'];
@@ -160,6 +162,27 @@ const TEST_RULES = {
   'max-lines-per-function': 'off',
   'max-lines': 'off',
   'unicorn/error-message': 'off',
+  'wirecatch/wait-with-patience': 'error',
+};
+
+/** Browser specs take `test` from the design system's testing module, which fails a test on a Svelte warning. */
+const BROWSER_SPECS = {
+  files: ['e2e/**/*.ts'],
+  rules: {
+    'no-restricted-imports': [
+      'error',
+      {
+        paths: [
+          {
+            name: '@playwright/test',
+            importNames: ['test'],
+            message:
+              "Import `test` from '@wirecatch/ui/testing/playwright', which fails a test whose page logged a Svelte warning.",
+          },
+        ],
+      },
+    ],
+  },
 };
 
 /** What eslint-plugin-import-x reads other modules with: TypeScript's parser, never on Svelte components, which it cannot parse. */
@@ -231,6 +254,7 @@ export function wirecatch({
       files: TEST_FILES,
       rules: TEST_RULES,
     },
+    BROWSER_SPECS,
     {
       files: TOOLING_FILES,
       languageOptions: { globals: globals.node },

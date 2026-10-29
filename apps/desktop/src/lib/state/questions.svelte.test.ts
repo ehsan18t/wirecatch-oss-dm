@@ -5,6 +5,7 @@
 
 import { questionId, type UiEvent } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
+import { PATIENCE_MS } from '@wirecatch/ui/testing/jsdom';
 import { appState, mockBackend } from '$lib/testing/setup';
 import type { ShellSignal } from '../backend';
 import { buildCommands } from '../commands';
@@ -17,7 +18,7 @@ async function make(b = backend()) {
   const app = appState(b);
   await app.init();
   // The add-ons load in the background after the list.
-  await vi.waitFor(() => expect(app.addons.list).not.toBeNull());
+  await vi.waitFor(() => expect(app.addons.list).not.toBeNull(), PATIENCE_MS);
   return { app, backend: b };
 }
 
@@ -136,7 +137,7 @@ describe('a question answered anywhere never comes back', () => {
 
     // The main window is closed and opened again: a fresh state loads from the core.
     const again = await make(b);
-    await vi.waitFor(() => expect(again.app.ready).toBe(true));
+    await vi.waitFor(() => expect(again.app.ready).toBe(true), PATIENCE_MS);
     await new Promise((r) => setTimeout(r, 0));
     expect(again.app.questions.mediaChoices).toEqual([]);
     expect(again.app.questions.waitingCount).toBe(0);
@@ -173,7 +174,7 @@ describe('a question answered anywhere never comes back', () => {
     expect(b.windows.windows).toHaveLength(0);
     // A reload counts it once, not twice.
     await app.init();
-    await vi.waitFor(() => expect(app.questions.waitingCount).toBe(1));
+    await vi.waitFor(() => expect(app.questions.waitingCount).toBe(1), PATIENCE_MS);
   });
 });
 
@@ -185,9 +186,9 @@ describe('questions asked while no window was open', () => {
     b.simulateAddonRequired();
 
     const { app } = await make(b);
-    await vi.waitFor(() => expect(app.questions.waitingCount).toBe(2));
+    await vi.waitFor(() => expect(app.questions.waitingCount).toBe(2), PATIENCE_MS);
     await app.init();
-    await vi.waitFor(() => expect(app.questions.mediaChoices).toHaveLength(1));
+    await vi.waitFor(() => expect(app.questions.mediaChoices).toHaveLength(1), PATIENCE_MS);
     expect(app.questions.waitingCount).toBe(2);
   });
 });
@@ -206,20 +207,22 @@ describe('shell signals', () => {
       .mockResolvedValueOnce(['https://example.com/a.zip', 'https://example.com/b.zip']);
     const app = appState(b);
     await app.init();
-    await vi.waitFor(() => expect(links).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(links).toHaveBeenCalledTimes(1), PATIENCE_MS);
     expect(app.dialog).toBeNull();
 
     signal?.('links');
-    await vi.waitFor(() =>
-      expect(app.dialog).toEqual({
-        kind: 'add',
-        urls: ['https://example.com/a.zip', 'https://example.com/b.zip'],
-      }),
+    await vi.waitFor(
+      () =>
+        expect(app.dialog).toEqual({
+          kind: 'add',
+          urls: ['https://example.com/a.zip', 'https://example.com/b.zip'],
+        }),
+      PATIENCE_MS,
     );
 
     const list = vi.spyOn(b, 'listDownloads');
     signal?.('resync');
-    await vi.waitFor(() => expect(list).toHaveBeenCalled());
+    await vi.waitFor(() => expect(list).toHaveBeenCalled(), PATIENCE_MS);
   });
 
   it('shows a storage failure from the core', async () => {

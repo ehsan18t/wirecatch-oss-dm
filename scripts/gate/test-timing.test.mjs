@@ -168,3 +168,35 @@ test('a short fixed timeout on a wait that has to succeed is a race; one that mu
   ].join('\n');
   assert.deepEqual(lines(text), [2, 5]);
 });
+
+test('a short wait or deadline kept in a constant is a race; PATIENCE and a wait that must run out are not', () => {
+  const text = [
+    'const PROMPT: Duration = Duration::from_secs(3);',
+    'const LONG: Duration = Duration::from_secs(600);',
+    'async fn paused() {',
+    '    let deadline = tokio::time::Instant::now() + PROMPT;',
+    '    while progress.done() == 0 {',
+    '        assert!(tokio::time::Instant::now() < deadline, "nothing arrived");',
+    '    }',
+    '    let done = tokio::time::timeout(PROMPT, task).await;',
+    '    let quiet = tokio::time::timeout(PROMPT, events.recv()).await.is_err();',
+    '    let calm = tokio::time::Instant::now() + LONG;',
+    '    assert!(tokio::time::Instant::now() < calm);',
+    '    let patient = Instant::now() + PATIENCE;',
+    '    assert!(Instant::now() < patient);',
+    '}',
+  ].join('\n');
+  assert.deepEqual(lines(text), [4, 8]);
+});
+
+test('a deadline written in place is a race only when the test asserts it is not past', () => {
+  const text = [
+    'async fn waits() {',
+    '    let deadline = Instant::now() + Duration::from_millis(500);',
+    '    assert!(Instant::now() < deadline);',
+    '    let window = Instant::now() + Duration::from_millis(200);',
+    '    while Instant::now() < window {}',
+    '}',
+  ].join('\n');
+  assert.deepEqual(lines(text), [2]);
+});

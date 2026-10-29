@@ -5,6 +5,7 @@
 import { downloadId, questionId } from '@wirecatch/protocol';
 import { PRODUCT_NAME } from '@wirecatch/product';
 import { describe, expect, it, vi } from 'vitest';
+import { PATIENCE_MS } from '@wirecatch/ui/testing/jsdom';
 import { mockBackend, windowState } from '$lib/testing/setup';
 import { BackendError } from '../backend';
 import type { MockBackend } from '../backend/mock';
@@ -17,7 +18,7 @@ function backend() {
 async function open(b: MockBackend, target: Target) {
   const { win, host } = windowState(b, target);
   await win.init();
-  await vi.waitFor(() => expect(win.addon).not.toBeNull());
+  await vi.waitFor(() => expect(win.addon).not.toBeNull(), PATIENCE_MS);
   return { win, host };
 }
 
@@ -219,7 +220,7 @@ describe('a video', () => {
     expect(win.addon?.state.type).toBe('installing');
     expect(host.becameDownload).not.toHaveBeenCalled();
     b.tick(4500);
-    await vi.waitFor(() => expect(win.phase).toBe('progress'));
+    await vi.waitFor(() => expect(win.phase).toBe('progress'), PATIENCE_MS);
     expect(win.awaitingAddon).toBeNull();
     expect(win.row?.media?.quality).toBe('2160p');
   });
@@ -265,7 +266,7 @@ describe('a video', () => {
     expect(win.question?.kind).toBe('addon');
     await win.installAddon();
     b.tick(4500);
-    await vi.waitFor(() => expect(win.question?.kind).toBe('choice'));
+    await vi.waitFor(() => expect(win.question?.kind).toBe('choice'), PATIENCE_MS);
   });
 
   it('Download later adds the picked quality paused', async () => {
@@ -390,7 +391,7 @@ describe('an event the window cannot read', () => {
     unreadable?.();
     await vi.waitFor(() => {
       expect(loads).toHaveBeenCalledOnce();
-    });
+    }, PATIENCE_MS);
     expect(win.phase).toBe('ask');
   });
 });
