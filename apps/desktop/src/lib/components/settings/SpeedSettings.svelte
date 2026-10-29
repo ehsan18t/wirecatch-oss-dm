@@ -1,12 +1,17 @@
 <script lang="ts">
-  // Speed and limits: a limit on all downloads together, how many run at once across the queues, and how many connections each opens, in the ranges the core accepts, each with the queues that use their own value.
+  // Speed and queues: a limit on all downloads together, how many run at once across the queues, and how many connections each opens, in the ranges the core accepts, each with the queues that use their own value; then Test a link and every queue, with when it runs, its own limits and its rules, Edit opening its dialog.
+  import Pencil from '~icons/lucide/pencil';
+  import Plus from '~icons/lucide/plus';
   import { MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD } from '@wirecatch/protocol';
   import { FIRST_TOTAL_SPEED_LIMIT, inUnit, SPEED_FIELD, toBytes } from '@wirecatch/units';
   import type { Snippet } from 'svelte';
-  import { NumberInput } from '@wirecatch/ui';
-  import { queuesWithOwn } from '$lib/limits';
+  import { Badge, Button, NumberInput } from '@wirecatch/ui';
+  import { formatSchedule } from '$lib/format';
+  import { queueLimitFacts, queuesWithOwn } from '$lib/limits';
+  import { rulesFact } from '$lib/queue-rules';
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
+  import TryLink from '../TryLink.svelte';
   import OwnValueQueues from './OwnValueQueues.svelte';
   import type { Row, SectionProps } from './row';
   import SettingRows from './SettingRows.svelte';
@@ -15,7 +20,7 @@
   let { items, settings, flash, save }: SectionProps = $props();
 
   const app = getApp();
-  const notes: Record<SettingIn<'speed'>, Snippet> = {
+  const notes: Partial<Record<SettingIn<'speed'>, Snippet>> = {
     global_speed_limit: ownSpeed,
     max_concurrent_downloads: ownConcurrent,
     connections_per_download: ownConnections,
@@ -25,10 +30,19 @@
     global_speed_limit: speedLimit,
     max_concurrent_downloads: concurrent,
     connections_per_download: connections,
+    queues,
   };
 </script>
 
-<SettingRows {items} {settings} {flash} {controls} {notes} />
+<SettingRows
+  {items}
+  {settings}
+  {flash}
+  {controls}
+  {notes}
+  stacked={['queues']}
+  unlabelled={['queues']}
+/>
 
 {#snippet ownSpeed()}<OwnValueQueues
     queues={queuesWithOwn(app.queues.list, 'speed_limit')}
@@ -88,4 +102,48 @@
       if (value !== null) save((d) => void (d.connections_per_download = value));
     }}
   />
+{/snippet}
+
+{#snippet queues({ control }: Row)}
+  <div class="flex w-full flex-col items-start gap-3">
+    <div class="w-full rounded-md border border-line p-3">
+      <TryLink />
+    </div>
+    <ul
+      aria-label="Your queues"
+      aria-describedby={control['aria-describedby']}
+      class="flex w-full flex-col divide-y divide-line rounded-md border border-line"
+    >
+      {#each app.queues.list as queue (queue.id)}
+        {const facts = $derived([
+          queue.status.paused ? 'Paused' : formatSchedule(queue.settings.schedule),
+          ...(queue.settings.notify === 'when_done' ? ['Notifies you when the queue is done'] : []),
+          ...queueLimitFacts(queue.settings),
+          ...[rulesFact(queue.settings.add_downloads)].filter((fact) => fact !== null),
+        ])}
+        <li class="flex items-center gap-3 py-2 pr-2 pl-3">
+          <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span class="flex items-center gap-2 text-ui font-medium text-ink">
+              <span class="truncate">{queue.settings.name}</span>
+              {#if queue.is_default}<Badge size="sm">Default</Badge>{/if}
+            </span>
+            {#if queue.settings.description}
+              <span class="truncate text-small text-ink">{queue.settings.description}</span>
+            {/if}
+            <span class="truncate text-small text-ink-muted">{facts.join(' · ')}</span>
+          </span>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={Pencil}
+            aria-label="Edit {queue.settings.name}"
+            onclick={() => app.openDialog({ kind: 'queue', id: queue.id })}>Edit</Button
+          >
+        </li>
+      {/each}
+    </ul>
+    <Button size="sm" icon={Plus} onclick={() => app.openDialog({ kind: 'queue', id: null })}
+      >New queue</Button
+    >
+  </div>
 {/snippet}

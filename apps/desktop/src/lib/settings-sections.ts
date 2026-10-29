@@ -1,64 +1,18 @@
-// The sections of the settings screen, in the order it shows them.
+// The sections of the settings screen, in the order it shows them (D85).
 
 export type SectionId =
-  | 'general'
-  | 'notifications'
-  | 'files'
-  | 'browser'
-  | 'media'
-  | 'addons'
-  | 'speed'
-  | 'queues'
-  | 'network'
-  | 'import_export'
-  | 'advanced';
+  'general' | 'notifications' | 'files' | 'browser' | 'media' | 'speed' | 'network';
 
 export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[] = [
-  { id: 'general', title: 'General', blurb: 'How Wirecatch looks and starts.' },
+  { id: 'general', title: 'General', blurb: 'Appearance, startup, updates and backup.' },
   {
     id: 'notifications',
     title: 'Notifications',
-    blurb: 'How Wirecatch lets you know a download started, finished or failed.',
+    blurb: 'When Wirecatch tells you about a download.',
   },
   { id: 'files', title: 'Saving files', blurb: 'Where finished files go.' },
-  {
-    id: 'browser',
-    title: 'Browser',
-    blurb: 'What the browser extension captures, and when it asks first.',
-  },
-  {
-    id: 'media',
-    title: 'Media',
-    blurb: 'Video quality, formats, subtitles and audio.',
-  },
-  {
-    id: 'addons',
-    title: 'Add-ons',
-    blurb: 'Optional extras, installed only when you ask.',
-  },
-  {
-    id: 'speed',
-    title: 'Speed and limits',
-    blurb: 'Limit speed and the number of downloads so the rest of your computer stays responsive.',
-  },
-  {
-    id: 'queues',
-    title: 'Queues',
-    blurb: 'Each queue can have its own schedule and limits; otherwise it uses the global ones.',
-  },
-  {
-    id: 'network',
-    title: 'Network',
-    blurb: 'How Wirecatch reaches the internet.',
-  },
-  {
-    id: 'import_export',
-    title: 'Import and export',
-    blurb: 'Save your settings to a file, or load them from one, for example on another computer.',
-  },
-  {
-    id: 'advanced',
-    title: 'Advanced',
-    blurb: 'Rarely needed. The defaults suit almost everyone.',
-  },
+  { id: 'browser', title: 'Browser', blurb: 'What the extension captures.' },
+  { id: 'media', title: 'Media', blurb: 'The media add-on, video and audio.' },
+  { id: 'speed', title: 'Speed and queues', blurb: 'Limits, and the queues that use them.' },
+  { id: 'network', title: 'Network', blurb: 'Proxies and your local network.' },
 ];

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Media: whether a video asks for a quality or downloads at once with the saved choices (D50), the resolution and what to do when a video lacks it, and what the quality window starts with, separately for videos and for audio only.
+  // Media: the media add-on, then whether a video asks for a quality or downloads at once with the saved choices (D50), the resolution and what to do when a video lacks it, and what the quality window starts with, separately for videos and for audio only.
   import {
     AUDIO_OUTPUT_FORMATS,
     FALLBACK_CHOICES,
@@ -18,18 +18,26 @@
   } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import {
+    Button,
     MultiSelect,
     SegmentedControl,
     Select,
     TagInput,
     type SelectOption,
   } from '@wirecatch/ui';
+  import { MEDIA_ADDON } from '$lib/addons';
   import type { SettingId, SettingIn } from '$lib/settings-schema';
+  import { getApp } from '$lib/state/app.svelte';
+  import AddonCard from '../AddonCard.svelte';
   import type { Row, SectionProps } from './row';
+  import RowNote from './RowNote.svelte';
   import SettingRows from './SettingRows.svelte';
   import SettingToggle from './SettingToggle.svelte';
 
   let { items, settings, flash, save }: SectionProps = $props();
+
+  const app = getApp();
+  const addon = $derived(app.addons.list?.find((a) => a.id === MEDIA_ADDON));
 
   /** Videos, or audio only: each keeps its own choices. */
   type Kind = 'video' | 'audio';
@@ -65,6 +73,7 @@
   const AUDIO_FORMATS = formatChoices(AUDIO_OUTPUT_FORMATS);
 
   const controls: Record<SettingIn<'media'>, Snippet<[Row]>> = {
+    media_addon: mediaAddon,
     media_ask: asking,
     media_quality: quality,
     media_fallback: fallback,
@@ -81,7 +90,31 @@
   };
 </script>
 
-<SettingRows {items} {settings} {flash} {controls} stacked={['video_sites']} />
+<SettingRows
+  {items}
+  {settings}
+  {flash}
+  {controls}
+  notes={{ media_fallback: fallbackNote }}
+  stacked={['video_sites']}
+/>
+
+{#snippet fallbackNote()}
+  {#if typeof settings.media.quality === 'string'}
+    <RowNote>Used only when Resolution is a height, like 1080p.</RowNote>
+  {/if}
+{/snippet}
+
+{#snippet mediaAddon({ control }: Row)}
+  {#if addon}
+    <AddonCard {addon} describedby={control['aria-describedby']} />
+  {:else if app.addons.error}
+    <span class="text-small text-danger">{app.addons.error}</span>
+    <Button size="sm" onclick={() => app.addons.load()}>Check again</Button>
+  {:else}
+    <span class="text-small text-ink-muted">Checking.</span>
+  {/if}
+{/snippet}
 
 {#snippet videoSites({ def, s, control }: Row)}
   <TagInput

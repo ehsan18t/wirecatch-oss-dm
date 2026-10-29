@@ -18,18 +18,14 @@
   } from '$lib/settings-schema';
   import { SECTIONS, type SectionId } from '$lib/settings-sections';
   import { getApp } from '$lib/state/app.svelte';
-  import AddonSettings from './settings/AddonSettings.svelte';
-  import AdvancedSettings from './settings/AdvancedSettings.svelte';
   import BrowserSettings from './settings/BrowserSettings.svelte';
   import FileSettings from './settings/FileSettings.svelte';
   import GeneralSettings from './settings/GeneralSettings.svelte';
   import MediaSettings from './settings/MediaSettings.svelte';
   import NetworkSettings from './settings/NetworkSettings.svelte';
   import NotificationSettings from './settings/NotificationSettings.svelte';
-  import QueueSettings from './settings/QueueSettings.svelte';
   import SpeedSettings from './settings/SpeedSettings.svelte';
-  import type { SectionProps } from './settings/row';
-  import ImportExportSettings from './settings/ImportExportSettings.svelte';
+  import { setSettingsSearching, type SectionProps } from './settings/row';
 
   const app = getApp();
 
@@ -40,12 +36,8 @@
     files: FileSettings,
     browser: BrowserSettings,
     media: MediaSettings,
-    addons: AddonSettings,
     speed: SpeedSettings,
-    queues: QueueSettings,
     network: NetworkSettings,
-    import_export: ImportExportSettings,
-    advanced: AdvancedSettings,
   };
 
   /** The page has scrolled under its header, which then draws its edge. */
@@ -56,6 +48,7 @@
 
   const query = $derived(app.settingsQuery.trim());
   const searching = $derived(query !== '');
+  setSettingsSearching(() => searching);
   const matches = $derived(searchSettings(query));
   const section = $derived(SECTIONS.find((s) => s.id === app.settingsSection) ?? SECTIONS[0]);
 

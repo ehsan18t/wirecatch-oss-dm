@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Network: the app's proxy, which every queue that follows it uses, the saved proxy servers, and the hosts reached directly (D73). Each change applies to downloads that start after it.
-  import { MAX_PROXY_HOST_CHARS, type ProxyUse } from '@wirecatch/protocol';
+  // Network: the app's proxy, which every queue that follows it uses, the saved proxy servers, and the hosts reached directly (D73), each change applying to downloads that start after it; then the sites that may reach the person's own network (D39).
+  import { MAX_PROXY_HOST_CHARS, normalizeSite, type ProxyUse } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { Checkbox, Field, Select, TagInput, type FieldControl } from '@wirecatch/ui';
   import { HOSTS_HINT, queueProxy, shownName } from '$lib/proxy';
@@ -20,6 +20,7 @@
     proxy_servers: profileList,
     proxy_exceptions: exceptions,
     ftp_bypass_proxy: ftpBypassProxy,
+    local_sites: localSites,
   };
 
   const SYSTEM = 'system';
@@ -64,7 +65,7 @@
   {settings}
   {flash}
   {controls}
-  stacked={['proxy_servers', 'proxy_exceptions']}
+  stacked={['proxy_servers', 'proxy_exceptions', 'local_sites']}
 />
 
 {#snippet proxyChoice({ s, control }: Row)}
@@ -91,7 +92,7 @@
         onchange={(on: boolean) => save((d) => void (d.proxy.exceptions.system = on))}
       />
       <Checkbox
-        label="Custom hosts"
+        label="Global hosts"
         checked={s.proxy.exceptions.use_hosts}
         onchange={(on: boolean) => save((d) => void (d.proxy.exceptions.use_hosts = on))}
       />
@@ -100,7 +101,7 @@
           {#snippet children(control: FieldControl)}
             <TagInput
               {...control}
-              label="Custom hosts"
+              label="Global hosts"
               placeholder="Add a host, like intranet.example.com"
               values={s.proxy.exceptions.hosts}
               normalize={normalizeException}
@@ -121,5 +122,16 @@
     label={def.label}
     checked={s.proxy.ftp_bypass_proxy}
     onchange={(on: boolean) => save((d) => void (d.proxy.ftp_bypass_proxy = on))}
+  />
+{/snippet}
+
+{#snippet localSites({ def, s, control }: Row)}
+  <TagInput
+    {...control}
+    label={def.label}
+    placeholder="Add a site, like wiki.example.com"
+    values={s.local_sites}
+    normalize={normalizeSite}
+    onchange={(sites: string[]) => save((d) => void (d.local_sites = sites))}
   />
 {/snippet}

@@ -26,14 +26,18 @@ describe('settings schema', () => {
     }
   });
 
-  it('puts every limit on speed together, and leaves Advanced to what is rarely needed', () => {
-    const in_ = (section: string) => SETTINGS.filter((d) => d.section === section).map((d) => d.id);
-    expect(in_('speed')).toEqual([
+  it('puts the limits with the queues, and updates and backup on General (D85)', () => {
+    const in_ = (section: string, group: string) =>
+      SETTINGS.filter((d) => d.section === section && d.group === group).map((d) => d.id);
+    expect(in_('speed', 'Limits')).toEqual([
       'global_speed_limit',
       'max_concurrent_downloads',
       'connections_per_download',
     ]);
-    expect(in_('advanced')).toEqual(['local_sites', 'update_suffix_list']);
+    expect(in_('general', 'Updates')).toEqual(['auto_update_addons', 'update_suffix_list']);
+    expect(in_('general', 'Backup')).toEqual(['export', 'import']);
+    expect(in_('network', 'Local network')).toEqual(['local_sites']);
+    expect(SETTINGS.find((d) => d.section === 'media')?.id).toBe('media_addon');
   });
 
   it('says what keeping the list of public domains current sends, and where', () => {

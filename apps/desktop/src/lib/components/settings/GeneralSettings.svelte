@@ -1,10 +1,11 @@
 <script lang="ts">
-  // General: the theme and accent, and how Wirecatch starts and closes.
+  // General: the theme and accent, how Wirecatch starts and closes, what updates itself, and settings saved to or loaded from a file (D85).
   import Check from '~icons/lucide/check';
   import { ACCENTS, type Accent, type Theme } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
-  import { cn, Icon, SegmentedControl, tooltip } from '@wirecatch/ui';
+  import { Button, cn, Icon, SegmentedControl, tooltip } from '@wirecatch/ui';
   import { findElement } from '$lib/dom';
+  import { suffixListNote } from '$lib/format';
   import { getApp } from '$lib/state/app.svelte';
   import type { SettingIn } from '$lib/settings-schema';
   import type { Row, SectionProps } from './row';
@@ -13,11 +14,15 @@
 
   let { items, settings, flash, save }: SectionProps = $props();
   const app = getApp();
+  const suffixes = $derived(app.suffixList);
+
+  /** Accents too close to another to offer side by side (D85.9); one already chosen stays offered. */
+  const LOOKALIKES: ReadonlySet<Accent> = new Set<Accent>(['teal', 'indigo']);
 
   /** The accents offered: "Match system" only where the system has an accent colour (Windows), or while it is the choice. */
   function offeredAccents(current: Accent): readonly Accent[] {
     const system = app.appearance.systemAccent !== null || current === 'system';
-    return ACCENTS.filter((a) => a !== 'system' || system);
+    return ACCENTS.filter((a) => a === current || (a === 'system' ? system : !LOOKALIKES.has(a)));
   }
 
   const THEMES: { value: Theme; label: string }[] = [
@@ -59,10 +64,21 @@
     accent,
     start_with_system: startWithSystem,
     close_to_tray: closeToTray,
+    auto_update_addons: autoUpdate,
+    update_suffix_list: suffixList,
+    export: exportButton,
+    import: importButton,
   };
 </script>
 
-<SettingRows {items} {settings} {flash} {controls} />
+<SettingRows
+  {items}
+  {settings}
+  {flash}
+  {controls}
+  notes={{ update_suffix_list: suffixListState }}
+  unlabelled={['export', 'import']}
+/>
 
 {#snippet theme({ def, s }: Row)}
   <SegmentedControl
@@ -120,4 +136,54 @@
     checked={s.close_to_tray}
     onchange={(v: boolean) => save((d) => void (d.close_to_tray = v))}
   />
+{/snippet}
+
+{#snippet autoUpdate({ def, s, control }: Row)}
+  <SettingToggle
+    {control}
+    label={def.label}
+    checked={s.auto_update_addons}
+    onchange={(v: boolean) => save((d) => void (d.auto_update_addons = v))}
+  />
+{/snippet}
+
+{#snippet suffixList({ def, s, control }: Row)}
+  <SettingToggle
+    {control}
+    label={def.label}
+    checked={s.update_suffix_list}
+    onchange={(v: boolean) => save((d) => void (d.update_suffix_list = v))}
+  />
+{/snippet}
+
+{#snippet suffixListState()}
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-3">
+    <span class="mr-auto text-small text-ink-muted">
+      {#if suffixes.info}
+        {suffixListNote(suffixes.info, app.clock.now)}
+      {:else if suffixes.error}
+        {suffixes.error}
+      {:else}
+        Reading the list.
+      {/if}
+    </span>
+    <Button size="sm" loading={suffixes.checking} onclick={() => suffixes.check()}>Check now</Button
+    >
+  </div>
+{/snippet}
+
+{#snippet exportButton({ control }: Row)}
+  <Button
+    size="sm"
+    aria-describedby={control['aria-describedby']}
+    onclick={() => app.openDialog({ kind: 'export' })}>Export settings…</Button
+  >
+{/snippet}
+
+{#snippet importButton({ control }: Row)}
+  <Button
+    size="sm"
+    aria-describedby={control['aria-describedby']}
+    onclick={() => app.openDialog({ kind: 'import' })}>Import settings…</Button
+  >
 {/snippet}

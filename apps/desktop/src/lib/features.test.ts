@@ -190,7 +190,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
         expect(screen.getAllByText(def.label).length).toBeGreaterThan(0);
       }
     }
-    await click(nav().getByRole('button', { name: /^Import and export/ }));
+    await click(nav().getByRole('button', { name: /^General/ }));
     await click(button('Export settings…'));
     expect(within(dialog()).getByText('In the file')).toBeInTheDocument();
     expect(palette('setting.export') && palette('setting.import') && palette('setting.theme')).toBe(
@@ -259,7 +259,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
   it('media add-on: Settings, then Install or Remove, 2 clicks', async () => {
     const { app, backend, click, palette } = await setup();
     expect(palette('addon.install.media')).toBe(true);
-    await openSection(click, 'Add-ons');
+    await openSection(click, 'Media');
     await click(button(/^Install/));
     expect(app.addons.list?.[0]?.state.type).toBe('installing');
     backend.tick(4500);
@@ -274,7 +274,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
     const { app, backend, click, palette } = await setup();
     await app.addons.install('media');
     backend.tick(4500);
-    await openSection(click, 'Add-ons');
+    await openSection(click, 'Media');
     expect(palette('addon.check.media')).toBe(true);
     const note = () => app.toasts.items.at(-1);
 
@@ -304,7 +304,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
 
   it('the list of public domains: Settings, then Check now, 2 clicks; its date and the result in words', async () => {
     const { app, backend, click } = await setup();
-    await openSection(click, 'Advanced');
+    await openSection(click, 'General');
     // The month as the system writes it short: "Sep", or "Sept" with newer locale data.
     expect(screen.getByText(/^Version of 15 Sept? 2026 · Not checked yet$/)).toBeInTheDocument();
     const note = () => app.toasts.items.at(-1);
@@ -335,7 +335,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
 
   it('the list of public domains: the weekly check shows on an open settings page', async () => {
     const { app, backend, click } = await setup();
-    await openSection(click, 'Advanced');
+    await openSection(click, 'General');
     backend.simulateWeeklySuffixCheck('newer');
     await settle();
     expect(screen.getByText(/^Version of 1 Oct 2026 · Checked today at /)).toBeInTheDocument();
@@ -347,7 +347,7 @@ describe('feature paths (visible in the interface, and in the palette)', () => {
 
   it('stopping an update keeps the installed add-on; stopping a first install leaves none', async () => {
     const { app, backend, click } = await setup();
-    await openSection(click, 'Add-ons');
+    await openSection(click, 'Media');
     await click(button(/^Install/));
     await click(button('Stop installing the media add-on'));
     expect(app.addons.list?.[0]?.state.type).toBe('not_installed');

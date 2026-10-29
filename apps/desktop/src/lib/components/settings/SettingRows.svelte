@@ -3,7 +3,7 @@
   import type { Snippet } from 'svelte';
   import { cn, SettingRow, type FieldControl } from '@wirecatch/ui';
   import { settingAnchor, type SettingDef, type SettingId } from '$lib/settings-schema';
-  import type { Row, SectionProps } from './row';
+  import { settingsSearching, type Row, type SectionProps } from './row';
 
   let {
     items,
@@ -24,6 +24,9 @@
     notes?: Partial<Record<SettingId, Snippet>>;
   } = $props();
 
+  // Under a search result's section heading (h2), a group's heading is one level down.
+  const searching = settingsSearching();
+
   /** The settings in runs that share a group, in order. */
   const groups = $derived.by(() => {
     const runs: { group: string | undefined; defs: SettingDef[] }[] = [];
@@ -40,7 +43,9 @@
   {#each groups as run, index (`${String(index)}-${run.group ?? ''}`)}
     <div class="flex flex-col gap-2">
       {#if run.group}
-        <h3 class="px-1 text-ui font-semibold text-ink">{run.group}</h3>
+        <svelte:element this={searching() ? 'h3' : 'h2'} class="px-1 text-ui font-semibold text-ink"
+          >{run.group}</svelte:element
+        >
       {/if}
       <div
         class="flex flex-col divide-y divide-line rounded-lg border border-line bg-raised shadow-raised forced-colors:border-sys-text"

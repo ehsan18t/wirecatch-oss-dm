@@ -1291,7 +1291,7 @@ fn swap_in(
                 }
                 return Err(InstallFailure {
                     reason: format!(
-                        "{} could not be put in place ({e}), and the version that was installed could not be put back ({restore}). Install the media add-on again from Settings > Add-ons.",
+                        "{} could not be put in place ({e}), and the version that was installed could not be put back ({restore}). Install the media add-on again from Settings > Media.",
                         component.id()
                     ),
                     part_lost: true,
