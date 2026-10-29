@@ -1034,9 +1034,10 @@ impl Manager {
             .body;
         let key = sources.ytdlp_signing_key.clone();
         let signed = list.clone();
+        // The check itself not running (the app closing) says nothing about the release: it is tried again later.
         self.blocking(move || Ok(signature::verify_detached(&key, &signed, &signature)))
             .await
-            .map_err(|e| Lookup::Refused(e.to_string()))?
+            .map_err(|e| Lookup::Unreachable(e.to_string()))?
             .map_err(|why| unsigned(Unsigned::Invalid(why)))?;
         let list = String::from_utf8_lossy(&list);
         let sha256 = addons::checksum_for(&list, &sources.ytdlp_asset).ok_or_else(|| {
