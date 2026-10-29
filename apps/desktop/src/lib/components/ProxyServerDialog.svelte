@@ -121,7 +121,7 @@
     ? 'Downloads already running keep the proxy they started with.'
     : forQueue
       ? `Available to all queues, and used by ${forQueue}.`
-      : 'Save a proxy server once; the app and each queue can then choose it.'}
+      : 'Save a proxy server once; the global proxy and each queue can then use it.'}
   onclose={() => onclose()}
 >
   <form
@@ -134,7 +134,7 @@
       void save();
     }}
   >
-    <Field label="Name (optional)" description="If left empty, the proxy’s address is shown.">
+    <Field label="Name (optional)" help="If left empty, the proxy’s address is shown.">
       {#snippet children(control: FieldControl)}
         <Input
           {...control}
@@ -150,6 +150,7 @@
       <span class="text-ui font-medium text-ink" aria-hidden="true">Type</span>
       <SegmentedControl
         label="Type"
+        class="self-start"
         value={kind}
         options={KIND_OPTIONS}
         onchange={(next: ProxyKind) =>
@@ -187,6 +188,7 @@
             min={1}
             max={MAX_PORT}
             optional
+            steppers={false}
             onchange={(value: number | null) => edit(() => (port = value))}
           />
         {/snippet}
@@ -232,28 +234,28 @@
                 edit(() => (password = text === '' ? { change: 'keep' } : { change: 'set', text }))}
             />
           {/if}
+          {#if savedPassword && sameServer && password.change !== 'set'}
+            <div class="mt-1.5">
+              {#if password.change === 'remove'}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onclick={() => edit(() => (password = { change: 'keep' }))}
+                  >Keep the saved password</Button
+                >
+              {:else}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onclick={() => edit(() => (password = { change: 'remove' }))}
+                  >Remove the saved password</Button
+                >
+              {/if}
+            </div>
+          {/if}
         {/snippet}
       </Field>
     </div>
-    {#if savedPassword && sameServer && password.change !== 'set'}
-      <div class="-mt-3 flex justify-end">
-        {#if password.change === 'remove'}
-          <Button
-            size="sm"
-            variant="ghost"
-            onclick={() => edit(() => (password = { change: 'keep' }))}
-            >Keep the saved password</Button
-          >
-        {:else}
-          <Button
-            size="sm"
-            variant="ghost"
-            onclick={() => edit(() => (password = { change: 'remove' }))}
-            >Remove the saved password</Button
-          >
-        {/if}
-      </div>
-    {/if}
 
     {#if resultText}
       <Callout tone={resultText.tone} live="polite">{resultText.text}</Callout>

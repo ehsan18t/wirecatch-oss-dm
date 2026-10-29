@@ -35,6 +35,8 @@
     unit?: string | undefined;
     /** Allows an empty field (null), such as "no limit". */
     optional?: boolean;
+    /** The pointer's minus and plus buttons; off for a number nobody counts up to, such as a port. */
+    steppers?: boolean;
     size?: FieldSize;
     invalid?: boolean;
     /** Called with each committed value: a step, or typed text when the field loses focus or Enter is pressed. */
@@ -49,6 +51,7 @@
     step = 1,
     unit,
     optional = false,
+    steppers = true,
     size,
     invalid = false,
     label,
@@ -105,7 +108,7 @@
   );
 </script>
 
-<div class={field({ size, invalid, class: cn('pr-0.5', className) })}>
+<div class={field({ size, invalid, class: cn(steppers && 'pr-0.5', className) })}>
   <input
     type="text"
     inputmode={step % 1 === 0 ? 'numeric' : 'decimal'}
@@ -128,26 +131,26 @@
     <span class="shrink-0 text-ink-subtle" aria-hidden="true">{unit}</span>
   {/if}
   <!-- Arrow keys step the value; these are for the pointer, so they stay out of the tab order. -->
-  <span class="flex h-full items-center py-0.5">
-    <button
-      type="button"
-      tabindex="-1"
-      class={STEPPER}
-      aria-label="Decrease"
-      disabled={disabled === true || (min !== undefined && value !== null && value <= min)}
-      onclick={() => commit(stepValue(value, -1, range))}
-    >
-      <Icon icon={Minus} size="xs" />
-    </button>
-    <button
-      type="button"
-      tabindex="-1"
-      class={STEPPER}
-      aria-label="Increase"
-      disabled={disabled === true || (max !== undefined && value !== null && value >= max)}
-      onclick={() => commit(stepValue(value, 1, range))}
-    >
-      <Icon icon={Plus} size="xs" />
-    </button>
-  </span>
+  {#if steppers}<span class="flex h-full items-center py-0.5">
+      <button
+        type="button"
+        tabindex="-1"
+        class={STEPPER}
+        aria-label="Decrease"
+        disabled={disabled === true || (min !== undefined && value !== null && value <= min)}
+        onclick={() => commit(stepValue(value, -1, range))}
+      >
+        <Icon icon={Minus} size="xs" />
+      </button>
+      <button
+        type="button"
+        tabindex="-1"
+        class={STEPPER}
+        aria-label="Increase"
+        disabled={disabled === true || (max !== undefined && value !== null && value >= max)}
+        onclick={() => commit(stepValue(value, 1, range))}
+      >
+        <Icon icon={Plus} size="xs" />
+      </button>
+    </span>{/if}
 </div>

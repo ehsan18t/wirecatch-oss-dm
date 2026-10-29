@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The saved proxy servers (D73.1): each with its address and type, its last test and what uses it, and Test, Edit and Delete; under them Add proxy and Copy from system.
+  // The saved proxy servers (D73.1): each with its address and type, its last test and what uses it, and Test, Edit and Delete; under them New proxy and Copy from system.
   import Pencil from '~icons/lucide/pencil';
   import Trash from '~icons/lucide/trash-2';
   import { MAX_PROXY_SERVERS, type ProxyServer, type ProxyServerId } from '@wirecatch/protocol';
@@ -104,7 +104,7 @@
       size="sm"
       variant="primary"
       disabled={profiles.length >= MAX_PROXY_SERVERS}
-      onclick={() => app.openDialog({ kind: 'proxy', id: null })}>Add proxy</Button
+      onclick={() => app.openDialog({ kind: 'proxy', id: null })}>New proxy</Button
     >
   </div>
 </div>

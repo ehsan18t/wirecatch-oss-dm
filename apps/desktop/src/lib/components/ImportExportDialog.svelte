@@ -132,7 +132,7 @@
             <h3 class="text-ui font-medium text-ink">{addon.name}</h3>
             <p class="text-small text-ink-muted" id="offer-{addon.id}">
               The file lists the {addon.name.toLowerCase()}, which is not installed here. Nothing
-              was downloaded. Install it now, or later from Settings > Add-ons.
+              was downloaded. Install it now, or later from Settings > Media.
             </p>
             <AddonCard {addon} align="start" describedby="offer-{addon.id}" />
           </section>

@@ -124,7 +124,7 @@ describe('the settings screen', () => {
   });
 
   it('keeps a site on the network as its host, the way the app keeps it', async () => {
-    const { app } = await openSettings('advanced');
+    const { app } = await openSettings('network');
     const field = screen.getByRole('textbox', { name: 'Local network sites' });
     await fireEvent.input(field, { target: { value: 'https://Wiki.Corp.Example.com/start' } });
     await fireEvent.keyDown(field, { key: 'Enter' });

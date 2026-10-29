@@ -101,7 +101,7 @@
         FOCUS_RING_INSET,
         'disabled:cursor-not-allowed',
         isSelected
-          ? 'text-ink before:absolute before:inset-0 before:-z-1 before:origin-left before:rounded-xs before:border before:border-line before:bg-raised before:shadow-raised forced-colors:bg-sys-highlight forced-colors:text-sys-highlight-text forced-colors:before:hidden'
+          ? 'text-ink before:absolute before:inset-0 before:-z-1 before:origin-left before:rounded-xs before:border before:border-line-strong/quiet before:bg-raised before:shadow-raised forced-colors:bg-sys-highlight forced-colors:text-sys-highlight-text forced-colors:before:hidden'
           : 'text-ink-muted enabled:hover:text-ink',
       )}
       onclick={() => choose(index)}
