@@ -114,7 +114,7 @@
   {#if resulting.kind !== 'direct'}
     <ChoiceCard
       flush
-      label="Bypass proxy for"
+      label="Hosts that skip the proxy"
       help="Hosts this queue connects to directly. Same as global uses the list in Settings > Network."
       value={own ? 'own' : 'app'}
       options={[
@@ -133,22 +133,22 @@
         />
         <Checkbox
           label={appHostCount === 0
-            ? 'Global custom hosts (empty)'
-            : `Global custom hosts (${String(appHostCount)})`}
+            ? 'Global hosts (empty)'
+            : `Global hosts (${String(appHostCount)})`}
           checked={own.app_hosts}
           onchange={(on: boolean) => change({ app_hosts: on })}
         />
         <Checkbox
-          label="Custom hosts"
+          label="This queue's hosts"
           checked={own.use_hosts}
           onchange={(on: boolean) => change({ use_hosts: on })}
         />
         {#if own.use_hosts}
-          <Field label="Custom hosts" hideLabel description={HOSTS_HINT}>
+          <Field label="This queue's hosts" hideLabel description={HOSTS_HINT}>
             {#snippet children(control: FieldControl)}
               <TagInput
                 {...control}
-                label="Custom hosts"
+                label="This queue's hosts"
                 placeholder="Add a host, like intranet.example.com"
                 values={own.hosts}
                 normalize={normalizeException}

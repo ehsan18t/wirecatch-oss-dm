@@ -38,7 +38,7 @@ pub enum CoreError {
     /// The choice needs the media add-on, which is not installed. The UI was
     /// told with `UiEvent::AddonRequired`; clients see `ErrorCode::AddonRequired`.
     #[error(
-        "This needs the media add-on, which merges video and audio and reads video pages. Install it from Settings > Add-ons (it is offered right away), then try again."
+        "This needs the media add-on, which merges video and audio and reads video pages. Install it from Settings > Media (it is offered right away), then try again."
     )]
     AddonRequired,
 
@@ -69,7 +69,7 @@ pub enum CoreError {
 
     /// An add-on install was stopped, but its files could not all be deleted.
     #[error(
-        "The install was stopped, but some of its files could not be deleted ({source}). Remove the media add-on in Settings > Add-ons to clean up."
+        "The install was stopped, but some of its files could not be deleted ({source}). Remove the media add-on in Settings > Media to clean up."
     )]
     AddonFilesLeft {
         /// What the operating system reported.

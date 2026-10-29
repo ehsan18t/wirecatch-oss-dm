@@ -3,6 +3,7 @@
   import type { Queue } from '@wirecatch/protocol';
   import { cn, FOCUS_RING } from '@wirecatch/ui';
   import { getApp } from '$lib/state/app.svelte';
+  import RowNote from './RowNote.svelte';
 
   let { queues }: { queues: readonly Queue[] } = $props();
 
@@ -11,7 +12,7 @@
 
 {#if queues.length > 0}
   <!-- Plain buttons, not Button: its sibling for a disabled reason would put a space before each comma. -->
-  <p class="px-4 pb-3 text-small text-ink-muted">
+  <RowNote>
     {queues.length === 1
       ? '1 queue uses its own value:'
       : `${String(queues.length)} queues use their own value:`}
@@ -24,5 +25,5 @@
         onclick={() => app.openDialog({ kind: 'queue', id: queue.id })}
         >{queue.settings.name}</button
       >{i < queues.length - 1 ? ', ' : '.'}{/each}
-  </p>
+  </RowNote>
 {/if}

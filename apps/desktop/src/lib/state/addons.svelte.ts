@@ -13,7 +13,7 @@ function updateNote(media: AddonInfo): { kind: 'info' | 'error'; text: string } 
     case 'update_available':
       return {
         kind: 'info',
-        text: `A newer ${name} is ready (${media.latest_version ?? 'a new version'}). Choose Update in Settings > Add-ons to install it.`,
+        text: `A newer ${name} is ready (${media.latest_version ?? 'a new version'}). Choose Update in Settings > Media to install it.`,
       };
     case 'installing':
       return { kind: 'info', text: `A newer ${name} was found and is being installed.` };
