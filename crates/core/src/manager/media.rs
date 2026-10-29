@@ -761,14 +761,14 @@ impl Manager {
                     .or_else(|| pending.source.title.clone())
                     .filter(|t| !t.trim().is_empty())
                     .unwrap_or_else(|| title_from_url(&pending.source.fetch.url));
-                let audio_only = offers.iter().all(|(o, _)| o.audio_only);
-                let category = if audio_only {
+                let category = if offers.iter().all(|(o, _)| o.audio_only) {
                     Category::Audio
                 } else {
                     Category::Video
                 };
-                let folder = self.folder_for(&state, pending, category);
                 let placed = placed_by_title(&state, pending, &title, category);
+                let (folder, type_folder) =
+                    self.folders_for(&state, pending, placed.queue, category);
                 let later = pending.later;
                 let page_url = pending.source.page_url.clone().or_else(|| {
                     (pending.source.kind == MediaKind::Page)
@@ -781,7 +781,8 @@ impl Manager {
                     title,
                     page_url,
                     options,
-                    folder: folder.to_string_lossy().into_owned(),
+                    folder,
+                    type_folder,
                     queue: placed.queue,
                     queue_reason: placed.reason.clone(),
                     subtitles,
@@ -934,13 +935,32 @@ impl Manager {
         true
     }
 
-    /// Where a video waiting as `pending` is saved: the folder chosen when it
-    /// was added, else the folder for `category`.
-    fn folder_for(&self, state: &State, pending: &MediaPending, category: Category) -> PathBuf {
-        pending.folder.clone().unwrap_or_else(|| {
-            wirecatch_settings::folder_for(&state.settings, category, &self.inner.folders)
-                .unwrap_or_else(|_| self.inner.folders.downloads.clone())
-        })
+    /// Where a video waiting as `pending` is saved in `queue` (the folder chosen
+    /// when it was added, else the queue's or the one for `category`), and
+    /// [`MediaChoice::type_folder`].
+    fn folders_for(
+        &self,
+        state: &State,
+        pending: &MediaPending,
+        queue: QueueId,
+        category: Category,
+    ) -> (String, Option<String>) {
+        let folders = &self.inner.folders;
+        let or_downloads = |found: Result<PathBuf>| {
+            found
+                .unwrap_or_else(|_| folders.downloads.clone())
+                .to_string_lossy()
+                .into_owned()
+        };
+        if let Some(chosen) = &pending.folder {
+            return (chosen.to_string_lossy().into_owned(), None);
+        }
+        let type_folder = wirecatch_settings::type_folder(&state.settings, category, folders)
+            .map_err(CoreError::from);
+        (
+            or_downloads(state.folder_for(queue, category, folders)),
+            Some(or_downloads(type_folder)),
+        )
     }
 
     /// Media that cannot be offered becomes a failed download, so the reason is
@@ -1015,9 +1035,10 @@ impl Manager {
         selection: MediaSelection,
         instead_of: Option<String>,
     ) -> Result<wirecatch_protocol::DownloadId> {
+        // Unpicked, the queue answered decides (D94.2).
         let folder = match selection.folder {
-            Some(folder) => self.inner.folders.resolve(&PortablePath(folder))?,
-            None => PathBuf::from(&choice.folder),
+            Some(folder) => Some(self.inner.folders.resolve(&PortablePath(folder))?),
+            None => pending.folder.clone(),
         };
         // A typed name keeps its words; the finished file gets the extension
         // of the format it is in (see `media_run::final_path`).
@@ -1030,7 +1051,7 @@ impl Manager {
                 fetch: pending.source.fetch.clone(),
                 wanted: Wanted {
                     file_name: Some(name),
-                    folder: Some(folder),
+                    folder,
                     category: Some(if plan.audio_only {
                         Category::Audio
                     } else {

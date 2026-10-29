@@ -11,7 +11,7 @@ import type {
 import { MB } from '@wirecatch/units';
 import { fileNameFromUrl } from '../../format';
 import { BackendError } from '../types';
-import { categoryFor, folderFor } from './data';
+import { categoryFor, typeFolder } from './data';
 import { answeredQueue } from './queues';
 import type { MockState } from './state';
 
@@ -46,7 +46,7 @@ export function confirmCapture(
   closeQuestion(state, id);
   const row = state.create(p.url, {
     ...answeredQueue(p, confirmation.queue),
-    folder: confirmation.folder ?? p.folder,
+    folder: confirmation.folder ?? undefined,
     fileName: confirmation.file_name ?? p.file_name,
     start: !confirmation.later,
     size: p.size,
@@ -115,7 +115,8 @@ export function simulateCapture(state: MockState, index: number): void {
       id: state.newQuestionId(),
       url,
       file_name: name,
-      folder: folderFor(category, state.settings),
+      folder: state.folderFor(queue, category),
+      type_folder: typeFolder(category, state.settings),
       category,
       size,
       queue,

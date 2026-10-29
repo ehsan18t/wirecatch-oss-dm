@@ -129,6 +129,7 @@ fn capture() -> PendingCapture {
         url: "https://example.com/a.zip".into(),
         file_name: "a.zip".into(),
         folder: "C:/Downloads".into(),
+        type_folder: "C:/Downloads".into(),
         category: Category::Archive,
         size: None,
         queue: QueueId(1),

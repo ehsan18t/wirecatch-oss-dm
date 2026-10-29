@@ -32,6 +32,7 @@
     sizeFor,
     switchedChoice,
   } from '$lib/media-output';
+  import { folderInQueue } from '$lib/queue-folders';
   import { queueLine } from '$lib/queue-reasons';
   import type { DownloadWindowState } from '$lib/window/download-window.svelte';
   import { enterSubmits } from '$lib/window/keys';
@@ -54,8 +55,10 @@
 
   let optionId = $state(proposal.start.option_id);
   let fileName = $state('');
-  let folder = $state(proposal.folder);
   let queue = $state<QueueId>(proposal.queue);
+  /** The folder the person picked here; until then the queue's decides (D94.4). */
+  let pickedFolder = $state<string | null>(null);
+  const folder = $derived(pickedFolder ?? folderInQueue(win.queues, queue, proposal));
   /** Why the download goes to the queue shown: the core's reason, or the person's pick (D72.8). */
   const queueReason = $derived(
     queueLine(
@@ -134,7 +137,7 @@
 
   async function changeFolder() {
     const chosen = await win.changeFolder(folder);
-    if (chosen) folder = chosen;
+    if (chosen) pickedFolder = chosen;
   }
 
   async function answer(later: boolean) {
@@ -143,7 +146,7 @@
     await win.choose({
       option_id: picked.id,
       file_name: fileName.trim() ? fileName.trim() : null,
-      folder: folder === choice.folder ? null : folder,
+      folder: pickedFolder,
       queue: queue === choice.queue ? null : queue,
       later,
       ...outputSelection(picked, choice, output),
@@ -237,7 +240,7 @@
         label="Folder"
         {folder}
         onchoose={() => void changeFolder()}
-        onreset={folder === proposal.folder ? undefined : () => (folder = proposal.folder)}
+        onreset={pickedFolder === null ? undefined : () => (pickedFolder = null)}
       />
 
       <QueueField

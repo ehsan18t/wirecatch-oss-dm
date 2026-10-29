@@ -426,8 +426,8 @@ pub fn check_queue_count(count: usize) -> Result<()> {
     Ok(())
 }
 
-/// Checks a queue's name, limits and schedule, trimming the name.
-pub fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> {
+/// Checks a queue's name, limits, folder and schedule, trimming the name.
+pub fn validate_queue(mut queue: QueueSettings, folders: &KnownFolders) -> Result<QueueSettings> {
     queue.name = queue.name.trim().to_string();
     if queue.name.is_empty() {
         return Err(SettingsError::Invalid("Give the queue a name.".into()));
@@ -451,6 +451,9 @@ pub fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> {
     }
     if let Setting::Own(connections) = queue.connections {
         check_connections(connections)?;
+    }
+    if let Setting::Own(folder) = &queue.folder {
+        check_folder(folder, folders)?;
     }
     queue.exceptions = crate::proxy::validate_queue_exceptions(queue.exceptions)?;
     if let AddDownloads::Auto(rules) = queue.add_downloads {
@@ -527,8 +530,21 @@ pub fn category_of(settings: &AppSettings, file_name: &str) -> Category {
         .map_or(Category::Other, |rule| rule.category)
 }
 
-/// The folder new downloads of `category` go to.
+/// The folder new downloads of `category` go to in `queue` (D94.2).
 pub fn folder_for(
+    settings: &AppSettings,
+    queue: &QueueSettings,
+    category: Category,
+    folders: &KnownFolders,
+) -> Result<PathBuf> {
+    match &queue.folder {
+        Setting::Own(folder) => Ok(folders.resolve(folder)?),
+        Setting::Global => type_folder(settings, category, folders),
+    }
+}
+
+/// The folder for `category` in a queue that follows the app.
+pub fn type_folder(
     settings: &AppSettings,
     category: Category,
     folders: &KnownFolders,
@@ -956,9 +972,9 @@ mod tests {
     fn queue_validation() {
         let mut q = default_queue().settings;
         q.name = "  Night  ".into();
-        assert_eq!(validate_queue(q.clone()).unwrap().name, "Night");
+        assert_eq!(validate_queue(q.clone(), &folders()).unwrap().name, "Night");
         q.name = " ".into();
-        assert!(validate_queue(q.clone()).is_err());
+        assert!(validate_queue(q.clone(), &folders()).is_err());
         q.name = "Night".into();
         q.schedule = Some(Schedule {
             start: TimeOfDay {
@@ -968,7 +984,12 @@ mod tests {
             stop: None,
             days: vec![],
         });
-        assert!(validate_queue(q).unwrap_err().to_string().contains("00:00"));
+        assert!(
+            validate_queue(q, &folders())
+                .unwrap_err()
+                .to_string()
+                .contains("00:00")
+        );
     }
 
     #[test]
@@ -980,7 +1001,8 @@ mod tests {
             sites: vec![" example.com ".into(), String::new()],
             ..QueueRules::default()
         });
-        let AddDownloads::Auto(kept) = validate_queue(q.clone()).unwrap().add_downloads else {
+        let AddDownloads::Auto(kept) = validate_queue(q.clone(), &folders()).unwrap().add_downloads
+        else {
             panic!("the queue stopped being an auto queue");
         };
         assert_eq!(kept.sites, ["example.com"]);
@@ -988,7 +1010,12 @@ mod tests {
             sites: vec!["*".into()],
             ..QueueRules::default()
         });
-        assert!(validate_queue(q).unwrap_err().to_string().contains("\"*\""));
+        assert!(
+            validate_queue(q, &folders())
+                .unwrap_err()
+                .to_string()
+                .contains("\"*\"")
+        );
     }
 
     #[test]
@@ -998,10 +1025,31 @@ mod tests {
         assert_eq!(category_of(&s, "Movie.MKV"), Category::Video);
         assert_eq!(category_of(&s, "backup.tar.gz"), Category::Archive);
         assert_eq!(category_of(&s, "README"), Category::Other);
+        let mut queue = default_queue().settings;
         assert_eq!(
-            folder_for(&s, Category::Video, &f).unwrap(),
+            folder_for(&s, &queue, Category::Video, &f).unwrap(),
             f.downloads.join("Video")
         );
-        assert_eq!(folder_for(&s, Category::Other, &f).unwrap(), f.downloads);
+        assert_eq!(
+            folder_for(&s, &queue, Category::Other, &f).unwrap(),
+            f.downloads
+        );
+        queue.folder = Setting::Own(PortablePath("{Downloads}/Night".into()));
+        assert_eq!(
+            folder_for(&s, &queue, Category::Video, &f).unwrap(),
+            f.downloads.join("Night")
+        );
+    }
+
+    #[test]
+    fn a_queue_folder_is_checked_like_the_others() {
+        let mut q = default_queue().settings;
+        q.folder = Setting::Own(PortablePath("relative/folder".into()));
+        assert!(validate_queue(q.clone(), &folders()).is_err());
+        q.folder = Setting::Own(PortablePath(format!(
+            "{{Downloads}}/{}",
+            "a".repeat(MAX_FOLDER_CHARS)
+        )));
+        assert!(validate_queue(q, &folders()).is_err());
     }
 }

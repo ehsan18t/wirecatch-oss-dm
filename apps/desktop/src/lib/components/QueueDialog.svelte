@@ -14,7 +14,7 @@
 </script>
 
 <script lang="ts">
-  // A queue's name and description, its own limits, its hours and when it notifies you: each limit is a switch that opens its own fields, and off follows the global value (D72.1); labels and help never change with what is chosen (D84).
+  // A queue's name and description, its own folder (D94), its own limits, its hours and when it notifies you: each limit is a switch that opens its own fields, and off follows the global value (D72.1); labels and help never change with what is chosen (D84).
   import {
     DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS,
@@ -65,6 +65,7 @@
   import ChoiceCard from './ChoiceCard.svelte';
   import DayPicker from './DayPicker.svelte';
   import QueueRulesCard from './QueueRulesCard.svelte';
+  import QueueFolderCard from './QueueFolderCard.svelte';
   import QueueProxyCard from './QueueProxyCard.svelte';
   import SwitchCard from './SwitchCard.svelte';
   import TimeInput from './TimeInput.svelte';
@@ -113,6 +114,7 @@
   const appConnections = app.settings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD;
   let connectionsOn = $state(ownConnections !== null);
   let connections = $state(ownConnections ?? appConnections);
+  let folder = $state<QueueSettings['folder']>($state.snapshot(opened?.folder) ?? GLOBAL);
 
   const concurrentCap = $derived(
     concurrentCapWarning(maxConcurrent, app.settings?.max_concurrent_downloads),
@@ -171,6 +173,7 @@
       add_downloads: addDownloadsOf(auto, $state.snapshot(rules)),
       schedule: schedule.schedule,
       notify,
+      folder: $state.snapshot(folder),
     };
   }
 
@@ -233,6 +236,8 @@
         />
       {/snippet}
     </Field>
+
+    <QueueFolderCard {folder} onchange={(next: QueueSettings['folder']) => (folder = next)} />
 
     <h3 id="{formId}-limits" class="-mb-3 text-ui font-medium text-ink">Limits</h3>
     <section

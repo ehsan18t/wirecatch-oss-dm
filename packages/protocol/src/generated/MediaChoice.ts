@@ -31,6 +31,11 @@ export type MediaChoice = {
    */
   folder: string;
   /**
+   * The folder for its file type, where a queue that follows the app saves it (D94.4); none
+   * when the person picked the folder as they added the link.
+   */
+  type_folder: string | null;
+  /**
    * The queue it goes to if the user just confirms.
    */
   queue: QueueId;

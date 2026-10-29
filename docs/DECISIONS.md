@@ -847,6 +847,16 @@ Decided with the maintainer on 2026-10-29.
 2. With subtitles inside the video, "If the format can’t hold subtitles" (`unembedded_subtitles`) says what happens when the chosen format holds none, as an audio file or an Original file whose container cannot: save them as separate files, as before, or leave them out. It shows only while subtitles go inside. A video's quality window follows the same choice, from the saved defaults.
 3. The Media page has a Video group and an Audio group, so their settings drop "for videos" and "for audio"; "Save audio as" heads the Audio group and says it converts. The command palette names a grouped setting with its group ("Media › Video: Subtitle languages"), so two settings of one name stay apart.
 
+### D94. A queue can save its downloads to a folder of its own
+
+Decided with the maintainer on 2026-10-30. It adds a setting to D72.1.
+
+1. A queue's Save to follows the app, which picks a folder by file type (Saving files), or is a folder of its own (`QueueSettings::folder`). New queues follow the app. Turning on "Save to its own folder" in the queue editor asks for the folder at once, and the switch stays off when none is picked. Everything a queue with its own folder takes goes straight into that folder, videos and audio included, with no folders by file type inside it.
+2. A download's folder is, in order: the folder the person picked for it (the Add dialog, a download window, a video's window), its queue's own folder, the folder for its file type.
+3. The folder is settled with the file name, when the server first answers, by the queue the download is in then. After that, moving a download to another queue or changing a queue's folder moves no file; Change folder moves one download.
+4. A download window shows the folder of the queue picked in it, until the person picks a folder there. The Add dialog's Save to says what decides the folder while none is picked: the picked queue's folder, or, on Automatic, each link's queue.
+5. A profile's queue folders are written relative to the standard folders on export and checked on import like the other folder settings, falling back to the default folder.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

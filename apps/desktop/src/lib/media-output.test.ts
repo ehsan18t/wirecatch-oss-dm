@@ -97,6 +97,7 @@ const choice: MediaChoice = {
   page_url: null,
   options: [uhd, audio],
   folder: 'C:/Videos',
+  type_folder: 'C:/Videos',
   queue: queueId(1),
   queue_reason: { kind: 'default_queue' },
   subtitles: [

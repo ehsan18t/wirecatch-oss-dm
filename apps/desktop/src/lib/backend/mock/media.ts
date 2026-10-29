@@ -15,7 +15,7 @@ import {
 import { MB } from '@wirecatch/units';
 import { BackendError } from '../types';
 import { ALREADY_ANSWERED } from './captures';
-import { folderFor } from './data';
+import { typeFolder } from './data';
 import {
   MEDIA_SAMPLES,
   SAMPLE_DURATION_MS,
@@ -62,7 +62,8 @@ export function simulateMediaChoice(
     title: sample.title,
     page_url: page ?? sample.page,
     options,
-    folder: folderFor('video', state.settings),
+    folder: state.folderFor(state.settings.extension.default_queue, 'video'),
+    type_folder: typeFolder('video', state.settings),
     queue: state.settings.extension.default_queue,
     queue_reason: { kind: 'browser_queue' },
     subtitles,
@@ -217,7 +218,8 @@ function addMediaDownload(
 ) {
   const row = state.create(choice.page_url ?? choice.title, {
     ...answeredQueue(choice, selection.queue),
-    folder: selection.folder ?? choice.folder,
+    // Unpicked, the queue answered decides (D94.2), unless the folder was picked when the link was added.
+    folder: selection.folder ?? (choice.type_folder === null ? choice.folder : undefined),
     fileName: nonBlank(selection.file_name) ?? `${choice.title}.${fit.ext}`,
     start: !selection.later,
     size: option.size ?? MEDIA_FALLBACK_SIZE,

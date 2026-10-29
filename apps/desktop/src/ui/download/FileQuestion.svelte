@@ -5,6 +5,7 @@
   import { formatBytes } from '@wirecatch/units';
   import { Button, Callout, textIfCut, tooltip } from '@wirecatch/ui';
   import { earlierNotice, hostOf, linkForDisplay } from '$lib/format';
+  import { folderInQueue } from '$lib/queue-folders';
   import { queueLine } from '$lib/queue-reasons';
   import type { DownloadWindowState } from '$lib/window/download-window.svelte';
   import { enterSubmits } from '$lib/window/keys';
@@ -22,8 +23,10 @@
   // The form starts from the proposal and edits its own copy.
   const proposal = (() => ({ ...capture }))();
   let fileName = $state(proposal.file_name);
-  let folder = $state(proposal.folder);
   let queue = $state<QueueId>(proposal.queue);
+  /** The folder the person picked here; until then the queue's decides (D94.4). */
+  let pickedFolder = $state<string | null>(null);
+  const folder = $derived(pickedFolder ?? folderInQueue(win.queues, queue, proposal));
   /** Why the download goes to the queue shown: the core's reason, or the person's pick (D72.8). */
   const queueReason = $derived(
     queueLine(
@@ -38,13 +41,13 @@
 
   async function changeFolder() {
     const picked = await win.changeFolder(folder);
-    if (picked) folder = picked;
+    if (picked) pickedFolder = picked;
   }
 
   async function answer(later: boolean) {
     if (win.busy) return;
     sending = later ? 'later' : 'now';
-    await win.confirm({ fileName, folder, queue }, later);
+    await win.confirm({ fileName, folder: pickedFolder, queue }, later);
     sending = null;
   }
 </script>
@@ -88,7 +91,7 @@
     <FolderField
       {folder}
       onchoose={() => void changeFolder()}
-      onreset={folder === proposal.folder ? undefined : () => (folder = proposal.folder)}
+      onreset={pickedFolder === null ? undefined : () => (pickedFolder = null)}
     />
 
     <QueueField

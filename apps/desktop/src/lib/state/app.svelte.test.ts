@@ -1,11 +1,11 @@
 import {
   downloadId,
   GLOBAL,
-  MANUAL_QUEUE,
   ownSetting,
   questionId,
   queueId,
   type QueueSettings,
+  newQueueSettings,
 } from '@wirecatch/protocol';
 import { PRODUCT_NAME } from '@wirecatch/product';
 import { describe, expect, it, vi } from 'vitest';
@@ -56,18 +56,7 @@ describe('AppState', () => {
 
   it('makes a new queue with its settings in one step, and a refused one makes nothing', async () => {
     const { app, backend } = await make();
-    const settings = {
-      name: 'Night',
-      description: '',
-      max_concurrent: ownSetting(2),
-      speed_limit: GLOBAL,
-      connections: GLOBAL,
-      proxy: GLOBAL,
-      exceptions: GLOBAL,
-      add_downloads: MANUAL_QUEUE,
-      schedule: null,
-      notify: 'each_download' as const,
-    };
+    const settings = { ...newQueueSettings('Night'), max_concurrent: ownSetting(2) };
     const named = () => app.queues.list.filter((q) => q.settings.name === 'Night');
     vi.spyOn(backend, 'createQueue').mockRejectedValueOnce(new BackendError('Not now.'));
 

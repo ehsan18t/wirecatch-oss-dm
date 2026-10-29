@@ -1,7 +1,5 @@
 import {
   downloadId,
-  GLOBAL,
-  MANUAL_QUEUE,
   ownSetting,
   ownValue,
   type QueueRules,
@@ -10,6 +8,7 @@ import {
   queueId,
   type DownloadSummary,
   type UiEvent,
+  newQueueSettings,
 } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { mockBackend, NOON } from '$lib/testing/setup';
@@ -171,18 +170,7 @@ describe('MockBackend', () => {
 
   it('manages queues and refuses to delete the default one', async () => {
     const { mock } = make();
-    const weekend = {
-      name: 'Weekend',
-      description: '',
-      max_concurrent: ownSetting(2),
-      speed_limit: GLOBAL,
-      connections: GLOBAL,
-      proxy: GLOBAL,
-      exceptions: GLOBAL,
-      add_downloads: MANUAL_QUEUE,
-      schedule: null,
-      notify: 'each_download',
-    } as const;
+    const weekend = { ...newQueueSettings('Weekend'), max_concurrent: ownSetting(2) };
     const q = await mock.createQueue(weekend);
     await mock.updateQueue(q.id, { ...weekend, max_concurrent: ownSetting(5) });
     expect((await mock.listQueues()).find((x) => x.id === q.id)?.settings.max_concurrent).toEqual(
@@ -203,16 +191,8 @@ describe('MockBackend', () => {
       sites: ['example.com'],
     });
     const videos = await mock.createQueue({
-      name: 'Videos',
-      description: '',
-      max_concurrent: GLOBAL,
-      speed_limit: GLOBAL,
-      connections: GLOBAL,
-      proxy: GLOBAL,
-      exceptions: GLOBAL,
+      ...newQueueSettings('Videos'),
       add_downloads: addDownloads(true),
-      schedule: null,
-      notify: 'each_download',
     });
     const link = 'https://cdn.example.com/a.mp4';
     const site = { kind: 'site', value: 'example.com' } as const;

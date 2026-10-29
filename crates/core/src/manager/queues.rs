@@ -39,7 +39,7 @@ impl Manager {
     pub fn create_queue(&self, settings: QueueSettings) -> Result<Queue> {
         let mut state = self.lock_open()?;
         wirecatch_settings::check_queue_count(state.queues.len() + 1)?;
-        let settings = wirecatch_settings::validate_queue(settings)?;
+        let settings = wirecatch_settings::validate_queue(settings, &self.inner.folders)?;
         ensure_name_free(&state, &settings.name, None)?;
         ensure_proxy_saved(&state, &settings)?;
         let queue = Queue {
@@ -56,7 +56,7 @@ impl Manager {
 
     /// Replaces queue `id`'s settings; new limits apply to running downloads at once.
     pub fn update_queue(&self, id: QueueId, settings: QueueSettings) -> Result<()> {
-        let settings = wirecatch_settings::validate_queue(settings)?;
+        let settings = wirecatch_settings::validate_queue(settings, &self.inner.folders)?;
         let mut state = self.lock_open()?;
         ensure_name_free(&state, &settings.name, Some(id))?;
         ensure_proxy_saved(&state, &settings)?;

@@ -12,14 +12,15 @@ use wirecatch_engine::{
 };
 use wirecatch_media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use wirecatch_protocol::app::{
-    AppSettings, DownloadStatus, DownloadSummary, FileExistsQuestion, PendingCapture, Queue,
-    Setting, WhenFileExists,
+    AppSettings, Category, DownloadStatus, DownloadSummary, FileExistsQuestion, PendingCapture,
+    Queue, Setting, WhenFileExists,
 };
 use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::proxy::{ProxyServer, ProxyUse};
 use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
 use wirecatch_queues::schedule::Gate;
+use wirecatch_settings::folders::KnownFolders;
 use wirecatch_settings::proxy::{Logins, SavedProxyServer};
 use wirecatch_sites::local_network::ChosenBy;
 use wirecatch_sites::public_suffix::SuffixList;
@@ -510,6 +511,22 @@ impl State {
             .iter()
             .find(|s| s.queue.id == id)
             .ok_or(CoreError::QueueNotFound(id))
+    }
+
+    /// The folder new downloads of `category` go to in `queue` (D94.2).
+    pub fn folder_for(
+        &self,
+        queue: QueueId,
+        category: Category,
+        folders: &KnownFolders,
+    ) -> Result<PathBuf> {
+        let queue = &self.slot(queue)?.queue.settings;
+        Ok(wirecatch_settings::folder_for(
+            &self.settings,
+            queue,
+            category,
+            folders,
+        )?)
     }
 
     pub fn slot_mut(&mut self, id: QueueId) -> Result<&mut QueueSlot> {

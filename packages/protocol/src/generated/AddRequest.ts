@@ -15,7 +15,7 @@ export type AddRequest = {
    */
   queue: QueueId | null;
   /**
-   * Absolute folder; the category rule decides if absent.
+   * Absolute folder; absent, the queue's folder or the one for the file type decides (D94.2).
    */
   folder: string | null;
   /**
