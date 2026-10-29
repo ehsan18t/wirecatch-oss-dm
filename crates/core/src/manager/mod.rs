@@ -543,15 +543,19 @@ impl Manager {
         self.inner.runtime.spawn(task)
     }
 
-    /// Runs `work` on the manager's runtime and waits for it. A caller that stops waiting (a timeout, a `select!`) leaves it running to the end: a method that changes state in steps across awaits is never left half done (CORE-6).
-    async fn to_the_end<T: Send + 'static>(
-        &self,
-        work: impl Future<Output = Result<T>> + Send + 'static,
-    ) -> Result<T> {
-        match self.spawn(work).await {
-            Ok(done) => done,
-            Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
-            Err(_) => Err(CoreError::Closed),
+    /// Starts `work` on the manager's runtime at once and returns a wait for it. A caller that stops waiting (a timeout, a `select!`) leaves it running to the end: a method that changes state in steps across awaits makes its first change itself, then hands the rest to this, so it is never left half done (CORE-6).
+    fn to_the_end<T, F>(&self, work: F) -> impl Future<Output = Result<T>> + use<T, F>
+    where
+        T: Send + 'static,
+        F: Future<Output = Result<T>> + Send + 'static,
+    {
+        let task = self.spawn(work);
+        async move {
+            match task.await {
+                Ok(done) => done,
+                Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
+                Err(_) => Err(CoreError::Closed),
+            }
         }
     }
 

@@ -309,12 +309,6 @@ impl Manager {
         id: QuestionId,
         answer: CaptureConfirmation,
     ) -> Result<DownloadId> {
-        let manager = self.clone();
-        self.to_the_end(async move { manager.confirm(id, answer).await })
-            .await
-    }
-
-    async fn confirm(&self, id: QuestionId, answer: CaptureConfirmation) -> Result<DownloadId> {
         let pending = {
             let mut state = self.lock_open()?;
             let pending = state
@@ -326,6 +320,18 @@ impl Manager {
             }
             pending
         };
+        let manager = self.clone();
+        self.to_the_end(async move { manager.add_confirmed(id, pending, answer).await })
+            .await
+    }
+
+    /// Adds the confirmed capture `pending`, or puts its question back when it cannot be added.
+    async fn add_confirmed(
+        &self,
+        id: QuestionId,
+        pending: Pending,
+        answer: CaptureConfirmation,
+    ) -> Result<DownloadId> {
         match self.insert_confirmed(&pending, answer).await {
             Ok(row) => {
                 let mut state = self.lock();
