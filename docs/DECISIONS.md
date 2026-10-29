@@ -828,6 +828,9 @@ Decided with the maintainer on 2026-10-29. Clicking a link again while its downl
 Decided with the maintainer on 2026-10-29. It amends D65.4: a notice in the browser about a finished download now offers the system notification's buttons, Open included. A website can still lay a decoy over the notice so a press lands on Open unseen, but Open opens a document, picture, video or audio file directly and anything else, a program, a script or a file of unknown type, only after the shell's own warning (`files::open_download`), which no page can cover. So a decoy can at most open a harmless file.
 
 It also amends D65.1 (D67): "When a download finishes" is a system notification by default again, listed first. A notice in the browser shows only while the browser is the program in front, and a download usually finishes while its own window or another program is; the browser notice stays one choice away. Settings saved with another choice keep it.
+### D91. Settings and Downloads switch at the sidebar's foot
+
+Decided with the maintainer on 2026-10-29. It amends D47: on the settings screen the "Back to downloads" item at the top of the settings list goes, and the foot of the sidebar shows Downloads where the downloads screen shows Settings. One place switches between the two screens, in the docked sidebar, the icon rail and the drawer. Escape and the palette's "Back to downloads" still leave settings.
 
 ## Assumptions (not yet confirmed)
 
