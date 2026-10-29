@@ -20,7 +20,7 @@ use crate::batches::Outcomes;
 use crate::speed;
 
 /// Time between two `DownloadsChanged` events, and between progress samples.
-pub(super) const TICK: Duration = Duration::from_millis(100);
+pub const PROGRESS_TICK: Duration = Duration::from_millis(100);
 /// How often the progress of running downloads is written to the database.
 const SAVE_PROGRESS_EVERY: Duration = Duration::from_secs(2);
 
@@ -39,7 +39,7 @@ pub(super) async fn run(weak: Weak<Inner>, rows_changed: Arc<Notify>, stopped: C
             None => return,
         };
         tokio::select! {
-            () = tokio::time::sleep(TICK) => {}
+            () = tokio::time::sleep(PROGRESS_TICK) => {}
             () = stopped.cancelled() => return,
         }
     }

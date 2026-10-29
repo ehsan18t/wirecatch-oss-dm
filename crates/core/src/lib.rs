@@ -19,7 +19,7 @@ pub use clock::{Clock, ManualClock, Sleep, SystemClock};
 pub use error::{CoreError, Result};
 pub use manager::{
     DEFAULT_CAPTURE_TIMEOUT, DEFAULT_MEDIA_REFRESH_DELAYS, DEFAULT_MEDIA_TIMEOUT,
-    DEFAULT_STOP_TIMEOUT, LinkFrom, Manager, ManagerConfig, PUBLIC_SUFFIX_LIST_URL,
+    DEFAULT_STOP_TIMEOUT, LinkFrom, Manager, ManagerConfig, PROGRESS_TICK, PUBLIC_SUFFIX_LIST_URL,
 };
 pub use proxy::PROXY_TEST_URL;
 pub use wirecatch_addons::manifest::{
