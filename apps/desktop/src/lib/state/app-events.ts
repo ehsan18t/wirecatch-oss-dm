@@ -65,6 +65,8 @@ export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
     confirmation_requested: (e) => app.questions.confirmationRequested(e.data),
     media_choice_requested: (e) => app.questions.mediaChoiceRequested(e.data),
     file_exists_requested: (e) => app.questions.fileExistsRequested(e.data),
+    // About the download windows, which the shell brings forward (D89).
+    capture_repeated: ignore,
     media_analysing: (e) => app.questions.analysing(e.data.id),
     addon_required: (e) => app.questions.addonRequired(e.data.id),
     confirmation_closed: (e) => app.questions.closed(e.data.id),

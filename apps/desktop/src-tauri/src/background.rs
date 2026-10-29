@@ -13,7 +13,7 @@ use wirecatch_core::Manager;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
     AppSettings, AppSettingsPatch, DownloadSummary, NotifyOnFinish, NotifyOnStart, Queue,
-    QueueNotify, QueueReport, UiEvent,
+    QueueNotify, QueueReport, Repeated, UiEvent,
 };
 use wirecatch_protocol::extension::{MediaKind, NoticeKind};
 
@@ -52,6 +52,12 @@ pub async fn forward<R: Runtime>(app: AppHandle<R>, mut events: broadcast::Recei
                     Attention::None => {}
                     Attention::Ask(id) => download_windows::ask(&app, id),
                     Attention::Closed(id) => download_windows::question_closed(&app, id),
+                    Attention::ShowAgain(Repeated::Question(id)) => {
+                        download_windows::show_question(&app, id);
+                    }
+                    Attention::ShowAgain(Repeated::Download(id)) => {
+                        download_windows::show_download(&app, id);
+                    }
                     Attention::ShowMain => crate::window::show_main_window(&app),
                     Attention::ShowBrowserSettings => crate::window::reveal(
                         &app,

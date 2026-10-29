@@ -8,7 +8,8 @@ use std::time::Duration;
 use wirecatch_core::CoreError;
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonState, Category, DownloadStatus, DownloadSummary, FixAction,
-    MediaChoice, MediaSelection, OutputFormat, QualityFallback, UiEvent, VideoQuality, WaitReason,
+    MediaChoice, MediaSelection, OutputFormat, QualityFallback, Repeated, UiEvent, VideoQuality,
+    WaitReason,
 };
 use wirecatch_protocol::extension::{AddAction, MediaKind, NewDownload};
 
@@ -162,6 +163,39 @@ async fn an_hls_capture_becomes_a_choice_and_then_a_file() -> TestResult {
 }
 
 /// A video waiting for its quality whose queue is deleted goes to the default queue, as a waiting download does, rather than failing once it is chosen.
+/// Clicked again while it is read or waits for its quality, a video joins that question and its
+/// window comes to the front (D89); a second click never reads it a second time.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_video_clicked_again_shows_its_question() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    let url = server.url("hls/master.m3u8");
+    h.manager
+        .add_capture(media_capture(&url, MediaKind::Hls, None))
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+
+    let mut again = media_capture(&url, MediaKind::Hls, None);
+    again.handover_id = "a second click".into();
+    h.manager.add_capture(again).await?;
+    let repeated = next_event(&mut ui, "CaptureRepeated", |e| match e {
+        UiEvent::CaptureRepeated(repeated) => Some(*repeated),
+        _ => None,
+    })
+    .await;
+    assert_eq!(repeated, Repeated::Question(choice.id));
+    assert_eq!(h.manager.pending_media_choices().len(), 1);
+
+    // Its download keeps the link, so a click once it runs finds the download (see `again.rs`).
+    h.manager
+        .choose_media(choice.id, select(&choice.options[0].id))
+        .await?;
+    assert_eq!(h.manager.list_downloads()[0].url, url.to_string());
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_choice_whose_queue_is_deleted_goes_to_the_default_queue() -> TestResult {
     let server = FileServer::start().await;

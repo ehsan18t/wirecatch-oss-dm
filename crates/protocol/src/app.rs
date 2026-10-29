@@ -1684,6 +1684,9 @@ pub enum UiEvent {
     MediaChoiceRequested(MediaChoice),
     /// A download found its file already in the folder and asks what to do (D88).
     FileExistsRequested(FileExistsQuestion),
+    /// The browser sent a link that is already a question or a download in progress, which it
+    /// joined instead of starting again: its window comes to the front (D89).
+    CaptureRepeated(Repeated),
     /// A video or stream from the browser was handed over and is read for its qualities
     /// without a window (D50): the desktop tells the person it was added at once, before the
     /// read ends (D67). Its download is not told again when it starts.
@@ -1848,6 +1851,18 @@ pub struct FileExistsAnswer {
     /// Do the same every time: saves [`FileExistsChoice::Replace`] or [`FileExistsChoice::KeepBoth`]
     /// as the setting; ignored with [`FileExistsChoice::Cancel`], which is never remembered.
     pub remember: bool,
+}
+
+/// What a link the browser sent again joined (D89).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
+#[ts(export)]
+pub enum Repeated {
+    /// A question still open: a file waiting for confirmation, or a video being read or
+    /// waiting for its quality.
+    Question(QuestionId),
+    /// A download not finished yet: queued, running or paused.
+    Download(DownloadId),
 }
 
 /// A captured stream or page still being read for its qualities.

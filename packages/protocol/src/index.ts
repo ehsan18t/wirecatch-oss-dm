@@ -143,6 +143,7 @@ export type { RejectCaptureArgs } from './generated/RejectCaptureArgs';
 export type { RemoveAddonArgs } from './generated/RemoveAddonArgs';
 export type { RemoveArgs } from './generated/RemoveArgs';
 export type { ReorderArgs } from './generated/ReorderArgs';
+export type { Repeated } from './generated/Repeated';
 export type { Reply } from './generated/Reply';
 export type { ReportUnreadableEventArgs } from './generated/ReportUnreadableEventArgs';
 export type { ResumeArgs } from './generated/ResumeArgs';

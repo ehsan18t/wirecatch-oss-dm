@@ -253,6 +253,8 @@ export class DownloadWindowState {
     },
     // A window opens for each such question and loads it by its id.
     file_exists_requested: ignore,
+    // The shell brings the window forward (D89).
+    capture_repeated: ignore,
     addon_required: (e) => {
       if (!this.#asking(e.data.id)) return;
       this.addon = e.data.addon;

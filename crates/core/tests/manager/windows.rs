@@ -100,9 +100,23 @@ async fn a_confirmed_file_returns_its_id_and_later_adds_it_paused() -> TestResul
         [] as [wirecatch_protocol::app::PendingCapture; 0]
     );
 
-    // The same link again: the question knows it is in the list already.
-    h.manager
+    // The same link while it waits, paused, joins it rather than asking again (D89).
+    let joined = h
+        .manager
         .add_capture(file_capture(server.url("a.pdf#again").to_string(), "two"))
+        .await
+        .unwrap();
+    assert_eq!(joined.id, Some(id));
+    assert_eq!(
+        h.manager.pending_confirmations(),
+        [] as [wirecatch_protocol::app::PendingCapture; 0]
+    );
+
+    // Once cancelled, the same link is asked about again, and the question knows it is in the
+    // list already.
+    h.manager.cancel(id).unwrap();
+    h.manager
+        .add_capture(file_capture(server.url("a.pdf#again").to_string(), "three"))
         .await
         .unwrap();
     let again = h.manager.pending_confirmations().remove(0);
