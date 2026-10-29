@@ -7,13 +7,13 @@ import { detectBrowser } from '../src/lib/browser-info';
 import {
   cookieStoreIdOf,
   inFlightStore,
-  noticeStore,
+  alertStore,
   toolbarBadge,
 } from '../src/lib/browser/adapters';
 import { asCachedSettings, CACHE_KEY, memoryArea, storageCache } from '../src/lib/cache';
 import { cookieHeader } from '../src/lib/cookies';
 import { baseName, fileNameFromUrl } from '../src/lib/file-types';
-import { asPopupRequest, isNotice, type Notice } from '../src/lib/messages';
+import { asPopupRequest, isAlert, type Alert } from '../src/lib/messages';
 import {
   classifyDisconnect,
   describeProblem,
@@ -346,8 +346,8 @@ describe('cookieStoreIdOf', () => {
   });
 });
 
-describe('notices kept in session storage', () => {
-  const notice: Notice = {
+describe('alerts kept in session storage', () => {
+  const alert: Alert = {
     id: 'd4',
     downloadId: 4,
     untilResumed: true,
@@ -358,24 +358,24 @@ describe('notices kept in session storage', () => {
     at: 5,
   };
 
-  it('reads back only a well-formed notice', () => {
-    expect(isNotice(notice)).toBe(true);
-    expect(isNotice({ ...notice, tone: 'loud' })).toBe(false);
-    expect(isNotice({ tone: 'warning', message: 'No time.' })).toBe(false);
-    expect(isNotice(null)).toBe(false);
+  it('reads back only a well-formed alert', () => {
+    expect(isAlert(alert)).toBe(true);
+    expect(isAlert({ ...alert, tone: 'loud' })).toBe(false);
+    expect(isAlert({ tone: 'warning', message: 'No time.' })).toBe(false);
+    expect(isAlert(null)).toBe(false);
   });
 
-  it('saves the notices, clears them, and drops those it cannot read', async () => {
+  it('saves the alerts, clears them, and drops those it cannot read', async () => {
     fakeBrowser.reset();
-    const store = noticeStore();
+    const store = alertStore();
     if (store === undefined) throw new Error('no session storage');
     expect(await store.load()).toEqual([]);
-    await store.save([notice]);
-    expect(await store.load()).toEqual([notice]);
+    await store.save([alert]);
+    expect(await store.load()).toEqual([alert]);
     await store.save([]);
     expect(await store.load()).toEqual([]);
-    await fakeBrowser.storage.session.set({ 'wirecatch.notices': [{ tone: 'loud' }, notice] });
-    expect(await store.load()).toEqual([notice]);
+    await fakeBrowser.storage.session.set({ 'wirecatch.alerts': [{ tone: 'loud' }, alert] });
+    expect(await store.load()).toEqual([alert]);
   });
 });
 

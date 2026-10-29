@@ -16,7 +16,7 @@ use wirecatch_desktop_lib::tray::{Shell, TrayAction, perform};
 use wirecatch_engine::units::{KIB, KIB_USIZE, MIB_USIZE};
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus,
-    DownloadSummary, FinishNotice, MediaSelection, Question, Queue, QueueNotify, QueueSettings,
+    DownloadSummary, MediaSelection, NotifyOnFinish, Question, Queue, QueueNotify, QueueSettings,
     Setting, Theme,
 };
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
@@ -113,7 +113,7 @@ fn change_settings_and_make_a_queue(manager: &Manager) -> TestResult<Queue> {
         AppSettingsPatch {
             theme: Some(Theme::Dark),
             max_concurrent_downloads: Some(7),
-            finish_notice: Some(FinishNotice::Window),
+            notify_on_finish: Some(NotifyOnFinish::Window),
             ..AppSettingsPatch::default()
         },
     )?;
@@ -255,7 +255,7 @@ async fn commands_drive_the_core_and_state_survives_a_restart() -> TestResult {
     let settings = api::get_settings(&manager);
     assert_eq!(settings.theme, Theme::Dark);
     assert_eq!(settings.max_concurrent_downloads, 7);
-    assert_eq!(settings.finish_notice, FinishNotice::Window);
+    assert_eq!(settings.notify_on_finish, NotifyOnFinish::Window);
     let queues = api::list_queues(&manager);
     let night_again = queues
         .iter()

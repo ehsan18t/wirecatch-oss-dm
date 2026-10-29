@@ -1,9 +1,9 @@
 /** What the hub is given: the connection, browser APIs and stores, and the shapes it hands back. */
-import type { BrowserNote, ExtensionSettings } from '@wirecatch/protocol';
+import type { BrowserNotice, ExtensionSettings } from '@wirecatch/protocol';
 import type { DownloadControl } from '../capture/handover';
 import type { CookieContext, CookieStore } from '../cookies';
 import type { MediaSendResult, MediaView } from '../media/center';
-import type { Notice } from '../messages';
+import type { Alert } from '../messages';
 import type { NativeClient } from '../native/client';
 import { REQUEST_TIMEOUT_MS, START_WAIT_MS, WITHDRAW_TIMEOUT_MS } from '../native/timing';
 
@@ -41,13 +41,13 @@ export interface InFlightStore {
 }
 
 /**
- * The notice the popup and the badge show, kept in `storage.session` next to the
+ * The alert the popup and the badge show, kept in `storage.session` next to the
  * in-flight downloads, so one about a download left paused outlives a background
  * script the browser stopped.
  */
-export interface NoticeStore {
-  load: () => Promise<Notice[]>;
-  save: (notices: Notice[]) => Promise<void>;
+export interface AlertStore {
+  load: () => Promise<Alert[]>;
+  save: (alerts: Alert[]) => Promise<void>;
 }
 
 export interface BrowserDownloads extends DownloadControl {
@@ -69,7 +69,7 @@ export interface HubDeps {
   hasSiteAccess: (url: string) => Promise<boolean>;
   userAgent: string | null;
   inFlight?: InFlightStore;
-  notice?: NoticeStore;
+  alert?: AlertStore;
   newHandoverId?: () => string;
   badge?: Badge;
   now?: () => number;
@@ -79,8 +79,8 @@ export interface HubDeps {
   mediaButtonSetting?: { publish: (on: boolean) => Promise<void> };
   /** The media lists the popup shows (`MediaCenter`); without it the popup's media commands fail. */
   media?: MediaCommands;
-  /** Shows the app's notes in the tab the person is looking at (`NoteCenter`, D65); without it, the app shows them in system notifications. */
-  notes?: { show: (note: BrowserNote) => Promise<void> };
+  /** Shows the app's notices in the tab the person is looking at (`NoticeCenter`, D65); without it, the app shows them in system notifications. */
+  notices?: { show: (notice: BrowserNotice) => Promise<void> };
 }
 
 /** What the popup's media commands need from the background's media side. */

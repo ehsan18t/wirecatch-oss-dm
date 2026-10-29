@@ -50,8 +50,8 @@ describe('event handler tables', () => {
       window_requested: vi.fn(),
       browser_settings_requested: vi.fn(),
       queue_finished: vi.fn(),
-      note_shown: vi.fn(),
-      note_pressed: vi.fn(),
+      notice_shown: vi.fn(),
+      notice_pressed: vi.fn(),
       media_captured: vi.fn(),
     };
     dispatch(handlers, STORAGE);

@@ -1,4 +1,4 @@
-//! What the tray and the notices need to know about downloads: how many run, how fast, and
+//! What the tray and the notifications need to know about downloads: how many run, how fast, and
 //! which just finished or failed.
 //! Kept up to date from the core's events, so nothing is polled.
 

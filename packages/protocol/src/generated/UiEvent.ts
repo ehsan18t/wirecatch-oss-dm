@@ -5,8 +5,8 @@ import type { DownloadId } from './DownloadId';
 import type { DownloadSummary } from './DownloadSummary';
 import type { ImportSummary } from './ImportSummary';
 import type { MediaChoice } from './MediaChoice';
-import type { NoteId } from './NoteId';
-import type { NotePressed } from './NotePressed';
+import type { NoticeId } from './NoticeId';
+import type { NoticePressed } from './NoticePressed';
 import type { PendingCapture } from './PendingCapture';
 import type { ProxyServer } from './ProxyServer';
 import type { QuestionId } from './QuestionId';
@@ -88,6 +88,6 @@ export type UiEvent =
     }
   | { type: 'window_requested' }
   | { type: 'browser_settings_requested' }
-  | { type: 'note_shown'; data: NoteId }
-  | { type: 'note_pressed'; data: NotePressed }
+  | { type: 'notice_shown'; data: NoticeId }
+  | { type: 'notice_pressed'; data: NoticePressed }
   | { type: 'queue_finished'; data: QueueReport };

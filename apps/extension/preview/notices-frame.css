@@ -1,0 +1,3 @@
+/* The notices preview's frame: the notices page's own stylesheet, so the preview shows what the extension does. */
+@import '../src/entrypoints/notices/style.css';
+@source '../src/ui/notices';

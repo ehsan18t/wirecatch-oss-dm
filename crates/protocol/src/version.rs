@@ -137,8 +137,8 @@ impl CallMethod {
         CallMethod::GetBrowserControls,
         CallMethod::UpdateBrowserControls,
         CallMethod::ShowBrowserSettings,
-        CallMethod::NoteShown,
-        CallMethod::NotePressed,
+        CallMethod::NoticeShown,
+        CallMethod::NoticePressed,
     ];
 
     /// The protocol version that added the call, or `None` for a method this build does not
@@ -159,8 +159,8 @@ impl CallMethod {
             CallMethod::GetBrowserControls
             | CallMethod::UpdateBrowserControls
             | CallMethod::ShowBrowserSettings
-            | CallMethod::NoteShown
-            | CallMethod::NotePressed => Some(2),
+            | CallMethod::NoticeShown
+            | CallMethod::NoticePressed => Some(2),
             CallMethod::Unknown => None,
         }
     }
@@ -178,7 +178,7 @@ impl EventKind {
         EventKind::ExtensionSettingsChanged,
         EventKind::QueuesChanged,
         EventKind::BrowserControlsChanged,
-        EventKind::NoteRequested,
+        EventKind::NoticeRequested,
     ];
 
     /// The protocol version that added the event. The app sends it only on connections that
@@ -187,7 +187,7 @@ impl EventKind {
     pub fn since(self) -> u32 {
         match self {
             EventKind::ExtensionSettingsChanged | EventKind::QueuesChanged => 1,
-            EventKind::BrowserControlsChanged | EventKind::NoteRequested => 2,
+            EventKind::BrowserControlsChanged | EventKind::NoticeRequested => 2,
         }
     }
 }
@@ -536,7 +536,7 @@ mod tests {
     /// for connections that predate it (D32.6): decide which, then update this list.
     #[test]
     fn the_values_of_enums_inside_messages_are_settled() {
-        use crate::extension::{AddAction, CaptureSource, MediaKind, NoteKind, WithdrawOutcome};
+        use crate::extension::{AddAction, CaptureSource, MediaKind, NoticeKind, WithdrawOutcome};
         use crate::wire::ClientKind;
         use ts_rs::TS;
 
@@ -547,7 +547,7 @@ mod tests {
             ("CaptureSource", CaptureSource::inline(&cfg)),
             ("AddAction", AddAction::inline(&cfg)),
             ("WithdrawOutcome", WithdrawOutcome::inline(&cfg)),
-            ("NoteKind", NoteKind::inline(&cfg)),
+            ("NoticeKind", NoticeKind::inline(&cfg)),
         ];
         let settled = [
             ("ClientKind", r#""extension" | "bridge" | "cli""#),
@@ -564,7 +564,7 @@ mod tests {
                 "WithdrawOutcome",
                 r#""withdrawn" | "not_found" | "already_started""#,
             ),
-            ("NoteKind", r#""started" | "finished" | "failed""#),
+            ("NoticeKind", r#""started" | "finished" | "failed""#),
         ];
         for ((name, values), (settled_name, settled_values)) in enums.iter().zip(settled) {
             assert_eq!((name, values.as_str()), (&settled_name, settled_values));

@@ -10,10 +10,10 @@ use std::path::PathBuf;
 
 use wirecatch_protocol::app::{
     Accent, AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
-    DEFAULT_MAX_CONCURRENT_DOWNLOADS, FinishNotice, FinishNoticeTime, MAX_CONCURRENT_DOWNLOADS,
-    MAX_CONNECTIONS_PER_DOWNLOAD, MAX_QUEUE_DESCRIPTION_CHARS, MediaDefaults, OutputDefaults,
-    PortablePath, Queue, QueueSettings, QueueStatus, Setting, StartNotice, StartNoticeTime, Theme,
-    VideoQuality,
+    DEFAULT_MAX_CONCURRENT_DOWNLOADS, FinishNoticeTime, MAX_CONCURRENT_DOWNLOADS,
+    MAX_CONNECTIONS_PER_DOWNLOAD, MAX_QUEUE_DESCRIPTION_CHARS, MediaDefaults, NotifyOnFinish,
+    NotifyOnStart, OutputDefaults, PortablePath, Queue, QueueSettings, QueueStatus, Setting,
+    StartNoticeTime, Theme, VideoQuality,
 };
 use wirecatch_protocol::extension::{
     ExtensionSettings, ExtensionSettingsPatch, MAX_IGNORED_SITES, MAX_SITE_CHARS, MAX_VIDEO_SITES,
@@ -112,9 +112,9 @@ pub fn default_settings() -> AppSettings {
         accent: Accent::Cyan,
         start_with_system: false,
         close_to_tray: true,
-        finish_notice: FinishNotice::Browser,
+        notify_on_finish: NotifyOnFinish::Browser,
         finish_notice_time: FinishNoticeTime::EightSeconds,
-        start_notice: StartNotice::Browser,
+        notify_on_start: NotifyOnStart::Browser,
         start_notice_time: StartNoticeTime::ThreeSeconds,
         notify_during_do_not_disturb: true,
         auto_update_addons: true,

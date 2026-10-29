@@ -17,7 +17,7 @@ import type { AppSettingsPatch } from './AppSettingsPatch';
 import type { BrowserControls } from './BrowserControls';
 import type { BrowserControlsPatch } from './BrowserControlsPatch';
 import type { BrowserInfo } from './BrowserInfo';
-import type { BrowserNote } from './BrowserNote';
+import type { BrowserNotice } from './BrowserNotice';
 import type { ButtonArea } from './ButtonArea';
 import type { Call } from './Call';
 import type { CancelAddonOperationArgs } from './CancelAddonOperationArgs';
@@ -46,7 +46,6 @@ import type { Event } from './Event';
 import type { ExportSettingsArgs } from './ExportSettingsArgs';
 import type { ExtensionSettings } from './ExtensionSettings';
 import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
-import type { FinishNotice } from './FinishNotice';
 import type { FinishNoticeTime } from './FinishNoticeTime';
 import type { FinishedGroup } from './FinishedGroup';
 import type { FinishedList } from './FinishedList';
@@ -82,10 +81,12 @@ import type { Message } from './Message';
 import type { MoveToQueueArgs } from './MoveToQueueArgs';
 import type { NameSyntax } from './NameSyntax';
 import type { NewDownload } from './NewDownload';
-import type { NoteId } from './NoteId';
-import type { NoteKind } from './NoteKind';
-import type { NotePressed } from './NotePressed';
-import type { NoteShown } from './NoteShown';
+import type { NoticeId } from './NoticeId';
+import type { NoticeKind } from './NoticeKind';
+import type { NoticePressed } from './NoticePressed';
+import type { NoticeShown } from './NoticeShown';
+import type { NotifyOnFinish } from './NotifyOnFinish';
+import type { NotifyOnStart } from './NotifyOnStart';
 import type { OpenFileArgs } from './OpenFileArgs';
 import type { OpenFolderArgs } from './OpenFolderArgs';
 import type { Outcome } from './Outcome';
@@ -144,7 +145,6 @@ import type { SettingsFileProxy } from './SettingsFileProxy';
 import type { SettingsFileQueue } from './SettingsFileQueue';
 import type { ShowDownloadDetailsArgs } from './ShowDownloadDetailsArgs';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
-import type { StartNotice } from './StartNotice';
 import type { StartNoticeTime } from './StartNoticeTime';
 import type { StartQueueNowArgs } from './StartQueueNowArgs';
 import type { StartupNotice } from './StartupNotice';
@@ -314,9 +314,9 @@ export function isAppSettings(value: unknown): value is AppSettings {
     isAccent(value1['accent']) &&
     typeof value1['start_with_system'] === 'boolean' &&
     typeof value1['close_to_tray'] === 'boolean' &&
-    isFinishNotice(value1['finish_notice']) &&
+    isNotifyOnFinish(value1['notify_on_finish']) &&
     isFinishNoticeTime(value1['finish_notice_time']) &&
-    isStartNotice(value1['start_notice']) &&
+    isNotifyOnStart(value1['notify_on_start']) &&
     isStartNoticeTime(value1['start_notice_time']) &&
     typeof value1['notify_during_do_not_disturb'] === 'boolean' &&
     typeof value1['auto_update_addons'] === 'boolean' &&
@@ -346,10 +346,10 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
     (value1['start_with_system'] === undefined ||
       typeof value1['start_with_system'] === 'boolean') &&
     (value1['close_to_tray'] === undefined || typeof value1['close_to_tray'] === 'boolean') &&
-    (value1['finish_notice'] === undefined || isFinishNotice(value1['finish_notice'])) &&
+    (value1['notify_on_finish'] === undefined || isNotifyOnFinish(value1['notify_on_finish'])) &&
     (value1['finish_notice_time'] === undefined ||
       isFinishNoticeTime(value1['finish_notice_time'])) &&
-    (value1['start_notice'] === undefined || isStartNotice(value1['start_notice'])) &&
+    (value1['notify_on_start'] === undefined || isNotifyOnStart(value1['notify_on_start'])) &&
     (value1['start_notice_time'] === undefined || isStartNoticeTime(value1['start_notice_time'])) &&
     (value1['notify_during_do_not_disturb'] === undefined ||
       typeof value1['notify_during_do_not_disturb'] === 'boolean') &&
@@ -394,12 +394,12 @@ export function isBrowserInfo(value: unknown): value is BrowserInfo {
     (typeof value1['version'] === 'string' || value1['version'] === null))(value);
 }
 
-/** Whether `value` has the shape of a {@link BrowserNote}; fields it does not name are not checked. */
-export function isBrowserNote(value: unknown): value is BrowserNote {
+/** Whether `value` has the shape of a {@link BrowserNotice}; fields it does not name are not checked. */
+export function isBrowserNotice(value: unknown): value is BrowserNotice {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
-    isNoteId(value1['id']) &&
-    isNoteKind(value1['kind']) &&
+    isNoticeId(value1['id']) &&
+    isNoticeKind(value1['kind']) &&
     typeof value1['title'] === 'string' &&
     typeof value1['body'] === 'string' &&
     isArrayOf(value1['buttons'], (value2: unknown) => typeof value2 === 'string') &&
@@ -449,13 +449,13 @@ export function isCall(value: unknown): value is Call {
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['method'] === 'show_browser_settings')(value) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) && value1['method'] === 'note_shown' && isNoteShown(value1['params']))(
+      isRecord(value1) && value1['method'] === 'notice_shown' && isNoticeShown(value1['params']))(
       value,
     ) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) && value1['method'] === 'note_pressed' && isNotePressed(value1['params']))(
-      value,
-    )
+      isRecord(value1) &&
+      value1['method'] === 'notice_pressed' &&
+      isNoticePressed(value1['params']))(value)
   );
 }
 
@@ -662,7 +662,7 @@ export function isEvent(value: unknown): value is Event {
       value1['type'] === 'browser_controls_changed' &&
       isBrowserControls(value1['data']))(value) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) && value1['type'] === 'note_requested' && isBrowserNote(value1['data']))(
+      isRecord(value1) && value1['type'] === 'notice_requested' && isBrowserNotice(value1['data']))(
       value,
     )
   );
@@ -730,13 +730,6 @@ export function isExtensionSettingsPatch(value: unknown): value is ExtensionSett
     (value1['private_windows'] === undefined ||
       typeof value1['private_windows'] === 'boolean' ||
       value1['private_windows'] === null))(value);
-}
-
-/** Whether `value` has the shape of a {@link FinishNotice}; fields it does not name are not checked. */
-export function isFinishNotice(value: unknown): value is FinishNotice {
-  return (
-    value === 'notification' || value === 'browser' || value === 'window' || value === 'nothing'
-  );
 }
 
 /** Whether `value` has the shape of a {@link FinishNoticeTime}; fields it does not name are not checked. */
@@ -1069,25 +1062,37 @@ export function isNewDownload(value: unknown): value is NewDownload {
     (value1['media'] === undefined || isMediaHint(value1['media'])))(value);
 }
 
-/** Whether `value` has the shape of a {@link NoteId}; fields it does not name are not checked. */
-export function isNoteId(value: unknown): value is NoteId {
+/** Whether `value` has the shape of a {@link NoticeId}; fields it does not name are not checked. */
+export function isNoticeId(value: unknown): value is NoticeId {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
-/** Whether `value` has the shape of a {@link NoteKind}; fields it does not name are not checked. */
-export function isNoteKind(value: unknown): value is NoteKind {
+/** Whether `value` has the shape of a {@link NoticeKind}; fields it does not name are not checked. */
+export function isNoticeKind(value: unknown): value is NoticeKind {
   return value === 'started' || value === 'finished' || value === 'failed';
 }
 
-/** Whether `value` has the shape of a {@link NotePressed}; fields it does not name are not checked. */
-export function isNotePressed(value: unknown): value is NotePressed {
+/** Whether `value` has the shape of a {@link NoticePressed}; fields it does not name are not checked. */
+export function isNoticePressed(value: unknown): value is NoticePressed {
   return ((value1: unknown): boolean =>
-    isRecord(value1) && isNoteId(value1['id']) && typeof value1['button'] === 'number')(value);
+    isRecord(value1) && isNoticeId(value1['id']) && typeof value1['button'] === 'number')(value);
 }
 
-/** Whether `value` has the shape of a {@link NoteShown}; fields it does not name are not checked. */
-export function isNoteShown(value: unknown): value is NoteShown {
-  return ((value1: unknown): boolean => isRecord(value1) && isNoteId(value1['id']))(value);
+/** Whether `value` has the shape of a {@link NoticeShown}; fields it does not name are not checked. */
+export function isNoticeShown(value: unknown): value is NoticeShown {
+  return ((value1: unknown): boolean => isRecord(value1) && isNoticeId(value1['id']))(value);
+}
+
+/** Whether `value` has the shape of a {@link NotifyOnFinish}; fields it does not name are not checked. */
+export function isNotifyOnFinish(value: unknown): value is NotifyOnFinish {
+  return (
+    value === 'notification' || value === 'browser' || value === 'window' || value === 'nothing'
+  );
+}
+
+/** Whether `value` has the shape of a {@link NotifyOnStart}; fields it does not name are not checked. */
+export function isNotifyOnStart(value: unknown): value is NotifyOnStart {
+  return value === 'browser' || value === 'nothing';
 }
 
 /** Whether `value` has the shape of a {@link OpenFileArgs}; fields it does not name are not checked. */
@@ -1650,11 +1655,6 @@ export function isShowProgressWindowArgs(value: unknown): value is ShowProgressW
   return ((value1: unknown): boolean => isRecord(value1) && isDownloadId(value1['id']))(value);
 }
 
-/** Whether `value` has the shape of a {@link StartNotice}; fields it does not name are not checked. */
-export function isStartNotice(value: unknown): value is StartNotice {
-  return value === 'browser' || value === 'nothing';
-}
-
 /** Whether `value` has the shape of a {@link StartNoticeTime}; fields it does not name are not checked. */
 export function isStartNoticeTime(value: unknown): value is StartNoticeTime {
   return (
@@ -1810,9 +1810,9 @@ export function isUiEvent(value: unknown): value is UiEvent {
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'browser_settings_requested')(value) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) && value1['type'] === 'note_shown' && isNoteId(value1['data']))(value) ||
+      isRecord(value1) && value1['type'] === 'notice_shown' && isNoticeId(value1['data']))(value) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) && value1['type'] === 'note_pressed' && isNotePressed(value1['data']))(
+      isRecord(value1) && value1['type'] === 'notice_pressed' && isNoticePressed(value1['data']))(
       value,
     ) ||
     ((value1: unknown): boolean =>

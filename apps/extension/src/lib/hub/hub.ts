@@ -4,7 +4,7 @@ import {
   type Call,
   type Event,
   type ExtensionSettings,
-  type NoteId,
+  type NoticeId,
   type Outcome,
 } from '@wirecatch/protocol';
 import { candidateFromItem, type DownloadItemLike } from '../capture/candidate';
@@ -19,7 +19,7 @@ import { cookieStoreOf, isCrossSite, type CookieContext } from '../cookies';
 import { fallback, log } from '../diag/log';
 import { fileNameFromUrl } from '../file-types';
 import type { MediaRequest, MediaSendResult } from '../media/center';
-import type { Notice, PopupCommand, Snapshot } from '../messages';
+import type { Alert, PopupCommand, Snapshot } from '../messages';
 import type { NativeClient } from '../native/client';
 import type { ConnectionStatus } from '../native/status';
 import { refererFor } from '../referrer';
@@ -33,7 +33,7 @@ import {
   type MenuTab,
 } from './deps';
 import { planMenuClick } from './menu';
-import { NoticeBoard } from './notice-board';
+import { AlertBoard } from './alert-board';
 import {
   BROWSER_DOWNLOAD_FAILED,
   MEDIA_NO_SITE_ACCESS,
@@ -42,7 +42,7 @@ import {
   NO_SITE_ACCESS,
   mediaAnswer,
   menuNotTaken,
-} from './notices';
+} from './alerts';
 import { Popups, type PopupChannel } from './popups';
 import { recoverHandover } from './recovery';
 import { KnownSettings } from './settings';
@@ -64,7 +64,7 @@ export class Hub {
   readonly #inFlight = new Map<number, string | null>();
   readonly #ready: Promise<void>;
   #markReady: () => void = () => undefined;
-  readonly #notices: NoticeBoard;
+  readonly #alerts: AlertBoard;
 
   constructor(deps: HubDeps) {
     this.#deps = deps;
@@ -72,9 +72,9 @@ export class Hub {
     const timing = hubTiming(deps.timing);
     this.#settings = new KnownSettings(deps, () => this.#publish());
     this.#app = new AppCalls(deps.client, timing, this.#settings, deps.userAgent);
-    this.#notices = new NoticeBoard({
+    this.#alerts = new AlertBoard({
       now: this.#now,
-      store: deps.notice,
+      store: deps.alert,
       changed: () => this.#publish(),
       readCopy: (id) => readBrowserCopy(deps.downloads, id),
     });
@@ -112,7 +112,7 @@ export class Hub {
         .catch(
           fallback('capture', 'Could not read the downloads an earlier run left paused', []),
         ) ?? Promise.resolve([]),
-      this.#notices.load(),
+      this.#alerts.load(),
     ]);
     this.#settings.loaded(cached);
     if (cached?.appClosed !== true) this.#client.start();
@@ -126,7 +126,7 @@ export class Hub {
     return {
       status,
       ...this.#settings.view(status.state === 'connected'),
-      notices: [...this.#notices.current],
+      alerts: [...this.#alerts.current],
     };
   }
 
@@ -156,7 +156,7 @@ export class Hub {
       const name = candidate.fileName ?? fileNameFromUrl(candidate.url) ?? 'A download';
 
       if (!(await this.#siteAccess(candidate.url))) {
-        this.#notices.warn(`${name} stayed in the browser. ${NO_SITE_ACCESS}`);
+        this.#alerts.warn(`${name} stayed in the browser. ${NO_SITE_ACCESS}`);
         return null;
       }
 
@@ -176,7 +176,7 @@ export class Hub {
           userAgent: this.#deps.userAgent,
         },
       );
-      this.#notices.handover(result, name, item.id);
+      this.#alerts.handover(result, name, item.id);
       return result;
     } finally {
       this.#inFlight.delete(item.id);
@@ -195,7 +195,7 @@ export class Hub {
       case 'failed':
         return 'failed';
       case 'private_window':
-        this.#notices.warn(MENU_PRIVATE_WINDOW);
+        this.#alerts.warn(MENU_PRIVATE_WINDOW);
         return 'private_window';
       case 'browser':
         return this.#browserFallback(plan.url, plan.message);
@@ -239,7 +239,7 @@ export class Hub {
     if (result.taken) return 'handed_over';
     if (!result.uncertain) return this.#browserFallback(url, menuNotTaken(name, result.detail));
     const fallback = await this.#browserFallback(url, null);
-    if (fallback === 'browser') this.#notices.uncertain(handoverId, name, null);
+    if (fallback === 'browser') this.#alerts.uncertain(handoverId, name, null);
     return fallback;
   }
 
@@ -294,11 +294,11 @@ export class Hub {
   async #browserFallback(url: string, message: string | null): Promise<'browser' | 'failed'> {
     try {
       await this.#deps.downloads.start(url);
-      if (message !== null) this.#notices.warn(message);
+      if (message !== null) this.#alerts.warn(message);
       return 'browser';
     } catch (error) {
       log.error('hub', 'The browser could not start the download either', error);
-      this.#notices.error(BROWSER_DOWNLOAD_FAILED);
+      this.#alerts.error(BROWSER_DOWNLOAD_FAILED);
       return 'failed';
     }
   }
@@ -370,7 +370,7 @@ export class Hub {
       // The app may need connecting, or starting, first: this is the handover the person started.
       withdraw: (handoverId) => this.#app.withdraw(handoverId, true),
     });
-    this.#notices.recovered(recovered, entry.id);
+    this.#alerts.recovered(recovered, entry.id);
   }
 
   /** Runs a popup command; resolves with a sentence to show when there is one. */
@@ -392,8 +392,8 @@ export class Hub {
       case 'reconnect':
         this.#client.reconnectNow();
         return;
-      case 'dismiss_notice':
-        this.#notices.dismiss(command.id);
+      case 'dismiss_alert':
+        this.#alerts.dismiss(command.id);
         return;
     }
   }
@@ -420,20 +420,20 @@ export class Hub {
       case 'browser_controls_changed':
         this.#settings.adoptControls(event.data);
         return;
-      case 'note_requested':
-        void this.#deps.notes?.show(event.data);
+      case 'notice_requested':
+        void this.#deps.notices?.show(event.data);
         return;
     }
   }
 
-  /** Tells the app a note showed in the tab the person is looking at (D65). */
-  noteShown(id: NoteId): Promise<void> {
-    return this.#app.noteShown(id);
+  /** Tells the app a notice showed in the tab the person is looking at (D65). */
+  noticeShown(id: NoticeId): Promise<void> {
+    return this.#app.noticeShown(id);
   }
 
-  /** Tells the app the person pressed one of a note's buttons (D65). */
-  notePressed(id: NoteId, button: number): Promise<void> {
-    return this.#app.notePressed(id, button);
+  /** Tells the app the person pressed one of a notice's buttons (D65). */
+  noticePressed(id: NoticeId, button: number): Promise<void> {
+    return this.#app.noticePressed(id, button);
   }
 
   /**
@@ -448,7 +448,7 @@ export class Hub {
       if (reply.type !== 'download_added') return;
     }
     const name = call.params.suggested_name ?? fileNameFromUrl(call.params.url) ?? 'A download';
-    this.#notices.confirmedLate(call.params.handover_id, name, outcome !== null);
+    this.#alerts.confirmedLate(call.params.handover_id, name, outcome !== null);
   }
 
   /** The app's settings, or the session copy when the app is not connected; null before either is known. */
@@ -469,14 +469,14 @@ export class Hub {
     return settings === undefined || takesPrivateWindows(settings);
   }
 
-  /** The browser reports a download running or finished, so a notice asking to resume it is done. */
+  /** The browser reports a download running or finished, so a alert asking to resume it is done. */
   onDownloadMoved(downloadId: number): void {
-    this.#notices.downloadMoved(downloadId);
+    this.#alerts.downloadMoved(downloadId);
   }
 
   /** Shows a message in the popup (and the badge), for answers that have nowhere else to go. */
-  notify(tone: Notice['tone'], message: string): void {
-    this.#notices.notify(tone, message);
+  notify(tone: Alert['tone'], message: string): void {
+    this.#alerts.notify(tone, message);
   }
 
   #publish(): void {
@@ -490,7 +490,7 @@ export class Hub {
     if (badge === undefined) return;
     if (snapshot.status.state === 'unavailable') {
       badge.set('!', 'Wirecatch is not connected. Click for details.');
-    } else if (snapshot.notices.length > 0) {
+    } else if (snapshot.alerts.length > 0) {
       badge.set('!', 'Wirecatch has alerts for you. Click to see them.');
     } else {
       badge.set('', 'Wirecatch');

@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager as _, Runtime};
 use tauri_plugin_updater::{Update, UpdaterExt as _};
 use wirecatch_core::UpdaterProxy;
 
-use crate::notices::Notice;
+use crate::notifications::Notification;
 
 /// How long after start the first check waits, so it never competes with startup.
 pub const FIRST_CHECK_AFTER: Duration = Duration::from_secs(60);
@@ -73,11 +73,11 @@ pub async fn check_and_download<R: Runtime>(app: &AppHandle<R>) -> Result<Option
 
 /// The notification that an update is downloaded, naming the running app. It is news, so it
 /// waits for the person to finish what Do Not Disturb is for (D64).
-fn update_ready_notice(version: &str) -> Notice {
+fn update_ready_notice(version: &str) -> Notification {
     let name = crate::host::CHANNEL.name();
-    Notice {
+    Notification {
         important: false,
-        ..crate::system_notices::plain(
+        ..crate::system_notifications::plain(
             format!("{name} {version} is ready"),
             format!("It installs the next time you quit {name}."),
         )
@@ -92,7 +92,7 @@ pub async fn keep_checking<R: Runtime>(app: AppHandle<R>) {
         if waiting.is_none() {
             match check_and_download(&app).await {
                 Ok(Some(version)) => {
-                    crate::system_notices::show(&app, update_ready_notice(&version));
+                    crate::system_notifications::show(&app, update_ready_notice(&version));
                 }
                 Ok(None) => {}
                 Err(e) => tracing::warn!("could not check for updates: {e}"),
@@ -123,14 +123,14 @@ mod tests {
     #[test]
     fn the_update_notice_names_the_running_app() {
         let name = crate::host::CHANNEL.name();
-        let notice = update_ready_notice("1.2.3");
+        let notification = update_ready_notice("1.2.3");
         assert_eq!(
-            (notice.title, notice.body),
+            (notification.title, notification.body),
             (
                 format!("{name} 1.2.3 is ready"),
                 format!("It installs the next time you quit {name}.")
             )
         );
-        assert!(!notice.important, "news waits out Do Not Disturb");
+        assert!(!notification.important, "news waits out Do Not Disturb");
     }
 }

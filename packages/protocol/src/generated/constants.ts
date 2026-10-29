@@ -45,11 +45,11 @@ export const UNKNOWN_REQUEST_ID = 0;
 export const BRIDGE_START_BUDGET_MS = 5000;
 
 /**
- * How long the app waits, in milliseconds, for a browser to say it showed a note
- * ([`Call::NoteShown`]) before it shows the system notification instead (D65). A browser
- * gives no note that waited longer for its frame, since the person was told by then.
+ * How long the app waits, in milliseconds, for a browser to say it showed a notice
+ * ([`Call::NoticeShown`]) before it shows the system notification instead (D65). A browser
+ * gives no notice that waited longer for its frame, since the person was told by then.
  */
-export const NOTE_ANSWER_WAIT_MS = 1000;
+export const NOTICE_ANSWER_WAIT_MS = 1000;
 
 /**
  * Largest message body in bytes. Browsers refuse messages from a native host larger
@@ -510,8 +510,8 @@ export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
   get_extension_settings: 1,
   hello: 1,
   list_queues: 1,
-  note_pressed: 2,
-  note_shown: 2,
+  notice_pressed: 2,
+  notice_shown: 2,
   pause_all: 1,
   resume_all: 1,
   show_browser_settings: 2,
@@ -527,7 +527,7 @@ export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
 export const EVENT_SINCE: Readonly<Record<Event['type'], number>> = {
   browser_controls_changed: 2,
   extension_settings_changed: 1,
-  note_requested: 2,
+  notice_requested: 2,
   queues_changed: 1,
 };
 

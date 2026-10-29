@@ -3,7 +3,7 @@ import type {
   Call,
   ExtensionSettings,
   NewDownload,
-  NoteId,
+  NoticeId,
   Reply,
   WithdrawOutcome,
 } from '@wirecatch/protocol';
@@ -31,13 +31,13 @@ export type AppCommand = Extract<
 /** The popup's commands the background carries out itself; the app carries out the rest (`AppCalls.run`). */
 export type LocalCommand = Extract<
   PopupCommand,
-  { type: 'watch_media' | 'download_media' | 'reconnect' | 'dismiss_notice' }
+  { type: 'watch_media' | 'download_media' | 'reconnect' | 'dismiss_alert' }
 >;
 const LOCAL_COMMANDS: ReadonlySet<PopupCommand['type']> = new Set<LocalCommand['type']>([
   'watch_media',
   'download_media',
   'reconnect',
-  'dismiss_notice',
+  'dismiss_alert',
 ]);
 export const isLocalCommand = (command: PopupCommand): command is LocalCommand =>
   LOCAL_COMMANDS.has(command.type);
@@ -156,17 +156,17 @@ export class AppCalls {
   }
 
   /** Tells the app a note showed (D65). Only while connected: the note came from the app. */
-  async noteShown(id: NoteId): Promise<void> {
+  async noticeShown(id: NoticeId): Promise<void> {
     await this.#client.request(
-      { method: 'note_shown', params: { id } },
+      { method: 'notice_shown', params: { id } },
       this.#timing.requestTimeoutMs,
     );
   }
 
   /** Tells the app the person pressed one of a note's buttons (D65). */
-  async notePressed(id: NoteId, button: number): Promise<void> {
+  async noticePressed(id: NoticeId, button: number): Promise<void> {
     await this.#client.request(
-      { method: 'note_pressed', params: { id, button } },
+      { method: 'notice_pressed', params: { id, button } },
       this.#timing.requestTimeoutMs,
     );
   }

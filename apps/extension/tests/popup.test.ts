@@ -546,7 +546,7 @@ describe('popup', () => {
     });
     const elsewhere = screen.getByRole('main');
     button.focus();
-    // Clicked without awaiting, so focus moves before the list without the notice arrives.
+    // Clicked without awaiting, so focus moves before the list without the alert arrives.
     void fireEvent.click(button);
     elsewhere.focus();
     await waitFor(() => expect(screen.queryByText('Second message.')).toBeNull());
@@ -562,7 +562,7 @@ describe('popup accessibility', () => {
     expect(await axeViolations(container)).toEqual([]);
   });
 
-  it('has no axe violations with the access notice and the app closed', async () => {
+  it('has no axe violations with the access alert and the app closed', async () => {
     const { container } = await openPopup({
       siteAccess: false,
       configure: (app) => {
@@ -676,7 +676,7 @@ describe('popup model', () => {
         settings: null,
         controls: null,
         queues: [],
-        notices: [],
+        alerts: [],
       },
     });
     await flush();

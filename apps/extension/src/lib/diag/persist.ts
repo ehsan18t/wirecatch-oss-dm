@@ -21,7 +21,7 @@ import {
 /** The storage key prefix; each context adds its name. */
 export const DIAG_KEY_PREFIX = 'wirecatch.diag.v1.';
 
-export type DiagContext = 'background' | 'popup' | 'notes';
+export type DiagContext = 'background' | 'popup' | 'notices';
 
 /** The part of a `storage` area this needs. */
 export interface DiagStore {
@@ -39,7 +39,7 @@ const isEntry = fields<DiagEntry>({
   private: isBoolean,
 });
 
-const CONTEXTS: readonly DiagContext[] = ['background', 'popup', 'notes'];
+const CONTEXTS: readonly DiagContext[] = ['background', 'popup', 'notices'];
 const keyOf = (context: DiagContext): string => `${DIAG_KEY_PREFIX}${context}`;
 
 /**

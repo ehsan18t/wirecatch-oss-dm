@@ -12,7 +12,7 @@ import type { MediaEntry, MediaView } from '../src/lib/media/center';
 import type {
   BackgroundMessage,
   Channel,
-  Notice,
+  Alert,
   PopupCommand,
   PopupRequest,
   Snapshot,
@@ -180,9 +180,9 @@ const LONG_SPEED_LIMIT = 1.5 * MB;
 export const LONG_PAGE_URL =
   'https://release-assets.downloads.mirror-network.example-university.edu/x';
 
-const NOTICES: Notice[] = [
+const ALERTS: Alert[] = [
   {
-    id: 'sample-notice',
+    id: 'sample-alert',
     downloadId: null,
     untilResumed: false,
     urgent: false,
@@ -222,7 +222,7 @@ function connected(state: SampleState): boolean {
 
 function snapshot(state: SampleState): Snapshot {
   if (!connected(state)) {
-    return { status: status(state), settings: null, controls: null, queues: [], notices: [] };
+    return { status: status(state), settings: null, controls: null, queues: [], alerts: [] };
   }
   return {
     status: status(state),
@@ -238,7 +238,7 @@ function snapshot(state: SampleState): Snapshot {
           ? { ...CONTROLS, global_speed_limit: LONG_SPEED_LIMIT }
           : CONTROLS,
     queues: state === 'long' ? LONG_QUEUES : QUEUES,
-    notices: state === 'many' || state === 'long' ? NOTICES : [],
+    alerts: state === 'many' || state === 'long' ? ALERTS : [],
   };
 }
 
@@ -257,8 +257,8 @@ function changed(shown: Snapshot, command: PopupCommand): Snapshot {
   if (command.type === 'update_controls' && controls !== null) {
     return { ...shown, controls: applyBrowserControlsPatch(controls, command.patch) };
   }
-  if (command.type === 'dismiss_notice') {
-    return { ...shown, notices: shown.notices.filter((n) => n.id !== command.id) };
+  if (command.type === 'dismiss_alert') {
+    return { ...shown, alerts: shown.alerts.filter((n) => n.id !== command.id) };
   }
   return shown;
 }

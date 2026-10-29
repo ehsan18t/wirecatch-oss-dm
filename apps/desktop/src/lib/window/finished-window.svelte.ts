@@ -155,8 +155,8 @@ export class FinishedWindowState {
     // What the shell adds arrives on its own event.
     queue_finished: ignore,
     // Between the shell and the browsers (D65).
-    note_shown: ignore,
-    note_pressed: ignore,
+    notice_shown: ignore,
+    notice_pressed: ignore,
     // The shell tells it in a note (D67); its download arrives in the list when it starts.
     media_captured: ignore,
   };
@@ -180,7 +180,7 @@ export class FinishedWindowState {
   /** "Use notifications instead": switches the setting, then the window goes. */
   async useNotifications(): Promise<void> {
     const ok = await this.#runner.succeeds(() =>
-      this.#host.backend().changeSettings({ finish_notice: 'notification' }),
+      this.#host.backend().changeSettings({ notify_on_finish: 'notification' }),
     );
     if (ok) this.close();
   }

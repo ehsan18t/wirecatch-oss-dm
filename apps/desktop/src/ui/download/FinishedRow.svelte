@@ -3,7 +3,7 @@
   import FolderOpen from '~icons/lucide/folder-open';
   import type { DownloadSummary } from '@wirecatch/protocol';
   import { Button, cn, IconButton } from '@wirecatch/ui';
-  import { retryHelps } from '$lib/finish-notices';
+  import { retryHelps } from '$lib/notify-options';
   import { folderOf, formatSize, statusShort } from '$lib/format';
   import type { FinishedWindowState } from '$lib/window/finished-window.svelte';
   import CategoryIcon from '../CategoryIcon.svelte';

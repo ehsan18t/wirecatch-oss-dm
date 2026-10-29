@@ -969,10 +969,10 @@ pub enum Accent {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
-pub enum FinishNotice {
+pub enum NotifyOnFinish {
     /// A system notification with buttons to open the file or show it in its folder.
     Notification,
-    /// A note in the browser tab the person is looking at, with the same buttons (D65); a
+    /// A notice in the browser tab the person is looking at, with the same buttons (D65); a
     /// system notification when no browser can show it. The default: a system notification
     /// only when the person is not in the browser (D67).
     #[default]
@@ -987,8 +987,8 @@ pub enum FinishNotice {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
-pub enum StartNotice {
-    /// A note in the browser tab the person is looking at; a system notification when no
+pub enum NotifyOnStart {
+    /// A notice in the browser tab the person is looking at; a system notification when no
     /// browser can show it.
     #[default]
     Browser,
@@ -996,7 +996,7 @@ pub enum StartNotice {
     Nothing,
 }
 
-/// How long a browser note about a download that started stays before it goes by itself (D65):
+/// How long a browser notice about a download that started stays before it goes by itself (D65):
 /// short, since the person just started it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -1032,7 +1032,7 @@ impl StartNoticeTime {
     }
 }
 
-/// How long a browser note about finished downloads stays before it goes by itself (D65). A note
+/// How long a browser notice about finished downloads stays before it goes by itself (D65). A notice
 /// about a failure stays until it is closed, whatever this says.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -1068,7 +1068,7 @@ impl FinishNoticeTime {
     }
 }
 
-/// When a queue tells the person its downloads finished (D52). How is [`FinishNotice`].
+/// When a queue tells the person its downloads finished (D52). How is [`NotifyOnFinish`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -1139,12 +1139,12 @@ pub struct AppSettingsPatch {
     pub start_with_system: Option<bool>,
     /// The new [`AppSettings::close_to_tray`].
     pub close_to_tray: Option<bool>,
-    /// The new [`AppSettings::finish_notice`].
-    pub finish_notice: Option<FinishNotice>,
+    /// The new [`AppSettings::notify_on_finish`].
+    pub notify_on_finish: Option<NotifyOnFinish>,
     /// The new [`AppSettings::finish_notice_time`].
     pub finish_notice_time: Option<FinishNoticeTime>,
-    /// The new [`AppSettings::start_notice`].
-    pub start_notice: Option<StartNotice>,
+    /// The new [`AppSettings::notify_on_start`].
+    pub notify_on_start: Option<NotifyOnStart>,
     /// The new [`AppSettings::start_notice_time`].
     pub start_notice_time: Option<StartNoticeTime>,
     /// The new [`AppSettings::notify_during_do_not_disturb`].
@@ -1365,17 +1365,17 @@ pub struct AppSettings {
     pub close_to_tray: bool,
     /// How the person is told that downloads finished or failed (D52).
     #[serde(default, with = "known_or_default")]
-    #[ts(as = "FinishNotice")]
-    pub finish_notice: FinishNotice,
-    /// How long a browser note about finished downloads stays (D65).
+    #[ts(as = "NotifyOnFinish")]
+    pub notify_on_finish: NotifyOnFinish,
+    /// How long a browser notice about finished downloads stays (D65).
     #[serde(default, with = "known_or_default")]
     #[ts(as = "FinishNoticeTime")]
     pub finish_notice_time: FinishNoticeTime,
     /// How the person is told that a browser download started without a window (D65).
     #[serde(default, with = "known_or_default")]
-    #[ts(as = "StartNotice")]
-    pub start_notice: StartNotice,
-    /// How long a browser note about a download that started stays (D65).
+    #[ts(as = "NotifyOnStart")]
+    pub notify_on_start: NotifyOnStart,
+    /// How long a browser notice about a download that started stays (D65).
     #[serde(default, with = "known_or_default")]
     #[ts(as = "StartNoticeTime")]
     pub start_notice_time: StartNoticeTime,
@@ -1428,9 +1428,9 @@ impl AppSettings {
             accent,
             start_with_system,
             close_to_tray,
-            finish_notice,
+            notify_on_finish,
             finish_notice_time,
-            start_notice,
+            notify_on_start,
             start_notice_time,
             notify_during_do_not_disturb,
             auto_update_addons,
@@ -1451,9 +1451,9 @@ impl AppSettings {
             accent: new_accent,
             start_with_system: new_start_with_system,
             close_to_tray: new_close_to_tray,
-            finish_notice: new_finish_notice,
+            notify_on_finish: new_notify_on_finish,
             finish_notice_time: new_finish_notice_time,
-            start_notice: new_start_notice,
+            notify_on_start: new_notify_on_start,
             start_notice_time: new_start_notice_time,
             notify_during_do_not_disturb: new_notify_during_do_not_disturb,
             auto_update_addons: new_auto_update_addons,
@@ -1475,9 +1475,9 @@ impl AppSettings {
         set(accent, new_accent);
         set(start_with_system, new_start_with_system);
         set(close_to_tray, new_close_to_tray);
-        set(finish_notice, new_finish_notice);
+        set(notify_on_finish, new_notify_on_finish);
         set(finish_notice_time, new_finish_notice_time);
-        set(start_notice, new_start_notice);
+        set(notify_on_start, new_notify_on_start);
         set(start_notice_time, new_start_notice_time);
         set(
             notify_during_do_not_disturb,
@@ -1704,11 +1704,11 @@ pub enum UiEvent {
     WindowRequested,
     /// A client asked for the browser settings (the popup's settings button, D61): the desktop shows its main window on them.
     BrowserSettingsRequested,
-    /// A browser showed the note with this id (D65): the desktop tells no one else.
-    NoteShown(crate::extension::NoteId),
-    /// The person pressed one of a browser note's buttons (D65): the desktop does what it stands
+    /// A browser showed the notice with this id (D65): the desktop tells no one else.
+    NoticeShown(crate::extension::NoticeId),
+    /// The person pressed one of a browser notice's buttons (D65): the desktop does what it stands
     /// for.
-    NotePressed(crate::extension::NotePressed),
+    NoticePressed(crate::extension::NoticePressed),
     /// A queue is done; the desktop tells the person when the queue is set to
     /// [`QueueNotify::WhenDone`] (D52).
     QueueFinished(QueueReport),
@@ -1920,7 +1920,7 @@ mod tests {
             "accent": "green",
             "start_with_system": false,
             "close_to_tray": true,
-            "finish_notice": "window",
+            "notify_on_finish": "window",
         })
     }
 

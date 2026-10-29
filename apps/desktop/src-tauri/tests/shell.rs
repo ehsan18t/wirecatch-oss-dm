@@ -19,17 +19,17 @@ use wirecatch_desktop_lib::autostart::{Action, EntryState};
 use wirecatch_desktop_lib::background::{
     Launcher, NOTIFY_BATCH, Tell, Teller, apply_autostart, forward, show_notification, tell,
 };
-use wirecatch_desktop_lib::browser_notes::{self, BrowserNotes};
+use wirecatch_desktop_lib::browser_notices::{self, BrowserNotices};
 use wirecatch_desktop_lib::download_windows::{DownloadWindows, Shows, may_act_on};
 use wirecatch_desktop_lib::finished_window::{self, FinishedWindow};
 use wirecatch_desktop_lib::host::Core;
 use wirecatch_desktop_lib::lifecycle::Lifecycle;
-use wirecatch_desktop_lib::notices::Lasts;
-use wirecatch_desktop_lib::system_notices::ShownNotices;
+use wirecatch_desktop_lib::notifications::Lasts;
+use wirecatch_desktop_lib::system_notifications::ShownNotifications;
 use wirecatch_desktop_lib::window::MAIN_WINDOW;
 use wirecatch_desktop_lib::{RESYNC_EVENT, UI_EVENT, tray};
 use wirecatch_protocol::app::{
-    Category, DownloadStatus, DownloadSummary, FinishNotice, PendingCapture, Queue, QueueNotify,
+    Category, DownloadStatus, DownloadSummary, NotifyOnFinish, PendingCapture, Queue, QueueNotify,
     QueueReport, QueueSettings, QueueStatus, UiEvent, UserError,
 };
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
@@ -47,8 +47,8 @@ fn app_with(core: Option<Core>) -> TestResult<App<MockRuntime>> {
         .manage(Lifecycle::default())
         .manage(DownloadWindows::default())
         .manage(FinishedWindow::default())
-        .manage(ShownNotices::default())
-        .manage(BrowserNotes::default());
+        .manage(ShownNotifications::default())
+        .manage(BrowserNotices::default());
     if let Some(core) = core {
         builder = builder.manage(core);
     }
@@ -151,15 +151,20 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResul
         }))
         .unwrap();
     wait_until("the notification", || {
-        !handle.state::<ShownNotices>().0.lock().unwrap().is_empty()
+        !handle
+            .state::<ShownNotifications>()
+            .0
+            .lock()
+            .unwrap()
+            .is_empty()
     });
     assert!(handle.get_webview_window(MAIN_WINDOW).is_none());
-    let shown = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
+    let shown = handle.state::<ShownNotifications>().0.lock().unwrap()[0].clone();
     // D64: what the person must know shows during Do Not Disturb by default.
     assert!(shown.through_do_not_disturb);
-    let notice = shown.notice;
-    assert!(notice.title.contains("could not save"));
-    assert_eq!(notice.body, "The disk is full.");
+    let notification = shown.notification;
+    assert!(notification.title.contains("could not save"));
+    assert_eq!(notification.body, "The disk is full.");
 
     // A question opens its own download window (D23), not the main window.
     sender
@@ -186,7 +191,10 @@ fn a_question_opens_its_own_window_and_a_storage_failure_notifies() -> TestResul
         .send(UiEvent::ConfirmationClosed { id: QuestionId(1) })
         .unwrap();
     wait_until("the events to be handled", || closed.load(Ordering::SeqCst));
-    assert_eq!(handle.state::<ShownNotices>().0.lock().unwrap().len(), 1);
+    assert_eq!(
+        handle.state::<ShownNotifications>().0.lock().unwrap().len(),
+        1
+    );
     assert_eq!(handle.state::<DownloadWindows>().snapshot().len(), 1);
     task.abort();
     Ok(())
@@ -207,13 +215,13 @@ fn a_download_started_without_asking_is_told_briefly_and_opens_no_window() -> Te
     sender.send(UiEvent::Captured(started.clone())).unwrap();
     wait_until("the notification", || titles(&handle).len() == 1);
     assert!(handle.get_webview_window(MAIN_WINDOW).is_none());
-    let shown = handle.state::<ShownNotices>().0.lock().unwrap()[0].clone();
+    let shown = handle.state::<ShownNotifications>().0.lock().unwrap()[0].clone();
     assert!(
         !shown.through_do_not_disturb,
         "news waits out Do Not Disturb"
     );
-    let notice = shown.notice;
-    assert_eq!(notice.lasts, Lasts::Brief(Duration::from_secs(3)));
+    let notification = shown.notification;
+    assert_eq!(notification.lasts, Lasts::Brief(Duration::from_secs(3)));
 
     wirecatch_desktop_lib::window::show_main_window(&handle);
     sender.send(UiEvent::Captured(started)).unwrap();
@@ -222,15 +230,17 @@ fn a_download_started_without_asking_is_told_briefly_and_opens_no_window() -> Te
     Ok(())
 }
 
-/// The next note the app asked the browsers for.
-fn note_requested(
+/// The next notice the app asked the browsers for.
+fn notice_requested(
     events: &mut broadcast::Receiver<wirecatch_protocol::wire::Event>,
-) -> TestResult<wirecatch_protocol::extension::BrowserNote> {
+) -> TestResult<wirecatch_protocol::extension::BrowserNotice> {
     tauri::async_runtime::block_on(async {
         tokio::time::timeout(PATIENCE, async {
             loop {
-                if let wirecatch_protocol::wire::Event::NoteRequested(note) = events.recv().await? {
-                    return TestResult::Ok(note);
+                if let wirecatch_protocol::wire::Event::NoticeRequested(notice) =
+                    events.recv().await?
+                {
+                    return TestResult::Ok(notice);
                 }
             }
         })
@@ -238,16 +248,16 @@ fn note_requested(
     })
 }
 
-/// D65: with no browser to ask, a note is the system notification at once; a browser that shows
+/// D65: with no browser to ask, a notice is the system notification at once; a browser that shows
 /// it keeps the notification away, one that does not answer gets it after the wait, and pressing
-/// a note's button does what the notification's would.
+/// a notice's button does what the notification's would.
 #[test]
 fn a_note_goes_to_the_browser_that_shows_it_or_to_a_notification() -> TestResult {
     let sandbox = Sandbox::new()?;
     let app = app_with(Some(Core::new(sandbox.config()?)))?;
     let handle = app.handle().clone();
     let manager = tauri::async_runtime::block_on(handle.state::<Core>().manager())?.clone();
-    let in_browser = told_by(FinishNotice::Browser);
+    let in_browser = told_by(NotifyOnFinish::Browser);
     let finished = |id| Tell::Finished(vec![ended_row(id, 1, DownloadStatus::Completed)]);
 
     tell(&handle, &in_browser, &finished(1));
@@ -255,35 +265,35 @@ fn a_note_goes_to_the_browser_that_shows_it_or_to_a_notification() -> TestResult
 
     let mut browser = manager.subscribe_events();
     tell(&handle, &in_browser, &finished(2));
-    let shown = note_requested(&mut browser)?;
+    let shown = notice_requested(&mut browser)?;
     assert_eq!(
         shown.kind,
-        wirecatch_protocol::extension::NoteKind::Finished
+        wirecatch_protocol::extension::NoticeKind::Finished
     );
     assert_eq!(shown.buttons, ["Show in folder"], "no Open in a page");
     assert_eq!(shown.stays_ms, Some(8000));
-    browser_notes::shown(&handle, shown.id);
+    browser_notices::shown(&handle, shown.id);
     // Asked after the one shown, so its notification can only come after the other's would.
     tell(
         &handle,
         &in_browser,
         &Tell::Failed(vec![ended_row(3, 1, DownloadStatus::Failed)]),
     );
-    let unanswered = note_requested(&mut browser)?;
+    let unanswered = notice_requested(&mut browser)?;
     assert_eq!(
         unanswered.stays_ms, None,
         "a failure stays until it is closed"
     );
-    wait_until("the notification for the note no browser showed", || {
+    wait_until("the notification for the notice no browser showed", || {
         titles(&handle).len() == 2
     });
     assert_eq!(titles(&handle), ["Download finished", "Download failed"]);
 
-    // Try again on the note no browser answered in time, for a download the list does not have:
+    // Try again on the notice no browser answered in time, for a download the list does not have:
     // its buttons still work for a browser that showed it late, and what it did is told.
-    browser_notes::pressed(
+    browser_notices::pressed(
         &handle,
-        &wirecatch_protocol::extension::NotePressed {
+        &wirecatch_protocol::extension::NoticePressed {
             id: unanswered.id,
             button: 0,
         },
@@ -320,7 +330,7 @@ fn a_video_is_told_as_added_once_when_handed_over() -> TestResult {
         instead_of: None,
     });
     sender.send(UiEvent::Captured(video)).unwrap();
-    // A file after it: its note shows only once the events before it were handled.
+    // A file after it: its notice shows only once the events before it were handled.
     sender
         .send(UiEvent::Captured(ended_row(
             9,
@@ -328,14 +338,14 @@ fn a_video_is_told_as_added_once_when_handed_over() -> TestResult {
             DownloadStatus::Downloading,
         )))
         .unwrap();
-    wait_until("the file's note", || titles(&handle).len() == 2);
+    wait_until("the file's notice", || titles(&handle).len() == 2);
     let bodies: Vec<String> = handle
-        .state::<ShownNotices>()
+        .state::<ShownNotifications>()
         .0
         .lock()
         .unwrap()
         .iter()
-        .map(|s| s.notice.body.clone())
+        .map(|s| s.notification.body.clone())
         .collect();
     assert_eq!(bodies, ["Keynote: getting video details", "file-9.zip"]);
     assert_eq!(titles(&handle), ["Download added", "Download added"]);
@@ -356,7 +366,7 @@ fn important_notices_follow_the_do_not_disturb_switch() -> TestResult {
     manager.update_settings(settings)?;
     show_notification(&handle, "After".into(), String::new());
     let through: Vec<bool> = handle
-        .state::<ShownNotices>()
+        .state::<ShownNotifications>()
         .0
         .lock()
         .unwrap()
@@ -531,20 +541,20 @@ fn queue_telling(id: i64, notify: QueueNotify) -> Queue {
 }
 
 /// The settings that tell finished downloads `how`.
-fn told_by(how: FinishNotice) -> wirecatch_protocol::app::AppSettings {
+fn told_by(how: NotifyOnFinish) -> wirecatch_protocol::app::AppSettings {
     let mut settings = wirecatch_core::default_settings();
-    settings.finish_notice = how;
+    settings.notify_on_finish = how;
     settings
 }
 
 fn titles(handle: &tauri::AppHandle<MockRuntime>) -> Vec<String> {
     handle
-        .state::<ShownNotices>()
+        .state::<ShownNotifications>()
         .0
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
-        .map(|n| n.notice.title.clone())
+        .map(|n| n.notification.title.clone())
         .collect()
 }
 
@@ -567,7 +577,7 @@ fn downloads_finishing_together_share_one_notification() -> TestResult {
     assert_eq!(teller.due(), Some(start + NOTIFY_BATCH));
     assert!(teller.take_due(start).is_empty(), "not due yet");
     for due in teller.take_due(start + NOTIFY_BATCH) {
-        tell(&handle, &told_by(FinishNotice::Notification), &due);
+        tell(&handle, &told_by(NotifyOnFinish::Notification), &due);
     }
     assert_eq!(titles(&handle), ["3 downloads finished"]);
     assert_eq!(teller.due(), None);
@@ -594,7 +604,7 @@ fn a_queue_that_tells_once_done_waits_for_its_report_but_failures_are_told_at_on
         "{due:?}"
     );
     for due in &due {
-        tell(&handle, &told_by(FinishNotice::Notification), due);
+        tell(&handle, &told_by(NotifyOnFinish::Notification), due);
     }
     let report = QueueReport {
         queue: QueueId(2),
@@ -608,7 +618,7 @@ fn a_queue_that_tells_once_done_waits_for_its_report_but_failures_are_told_at_on
     let told = teller
         .queue_finished(&report)
         .ok_or("the queue's report was not told")?;
-    tell(&handle, &told_by(FinishNotice::Notification), &told);
+    tell(&handle, &told_by(NotifyOnFinish::Notification), &told);
     assert_eq!(
         titles(&handle),
         [
@@ -629,7 +639,7 @@ fn the_complete_window_lists_what_ended_and_acts_only_on_that() -> TestResult {
     let handle = app.handle().clone();
     tell(
         &handle,
-        &told_by(FinishNotice::Nothing),
+        &told_by(NotifyOnFinish::Nothing),
         &Tell::Finished(vec![ended_row(9, 1, DownloadStatus::Completed)]),
     );
     assert_eq!(titles(&handle), Vec::<String>::new());
@@ -640,7 +650,7 @@ fn the_complete_window_lists_what_ended_and_acts_only_on_that() -> TestResult {
 
     tell(
         &handle,
-        &told_by(FinishNotice::Window),
+        &told_by(NotifyOnFinish::Window),
         &Tell::Finished(vec![
             ended_row(1, 1, DownloadStatus::Completed),
             ended_row(2, 1, DownloadStatus::Completed),

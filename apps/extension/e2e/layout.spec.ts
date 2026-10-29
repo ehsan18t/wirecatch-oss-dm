@@ -222,7 +222,7 @@ for (const font of FONTS) {
         expect(await untippedLabels(page, cut)).toEqual([]);
       });
 
-      test('shows the capture switch without scrolling under the website access notice', async ({
+      test('shows the capture switch without scrolling under the website access alert', async ({
         page,
       }) => {
         await page.setViewportSize({ width: 480, height: 720 });

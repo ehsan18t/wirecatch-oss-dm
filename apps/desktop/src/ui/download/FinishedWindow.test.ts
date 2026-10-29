@@ -92,18 +92,18 @@ describe('the download complete window', () => {
 
   it('switches to notifications in one click, and goes', async () => {
     const b = mockBackend();
-    await b.changeSettings({ finish_notice: 'window' });
+    await b.changeSettings({ notify_on_finish: 'window' });
     sample(b).sampleOne();
     const { host } = await shown(b);
     await fireEvent.click(screen.getByRole('button', { name: 'Use notifications instead' }));
     await settle();
-    expect((await b.getSettings()).finish_notice).toBe('notification');
+    expect((await b.getSettings()).notify_on_finish).toBe('notification');
     expect(host.close).toHaveBeenCalledOnce();
   });
 
   it('opens by itself in the sample page when a download finishes and the window is chosen', async () => {
     const b = mockBackend({ empty: true });
-    await b.changeSettings({ finish_notice: 'window' });
+    await b.changeSettings({ notify_on_finish: 'window' });
     const id = await b.addDownload({
       url: 'https://example.com/small.zip',
       queue: null,

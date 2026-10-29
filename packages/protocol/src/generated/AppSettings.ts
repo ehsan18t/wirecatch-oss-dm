@@ -2,12 +2,12 @@
 import type { Accent } from './Accent';
 import type { CategoryRule } from './CategoryRule';
 import type { ExtensionSettings } from './ExtensionSettings';
-import type { FinishNotice } from './FinishNotice';
 import type { FinishNoticeTime } from './FinishNoticeTime';
 import type { MediaDefaults } from './MediaDefaults';
+import type { NotifyOnFinish } from './NotifyOnFinish';
+import type { NotifyOnStart } from './NotifyOnStart';
 import type { PortablePath } from './PortablePath';
 import type { ProxySettings } from './ProxySettings';
-import type { StartNotice } from './StartNotice';
 import type { StartNoticeTime } from './StartNoticeTime';
 import type { Theme } from './Theme';
 
@@ -58,17 +58,17 @@ export type AppSettings = {
   /**
    * How the person is told that downloads finished or failed (D52).
    */
-  finish_notice: FinishNotice;
+  notify_on_finish: NotifyOnFinish;
   /**
-   * How long a browser note about finished downloads stays (D65).
+   * How long a browser notice about finished downloads stays (D65).
    */
   finish_notice_time: FinishNoticeTime;
   /**
    * How the person is told that a browser download started without a window (D65).
    */
-  start_notice: StartNotice;
+  notify_on_start: NotifyOnStart;
   /**
-   * How long a browser note about a download that started stays (D65).
+   * How long a browser notice about a download that started stays (D65).
    */
   start_notice_time: StartNoticeTime;
   /**

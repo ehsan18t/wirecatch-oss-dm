@@ -43,7 +43,7 @@ use wirecatch_addons::manifest::MediaAddonSources;
 use wirecatch_engine::{CancellationToken, RateLimiter, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{StartupNotice, UiEvent};
-use wirecatch_protocol::extension::{BrowserNote, NoteId, NotePressed};
+use wirecatch_protocol::extension::{BrowserNotice, NoticeId, NoticePressed};
 use wirecatch_protocol::wire::Event;
 use wirecatch_settings::folders::KnownFolders;
 use wirecatch_sites::public_suffix::SuffixList;
@@ -425,23 +425,23 @@ impl Manager {
         self.emit(UiEvent::WindowRequested);
     }
 
-    /// Asks every connected browser to show `note` (D65) and says how many may answer: the
+    /// Asks every connected browser to show `notice` (D65) and says how many may answer: the
     /// connections listening for the app's events. None means no browser can show it.
-    #[must_use = "no browser listening means the note must be told another way"]
-    pub fn request_note(&self, note: BrowserNote) -> usize {
+    #[must_use = "no browser listening means the notice must be told another way"]
+    pub fn request_notice(&self, notice: BrowserNotice) -> usize {
         let listening = self.inner.wire_events.receiver_count();
-        self.emit_wire(Event::NoteRequested(note));
+        self.emit_wire(Event::NoticeRequested(notice));
         listening
     }
 
-    /// A browser showed the note `id` ([`UiEvent::NoteShown`]).
-    pub fn note_shown(&self, id: NoteId) {
-        self.emit(UiEvent::NoteShown(id));
+    /// A browser showed the notice `id` ([`UiEvent::NoticeShown`]).
+    pub fn notice_shown(&self, id: NoticeId) {
+        self.emit(UiEvent::NoticeShown(id));
     }
 
-    /// The person pressed one of a browser note's buttons ([`UiEvent::NotePressed`]).
-    pub fn note_pressed(&self, pressed: NotePressed) {
-        self.emit(UiEvent::NotePressed(pressed));
+    /// The person pressed one of a browser notice's buttons ([`UiEvent::NoticePressed`]).
+    pub fn notice_pressed(&self, pressed: NoticePressed) {
+        self.emit(UiEvent::NoticePressed(pressed));
     }
 
     /// Asks the desktop to show its main window on the browser settings ([`UiEvent::BrowserSettingsRequested`]), for the popup's settings button (D61).

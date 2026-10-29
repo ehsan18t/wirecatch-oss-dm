@@ -431,7 +431,7 @@ describe('MediaButton', () => {
     expect(b.state).toBe('shown');
   });
 
-  it('notices a video in a shadow root added later, when it gets focus', async () => {
+  it('alerts a video in a shadow root added later, when it gets focus', async () => {
     const fake = fakeDeps();
     const b = start(fake);
     const player = document.createElement('fancy-player');

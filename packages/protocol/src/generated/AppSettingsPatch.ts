@@ -2,12 +2,12 @@
 import type { Accent } from './Accent';
 import type { CategoryRule } from './CategoryRule';
 import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
-import type { FinishNotice } from './FinishNotice';
 import type { FinishNoticeTime } from './FinishNoticeTime';
 import type { MediaDefaultsPatch } from './MediaDefaultsPatch';
+import type { NotifyOnFinish } from './NotifyOnFinish';
+import type { NotifyOnStart } from './NotifyOnStart';
 import type { PortablePath } from './PortablePath';
 import type { ProxySettings } from './ProxySettings';
-import type { StartNotice } from './StartNotice';
 import type { StartNoticeTime } from './StartNoticeTime';
 import type { Theme } from './Theme';
 
@@ -56,17 +56,17 @@ export type AppSettingsPatch = {
    */
   close_to_tray?: boolean;
   /**
-   * The new [`AppSettings::finish_notice`].
+   * The new [`AppSettings::notify_on_finish`].
    */
-  finish_notice?: FinishNotice;
+  notify_on_finish?: NotifyOnFinish;
   /**
    * The new [`AppSettings::finish_notice_time`].
    */
   finish_notice_time?: FinishNoticeTime;
   /**
-   * The new [`AppSettings::start_notice`].
+   * The new [`AppSettings::notify_on_start`].
    */
-  start_notice?: StartNotice;
+  notify_on_start?: NotifyOnStart;
   /**
    * The new [`AppSettings::start_notice_time`].
    */

@@ -2,7 +2,7 @@
 import { fileNameFromUrl } from '../file-types';
 import { nonEmpty } from '../text';
 import type { MenuClick, MenuTab } from './deps';
-import { MENU_NOT_WEB } from './notices';
+import { MENU_NOT_WEB } from './alerts';
 
 export type MenuPlan =
   /** Nothing to download: the click had no link or source. */

@@ -84,14 +84,14 @@ describe('withoutPatch', () => {
     const before = await settings();
     const failed: AppSettingsPatch = {
       theme: 'dark',
-      finish_notice: before.finish_notice === 'window' ? 'nothing' : 'window',
+      notify_on_finish: before.notify_on_finish === 'window' ? 'nothing' : 'window',
       extension: { capture_enabled: !before.extension.capture_enabled },
     };
     const current = applyPatch(before, failed);
     current.theme = 'light'; // a newer change, made while the failed one was on its way
     const restored = withoutPatch(current, failed, before);
     expect(restored.theme).toBe('light');
-    expect(restored.finish_notice).toBe(before.finish_notice);
+    expect(restored.notify_on_finish).toBe(before.notify_on_finish);
     expect(restored.extension.capture_enabled).toBe(before.extension.capture_enabled);
   });
 });

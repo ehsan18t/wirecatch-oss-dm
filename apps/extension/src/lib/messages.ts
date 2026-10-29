@@ -60,10 +60,10 @@ export function acceptsPopupPort(
 }
 
 /** Something that happened in the background that the person should know about. */
-export interface Notice {
-  /** Names the notice for dismissing it; one about a browser download is named after it. */
+export interface Alert {
+  /** Names the alert for dismissing it; one about a browser download is named after it. */
   id: string;
-  /** The browser download it is about; a newer notice about the same download replaces it. */
+  /** The browser download it is about; a newer alert about the same download replaces it. */
   downloadId: number | null;
   /** Cleared once the browser reports the download running or finished. */
   untilResumed: boolean;
@@ -74,13 +74,13 @@ export interface Notice {
   at: number;
 }
 
-/** Checks a notice read back from storage. */
-export const isNotice = fields<Notice>({
+/** Checks a alert read back from storage. */
+export const isAlert = fields<Alert>({
   id: isString,
   downloadId: nullable(isNumber),
   untilResumed: isBoolean,
   urgent: isBoolean,
-  tone: member<Notice['tone']>({ warning: true, error: true }),
+  tone: member<Alert['tone']>({ warning: true, error: true }),
   message: isString,
   at: isNumber,
 });
@@ -94,7 +94,7 @@ export interface Snapshot {
   controls: BrowserControls | null;
   queues: QueueSummary[];
   /** Newest first. */
-  notices: Notice[];
+  alerts: Alert[];
 }
 
 export type PopupCommand =
@@ -107,7 +107,7 @@ export type PopupCommand =
   | { type: 'reconnect' }
   /** Start Wirecatch if it is closed, and show its window. */
   | { type: 'open_app' }
-  | { type: 'dismiss_notice'; id: string }
+  | { type: 'dismiss_alert'; id: string }
   /** Start sending `media` messages for this tab's "Media on this page" list. */
   | { type: 'watch_media'; tabId: number }
   /** Send one item of that list to the app. */
@@ -132,7 +132,7 @@ const isSnapshot = fields<Snapshot>({
   settings: nullable(isExtensionSettings),
   controls: nullable(isBrowserControls),
   queues: arrayOf(isQueueSummary),
-  notices: arrayOf(isNotice),
+  alerts: arrayOf(isAlert),
 });
 
 const isMediaEntry = fields<MediaEntry>({
@@ -199,8 +199,8 @@ const isCommand = variants<PopupCommand>({
   resume_all: fields<Command<'resume_all'>>({ type: literal('resume_all') }),
   reconnect: fields<Command<'reconnect'>>({ type: literal('reconnect') }),
   open_app: fields<Command<'open_app'>>({ type: literal('open_app') }),
-  dismiss_notice: fields<Command<'dismiss_notice'>>({
-    type: literal('dismiss_notice'),
+  dismiss_alert: fields<Command<'dismiss_alert'>>({
+    type: literal('dismiss_alert'),
     id: isString,
   }),
   watch_media: fields<Command<'watch_media'>>({ type: literal('watch_media'), tabId: isTabId }),

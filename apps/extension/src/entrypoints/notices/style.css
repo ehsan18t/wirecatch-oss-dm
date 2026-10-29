@@ -1,0 +1,15 @@
+/*
+ * The notices page's stylesheet: the design system, and the notices' own component as its source. The page is transparent, since it sits over a website in a frame only as big as its notices.
+ */
+@import '@wirecatch/ui/tokens.css';
+@import '@wirecatch/ui/base.css';
+@source '../../ui/notices';
+
+@layer components {
+  html,
+  body {
+    height: auto;
+    overflow: hidden;
+    background: transparent;
+  }
+}

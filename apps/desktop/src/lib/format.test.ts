@@ -2,7 +2,7 @@ import { downloadId, queueId, type DownloadSummary } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   dayPattern,
-  earlierNote,
+  earlierNotice,
   FIX_LABEL,
   extractUrls,
   fileNameFromUrl,
@@ -191,23 +191,23 @@ describe('a download already in the list (D23)', () => {
   });
 
   it('says when it was downloaded, or what it is doing, in one line', () => {
-    expect(earlierNote(row({}), now)).toBe('You downloaded this today at 18:38.');
-    expect(earlierNote(row({ completed_at: new Date(2026, 9, 9, 7, 5).getTime() }), now)).toBe(
+    expect(earlierNotice(row({}), now)).toBe('You downloaded this today at 18:38.');
+    expect(earlierNotice(row({ completed_at: new Date(2026, 9, 9, 7, 5).getTime() }), now)).toBe(
       'You downloaded this yesterday at 07:05.',
     );
-    expect(earlierNote(row({ completed_at: new Date(2026, 8, 3, 9, 0).getTime() }), now)).toBe(
+    expect(earlierNotice(row({ completed_at: new Date(2026, 8, 3, 9, 0).getTime() }), now)).toBe(
       'You downloaded this on 3 Sep 2026.',
     );
-    expect(earlierNote(row({ status: 'downloading' }), now)).toBe('This is already downloading.');
-    expect(earlierNote(row({ status: 'processing' }), now)).toBe('This is already downloading.');
-    expect(earlierNote(row({ status: 'paused' }), now)).toBe(
+    expect(earlierNotice(row({ status: 'downloading' }), now)).toBe('This is already downloading.');
+    expect(earlierNotice(row({ status: 'processing' }), now)).toBe('This is already downloading.');
+    expect(earlierNotice(row({ status: 'paused' }), now)).toBe(
       'This is already in your list, paused.',
     );
-    expect(earlierNote(row({ status: 'cancelled' }), now)).toBe(
+    expect(earlierNotice(row({ status: 'cancelled' }), now)).toBe(
       'You started this today at 18:30 and cancelled it.',
     );
     for (const status of ['queued', 'failed', 'connecting'] as const) {
-      expect(earlierNote(row({ status }), now)).not.toContain(String.fromCharCode(0x2014));
+      expect(earlierNotice(row({ status }), now)).not.toContain(String.fromCharCode(0x2014));
     }
   });
 

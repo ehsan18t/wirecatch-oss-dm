@@ -3,8 +3,8 @@ import type { BrowserControlsPatch } from './BrowserControlsPatch';
 import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
 import type { Hello } from './Hello';
 import type { NewDownload } from './NewDownload';
-import type { NotePressed } from './NotePressed';
-import type { NoteShown } from './NoteShown';
+import type { NoticePressed } from './NoticePressed';
+import type { NoticeShown } from './NoticeShown';
 import type { WithdrawRequest } from './WithdrawRequest';
 
 /**
@@ -23,5 +23,5 @@ export type Call =
   | { method: 'get_browser_controls' }
   | { method: 'update_browser_controls'; params: BrowserControlsPatch }
   | { method: 'show_browser_settings' }
-  | { method: 'note_shown'; params: NoteShown }
-  | { method: 'note_pressed'; params: NotePressed };
+  | { method: 'notice_shown'; params: NoticeShown }
+  | { method: 'notice_pressed'; params: NoticePressed };

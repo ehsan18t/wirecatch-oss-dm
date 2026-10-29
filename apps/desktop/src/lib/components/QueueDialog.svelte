@@ -45,7 +45,7 @@
     ToggleChip,
     type FieldControl,
   } from '@wirecatch/ui';
-  import { QUEUE_NOTIFY_OPTIONS, queueNotifyHelp } from '$lib/finish-notices';
+  import { QUEUE_NOTIFY_OPTIONS, queueNotifyHelp } from '$lib/notify-options';
   import { dayPattern, formatTime, WEEKDAY_SHORT } from '$lib/format';
   import { daysForPattern, pickedDaysHelp, toggledDay } from '$lib/schedule-days';
   import { FIRST_START, FIRST_STOP, readSchedule } from '$lib/queue-schedule';
@@ -124,7 +124,7 @@
   const limitHelp = $derived(speedLimitHelp(limitOn, app.settings?.global_speed_limit ?? null));
   const connectionsHelp = $derived(ownConnectionsHelp(connectionsOn, appConnections));
 
-  const notifyHelp = $derived(queueNotifyHelp(notify, app.settings?.finish_notice));
+  const notifyHelp = $derived(queueNotifyHelp(notify, app.settings?.notify_on_finish));
   let error = $state('');
   // Opened to delete the queue (from the palette), it starts at that question.
   let confirmDelete = $state((() => deleting)());

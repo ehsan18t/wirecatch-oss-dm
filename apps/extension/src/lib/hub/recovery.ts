@@ -40,7 +40,7 @@ const REMOVAL_RESULTS = {
 
 export interface RecoveryResult {
   result: Recovered;
-  /** The file's name, as the notices give it. */
+  /** The file's name, as the alerts give it. */
   name: string;
   /** The withdraw got no answer it could read, so the app may have the download. */
   appMayHave: boolean;

@@ -105,7 +105,7 @@ const MIGRATIONS: &[&str] = &[
     UPDATE settings
     SET value = json_set(
         json_remove(value, '$.notify_on_complete'),
-        '$.finish_notice',
+        '$.notify_on_finish',
         CASE json_extract(value, '$.notify_on_complete') WHEN 0 THEN 'nothing' ELSE 'notification' END
     )
     WHERE key = 'app' AND json_valid(value) AND json_type(value, '$.notify_on_complete') IS NOT NULL;
@@ -1409,7 +1409,7 @@ mod tests {
 
     use super::*;
     use wirecatch_protocol::app::{
-        Accent, Category, DownloadStatus, FinishNotice, FixAction, QueueNotify, QueueSettings,
+        Accent, Category, DownloadStatus, FixAction, NotifyOnFinish, QueueNotify, QueueSettings,
         Schedule, Setting, Theme, TimeOfDay, UserError,
     };
 
@@ -2535,7 +2535,7 @@ mod tests {
             .unwrap();
         let mut settings = sample_settings();
         settings.extension.ask_before_download = ask;
-        settings.finish_notice = FinishNotice::Window;
+        settings.notify_on_finish = NotifyOnFinish::Window;
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?1, ?2)",
             params![SETTINGS_KEY, to_json(&settings)],
@@ -2552,8 +2552,8 @@ mod tests {
         let settings = snapshot.settings.expect("the settings survive");
         assert!(settings.extension.ask_before_download, "switched on");
         assert_eq!(
-            settings.finish_notice,
-            FinishNotice::Window,
+            settings.notify_on_finish,
+            NotifyOnFinish::Window,
             "nothing else changes"
         );
         assert!(
@@ -2584,7 +2584,7 @@ mod tests {
 
     fn stored_defaults() -> serde_json::Value {
         let mut settings = sample_settings();
-        settings.finish_notice = FinishNotice::Window;
+        settings.notify_on_finish = NotifyOnFinish::Window;
         serde_json::to_value(settings).unwrap()
     }
 
@@ -2603,8 +2603,8 @@ mod tests {
             (Theme::System, Accent::Cyan)
         );
         assert_eq!(
-            settings.finish_notice,
-            FinishNotice::Window,
+            settings.notify_on_finish,
+            NotifyOnFinish::Window,
             "nothing else changes"
         );
     }
@@ -2623,8 +2623,8 @@ mod tests {
             (Theme::System, Accent::Cyan)
         );
         assert_eq!(
-            settings.finish_notice,
-            FinishNotice::Window,
+            settings.notify_on_finish,
+            NotifyOnFinish::Window,
             "nothing else changes"
         );
     }
@@ -2653,7 +2653,7 @@ mod tests {
         let conn = Connection::open(dir.join(DATABASE_FILE)).unwrap();
         let mut stored = stored_defaults();
         let fields = stored.as_object_mut().unwrap();
-        fields.remove("finish_notice");
+        fields.remove("notify_on_finish");
         fields.insert("notify_on_complete".into(), notify.into());
         conn.execute(
             "UPDATE settings SET value = ?2 WHERE key = ?1",
@@ -2672,14 +2672,14 @@ mod tests {
     #[test]
     fn the_notification_switch_becomes_how_finished_downloads_are_told() {
         for (notify, told) in [
-            (true, FinishNotice::Notification),
-            (false, FinishNotice::Nothing),
+            (true, NotifyOnFinish::Notification),
+            (false, NotifyOnFinish::Nothing),
         ] {
             let dir = tempfile::tempdir().unwrap();
             database_before_finish_notices(dir.path(), notify);
             let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
             let settings = snapshot.settings.expect("the settings survive");
-            assert_eq!(settings.finish_notice, told, "switch {notify}");
+            assert_eq!(settings.notify_on_finish, told, "switch {notify}");
             assert_eq!(
                 snapshot.queues[0].settings.notify,
                 QueueNotify::EachDownload
