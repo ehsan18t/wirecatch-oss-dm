@@ -480,23 +480,23 @@ mod platform {
         notification: &Notification,
         waits: bool,
     ) {
-        let mut notification = notify_rust::Notification::new();
-        notification
+        let mut shown = notify_rust::Notification::new();
+        shown
             .appname(name)
             .summary(&notification.title)
             .body(&escape_text(&notification.body));
         if let Lasts::Brief(stays) = notification.lasts {
-            notification
+            shown
                 .timeout(stays)
                 .hint(notify_rust::Hint::Transient(true));
         }
         if waits {
-            notification.action(CLICK, "");
+            shown.action(CLICK, "");
             for (at, button) in notification.buttons.iter().enumerate() {
-                notification.action(&button_argument(at), button.label);
+                shown.action(&button_argument(at), button.label);
             }
         }
-        let handle = match notification.show() {
+        let handle = match shown.show() {
             Ok(handle) => handle,
             Err(e) => {
                 tracing::warn!("could not show a notification: {e}");
