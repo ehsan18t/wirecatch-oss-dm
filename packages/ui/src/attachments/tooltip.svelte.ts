@@ -1,5 +1,5 @@
 import type { Attachment } from 'svelte/attachments';
-import { placeFlyout, layoutSize, viewportSize, type Placement } from '../lib/flyout';
+import { placeBeside, placeFlyout, layoutSize, viewportSize, type Placement } from '../lib/flyout';
 import { lower, raise } from '../lib/layer';
 import { delay } from '../motion/motion';
 
@@ -35,15 +35,17 @@ function nextTooltipId(): string {
   return `wc-tooltip-${String(next)}`;
 }
 
-/** `pin`: a click opens the tip at once and keeps it until a click elsewhere, Escape or focus leaving, for help behind an info icon (D84.2). */
+/** `pin`: a click opens the tip at once and keeps it until a click elsewhere, Escape or focus leaving, for help behind an info icon (D84.2). `beside`: the tip opens after the node, not above it, for a mark whose tip would cover the text it marks. */
 export interface TooltipOptions {
   pin?: boolean;
+  beside?: boolean;
 }
 
 class Tooltip {
   text: TooltipText = null;
   readonly #node: HTMLElement;
   readonly #pin: boolean;
+  readonly #beside: boolean;
   #pinned = false;
   readonly #id = nextTooltipId();
   #tip: HTMLElement | null = null;
@@ -51,9 +53,10 @@ class Tooltip {
   /** A hide waiting out the linger, so the pointer can cross from the anchor to the tip. */
   #leaving: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(node: HTMLElement, { pin = false }: TooltipOptions = {}) {
+  constructor(node: HTMLElement, { pin = false, beside = false }: TooltipOptions = {}) {
     this.#node = node;
     this.#pin = pin;
+    this.#beside = beside;
   }
 
   read(): string | null | undefined {
@@ -130,7 +133,11 @@ class Tooltip {
   readonly position = (): void => {
     if (!this.#tip) return;
     const box = this.#node.getBoundingClientRect();
-    const { top, left } = placeFlyout(box, layoutSize(this.#tip), viewportSize(), PLACEMENT);
+    const size = layoutSize(this.#tip);
+    const viewport = viewportSize();
+    const { top, left } =
+      (this.#beside ? placeBeside(box, size, viewport, PLACEMENT) : null) ??
+      placeFlyout(box, size, viewport, PLACEMENT);
     this.#tip.style.top = `${String(top)}px`;
     this.#tip.style.left = `${String(left)}px`;
   };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeFlyout, pointBox } from './flyout';
+import { placeBeside, placeFlyout, pointBox } from './flyout';
 import {
   listKeyIndex,
   nextEnabledIndex,
@@ -74,6 +74,17 @@ describe('flyout placement', () => {
       left: 592,
       above: true,
     });
+  });
+
+  it('opens beside its anchor, centred on it, and not at all where it would leave the window', () => {
+    const anchor = { top: 100, bottom: 120, left: 40, right: 60 };
+    expect(placeBeside(anchor, { width: 200, height: 40 }, viewport, placement)).toEqual({
+      top: 90,
+      left: 64,
+      above: false,
+    });
+    const atEdge = { top: 100, bottom: 120, left: 700, right: 780 };
+    expect(placeBeside(atEdge, { width: 200, height: 40 }, viewport, placement)).toBeNull();
   });
 
   it('opens at a point for a context menu', () => {
