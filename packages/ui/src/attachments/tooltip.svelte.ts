@@ -87,9 +87,9 @@ class Tooltip {
   };
 
   readonly hideOnFocusOut = (event: FocusEvent): void => {
-    if (!(event.relatedTarget instanceof Node) || !this.#node.contains(event.relatedTarget)) {
-      this.hide();
-    }
+    const to = event.relatedTarget;
+    if (to instanceof Node && (this.#node.contains(to) || this.#tip?.contains(to))) return;
+    this.hide();
   };
 
   /** Capture phase, stopped: the first Escape closes the tooltip, not the dialog or field under it. */
@@ -142,6 +142,8 @@ class Tooltip {
     tip.id = this.#id;
     tip.setAttribute('role', 'tooltip');
     tip.setAttribute('popover', 'manual');
+    // Focusable, so a press on a pinned tip (to select its text) moves focus into it instead of closing it.
+    if (this.#pin) tip.tabIndex = -1;
     tip.className = TIP_CLASS;
     tip.textContent = content;
     tip.addEventListener('pointerenter', this.stay);

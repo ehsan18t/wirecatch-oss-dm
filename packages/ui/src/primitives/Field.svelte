@@ -30,15 +30,19 @@
 
   const id = $props.id();
   const hintId = `${id}-hint`;
+  const helpId = `${id}-help`;
   const message = $derived(error ?? description);
   const control = $derived<FieldControl>({
     id,
-    'aria-describedby': message ? hintId : undefined,
+    'aria-describedby':
+      [help ? helpId : null, message ? hintId : null].filter((part) => part !== null).join(' ') ||
+      undefined,
     invalid: Boolean(error),
   });
 </script>
 
 <div class={cn('flex min-w-0 flex-col gap-1.5', className)}>
+  {#if help}<span id={helpId} class="sr-only">{help}</span>{/if}
   {#if help && !hideLabel}
     <div class="flex items-center gap-1">
       <label for={id} class="text-ui font-medium text-ink">{label}</label>

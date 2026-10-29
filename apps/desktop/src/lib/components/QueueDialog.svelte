@@ -103,7 +103,7 @@
   let stop = $state(formatTime(opened?.schedule?.stop ?? FIRST_STOP));
   let days = $state<Weekday[]>(pressedDays(opened?.schedule?.days));
   let auto = $state(opened?.add_downloads.kind === 'auto');
-  // Kept while the form is switched to Manually, so switching back loses nothing.
+  // Kept while adding automatically is off, so turning it back on loses nothing.
   let rules = $state<QueueRules>(rulesOf(opened?.add_downloads));
   let notify = $state<QueueNotify>(opened?.notify ?? 'each_download');
   let proxy = $state<QueueSettings['proxy']>($state.snapshot(opened?.proxy) ?? GLOBAL);

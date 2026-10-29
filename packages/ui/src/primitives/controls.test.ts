@@ -542,6 +542,22 @@ describe('MultiSelect', () => {
 });
 
 describe('InfoTip', () => {
+  it('describes a field by its help as well as its hint, with its label shown or hidden', () => {
+    for (const hideLabel of [false, true]) {
+      const { unmount } = render(FieldHost, { help: 'Where the file is.', hideLabel });
+      expect(
+        screen.getByRole('textbox', {
+          name: 'Address',
+          description: 'Where the file is. A link to a file.',
+        }),
+      ).toBeTruthy();
+      expect(screen.queryAllByRole('button', { name: 'About Address' })).toHaveLength(
+        hideLabel ? 0 : 1,
+      );
+      unmount();
+    }
+  });
+
   const help = 'Downloads that match go to this queue.';
 
   it('shows its text on a click and keeps it until a click elsewhere', async () => {
