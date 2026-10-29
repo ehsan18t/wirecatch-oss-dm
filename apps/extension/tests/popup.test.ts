@@ -370,8 +370,7 @@ describe('popup', () => {
     expect(app.calls('resume_all')).toHaveLength(1);
   });
 
-  // The button used to only reconnect, and the bridge starts the app in the tray, so nothing opened.
-  it('opens a closed Wirecatch and shows its window', async () => {
+  it('connects a closed Wirecatch in the tray, without its window or a status line', async () => {
     const { app } = await openPopup({
       configure: (fake) => {
         fake.running = false;
@@ -379,11 +378,12 @@ describe('popup', () => {
     });
     expect(screen.getByText('Closed')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Wirecatch is not running.' })).toBeTruthy();
-    await userEvent.setup().click(await screen.findByRole('button', { name: 'Open Wirecatch' }));
-    const status = within(screen.getByRole('contentinfo')).getByRole('status');
-    await waitFor(() => expect(status.textContent.trim()).toBe('Wirecatch is open.'));
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Connect Wirecatch' }));
+    await screen.findByText('Connected');
     expect(app.starts).toBe(1);
-    expect(app.calls('show_window')).toHaveLength(1);
+    expect(app.calls('show_window')).toHaveLength(0);
+    const status = within(screen.getByRole('contentinfo')).getByRole('status');
+    expect(status.textContent.trim()).toBe('');
   });
 
   it('rolls a change back and says why when the app refuses it', async () => {
@@ -563,7 +563,7 @@ describe('popup accessibility', () => {
         app.running = false;
       },
     });
-    await screen.findByRole('button', { name: 'Open Wirecatch' });
+    await screen.findByRole('button', { name: 'Connect Wirecatch' });
     expect(await axeViolations(container)).toEqual([]);
   });
 

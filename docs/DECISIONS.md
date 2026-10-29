@@ -787,6 +787,13 @@ Decided with the maintainer on 2026-10-29. Eleven pages held 47 settings, four o
 8. A page's line under its title is a few words. No setting key changes: saved settings and export files are read as before.
 9. The accent swatches leave out teal and indigo, too close to cyan, green and blue to tell apart; a person who chose one keeps it, offered while it is the choice.
 10. A control that does nothing with the other choices made says so on a line under its row ("Used only with …") instead of only greying out.
+### D86. The popup connects a closed Wirecatch in the tray
+
+Decided with the maintainer on 2026-10-29. A closed app opened its window in front of the person, when all they wanted was the popup's settings back.
+
+1. The popup's button for a closed app is "Connect Wirecatch". It connects with the app allowed to start, so the bridge starts it with `--background`: in the tray, with no window. The popup then shows its settings, which says it is connected; no line says so.
+2. The popup's status line under Pause all and Resume all takes no room while it has nothing to say.
+3. This amends D25.6 and D61.2, where the button was Open Wirecatch and showed the window.
 
 ## Assumptions (not yet confirmed)
 

@@ -1,15 +1,15 @@
 <script lang="ts">
-  // What keeps the extension from the app, what to do about it, and the button that does it: open a closed app, or try again.
+  // What keeps the extension from the app, what to do about it, and the button that does it: connect a closed app, which starts it in the tray (D86), or try again.
   import { Button, Callout } from '@wirecatch/ui';
   import { describeProblem, type Problem } from '../../lib/native/status';
 
   interface Props {
     problem: Problem;
-    onopen: () => void;
+    onconnect: () => void;
     onretry: () => void;
   }
 
-  let { problem, onopen, onretry }: Props = $props();
+  let { problem, onconnect, onretry }: Props = $props();
 
   const text = $derived(describeProblem(problem.kind));
   // A closed app is a state to know about, not a fault.
@@ -24,7 +24,7 @@
   {/if}
   <div class="mt-2.5 flex flex-wrap gap-2">
     {#if closed}
-      <Button size="sm" variant="primary" onclick={onopen}>Open Wirecatch</Button>
+      <Button size="sm" variant="primary" onclick={onconnect}>Connect Wirecatch</Button>
     {:else}
       <Button size="sm" onclick={onretry}>Try again</Button>
     {/if}

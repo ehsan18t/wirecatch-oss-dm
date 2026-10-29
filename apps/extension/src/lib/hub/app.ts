@@ -18,13 +18,7 @@ import type { KnownSettings } from './settings';
 export type AppCommand = Extract<
   PopupCommand,
   {
-    type:
-      | 'open_app'
-      | 'open_settings'
-      | 'pause_all'
-      | 'resume_all'
-      | 'update_settings'
-      | 'update_controls';
+    type: 'open_settings' | 'pause_all' | 'resume_all' | 'update_settings' | 'update_controls';
   }
 >;
 
@@ -197,9 +191,6 @@ export class AppCalls {
   /** Carries out a popup command that the app does. */
   async run(command: AppCommand): Promise<void> {
     switch (command.type) {
-      case 'open_app':
-        await this.showWindow();
-        return;
       case 'open_settings':
         await this.showBrowserSettings();
         return;
