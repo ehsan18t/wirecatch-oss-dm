@@ -78,7 +78,9 @@ Where each stands (2026-10-29):
 - XC-18 and DUI-18: a11y and layout run in CI's browser job, which keeps a failed run's results. `e2e:perf` still runs nowhere: it asserts frame times, which a shared runner cannot promise, so it belongs in a scheduled run that reports them rather than in every pull request's gate.
 - XC-21: done; Windows runs the JavaScript checks with `--skip=protocol` and installs no Rust.
 - IPB-20: every test endpoint is named through `private_dir`; still untested are `accept` recovering after a failed `new_instance`, the `ERROR_MORE_DATA` branch and the `OpenProcess` fallback.
-- Open: XC-20 (no release or packaging workflow), DUI-17 (the mock is not checked against the real core), DUI-27 (`review-fixes.test.ts` and `features.test.ts` still hold component tests).
+- XC-20: `release.yml` builds the installers and the extension's store packages on a version tag or by hand, and drafts the release after `gate.mjs publish`; unsigned until the certificate and updater key exist, and not run yet.
+- DUI-27: done; the review-round file is split into tests by area, and `features.test.ts` stays as the acceptance suite.
+- Open: DUI-17 (the mock is not checked against the real core).
 
 #### Proposed gate checks
 
