@@ -16,7 +16,7 @@ use wirecatch_store::{Snapshot, StoredDownload};
 
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
-use super::questions::Questions;
+use super::questions;
 use super::run::mark_completed;
 use super::state::{Counters, Entry, Hold, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
@@ -105,14 +105,9 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         claimed: Claimed::default(),
         running: BTreeSet::default(),
         unfinished: BTreeSet::default(),
-        pending: Questions::new(
-            "downloads are already waiting for your confirmation. Answer some of them first.",
-            "This link was captured many times and is already waiting for your confirmation. Answer that first.",
-        ),
-        media: Questions::new(
-            "videos are already waiting for your choice. Answer some of them first.",
-            "This video was sent many times and is already waiting for your choice. Answer that first.",
-        ),
+        system_proxy: None,
+        pending: questions::captures(),
+        media: questions::videos(),
         file_exists: BTreeMap::new(),
         addon: AddonSlot::default(),
         suffixes: around.suffixes.clone(),
@@ -307,6 +302,24 @@ mod tests {
         assert_eq!(
             state.unfinished.iter().map(|id| id.0).collect::<Vec<_>>(),
             [2]
+        );
+    }
+
+    /// The proxy a run is shown going through comes from the system's setting as last read, not read again under the manager's lock.
+    #[test]
+    fn a_run_shows_the_system_proxy_as_last_read() {
+        let mut state = restore(Snapshot::default(), &nowhere(&|_| None)).state;
+        let queue = state.default_queue();
+        let mut read = wirecatch_engine::ManualProxies::default();
+        read.all = Some("http://proxy.example:8080".into());
+        state.system_proxy = Some(read);
+        let (label, through) = state.proxy_route(queue, "https://example.com/f");
+        assert_eq!(label, "System proxy (proxy.example:8080)");
+        assert_eq!(through.as_deref(), Some(label.as_str()));
+        state.system_proxy = None;
+        assert_eq!(
+            state.proxy_route(queue, "https://example.com/f").0,
+            "No proxy"
         );
     }
 

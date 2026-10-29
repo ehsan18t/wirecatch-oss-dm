@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use chrono::NaiveDateTime;
 use tokio::task::AbortHandle;
-use wirecatch_engine::{CancellationToken, Progress, ProxyChoice, ProxyRoute, RateLimiter, Url};
+use wirecatch_engine::{
+    CancellationToken, ManualProxies, Progress, ProxyChoice, ProxyRoute, RateLimiter, Url,
+};
 use wirecatch_media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use wirecatch_protocol::app::{
     AppSettings, DownloadStatus, DownloadSummary, FileExistsQuestion, PendingCapture, Queue,
@@ -45,6 +47,9 @@ pub(super) struct State {
     pub claimed: Claimed,
     /// Downloads with a run, so the ticker visits only those.
     pub running: BTreeSet<DownloadId>,
+    /// The system's proxy setting as last read, for the proxy a run is shown going through: read off
+    /// the lock, as on Windows it is in the registry. The run itself reads it when it connects.
+    pub system_proxy: Option<ManualProxies>,
     /// Every unfinished download, and any finished since [`State::prune_finished`] last ran: the scheduler visits these, not the whole history (CORE-10). A finished download never becomes unfinished again, so only adding one puts it here.
     pub unfinished: BTreeSet<DownloadId>,
     pub pending: Questions<Pending>,
@@ -435,6 +440,13 @@ impl State {
     /// through one (D73.3).
     pub fn proxy_route(&self, queue: QueueId, url: &str) -> (String, Option<String>) {
         let (proxy, choice) = self.queue_proxy_with_use(self.slot(queue).ok().map(|s| &s.queue));
+        let choice = match choice {
+            ProxyChoice::System => self
+                .system_proxy
+                .clone()
+                .map_or(ProxyChoice::Direct, ProxyChoice::Manual),
+            other => other,
+        };
         let route = Url::parse(url).map_or(ProxyRoute::Direct, |url| choice.route(&url));
         match route {
             ProxyRoute::Through(address) => {

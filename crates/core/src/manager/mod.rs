@@ -42,7 +42,7 @@ use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 use tracing::warn;
 use wirecatch_addons::manifest::MediaAddonSources;
-use wirecatch_engine::{CancellationToken, RateLimiter, Url};
+use wirecatch_engine::{CancellationToken, ManualProxies, RateLimiter, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{StartupNotice, UiEvent};
 use wirecatch_protocol::extension::{BrowserNotice, NoticeId, NoticePressed};
@@ -294,6 +294,13 @@ impl Drop for Inner {
     }
 }
 
+/// What the state holds besides the download list, read from the disk and the system at start.
+fn load_beside_the_list(state: &mut State, dir: &Path, addon_dir: &Path) {
+    state.addon = addons::AddonSlot::load(addon_dir);
+    state.suffix_check = suffix_list::SuffixCheck::load(dir);
+    state.system_proxy = ManualProxies::from_system();
+}
+
 impl Manager {
     /// Opens the manager on `config.data_dir`, restoring every download. Downloads
     /// that were running when the app last stopped continue on their own.
@@ -334,8 +341,7 @@ impl Manager {
                 suffixes: SuffixList::load(&dir, now_millis),
             };
             let mut restored = restore::restore(snapshot, &around);
-            restored.state.addon = addons::AddonSlot::load(&addons_at);
-            restored.state.suffix_check = suffix_list::SuffixCheck::load(&dir);
+            load_beside_the_list(&mut restored.state, &dir, &addons_at);
             // Cookies files left by a crash: nothing may keep them.
             wirecatch_files::discard::dir(&temp_at);
             Ok((store, restored, recoveries, not_private))
@@ -501,6 +507,10 @@ impl Manager {
             self.inner.stopped.clone(),
         ));
         self.spawn(Manager::run_suffix_list_updates(
+            weak.clone(),
+            self.inner.stopped.clone(),
+        ));
+        self.spawn(proxy::run_system_proxy_reads(
             weak,
             self.inner.stopped.clone(),
         ));
