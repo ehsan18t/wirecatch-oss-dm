@@ -25,6 +25,10 @@ export type PendingCapture = {
    */
   folder: string;
   /**
+   * The folder for its file type, where a queue that follows the app saves it (D94.4).
+   */
+  type_folder: string;
+  /**
    * The kind of file, which picked the folder.
    */
   category: Category;

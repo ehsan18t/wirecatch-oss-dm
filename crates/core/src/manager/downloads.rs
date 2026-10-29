@@ -571,7 +571,7 @@ impl Manager {
             .unwrap_or_else(|| wirecatch_settings::category_of(&state.settings, &name));
         let dir = match &wanted.folder {
             Some(folder) => folder.clone(),
-            None => wirecatch_settings::folder_for(&state.settings, category, &self.inner.folders)?,
+            None => state.folder_for(new.placed.queue, category, &self.inner.folders)?,
         };
         Ok((dir, name, category))
     }

@@ -124,10 +124,9 @@ impl Manager {
             }
             let dir = match &entry.naming.folder {
                 Some(folder) => PathBuf::from(folder),
-                None => {
-                    wirecatch_settings::folder_for(&state.settings, category, &self.inner.folders)
-                        .map_err(|e| e.to_string())?
-                }
+                None => state
+                    .folder_for(entry.row.queue, category, &self.inner.folders)
+                    .map_err(|e| e.to_string())?,
             };
             (dir, name, category, entry.path().to_path_buf())
         };

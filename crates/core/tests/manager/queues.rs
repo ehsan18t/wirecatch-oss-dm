@@ -5,9 +5,10 @@ use std::time::Duration;
 use chrono::TimeDelta;
 use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
 use wirecatch_protocol::app::{
-    AddRequest, DownloadStatus, Queue, QueueNotify, QueueReport, QueueSettings, Schedule, Setting,
-    TimeOfDay, UiEvent, WaitReason,
+    AddRequest, CaptureConfirmation, DownloadStatus, PortablePath, Queue, QueueNotify, QueueReport,
+    QueueSettings, Schedule, Setting, TimeOfDay, UiEvent, WaitReason,
 };
+use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::common::{Harness, SilentServer, TestResult, fast_server, is_running, monday, tune};
@@ -227,40 +228,45 @@ async fn deleting_a_queue_moves_its_waiting_confirmations_to_the_default() -> Te
         .create_queue(QueueSettings::new("Later"))
         .unwrap()
         .id;
-    let capture = wirecatch_protocol::extension::NewDownload {
-        handover_id: "tab-1".into(),
-        url: server.url("report.pdf").to_string(),
-        // A page on the person's network, whose links may lead there (D39).
-        referrer: Some("http://intranet.test/".into()),
-        page_url: Some("http://intranet.test/".into()),
-        frame_url: None,
-        suggested_name: Some("report.pdf".into()),
-        mime: None,
-        size_hint: Some(1024),
-        cookies: None,
-        user_agent: None,
-        extra_headers: vec![],
-        source: wirecatch_protocol::extension::CaptureSource::BrowserDownload,
-        queue: Some(later),
-        media: None,
-    };
-    h.manager.add_capture(capture).await.unwrap();
+    h.manager
+        .add_capture(capture(&server.url("report.pdf"), later))
+        .await
+        .unwrap();
     assert_eq!(h.manager.pending_confirmations()[0].queue, later);
 
     h.manager.delete_queue(later).unwrap();
     let waiting = h.manager.pending_confirmations().remove(0);
     assert_eq!(waiting.queue, DEFAULT_QUEUE_ID);
-    let answer = wirecatch_protocol::app::CaptureConfirmation {
-        folder: None,
-        file_name: None,
-        queue: None,
-        later: false,
-    };
-    h.manager.confirm_capture(waiting.id, answer).await.unwrap();
+    h.manager
+        .confirm_capture(waiting.id, CaptureConfirmation::default())
+        .await
+        .unwrap();
     let row = h.manager.list_downloads().remove(0);
     assert_eq!(row.queue, DEFAULT_QUEUE_ID);
     h.wait_status(row.id, DownloadStatus::Completed).await;
     Ok(())
+}
+
+/// What the browser hands over for `url`, to go to `queue`.
+fn capture(url: &impl ToString, queue: QueueId) -> NewDownload {
+    let url = url.to_string();
+    NewDownload {
+        handover_id: "tab-1".into(),
+        suggested_name: url.rsplit('/').next().map(Into::into),
+        url,
+        // A page on the person's network, whose links may lead there (D39).
+        referrer: Some("http://intranet.test/".into()),
+        page_url: Some("http://intranet.test/".into()),
+        frame_url: None,
+        mime: None,
+        size_hint: Some(1024),
+        cookies: None,
+        user_agent: None,
+        extra_headers: vec![],
+        source: CaptureSource::BrowserDownload,
+        queue: Some(queue),
+        media: None,
+    }
 }
 
 fn ids_of(rows: &[wirecatch_protocol::app::DownloadSummary]) -> Vec<DownloadId> {
@@ -361,6 +367,85 @@ async fn a_queue_is_made_with_its_settings_or_not_at_all() -> TestResult {
             .list_queues()
             .iter()
             .any(|q| q.settings.name == "Never")
+    );
+    Ok(())
+}
+
+/// A queue's own folder holds everything it takes; a folder the person picks wins over it (D94.2).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queue_with_its_own_folder_saves_everything_there() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
+    let own = h.root.path().join("Night");
+    let night = h
+        .manager
+        .create_queue(QueueSettings {
+            folder: Setting::Own(PortablePath(own.to_string_lossy().into_owned())),
+            ..QueueSettings::new("Night")
+        })?
+        .id;
+    let in_night = |name: &str| {
+        let url = server.url(name);
+        h.add_with(url, move |r| r.queue = Some(night))
+    };
+    let film = in_night("film.mkv").await?.id;
+    let song = in_night("song.mp3").await?.id;
+    let picked = h.root.path().join("Picked");
+    let chosen = h
+        .add_with(server.url("chosen.mkv"), |r| {
+            r.queue = Some(night);
+            r.folder = Some(picked.to_string_lossy().into_owned());
+        })
+        .await?
+        .id;
+    let in_main = h.add(server.url("main.mkv")).await?.id;
+
+    for (id, folder) in [
+        (film, own.clone()),
+        (song, own),
+        (chosen, picked),
+        (in_main, h.folders.downloads.join("Video")),
+    ] {
+        let done = h.wait_status(id, DownloadStatus::Completed).await;
+        assert_eq!(
+            std::path::Path::new(&done.path).parent(),
+            Some(folder.as_path())
+        );
+    }
+    Ok(())
+}
+
+/// A file from the browser proposes its queue's folder, and goes to the folder of the queue picked in its window (D94.4).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_capture_goes_to_the_folder_of_the_queue_answered() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
+    tune(&h.manager, |s| s.extension.ask_before_download = true)?;
+    let own = h.root.path().join("Night");
+    let night = h
+        .manager
+        .create_queue(QueueSettings {
+            folder: Setting::Own(PortablePath(own.to_string_lossy().into_owned())),
+            ..QueueSettings::new("Night")
+        })?
+        .id;
+    h.manager
+        .add_capture(capture(&server.url("report.pdf"), DEFAULT_QUEUE_ID))
+        .await?;
+    let asked = h.manager.pending_confirmations().remove(0);
+    let documents = h.folders.downloads.join("Documents");
+    assert_eq!(asked.folder, documents.to_string_lossy());
+    assert_eq!(asked.type_folder, asked.folder);
+
+    let answer = CaptureConfirmation {
+        queue: Some(night),
+        ..CaptureConfirmation::default()
+    };
+    let id = h.manager.confirm_capture(asked.id, answer).await?;
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+    assert_eq!(
+        std::path::Path::new(&done.path).parent(),
+        Some(own.as_path())
     );
     Ok(())
 }

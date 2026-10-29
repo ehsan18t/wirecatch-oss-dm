@@ -123,7 +123,8 @@ describe('the Add dialog', () => {
     app.openDialog({ kind: 'add', urls: ['https://a.example/1.zip'] });
     await settle();
     const saveTo = inDialog().getByRole('group', { name: 'Save to' });
-    expect(saveTo).toHaveTextContent('By file type (from Settings)');
+    // The sample's Overnight saves to its own folder (D94.4).
+    expect(saveTo).toHaveTextContent('By queue or file type');
     expect(within(saveTo).queryByRole('button', { name: 'Use default' })).toBeNull();
     await click(within(saveTo).getByRole('button', { name: 'Change' }));
     expect(saveTo).toHaveTextContent(String.raw`E:\Media`);
@@ -131,7 +132,7 @@ describe('the Add dialog', () => {
       String.raw`E:\Media`,
     );
     await click(within(saveTo).getByRole('button', { name: 'Use default' }));
-    expect(saveTo).toHaveTextContent('By file type');
+    expect(saveTo).toHaveTextContent('By queue or file type');
   });
 
   it('keeps the focus in the form when Use default goes with the folder', async () => {

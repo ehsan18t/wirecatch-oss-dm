@@ -197,10 +197,11 @@ pub struct Queue {
 }
 
 /// A queue setting that uses the global value or is the queue's own (D72.1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "source", content = "value", rename_all = "snake_case")]
 #[ts(export)]
 pub enum Setting<T> {
+    #[default]
     Global,
     Own(T),
 }
@@ -251,6 +252,9 @@ pub struct QueueSettings {
     #[serde(default, with = "known_or_default")]
     #[ts(as = "QueueNotify")]
     pub notify: QueueNotify,
+    /// Where its downloads are saved (D94); following the app picks a folder by file type.
+    #[serde(default)]
+    pub folder: Setting<PortablePath>,
 }
 
 impl QueueSettings {
@@ -267,6 +271,7 @@ impl QueueSettings {
             add_downloads: AddDownloads::Manual,
             schedule: None,
             notify: QueueNotify::EachDownload,
+            folder: Setting::Global,
         }
     }
 }
@@ -348,6 +353,9 @@ pub struct MediaChoice {
     pub options: Vec<MediaOption>,
     /// Where it will be saved if the user just confirms.
     pub folder: String,
+    /// The folder for its file type, where a queue that follows the app saves it (D94.4); none
+    /// when the person picked the folder as they added the link.
+    pub type_folder: Option<String>,
     /// The queue it goes to if the user just confirms.
     pub queue: QueueId,
     /// Why it goes to that queue (D72.8).
@@ -1636,7 +1644,7 @@ pub struct AddRequest {
     pub url: Link,
     /// The queue picked; absent, the rules place it, else it joins the default queue (D72.3).
     pub queue: Option<QueueId>,
-    /// Absolute folder; the category rule decides if absent.
+    /// Absolute folder; absent, the queue's folder or the one for the file type decides (D94.2).
     pub folder: Option<String>,
     /// The server's name is used if absent.
     pub file_name: Option<String>,
@@ -1656,6 +1664,8 @@ pub struct PendingCapture {
     pub file_name: String,
     /// Where it will be saved if the user just confirms.
     pub folder: String,
+    /// The folder for its file type, where a queue that follows the app saves it (D94.4).
+    pub type_folder: String,
     /// The kind of file, which picked the folder.
     pub category: Category,
     /// Size in bytes, when known.

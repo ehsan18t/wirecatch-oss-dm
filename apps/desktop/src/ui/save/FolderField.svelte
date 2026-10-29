@@ -1,7 +1,7 @@
 <script lang="ts">
   // Where a download is saved: the folder, or what decides it while none is chosen, with Change and, when the owner offers it, Use default. The owner asks for the folder and keeps it. The Add dialog uses it, and the download window's save question can.
   import FolderIcon from '~icons/lucide/folder';
-  import { Button, Icon } from '@wirecatch/ui';
+  import { Button, Icon, cn } from '@wirecatch/ui';
 
   interface Props {
     /** The folder chosen; null while the default decides. */
@@ -9,6 +9,8 @@
     /** What decides the folder while none is chosen. */
     fallback?: string;
     label?: string;
+    /** Names the field for screen readers only, where a heading above already says it. */
+    labelHidden?: boolean;
     /** Asks for another folder. */
     onchoose: () => void;
     /** Goes back to the default; offered while a folder is chosen. */
@@ -19,6 +21,7 @@
     folder,
     fallback = 'By file type (from Settings)',
     label = 'Save to',
+    labelHidden = false,
     onchoose,
     onreset,
   }: Props = $props();
@@ -36,14 +39,16 @@
 </script>
 
 <div role="group" aria-labelledby={labelId} class="flex min-w-0 flex-col gap-1.5">
-  <span id={labelId} class="text-ui font-medium text-ink">{label}</span>
+  <span id={labelId} class={labelHidden ? 'sr-only' : 'text-ui font-medium text-ink'}>{label}</span>
   <div class="flex flex-wrap items-center gap-2">
     <p
       id={folderId}
       class="flex min-h-control min-w-0 flex-1 basis-64 items-center gap-2 rounded-sm border border-line-strong/quiet bg-field px-2.5 py-1 text-ui text-ink"
     >
       <Icon icon={FolderIcon} size="sm" class="shrink-0 text-ink-subtle" />
-      <span class="min-w-0 wrap-anywhere">{folder ?? fallback}</span>
+      <span class={cn('min-w-0 wrap-anywhere', folder === null && 'text-ink-muted')}
+        >{folder ?? fallback}</span
+      >
     </p>
     <div class="flex shrink-0 gap-2">
       <Button id={changeId} aria-describedby={folderId} onclick={onchoose}>Change</Button>

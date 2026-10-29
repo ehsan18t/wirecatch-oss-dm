@@ -1,10 +1,10 @@
 import {
   GLOBAL,
-  MANUAL_QUEUE,
   MAX_CONCURRENT_DOWNLOADS,
   MAX_CONNECTIONS_PER_DOWNLOAD,
   ownSetting,
   type QueueSettings,
+  newQueueSettings,
 } from '@wirecatch/protocol';
 import { MB } from '@wirecatch/units';
 import { describe, expect, it } from 'vitest';
@@ -17,18 +17,7 @@ import {
   queueLimitFacts,
 } from './limits';
 
-const FOLLOWS: QueueSettings = {
-  name: 'Plain',
-  description: '',
-  max_concurrent: GLOBAL,
-  speed_limit: GLOBAL,
-  connections: GLOBAL,
-  proxy: GLOBAL,
-  exceptions: GLOBAL,
-  add_downloads: MANUAL_QUEUE,
-  schedule: null,
-  notify: 'each_download',
-};
+const FOLLOWS: QueueSettings = newQueueSettings('Plain');
 
 describe('download limits', () => {
   it('lets a queue run as many downloads at once as the core allows', () => {

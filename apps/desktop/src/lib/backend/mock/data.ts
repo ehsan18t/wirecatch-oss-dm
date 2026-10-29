@@ -4,8 +4,7 @@ import {
   DEFAULT_CONNECTIONS_PER_DOWNLOAD,
   DEFAULT_MAX_CONCURRENT_DOWNLOADS,
   DEFAULT_QUEUE_ID,
-  GLOBAL,
-  MANUAL_QUEUE,
+  newQueueSettings,
   ownSetting,
   proxyServerId,
   queueId,
@@ -168,6 +167,7 @@ export const SLOW_READING_MS = 3000;
 const MAIN_AT_ONCE = 3;
 const OVERNIGHT_SPEED_LIMIT = 4 * MB;
 const WORK_CONNECTIONS = 4;
+const OVERNIGHT_FOLDER = String.raw`D:\Overnight`;
 
 /** The sample's proxy servers: one that works, with a password, and one that cannot be reached. */
 export const OFFICE_PROXY_ID = proxyServerId(1);
@@ -203,34 +203,20 @@ const DEFAULT_QUEUES: readonly Queue[] = [
   {
     id: MAIN_QUEUE_ID,
     is_default: true,
-    settings: {
-      name: 'Main',
-      description: '',
-      max_concurrent: ownSetting(MAIN_AT_ONCE),
-      speed_limit: GLOBAL,
-      connections: GLOBAL,
-      proxy: GLOBAL,
-      exceptions: GLOBAL,
-      add_downloads: MANUAL_QUEUE,
-      schedule: null,
-      notify: 'each_download',
-    },
+    settings: { ...newQueueSettings('Main'), max_concurrent: ownSetting(MAIN_AT_ONCE) },
     status: { ...QUEUE_RUNNING },
   },
   {
     id: OVERNIGHT_QUEUE_ID,
     is_default: false,
     settings: {
-      name: 'Overnight',
+      ...newQueueSettings('Overnight'),
       description: 'Large files, while nobody is using the connection',
       max_concurrent: ownSetting(2),
       speed_limit: ownSetting(OVERNIGHT_SPEED_LIMIT),
-      connections: GLOBAL,
-      proxy: GLOBAL,
-      exceptions: GLOBAL,
-      add_downloads: MANUAL_QUEUE,
       schedule: { start: { hour: 1, minute: 0 }, stop: { hour: 7, minute: 0 }, days: [] },
       notify: 'when_done',
+      folder: ownSetting(OVERNIGHT_FOLDER),
     },
     status: { ...QUEUE_RUNNING },
   },
@@ -238,16 +224,11 @@ const DEFAULT_QUEUES: readonly Queue[] = [
     id: WORK_QUEUE_ID,
     is_default: false,
     settings: {
-      name: 'Work files',
-      description: '',
+      ...newQueueSettings('Work files'),
       max_concurrent: ownSetting(1),
       speed_limit: ownSetting(1 * MB),
       connections: ownSetting(WORK_CONNECTIONS),
       proxy: ownSetting({ kind: 'server', id: OFFICE_PROXY_ID }),
-      exceptions: GLOBAL,
-      add_downloads: MANUAL_QUEUE,
-      schedule: null,
-      notify: 'each_download',
     },
     status: { ...QUEUE_RUNNING },
   },
@@ -276,7 +257,8 @@ export function categoryFor(fileName: string, rules: readonly CategoryRule[]): C
   return 'other';
 }
 
-export function folderFor(category: Category, settings: AppSettings): string {
+/** The folder for `category` in a queue that follows the app. */
+export function typeFolder(category: Category, settings: AppSettings): string {
   const rule = settings.categories.find((r) => r.category === category);
   return resolvePortable(rule ? rule.folder : settings.default_folder);
 }

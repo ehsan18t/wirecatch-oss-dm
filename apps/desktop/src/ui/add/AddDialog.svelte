@@ -5,6 +5,7 @@
   import { Button, Callout, Dialog, Field, type FieldControl, Kbd, TextArea } from '@wirecatch/ui';
   import { fileNameFromUrl } from '$lib/format';
   import { type AddDraft, linksHint } from '$lib/state/add-draft.svelte';
+  import { folderFallback } from '$lib/queue-folders';
   import { queueLine } from '$lib/queue-reasons';
   import { getApp } from '$lib/state/app.svelte';
   import FileNameField from '../save/FileNameField.svelte';
@@ -128,6 +129,7 @@
 
     <FolderField
       folder={draft.folder}
+      fallback={folderFallback(app.queues.list, draft.queue)}
       onchoose={() => void draft.chooseFolder()}
       onreset={() => {
         draft.useDefaultFolder();

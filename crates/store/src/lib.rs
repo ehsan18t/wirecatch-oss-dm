@@ -1475,8 +1475,8 @@ mod tests {
 
     use super::*;
     use wirecatch_protocol::app::{
-        Accent, Category, DownloadStatus, FixAction, NotifyOnFinish, QueueNotify, QueueSettings,
-        Schedule, Setting, Theme, TimeOfDay, UserError,
+        Accent, Category, DownloadStatus, FixAction, NotifyOnFinish, PortablePath, QueueNotify,
+        QueueSettings, Schedule, Setting, Theme, TimeOfDay, UserError,
     };
 
     fn sample_settings() -> AppSettings {
@@ -1929,6 +1929,7 @@ mod tests {
                     days: vec![],
                 }),
                 notify: QueueNotify::WhenDone,
+                folder: Setting::Own(PortablePath("{Downloads}/Night".into())),
             },
             status: QueueStatus {
                 paused: true,

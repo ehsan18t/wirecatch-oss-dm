@@ -3,5 +3,5 @@
 export { MockBackend } from './backend';
 export { SAMPLE_SYSTEM_ACCENT } from './data';
 export type { MockOptions } from './options';
-export { defaultSettings, mediaAddon } from './data';
+export { defaultSettings, DOWNLOADS, mediaAddon, PICKED_FOLDERS } from './data';
 export { MockFinished } from './finished';

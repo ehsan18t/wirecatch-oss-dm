@@ -475,14 +475,16 @@ impl Manager {
         state.pending.check_room()?;
         let file_name = naming::file_name(capture.suggested_name.as_deref(), url)?;
         let category = wirecatch_settings::category_of(&state.settings, &file_name);
-        let folder =
-            wirecatch_settings::folder_for(&state.settings, category, &self.inner.folders)?;
+        let folder = state.folder_for(placed.queue, category, &self.inner.folders)?;
+        let type_folder =
+            wirecatch_settings::type_folder(&state.settings, category, &self.inner.folders)?;
         let id = state.ids.pending();
         let proposal = PendingCapture {
             id,
             url: url_text,
             file_name,
             folder: folder.to_string_lossy().into_owned(),
+            type_folder: type_folder.to_string_lossy().into_owned(),
             category,
             size: capture.size_hint,
             queue: placed.queue,

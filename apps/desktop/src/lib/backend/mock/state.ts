@@ -4,6 +4,7 @@
 import {
   type AddonInfo,
   type AppSettings,
+  type Category,
   type DownloadId,
   type DownloadSummary,
   type MediaChoice,
@@ -37,8 +38,9 @@ import {
   defaultProxies,
   defaultQueues,
   defaultSettings,
-  folderFor,
   mediaAddon,
+  resolvePortable,
+  typeFolder,
   MAIN_QUEUE_ID,
 } from './data';
 import { between, type Random, type Spread } from './rng';
@@ -261,10 +263,16 @@ export class MockState {
     return name === '' ? address : `${name} (${address})`;
   }
 
+  /** The folder new downloads of `category` go to in `queue`, as the core picks it (D94.2). */
+  folderFor(queue: QueueId, category: Category): string {
+    const own = this.queues.find((q) => q.id === queue)?.settings.folder;
+    return own?.source === 'own' ? resolvePortable(own.value) : typeFolder(category, this.settings);
+  }
+
   /** Adds a download at the end of the list; `rate` is how fast it can go. */
   insert(fields: NewRow, rate: number): DownloadSummary {
     const category = categoryFor(fields.file_name, this.settings.categories);
-    const folder = fields.folder ?? folderFor(category, this.settings);
+    const folder = fields.folder ?? this.folderFor(fields.queue, category);
     const row: DownloadSummary = {
       id: this.newDownloadId(),
       url: fields.url,

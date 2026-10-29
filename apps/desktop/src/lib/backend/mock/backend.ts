@@ -502,7 +502,7 @@ export class MockBackend extends MockShell implements Backend {
     return this.#call(() => downloads.setDownloadFolder(this.#state, id, folder));
   }
 
-  pickFolder(current?: string) {
+  pickFolder(current?: string): Promise<string | null> {
     return this.#call(() => {
       const next = () =>
         data.PICKED_FOLDERS[this.#folderPick++ % data.PICKED_FOLDERS.length] ?? data.DOWNLOADS;

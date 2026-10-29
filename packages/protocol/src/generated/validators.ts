@@ -951,6 +951,7 @@ export function isMediaChoice(value: unknown): value is MediaChoice {
     (typeof value1['page_url'] === 'string' || value1['page_url'] === null) &&
     isArrayOf(value1['options'], isMediaOption) &&
     typeof value1['folder'] === 'string' &&
+    (typeof value1['type_folder'] === 'string' || value1['type_folder'] === null) &&
     isQueueId(value1['queue']) &&
     isQueueReason(value1['queue_reason']) &&
     isArrayOf(value1['subtitles'], isMediaSubtitle) &&
@@ -1232,6 +1233,7 @@ export function isPendingCapture(value: unknown): value is PendingCapture {
     typeof value1['url'] === 'string' &&
     typeof value1['file_name'] === 'string' &&
     typeof value1['folder'] === 'string' &&
+    typeof value1['type_folder'] === 'string' &&
     isCategory(value1['category']) &&
     (typeof value1['size'] === 'number' || value1['size'] === null) &&
     isQueueId(value1['queue']) &&
@@ -1494,7 +1496,14 @@ export function isQueueSettings(value: unknown): value is QueueSettings {
       )) &&
     (isSchedule(value1['schedule']) || value1['schedule'] === null) &&
     isAddDownloads(value1['add_downloads']) &&
-    isQueueNotify(value1['notify']))(value);
+    isQueueNotify(value1['notify']) &&
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'global')(
+      value1['folder'],
+    ) ||
+      ((value2: unknown): boolean =>
+        isRecord(value2) && value2['source'] === 'own' && isPortablePath(value2['value']))(
+        value1['folder'],
+      )))(value);
 }
 
 /** Whether `value` has the shape of a {@link QueueStatus}; fields it does not name are not checked. */

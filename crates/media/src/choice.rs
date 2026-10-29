@@ -739,6 +739,7 @@ mod tests {
             page_url: None,
             options: offers.iter().map(|(o, _)| o.clone()).collect(),
             folder: "/v".into(),
+            type_folder: None,
             queue: wirecatch_protocol::QueueId(1),
             queue_reason: wirecatch_protocol::rules::QueueReason::BrowserQueue,
             subtitles: vec![

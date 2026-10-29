@@ -47,10 +47,16 @@ pub fn export(
         settings,
         queues: queues
             .iter()
-            .map(|q| SettingsFileQueue {
-                id: q.id,
-                is_default: q.is_default,
-                settings: q.settings.clone(),
+            .map(|q| {
+                let mut settings = q.settings.clone();
+                if let Setting::Own(folder) = &mut settings.folder {
+                    *folder = folders.to_portable(folder);
+                }
+                SettingsFileQueue {
+                    id: q.id,
+                    is_default: q.is_default,
+                    settings,
+                }
             })
             .collect(),
         proxy_servers: proxies
@@ -111,7 +117,7 @@ pub struct Localized {
 /// the disk.
 #[must_use]
 pub fn localize(mut profile: SettingsFile, folders: &KnownFolders) -> Localized {
-    let report = localize_folders(&mut profile.settings, folders);
+    let report = localize_folders(&mut profile, folders);
     Localized {
         profile,
         folders: report,
@@ -211,7 +217,7 @@ pub fn merge_localized(
     let mut ids = HashMap::new();
     let (mut added, mut updated) = (Vec::new(), Vec::new());
     for incoming in profile.queues {
-        let mut settings = crate::validate_queue(incoming.settings)?;
+        let mut settings = crate::validate_queue(incoming.settings, folders)?;
         if let Setting::Own(proxy) = settings.proxy {
             settings.proxy = local_proxy(proxy).map_or(Setting::Global, Setting::Own);
         }
@@ -305,8 +311,9 @@ fn merge_proxies(
 /// Replaces folders that do not exist on this machine, or that are startup or
 /// system folders, with a fallback, and reports every folder setting with where
 /// it ended up and why. Blocks on the disk.
-fn localize_folders(settings: &mut AppSettings, folders: &KnownFolders) -> Vec<ImportedFolder> {
-    let mut report = Vec::with_capacity(settings.categories.len() + 1);
+fn localize_folders(profile: &mut SettingsFile, folders: &KnownFolders) -> Vec<ImportedFolder> {
+    let settings = &mut profile.settings;
+    let mut report = Vec::with_capacity(settings.categories.len() + profile.queues.len() + 1);
     let mut place = |setting: String, folder: &mut PortablePath, fallback: &PortablePath| {
         let requested = folder.clone();
         // A file from elsewhere may not point downloads at a network folder, or
@@ -343,6 +350,15 @@ fn localize_folders(settings: &mut AppSettings, folders: &KnownFolders) -> Vec<I
             &mut rule.folder,
             &default_folder,
         );
+    }
+    for queue in &mut profile.queues {
+        if let Setting::Own(folder) = &mut queue.settings.folder {
+            place(
+                format!("{} queue folder", queue.settings.name.trim()),
+                folder,
+                &default_folder,
+            );
+        }
     }
     report
 }
@@ -753,6 +769,40 @@ mod tests {
             imported.settings.categories[0].folder,
             PortablePath("{Downloads}".into())
         );
+    }
+
+    /// A queue's folder travels like the other folder settings (D94.5).
+    #[test]
+    fn queue_folders_are_exported_portable_and_checked_on_import() {
+        let foreign = if cfg!(windows) {
+            "/home/ada/Films"
+        } else {
+            r"D:\Films"
+        };
+        let mut night = queue(4, "Night");
+        let home = folders().downloads.join("Night");
+        night.settings.folder = Setting::Own(PortablePath(home.to_string_lossy().into_owned()));
+        let exported = export(&default_settings(), &[night.clone()], &[], &folders(), 0);
+        assert_eq!(
+            exported.queues[0].settings.folder,
+            Setting::Own(PortablePath("{Downloads}/Night".into()))
+        );
+
+        let mut profile = exported;
+        profile.queues[0].settings.folder = Setting::Own(PortablePath(foreign.into()));
+        let imported = merge(profile, &[default_queue()], &folders(), || QueueId(5)).unwrap();
+        let added = imported
+            .queues
+            .iter()
+            .find(|q| q.settings.name == "Night")
+            .unwrap();
+        assert_eq!(
+            added.settings.folder,
+            Setting::Own(imported.settings.default_folder.clone())
+        );
+        let reported = imported.summary.folders.last().unwrap();
+        assert_eq!(reported.setting, "Night queue folder");
+        assert_eq!(reported.requested, PortablePath(foreign.into()));
     }
 
     /// A settings file may not send downloads into a startup or system folder,
