@@ -4,8 +4,10 @@
 //! They rely on the overrides `WIRECATCH_BRIDGE_TEST_ENDPOINT`,
 //! `WIRECATCH_BRIDGE_TEST_LAUNCH` and `WIRECATCH_BRIDGE_TEST_START_BUDGET_MS`
 //! (see `src/app.rs`), which exist only with the
-//! `test-overrides` feature; Cargo.toml makes this test require it. Run with
+//! `test-overrides` feature, so the file is empty without it and
+//! `needs_overrides.rs` fails instead. Run with
 //! `cargo test -p wirecatch-bridge --features test-overrides`.
+#![cfg(feature = "test-overrides")]
 
 use std::ffi::OsString;
 use std::process::Stdio;
@@ -339,19 +341,12 @@ fn fake_app_process() {
         }
         // Like the real app, keep running after the bridge leaves, until the test
         // has checked that (by connecting once more), then exit.
-        test_may_not_check(&timeout(LINGER, listener.accept()).await);
+        // Whether the check comes or the linger runs out, the fake app's job is over.
+        tokio::select! {
+            _ = listener.accept() => {}
+            () = tokio::time::sleep(LINGER) => {}
+        }
     });
-}
-
-/// Takes the outcome of waiting for the test's last check. Whether it came in time or not,
-/// the fake app's job is over.
-fn test_may_not_check(
-    checked: &Result<
-        Result<wirecatch_ipc::Connection, wirecatch_ipc::IpcError>,
-        tokio::time::error::Elapsed,
-    >,
-) {
-    let (Ok(Ok(_) | Err(_)) | Err(_)) = checked;
 }
 
 fn launch_fake_app(mode: &str, endpoint: &Endpoint, command: &mut Command) -> TestResult {

@@ -2,8 +2,8 @@
 
 import AxeBuilder from '@axe-core/playwright';
 import { DOWNLOAD_WINDOW_MAX_HEIGHT } from '@wirecatch/protocol';
-import { expect, test, type Locator, type Page } from '@playwright/test';
-import { open, settled } from './helpers';
+import { expect, type Locator, type Page } from '@playwright/test';
+import { open, settled, test } from './helpers';
 
 const windows = (page: Page) => page.getByRole('region', { name: /^Wirecatch download window/ });
 

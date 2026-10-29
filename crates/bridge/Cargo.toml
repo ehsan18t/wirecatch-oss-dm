@@ -13,14 +13,6 @@ publish = false
 name = "wirecatch-bridge"
 path = "src/main.rs"
 
-# End-to-end tests of the executable. They point it at a fake app through
-# environment variables that exist only with the `test-overrides` feature, so run
-# them with `cargo test -p wirecatch-bridge --features test-overrides`.
-[[test]]
-name = "bridge"
-path = "tests/bridge.rs"
-required-features = ["test-overrides"]
-
 [features]
 ## Test-only environment overrides for the app endpoint and the app launcher
 ## (see `src/app.rs`). Never enable this in a build that ships. Which extensions

@@ -1,5 +1,5 @@
 //! Helpers for the add-on and media tests: fake add-on releases built from the
-//! `fake_media_tool` example, served by the test-support crate's file server,
+//! `fake_media_tool` program, served by the test-support crate's file server,
 //! and a harness with the media add-on pointed at them.
 
 use std::io::{Cursor, Write};
@@ -29,24 +29,9 @@ pub use wirecatch_test_support::files::FileServer;
 
 use crate::common::{Harness, PATIENCE, TestResult};
 
-/// The `fake_media_tool` example, built by `cargo test`.
+/// The `fake_media_tool` program, which cargo builds for this crate's tests.
 pub fn fake_tool() -> TestResult<Vec<u8>> {
-    let exe = std::env::current_exe()?;
-    // The test binary is in `<target>/<profile>/deps`, the examples beside it.
-    let profile = exe
-        .parent()
-        .and_then(Path::parent)
-        .ok_or("the test binary has no profile folder")?;
-    let path = profile
-        .join("examples")
-        .join(format!("fake_media_tool{}", std::env::consts::EXE_SUFFIX));
-    std::fs::read(&path).map_err(|e| {
-        format!(
-            "{} is missing ({e}): run `cargo test -p wirecatch-core`, which builds the examples",
-            path.display()
-        )
-        .into()
-    })
+    Ok(std::fs::read(env!("CARGO_BIN_EXE_fake_media_tool"))?)
 }
 
 /// The fake tool as yt-dlp release `version`: it says it is that version when asked.

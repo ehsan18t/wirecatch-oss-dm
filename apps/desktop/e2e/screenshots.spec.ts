@@ -1,7 +1,7 @@
 // Screenshots of the main states for review, in both themes. Saved to docs/screenshots.
 
-import { expect, test } from '@playwright/test';
-import { open, row, rows, SCREENSHOTS, settled, showDetails } from './helpers';
+import { expect } from '@playwright/test';
+import { open, row, rows, SCREENSHOTS, settled, showDetails, test } from './helpers';
 
 const dir = SCREENSHOTS;
 

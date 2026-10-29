@@ -1,6 +1,7 @@
 // The design system in a real engine, built for production (playwright.gallery.config.ts): what jsdom cannot show and the dev server can hide. Each test names the failure it catches.
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { test } from './helpers';
 
 /** Tab presses before the walk gives up; the gallery has fewer stops than this. */
 const MAX_TAB_STOPS = 400;

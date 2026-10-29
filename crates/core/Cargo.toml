@@ -31,6 +31,14 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "process"] }
 tracing.workspace = true
 
+# Stands in for the media add-on's programs in this crate's tests, which take its path from
+# `CARGO_BIN_EXE_fake_media_tool`, so cargo builds it for every test run.
+[[bin]]
+name = "fake_media_tool"
+path = "src/bin/fake_media_tool.rs"
+test = false
+doc = false
+
 [dev-dependencies]
 anyhow.workspace = true
 # Building the media add-on releases the manager tests install: .zip and signed .tar.xz.

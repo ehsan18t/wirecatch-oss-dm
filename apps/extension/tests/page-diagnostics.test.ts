@@ -1,6 +1,7 @@
 /** The extension's own page records its diagnostics from the moment it loads (W5, D40). */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
+import { PATIENCE_MS } from '@wirecatch/ui/testing/jsdom';
 import { log, type DiagEntry } from '../src/lib/diag/log';
 import { DIAG_KEY_PREFIX } from '../src/lib/diag/persist';
 
@@ -37,7 +38,7 @@ describe.each(Object.keys(PAGES) as (keyof typeof PAGES)[])('the %s page', (page
     log.warn('settings', `Handled on the ${page} page`);
     await vi.waitFor(async () => {
       expect((await kept(page)).map((e) => e.message)).toContain(`Handled on the ${page} page`);
-    });
+    }, PATIENCE_MS);
   });
 
   it('logs what nothing caught, as its own', async () => {
@@ -46,6 +47,6 @@ describe.each(Object.keys(PAGES) as (keyof typeof PAGES)[])('the %s page', (page
       expect(await kept(page)).toContainEqual(
         expect.objectContaining({ scope: page, message: 'Uncaught error' }),
       );
-    });
+    }, PATIENCE_MS);
   });
 });

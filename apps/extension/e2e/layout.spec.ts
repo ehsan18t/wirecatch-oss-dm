@@ -4,7 +4,8 @@
  * may stick out of the popup or the page, scroll sideways, or squeeze text into a sliver. jsdom
  * does no layout, so only this catches a label that grows in translation or a long host name.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { test } from '@wirecatch/ui/testing/playwright';
 
 /** The narrowest a column holding a few words of text may get before it reads one word per line. */
 const NARROWEST_TEXT_PX = 96;
@@ -31,6 +32,9 @@ interface Font {
 async function open(page: Page, query: string, font: Font): Promise<void> {
   await page.goto(`/?${query}${font.query}`);
   await page.locator('main').waitFor();
+  // `fonts.ready` waits only for loads already started, which the page may not have asked for yet.
+  if (font.bundled !== null)
+    await page.evaluate((family) => document.fonts.load(`16px "${family}"`), font.bundled);
   await page.evaluate(() => document.fonts.ready);
   if (font.bundled !== null) {
     // A font that failed to load leaves the system's in its place, and the check would measure that.

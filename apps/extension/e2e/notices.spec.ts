@@ -6,7 +6,8 @@
  * gets an opaque backdrop; and keep every notice inside it, with every word lengthened as a
  * translation may.
  */
-import { expect, test, type Frame, type Page } from '@playwright/test';
+import { expect, type Frame, type Page } from '@playwright/test';
+import { test } from '@wirecatch/ui/testing/playwright';
 
 const SCHEMES = ['light', 'dark'] as const;
 const SITES = ['light', 'dark'] as const;
