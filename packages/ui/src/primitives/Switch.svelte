@@ -3,6 +3,7 @@
   import type { Snippet } from 'svelte';
   import { cn } from '../lib/cn';
   import { CHROME, DISABLED, FOCUS_RING } from '../recipes/control';
+  import InfoTip from './InfoTip.svelte';
   import Spinner from './Spinner.svelte';
 
   interface Props {
@@ -10,14 +11,14 @@
     /** The switch's name: shown beside it, or only to screen readers with `hideLabel`. */
     label: string;
     hideLabel?: boolean;
-    /** A second line under the label; a snippet where part of it is marked, such as a name in bold. */
-    description?: string | Snippet | undefined;
-    /** The id of help shown elsewhere (a settings row's), in place of `description`. */
+    /** What the switch does, behind an info icon after the label; never changes with its value (D84). */
+    help?: string | undefined;
+    /** The id of help shown elsewhere, in place of `help`. */
     describedby?: string | undefined;
     /** Waiting for the change to land: the thumb shows a spinner and the switch takes no input. */
     loading?: boolean;
     disabled?: boolean;
-    /** The label sits after the switch (`end`), or, as in a settings row (`start`), on a line of the row's width with the switch at its end and the description under both, the label in medium weight. */
+    /** The label sits after the switch (`end`), or, as in a settings row (`start`), on a line of the row's width with the switch at its end, the label in medium weight. */
     labelSide?: 'start' | 'end';
     id?: string | undefined;
     class?: string | undefined;
@@ -29,7 +30,7 @@
     checked,
     label,
     hideLabel = false,
-    description,
+    help,
     describedby,
     loading = false,
     disabled = false,
@@ -49,26 +50,44 @@
   }
 </script>
 
+<!-- The switch comes last, so in a settings row (`start`) focus follows what is read: label, info icon, switch. -->
 <div
   class={cn(
-    labelSide === 'start'
-      ? 'flex w-full flex-wrap items-center gap-x-3 gap-y-0.5'
-      : 'inline-flex items-center gap-3',
+    labelSide === 'start' ? 'flex w-full items-center gap-x-3' : 'inline-flex items-center gap-3',
     className,
   )}
 >
+  <span
+    class={cn(
+      'flex min-w-0 items-center gap-1',
+      labelSide === 'start' && 'flex-1',
+      hideLabel && 'sr-only',
+    )}
+  >
+    <span
+      id={labelId}
+      class={cn(
+        'text-ui wrap-break-word text-ink',
+        labelSide === 'start' && 'min-w-0 font-medium',
+        labelSide === 'start' && disabled && 'text-ink-muted',
+      )}>{label}</span
+    >
+    {#if help && !hideLabel}<InfoTip {label} text={help} />{/if}
+  </span>
+  {@render children?.()}
+  {#if help}<span id={hintId} class="sr-only">{help}</span>{/if}
   <button
     {id}
     type="button"
     role="switch"
     aria-checked={checked}
     aria-labelledby={labelId}
-    aria-describedby={describedby ?? (description ? hintId : undefined)}
+    aria-describedby={describedby ?? (help ? hintId : undefined)}
     aria-busy={loading || undefined}
     {disabled}
     class={cn(
       'group relative inline-flex h-5 w-10 shrink-0 items-center rounded-full border p-0.5 transition',
-      labelSide === 'start' && 'order-1',
+      labelSide === 'end' && 'order-first',
       checked
         ? 'border-accent bg-accent enabled:hover:border-accent-hover enabled:hover:bg-accent-hover'
         : 'border-line-strong bg-field enabled:hover:bg-wash-strong',
@@ -93,33 +112,4 @@
       {#if loading}<Spinner size="xs" tone="current" class="text-accent" />{/if}
     </span>
   </button>
-  <!-- In a settings row its parts sit in the row itself: the label on the switch's line, taking the room the switch leaves, and the rest under both. -->
-  <span
-    class={cn(
-      'flex min-w-0 flex-col',
-      labelSide === 'start' && 'contents',
-      hideLabel && 'sr-only flex',
-    )}
-  >
-    <span
-      id={labelId}
-      class={cn(
-        'text-ui wrap-break-word text-ink',
-        labelSide === 'start' && 'min-w-0 flex-1 font-medium',
-        labelSide === 'start' && disabled && 'text-ink-muted',
-      )}>{label}</span
-    >
-    {@render children?.()}
-    {#if description}
-      <span
-        id={hintId}
-        class={cn(
-          'text-small wrap-break-word text-ink-muted',
-          labelSide === 'start' && 'order-2 basis-full',
-        )}
-      >
-        {#if typeof description === 'string'}{description}{:else}{@render description()}{/if}
-      </span>
-    {/if}
-  </span>
 </div>

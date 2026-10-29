@@ -251,7 +251,7 @@
       <Checkbox
         checked={everyVideoShown}
         label="Use these choices for every video"
-        description={everyVideoNote}
+        help={everyVideoNote}
         onchange={(on: boolean) => (everyVideo = on)}
       />
     </WindowOptions>

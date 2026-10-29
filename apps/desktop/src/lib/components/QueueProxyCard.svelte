@@ -11,7 +11,7 @@
     type Setting,
   } from '@wirecatch/protocol';
   import { Button, Checkbox, Field, Select, TagInput, type FieldControl } from '@wirecatch/ui';
-  import { defaultProxySettings, proxyName, shownName } from '$lib/proxy';
+  import { defaultProxySettings, HOSTS_HINT, proxyName, shownName } from '$lib/proxy';
   import { getApp } from '$lib/state/app.svelte';
   import ChoiceCard from './ChoiceCard.svelte';
   import ProxyServerDialog from './ProxyServerDialog.svelte';
@@ -98,25 +98,24 @@
 <div class="flex flex-col divide-y divide-line rounded-md border border-line bg-layer">
   <div class="flex flex-col gap-1.5 p-3">
     <div class="flex flex-wrap items-end gap-2">
-      <Field label="Proxy" class="min-w-56 flex-1">
+      <Field
+        label="Proxy"
+        help="Downloads already running keep the connection they started with."
+        class="min-w-56 flex-1"
+      >
         {#snippet children(control: FieldControl)}
           <Select {...control} value={keyOf(proxy)} {options} onchange={choose} />
         {/snippet}
       </Field>
       <Button icon={Plus} onclick={() => (creating = true)}>New proxy</Button>
     </div>
-    {#if proxy.source === 'global'}
-      <p class="text-small text-ink-muted">Follows the global proxy setting.</p>
-    {/if}
   </div>
 
   {#if resulting.kind !== 'direct'}
     <ChoiceCard
       flush
       label="Bypass proxy for"
-      description={own
-        ? 'Hosts this queue connects to directly.'
-        : 'Hosts this queue connects to directly. Follows the global list.'}
+      help="Hosts this queue connects to directly. Same as global uses the list in Settings > Network."
       value={own ? 'own' : 'app'}
       options={[
         { value: 'app', label: 'Same as global' },
@@ -134,26 +133,22 @@
         />
         <Checkbox
           label={appHostCount === 0
-            ? 'Global bypass list (empty)'
-            : `Global bypass list (${String(appHostCount)})`}
+            ? 'Global custom hosts (empty)'
+            : `Global custom hosts (${String(appHostCount)})`}
           checked={own.app_hosts}
           onchange={(on: boolean) => change({ app_hosts: on })}
         />
         <Checkbox
-          label="These hosts"
+          label="Custom hosts"
           checked={own.use_hosts}
           onchange={(on: boolean) => change({ use_hosts: on })}
         />
         {#if own.use_hosts}
-          <Field
-            label="Hosts for this queue"
-            hideLabel
-            description="A domain also matches its subdomains. IP addresses, ranges like 10.0.0.0/8, and <local> (names without a dot) work too."
-          >
+          <Field label="Custom hosts" hideLabel description={HOSTS_HINT}>
             {#snippet children(control: FieldControl)}
               <TagInput
                 {...control}
-                label="Hosts for this queue"
+                label="Custom hosts"
                 placeholder="Add a host, like intranet.example.com"
                 values={own.hosts}
                 normalize={normalizeException}
@@ -165,9 +160,6 @@
       </div>
     {/if}
   {/if}
-  <p class="px-3 py-2.5 text-small text-ink-muted">
-    Downloads already running keep the connection they started with.
-  </p>
 </div>
 
 {#if creating}

@@ -1,22 +1,20 @@
 <script lang="ts" module>
   import type { SelectOption } from '@wirecatch/ui';
-  import type { DayPattern } from '$lib/format';
 
   const UNITS: readonly SelectOption<'KB' | 'MB'>[] = [
     { value: 'KB', label: 'KB/s' },
     { value: 'MB', label: 'MB/s' },
   ];
 
-  const PATTERNS: readonly SelectOption<DayPattern>[] = [
-    { value: 'every', label: 'Every day' },
-    { value: 'weekdays', label: 'Weekdays' },
-    { value: 'weekends', label: 'Weekends' },
-    { value: 'custom', label: 'Pick days' },
+  // "At" comes last, next to the time it uses.
+  const STOPS: readonly SelectOption<'time' | 'empty'>[] = [
+    { value: 'empty', label: 'When the queue is empty' },
+    { value: 'time', label: 'At' },
   ];
 </script>
 
 <script lang="ts">
-  // A queue's name and description, its own limits, its hours and when it tells you its downloads finished: each limit is a switch that opens its own fields, and off follows the app (D72.1); the days are a pattern first (every day, weekdays, weekends) with single days only when asked for.
+  // A queue's name and description, its own limits, its hours and when it notifies you: each limit is a switch that opens its own fields, and off follows the global value (D72.1); labels and help never change with what is chosen (D84).
   import {
     DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS,
@@ -36,33 +34,36 @@
   import {
     Button,
     Callout,
-    Checkbox,
     Dialog,
     Field,
     Input,
     NumberInput,
     SegmentedControl,
-    ToggleChip,
     type FieldControl,
   } from '@wirecatch/ui';
-  import { QUEUE_NOTIFY_OPTIONS, queueNotifyHelp } from '$lib/notify-options';
-  import { dayPattern, formatTime, WEEKDAY_SHORT } from '$lib/format';
-  import { daysForPattern, pickedDaysHelp, toggledDay } from '$lib/schedule-days';
-  import { FIRST_START, FIRST_STOP, readSchedule } from '$lib/queue-schedule';
-  import { WEEKDAYS } from '$lib/time';
+  import { QUEUE_NOTIFY_HELP, QUEUE_NOTIFY_OPTIONS, queueNotifyWarning } from '$lib/notify-options';
+  import { formatTime } from '$lib/format';
   import {
-    concurrentLimitHelp,
+    FIRST_START,
+    FIRST_STOP,
+    NO_DAYS,
+    pressedDays,
+    readSchedule,
+    toggledDay,
+  } from '$lib/queue-schedule';
+  import {
+    concurrentCapWarning,
     firstConcurrent,
-    ownConnectionsHelp,
+    globalLimitText,
     queueConcurrentProblem,
     queueConnectionsProblem,
     queueDeletionNote,
     readQueueLimit,
-    speedLimitHelp,
   } from '$lib/limits';
   import { rulesOf, addDownloadsOf } from '$lib/queue-rules';
   import { getApp } from '$lib/state/app.svelte';
   import ChoiceCard from './ChoiceCard.svelte';
+  import DayPicker from './DayPicker.svelte';
   import QueueRulesCard from './QueueRulesCard.svelte';
   import QueueProxyCard from './QueueProxyCard.svelte';
   import SwitchCard from './SwitchCard.svelte';
@@ -100,9 +101,7 @@
   let start = $state(formatTime(opened?.schedule?.start ?? FIRST_START));
   let untilEmpty = $state(opened?.schedule ? opened.schedule.stop === null : false);
   let stop = $state(formatTime(opened?.schedule?.stop ?? FIRST_STOP));
-  let days = $state<Weekday[]>(opened?.schedule?.days ?? []);
-  // Picking single days is its own choice, kept while the days picked happen to make a pattern.
-  let pickingDays = $state(dayPattern(opened?.schedule?.days ?? []) === 'custom');
+  let days = $state<Weekday[]>(pressedDays(opened?.schedule?.days));
   let auto = $state(opened?.add_downloads.kind === 'auto');
   // Kept while the form is switched to Manually, so switching back loses nothing.
   let rules = $state<QueueRules>(rulesOf(opened?.add_downloads));
@@ -115,16 +114,9 @@
   let connectionsOn = $state(ownConnections !== null);
   let connections = $state(ownConnections ?? appConnections);
 
-  const concurrentHelp = $derived(
-    concurrentLimitHelp(
-      concurrentOn ? maxConcurrent : null,
-      app.settings?.max_concurrent_downloads,
-    ),
+  const concurrentCap = $derived(
+    concurrentCapWarning(maxConcurrent, app.settings?.max_concurrent_downloads),
   );
-  const limitHelp = $derived(speedLimitHelp(limitOn, app.settings?.global_speed_limit ?? null));
-  const connectionsHelp = $derived(ownConnectionsHelp(connectionsOn, appConnections));
-
-  const notifyHelp = $derived(queueNotifyHelp(notify, app.settings?.notify_on_finish));
   let error = $state('');
   // Opened to delete the queue (from the palette), it starts at that question.
   let confirmDelete = $state((() => deleting)());
@@ -151,14 +143,6 @@
       : '',
   );
 
-  const pattern = $derived<DayPattern>(pickingDays ? 'custom' : dayPattern(days));
-  function choosePattern(next: DayPattern) {
-    pickingDays = next === 'custom';
-    days = daysForPattern(next, days);
-  }
-
-  const daysHelp = $derived(pickedDaysHelp(days));
-
   /** What the form changes in a queue, or why it cannot. */
   function readForm(): QueueSettings | string {
     if (!name.trim()) return 'Give the queue a name.';
@@ -173,7 +157,6 @@
       start,
       untilEmpty,
       stop,
-      pickingDays,
       days,
     });
     if (typeof schedule === 'string') return schedule;
@@ -218,9 +201,6 @@
 <Dialog
   open
   title={original ? `Edit ${original.settings.name}` : 'New queue'}
-  description={original
-    ? undefined
-    : 'A queue runs its downloads in order, using the global limits unless you set its own.'}
   onclose={() => app.closeDialog()}
 >
   <form
@@ -262,7 +242,8 @@
       <SwitchCard
         flush
         label="Downloads at the same time"
-        description={concurrentHelp}
+        help="Up to this many of its downloads run at once, and the rest wait. The global limit still applies across all queues."
+        inherited={globalLimitText('max_concurrent', app.settings?.max_concurrent_downloads)}
         checked={concurrentOn}
         onchange={(on: boolean) => (concurrentOn = on)}
       >
@@ -276,12 +257,14 @@
             if (value !== null) maxConcurrent = value;
           }}
         />
+        {#if concurrentCap}<p class="text-small text-warning">{concurrentCap}</p>{/if}
       </SwitchCard>
 
       <SwitchCard
         flush
         label="Speed limit"
-        description={limitHelp}
+        help="Shared by all downloads in this queue. The global limit still applies."
+        inherited={globalLimitText('speed_limit', app.settings?.global_speed_limit)}
         checked={limitOn}
         onchange={(on: boolean) => (limitOn = on)}
       >
@@ -307,7 +290,8 @@
       <SwitchCard
         flush
         label="Connections per download"
-        description={connectionsHelp}
+        help="Each download in this queue uses up to this many connections, in place of the global setting."
+        inherited={globalLimitText('connections', app.settings?.connections_per_download)}
         checked={connectionsOn}
         onchange={(on: boolean) => (connectionsOn = on)}
       >
@@ -342,62 +326,59 @@
 
     <SwitchCard
       label="Run on a schedule"
-      description="Outside these times, its downloads wait unless you start the queue manually."
+      help="Its downloads start only between these times, on the days picked. A queue you start manually ignores its schedule."
       checked={scheduleOn}
       onchange={(on: boolean) => (scheduleOn = on)}
     >
-      <div class="flex flex-wrap items-end gap-x-4 gap-y-3">
-        <Field label="Starts at">
-          {#snippet children(control: FieldControl)}
-            <TimeInput {...control} value={start} onchange={(value: string) => (start = value)} />
-          {/snippet}
-        </Field>
-        {#if !untilEmpty}
-          <Field label="Stops at">
-            {#snippet children(control: FieldControl)}
-              <TimeInput {...control} value={stop} onchange={(value: string) => (stop = value)} />
-            {/snippet}
-          </Field>
-        {/if}
-        <Checkbox
-          class="pb-2"
-          label="Run until the queue is empty"
-          checked={untilEmpty}
-          onchange={(on: boolean) => (untilEmpty = on)}
-        />
-      </div>
-      <div class="flex flex-col gap-2">
-        <span class="text-ui font-medium text-ink" aria-hidden="true">Days</span>
-        <SegmentedControl
-          label="Days"
-          size="sm"
-          value={pattern}
-          options={PATTERNS}
-          onchange={choosePattern}
-        />
-        {#if pattern === 'custom'}
-          <div
-            class="flex flex-wrap gap-1"
-            role="group"
-            aria-label="Only on these days"
-            aria-describedby="{formId}-days-help"
-          >
-            {#each WEEKDAYS as d (d)}
-              <ToggleChip
-                pressed={days.includes(d)}
-                label={WEEKDAY_SHORT[d]}
-                onchange={() => (days = toggledDay(days, d))}
+      <div class="flex flex-col gap-2.5">
+        <div class="flex items-center gap-3">
+          <label for="{formId}-start" class="w-20 shrink-0 text-ui text-ink">Starts at</label>
+          <TimeInput
+            id="{formId}-start"
+            value={start}
+            onchange={(value: string) => (start = value)}
+          />
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="w-20 shrink-0 text-ui text-ink" aria-hidden="true">Stops</span>
+          <div class="flex flex-wrap items-center gap-2">
+            <SegmentedControl
+              label="Stops"
+              size="sm"
+              value={untilEmpty ? 'empty' : 'time'}
+              options={STOPS}
+              onchange={(next: 'time' | 'empty') => (untilEmpty = next === 'empty')}
+            />
+            {#if !untilEmpty}
+              <TimeInput
+                label="Stop time"
+                value={stop}
+                onchange={(value: string) => (stop = value)}
               />
-            {/each}
+            {/if}
           </div>
-          <p id="{formId}-days-help" class="text-small text-ink-muted">{daysHelp}</p>
-        {/if}
+        </div>
+        <div class="flex items-start gap-3">
+          <span class="w-20 shrink-0 pt-1 text-ui text-ink" aria-hidden="true">Days</span>
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
+            <DayPicker
+              {days}
+              invalid={days.length === 0}
+              describedby={days.length === 0 ? `${formId}-days-error` : undefined}
+              onchange={(day: Weekday) => (days = toggledDay(days, day))}
+            />
+            {#if days.length === 0}
+              <p id="{formId}-days-error" class="text-small text-danger">{NO_DAYS}</p>
+            {/if}
+          </div>
+        </div>
       </div>
     </SwitchCard>
 
     <ChoiceCard
       label="Notify me when downloads finish"
-      description={notifyHelp}
+      help={QUEUE_NOTIFY_HELP}
+      warning={queueNotifyWarning(app.settings?.notify_on_finish)}
       value={notify}
       options={QUEUE_NOTIFY_OPTIONS}
       onchange={(next: QueueNotify) => (notify = next)}

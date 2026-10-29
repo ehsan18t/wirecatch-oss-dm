@@ -76,15 +76,7 @@
   );
   const resultText = $derived(result ? testResultText(result, loginEntered) : null);
 
-  const passwordHelp = $derived.by(() => {
-    if (password.change === 'remove') return 'The password is removed when you save.';
-    if (password.change === 'set') return 'Stored only in Wirecatch and never shown again.';
-    if (keepsSaved) return 'A password is saved. Type a new one to replace it.';
-    if (savedPassword) {
-      return 'The saved password belonged to the previous server or user name and was cleared. Enter it again if this proxy needs one.';
-    }
-    return 'Only if the proxy requires one. Stored only in Wirecatch.';
-  });
+  const passwordCleared = $derived(password.change === 'keep' && savedPassword && !keepsSaved);
 
   function draft(): ProxyServerDraft {
     const d: ProxyServerDraft = { settings: $state.snapshot(settings) };
@@ -213,7 +205,14 @@
           />
         {/snippet}
       </Field>
-      <Field label="Password (optional)" class="min-w-40 flex-1" description={passwordHelp}>
+      <Field
+        label="Password (optional)"
+        class="min-w-40 flex-1"
+        help="Only if the proxy requires one. Stored only in Wirecatch and never shown again."
+        description={passwordCleared
+          ? 'The saved password was cleared: it belonged to the previous server or user name.'
+          : undefined}
+      >
         {#snippet children(control: FieldControl)}
           {#if password.change === 'remove'}
             <p
@@ -228,7 +227,7 @@
               type="password"
               autocomplete="new-password"
               value={password.change === 'set' ? password.text : ''}
-              placeholder={keepsSaved ? '••••••••' : ''}
+              placeholder={keepsSaved ? 'Saved, type to replace' : ''}
               onchange={(text: string) =>
                 edit(() => (password = text === '' ? { change: 'keep' } : { change: 'set', text }))}
             />

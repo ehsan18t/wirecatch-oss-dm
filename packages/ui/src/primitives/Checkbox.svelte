@@ -7,6 +7,7 @@
   import { cn } from '../lib/cn';
   import { DISABLED, FOCUS_RING } from '../recipes/control';
   import Icon from './Icon.svelte';
+  import InfoTip from './InfoTip.svelte';
 
   interface Props extends Omit<
     HTMLInputAttributes,
@@ -21,8 +22,8 @@
     hideLabel?: boolean;
     /** Called with the state a click asks for; the box shows what the owner sets. */
     onchange?: (checked: boolean) => void;
-    /** A second line under the label. */
-    description?: string | undefined;
+    /** What the box does, behind an info icon after the label (D84). */
+    help?: string | undefined;
     children?: Snippet;
     class?: string | undefined;
   }
@@ -33,7 +34,7 @@
     label,
     hideLabel = false,
     onchange,
-    description,
+    help,
     children,
     disabled,
     class: className,
@@ -59,46 +60,47 @@
   }
 </script>
 
-<label
-  class={cn(
-    'inline-flex items-start gap-2.5 text-ui text-ink select-none',
-    disabled && 'cursor-not-allowed opacity-disabled',
-    className,
-  )}
->
-  <span class="relative mt-0.5 inline-flex shrink-0">
-    <input
-      type="checkbox"
-      {checked}
-      {disabled}
-      {onclick}
-      {@attach showIndeterminate}
-      aria-labelledby={label === undefined ? undefined : labelId}
-      aria-describedby={description ? hintId : undefined}
-      class={cn(
-        'peer size-4 appearance-none rounded-xs border border-line-strong bg-field transition',
-        'enabled:hover:border-ink-muted checked:border-accent checked:bg-accent indeterminate:border-accent indeterminate:bg-accent',
-        'enabled:active:scale-pressed forced-colors:appearance-auto',
-        FOCUS_RING,
-        DISABLED,
-      )}
-      {...rest}
-    />
-    {#if marked}
-      <Icon
-        icon={indeterminate ? Minus : Check}
-        size="xs"
-        class="pointer-events-none absolute inset-0 m-auto animate-pop-in text-accent-fg forced-colors:hidden"
+<!-- The info icon sits beside the label, never in it: a label may hold no other control. -->
+<span class={cn('inline-flex items-start gap-1', className)}>
+  <label
+    class={cn(
+      'inline-flex items-start gap-2.5 text-ui text-ink select-none',
+      disabled && 'cursor-not-allowed opacity-disabled',
+    )}
+  >
+    <span class="relative mt-0.5 inline-flex shrink-0">
+      <input
+        type="checkbox"
+        {checked}
+        {disabled}
+        {onclick}
+        {@attach showIndeterminate}
+        aria-labelledby={label === undefined ? undefined : labelId}
+        aria-describedby={help ? hintId : undefined}
+        class={cn(
+          'peer size-4 appearance-none rounded-xs border border-line-strong bg-field transition',
+          'enabled:hover:border-ink-muted checked:border-accent checked:bg-accent indeterminate:border-accent indeterminate:bg-accent',
+          'enabled:active:scale-pressed forced-colors:appearance-auto',
+          FOCUS_RING,
+          DISABLED,
+        )}
+        {...rest}
       />
-    {/if}
-  </span>
-  {#if label !== undefined || children}
-    <span class="flex min-w-0 flex-col">
-      {#if label}<span id={labelId} class={cn(hideLabel && 'sr-only')}>{label}</span>{/if}
-      {@render children?.()}
-      {#if description}
-        <span id={hintId} class="text-small text-ink-muted">{description}</span>
+      {#if marked}
+        <Icon
+          icon={indeterminate ? Minus : Check}
+          size="xs"
+          class="pointer-events-none absolute inset-0 m-auto animate-pop-in text-accent-fg forced-colors:hidden"
+        />
       {/if}
     </span>
-  {/if}
-</label>
+    {#if label !== undefined || children}
+      <span class="flex min-w-0 flex-col">
+        {#if label}<span id={labelId} class={cn(hideLabel && 'sr-only')}>{label}</span>{/if}
+        {@render children?.()}
+        {#if help}<span id={hintId} class="sr-only">{help}</span>{/if}
+      </span>
+    {/if}
+  </label>
+  {#if help && label && !hideLabel}<InfoTip {label} text={help} />{/if}
+</span>

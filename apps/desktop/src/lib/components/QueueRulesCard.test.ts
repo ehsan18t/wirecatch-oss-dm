@@ -1,4 +1,4 @@
-// The queue editor's "Add downloads" card and Test a link: what an auto queue rules is what is saved, and Test a link answers for the rules as the form has them.
+// The queue editor's rules card and Test a link: the rules written are what is saved, and Test a link answers for the rules as the form has them.
 
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
@@ -24,6 +24,15 @@ async function click(target: HTMLElement) {
   await settle();
 }
 
+const AUTO = { name: /^Add matching downloads automatically/ };
+
+/** Turns the rules on and checks each kind named ("By site"). */
+async function useRules(...kinds: string[]) {
+  const dialog = within(screen.getByRole('dialog'));
+  await click(dialog.getByRole('switch', AUTO));
+  for (const kind of kinds) await click(dialog.getByRole('checkbox', { name: kind }));
+}
+
 async function save() {
   await click(screen.getByRole('button', { name: /^(Save|Create)/ }));
 }
@@ -35,12 +44,15 @@ async function tryLink(root: HTMLElement, url: string) {
   return scope.getAllByRole('status').find((s) => s.textContent.includes('Queue'));
 }
 
+const addDownloadsOf = (app: Awaited<ReturnType<typeof renderApp>>['app'], name: string) =>
+  app.queues.list.find((q) => q.settings.name === name)?.settings.add_downloads;
+
 describe('the rules card', () => {
   it('saves an auto queue with the rules of each kind as they were written', async () => {
     const { app, dialog } = await openQueueDialog(null);
     await typeInto(dialog.getByLabelText('Name'), 'Videos');
-    expect(dialog.queryByLabelText('Sites')).toBeNull();
-    await click(dialog.getByRole('radio', { name: 'Automatically' }));
+    expect(dialog.queryByRole('checkbox', { name: 'By site' })).toBeNull();
+    await useRules('By site', 'By file name', 'By file type', 'By category', 'By protocol');
     await typeInto(dialog.getByLabelText('Sites'), 'YouTube.com');
     await typeInto(dialog.getByLabelText('File types'), '.ISO tar.gz');
     await typeInto(dialog.getByLabelText('File names'), String.raw`^clip-\d+$`);
@@ -49,8 +61,7 @@ describe('the rules card', () => {
     await click(dialog.getByRole('button', { name: 'FTP and FTPS' }));
     await save();
 
-    const made = app.queues.list.find((q) => q.settings.name === 'Videos');
-    expect(made?.settings.add_downloads).toEqual({
+    expect(addDownloadsOf(app, 'Videos')).toEqual({
       kind: 'auto',
       enabled: true,
       sites: ['youtube.com'],
@@ -62,35 +73,57 @@ describe('the rules card', () => {
     });
   });
 
-  it('keeps the rules while switched to Manually, and saves a manual queue without them', async () => {
+  it('shows a kind of rule only while it is checked', async () => {
+    const { dialog } = await openQueueDialog(null);
+    await useRules();
+    expect(dialog.queryByLabelText('Sites')).toBeNull();
+    expect(dialog.getByText(/Add a rule/)).toBeInTheDocument();
+    await click(dialog.getByRole('checkbox', { name: 'By site' }));
+    expect(dialog.getByLabelText('Sites')).toBeInTheDocument();
+  });
+
+  it('keeps the rules of a queue switched off, as Auto off', async () => {
     const { app, dialog } = await openQueueDialog('Work files');
-    await click(dialog.getByRole('radio', { name: 'Automatically' }));
+    await useRules('By site');
     await typeInto(dialog.getByLabelText('Sites'), 'example.com');
-    await click(dialog.getByRole('radio', { name: 'Manually' }));
-    await click(dialog.getByRole('radio', { name: 'Automatically' }));
+    await click(dialog.getByRole('switch', AUTO));
+    await click(dialog.getByRole('switch', AUTO));
     expect(dialog.getByRole('button', { name: /Remove example\.com/ })).toBeInTheDocument();
-    await click(dialog.getByRole('radio', { name: 'Manually' }));
+    await click(dialog.getByRole('switch', AUTO));
     await save();
-    expect(
-      app.queues.list.find((q) => q.settings.name === 'Work files')?.settings.add_downloads,
-    ).toEqual({
-      kind: 'manual',
+    expect(addDownloadsOf(app, 'Work files')).toMatchObject({
+      kind: 'auto',
+      enabled: false,
+      sites: ['example.com'],
     });
   });
 
-  it('keeps the rules of a queue whose ruleing is switched off', async () => {
-    const { app, dialog } = await openQueueDialog('Overnight');
-    await click(dialog.getByRole('radio', { name: 'Automatically' }));
-    expect(dialog.getByText(/No rules yet/)).toBeInTheDocument();
-    await typeInto(dialog.getByLabelText('Sites'), 'example.org');
-    await click(dialog.getByRole('switch', { name: /^Use rules/ }));
-    expect(
-      dialog.getByText('Only downloads you add to it, while its rules are off.'),
-    ).toBeInTheDocument();
+  it('saves a queue switched off with no rules as manual', async () => {
+    const { app, dialog } = await openQueueDialog('Work files');
+    await click(dialog.getByRole('switch', AUTO));
+    await click(dialog.getByRole('switch', AUTO));
     await save();
-    expect(
-      app.queues.list.find((q) => q.settings.name === 'Overnight')?.settings.add_downloads,
-    ).toMatchObject({ kind: 'auto', enabled: false, sites: ['example.org'] });
+    expect(addDownloadsOf(app, 'Work files')).toEqual({ kind: 'manual' });
+  });
+
+  it('brings an unchecked kind back when checked again, and drops it when saved unchecked', async () => {
+    const { app, dialog } = await openQueueDialog(null);
+    await typeInto(dialog.getByLabelText('Name'), 'Mixed');
+    await useRules('By site', 'By file type');
+    await typeInto(dialog.getByLabelText('Sites'), 'example.org');
+    await typeInto(dialog.getByLabelText('File types'), 'iso');
+    await click(dialog.getByRole('checkbox', { name: 'By site' }));
+    expect(dialog.queryByLabelText('Sites')).toBeNull();
+    await click(dialog.getByRole('checkbox', { name: 'By site' }));
+    expect(dialog.getByRole('button', { name: /Remove example\.org/ })).toBeInTheDocument();
+    await click(dialog.getByRole('checkbox', { name: 'By site' }));
+    await save();
+    expect(addDownloadsOf(app, 'Mixed')).toMatchObject({
+      kind: 'auto',
+      enabled: true,
+      sites: [],
+      file_types: ['iso'],
+    });
   });
 });
 
@@ -98,7 +131,7 @@ describe('Test a link', () => {
   it('tries the rules as the form has them, before they are saved', async () => {
     const { dialog } = await openQueueDialog(null);
     await typeInto(dialog.getByLabelText('Name'), 'Videos');
-    await click(dialog.getByRole('radio', { name: 'Automatically' }));
+    await useRules('By site');
     await typeInto(dialog.getByLabelText('Sites'), 'youtube.com');
     const result = await tryLink(screen.getByRole('dialog'), 'https://www.youtube.com/watch?v=1');
     expect(result).toHaveTextContent('Queue: Videos. Its rules match youtube.com.');
@@ -109,11 +142,14 @@ describe('Test a link', () => {
   });
 
   it('names a switched-off queue that would have matched the link', async () => {
-    const { dialog } = await openQueueDialog('Work files');
-    await click(dialog.getByRole('radio', { name: 'Automatically' }));
+    const { app, dialog } = await openQueueDialog('Work files');
+    await useRules('By site');
     await typeInto(dialog.getByLabelText('Sites'), 'example.com');
-    await click(dialog.getByRole('switch', { name: /^Use rules/ }));
-    const result = await tryLink(screen.getByRole('dialog'), 'https://files.example.com/a.zip');
+    await click(dialog.getByRole('switch', AUTO));
+    await save();
+    app.openSettings('queues');
+    await settle();
+    const result = await tryLink(screen.getByRole('main'), 'https://files.example.com/a.zip');
     expect(result).toHaveTextContent('Queue: Main. No queue’s rules match it.');
     expect(result).toHaveTextContent('Work files would match example.com, but its rules are off.');
   });
@@ -121,7 +157,9 @@ describe('Test a link', () => {
   it('marks the link when it is the link that is wrong, and says why until it changes', async () => {
     const { dialog } = await openQueueDialog(null);
     expect(dialog.queryByLabelText('Test a link')).toBeNull();
-    await click(dialog.getByRole('radio', { name: 'Automatically' }));
+    await useRules('By site');
+    expect(dialog.queryByLabelText('Test a link')).toBeNull();
+    await typeInto(dialog.getByLabelText('Sites'), 'example.org');
     await typeInto(dialog.getByLabelText('Test a link'), 'not a link');
     await click(dialog.getByRole('button', { name: 'Try' }));
     expect(dialog.getByText(/is not a valid link/)).toBeInTheDocument();
@@ -133,7 +171,7 @@ describe('Test a link', () => {
 
   it('says a rule it cannot read without marking the link', async () => {
     const { dialog } = await openQueueDialog(null);
-    await click(dialog.getByRole('radio', { name: 'Automatically' }));
+    await useRules('By file name');
     await typeInto(dialog.getByRole('textbox', { name: 'File names' }), '*-final.*');
     await click(dialog.getByRole('radio', { name: 'Regular expression' }));
     await tryLink(screen.getByRole('dialog'), 'https://example.org/a-final.zip');
@@ -143,7 +181,7 @@ describe('Test a link', () => {
 
   it('tries the saved rules in Settings', async () => {
     const { app, dialog } = await openQueueDialog('Work files');
-    await click(dialog.getByRole('radio', { name: 'Automatically' }));
+    await useRules('By site');
     await typeInto(dialog.getByLabelText('Sites'), 'share.example.com');
     await save();
     app.openSettings('queues');

@@ -1,4 +1,4 @@
-// A queue's hours as its editor reads them (D72): the times typed and the days picked, checked into a schedule.
+// A queue's hours as its editor reads them (D72, D84.6): the times typed and the days pressed, checked into a schedule.
 
 import type { QueueSettings, TimeOfDay, Weekday } from '@wirecatch/protocol';
 import { formatTime, parseTime } from './format';
@@ -14,9 +14,20 @@ export interface ScheduleForm {
   start: string;
   untilEmpty: boolean;
   stop: string;
-  pickingDays: boolean;
+  /** The days pressed: all seven for every day. */
   days: readonly Weekday[];
 }
+
+/** The days to press for a saved schedule's days, where none means every day. */
+export function pressedDays(days: readonly Weekday[] | undefined): Weekday[] {
+  return days === undefined || days.length === 0 ? [...WEEKDAYS] : [...days];
+}
+
+export function toggledDay(days: readonly Weekday[], day: Weekday): Weekday[] {
+  return days.includes(day) ? days.filter((d) => d !== day) : [...days, day];
+}
+
+export const NO_DAYS = 'Pick at least one day.';
 
 /** The schedule `form` describes, or why it is not one. */
 export function readSchedule(form: ScheduleForm): { schedule: QueueSettings['schedule'] } | string {
@@ -27,9 +38,8 @@ export function readSchedule(form: ScheduleForm): { schedule: QueueSettings['sch
   if (!form.untilEmpty && !e) return `Enter a stop time like ${formatTime(FIRST_STOP)}.`;
   if (e?.hour === s.hour && e.minute === s.minute)
     return 'The start and stop times are the same. Pick a different stop time.';
-  if (form.pickingDays && form.days.length === 0)
-    return 'Pick at least one day for the queue to run.';
-  // Seven ticked days is the same as every day.
+  if (form.days.length === 0) return NO_DAYS;
+  // Seven pressed days is every day, which the core keeps as none.
   const every = form.days.length === DAYS_PER_WEEK;
   return {
     schedule: {

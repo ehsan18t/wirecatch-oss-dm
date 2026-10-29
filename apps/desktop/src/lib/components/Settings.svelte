@@ -72,7 +72,7 @@
     void tick().then(() => {
       const el = document.getElementById(settingAnchor(target));
       el?.scrollIntoView({ block: 'center' });
-      findElement(el, 'button, input, select, textarea')?.focus({
+      findElement(el, 'button:not([data-info-tip]), input, select, textarea')?.focus({
         preventScroll: true,
       });
       flash = { id: target };

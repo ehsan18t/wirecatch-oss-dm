@@ -174,7 +174,7 @@
       <Switch
         checked={startup}
         label="Start with Windows"
-        description="Opens in the tray, ready for the browser"
+        help="Opens in the tray, ready for the browser"
         labelSide="start"
         onchange={(value: boolean) => (startup = value)}
       />
@@ -188,7 +188,7 @@
         checked={clipboard}
         onchange={(value: boolean) => (clipboard = value)}
         label="Catch links copied to the clipboard"
-        description="Only links to files"
+        help="Only links to files"
       />
       <Checkbox checked indeterminate label="Some selected" />
       <Checkbox disabled label="Disabled" />

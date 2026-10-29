@@ -9,6 +9,7 @@ import RemovedFieldHost from '../testing/RemovedFieldHost.svelte';
 import StrippingInputHost from '../testing/StrippingInputHost.svelte';
 import Checkbox from './Checkbox.svelte';
 import IconButton from './IconButton.svelte';
+import InfoTip from './InfoTip.svelte';
 import Kbd from './Kbd.svelte';
 import MultiSelect from './MultiSelect.svelte';
 import Input from './Input.svelte';
@@ -189,10 +190,15 @@ describe('Switch', () => {
 });
 
 describe('Checkbox', () => {
-  it('is a native checkbox named by its label, described by its hint', () => {
-    render(Checkbox, { label: 'Delete the files too', description: 'They go to the recycle bin.' });
-    const box = screen.getByRole('checkbox', { name: 'Delete the files too' });
-    expect(box.getAttribute('aria-describedby')).toBeTruthy();
+  it('is a native checkbox named by its label, described by its help', () => {
+    render(Checkbox, { label: 'Delete the files too', help: 'They go to the recycle bin.' });
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Delete the files too',
+        description: 'They go to the recycle bin.',
+      }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'About Delete the files too' })).toBeTruthy();
   });
 
   it('is controlled, like every other control: it asks, and shows what it is given', async () => {
@@ -311,6 +317,15 @@ describe('Tabs', () => {
 });
 
 describe('NumberInput', () => {
+  it('stays usable at its minimum: only the step down is disabled, not the whole field', () => {
+    render(NumberInput, { label: 'Connections', value: 1, min: 1, max: 8 });
+    const input = screen.getByRole('spinbutton', { name: 'Connections' });
+    const box = input.parentElement;
+    expect(input.hasAttribute('disabled')).toBe(false);
+    expect(box?.matches(':has(:disabled)')).toBe(true);
+    expect(box?.className).not.toMatch(/(^|\s)has-disabled:/);
+  });
+
   it('is a spin button that steps with the arrows and commits typed text', async () => {
     const onchange = vi.fn();
     render(NumberInput, {
@@ -523,5 +538,31 @@ describe('MultiSelect', () => {
     await userEvent.keyboard('{Escape}');
     expect(screen.queryByRole('listbox')).toBeNull();
     expect(document.activeElement).toBe(field);
+  });
+});
+
+describe('InfoTip', () => {
+  const help = 'Downloads that match go to this queue.';
+
+  it('shows its text on a click and keeps it until a click elsewhere', async () => {
+    render(InfoTip, { label: 'Add automatically', text: help });
+    const button = screen.getByRole('button', { name: 'About Add automatically' });
+    await userEvent.click(button);
+    expect(screen.getByRole('tooltip').textContent).toBe(help);
+    await userEvent.unhover(button);
+    expect(screen.queryByRole('tooltip')).not.toBeNull();
+    await userEvent.click(document.body);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('closes on a second click and on Escape', async () => {
+    render(InfoTip, { label: 'Add automatically', text: help });
+    const button = screen.getByRole('button', { name: 'About Add automatically' });
+    await userEvent.click(button);
+    await userEvent.click(button);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    await userEvent.click(button);
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('tooltip')).toBeNull();
   });
 });

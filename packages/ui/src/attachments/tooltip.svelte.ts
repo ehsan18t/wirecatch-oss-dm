@@ -35,17 +35,25 @@ function nextTooltipId(): string {
   return `wc-tooltip-${String(next)}`;
 }
 
+/** `pin`: a click opens the tip at once and keeps it until a click elsewhere, Escape or focus leaving, for help behind an info icon (D84.2). */
+export interface TooltipOptions {
+  pin?: boolean;
+}
+
 class Tooltip {
   text: TooltipText = null;
   readonly #node: HTMLElement;
+  readonly #pin: boolean;
+  #pinned = false;
   readonly #id = nextTooltipId();
   #tip: HTMLElement | null = null;
   #timer: ReturnType<typeof setTimeout> | undefined;
   /** A hide waiting out the linger, so the pointer can cross from the anchor to the tip. */
   #leaving: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(node: HTMLElement) {
+  constructor(node: HTMLElement, { pin = false }: TooltipOptions = {}) {
     this.#node = node;
+    this.#pin = pin;
   }
 
   read(): string | null | undefined {
@@ -95,7 +103,7 @@ class Tooltip {
   /** The pointer left the anchor or the tip: hide after the linger, unless it reaches the other first. */
   readonly leave = (): void => {
     clearTimeout(this.#timer);
-    if (!this.#tip) return;
+    if (!this.#tip || this.#pinned) return;
     clearTimeout(this.#leaving);
     this.#leaving = setTimeout(this.hide, delay('linger'));
   };
@@ -107,6 +115,7 @@ class Tooltip {
   readonly hide = (): void => {
     clearTimeout(this.#timer);
     clearTimeout(this.#leaving);
+    this.#pinned = false;
     if (!this.#tip) return;
     lower(this.#tip);
     this.#tip.remove();
@@ -150,6 +159,22 @@ class Tooltip {
     this.#listen(true);
   }
 
+  readonly togglePin = (): void => {
+    if (this.#pinned) {
+      this.hide();
+      return;
+    }
+    clearTimeout(this.#timer);
+    if (!this.#tip) this.show();
+    this.#pinned = this.#tip !== null;
+  };
+
+  /** A press outside the anchor and the tip closes a pinned tip. */
+  readonly hideOnPressOutside = (event: PointerEvent): void => {
+    if (!this.#pinned || !(event.target instanceof Node)) return;
+    if (!this.#node.contains(event.target) && !this.#tip?.contains(event.target)) this.hide();
+  };
+
   readonly hideIfHidden = (): void => {
     if (document.hidden) this.hide();
   };
@@ -161,11 +186,13 @@ class Tooltip {
       window.addEventListener('resize', this.position);
       document.addEventListener('visibilitychange', this.hideIfHidden);
       document.addEventListener('keydown', this.hideOnEscape, true);
+      document.addEventListener('pointerdown', this.hideOnPressOutside, true);
     } else {
       window.removeEventListener('scroll', this.hide, true);
       window.removeEventListener('resize', this.position);
       document.removeEventListener('visibilitychange', this.hideIfHidden);
       document.removeEventListener('keydown', this.hideOnEscape, true);
+      document.removeEventListener('pointerdown', this.hideOnPressOutside, true);
     }
   }
 
@@ -174,15 +201,17 @@ class Tooltip {
     const node = this.#node;
     node.addEventListener('mouseenter', this.schedule);
     node.addEventListener('mouseleave', this.leave);
-    node.addEventListener('pointerdown', this.hide);
-    node.addEventListener('click', this.hide);
+    const press = this.#pin ? null : this.hide;
+    const click = this.#pin ? this.togglePin : this.hide;
+    if (press) node.addEventListener('pointerdown', press);
+    node.addEventListener('click', click);
     node.addEventListener('focusin', this.showOnFocus);
     node.addEventListener('focusout', this.hideOnFocusOut);
     return () => {
       node.removeEventListener('mouseenter', this.schedule);
       node.removeEventListener('mouseleave', this.leave);
-      node.removeEventListener('pointerdown', this.hide);
-      node.removeEventListener('click', this.hide);
+      if (press) node.removeEventListener('pointerdown', press);
+      node.removeEventListener('click', click);
       node.removeEventListener('focusin', this.showOnFocus);
       node.removeEventListener('focusout', this.hideOnFocusOut);
       this.hide();
@@ -194,9 +223,9 @@ class Tooltip {
  * A tooltip on hover and keyboard focus, after the tooltip delay. Takes a getter, so a changed text updates the open tooltip in place: `{@attach tooltip(() => label)}`.
  */
 export const tooltip =
-  (getText: () => TooltipText): Attachment<HTMLElement> =>
+  (getText: () => TooltipText, options?: TooltipOptions): Attachment<HTMLElement> =>
   (node) => {
-    const tip = new Tooltip(node);
+    const tip = new Tooltip(node, options);
     $effect(() => {
       tip.text = getText();
       tip.update();

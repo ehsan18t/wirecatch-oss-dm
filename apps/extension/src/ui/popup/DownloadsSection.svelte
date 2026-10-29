@@ -57,11 +57,7 @@
 </script>
 
 <Disclosure variant="card" label="Downloads" {summary}>
-  <SettingRow
-    label={SETTINGS.defaultQueue.label}
-    description={SETTINGS.defaultQueue.description}
-    stacked
-  >
+  <SettingRow label={SETTINGS.defaultQueue.label} help={SETTINGS.defaultQueue.help} stacked>
     {#snippet children(control)}
       <Select
         {...control}
@@ -80,7 +76,7 @@
       <SettingSwitch
         id="speed-limit"
         label={SETTINGS.speedLimit.label}
-        description={SETTINGS.speedLimit.description}
+        help={SETTINGS.speedLimit.help}
         checked={limit !== null}
         disabled={!editable}
         onchange={(on: boolean) =>
@@ -105,7 +101,7 @@
         </div>
       {/if}
     </div>
-    <SettingRow label={SETTINGS.concurrent.label} description={SETTINGS.concurrent.description}>
+    <SettingRow label={SETTINGS.concurrent.label} help={SETTINGS.concurrent.help}>
       {#snippet children(control)}
         <NumberInput
           {...control}

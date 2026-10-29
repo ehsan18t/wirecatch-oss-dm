@@ -31,12 +31,12 @@ export const SETTING_WORDS = {
   },
   media_quality: {
     label: 'Resolution',
-    help: 'Videos download at this resolution when Wirecatch doesn’t ask, and the quality window opens on it. Choosing another one there updates this setting. Audio-only downloads use the audio settings below.',
+    help: 'Used when Wirecatch doesn’t ask, and chosen first in the quality window. Audio-only downloads use the audio settings.',
     brief: 'Used for videos that download without asking, and preselected in the quality window.',
   },
   media_fallback: {
     label: 'If a video doesn’t offer that resolution',
-    help: 'Next lower picks the lowest available if none is lower. Next higher picks the best available if none is higher. Ask me opens the quality window.',
+    help: 'Take the next lower or next higher resolution, or ask with the quality window.',
   },
   media: {
     label: 'Save videos as',
@@ -44,7 +44,7 @@ export const SETTING_WORDS = {
   },
   media_subtitles: {
     label: 'Subtitle languages for videos',
-    help: 'Uses the creator’s subtitles for each language, or auto-generated ones if allowed below. Languages a video doesn’t have are skipped.',
+    help: 'The creator’s subtitles, or auto-generated ones if allowed. Languages a video doesn’t have are skipped.',
     brief: 'Languages a video doesn’t have are skipped.',
   },
   media_auto_subtitles: {

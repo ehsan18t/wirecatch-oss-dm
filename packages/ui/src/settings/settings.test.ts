@@ -23,7 +23,7 @@ describe('settings rows', () => {
     expect(input.hasAttribute('aria-invalid')).toBe(false);
   });
 
-  it('announces an error under the control, marks it invalid and keeps the description', () => {
+  it('announces an error under the control, marks it invalid and keeps the help', () => {
     render(SettingsHost, { error: 'That folder cannot be written to.' });
     const input = screen.getByRole('textbox', { name: 'Folder' });
     const alert = screen.getByRole('alert');
@@ -37,7 +37,7 @@ describe('settings rows', () => {
     render(SettingsHost);
     const button = screen.getByRole('button', {
       name: 'Check for updates',
-      description: '1.2.0, up to date.',
+      description: 'Whether a newer version is out.',
     });
     expect(button).toBeTruthy();
     expect(screen.getByText('Version').tagName).toBe('P');

@@ -67,16 +67,15 @@ export const QUEUE_NOTIFY_OPTIONS: readonly SelectOption<QueueNotify>[] = [
   { value: 'when_done', label: 'When the queue is done' },
 ];
 
-/** What a queue's choice of when to tell does, given how Settings says to tell (`undefined` before the settings load). */
-export function queueNotifyHelp(
-  notify: QueueNotify,
-  notifyOnFinish: NotifyOnFinish | undefined,
-): string {
-  if (notifyOnFinish === 'nothing')
-    return 'Finish notifications are turned off in Settings > Notifications. This applies once you turn them back on.';
-  return notify === 'each_download'
-    ? 'Downloads that finish a few seconds apart are grouped together.'
-    : 'Notifies you once, when nothing in the queue is downloading or waiting. Failed downloads are still reported right away.';
+/** What a queue's choice of when to notify means, the same whichever is chosen (D84.1). */
+export const QUEUE_NOTIFY_HELP =
+  'Each download groups those that finish a few seconds apart. When the queue is done notifies once nothing in it is downloading or waiting; failed downloads still notify at once.';
+
+/** Why the queue's choice does nothing yet; `undefined` before the settings load. */
+export function queueNotifyWarning(notifyOnFinish: NotifyOnFinish | undefined): string | null {
+  return notifyOnFinish === 'nothing'
+    ? 'Finish notifications are off in Settings > Notifications.'
+    : null;
 }
 
 /** What a queue's choice means, in a sentence about the queue `name`. */

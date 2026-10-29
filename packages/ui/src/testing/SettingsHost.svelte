@@ -13,16 +13,16 @@
 <SettingsSection title="Saving" description="Where finished files go.">
   <SettingSwitch
     label="Ask where to save"
-    description="Choose a folder for each file."
+    help="Choose a folder for each file."
     checked={on}
     onchange={(next: boolean) => (on = next)}
   />
-  <SettingRow label="Folder" description="New downloads go here." {error}>
+  <SettingRow label="Folder" help="New downloads go here." {error}>
     {#snippet children(control: FieldControl)}
       <Input {...control} value={folder} onchange={(next: string) => (folder = next)} />
     {/snippet}
   </SettingRow>
-  <SettingRow label="Version" description="1.2.0, up to date." labelled={false}>
+  <SettingRow label="Version" help="Whether a newer version is out." labelled={false}>
     {#snippet children(control: FieldControl)}
       <button type="button" aria-describedby={control['aria-describedby']}>Check for updates</button
       >

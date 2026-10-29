@@ -46,17 +46,10 @@ export function queueLimitFacts(settings: QueueSettings): string[] {
   return follows ? [...facts, 'Other limits are global'] : facts;
 }
 
-/** What a queue's downloads at the same time are: the app's (`own` `null`), or its own, which the app's limit still caps. */
-export function concurrentLimitHelp(own: number | null, app: number | undefined): string {
-  if (own === null)
-    return app === undefined
-      ? 'Uses the global limit.'
-      : `Uses the global limit: ${String(app)} at once.`;
-  const line = 'Up to this many of its downloads run at once, and the rest wait their turn.';
-  if (app === undefined) return line;
-  return own > app
-    ? `${line} The global limit of ${String(app)} is lower, so at most ${String(app)} run at once.`
-    : `${line} The global limit of ${String(app)} still applies across all queues.`;
+/** A warning when a queue's own downloads at the same time exceed the global limit, which still caps them. */
+export function concurrentCapWarning(own: number, app: number | undefined): string | null {
+  if (app === undefined || own <= app) return null;
+  return `The global limit of ${String(app)} is lower, so at most ${String(app)} run at once.`;
 }
 
 /** Where a queue's own downloads at the same time start: below the app's limit, so switching it on changes something. */
@@ -64,20 +57,11 @@ export function firstConcurrent(app: number): number {
   return Math.max(1, app - 1);
 }
 
-/** What a queue's speed limit is, its own or the app's; the app's limit still caps every download. */
-export function speedLimitHelp(own: boolean, app: number | null): string {
-  if (own)
-    return app === null
-      ? 'Shared by all downloads in this queue.'
-      : `Shared by all downloads in this queue. The global limit of ${formatRate(app)} still applies.`;
-  return `Uses the global limit: ${app === null ? 'none' : formatRate(app)}.`;
-}
-
-/** What a queue's connections per download are: its own replace the app's. */
-export function ownConnectionsHelp(own: boolean, app: number): string {
-  return own
-    ? `Each download in this queue uses up to this many connections instead of the global ${String(app)}.`
-    : `Uses the global setting: ${String(app)} per download.`;
+/** The global value a queue limit follows while it has none of its own; `null` before the settings load. */
+export function globalLimitText(limit: QueueLimit, app: number | null | undefined): string | null {
+  if (app === undefined) return null;
+  if (limit === 'speed_limit') return `Global: ${app === null ? 'no limit' : formatRate(app)}`;
+  return app === null ? null : `Global: ${String(app)}`;
 }
 
 /** The queue settings that may follow an app setting or have their own value (D72.1). */
