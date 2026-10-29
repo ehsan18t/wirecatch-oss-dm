@@ -3,8 +3,8 @@
   import type { SelectOption } from '@wirecatch/ui';
 
   const TAKES: readonly SelectOption<'manual' | 'auto'>[] = [
-    { value: 'manual', label: 'Manual' },
-    { value: 'auto', label: 'Auto' },
+    { value: 'manual', label: 'Manually' },
+    { value: 'auto', label: 'Automatically' },
   ];
 
   const SYNTAX: readonly SelectOption<NameSyntax>[] = [
@@ -20,7 +20,7 @@
 </script>
 
 <script lang="ts">
-  // The queue editor's "Takes new downloads" card: Manual, or Auto with its switch, its claims of each kind and Try a link, which tries the claims as the form has them (D72.2, D72.7).
+  // The queue editor's "Add downloads" card: Manually, or Automatically with its switch, its claims of each kind and Test a link, which tries the claims as the form has them (D72.2, D72.7).
   import type { DraftClaims, QueueClaims, QueueId } from '@wirecatch/protocol';
   import {
     Field,
@@ -65,12 +65,12 @@
 <div class="flex flex-col divide-y divide-line rounded-md border border-line bg-layer">
   <ChoiceCard
     flush
-    label="Takes new downloads"
+    label="Add downloads"
     description={auto
       ? claims.enabled
-        ? 'What you put in it, and new downloads it claims.'
-        : 'Only what you put in it, while its claims are off.'
-      : 'Only what you put in it.'}
+        ? 'Downloads you add to it, and new downloads that match its rules.'
+        : 'Only downloads you add to it, while its rules are off.'
+      : 'Only downloads you add to it.'}
     value={auto ? 'auto' : 'manual'}
     options={TAKES}
     onchange={(next: 'manual' | 'auto') => onchange(next === 'auto', claims)}
@@ -80,12 +80,12 @@
     <div class="p-3">
       <Switch
         labelSide="start"
-        label="Claim new downloads"
+        label="Use rules"
         description={claims.enabled
           ? hasClaims(claims)
-            ? 'New downloads its claims match come here.'
-            : 'It claims nothing yet: add a site, a name, a type, a category or a protocol.'
-          : 'Its claims are kept, but it takes nothing new until you turn this on.'}
+            ? 'New downloads that match any rule below are added to this queue.'
+            : 'No rules yet. Add a site, file name, file type, category or protocol.'
+          : 'Its rules are kept but not used until you turn this on.'}
         checked={claims.enabled}
         onchange={(on: boolean) => change({ enabled: on })}
       />
@@ -94,7 +94,7 @@
     <div class="flex flex-col gap-4 p-3">
       <Field
         label="Sites"
-        description="example.com covers www.example.com too. *.example.com, 10.0.0.0/8 and <local> work as well."
+        description="A site also matches its subdomains. Wildcards (*.example.com), IP ranges (10.0.0.0/8) and <local> (names without a dot) work too."
       >
         {#snippet children(control: FieldControl)}
           <TagInput
@@ -130,7 +130,7 @@
           {/snippet}
         </Field>
         <SegmentedControl
-          label="File names are written as"
+          label="Match file names using"
           class="self-start"
           size="sm"
           value={claims.file_name_syntax}
@@ -181,8 +181,8 @@
       </div>
 
       <p class="text-small text-ink-muted">
-        Claims are checked in this order: site, file name, file type, category, protocol. Between
-        queues, the one higher in the sidebar wins.
+        Rules are checked in this order: site, file name, file type, category, protocol. If several
+        queues match, the one highest in the sidebar wins.
       </p>
     </div>
 

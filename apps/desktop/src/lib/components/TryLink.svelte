@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Try a link: which queue the claims send a link to and why, a switched-off queue that would have taken it included (D72.5, D72.7). The core matches, so this and the downloads never disagree.
+  // Test a link: which queue the claims send a link to and why, a switched-off queue that would have taken it included (D72.5, D72.7). The core matches, so this and the downloads never disagree.
   import { tick } from 'svelte';
   import type { DraftClaims, QueueId } from '@wirecatch/protocol';
   import { Button, Field, Input, type FieldControl } from '@wirecatch/ui';
@@ -69,7 +69,7 @@
 
 <div class="flex max-w-prose flex-col gap-2">
   <div class="flex items-end gap-2">
-    <Field label="Try a link" class="min-w-0 flex-1">
+    <Field label="Test a link" class="min-w-0 flex-1">
       {#snippet children(control: FieldControl)}
         <Input
           {...control}

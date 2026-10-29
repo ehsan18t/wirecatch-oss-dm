@@ -26,7 +26,7 @@ fn retry(message: String) -> UserError {
 fn cannot_start(tools: &MediaTools, program: &str, error: &std::io::Error) -> UserError {
     tools.mark_broken();
     retry(format!(
-        "The media add-on's {program} could not be started ({error}). Reinstall the media add-on in Settings, Add-ons, then try again."
+        "The media add-on's {program} could not be started ({error}). Reinstall the media add-on in Settings > Add-ons, then try again."
     ))
 }
 
@@ -47,11 +47,11 @@ pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
         )),
         YtDlpError::Stalled(_) => retry("The media add-on stopped answering. Try again.".into()),
         YtDlpError::Refused { reason } => retry(format!(
-            "The media add-on could not get the video from this page ({reason}). Check that the video plays in your browser; if it does, update the media add-on in Settings, Add-ons, then try again."
+            "The media add-on could not get the video from this page ({reason}). Check that the video plays in your browser; if it does, update the media add-on in Settings > Add-ons, then try again."
         )),
         YtDlpError::BadOutput(e) => {
             tracing::warn!(error = %e, "yt-dlp printed something that is not a page description");
-            retry("The media add-on could not read this page. Update the media add-on in Settings, Add-ons, then try again.".into())
+            retry("The media add-on could not read this page. Update the media add-on in Settings > Add-ons, then try again.".into())
         }
         // The page is as long the next time, so trying again does not help.
         YtDlpError::OutputTooLarge => UserError {

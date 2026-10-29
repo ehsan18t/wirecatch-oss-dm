@@ -746,6 +746,20 @@ Decided with the maintainer on 2026-10-25. Downloads, the button over videos, th
 5. What the extension logs while a private window is open is still forgotten when the last one closes (`lib/diag`): the extension's own records are not the person's downloads.
 6. Notes from the app (D65) show in a private window's tab too. Chromium does not load an extension's page as the main frame of an incognito tab for an extension that spans both (the default); should it refuse the notes frame there as well, no note is confirmed and the app shows the system notification instead (D65.5).
 
+### D83. Interface copy uses the words download managers already use
+
+Decided on 2026-10-29. Labels and help text use the terms people know from other download managers and from Windows, not words invented to describe the code. Names in code and in the protocol (`claims`, `takes`, `follow_app`) stay; only what a person reads follows this list.
+
+1. Queue rules: a queue adds new downloads "manually" or "automatically", by its "rules" (never "claims" or "takes"). A link's queue is explained by which rules match it.
+2. Inherited values: a value every queue uses unless it sets its own is "global" ("Global speed limit", "Uses the global limit: 3 at once", "Global proxy (Office)"), never "the app's".
+3. Proxy: "System proxy" for the operating system's setting, "Proxy servers" for the saved ones, "Bypass proxy for" for exceptions, "System proxy exceptions" for the system's bypass list.
+4. Schedules: a queue "runs on a schedule"; started outside it, it was started "manually" and "ignores the schedule". Never "hours" or "by hand".
+5. Notifications: "notification" is the system's; "notice" is the small card in the browser tab; "alerts" are the list of problems in the extension's popup. Wirecatch "notifies" you, never "tells" you.
+6. Browser downloads are "captured", the word the code uses, in the app and the popup alike; "Sites to ignore" are left to the browser.
+7. A settings file is exported and imported ("Export settings", "Import settings").
+8. A place in settings is written "Settings > Media".
+9. Video and audio that come separately are "merged", not "joined".
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

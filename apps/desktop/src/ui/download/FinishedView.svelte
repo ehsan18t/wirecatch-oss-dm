@@ -55,7 +55,7 @@
       {#if only.status === 'failed'}
         <Callout tone="danger">{only.error?.message ?? 'It stopped with an error.'}</Callout>
         {#if !retryHelps(only)}
-          <p class="text-small text-ink-muted">Fix it from the download list in Wirecatch.</p>
+          <p class="text-small text-ink-muted">Open the download list in Wirecatch to fix it.</p>
         {/if}
       {:else}
         <dl>
@@ -83,7 +83,7 @@
   {/if}
   {#if win.settings?.finish_notice === 'window'}
     <p class="mt-4 text-small text-ink-muted">
-      Rather not have a window?
+      Prefer notifications?
       <Button variant="link" size="sm" onclick={() => void win.useNotifications()}
         >Use notifications instead</Button
       >

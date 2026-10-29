@@ -248,7 +248,7 @@ function finishDownload(s: Step, row: DownloadSummary) {
   }
 }
 
-/** Joining video and audio takes a moment, then the file is finished. */
+/** Merging video and audio takes a moment, then the file is finished. */
 function advanceProcessing(s: Step, wanted: Map<DownloadId, number>) {
   for (const [id, sim] of s.state.sim) {
     const row = s.state.rows.get(id);

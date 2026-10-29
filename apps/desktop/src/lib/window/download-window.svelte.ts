@@ -452,7 +452,7 @@ export class DownloadWindowState {
     return this.#saveSettings((d) => void (d.extension.ask_before_download = !on));
   }
 
-  /** "Keep the window open to show progress", worded as Settings words it. */
+  /** "Keep the download window open to show progress", worded as Settings words it. */
   setKeepOpen(on: boolean): Promise<void> {
     return this.#saveSettings((d) => void (d.show_progress_windows = on));
   }

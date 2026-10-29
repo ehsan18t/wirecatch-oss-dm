@@ -1234,7 +1234,7 @@ fn refused_after_refreshing(status: Option<u16>) -> UserError {
         .unwrap_or_default();
     UserError {
         message: format!(
-            "The video's server kept refusing to send the video{answered}, even though Wirecatch tried again by itself several times with fresh addresses from the page. Sites sometimes refuse one video for a while. Try again later; what was already downloaded is kept."
+            "The video's server kept refusing to send the video{answered}, even though Wirecatch tried again automatically several times with fresh addresses from the page. Sites sometimes refuse one video for a while. Try again later; what was already downloaded is kept."
         ),
         fix: Some(FixAction::Retry),
     }

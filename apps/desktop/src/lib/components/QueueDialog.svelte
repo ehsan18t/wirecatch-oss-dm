@@ -104,7 +104,7 @@
   // Picking single days is its own choice, kept while the days picked happen to make a pattern.
   let pickingDays = $state(dayPattern(opened?.schedule?.days ?? []) === 'custom');
   let auto = $state(opened?.takes.kind === 'auto');
-  // Kept while the form is switched to Manual, so switching back loses nothing.
+  // Kept while the form is switched to Manually, so switching back loses nothing.
   let claims = $state<QueueClaims>(claimsOf(opened?.takes));
   let notify = $state<QueueNotify>(opened?.notify ?? 'each_download');
   let proxy = $state<QueueSettings['proxy']>($state.snapshot(opened?.proxy) ?? FOLLOW_APP);
@@ -130,7 +130,7 @@
   let confirmDelete = $state((() => deleting)());
   let busy = $state(false);
 
-  // The button pressed goes as the footer changes: the focus moves to the safe answer, and back to Delete queue on Keep it.
+  // The button pressed goes as the footer changes: the focus moves to the safe answer, and back to Delete queue on Keep queue.
   let keepButton = $state<HTMLButtonElement | null>(null);
   let deleteButton = $state<HTMLButtonElement | null>(null);
   let asked = (() => confirmDelete)();
@@ -220,7 +220,7 @@
   title={original ? `Edit ${original.settings.name}` : 'New queue'}
   description={original
     ? undefined
-    : "A queue runs its downloads in order. It uses the app's limits unless you set its own."}
+    : 'A queue runs its downloads in order, using the global limits unless you set its own.'}
   onclose={() => app.closeDialog()}
 >
   <form
@@ -341,8 +341,8 @@
     />
 
     <SwitchCard
-      label="Only run at certain times"
-      description="Outside these hours its downloads wait, unless you start the queue now."
+      label="Run on a schedule"
+      description="Outside these times, its downloads wait unless you start the queue manually."
       checked={scheduleOn}
       onchange={(on: boolean) => (scheduleOn = on)}
     >
@@ -396,7 +396,7 @@
     </SwitchCard>
 
     <ChoiceCard
-      label="Tell me when downloads finish"
+      label="Notify me when downloads finish"
       description={notifyHelp}
       value={notify}
       options={QUEUE_NOTIFY_OPTIONS}
@@ -414,7 +414,7 @@
         {movingLine}
       </p>
       <Button bind:ref={keepButton} data-autofocus onclick={() => (confirmDelete = false)}
-        >Keep it</Button
+        >Keep queue</Button
       >
       <Button variant="danger" onclick={remove}>Delete {original.settings.name}</Button>
     {:else}

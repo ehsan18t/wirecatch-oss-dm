@@ -98,7 +98,7 @@ export function setQueueOrder(state: MockState, order: QueueId[]): void {
   state.queuesChanged();
 }
 
-/** Try a link in the mock, by site claims alone: a name covers itself and the names under it; drafted regular expressions are checked by JavaScript's reader. The app matches every kind and pattern in `wirecatch-queues`; this stands in for it so the windows can be built against sample data. */
+/** Test a link in the mock, by site claims alone: a name covers itself and the names under it; drafted regular expressions are checked by JavaScript's reader. The app matches every kind and pattern in `wirecatch-queues`; this stands in for it so the windows can be built against sample data. */
 export function tryLink(state: MockState, trial: LinkTrial): LinkClaims {
   let host: string;
   try {

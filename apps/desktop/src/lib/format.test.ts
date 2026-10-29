@@ -89,7 +89,7 @@ describe('progress', () => {
   });
 
   it('describes size in plain words', () => {
-    expect(formatSize(0, null, 'queued')).toBe('Size not known yet');
+    expect(formatSize(0, null, 'queued')).toBe('Size unknown');
     expect(formatSize(0, null, 'failed')).toBe('');
     expect(formatSize(1024, 4096, 'downloading')).toBe('1.00 KB of 4.00 KB');
     expect(formatSize(4096, 4096, 'completed')).toBe('4.00 KB');
@@ -101,7 +101,7 @@ describe('schedules', () => {
   const lateNight = { start: { hour: 22, minute: 0 }, stop: { hour: 6, minute: 0 }, days: [] };
 
   it('reads like a sentence', () => {
-    expect(formatSchedule(null)).toBe('Runs any time');
+    expect(formatSchedule(null)).toBe('No schedule');
     expect(formatSchedule(night)).toBe('01:00 to 07:00');
     expect(formatSchedule({ ...night, days: ['sat', 'sun'] })).toBe('01:00 to 07:00, weekends');
     expect(formatSchedule({ ...night, days: ['fri', 'mon'] })).toBe('01:00 to 07:00, Mon, Fri');
@@ -220,8 +220,8 @@ describe('a download already in the list (D23)', () => {
     expect(statusDetail(waiting, 'Main')).toBe(
       'Main is running 2 of 2. This starts when one of them finishes.',
     );
-    expect(statusShort(row({ status: 'processing' }))).toBe('Joining video and audio');
-    expect(statusDetail(row({ status: 'processing' }), 'Main')).toMatch(/joining them/);
+    expect(statusShort(row({ status: 'processing' }))).toBe('Merging video and audio');
+    expect(statusDetail(row({ status: 'processing' }), 'Main')).toMatch(/merging them/);
     expect(statusDetail(row({}), 'Main')).toBeNull();
   });
 
@@ -276,7 +276,7 @@ describe('a video whose server refused it for now', () => {
       completed_at: null,
     };
     const detail = statusDetail(full, 'Main');
-    expect(detail).toContain('tries again by itself at 20:51');
+    expect(detail).toContain('tries again automatically at 20:51');
     expect(detail).not.toContain('\u2014');
   });
 

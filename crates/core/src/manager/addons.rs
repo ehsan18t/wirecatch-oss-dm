@@ -500,7 +500,7 @@ impl Manager {
         AddonInfo {
             id: AddonId::Media,
             name: "Media add-on".into(),
-            description: "Downloads video and audio from sites such as YouTube (yt-dlp), and joins separate video and audio into one file (ffmpeg).".into(),
+            description: "Downloads video and audio from sites such as YouTube (yt-dlp), and merges separate video and audio into one file (ffmpeg).".into(),
             state,
             installed_version: (!slot.record.components.is_empty()).then(|| {
                 describe(
@@ -552,7 +552,7 @@ impl Manager {
             "yesterday"
         };
         Some(format!(
-            "A newer version came out {when}; Wirecatch installs it once it is two days old."
+            "A newer version was released {when}; Wirecatch installs it after two days."
         ))
     }
 
@@ -1288,7 +1288,7 @@ fn swap_in(
                 }
                 return Err(InstallFailure {
                     reason: format!(
-                        "{} could not be put in place ({e}), and the version that was installed could not be put back ({restore}). Install the media add-on again from Settings, Add-ons.",
+                        "{} could not be put in place ({e}), and the version that was installed could not be put back ({restore}). Install the media add-on again from Settings > Add-ons.",
                         component.id()
                     ),
                     part_lost: true,

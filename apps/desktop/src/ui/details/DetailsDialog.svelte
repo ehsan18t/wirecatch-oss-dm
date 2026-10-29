@@ -64,7 +64,7 @@
         ? []
         : [['Finished', formatDate(r.completed_at, app.clock.now)] as [string, string]]),
       ...(notStarted
-        ? [['Size', r.total === null ? 'Not known' : formatBytes(r.total)] as [string, string]]
+        ? [['Size', r.total === null ? 'Unknown' : formatBytes(r.total)] as [string, string]]
         : []),
       ['Kind', fileKind(r.file_name, CATEGORY_LABEL[r.category])],
       ['Added', formatDate(r.added_at, app.clock.now)],
@@ -77,7 +77,7 @@
     return [
       {
         id: 'window',
-        label: 'Open in its own window',
+        label: 'Open in a separate window',
         icon: AppWindow,
         onselect: () => void app.showProgressWindow(r.id),
       },

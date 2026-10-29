@@ -77,13 +77,13 @@
   const resultText = $derived(result ? testResultText(result, loginEntered) : null);
 
   const passwordHelp = $derived.by(() => {
-    if (password.change === 'remove') return 'It goes from this app when you save.';
-    if (password.change === 'set') return 'Kept in this app only; it is never shown again.';
+    if (password.change === 'remove') return 'The password is removed when you save.';
+    if (password.change === 'set') return 'Stored only in Wirecatch and never shown again.';
     if (keepsSaved) return 'A password is saved. Type a new one to replace it.';
     if (savedPassword) {
-      return 'The saved password was for the old server or user name, so it is not kept. Enter it again if this one asks for it.';
+      return 'The saved password belonged to the previous server or user name and was cleared. Enter it again if this proxy needs one.';
     }
-    return 'Only if the proxy asks for one. Kept in this app only.';
+    return 'Only if the proxy requires one. Stored only in Wirecatch.';
   });
 
   function draft(): ProxyProfileDraft {
@@ -128,7 +128,7 @@
   description={opened
     ? 'Downloads already running keep the proxy they started with.'
     : forQueue
-      ? `Saved for the whole app, and used by ${forQueue}.`
+      ? `Available to all queues, and used by ${forQueue}.`
       : 'Save a proxy server once; the app and each queue can then choose it.'}
   onclose={() => onclose()}
 >
@@ -142,7 +142,7 @@
       void save();
     }}
   >
-    <Field label="Name (optional)" description="Left empty, the proxy shows as its address.">
+    <Field label="Name (optional)" description="If left empty, the proxy’s address is shown.">
       {#snippet children(control: FieldControl)}
         <Input
           {...control}

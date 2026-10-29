@@ -132,7 +132,7 @@ pub fn started(row: &DownloadSummary, stays: std::time::Duration) -> Notice {
 pub fn video_added(title: &str, stays: std::time::Duration) -> Notice {
     Notice {
         title: ADDED.to_owned(),
-        body: format!("{title}, reading the video"),
+        body: format!("{title}: getting video details"),
         buttons: Vec::new(),
         click: show(None, &[]),
         lasts: Lasts::Brief(stays),
@@ -347,7 +347,7 @@ mod tests {
         let video = video_added("Keynote", BRIEFLY);
         assert_eq!(
             (video.title.as_str(), video.body.as_str()),
-            ("Download added", "Keynote, reading the video")
+            ("Download added", "Keynote: getting video details")
         );
         assert_eq!(video.lasts, Lasts::Brief(BRIEFLY));
     }

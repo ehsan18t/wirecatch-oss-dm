@@ -24,7 +24,7 @@ async function type(field: HTMLElement, value: string) {
 }
 
 const dialog = () => within(screen.getByRole('dialog'));
-const list = () => within(screen.getByRole('list', { name: 'Saved proxies' }));
+const list = () => within(screen.getByRole('list', { name: 'Proxy servers' }));
 
 describe('proxy profiles in settings', () => {
   it('lists each saved profile once, with its last test and what uses it', async () => {
@@ -38,7 +38,7 @@ describe('proxy profiles in settings', () => {
     app.settings.proxy.proxy = { kind: 'profile', id: office.id };
     await settle();
     expect(
-      list().getByText('Used by the app (Main, Overnight) and Work files'),
+      list().getByText('Used by the global setting (Main, Overnight) and Work files'),
     ).toBeInTheDocument();
   });
 
@@ -48,7 +48,7 @@ describe('proxy profiles in settings', () => {
     await type(dialog().getByLabelText('Name (optional)'), 'Lab');
     await type(dialog().getByLabelText('Server'), 'refuse.lab.example');
     await click(dialog().getByRole('button', { name: 'Test connection' }));
-    expect(dialog().getByText(/The proxy needs a login/)).toBeInTheDocument();
+    expect(dialog().getByText(/The proxy requires a user name and password/)).toBeInTheDocument();
     await type(dialog().getByLabelText('User name (optional)'), 'ada');
     await type(dialog().getByLabelText('Password (optional)'), 'secret');
     await click(dialog().getByRole('button', { name: 'Test connection' }));
@@ -68,7 +68,7 @@ describe('proxy profiles in settings', () => {
     await click(list().getByRole('button', { name: 'Edit Office' }));
     expect(dialog().getByText(/A password is saved/)).toBeInTheDocument();
     await type(dialog().getByLabelText('Server'), '10.0.0.6');
-    expect(dialog().getByText(/was for the old server or user name/)).toBeInTheDocument();
+    expect(dialog().getByText(/belonged to the previous server or user name/)).toBeInTheDocument();
   });
 
   it('deletes a profile in use, giving what used it the replacement', async () => {
@@ -85,7 +85,7 @@ describe('proxy profiles in settings', () => {
     });
   });
 
-  it('copies the computer’s proxy once', async () => {
+  it('copies the system proxy once', async () => {
     const { app } = await openNetwork();
     const before = app.proxies.list.length;
     await click(screen.getByRole('button', { name: 'Copy from system' }));
@@ -108,6 +108,6 @@ describe('proxy profiles in settings', () => {
     await app.queues.save(work.id, { ...settings, proxy: { source: 'follow_app' } });
     await settle();
     expect(screen.queryByRole('checkbox', { name: /^These hosts/ })).toBeNull();
-    expect(screen.getByText(/nothing to go around/)).toBeInTheDocument();
+    expect(screen.getByText(/nothing to bypass/)).toBeInTheDocument();
   });
 });

@@ -78,7 +78,7 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(quality).toBeHidden();
 
     await pretend(page, 'takes a while to read');
-    const reading = await windowWith(page, 'Reading the video');
+    const reading = await windowWith(page, 'Getting video details');
     await audit(page, 'reading a video');
     await reading.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(reading).toBeHidden();
@@ -129,7 +129,7 @@ test('the file question by keyboard: the order of its controls, Enter to downloa
   expect(stops).toEqual([
     'Download later',
     'Cancel',
-    'Keep the window open to show progress',
+    'Keep the download window open to show progress',
     'Don’t ask again for files from the browser',
     'Main',
     'Change',

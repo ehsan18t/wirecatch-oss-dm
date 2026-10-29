@@ -89,7 +89,7 @@
       {#if limit !== null}
         <div class="-mt-1 px-4 pb-3">
           <NumberInput
-            label="Total speed limit"
+            label="Global speed limit"
             class="w-36"
             unit="MB/s"
             min={SPEED_FIELD.MB.min}

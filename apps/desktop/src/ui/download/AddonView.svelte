@@ -41,13 +41,13 @@
   <div class="flex flex-col gap-3 text-ui text-ink">
     <p>
       {url
-        ? `Downloading from ${hostOf(url)} needs it. `
+        ? `It is needed to download from ${hostOf(url)}. `
         : 'This video needs it. '}{addon.description}
     </p>
     <!-- Always there, so a screen reader hears the start, the progress and the end (or the failure) of the install: a region added together with its text is often not read. -->
     <p class="sr-only" aria-live="polite" data-testid="addon-live">{addonAnnouncement(addon)}</p>
     {#if installed}
-      <p>Your download continues on its own.</p>
+      <p>Your download continues automatically.</p>
     {:else if installing}
       <p>{addonStatus(addon)}</p>
       <ProgressBar value={fraction} label="Installing {addon.name}" />
@@ -59,7 +59,7 @@
     {:else if failed}
       <Callout tone="danger" title="The add-on did not install">{addonStatus(addon)}</Callout>
     {:else}
-      <p class="text-ink-muted">Once it is installed, your download continues on its own.</p>
+      <p class="text-ink-muted">Once it is installed, your download continues automatically.</p>
     {/if}
   </div>
 

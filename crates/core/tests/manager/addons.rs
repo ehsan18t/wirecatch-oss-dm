@@ -666,7 +666,7 @@ async fn a_refusal_is_shown_until_a_newer_release_is_installed() -> TestResult {
             .note
             .is_some_and(|n| n.contains("2026.09.30"))
     );
-    let waiting = "A newer version came out today; Wirecatch installs it once it is two days old.";
+    let waiting = "A newer version was released today; Wirecatch installs it after two days.";
     let fresh = crate::media_support::ytdlp_release("2026.10.12")?;
     serve_releases(&server, &[("2026.10.12", &fresh, "2026-10-12T00:00:00Z")])?;
     let note = check(&h).await?.note.unwrap_or_default();
@@ -901,7 +901,7 @@ async fn a_fresh_release_waits_two_days_on_every_install_path() -> TestResult {
         "2026-10-12T00:00:00Z",
     )?;
     let program = format!("rel/2026.10.12/{}", ytdlp_asset());
-    let waiting = "A newer version came out today; Wirecatch installs it once it is two days old.";
+    let waiting = "A newer version was released today; Wirecatch installs it after two days.";
     // Not installed quietly, and not offered: the add-on stays as it is and
     // says why.
     let info = check(&h).await?;
@@ -930,7 +930,7 @@ async fn a_fresh_release_waits_two_days_on_every_install_path() -> TestResult {
     assert_eq!(info.state, AddonState::Installed);
     assert_eq!(
         info.note.as_deref(),
-        Some("A newer version came out yesterday; Wirecatch installs it once it is two days old.")
+        Some("A newer version was released yesterday; Wirecatch installs it after two days.")
     );
     // Two days old: offered at once, and installed quietly by the next check.
     h.clock.advance(chrono::TimeDelta::hours(24));
@@ -967,7 +967,7 @@ async fn the_newest_release_old_enough_is_used_while_a_newer_one_waits() -> Test
     assert_eq!(installed_ytdlp(&h)?, older);
     assert_eq!(
         info.note.as_deref(),
-        Some("A newer version came out today; Wirecatch installs it once it is two days old.")
+        Some("A newer version was released today; Wirecatch installs it after two days.")
     );
     assert_eq!(
         server.requests(&format!("rel/2026.10.12/{}", ytdlp_asset())),

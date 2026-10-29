@@ -72,7 +72,7 @@ const TOGGLES: readonly CommandSpec<Switches>[] = [
   {
     id: 'toggle.capture',
     title: ({ capture }) =>
-      capture ? 'Stop catching browser downloads' : 'Catch browser downloads',
+      capture ? 'Stop capturing browser downloads' : 'Capture browser downloads',
     keywords: 'extension capture off on',
     run: ({ app, capture }) =>
       app.updateSettings((d) => void (d.extension.capture_enabled = !capture)),
@@ -119,14 +119,14 @@ const PROXY: readonly CommandSpec<ProxyOption>[] = [
   {
     id: ({ proxy }) => `proxy.use.${proxy.kind === 'profile' ? String(proxy.id) : proxy.kind}`,
     title: ({ proxy, name }) =>
-      proxy.kind === 'direct' ? 'Proxy: turn it off for the app' : `Proxy: use ${name} for the app`,
+      proxy.kind === 'direct' ? 'Proxy: turn off' : `Proxy: use ${name}`,
     keywords: PROXY_KEYWORDS,
     when: ({ app, proxy }) => !app.settings || !sameUse(app.settings.proxy.proxy, proxy),
     run: ({ app, proxy }) => app.updateSettings((d) => void (d.proxy.proxy = proxy)),
   },
   {
     id: 'proxy.current',
-    title: ({ name }) => `Proxy: the app uses ${name} now (opens settings)`,
+    title: ({ name }) => `Proxy: ${name} is in use (open settings)`,
     keywords: PROXY_KEYWORDS,
     when: ({ app, proxy }) => app.settings !== null && sameUse(app.settings.proxy.proxy, proxy),
     run: ({ app }) => app.openSettings('proxy'),
@@ -136,7 +136,7 @@ const PROXY: readonly CommandSpec<ProxyOption>[] = [
 /** The proxies the app's could switch to, each named as a sentence takes it. */
 function proxyOptions(app: AppState): ProxyOption[] {
   return [
-    { app, proxy: { kind: 'system' }, name: 'the computer’s proxy' },
+    { app, proxy: { kind: 'system' }, name: 'the system proxy' },
     { app, proxy: { kind: 'direct' }, name: 'no proxy' },
     ...app.proxies.list.map((p) => ({
       app,

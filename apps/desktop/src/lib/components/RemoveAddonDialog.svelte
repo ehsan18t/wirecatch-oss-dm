@@ -20,8 +20,8 @@
 
 <Dialog open role="alertdialog" title={`Remove the ${name}?`} onclose={() => app.closeDialog()}>
   <p class="text-ui text-ink-muted">
-    Downloads from video sites, and videos whose sound and picture must be joined, stop working
-    until you install it again. Your downloaded files stay.
+    Downloads from video sites, and videos whose video and audio must be merged, won’t work until
+    you install it again. Your downloaded files are kept.
   </p>
 
   {#snippet footer()}

@@ -4,19 +4,19 @@ import type { MediaSendResult } from '../media/center';
 import { RequestError, UNREADABLE_ANSWER } from '../native/client';
 
 export const NO_SITE_ACCESS =
-  'Wirecatch needs access to websites to take downloads with their cookies. Open this popup and click Allow access.';
+  'Wirecatch needs access to websites to capture downloads with their cookies. Open the Wirecatch popup and click Allow access.';
 
 /** For media there is no browser download to fall back on, so the person has to act. */
 export const MEDIA_UNREACHABLE = 'Wirecatch could not be reached. Open Wirecatch, then try again.';
 
 export const MEDIA_NO_SITE_ACCESS =
-  'Wirecatch needs access to websites to send media with its cookies. Open the Wirecatch popup and click Allow access.';
+  'Wirecatch needs access to websites to send media with their cookies. Open the Wirecatch popup and click Allow access.';
 
 export const MENU_PRIVATE_WINDOW =
-  'Wirecatch is set to leave private windows to the browser. Turn on "Work in private windows" in the Wirecatch popup, or use the browser\'s own "Save as" option.';
+  'Wirecatch is turned off in private windows. Turn on "Work in private windows" in the Wirecatch popup, or use the browser\'s own "Save as" option.';
 
 export const MENU_NOT_WEB =
-  'Wirecatch can only take web links, so the browser is downloading this item instead.';
+  'Wirecatch can only capture web links, so the browser is downloading this item instead.';
 
 export const BROWSER_DOWNLOAD_FAILED =
   'This item could not be downloaded. Try the browser\'s own "Save as" option instead.';
@@ -79,7 +79,7 @@ function keptReason(result: Extract<HandoverResult, { kind: 'kept' }>): string |
 /** The context menu's link went to the browser instead, after the app did not take it. */
 export function menuNotTaken(name: string, detail: string | null): string {
   const reason = detail === null ? '' : ` ${detail}`;
-  return `Wirecatch could not take ${name}, so the browser is downloading it instead.${reason}`;
+  return `Wirecatch could not capture ${name}, so the browser is downloading it instead.${reason}`;
 }
 
 /** The answer shown next to the media button or in the popup's media list. */
@@ -95,7 +95,7 @@ export function mediaAnswer(result: SubmitResult): MediaSendResult {
   }
   if (result.reason === 'refused') {
     const why = result.detail === null ? '' : ` ${result.detail.replace(/\.?$/, '.')}`;
-    return { ok: false, message: `Wirecatch did not take it.${why}` };
+    return { ok: false, message: `Wirecatch did not accept it.${why}` };
   }
   if (result.reason === 'unreadable') {
     return {

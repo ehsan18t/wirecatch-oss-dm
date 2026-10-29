@@ -58,7 +58,7 @@ export class NotesFrame {
     const token = this.#page.newToken();
     const iframe = document.createElement('iframe');
     iframe.src = this.#page.notesUrl(token);
-    iframe.title = 'Wirecatch notes';
+    iframe.title = 'Wirecatch notices';
     iframe.setAttribute('allowtransparency', 'true');
     // A frame whose colour scheme differs from the page around it gets an opaque backdrop; both say the same.
     Object.assign(iframe.style, {

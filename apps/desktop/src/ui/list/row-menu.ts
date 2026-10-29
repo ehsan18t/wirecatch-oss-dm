@@ -110,7 +110,7 @@ function oneEntries(app: AppState): MenuAction[] {
     },
     {
       id: 'window',
-      label: 'Open in its own window',
+      label: 'Open in a separate window',
       icon: AppWindow,
       onselect: () => void app.showProgressWindow(only.id),
     },

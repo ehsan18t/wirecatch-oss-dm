@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Queues: Try a link, then every queue in one list, with when it runs, its own limits, what it claims and whether it tells you only once it is done, so ten queues stay manageable. Edit opens the queue's own dialog; New queue makes one.
+  // Queues: Test a link, then every queue in one list, with when it runs, its own limits, what it claims and whether it tells you only once it is done, so ten queues stay manageable. Edit opens the queue's own dialog; New queue makes one.
   import Pencil from '~icons/lucide/pencil';
   import Plus from '~icons/lucide/plus';
   import type { Snippet } from 'svelte';
@@ -35,7 +35,7 @@
       {#each app.queues.list as queue (queue.id)}
         {const facts = $derived([
           queue.status.paused ? 'Paused' : formatSchedule(queue.settings.schedule),
-          ...(queue.settings.notify === 'when_done' ? ['Tells you once the queue is done'] : []),
+          ...(queue.settings.notify === 'when_done' ? ['Notifies you when the queue is done'] : []),
           ...queueLimitFacts(queue.settings),
           ...[claimsFact(queue.settings.takes)].filter((fact) => fact !== null),
         ])}

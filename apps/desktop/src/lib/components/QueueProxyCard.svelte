@@ -41,15 +41,15 @@
 
   const appProxyName = $derived.by(() => {
     const name = proxyName(appProxy.proxy, app.proxies.list);
-    return appProxy.proxy.kind === 'profile' ? name : name.toLowerCase();
+    return name;
   });
 
   const options = $derived([
     {
       value: FOLLOW,
-      label: `Same as the app (now ${appProxyName})`,
+      label: `Global proxy (${appProxyName})`,
     },
-    { value: SYSTEM, label: 'The computer’s proxy' },
+    { value: SYSTEM, label: 'System proxy' },
     { value: DIRECT, label: 'No proxy' },
     ...app.proxies.list.map((p) => ({ value: String(p.id), label: shownName(p.settings) })),
   ]);
@@ -106,21 +106,21 @@
       <Button icon={Plus} onclick={() => (creating = true)}>New proxy</Button>
     </div>
     {#if proxy.source === 'follow_app'}
-      <p class="text-small text-ink-muted">Changes when you change the app’s proxy.</p>
+      <p class="text-small text-ink-muted">Follows the global proxy setting.</p>
     {/if}
   </div>
 
   {#if resulting.kind !== 'direct'}
     <ChoiceCard
       flush
-      label="Go directly to"
+      label="Bypass proxy for"
       description={own
-        ? 'Hosts this queue reaches without its proxy.'
-        : 'Hosts this queue reaches without its proxy. Follows the app’s list as it changes.'}
+        ? 'Hosts this queue connects to directly.'
+        : 'Hosts this queue connects to directly. Follows the global list.'}
       value={own ? 'own' : 'app'}
       options={[
-        { value: 'app', label: 'Same as the app' },
-        { value: 'own', label: 'Choose' },
+        { value: 'app', label: 'Same as global' },
+        { value: 'own', label: 'Custom' },
       ]}
       onchange={(next: 'app' | 'own') =>
         onchange(proxy, next === 'app' ? FOLLOW_APP : ownSetting(fromApp()))}
@@ -128,19 +128,19 @@
     {#if own}
       <div class="flex flex-col gap-3 p-3">
         <Checkbox
-          label="The hosts the computer’s proxy skips"
+          label="System proxy exceptions"
           checked={own.system}
           onchange={(on: boolean) => change({ system: on })}
         />
         <Checkbox
           label={appHostCount === 0
-            ? 'The app’s hosts (none yet: add them in Settings > Network)'
-            : `The app’s hosts (${String(appHostCount)})`}
+            ? 'Global bypass list (empty)'
+            : `Global bypass list (${String(appHostCount)})`}
           checked={own.app_hosts}
           onchange={(on: boolean) => change({ app_hosts: on })}
         />
         <Checkbox
-          label="This queue’s hosts"
+          label="These hosts"
           checked={own.use_hosts}
           onchange={(on: boolean) => change({ use_hosts: on })}
         />
@@ -148,7 +148,7 @@
           <Field
             label="Hosts for this queue"
             hideLabel
-            description="A name also covers the names under it. Also addresses, networks like 10.0.0.0/8, and <local> for names without a dot."
+            description="A domain also matches its subdomains. IP addresses, ranges like 10.0.0.0/8, and <local> (names without a dot) work too."
           >
             {#snippet children(control: FieldControl)}
               <TagInput

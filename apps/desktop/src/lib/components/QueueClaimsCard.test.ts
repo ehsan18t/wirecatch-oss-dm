@@ -1,4 +1,4 @@
-// The queue editor's "Takes new downloads" card and Try a link: what an auto queue claims is what is saved, and Try a link answers for the claims as the form has them.
+// The queue editor's "Add downloads" card and Test a link: what an auto queue claims is what is saved, and Test a link answers for the claims as the form has them.
 
 import { fireEvent, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
@@ -30,7 +30,7 @@ async function save() {
 
 async function tryLink(root: HTMLElement, url: string) {
   const scope = within(root);
-  await typeInto(scope.getByLabelText('Try a link'), url);
+  await typeInto(scope.getByLabelText('Test a link'), url);
   await click(scope.getByRole('button', { name: 'Try' }));
   return scope.getAllByRole('status').find((s) => s.textContent.includes('Queue'));
 }
@@ -40,7 +40,7 @@ describe('the claims card', () => {
     const { app, dialog } = await openQueueDialog(null);
     await typeInto(dialog.getByLabelText('Name'), 'Videos');
     expect(dialog.queryByLabelText('Sites')).toBeNull();
-    await click(dialog.getByRole('radio', { name: 'Auto' }));
+    await click(dialog.getByRole('radio', { name: 'Automatically' }));
     await typeInto(dialog.getByLabelText('Sites'), 'YouTube.com');
     await typeInto(dialog.getByLabelText('File types'), '.ISO tar.gz');
     await typeInto(dialog.getByLabelText('File names'), String.raw`^clip-\d+$`);
@@ -62,14 +62,14 @@ describe('the claims card', () => {
     });
   });
 
-  it('keeps the claims while switched to Manual, and saves a manual queue without them', async () => {
+  it('keeps the claims while switched to Manually, and saves a manual queue without them', async () => {
     const { app, dialog } = await openQueueDialog('Work files');
-    await click(dialog.getByRole('radio', { name: 'Auto' }));
+    await click(dialog.getByRole('radio', { name: 'Automatically' }));
     await typeInto(dialog.getByLabelText('Sites'), 'example.com');
-    await click(dialog.getByRole('radio', { name: 'Manual' }));
-    await click(dialog.getByRole('radio', { name: 'Auto' }));
+    await click(dialog.getByRole('radio', { name: 'Manually' }));
+    await click(dialog.getByRole('radio', { name: 'Automatically' }));
     expect(dialog.getByRole('button', { name: /Remove example\.com/ })).toBeInTheDocument();
-    await click(dialog.getByRole('radio', { name: 'Manual' }));
+    await click(dialog.getByRole('radio', { name: 'Manually' }));
     await save();
     expect(app.queues.list.find((q) => q.settings.name === 'Work files')?.settings.takes).toEqual({
       kind: 'manual',
@@ -78,12 +78,12 @@ describe('the claims card', () => {
 
   it('keeps the claims of a queue whose claiming is switched off', async () => {
     const { app, dialog } = await openQueueDialog('Overnight');
-    await click(dialog.getByRole('radio', { name: 'Auto' }));
-    expect(dialog.getByText(/claims nothing yet/)).toBeInTheDocument();
+    await click(dialog.getByRole('radio', { name: 'Automatically' }));
+    expect(dialog.getByText(/No rules yet/)).toBeInTheDocument();
     await typeInto(dialog.getByLabelText('Sites'), 'example.org');
-    await click(dialog.getByRole('switch', { name: /^Claim new downloads/ }));
+    await click(dialog.getByRole('switch', { name: /^Use rules/ }));
     expect(
-      dialog.getByText('Only what you put in it, while its claims are off.'),
+      dialog.getByText('Only downloads you add to it, while its rules are off.'),
     ).toBeInTheDocument();
     await save();
     expect(
@@ -92,62 +92,62 @@ describe('the claims card', () => {
   });
 });
 
-describe('Try a link', () => {
+describe('Test a link', () => {
   it('tries the claims as the form has them, before they are saved', async () => {
     const { dialog } = await openQueueDialog(null);
     await typeInto(dialog.getByLabelText('Name'), 'Videos');
-    await click(dialog.getByRole('radio', { name: 'Auto' }));
+    await click(dialog.getByRole('radio', { name: 'Automatically' }));
     await typeInto(dialog.getByLabelText('Sites'), 'youtube.com');
     const result = await tryLink(screen.getByRole('dialog'), 'https://www.youtube.com/watch?v=1');
-    expect(result).toHaveTextContent('Queue: Videos. It takes youtube.com.');
+    expect(result).toHaveTextContent('Queue: Videos. Its rules match youtube.com.');
     await typeInto(dialog.getByRole('textbox', { name: 'Sites' }), 'vimeo.com');
     expect(dialog.queryByText(/^Queue: Videos/)).toBeNull();
     const elsewhere = await tryLink(screen.getByRole('dialog'), 'https://example.org/a.zip');
-    expect(elsewhere).toHaveTextContent('Queue: Main. No queue claims it.');
+    expect(elsewhere).toHaveTextContent('Queue: Main. No queue’s rules match it.');
   });
 
   it('names a switched-off queue that would have taken the link', async () => {
     const { dialog } = await openQueueDialog('Work files');
-    await click(dialog.getByRole('radio', { name: 'Auto' }));
+    await click(dialog.getByRole('radio', { name: 'Automatically' }));
     await typeInto(dialog.getByLabelText('Sites'), 'example.com');
-    await click(dialog.getByRole('switch', { name: /^Claim new downloads/ }));
+    await click(dialog.getByRole('switch', { name: /^Use rules/ }));
     const result = await tryLink(screen.getByRole('dialog'), 'https://files.example.com/a.zip');
-    expect(result).toHaveTextContent('Queue: Main. No queue claims it.');
-    expect(result).toHaveTextContent('Work files would take example.com, but its claims are off.');
+    expect(result).toHaveTextContent('Queue: Main. No queue’s rules match it.');
+    expect(result).toHaveTextContent('Work files would match example.com, but its rules are off.');
   });
 
   it('marks the link when it is the link that is wrong, and says why until it changes', async () => {
     const { dialog } = await openQueueDialog(null);
-    expect(dialog.queryByLabelText('Try a link')).toBeNull();
-    await click(dialog.getByRole('radio', { name: 'Auto' }));
-    await typeInto(dialog.getByLabelText('Try a link'), 'not a link');
+    expect(dialog.queryByLabelText('Test a link')).toBeNull();
+    await click(dialog.getByRole('radio', { name: 'Automatically' }));
+    await typeInto(dialog.getByLabelText('Test a link'), 'not a link');
     await click(dialog.getByRole('button', { name: 'Try' }));
     expect(dialog.getByText(/is not a valid link/)).toBeInTheDocument();
-    expect(dialog.getByLabelText('Try a link')).toHaveAttribute('aria-invalid', 'true');
-    await fireEvent.input(dialog.getByLabelText('Try a link'), { target: { value: 'https://' } });
+    expect(dialog.getByLabelText('Test a link')).toHaveAttribute('aria-invalid', 'true');
+    await fireEvent.input(dialog.getByLabelText('Test a link'), { target: { value: 'https://' } });
     await settle();
     expect(dialog.queryByText(/is not a valid link/)).toBeNull();
   });
 
   it('says a claim it cannot read without marking the link', async () => {
     const { dialog } = await openQueueDialog(null);
-    await click(dialog.getByRole('radio', { name: 'Auto' }));
+    await click(dialog.getByRole('radio', { name: 'Automatically' }));
     await typeInto(dialog.getByRole('textbox', { name: 'File names' }), '*-final.*');
     await click(dialog.getByRole('radio', { name: 'Regular expression' }));
     await tryLink(screen.getByRole('dialog'), 'https://example.org/a-final.zip');
     expect(dialog.getByText(/is not a regular expression/)).toBeInTheDocument();
-    expect(dialog.getByLabelText('Try a link')).not.toHaveAttribute('aria-invalid', 'true');
+    expect(dialog.getByLabelText('Test a link')).not.toHaveAttribute('aria-invalid', 'true');
   });
 
   it('tries the saved claims in Settings', async () => {
     const { app, dialog } = await openQueueDialog('Work files');
-    await click(dialog.getByRole('radio', { name: 'Auto' }));
+    await click(dialog.getByRole('radio', { name: 'Automatically' }));
     await typeInto(dialog.getByLabelText('Sites'), 'share.example.com');
     await save();
     app.openSettings('queues');
     await settle();
-    expect(screen.getByRole('main')).toHaveTextContent('Takes share.example.com');
+    expect(screen.getByRole('main')).toHaveTextContent('Adds share.example.com');
     const result = await tryLink(screen.getByRole('main'), 'https://share.example.com/report.pdf');
-    expect(result).toHaveTextContent('Queue: Work files. It takes share.example.com.');
+    expect(result).toHaveTextContent('Queue: Work files. Its rules match share.example.com.');
   });
 });

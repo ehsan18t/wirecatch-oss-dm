@@ -49,7 +49,7 @@ for (const theme of ['light', 'dark'] as const) {
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: /^Overnight/ }).hover();
     await page.getByRole('button', { name: 'Actions for Overnight' }).click();
-    await page.getByRole('menuitem', { name: 'Edit name, hours and limits' }).click();
+    await page.getByRole('menuitem', { name: 'Edit queue' }).click();
     await audit(page, 'queue editor');
     await page.keyboard.press('Escape');
     await page.keyboard.press('Control+Shift+P');

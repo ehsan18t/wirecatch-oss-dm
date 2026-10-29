@@ -73,7 +73,7 @@
         <Button
           variant="link"
           size="sm"
-          aria-label="Change when {defaultQueue.settings.name} tells you"
+          aria-label="Change when {defaultQueue.settings.name} notifies you"
           onclick={() => app.openDialog({ kind: 'queue', id: defaultQueue.id })}>Change</Button
         >
       </p>

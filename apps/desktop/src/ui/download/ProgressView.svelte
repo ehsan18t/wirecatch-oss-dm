@@ -205,7 +205,7 @@
           <div class="min-w-0">
             <dt class="text-small text-ink-muted">Time left</dt>
             <dd class="text-ui text-ink">
-              {row.eta_secs !== null && row.speed > 0 ? formatEta(row.eta_secs) : 'Not known yet'}
+              {row.eta_secs !== null && row.speed > 0 ? formatEta(row.eta_secs) : 'Unknown'}
             </dd>
           </div>
           <div class="col-span-2 min-w-0">
@@ -251,7 +251,7 @@
           }}
         >
           <Field
-            label="Fresh link"
+            label="New link"
             description="Start the download again on the page it came from, copy the new link and paste it here. Everything already downloaded is kept."
             error={linkError}
           >
@@ -279,7 +279,7 @@
       {/if}
 
       {#if finished && !staysOpen && !hovered && !focused && !opening && asking === null}
-        <p class="text-small text-ink-muted">This window closes by itself in a few seconds.</p>
+        <p class="text-small text-ink-muted">This window closes automatically in a few seconds.</p>
       {/if}
     </div>
 

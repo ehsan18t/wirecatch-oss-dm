@@ -593,7 +593,7 @@ impl Manager {
         let now = self.inner.clock.unix_millis();
         self.fail_addon_waits(
             |m| now.saturating_sub(m.added_at) >= ADDON_WAIT_MILLIS,
-            "This video waited for the media add-on for a long time, so Wirecatch stopped waiting. Install the media add-on in Settings, Add-ons, then try again.",
+            "This video waited for the media add-on for a long time, so Wirecatch stopped waiting. Install the media add-on in Settings > Add-ons, then try again.",
         );
     }
 
@@ -602,7 +602,7 @@ impl Manager {
     pub(super) fn media_addon_failed(&self) {
         self.fail_addon_waits(
             |_| true,
-            "This video needs the media add-on, which could not be installed. Install the media add-on in Settings, Add-ons, then try again.",
+            "This video needs the media add-on, which could not be installed. Install the media add-on in Settings > Add-ons, then try again.",
         );
     }
 
@@ -1187,7 +1187,7 @@ pub(super) fn cookie_header(origin: &Origin) -> Option<String> {
 
 pub(super) fn addon_missing() -> UserError {
     UserError {
-        message: "This needs the media add-on, which is not installed. Install it from Settings, Add-ons, then try again.".into(),
+        message: "This needs the media add-on, which is not installed. Install it from Settings > Add-ons, then try again.".into(),
         fix: Some(wirecatch_protocol::app::FixAction::Retry),
     }
 }

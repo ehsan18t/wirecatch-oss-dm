@@ -328,7 +328,7 @@ impl State {
                         format!("{} ({})", p.settings.name.trim(), p.settings.address())
                     }
                     Some(p) => p.settings.address(),
-                    None => format!("The computer's proxy ({address})"),
+                    None => format!("System proxy ({address})"),
                 };
                 (label.clone(), Some(label))
             }

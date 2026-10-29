@@ -60,7 +60,7 @@
     {/each}
     <div class="flex items-center gap-4">
       <span class="w-16 text-small text-ink-muted">unknown</span>
-      <ProgressBar value={null} label="Reading the video" class="flex-1" />
+      <ProgressBar value={null} label="Getting video details" class="flex-1" />
     </div>
     <div class="grid grid-cols-4 items-center gap-4">
       <ProgressBar value={moving} size="xs" label="Extra small" />
@@ -85,8 +85,8 @@
       <Spinner size="sm" />
       <Spinner size="lg" />
       <Spinner size="2xl" />
-      <Spinner label="Reading the video">
-        <span class="text-ui text-ink-muted">Reading the video…</span>
+      <Spinner label="Getting video details">
+        <span class="text-ui text-ink-muted">Getting video details…</span>
       </Spinner>
       <Separator orientation="vertical" class="h-6" />
       <Kbd keys={['Ctrl', 'V']} />

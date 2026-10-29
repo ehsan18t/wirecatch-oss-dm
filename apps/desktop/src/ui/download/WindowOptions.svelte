@@ -25,13 +25,13 @@
       <Checkbox
         checked={startWithoutAsking}
         label="Don’t ask again for files from the browser"
-        description="They start at once; videos follow Settings, Media. Turn it back on in Settings, Browser."
+        description="Browser downloads will start right away (videos follow Settings > Media). You can turn this back on in Settings > Browser."
         onchange={(on: boolean) => void win.setStartWithoutAsking(on)}
       />
     {/if}
     <Checkbox
       checked={keepOpen}
-      label="Keep the window open to show progress"
+      label="Keep the download window open to show progress"
       onchange={(on: boolean) => void win.setKeepOpen(on)}
     />
   </div>

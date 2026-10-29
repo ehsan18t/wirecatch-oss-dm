@@ -272,7 +272,7 @@ describe('handover', () => {
     // Told apart from a timeout: the app did answer, in a shape this version cannot read.
     expect(result).toMatchObject({ kind: 'kept', reason: 'app_unreadable', uncertain: false });
     expect(latestNotice(s.hub)?.message).toBe(
-      'big.zip stayed in the browser: Wirecatch answered in a way this version of the extension does not understand. Updating the extension may help.',
+      'big.zip stayed in the browser: Wirecatch sent a response this version of the extension cannot read. Updating the extension may help.',
     );
   });
 

@@ -36,7 +36,7 @@ describe('a download window with the keyboard', () => {
     ).not.toBeChecked();
     // Worded as Settings words it: on, as it is by default.
     expect(
-      screen.getByRole('checkbox', { name: 'Keep the window open to show progress' }),
+      screen.getByRole('checkbox', { name: 'Keep the download window open to show progress' }),
     ).toBeChecked();
     // Enter in the file name field downloads too.
     await userEvent.setup().type(screen.getByRole('textbox', { name: 'File name' }), '{Enter}');
@@ -81,7 +81,7 @@ describe('a download window with the keyboard', () => {
     const { win, host } = await show(b, { question: asked?.id ?? questionId(0) });
     const user = userEvent.setup();
     const keepOpen = screen.getByRole('checkbox', {
-      name: 'Keep the window open to show progress',
+      name: 'Keep the download window open to show progress',
     });
     keepOpen.focus();
     await user.keyboard(' ');
@@ -227,7 +227,9 @@ describe('why a download goes to its queue', () => {
     const [asked] = await b.pendingConfirmations();
     await show(b, { question: asked?.id ?? questionId(0) });
     const queue = screen.getByRole('combobox', { name: 'Queue' });
-    expect(queue).toHaveAccessibleDescription("Queue: Main. It is the browser's queue.");
+    expect(queue).toHaveAccessibleDescription(
+      'Queue: Main. It is the queue for browser downloads.',
+    );
     const user = userEvent.setup();
     await user.click(queue);
     await user.click(screen.getByRole('option', { name: /^Overnight/ }));

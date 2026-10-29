@@ -33,7 +33,7 @@ describe('add-on wording', () => {
     expect(addonAction(a)).toBeNull();
     // All downloaded: the core checks and unpacks before it says installed.
     a.state = { type: 'installing', data: { done: 96, total: 96 } };
-    expect(addonStatus(a)).toBe('Installing, checking the files.');
+    expect(addonStatus(a)).toBe('Installing: verifying files.');
 
     a.state = { type: 'installed' };
     a.installed_version = '2026.10.02';

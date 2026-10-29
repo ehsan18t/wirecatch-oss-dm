@@ -40,19 +40,19 @@ export function versionProblem(version: number): Problem | null {
   if (!Number.isInteger(version)) {
     return {
       kind: 'version_mismatch',
-      detail: `${PRODUCT_NAME} answered with protocol version ${version}, which does not exist.`,
+      detail: `${PRODUCT_NAME} reported protocol version ${version}, which does not exist.`,
     };
   }
   if (version < MIN_PROTOCOL_VERSION) {
     return {
       kind: 'version_mismatch',
-      detail: `${PRODUCT_NAME} speaks protocol version ${version}, and this extension needs ${MIN_PROTOCOL_VERSION} or newer. Update the ${PRODUCT_NAME} app.`,
+      detail: `${PRODUCT_NAME} uses protocol version ${version}, but this extension needs ${MIN_PROTOCOL_VERSION} or newer. Update the ${PRODUCT_NAME} app.`,
     };
   }
   if (version > PROTOCOL_VERSION) {
     return {
       kind: 'version_mismatch',
-      detail: `${PRODUCT_NAME} chose protocol version ${version}, and this extension speaks up to ${PROTOCOL_VERSION}. Update the extension.`,
+      detail: `${PRODUCT_NAME} uses protocol version ${version}, but this extension supports only up to ${PROTOCOL_VERSION}. Update the extension.`,
     };
   }
   return null;
@@ -61,7 +61,10 @@ export function versionProblem(version: number): Problem | null {
 /** What is wrong with the answer to `hello`, or null when the app can be talked to. */
 export function helloProblem(reply: Reply): Problem | null {
   if (reply.type !== 'hello') {
-    return { kind: 'disconnected', detail: `${PRODUCT_NAME} gave an unexpected answer to hello.` };
+    return {
+      kind: 'disconnected',
+      detail: `${PRODUCT_NAME} sent an unexpected response while connecting.`,
+    };
   }
   return versionProblem(reply.data.protocol_version);
 }

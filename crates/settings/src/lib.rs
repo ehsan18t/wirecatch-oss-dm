@@ -276,7 +276,10 @@ pub fn validate(
         rule.extensions = clean_extensions(&rule.extensions)?;
     }
     check_connections(settings.connections_per_download)?;
-    check_concurrency(settings.max_concurrent_downloads, "Downloads at once")?;
+    check_concurrency(
+        settings.max_concurrent_downloads,
+        "Downloads at the same time",
+    )?;
     check_speed_limit(settings.global_speed_limit)?;
 
     let ext = &mut settings.extension;
@@ -440,7 +443,7 @@ pub fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> {
         )));
     }
     if let Setting::Own(max) = queue.max_concurrent {
-        check_concurrency(max, "Downloads at once in a queue")?;
+        check_concurrency(max, "A queue’s downloads at the same time")?;
     }
     if let Setting::Own(limit) = queue.speed_limit {
         check_speed_limit(Some(limit))?;

@@ -52,7 +52,7 @@ describe('download limits', () => {
   });
 
   it("says a queue's own limits, or that it follows the app's", () => {
-    expect(queueLimitFacts(FOLLOWS)).toEqual(["Follows the app's limits"]);
+    expect(queueLimitFacts(FOLLOWS)).toEqual(['Uses global limits']);
     expect(
       queueLimitFacts({
         ...FOLLOWS,
@@ -65,27 +65,27 @@ describe('download limits', () => {
     ).toEqual(['2 at once', 'Up to 4 MB/s', '1 connection each']);
     expect(queueLimitFacts({ ...FOLLOWS, max_concurrent: ownSetting(2) })).toEqual([
       '2 at once',
-      'Other limits follow the app',
+      'Other limits are global',
     ]);
   });
 
   it('says what the app still limits, whether a queue has its own limit or not', () => {
-    expect(concurrentLimitHelp(null, 5)).toBe("Uses the app's limit: 5 at once.");
+    expect(concurrentLimitHelp(null, 5)).toBe('Uses the global limit: 5 at once.');
     expect(concurrentLimitHelp(2, 5)).toBe(
-      "Up to this many of its downloads run at once, and the rest wait their turn. The app's limit of 5 still applies to all downloads.",
+      'Up to this many of its downloads run at once, and the rest wait their turn. The global limit of 5 still applies across all queues.',
     );
     expect(concurrentLimitHelp(8, 5)).toMatch(
-      /The app's limit of 5 is lower, so at most 5 run at once\.$/,
+      /The global limit of 5 is lower, so at most 5 run at once\.$/,
     );
     expect(firstConcurrent(5)).toBe(4);
     expect(firstConcurrent(1)).toBe(1);
-    expect(speedLimitHelp(false, null)).toBe("Uses the app's limit: none.");
+    expect(speedLimitHelp(false, null)).toBe('Uses the global limit: none.');
     expect(speedLimitHelp(true, 2 * MB)).toBe(
-      "Shared by everything running in this queue. The app's limit of 2 MB/s still applies.",
+      'Shared by all downloads in this queue. The global limit of 2 MB/s still applies.',
     );
-    expect(ownConnectionsHelp(false, 8)).toBe("Uses the app's setting: 8 per download.");
+    expect(ownConnectionsHelp(false, 8)).toBe('Uses the global setting: 8 per download.');
     expect(ownConnectionsHelp(true, 8)).toBe(
-      "Each download in this queue opens up to this many, instead of the app's 8.",
+      'Each download in this queue uses up to this many connections instead of the global 8.',
     );
   });
 });

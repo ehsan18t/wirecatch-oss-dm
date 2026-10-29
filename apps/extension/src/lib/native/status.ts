@@ -146,7 +146,7 @@ export function describeProblem(kind: ProblemKind): ProblemText {
       };
     case 'host_untrusted':
       return {
-        title: 'This copy of the extension is not the one Wirecatch trusts.',
+        title: 'Wirecatch does not recognize this copy of the extension.',
         fix: 'Install the extension from the Wirecatch website or store, or update Wirecatch.',
       };
     case 'app_unavailable':
@@ -156,18 +156,18 @@ export function describeProblem(kind: ProblemKind): ProblemText {
       };
     case 'app_closed':
       return {
-        title: 'Wirecatch is closed.',
-        fix: 'It opens when the browser has a download for it. You can also open it now.',
+        title: 'Wirecatch is not running.',
+        fix: 'It starts automatically when the browser has a download for it. You can also open it now.',
       };
     case 'version_mismatch':
       return {
-        title: 'This extension and the Wirecatch app are different versions.',
+        title: 'This extension and the Wirecatch app versions do not match.',
         fix: 'Update the Wirecatch app and this extension to their latest versions.',
       };
     case 'disconnected':
       return {
         title: 'The connection to Wirecatch was lost.',
-        fix: 'Wirecatch reconnects by itself. If this keeps happening, restart the Wirecatch app.',
+        fix: 'Wirecatch reconnects automatically. If this keeps happening, restart the Wirecatch app.',
       };
   }
 }

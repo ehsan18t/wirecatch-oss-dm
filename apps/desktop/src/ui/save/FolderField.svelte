@@ -17,7 +17,7 @@
 
   let {
     folder,
-    fallback = 'By file type, as set in Settings',
+    fallback = 'By file type (from Settings)',
     label = 'Save to',
     onchoose,
     onreset,

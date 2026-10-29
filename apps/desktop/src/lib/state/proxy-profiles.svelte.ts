@@ -33,12 +33,16 @@ export interface ProfileUsers {
   queues: Queue[];
 }
 
-/** "Used by the app (Main, Overnight) and Work files", or "Not used yet". */
+/** "Used by the global setting (Main, Overnight) and Work files", or "Not used yet". */
 export function usersLine(users: ProfileUsers): string {
   const names = (queues: readonly Queue[]) => queues.map((q) => q.settings.name).join(', ');
   const parts: string[] = [];
   if (users.app) {
-    parts.push(users.following.length === 0 ? 'the app' : `the app (${names(users.following)})`);
+    parts.push(
+      users.following.length === 0
+        ? 'the global setting'
+        : `the global setting (${names(users.following)})`,
+    );
   }
   if (users.queues.length > 0) parts.push(names(users.queues));
   return parts.length === 0 ? 'Not used yet' : `Used by ${parts.join(' and ')}`;
@@ -104,21 +108,21 @@ export class ProxyProfiles {
     if (ids === undefined) return;
     const added = ids.filter((id) => !before.includes(id));
     if (ids.length === 0) {
-      this.#host.toasts.notify('This computer sets no proxy to copy.');
+      this.#host.toasts.notify('No system proxy is set, so there is nothing to copy.');
       return;
     }
     if (added.length === 0) {
-      this.#host.toasts.notify('The computer’s proxy is already saved.');
+      this.#host.toasts.notify('The system proxy is already saved.');
       return;
     }
     // A user name comes along; its password stays with the computer's setting.
     const login = added.some((id) => (this.byId(id)?.settings.user ?? '') !== '');
     const saved =
       added.length === 1
-        ? 'Saved the computer’s proxy.'
-        : `Saved the computer’s ${String(added.length)} proxies.`;
+        ? 'Saved the system proxy.'
+        : `Saved ${String(added.length)} system proxies.`;
     this.#host.toasts.notify(
-      login ? `${saved} Passwords are not copied: edit it to enter one.` : saved,
+      login ? `${saved} Passwords aren’t copied; edit the proxy to add one.` : saved,
     );
   }
 }

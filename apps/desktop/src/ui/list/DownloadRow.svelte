@@ -74,7 +74,7 @@
     if (row.status === 'connecting') return STATUS_LABEL.connecting;
     return formatSpeedShown(row.speed);
   });
-  const etaCell = $derived(group === 'active' ? eta || 'Not known' : '');
+  const etaCell = $derived(group === 'active' ? eta || 'Unknown' : '');
   /** Why a waiting download waits, or where it stands in its queue's line. */
   const waitNote = $derived.by(() => {
     if (!row || group !== 'waiting') return '';

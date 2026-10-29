@@ -38,7 +38,7 @@ pub enum CoreError {
     /// The choice needs the media add-on, which is not installed. The UI was
     /// told with `UiEvent::AddonRequired`; clients see `ErrorCode::AddonRequired`.
     #[error(
-        "This needs the media add-on, which joins video and audio and reads video pages. Install it from Settings, Add-ons (it is offered right away), then try again."
+        "This needs the media add-on, which merges video and audio and reads video pages. Install it from Settings > Add-ons (it is offered right away), then try again."
     )]
     AddonRequired,
 
@@ -69,7 +69,7 @@ pub enum CoreError {
 
     /// An add-on install was stopped, but its files could not all be deleted.
     #[error(
-        "The install was stopped, but some of its files could not be deleted ({source}). Remove the media add-on in Settings, Add-ons to clean up."
+        "The install was stopped, but some of its files could not be deleted ({source}). Remove the media add-on in Settings > Add-ons to clean up."
     )]
     AddonFilesLeft {
         /// What the operating system reported.
@@ -109,7 +109,7 @@ pub enum CoreError {
     /// already moved could not be put back, so they are split between the two
     /// folders.
     #[error(
-        "Could not move {path} ({source}), and some of this download's files could not be moved back: {stuck}. Move each one back by hand, under the name given, then try the download again."
+        "Could not move {path} ({source}), and some of this download's files could not be moved back: {stuck}. Move each one back manually, using the name shown, then try the download again."
     )]
     FilesSplit {
         /// The file that could not be moved.

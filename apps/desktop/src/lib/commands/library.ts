@@ -100,7 +100,7 @@ const SHOW_CATEGORY: CommandSpec<{ app: AppState; category: Category }> = {
 const FOLD_GROUP: CommandSpec<{ app: AppState; group: StatusGroup }> = {
   id: ({ group }) => `list.fold.${group}`,
   title: ({ app, group }) =>
-    `${app.folded.has(group) ? 'Open' : 'Fold'} the ${STATUS_GROUP_LABEL[group]} group`,
+    `${app.folded.has(group) ? 'Expand' : 'Collapse'} the ${STATUS_GROUP_LABEL[group]} group`,
   keywords: 'fold unfold collapse expand hide show group heading',
   when: ({ app, group }) =>
     app.screen === 'downloads' && app.layout.sections.some((s) => s.group === group),
@@ -153,7 +153,7 @@ const QUEUE: readonly CommandSpec<{ app: AppState; q: Queue }>[] = [
   },
   {
     id: ({ q }) => `queue.edit.${q.id}`,
-    title: ({ q }) => `Edit ${q.settings.name}: name, schedule and limits`,
+    title: ({ q }) => `Edit the ${q.settings.name} queue`,
     keywords: 'rename schedule speed limit concurrent settings',
     run: ({ app, q }) => app.openDialog({ kind: 'queue', id: q.id }),
   },
@@ -173,7 +173,7 @@ const QUEUE: readonly CommandSpec<{ app: AppState; q: Queue }>[] = [
   },
   {
     id: ({ q }) => `queue.startnow.${q.id}`,
-    title: ({ q }) => `Start ${q.settings.name} now, outside its hours`,
+    title: ({ q }) => `Start the ${q.settings.name} queue now, ignoring its schedule`,
     keywords: 'run schedule override immediately',
     when: ({ app, q }) => app.queues.isOutsideSchedule(q),
     run: ({ app, q }) => app.queues.startNow(q.id),

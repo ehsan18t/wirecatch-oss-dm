@@ -94,7 +94,7 @@ describe('the queue dialog', () => {
   it('makes no queue when the form it would get is refused', async () => {
     const { app, dialog } = await openQueueDialog(null);
     await typeInto(dialog.getByLabelText('Name'), 'Never runs');
-    await fireEvent.click(dialog.getByRole('switch', { name: 'Only run at certain times' }));
+    await fireEvent.click(dialog.getByRole('switch', { name: 'Run on a schedule' }));
     await settle();
     const start = dialog.getByLabelText('Starts at');
     if (!(start instanceof HTMLInputElement)) throw new Error('no start time field');
@@ -134,7 +134,7 @@ describe('the queue dialog', () => {
     expect(dialog.getByRole('radio', { name: 'Each download' })).toBeChecked();
     await fireEvent.click(dialog.getByRole('radio', { name: 'When the queue is done' }));
     await settle();
-    expect(dialog.getByText(/You still hear about a failed download right away\.$/)).toBeVisible();
+    expect(dialog.getByText(/Failed downloads are still reported right away\.$/)).toBeVisible();
     await save();
     expect(app.queues.list.find((q) => q.settings.name === 'Main')?.settings.notify).toBe(
       'when_done',
@@ -146,9 +146,9 @@ describe('the queue dialog', () => {
     await fireEvent.click(dialog.getByRole('button', { name: 'Delete queue' }));
     await settle();
     // The button pressed went: the focus moves to the safe answer, not to the page.
-    expect(dialog.getByRole('button', { name: 'Keep it' })).toHaveFocus();
+    expect(dialog.getByRole('button', { name: 'Keep queue' })).toHaveFocus();
     expect(dialog.getByText(/downloads? moves? to Main\.$/)).toHaveAttribute('role', 'status');
-    await fireEvent.click(dialog.getByRole('button', { name: 'Keep it' }));
+    await fireEvent.click(dialog.getByRole('button', { name: 'Keep queue' }));
     await settle();
     expect(dialog.getByRole('button', { name: 'Delete queue' })).toHaveFocus();
     await fireEvent.click(dialog.getByRole('button', { name: 'Delete queue' }));

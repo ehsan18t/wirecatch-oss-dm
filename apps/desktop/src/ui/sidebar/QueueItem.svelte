@@ -1,5 +1,5 @@
 <script lang="ts">
-  // One queue in the sidebar: what it is doing, and one button for its own actions (start now outside its hours, pause or resume, edit, move up or down), which its view's header shows too. Downloads dragged onto it move to it; a queue below the default one can be dragged to another place (D72.9). It is marked Auto, dimmed with Auto off, and marked on its second line with the network icon while its proxy is a saved profile, where hovering it does not hide the mark (D72.4, D73.13).
+  // One queue in the sidebar: what it is doing, and one button for its own actions (start now outside its hours, pause or resume, edit, move up or down), which its view's header shows too. Downloads dragged onto it move to it; a queue below the default one can be dragged to another place (D72.9). It is marked Rules, dimmed with Rules off, and marked on its second line with the network icon while its proxy is a saved profile, where hovering it does not hide the mark (D72.4, D73.13).
   import ArrowDown from '~icons/lucide/arrow-down';
   import ArrowUp from '~icons/lucide/arrow-up';
   import Ellipsis from '~icons/lucide/ellipsis';
@@ -62,7 +62,7 @@
       ? [
           {
             id: 'start',
-            label: 'Start now, outside its hours',
+            label: 'Start now (ignore schedule)',
             icon: Play,
             onselect: () => void app.queues.startNow(queue.id),
           },
@@ -76,7 +76,7 @@
     },
     {
       id: 'edit',
-      label: 'Edit name, hours and limits',
+      label: 'Edit queue',
       icon: Pencil,
       onselect: () => app.openDialog({ kind: 'queue', id: queue.id }),
     },
@@ -215,7 +215,7 @@
 {#snippet doing()}
   <span class="flex min-w-0 items-center gap-1">
     {#if takes.kind === 'auto'}
-      <Badge size="sm">{takes.enabled ? 'Auto' : 'Auto off'}</Badge>
+      <Badge size="sm">{takes.enabled ? 'Rules' : 'Rules off'}</Badge>
     {/if}
     {#if profile}
       <span class="flex shrink-0 text-ink-muted" {@attach tooltip(() => proxyNote)}>

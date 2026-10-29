@@ -309,7 +309,7 @@ fn version_refusal(id: u64, hello: &Hello, refused: VersionError) -> Message {
         VersionError::PeerTooOld { peer, ours } => (
             ErrorCode::UnsupportedVersion,
             format!(
-                "The {client} is too old for this Wirecatch app: it speaks protocol versions up to {}, and the app needs {} or newer. Update the {client}.",
+                "The {client} is too old for this Wirecatch app: it supports protocol versions up to {}, and the app needs {} or newer. Update the {client}.",
                 peer.newest(),
                 ours.oldest(),
             ),
