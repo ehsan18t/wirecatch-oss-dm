@@ -86,12 +86,12 @@ function argumentsClaim(checker, from, to, depth) {
   const toArguments = typeArguments(checker, to);
   if (isTuple(to) && !isTuple(from) && fromArguments.length === 1) {
     return toArguments.some((element) =>
-      claimsUncheckedShape(checker, fromArguments[0], element, depth + 1),
+      rulesUncheckedShape(checker, fromArguments[0], element, depth + 1),
     );
   }
   if (fromArguments.length !== toArguments.length) return false;
   return fromArguments.some((argument, i) =>
-    claimsUncheckedShape(checker, argument, toArguments[i], depth + 1),
+    rulesUncheckedShape(checker, argument, toArguments[i], depth + 1),
   );
 }
 
@@ -108,13 +108,13 @@ function propertiesClaim(checker, from, to) {
 }
 
 /** Whether asserting `from` to `to` claims a shape nothing checked: at the top, member by member of a union, inside the type arguments of a container (`unknown[]` to `Message[]`), or in a property (`{ data: unknown }` to `{ data: Message }`). */
-function claimsUncheckedShape(checker, from, to, depth = 0) {
+function rulesUncheckedShape(checker, from, to, depth = 0) {
   if (depth > MAX_DEPTH) return false;
   if (isUnchecked(checker, from)) return !claimsNothing(checker, to);
   if (from.isUnion()) {
     return from.types.some((member) => {
       const target = counterpart(member, to);
-      return target !== null && claimsUncheckedShape(checker, member, target, depth + 1);
+      return target !== null && rulesUncheckedShape(checker, member, target, depth + 1);
     });
   }
   const target = counterpart(from, to);
@@ -159,7 +159,7 @@ export const noAssertionOnInput = {
     function checkAssertion(node) {
       if (isConstAssertion(node) || isWrittenInPlace(node.expression)) return;
       const type = typeOf(node.expression);
-      if (claimsUncheckedShape(checker, type, typeOf(node.typeAnnotation))) report(node, type);
+      if (rulesUncheckedShape(checker, type, typeOf(node.typeAnnotation))) report(node, type);
     }
 
     return {

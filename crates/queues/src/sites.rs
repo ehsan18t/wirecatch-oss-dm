@@ -1,4 +1,4 @@
-//! Site claims (D72.10): what a pattern covers, and how specific it is.
+//! Site rules (D72.10): what a pattern covers, and how specific it is.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
@@ -14,7 +14,7 @@ const V4_BITS: u8 = 32;
 const V6_BITS: u8 = 128;
 const V4_PART_BITS: u8 = 8;
 
-/// One site claim, read.
+/// One site rule, read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SitePattern {
     /// A name and every name under it.
@@ -28,7 +28,7 @@ pub(crate) enum SitePattern {
 }
 
 impl SitePattern {
-    /// A site claim as the person wrote it, or `None` when it names no site.
+    /// A site rule as the person wrote it, or `None` when it names no site.
     pub(crate) fn read(input: &str) -> Option<Self> {
         let input = input.trim();
         if input.eq_ignore_ascii_case(LOCAL) {

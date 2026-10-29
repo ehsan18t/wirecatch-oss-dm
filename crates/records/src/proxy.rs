@@ -1,16 +1,16 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use wirecatch_protocol::proxy::{ProxyProfileSettings, ProxyTestRun};
-use wirecatch_protocol::{ProxyProfileId, Secret};
+use wirecatch_protocol::proxy::{ProxyServerSettings, ProxyTestRun};
+use wirecatch_protocol::{ProxyServerId, Secret};
 
-/// The passwords of the proxy profiles, which never leave the app (D71.2).
-pub type Logins = BTreeMap<ProxyProfileId, Secret>;
+/// The passwords of the proxy servers, which never leave the app (D71.2).
+pub type Logins = BTreeMap<ProxyServerId, Secret>;
 
-/// A proxy profile as it is saved, without its password.
+/// A proxy server as it is saved, without its password.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SavedProfile {
-    pub id: ProxyProfileId,
-    pub settings: ProxyProfileSettings,
+pub struct SavedProxyServer {
+    pub id: ProxyServerId,
+    pub settings: ProxyServerSettings,
     pub last_test: Option<ProxyTestRun>,
 }

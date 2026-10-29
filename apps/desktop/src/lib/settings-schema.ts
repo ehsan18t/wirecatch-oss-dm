@@ -59,7 +59,7 @@ const DEFS = [
     keywords: 'started start begin note browser tab toast notification notify tell',
   },
   {
-    id: 'start_note_time',
+    id: 'start_notice_time',
     section: 'notifications',
     label: 'Hide the start notice after',
     help: 'Also applies to the system notification shown when the browser is in the background. Used only when start notices appear in the browser.',
@@ -74,7 +74,7 @@ const DEFS = [
       'notification notify alert done complete finished failed popup dialog window toast message tell browser note',
   },
   {
-    id: 'finish_note_time',
+    id: 'finish_notice_time',
     section: 'notifications',
     label: 'Hide the finish notice after',
     help: 'Notices about failed downloads stay until you close them. Used only when finish notices appear in the browser.',
@@ -280,14 +280,14 @@ const DEFS = [
   },
   {
     id: 'export',
-    section: 'transfer',
+    section: 'import_export',
     label: 'Export settings',
     help: 'Saves your settings, queues, schedules and folder rules to a single file.',
     keywords: 'backup save profile export migrate',
   },
   {
     id: 'import',
-    section: 'transfer',
+    section: 'import_export',
     label: 'Import settings',
     help: 'Shows what will change before replacing your settings and queues.',
     keywords: 'restore load profile import migrate',
@@ -313,11 +313,11 @@ const DEFS = [
     keywords: 'proxy socks socks5 http https firewall vpn corporate office no proxy direct system',
   },
   {
-    id: 'proxy_profiles',
+    id: 'proxy_servers',
     section: 'network',
     label: 'Proxy servers',
     help: 'The proxy servers you use, with their sign-in details. The global proxy and each queue can use any of them.',
-    keywords: 'proxy profiles servers login password user name test connection copy from system',
+    keywords: 'proxy servers servers login password user name test connection copy from system',
   },
   {
     id: 'proxy_exceptions',
@@ -327,7 +327,7 @@ const DEFS = [
     keywords: 'proxy exceptions bypass no_proxy direct intranet local hosts',
   },
   {
-    id: 'ftp_direct',
+    id: 'ftp_bypass_proxy',
     section: 'network',
     label: 'Bypass proxy for FTP links',
     help: 'Only SOCKS5 proxies support FTP. When on, FTP downloads connect directly if the proxy is another type. When off, those downloads fail.',

@@ -25,7 +25,7 @@ use wirecatch_files::{FileError, owner_only, with_suffix};
 use wirecatch_records::batch::StoredBatch;
 use wirecatch_records::media::{MediaJob, StoredMedia, unreadable};
 use wirecatch_records::origin::{Origin, without_sign_in};
-use wirecatch_records::proxy::{Logins, SavedProfile};
+use wirecatch_records::proxy::{Logins, SavedProxyServer};
 use wirecatch_sites::local_network::ChosenBy;
 
 mod error;
@@ -140,9 +140,9 @@ const MIGRATIONS: &[&str] = &[
     SET settings = json_set(
         settings,
         '$.description', '',
-        '$.max_concurrent', json('{"source":"follow_app"}'),
-        '$.speed_limit', json('{"source":"follow_app"}'),
-        '$.connections', json('{"source":"follow_app"}')
+        '$.max_concurrent', json('{"source":"global"}'),
+        '$.speed_limit', json('{"source":"global"}'),
+        '$.connections', json('{"source":"global"}')
     )
     WHERE json_valid(settings);
 "#,
@@ -153,7 +153,7 @@ const MIGRATIONS: &[&str] = &[
     // D72.2: every stored queue is manual.
     r#"
     UPDATE queues
-    SET settings = json_set(settings, '$.takes', json('{"kind":"manual"}'))
+    SET settings = json_set(settings, '$.add_downloads', json('{"kind":"manual"}'))
     WHERE json_valid(settings);
 "#,
     // D73.9: the proxy is profiles, so D71's manual proxies and their passwords go, and every
@@ -165,8 +165,8 @@ const MIGRATIONS: &[&str] = &[
     UPDATE queues
     SET settings = json_set(
         settings,
-        '$.proxy', json('{"source":"follow_app"}'),
-        '$.exceptions', json('{"source":"follow_app"}')
+        '$.proxy', json('{"source":"global"}'),
+        '$.exceptions', json('{"source":"global"}')
     )
     WHERE json_valid(settings);
 "#,
@@ -180,16 +180,16 @@ const SETTINGS_KEY: &str = "app";
 const LAST_IDS_KEY: &str = "last_ids";
 const BATCHES_KEY: &str = "queue_batches";
 const PROXY_LOGINS_KEY: &str = "proxy_passwords";
-const PROXY_PROFILES_KEY: &str = "proxy_profiles";
+const PROXY_SERVERS_KEY: &str = "proxy_servers";
 
-/// The highest download, queue and proxy profile ids ever handed out. Kept so an id is never
+/// The highest download, queue and proxy server ids ever handed out. Kept so an id is never
 /// reused, even after the newest one was deleted.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LastIds {
     pub download: i64,
     pub queue: i64,
     #[serde(default)]
-    pub proxy_profile: i64,
+    pub proxy_server: i64,
 }
 
 /// One download as stored.
@@ -241,9 +241,9 @@ pub struct Snapshot {
     pub downloads: Vec<StoredDownload>,
     /// What each queue at work had finished or failed so far (D52).
     pub batches: Vec<StoredBatch>,
-    /// The passwords of the proxy profiles (D71.2).
+    /// The passwords of the proxy servers (D71.2).
     pub proxy_logins: Logins,
-    pub proxy_profiles: Vec<SavedProfile>,
+    pub proxy_servers: Vec<SavedProxyServer>,
     /// What had to be repaired to open the list, for the person to be told.
     pub recoveries: Vec<Recovery>,
     /// Why the data folder could not be made private to the current user, when it could
@@ -301,7 +301,7 @@ enum Op {
     SaveLastIds(LastIds),
     SaveBatches(Vec<StoredBatch>),
     SaveProxyLogins(Logins),
-    SaveProxyProfiles(Vec<SavedProfile>),
+    SaveProxyServers(Vec<SavedProxyServer>),
     /// Answers once every write sent before it is on disk; only tests wait
     /// for that.
     #[cfg(test)]
@@ -326,7 +326,7 @@ impl std::fmt::Debug for Op {
             Op::SaveLastIds(_) => "SaveLastIds",
             Op::SaveBatches(_) => "SaveBatches",
             Op::SaveProxyLogins(_) => "SaveProxyLogins",
-            Op::SaveProxyProfiles(_) => "SaveProxyProfiles",
+            Op::SaveProxyServers(_) => "SaveProxyServers",
             #[cfg(test)]
             Op::Flush(_) => "Flush",
             Op::Close(_) => "Close",
@@ -456,9 +456,9 @@ impl Store {
         self.send(Op::SaveProxyLogins(logins));
     }
 
-    /// Replaces the saved proxy profiles.
-    pub fn save_proxy_profiles(&self, profiles: Vec<SavedProfile>) {
-        self.send(Op::SaveProxyProfiles(profiles));
+    /// Replaces the saved proxy servers.
+    pub fn save_proxy_servers(&self, profiles: Vec<SavedProxyServer>) {
+        self.send(Op::SaveProxyServers(profiles));
     }
 
     /// Waits until every write sent so far is on disk.
@@ -654,7 +654,7 @@ enum Target {
     LastIds,
     Batches,
     ProxyLogins,
-    ProxyProfiles,
+    ProxyServers,
     Nothing,
 }
 
@@ -667,7 +667,7 @@ fn target_of(op: &Op) -> Target {
         Op::SaveLastIds(_) => Target::LastIds,
         Op::SaveBatches(_) => Target::Batches,
         Op::SaveProxyLogins(_) => Target::ProxyLogins,
-        Op::SaveProxyProfiles(_) => Target::ProxyProfiles,
+        Op::SaveProxyServers(_) => Target::ProxyServers,
         #[cfg(test)]
         Op::Flush(_) => Target::Nothing,
         Op::Close(_) => Target::Nothing,
@@ -768,7 +768,7 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
             Op::SaveLastIds(ids) => write_value(&tx, LAST_IDS_KEY, ids)?,
             Op::SaveBatches(batches) => write_value(&tx, BATCHES_KEY, batches)?,
             Op::SaveProxyLogins(logins) => write_value(&tx, PROXY_LOGINS_KEY, logins)?,
-            Op::SaveProxyProfiles(profiles) => write_value(&tx, PROXY_PROFILES_KEY, profiles)?,
+            Op::SaveProxyServers(profiles) => write_value(&tx, PROXY_SERVERS_KEY, profiles)?,
             #[cfg(test)]
             Op::Flush(_) => {}
             Op::Close(_) => {}
@@ -1013,14 +1013,14 @@ fn write_value<T: Serialize>(tx: &Transaction<'_>, key: &str, value: &T) -> rusq
 }
 
 /// One by one, so a profile that cannot be read loses only itself.
-fn load_proxy_profiles(conn: &Connection) -> rusqlite::Result<Vec<SavedProfile>> {
+fn load_proxy_servers(conn: &Connection) -> rusqlite::Result<Vec<SavedProxyServer>> {
     Ok(
-        read_value::<Vec<serde_json::Value>>(conn, PROXY_PROFILES_KEY, "proxy profiles")?
+        read_value::<Vec<serde_json::Value>>(conn, PROXY_SERVERS_KEY, "proxy servers")?
             .unwrap_or_default()
             .into_iter()
             .filter_map(|profile| {
                 serde_json::from_value(profile)
-                    .inspect_err(|e| warn!(error = %e, "a stored proxy profile is unreadable"))
+                    .inspect_err(|e| warn!(error = %e, "a stored proxy server is unreadable"))
                     .ok()
             })
             .collect(),
@@ -1045,7 +1045,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     let last_ids = read_value(conn, LAST_IDS_KEY, "id counters")?.unwrap_or_default();
     let batches = read_value(conn, BATCHES_KEY, "queue batches")?.unwrap_or_default();
     let proxy_logins = read_value(conn, PROXY_LOGINS_KEY, "proxy passwords")?.unwrap_or_default();
-    let proxy_profiles = load_proxy_profiles(conn)?;
+    let proxy_servers = load_proxy_servers(conn)?;
 
     let queues = load_queues(conn)?;
     let mut downloads_reset = 0;
@@ -1106,7 +1106,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
         downloads,
         batches,
         proxy_logins,
-        proxy_profiles,
+        proxy_servers,
         recoveries: [
             (newly_unreadable > 0).then_some(Recovery::UnreadableKept(newly_unreadable)),
             (downloads_reset > 0).then_some(Recovery::ValuesReset {
@@ -1402,9 +1402,9 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use wirecatch_protocol::DEFAULT_QUEUE_ID;
-    use wirecatch_protocol::ProxyProfileId;
-    use wirecatch_protocol::claims::{QueueClaims, QueueTakes};
+    use wirecatch_protocol::ProxyServerId;
     use wirecatch_protocol::proxy::{ProxySettings, ProxyUse, QueueExceptions};
+    use wirecatch_protocol::rules::{AddDownloads, QueueRules};
     use wirecatch_test_support::PATIENCE;
 
     use super::*;
@@ -1438,7 +1438,7 @@ mod tests {
                     .to_string_lossy()
                     .into_owned(),
                 queue: QueueId(1),
-                queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+                queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
                 category: Category::Archive,
                 status: DownloadStatus::Failed,
                 total: Some(100),
@@ -1790,18 +1790,18 @@ mod tests {
                 max_concurrent: Setting::Own(2),
                 speed_limit: Setting::Own(1000),
                 connections: Setting::Own(4),
-                proxy: Setting::Own(ProxyUse::Profile(ProxyProfileId(2))),
+                proxy: Setting::Own(ProxyUse::Server(ProxyServerId(2))),
                 exceptions: Setting::Own(QueueExceptions {
                     app_hosts: true,
                     use_hosts: true,
                     hosts: vec!["intranet.example".into()],
                     ..QueueExceptions::default()
                 }),
-                takes: QueueTakes::Auto(QueueClaims {
+                add_downloads: AddDownloads::Auto(QueueRules {
                     enabled: true,
                     sites: vec!["example.com".into()],
                     categories: vec![Category::Archive],
-                    ..QueueClaims::default()
+                    ..QueueRules::default()
                 }),
                 schedule: Some(Schedule {
                     start: TimeOfDay {
@@ -1819,13 +1819,13 @@ mod tests {
             },
         };
         let settings = sample_settings();
-        let profiles: Vec<SavedProfile> =
-            serde_json::from_str(include_str!("../samples/proxy_profiles/example.json")).unwrap();
+        let profiles: Vec<SavedProxyServer> =
+            serde_json::from_str(include_str!("../samples/proxy_servers/example.json")).unwrap();
         let logins: Logins =
             serde_json::from_str(include_str!("../samples/proxy_logins/example.json")).unwrap();
         store.save_queues(vec![queue.clone()]);
         store.save_settings(settings.clone());
-        store.save_proxy_profiles(profiles.clone());
+        store.save_proxy_servers(profiles.clone());
         store.save_proxy_logins(logins.clone());
         store.save_downloads(vec![download(1), download(2)]);
         store.delete_downloads(vec![DownloadId(2)]);
@@ -1836,7 +1836,7 @@ mod tests {
         assert_eq!(snapshot.settings, Some(settings));
         assert_eq!(snapshot.queues, vec![queue]);
         assert_eq!(snapshot.downloads, vec![download(1)]);
-        assert_eq!(snapshot.proxy_profiles, profiles);
+        assert_eq!(snapshot.proxy_servers, profiles);
         assert_eq!(snapshot.proxy_logins, logins);
     }
 
@@ -2348,25 +2348,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_proxy_profile_that_cannot_be_read_loses_only_itself() {
+    async fn a_proxy_server_that_cannot_be_read_loses_only_itself() {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
-        let profiles: Vec<SavedProfile> =
-            serde_json::from_str(include_str!("../samples/proxy_profiles/example.json")).unwrap();
-        store.save_proxy_profiles(profiles.clone());
+        let profiles: Vec<SavedProxyServer> =
+            serde_json::from_str(include_str!("../samples/proxy_servers/example.json")).unwrap();
+        store.save_proxy_servers(profiles.clone());
         store.flush().await;
         drop(store);
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.execute(
             r"UPDATE settings SET value = json_set(value, '$[1].last_test.result.outcome', 'from_a_later_build')
-               WHERE key = 'proxy_profiles'",
+               WHERE key = 'proxy_servers'",
             [],
         )
         .unwrap();
         drop(conn);
 
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
-        let ids: Vec<_> = snapshot.proxy_profiles.iter().map(|p| p.id).collect();
+        let ids: Vec<_> = snapshot.proxy_servers.iter().map(|p| p.id).collect();
         assert_eq!(ids, [profiles[0].id, profiles[2].id]);
     }
 

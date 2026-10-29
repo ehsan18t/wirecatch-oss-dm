@@ -212,7 +212,7 @@ mod tests {
             file_name: format!("file-{id}"),
             path: String::new(),
             queue,
-            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
             category: Category::Other,
             status,
             total: None,

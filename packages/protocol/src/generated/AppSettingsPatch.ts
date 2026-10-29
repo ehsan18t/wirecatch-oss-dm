@@ -2,13 +2,13 @@
 import type { Accent } from './Accent';
 import type { CategoryRule } from './CategoryRule';
 import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
-import type { FinishNoteTime } from './FinishNoteTime';
 import type { FinishNotice } from './FinishNotice';
+import type { FinishNoticeTime } from './FinishNoticeTime';
 import type { MediaDefaultsPatch } from './MediaDefaultsPatch';
 import type { PortablePath } from './PortablePath';
 import type { ProxySettings } from './ProxySettings';
-import type { StartNoteTime } from './StartNoteTime';
 import type { StartNotice } from './StartNotice';
+import type { StartNoticeTime } from './StartNoticeTime';
 import type { Theme } from './Theme';
 
 /**
@@ -60,17 +60,17 @@ export type AppSettingsPatch = {
    */
   finish_notice?: FinishNotice;
   /**
-   * The new [`AppSettings::finish_note_time`].
+   * The new [`AppSettings::finish_notice_time`].
    */
-  finish_note_time?: FinishNoteTime;
+  finish_notice_time?: FinishNoticeTime;
   /**
    * The new [`AppSettings::start_notice`].
    */
   start_notice?: StartNotice;
   /**
-   * The new [`AppSettings::start_note_time`].
+   * The new [`AppSettings::start_notice_time`].
    */
-  start_note_time?: StartNoteTime;
+  start_notice_time?: StartNoticeTime;
   /**
    * The new [`AppSettings::notify_during_do_not_disturb`].
    */

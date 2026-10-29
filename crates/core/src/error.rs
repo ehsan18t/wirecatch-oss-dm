@@ -4,9 +4,9 @@ use std::io;
 
 use wirecatch_files::FileError;
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
-use wirecatch_protocol::{DownloadId, ProxyProfileId, QuestionId, QueueId};
+use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
 use wirecatch_settings::folders::PathError;
-use wirecatch_settings::{ProfileError, SettingsError};
+use wirecatch_settings::{SettingsError, SettingsFileError};
 use wirecatch_store::StoreError;
 
 /// Why a manager operation failed. The `Display` text is plain language and says
@@ -21,9 +21,9 @@ pub enum CoreError {
     #[error("That queue no longer exists. It may have been deleted.")]
     QueueNotFound(QueueId),
 
-    /// The proxy profile does not exist (any more).
+    /// The proxy server does not exist (any more).
     #[error("That proxy no longer exists. It may have been deleted.")]
-    ProxyProfileNotFound(ProxyProfileId),
+    ProxyServerNotFound(ProxyServerId),
 
     /// The confirmation was already answered or never existed.
     #[error("That download was already confirmed or dismissed, or the browser took it back.")]
@@ -95,7 +95,7 @@ pub enum CoreError {
 
     /// A settings file that could not be imported.
     #[error(transparent)]
-    Profile(#[from] ProfileError),
+    Profile(#[from] SettingsFileError),
 
     /// The download list could not be opened or saved.
     #[error(transparent)]
@@ -170,7 +170,7 @@ impl CoreError {
         let code = match self {
             CoreError::DownloadNotFound(_)
             | CoreError::QueueNotFound(_)
-            | CoreError::ProxyProfileNotFound(_)
+            | CoreError::ProxyServerNotFound(_)
             | CoreError::ConfirmationNotFound(_)
             | CoreError::UnknownAddon => ErrorCode::NotFound,
             CoreError::InvalidUrl(_) => ErrorCode::InvalidUrl,
@@ -262,12 +262,14 @@ mod tests {
             CoreError::DefaultQueue,
             CoreError::Path(PathError::Special(r"\\.\C:".into())),
             CoreError::Path(PathError::Network(r"\\server\share".into())),
-            CoreError::Profile(ProfileError::TooNew {
+            CoreError::Profile(SettingsFileError::TooNew {
                 found: 3,
                 supported: 2,
             }),
-            CoreError::Profile(ProfileError::TooOld { found: 1 }),
-            CoreError::Profile(ProfileError::Invalid("it has no format version".into())),
+            CoreError::Profile(SettingsFileError::TooOld { found: 1 }),
+            CoreError::Profile(SettingsFileError::Invalid(
+                "it has no format version".into(),
+            )),
             CoreError::File(FileError {
                 path: "/x".into(),
                 source: io(),

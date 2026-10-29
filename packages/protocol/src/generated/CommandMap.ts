@@ -11,9 +11,9 @@ import type { ChooseMediaArgs } from './ChooseMediaArgs';
 import type { Command } from './Command';
 import type { ConfirmCaptureArgs } from './ConfirmCaptureArgs';
 import type { ControlWindowArgs } from './ControlWindowArgs';
-import type { CreateProxyProfileArgs } from './CreateProxyProfileArgs';
+import type { CreateProxyServerArgs } from './CreateProxyServerArgs';
 import type { CreateQueueArgs } from './CreateQueueArgs';
-import type { DeleteProxyProfileArgs } from './DeleteProxyProfileArgs';
+import type { DeleteProxyServerArgs } from './DeleteProxyServerArgs';
 import type { DeleteQueueArgs } from './DeleteQueueArgs';
 import type { DismissMediaChoiceArgs } from './DismissMediaChoiceArgs';
 import type { DownloadId } from './DownloadId';
@@ -28,7 +28,7 @@ import type { ImportPreview } from './ImportPreview';
 import type { ImportSettingsArgs } from './ImportSettingsArgs';
 import type { InstallAddonArgs } from './InstallAddonArgs';
 import type { KeepOriginalArgs } from './KeepOriginalArgs';
-import type { LinkClaims } from './LinkClaims';
+import type { LinkMatch } from './LinkMatch';
 import type { MediaChoice } from './MediaChoice';
 import type { MoveToQueueArgs } from './MoveToQueueArgs';
 import type { OpenFileArgs } from './OpenFileArgs';
@@ -36,8 +36,8 @@ import type { OpenFolderArgs } from './OpenFolderArgs';
 import type { PauseArgs } from './PauseArgs';
 import type { PendingCapture } from './PendingCapture';
 import type { PreviewImportArgs } from './PreviewImportArgs';
-import type { ProxyProfile } from './ProxyProfile';
-import type { ProxyProfileId } from './ProxyProfileId';
+import type { ProxyServer } from './ProxyServer';
+import type { ProxyServerId } from './ProxyServerId';
 import type { ProxyTestResult } from './ProxyTestResult';
 import type { Question } from './Question';
 import type { QuestionId } from './QuestionId';
@@ -61,10 +61,10 @@ import type { StartQueueNowArgs } from './StartQueueNowArgs';
 import type { StartupNotice } from './StartupNotice';
 import type { SuffixListInfo } from './SuffixListInfo';
 import type { SystemAppearance } from './SystemAppearance';
-import type { TestProxyProfileArgs } from './TestProxyProfileArgs';
+import type { TestProxyServerArgs } from './TestProxyServerArgs';
 import type { TryLinkArgs } from './TryLinkArgs';
 import type { UpdateAddonArgs } from './UpdateAddonArgs';
-import type { UpdateProxyProfileArgs } from './UpdateProxyProfileArgs';
+import type { UpdateProxyServerArgs } from './UpdateProxyServerArgs';
 import type { UpdateQueueArgs } from './UpdateQueueArgs';
 import type { WindowFrame } from './WindowFrame';
 
@@ -263,46 +263,46 @@ export type CommandMap = {
    */
   check_suffix_list: Command<null, SuffixListInfo>;
   /**
-   * Puts the queues in this order in the sidebar, which also settles ties between claims (D72.9). Fails with `invalid_request` unless it names every queue once, the default queue first.
+   * Puts the queues in this order in the sidebar, which also settles ties between rules (D72.9). Fails with `invalid_request` unless it names every queue once, the default queue first.
    */
   set_queue_order: Command<SetQueueOrderArgs, null>;
   /**
-   * Where a link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7). Fails with `invalid_url` for a link that is not http, https or FTP.
+   * Where a link would go by the rules, saved or as one queue's editor has them (D72.5, D72.7). Fails with `invalid_url` for a link that is not http, https or FTP.
    */
-  try_link: Command<TryLinkArgs, LinkClaims>;
+  try_link: Command<TryLinkArgs, LinkMatch>;
   /**
-   * Every proxy profile (D73).
+   * Every proxy server (D73).
    */
-  list_proxy_profiles: Command<null, Array<ProxyProfile>>;
+  list_proxy_servers: Command<null, Array<ProxyServer>>;
   /**
-   * Saves a new proxy profile and tests it in the background; the profiles arrive as
-   * `ProxyProfilesChanged`, again with the test's result. Fails with `invalid_request` and a
+   * Saves a new proxy server and tests it in the background; the profiles arrive as
+   * `ProxyServersChanged`, again with the test's result. Fails with `invalid_request` and a
    * message for the person for a profile that cannot work, changing nothing.
    */
-  create_proxy_profile: Command<CreateProxyProfileArgs, ProxyProfileId>;
+  create_proxy_server: Command<CreateProxyServerArgs, ProxyServerId>;
   /**
    * Saves a profile's new settings, tested in the background when its server or login
    * changed. Downloads running through it keep the proxy they started with (D73.3). Fails like
-   * `create_proxy_profile`, or with `not_found`.
+   * `create_proxy_server`, or with `not_found`.
    */
-  update_proxy_profile: Command<UpdateProxyProfileArgs, null>;
+  update_proxy_server: Command<UpdateProxyServerArgs, null>;
   /**
    * Deletes a profile; the app and the queues that use it use `replacement` instead (D73.4).
    * Fails with `not_found`, or `invalid_request` when `replacement` is the profile itself or
    * another that does not exist.
    */
-  delete_proxy_profile: Command<DeleteProxyProfileArgs, null>;
+  delete_proxy_server: Command<DeleteProxyServerArgs, null>;
   /**
    * Sends one request through a profile as `draft` has it, before it is saved (D71.5). For a
    * saved profile (`id`), a password `draft` keeps is the saved one, and the result is kept as
    * its last test when the draft is what is saved.
    */
-  test_proxy_profile: Command<TestProxyProfileArgs, ProxyTestResult>;
+  test_proxy_server: Command<TestProxyServerArgs, ProxyTestResult>;
   /**
    * Saves a profile for each server the computer's proxy names, without passwords, and
    * answers with their ids, those saved before included; empty when the computer sets none.
    */
-  copy_system_proxy: Command<null, Array<ProxyProfileId>>;
+  copy_system_proxy: Command<null, Array<ProxyServerId>>;
   /**
    * Brings the main window to the front on the proxy settings, for a progress window's fix
    * of a proxy error.

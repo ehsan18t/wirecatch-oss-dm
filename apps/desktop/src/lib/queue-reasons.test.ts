@@ -2,22 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { queueLine, trialLines } from './queue-reasons';
 
 describe('why a download is in its queue', () => {
-  it('says each kind of claim and each other reason in words', () => {
-    const claimed = (claim: Parameters<typeof queueLine>[1] & { kind: 'claimed' }) =>
-      queueLine('Q', claim);
-    expect(claimed({ kind: 'claimed', claim: { kind: 'site', claim: 'youtube.com' } })).toBe(
+  it('says each kind of rule and each other reason in words', () => {
+    const matched = (rule: Parameters<typeof queueLine>[1] & { kind: 'matched' }) =>
+      queueLine('Q', rule);
+    expect(matched({ kind: 'matched', rule: { kind: 'site', value: 'youtube.com' } })).toBe(
       'Queue: Q. Its rules match youtube.com.',
     );
-    expect(claimed({ kind: 'claimed', claim: { kind: 'file_name', claim: '*.iso' } })).toBe(
+    expect(matched({ kind: 'matched', rule: { kind: 'file_name', value: '*.iso' } })).toBe(
       'Queue: Q. Its rules match files named *.iso.',
     );
-    expect(claimed({ kind: 'claimed', claim: { kind: 'file_type', claim: 'tar.gz' } })).toBe(
+    expect(matched({ kind: 'matched', rule: { kind: 'file_type', value: 'tar.gz' } })).toBe(
       'Queue: Q. Its rules match .tar.gz files.',
     );
-    expect(claimed({ kind: 'claimed', claim: { kind: 'category', claim: 'video' } })).toBe(
+    expect(matched({ kind: 'matched', rule: { kind: 'category', value: 'video' } })).toBe(
       'Queue: Q. Its rules match videos.',
     );
-    expect(claimed({ kind: 'claimed', claim: { kind: 'protocol', claim: 'ftp' } })).toBe(
+    expect(matched({ kind: 'matched', rule: { kind: 'protocol', value: 'ftp' } })).toBe(
       'Queue: Q. Its rules match FTP links.',
     );
     expect(queueLine('Q', { kind: 'picked' })).toBe('Queue: Q. You picked it.');
@@ -29,7 +29,7 @@ describe('why a download is in its queue', () => {
 
   it('names the queue not made yet by the name its form has', () => {
     const lines = trialLines(
-      { taken: { queue: null, claim: { kind: 'site', claim: 'a.example' } }, switched_off: null },
+      { matched: { queue: null, rule: { kind: 'site', value: 'a.example' } }, switched_off: null },
       (queue) => (queue === null ? 'New' : 'Saved'),
       'Main',
     );

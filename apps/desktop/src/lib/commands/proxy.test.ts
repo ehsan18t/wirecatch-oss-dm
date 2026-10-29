@@ -17,6 +17,6 @@ describe('the palette’s proxy commands', () => {
     expect(screen.getByRole('option', { name: /Proxy: turn off/ })).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('option', { name: /Proxy: use “Office”/ }));
     await settle();
-    expect(app.settings?.proxy.proxy).toEqual({ kind: 'profile', id: app.proxies.list[0]?.id });
+    expect(app.settings?.proxy.proxy).toEqual({ kind: 'server', id: app.proxies.list[0]?.id });
   });
 });

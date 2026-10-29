@@ -1,4 +1,4 @@
-// Proxy profiles in Settings, Network (D73): the app's proxy is chosen from them, each is saved,
+// Proxy servers in Settings, Network (D73): the app's proxy is chosen from them, each is saved,
 // tested and deleted with a replacement, and the computer's proxy is copied as one.
 
 import { fireEvent, screen, within } from '@testing-library/svelte';
@@ -26,7 +26,7 @@ async function type(field: HTMLElement, value: string) {
 const dialog = () => within(screen.getByRole('dialog'));
 const list = () => within(screen.getByRole('list', { name: 'Proxy servers' }));
 
-describe('proxy profiles in settings', () => {
+describe('proxy servers in settings', () => {
   it('lists each saved profile once, with its last test and what uses it', async () => {
     const { app } = await openNetwork();
     expect(list().getByText(/^Works, tested /)).toBeInTheDocument();
@@ -35,7 +35,7 @@ describe('proxy profiles in settings', () => {
     expect(list().getAllByText('Not used yet')).toHaveLength(1);
     const office = app.proxies.list[0];
     if (!office || !app.settings) throw new Error('no sample proxy');
-    app.settings.proxy.proxy = { kind: 'profile', id: office.id };
+    app.settings.proxy.proxy = { kind: 'server', id: office.id };
     await settle();
     expect(
       list().getByText('Used by the global setting (Main, Overnight) and Work files'),
@@ -105,7 +105,7 @@ describe('proxy profiles in settings', () => {
     const work = app.queues.list.find((q) => q.settings.name === 'Work files');
     if (!work) throw new Error('no sample queue');
     const settings = JSON.parse(JSON.stringify(work.settings)) as typeof work.settings;
-    await app.queues.save(work.id, { ...settings, proxy: { source: 'follow_app' } });
+    await app.queues.save(work.id, { ...settings, proxy: { source: 'global' } });
     await settle();
     expect(screen.queryByRole('checkbox', { name: /^These hosts/ })).toBeNull();
     expect(screen.getByText(/nothing to bypass/)).toBeInTheDocument();

@@ -48,7 +48,7 @@
   );
   const speed = $derived(app.downloads.queueSpeed[queue.id] ?? 0);
   const count = $derived(app.counts.queue.get(queue.id)?.total ?? 0);
-  const takes = $derived(queue.settings.takes);
+  const addDownloads = $derived(queue.settings.add_downloads);
   // Marked while its proxy, its own or the app's, is a saved profile (D73.9).
   const profile = $derived(
     app.settings ? profileOf(queueProxy(queue, app.settings.proxy), app.proxies.list) : undefined,
@@ -160,7 +160,7 @@
     'rounded-sm',
     dropping && 'bg-accent-soft outline-2 -outline-offset-2 outline-accent',
     dragging && 'opacity-dragged',
-    takes.kind === 'auto' && !takes.enabled && !dragging && 'opacity-quiet',
+    addDownloads.kind === 'auto' && !addDownloads.enabled && !dragging && 'opacity-quiet',
     // Centred on the edge, so "below one row" and "above the next" draw the same line.
     landing !== null &&
       'relative after:absolute after:inset-x-1 after:h-0.5 after:rounded-full after:bg-accent',
@@ -214,8 +214,8 @@
 
 {#snippet doing()}
   <span class="flex min-w-0 items-center gap-1">
-    {#if takes.kind === 'auto'}
-      <Badge size="sm">{takes.enabled ? 'Rules' : 'Rules off'}</Badge>
+    {#if addDownloads.kind === 'auto'}
+      <Badge size="sm">{addDownloads.enabled ? 'Rules' : 'Rules off'}</Badge>
     {/if}
     {#if profile}
       <span class="flex shrink-0 text-ink-muted" {@attach tooltip(() => proxyNote)}>

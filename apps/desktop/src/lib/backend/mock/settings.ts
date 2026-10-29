@@ -1,12 +1,12 @@
 // What the mock core does with settings: change them, and export and import settings files.
 
 import {
-  PROFILE_FORMAT_VERSION,
+  SETTINGS_FILE_FORMAT_VERSION,
   type AddonId,
   type AppSettingsPatch,
   type ImportedFolder,
   type ImportPreview,
-  type SettingsProfile,
+  type SettingsFile,
 } from '@wirecatch/protocol';
 import { version } from '../../../../package.json';
 import { applyPatch } from '../../state/settings-changes.svelte';
@@ -21,7 +21,7 @@ export function changeSettings(state: MockState, patch: AppSettingsPatch): void 
 
 export function exportSettings(state: MockState, path: string): void {
   state.files.set(path, {
-    format_version: PROFILE_FORMAT_VERSION,
+    format_version: SETTINGS_FILE_FORMAT_VERSION,
     app_version: version,
     exported_at: state.now(),
     settings: structuredClone(state.settings),
@@ -31,7 +31,7 @@ export function exportSettings(state: MockState, path: string): void {
       settings: structuredClone(settings),
     })),
     // Passwords and last tests stay on this computer, as in the core.
-    proxy_profiles: state.proxyProfiles.map(({ id, settings }) => ({
+    proxy_servers: state.proxyServers.map(({ id, settings }) => ({
       id,
       settings: structuredClone(settings),
     })),
@@ -39,7 +39,7 @@ export function exportSettings(state: MockState, path: string): void {
   });
 }
 
-function profileAt(state: MockState, path: string): SettingsProfile {
+function profileAt(state: MockState, path: string): SettingsFile {
   const profile = state.files.get(path);
   if (!profile) {
     throw new BackendError(
@@ -53,7 +53,7 @@ function profileAt(state: MockState, path: string): SettingsProfile {
  * The default folder of `profile` as the core would place it: a startup folder is refused and
  * replaced by Downloads, a folder outside the person's own folders is flagged.
  */
-function importedFolder(profile: SettingsProfile): ImportedFolder {
+function importedFolder(profile: SettingsFile): ImportedFolder {
   const requested = profile.settings.default_folder;
   const startup = /Start Menu|[\\/]\.config[\\/]autostart/i.test(requested);
   const used = startup ? '{Downloads}' : requested;
@@ -69,7 +69,7 @@ function importedFolder(profile: SettingsProfile): ImportedFolder {
   };
 }
 
-function addonsToOffer(state: MockState, profile: SettingsProfile): AddonId[] {
+function addonsToOffer(state: MockState, profile: SettingsFile): AddonId[] {
   // Like the core: offered, never installed by the import itself.
   return profile.addons.filter(
     (id) => state.addons.find((a) => a.id === id)?.state.type === 'not_installed',
@@ -102,8 +102,8 @@ export function importSettings(state: MockState, path: string): void {
     status: state.queues.find((q) => q.id === id)?.status ?? { ...QUEUE_RUNNING },
   }));
   // The mock matches profiles by id too; a password stays only with its proxy, as in the core.
-  state.proxyProfiles = profile.proxy_profiles.map(({ id, settings }) => {
-    const saved = state.proxyProfiles.find((p) => p.id === id);
+  state.proxyServers = profile.proxy_servers.map(({ id, settings }) => {
+    const saved = state.proxyServers.find((p) => p.id === id);
     const same = saved !== undefined && JSON.stringify(saved.settings) === JSON.stringify(settings);
     return {
       id,
@@ -112,7 +112,7 @@ export function importSettings(state: MockState, path: string): void {
       last_test: same ? saved.last_test : null,
     };
   });
-  state.proxyProfilesChanged();
+  state.proxyServersChanged();
   state.settingsChanged();
   state.queuesChanged();
   state.emit({

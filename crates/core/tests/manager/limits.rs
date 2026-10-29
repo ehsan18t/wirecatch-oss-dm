@@ -147,7 +147,7 @@ async fn limit_changes_apply_to_running_downloads() -> TestResult {
 
     // At 2 KiB/s this would take over four minutes, longer than the wait below
     // allows; lifting the limit finishes it now.
-    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = Setting::FollowApp)?;
+    set_queue(&h, DEFAULT_QUEUE_ID, |q| q.speed_limit = Setting::Global)?;
     h.wait_status(row.id, DownloadStatus::Completed).await;
     Ok(())
 }

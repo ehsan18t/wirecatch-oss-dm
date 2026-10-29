@@ -162,8 +162,8 @@ macro_rules! timed_lists {
 }
 
 timed_lists!(
-    StartNoteTime: u64 => "number",
-    FinishNoteTime: Option<u64> => "number | null"
+    StartNoticeTime: u64 => "number",
+    FinishNoticeTime: Option<u64> => "number | null"
 );
 
 #[cfg(test)]
@@ -614,7 +614,7 @@ mod tests {
             crate::wire::exported_consts(),
             crate::frame::exported_consts(),
             crate::app::exported_consts(),
-            crate::claims::exported_consts(),
+            crate::rules::exported_consts(),
             crate::desktop::exported_consts(),
             crate::extension::exported_consts(),
             crate::proxy::exported_consts(),

@@ -729,7 +729,7 @@ mod tests {
             options: offers.iter().map(|(o, _)| o.clone()).collect(),
             folder: "/v".into(),
             queue: wirecatch_protocol::QueueId(1),
-            queue_reason: wirecatch_protocol::claims::QueueReason::BrowserQueue,
+            queue_reason: wirecatch_protocol::rules::QueueReason::BrowserQueue,
             subtitles: vec![
                 wirecatch_protocol::app::MediaSubtitle {
                     id: "sub:en".into(),

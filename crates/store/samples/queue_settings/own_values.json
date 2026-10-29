@@ -16,7 +16,7 @@
   "proxy": {
     "source": "own",
     "value": {
-      "kind": "profile",
+      "kind": "server",
       "id": 2
     }
   },
@@ -32,7 +32,7 @@
       ]
     }
   },
-  "takes": {
+  "add_downloads": {
     "kind": "auto",
     "enabled": true,
     "sites": [

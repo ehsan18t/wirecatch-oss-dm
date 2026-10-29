@@ -8,15 +8,15 @@ use wirecatch_core::LinkFrom;
 use wirecatch_protocol::desktop::commands as contract;
 use wirecatch_protocol::desktop::{
     AddDownloadArgs, AddVideoPageArgs, CancelAddonOperationArgs, CancelArgs, ChangeSettingsArgs,
-    ChooseMediaArgs, ConfirmCaptureArgs, ControlWindowArgs, CreateProxyProfileArgs,
-    CreateQueueArgs, DeleteProxyProfileArgs, DeleteQueueArgs, DismissMediaChoiceArgs,
-    EarlierDownloadArgs, ExportSettingsArgs, FitDownloadWindowArgs, GetDownloadArgs,
-    GetQuestionArgs, ImportSettingsArgs, InstallAddonArgs, KeepOriginalArgs, MoveToQueueArgs,
-    OpenFileArgs, OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs, RejectCaptureArgs,
+    ChooseMediaArgs, ConfirmCaptureArgs, ControlWindowArgs, CreateProxyServerArgs, CreateQueueArgs,
+    DeleteProxyServerArgs, DeleteQueueArgs, DismissMediaChoiceArgs, EarlierDownloadArgs,
+    ExportSettingsArgs, FitDownloadWindowArgs, GetDownloadArgs, GetQuestionArgs,
+    ImportSettingsArgs, InstallAddonArgs, KeepOriginalArgs, MoveToQueueArgs, OpenFileArgs,
+    OpenFolderArgs, PauseArgs, PreviewImportArgs, RefreshLinkArgs, RejectCaptureArgs,
     RemoveAddonArgs, RemoveArgs, ReorderArgs, ReportUnreadableEventArgs, ResumeArgs, RetryArgs,
     SetDownloadFolderArgs, SetMaximizeButtonArgs, SetQueueOrderArgs, SetQueuePausedArgs,
     ShowDownloadDetailsArgs, ShowProgressWindowArgs, StartQueueNowArgs, SystemAppearance,
-    TestProxyProfileArgs, TryLinkArgs, UpdateAddonArgs, UpdateProxyProfileArgs, UpdateQueueArgs,
+    TestProxyServerArgs, TryLinkArgs, UpdateAddonArgs, UpdateProxyServerArgs, UpdateQueueArgs,
 };
 
 use crate::api::{self, CommandResult};
@@ -588,46 +588,46 @@ pub async fn try_link(
 }
 
 #[tauri::command]
-pub async fn list_proxy_profiles(
+pub async fn list_proxy_servers(
     core: CoreState<'_>,
-) -> CommandResult<contract::list_proxy_profiles::Output> {
-    Ok(api::list_proxy_profiles(core.manager().await?))
+) -> CommandResult<contract::list_proxy_servers::Output> {
+    Ok(api::list_proxy_servers(core.manager().await?))
 }
 
 #[tauri::command]
-pub async fn create_proxy_profile(
+pub async fn create_proxy_server(
     core: CoreState<'_>,
-    args: contract::create_proxy_profile::Args,
-) -> CommandResult<contract::create_proxy_profile::Output> {
-    let CreateProxyProfileArgs { draft } = args;
-    api::create_proxy_profile(core.manager().await?, draft)
+    args: contract::create_proxy_server::Args,
+) -> CommandResult<contract::create_proxy_server::Output> {
+    let CreateProxyServerArgs { draft } = args;
+    api::create_proxy_server(core.manager().await?, draft)
 }
 
 #[tauri::command]
-pub async fn update_proxy_profile(
+pub async fn update_proxy_server(
     core: CoreState<'_>,
-    args: contract::update_proxy_profile::Args,
-) -> CommandResult<contract::update_proxy_profile::Output> {
-    let UpdateProxyProfileArgs { id, draft } = args;
-    api::update_proxy_profile(core.manager().await?, id, draft)
+    args: contract::update_proxy_server::Args,
+) -> CommandResult<contract::update_proxy_server::Output> {
+    let UpdateProxyServerArgs { id, draft } = args;
+    api::update_proxy_server(core.manager().await?, id, draft)
 }
 
 #[tauri::command]
-pub async fn delete_proxy_profile(
+pub async fn delete_proxy_server(
     core: CoreState<'_>,
-    args: contract::delete_proxy_profile::Args,
-) -> CommandResult<contract::delete_proxy_profile::Output> {
-    let DeleteProxyProfileArgs { id, replacement } = args;
-    api::delete_proxy_profile(core.manager().await?, id, replacement)
+    args: contract::delete_proxy_server::Args,
+) -> CommandResult<contract::delete_proxy_server::Output> {
+    let DeleteProxyServerArgs { id, replacement } = args;
+    api::delete_proxy_server(core.manager().await?, id, replacement)
 }
 
 #[tauri::command]
-pub async fn test_proxy_profile(
+pub async fn test_proxy_server(
     core: CoreState<'_>,
-    args: contract::test_proxy_profile::Args,
-) -> CommandResult<contract::test_proxy_profile::Output> {
-    let TestProxyProfileArgs { id, draft } = args;
-    api::test_proxy_profile(core.manager().await?, id, draft).await
+    args: contract::test_proxy_server::Args,
+) -> CommandResult<contract::test_proxy_server::Output> {
+    let TestProxyServerArgs { id, draft } = args;
+    api::test_proxy_server(core.manager().await?, id, draft).await
 }
 
 #[tauri::command]
@@ -804,11 +804,11 @@ handler![
     check_suffix_list,
     set_queue_order,
     try_link,
-    list_proxy_profiles,
-    create_proxy_profile,
-    update_proxy_profile,
-    delete_proxy_profile,
-    test_proxy_profile,
+    list_proxy_servers,
+    create_proxy_server,
+    update_proxy_server,
+    delete_proxy_server,
+    test_proxy_server,
     copy_system_proxy,
     show_proxy_settings,
     show_download_details,

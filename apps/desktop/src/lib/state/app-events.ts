@@ -4,12 +4,12 @@ import type { AppSettings, DownloadId } from '@wirecatch/protocol';
 import type { Addons } from './addons.svelte';
 import type { DownloadStore } from './downloads.svelte';
 import { ignore, type UiEventHandlers } from './events';
-import type { ProxyProfiles } from './proxy-profiles.svelte';
+import type { ProxyServers } from './proxy-servers.svelte';
 import type { Questions } from './questions.svelte';
 import type { Queues } from './queues.svelte';
 import type { Selection } from './selection.svelte';
 import type { SuffixList } from './suffix-list.svelte';
-import type { SettingsTransfer } from './settings-transfer.svelte';
+import type { ImportExport } from './import-export.svelte';
 import type { View } from './view';
 
 /** What the core's events change in the main window. */
@@ -20,7 +20,7 @@ export interface MainWindowEventsHost {
   readonly details: DownloadId | null;
   closeDetails: () => void;
   readonly queues: Pick<Queues, 'list'>;
-  readonly proxies: Pick<ProxyProfiles, 'list'>;
+  readonly proxies: Pick<ProxyServers, 'list'>;
   view: View;
   settings: AppSettings | null;
   /** Takes the settings the core sent. */
@@ -31,7 +31,7 @@ export interface MainWindowEventsHost {
   >;
   readonly addons: Pick<Addons, 'changed'>;
   readonly suffixList: Pick<SuffixList, 'checked'>;
-  readonly transfer: Pick<SettingsTransfer, 'lastImport'>;
+  readonly transfer: Pick<ImportExport, 'lastImport'>;
   storageProblem: string | null;
 }
 
@@ -51,7 +51,7 @@ export function mainWindowEvents(app: MainWindowEventsHost): UiEventHandlers {
         app.view = { kind: 'all' };
       }
     },
-    proxy_profiles_changed: (e) => {
+    proxy_servers_changed: (e) => {
       app.proxies.list = e.data;
     },
     settings_changed: (e) => app.settingsArrived(e.data),

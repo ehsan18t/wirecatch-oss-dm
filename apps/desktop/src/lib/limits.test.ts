@@ -1,5 +1,5 @@
 import {
-  FOLLOW_APP,
+  GLOBAL,
   MANUAL_QUEUE,
   MAX_CONCURRENT_DOWNLOADS,
   MAX_CONNECTIONS_PER_DOWNLOAD,
@@ -21,12 +21,12 @@ import {
 const FOLLOWS: QueueSettings = {
   name: 'Plain',
   description: '',
-  max_concurrent: FOLLOW_APP,
-  speed_limit: FOLLOW_APP,
-  connections: FOLLOW_APP,
-  proxy: FOLLOW_APP,
-  exceptions: FOLLOW_APP,
-  takes: MANUAL_QUEUE,
+  max_concurrent: GLOBAL,
+  speed_limit: GLOBAL,
+  connections: GLOBAL,
+  proxy: GLOBAL,
+  exceptions: GLOBAL,
+  add_downloads: MANUAL_QUEUE,
   schedule: null,
   notify: 'each_download',
 };
@@ -59,8 +59,8 @@ describe('download limits', () => {
         max_concurrent: ownSetting(2),
         speed_limit: ownSetting(4 * MB),
         connections: ownSetting(1),
-        proxy: FOLLOW_APP,
-        exceptions: FOLLOW_APP,
+        proxy: GLOBAL,
+        exceptions: GLOBAL,
       }),
     ).toEqual(['2 at once', 'Up to 4 MB/s', '1 connection each']);
     expect(queueLimitFacts({ ...FOLLOWS, max_concurrent: ownSetting(2) })).toEqual([

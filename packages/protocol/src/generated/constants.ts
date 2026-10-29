@@ -5,11 +5,11 @@ import type { Call } from './Call';
 import type { ErrorCode } from './ErrorCode';
 import type { Event } from './Event';
 import type { ExtensionSettings } from './ExtensionSettings';
-import type { FinishNoteTime } from './FinishNoteTime';
+import type { FinishNoticeTime } from './FinishNoticeTime';
 import type { FixAction } from './FixAction';
 import type { OutputFormat } from './OutputFormat';
 import type { QueueId } from './QueueId';
-import type { StartNoteTime } from './StartNoteTime';
+import type { StartNoticeTime } from './StartNoticeTime';
 import type { Theme } from './Theme';
 
 /**
@@ -91,9 +91,9 @@ export const MAX_QUEUE_DESCRIPTION_CHARS = 500;
 export const PER_MILLE_DONE = 1000;
 
 /**
- * The only [`SettingsProfile::format_version`] this build reads and writes (D75).
+ * The only [`SettingsFile::format_version`] this build reads and writes (D75).
  */
-export const PROFILE_FORMAT_VERSION = 3;
+export const SETTINGS_FILE_FORMAT_VERSION = 3;
 
 /**
  * Most download windows asking a question at once (D23); later questions wait until one
@@ -137,9 +137,9 @@ export const THEMES: readonly Theme[] = ['system', 'light', 'dark'];
 export const RETRY_FIXES: readonly FixAction[] = ['retry', 'free_disk_space'];
 
 /**
- * Every [`StartNoteTime`] with its seconds, in the order settings offer them (D65).
+ * Every [`StartNoticeTime`] with its seconds, in the order settings offer them (D65).
  */
-export const START_NOTE_TIMES: readonly (readonly [StartNoteTime, number])[] = [
+export const START_NOTICE_TIMES: readonly (readonly [StartNoticeTime, number])[] = [
   ['three_seconds', 3],
   ['five_seconds', 5],
   ['eight_seconds', 8],
@@ -147,10 +147,10 @@ export const START_NOTE_TIMES: readonly (readonly [StartNoteTime, number])[] = [
 ];
 
 /**
- * Every [`FinishNoteTime`] with its seconds (`null` until closed), in the order settings
+ * Every [`FinishNoticeTime`] with its seconds (`null` until closed), in the order settings
  * offer them (D65).
  */
-export const FINISH_NOTE_TIMES: readonly (readonly [FinishNoteTime, number | null])[] = [
+export const FINISH_NOTICE_TIMES: readonly (readonly [FinishNoticeTime, number | null])[] = [
   ['five_seconds', 5],
   ['eight_seconds', 8],
   ['fifteen_seconds', 15],
@@ -177,14 +177,14 @@ export const ACCENTS: readonly Accent[] = [
 ];
 
 /**
- * Most claims of one kind in one queue.
+ * Most rules of one kind in one queue.
  */
-export const MAX_CLAIMS_PER_KIND = 200;
+export const MAX_RULES_PER_KIND = 200;
 
 /**
- * Most characters in one claim as the person writes it.
+ * Most characters in one rule as the person writes it.
  */
-export const MAX_CLAIM_CHARS = 256;
+export const MAX_RULE_CHARS = 256;
 
 /**
  * The Tauri event that carries every [`UiEvent`](crate::app::UiEvent), in order.
@@ -360,14 +360,14 @@ export const MAX_PROXY_LOGIN_BYTES = 255;
 export const MAX_PROXY_EXCEPTIONS = 256;
 
 /**
- * Most characters in a proxy profile's name.
+ * Most characters in a proxy server's name.
  */
 export const MAX_PROXY_NAME_CHARS = 60;
 
 /**
- * Most proxy profiles there can be.
+ * Most proxy servers there can be.
  */
-export const MAX_PROXY_PROFILES = 100;
+export const MAX_PROXY_SERVERS = 100;
 
 /**
  * Words that make a name a secret's when one of its segments is the word (see the module documentation for how a name is split). `key` alone counts, so `Invalid key: 5` loses its 5: a bare `key=` pair is most often an API key.

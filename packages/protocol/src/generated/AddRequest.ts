@@ -11,7 +11,7 @@ export type AddRequest = {
    */
   url: Link;
   /**
-   * The queue picked; absent, the claims place it, else it joins the default queue (D72.3).
+   * The queue picked; absent, the rules place it, else it joins the default queue (D72.3).
    */
   queue: QueueId | null;
   /**

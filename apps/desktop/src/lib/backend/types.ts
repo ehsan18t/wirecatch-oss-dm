@@ -18,9 +18,9 @@ import type {
   MediaChoice,
   MediaSelection,
   PendingCapture,
-  ProxyProfile,
-  ProxyProfileDraft,
-  ProxyProfileId,
+  ProxyServer,
+  ProxyServerDraft,
+  ProxyServerId,
   ProxyTestResult,
   ProxyUse,
   Question,
@@ -35,7 +35,7 @@ import type {
   UiEvent,
   WindowAction,
   WindowFrame,
-  LinkClaims,
+  LinkMatch,
   LinkTrial,
 } from '@wirecatch/protocol';
 import type { WindowRegistry } from '../sample-windows';
@@ -172,23 +172,20 @@ export interface Backend {
 
   /** Puts the queues in this order in the sidebar; the default queue stays first (D72.9). */
   setQueueOrder: (order: QueueId[]) => Promise<void>;
-  /** Where a link would go by the claims, saved or as one queue's editor has them (D72.5, D72.7). */
-  tryLink: (trial: LinkTrial) => Promise<LinkClaims>;
-  /** Every proxy profile (D73). */
-  listProxyProfiles: () => Promise<ProxyProfile[]>;
-  /** Saves a new proxy profile; the core tests it in the background. */
-  createProxyProfile: (draft: ProxyProfileDraft) => Promise<ProxyProfileId>;
+  /** Where a link would go by the rules, saved or as one queue's editor has them (D72.5, D72.7). */
+  tryLink: (trial: LinkTrial) => Promise<LinkMatch>;
+  /** Every proxy server (D73). */
+  listProxyServers: () => Promise<ProxyServer[]>;
+  /** Saves a new proxy server; the core tests it in the background. */
+  createProxyServer: (draft: ProxyServerDraft) => Promise<ProxyServerId>;
   /** Saves a profile's new settings and the change to its password. */
-  updateProxyProfile: (id: ProxyProfileId, draft: ProxyProfileDraft) => Promise<void>;
+  updateProxyServer: (id: ProxyServerId, draft: ProxyServerDraft) => Promise<void>;
   /** Deletes a profile; the app and the queues that use it use `replacement` instead. */
-  deleteProxyProfile: (id: ProxyProfileId, replacement: ProxyUse) => Promise<void>;
+  deleteProxyServer: (id: ProxyServerId, replacement: ProxyUse) => Promise<void>;
   /** Sends one request through a profile as `draft` has it; for a saved `id`, a kept password is the saved one. */
-  testProxyProfile: (
-    id: ProxyProfileId | null,
-    draft: ProxyProfileDraft,
-  ) => Promise<ProxyTestResult>;
+  testProxyServer: (id: ProxyServerId | null, draft: ProxyServerDraft) => Promise<ProxyTestResult>;
   /** Saves a profile for each server of the computer's proxy; their ids, those saved before included. */
-  copySystemProxy: () => Promise<ProxyProfileId[]>;
+  copySystemProxy: () => Promise<ProxyServerId[]>;
   /** Brings the main window forward on the proxy settings, for a progress window's fix. */
   showProxySettings: () => Promise<void>;
   /** Brings the main window forward with a download's details open, for a progress window's Change queue. */

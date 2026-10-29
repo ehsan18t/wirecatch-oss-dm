@@ -2,7 +2,7 @@
 
 import {
   ownValue,
-  type LinkClaims,
+  type LinkMatch,
   type LinkTrial,
   type Queue,
   type QueueId,
@@ -37,7 +37,7 @@ function runningPhrase(running: number, atOnce: number | null): string {
 /** Why Test a link could not answer. */
 export interface TrialProblem {
   problem: string;
-  /** The link is at fault, not the claims. */
+  /** The link is at fault, not the rules. */
   inLink: boolean;
 }
 
@@ -103,7 +103,7 @@ export class Queues {
     return ok;
   }
 
-  /** Moves a queue to `index` in the sidebar, whose order also settles ties between claims; the default queue stays first (D72.9). */
+  /** Moves a queue to `index` in the sidebar, whose order also settles ties between rules; the default queue stays first (D72.9). */
   async moveTo(queue: QueueId, index: number): Promise<void> {
     const order = this.list.map((q) => q.id);
     const from = order.indexOf(queue);
@@ -117,8 +117,8 @@ export class Queues {
     }
   }
 
-  /** Where the claims send `trial`'s link, or why it cannot be tried: the link, or the drafted claims (`inLink` false). */
-  async tryLink(trial: LinkTrial): Promise<LinkClaims | TrialProblem> {
+  /** Where the rules send `trial`'s link, or why it cannot be tried: the link, or the drafted rules (`inLink` false). */
+  async tryLink(trial: LinkTrial): Promise<LinkMatch | TrialProblem> {
     try {
       return await this.#host.backend().tryLink(trial);
     } catch (error) {
@@ -127,16 +127,16 @@ export class Queues {
     }
   }
 
-  /** Where the saved claims send each of `urls`, as the Add dialog's line says it; links that cannot be tried are left out. */
+  /** Where the saved rules send each of `urls`, as the Add dialog's line says it; links that cannot be tried are left out. */
   async placement(urls: readonly string[]): Promise<string> {
     const fallback = this.defaultQueue?.settings.name ?? 'Main';
     const found = await Promise.all(urls.map((url) => this.tryLink({ url, draft: null })));
     const placed = found.flatMap((f): { name: string; reason: QueueReason }[] => {
       if ('problem' in f) return [];
-      if (f.taken === null) return [{ name: fallback, reason: { kind: 'default_queue' } }];
-      const { queue } = f.taken;
+      if (f.matched === null) return [{ name: fallback, reason: { kind: 'default_queue' } }];
+      const { queue } = f.matched;
       const name = (queue === null ? undefined : this.byId(queue)?.settings.name) ?? fallback;
-      return [{ name, reason: { kind: 'claimed', claim: f.taken.claim } }];
+      return [{ name, reason: { kind: 'matched', rule: f.matched.rule } }];
     });
     return placementLine(placed);
   }

@@ -1,11 +1,11 @@
 // Proxies (D73) as the windows show them: profiles and their parts in words, which proxy a queue uses, and what a test found.
 
 import {
-  FOLLOW_APP,
+  GLOBAL,
   type ProxyTestRun,
   type ProxyKind,
-  type ProxyProfile,
-  type ProxyProfileSettings,
+  type ProxyServer,
+  type ProxyServerSettings,
   type ProxySettings,
   type ProxyTestResult,
   type ProxyUse,
@@ -19,30 +19,30 @@ export function defaultProxySettings(): ProxySettings {
   return {
     proxy: { kind: 'system' },
     exceptions: { system: true, use_hosts: true, hosts: [] },
-    ftp_direct: false,
+    ftp_bypass_proxy: false,
   };
 }
 
 /** A new queue's proxy and exceptions: the app's. */
 export const FOLLOWS_APP_PROXY = {
-  proxy: FOLLOW_APP,
-  exceptions: FOLLOW_APP,
+  proxy: GLOBAL,
+  exceptions: GLOBAL,
 } as const satisfies Pick<QueueSettings, 'proxy' | 'exceptions'>;
 
 /** `host:port`, with an IPv6 address in brackets, as the core writes it. */
-export function proxyAddress(profile: ProxyProfileSettings): string {
+export function proxyAddress(profile: ProxyServerSettings): string {
   const host = profile.host.includes(':') ? `[${profile.host}]` : profile.host;
   return `${host}:${String(profile.port)}`;
 }
 
 /** A profile's name, or its address when it has none, as the core shows it. */
-export function shownName(profile: ProxyProfileSettings): string {
+export function shownName(profile: ProxyServerSettings): string {
   const name = profile.name.trim();
   return name === '' ? proxyAddress(profile) : name;
 }
 
 /** Whether `a` and `b` name the same proxy and login, so a password saved for one is the other's, as the core decides. */
-export function sameProxy(a: ProxyProfileSettings, b: ProxyProfileSettings): boolean {
+export function sameProxy(a: ProxyServerSettings, b: ProxyServerSettings): boolean {
   return (
     a.kind === b.kind &&
     a.host.trim().toLowerCase() === b.host.trim().toLowerCase() &&
@@ -58,25 +58,25 @@ export function queueProxy(queue: Queue, app: ProxySettings): ProxyUse {
 
 /** Whether `a` and `b` are the same proxy. */
 export function sameUse(a: ProxyUse, b: ProxyUse): boolean {
-  return a.kind === 'profile' && b.kind === 'profile' ? a.id === b.id : a.kind === b.kind;
+  return a.kind === 'server' && b.kind === 'server' ? a.id === b.id : a.kind === b.kind;
 }
 
 /** The profile `proxy` names, if it names one that is saved. */
 export function profileOf(
   proxy: ProxyUse,
-  profiles: readonly ProxyProfile[],
-): ProxyProfile | undefined {
-  return proxy.kind === 'profile' ? profiles.find((p) => p.id === proxy.id) : undefined;
+  profiles: readonly ProxyServer[],
+): ProxyServer | undefined {
+  return proxy.kind === 'server' ? profiles.find((p) => p.id === proxy.id) : undefined;
 }
 
 /** `proxy` in words. */
-export function proxyName(proxy: ProxyUse, profiles: readonly ProxyProfile[]): string {
+export function proxyName(proxy: ProxyUse, profiles: readonly ProxyServer[]): string {
   switch (proxy.kind) {
     case 'system':
       return 'System proxy';
     case 'direct':
       return 'No proxy';
-    case 'profile': {
+    case 'server': {
       const profile = profileOf(proxy, profiles);
       return profile ? shownName(profile.settings) : 'A deleted proxy';
     }

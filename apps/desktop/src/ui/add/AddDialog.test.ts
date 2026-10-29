@@ -4,7 +4,7 @@ import { queueId } from '@wirecatch/protocol';
 import { fireEvent, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { claimsOf } from '$lib/queue-claims';
+import { rulesOf } from '$lib/queue-rules';
 import { NO_LINK } from '$lib/state/add-draft.svelte';
 import { renderApp, settle } from '$lib/testing/setup';
 
@@ -163,14 +163,14 @@ describe('the Add dialog', () => {
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ queue: queueId(2), start: false }));
   });
 
-  it('sends each link where the claims do, and says where and why', async () => {
+  it('sends each link where the rules do, and says where and why', async () => {
     const { app, user, press } = await setup();
     const work = app.queues.list.find((q) => q.settings.name === 'Work files');
     if (!work) throw new Error('no sample queue');
     const settings = JSON.parse(JSON.stringify(work.settings)) as typeof work.settings;
     await app.queues.save(work.id, {
       ...settings,
-      takes: { kind: 'auto', ...claimsOf(undefined), sites: ['share.example.com'] },
+      add_downloads: { kind: 'auto', ...rulesOf(undefined), sites: ['share.example.com'] },
     });
     app.openDialog({ kind: 'add', urls: ['https://share.example.com/a.zip'] });
     await settle();
@@ -189,8 +189,8 @@ describe('the Add dialog', () => {
     expect(added?.url).toBe('https://share.example.com/a.zip');
     expect(added?.queue).toBe(work.id);
     expect(added?.queue_reason).toEqual({
-      kind: 'claimed',
-      claim: { kind: 'site', claim: 'share.example.com' },
+      kind: 'matched',
+      rule: { kind: 'site', value: 'share.example.com' },
     });
   });
 

@@ -48,7 +48,7 @@ Runtimes column: R = Rust build (const or `include_str!`), T = TypeScript build 
 | 32 | `PROTOCOL_VERSION = 1` | wire protocol version | `crates/protocol/src/lib.rs:21`; regex-scraped by `packages/protocol/scripts/write-index.mjs:16` into `packages/protocol/src/index.ts:3` | R, T |
 | 33 | `UNKNOWN_REQUEST_ID = 0` | wire constant | `crates/protocol/src/wire.rs:19`; scraped by `write-index.mjs:19` into `index.ts:5` | R, T |
 | 34 | `1024 * 1024` (1 MiB frame cap) | wire limit | `crates/protocol/src/frame.rs:14` (`MAX_FRAME_LEN`); copied by hand in `apps/extension/src/lib/native/client.ts:15` (`MAX_MESSAGE_BYTES`) and in copy `:290`; `docs/DECISIONS.md:88` | R, T |
-| 35 | `PROFILE_FORMAT_VERSION = 2` | settings file format | `crates/core/src/profile.rs:17` | R |
+| 35 | `SETTINGS_FILE_FORMAT_VERSION = 2` | settings file format | `crates/core/src/profile.rs:17` | R |
 | 36 | `Wirecatch/<CARGO_PKG_VERSION>` | HTTP User-Agent | `crates/engine/src/download.rs:153` (uses the engine crate version, not the app version) | R |
 | 37 | `WirecatchE2E/1.0` | test User-Agent | `crates/e2e/src/app.rs:265` | R |
 | 38 | `wirecatch://event` | Tauri event name | `apps/desktop/src-tauri/src/lib.rs:122`; `apps/desktop/src/lib/backend/types.ts:229`; `apps/desktop/src-tauri/capabilities/default.json:4`, `download-windows.json:4` (descriptions) | R, T |

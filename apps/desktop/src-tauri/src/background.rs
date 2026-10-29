@@ -218,7 +218,7 @@ fn tell_added<R: Runtime>(
     if settings.start_notice == StartNotice::Nothing {
         return;
     }
-    let stays = Duration::from_millis(settings.start_note_time.millis());
+    let stays = Duration::from_millis(settings.start_notice_time.millis());
     browser_notes::tell(app, made(stays), NoteKind::Started, Some(stays));
 }
 
@@ -252,7 +252,7 @@ pub fn tell<R: Runtime>(app: &AppHandle<R>, settings: &AppSettings, tell: &Tell)
                 (NoteKind::Failed, None)
             } else {
                 let stays = settings
-                    .finish_note_time
+                    .finish_notice_time
                     .millis()
                     .map(Duration::from_millis);
                 (NoteKind::Finished, stays)
@@ -286,7 +286,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
     let mut settings = manager.get_settings();
     let mut teller = Teller::default();
     teller.queues(&manager.list_queues());
-    let mut profiles = manager.list_proxy_profiles();
+    let mut profiles = manager.list_proxy_servers();
     tray::set_proxies(&app, &tray_proxy::items(&settings.proxy, &profiles));
     sync_autostart(&app, &manager, settings.start_with_system, false);
 
@@ -312,7 +312,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
                             }
                             settings = *new;
                         }
-                        UiEvent::ProxyProfilesChanged(list) => {
+                        UiEvent::ProxyServersChanged(list) => {
                             profiles = list;
                             tray::set_proxies(&app, &tray_proxy::items(&settings.proxy, &profiles));
                         }
@@ -330,7 +330,7 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
                     activity.load(&manager.list_downloads());
                     settings = manager.get_settings();
                     teller.queues(&manager.list_queues());
-                    profiles = manager.list_proxy_profiles();
+                    profiles = manager.list_proxy_servers();
                     tray::set_proxies(&app, &tray_proxy::items(&settings.proxy, &profiles));
                     tooltip_stale = true;
                 }

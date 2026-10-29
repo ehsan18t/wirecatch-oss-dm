@@ -6,13 +6,13 @@
   import AddDialog from '../../ui/add/AddDialog.svelte';
   import CancelDialog from './CancelDialog.svelte';
   import DeleteProxyDialog from './DeleteProxyDialog.svelte';
-  import ProxyProfileDialog from './ProxyProfileDialog.svelte';
+  import ProxyServerDialog from './ProxyServerDialog.svelte';
   import RemoveAddonDialog from './RemoveAddonDialog.svelte';
   import QueueDialog from './QueueDialog.svelte';
   import RefreshDialog from './RefreshDialog.svelte';
   import RemoveDialog from './RemoveDialog.svelte';
   import ShortcutsDialog from './ShortcutsDialog.svelte';
-  import TransferDialog from './TransferDialog.svelte';
+  import ImportExportDialog from './ImportExportDialog.svelte';
 
   const app = getApp();
 
@@ -67,7 +67,7 @@
 {/snippet}
 
 {#snippet transferView(d: DialogOf<'export' | 'import'>)}
-  <TransferDialog mode={d.kind} />
+  <ImportExportDialog mode={d.kind} />
 {/snippet}
 
 {#snippet shortcutsView(_: DialogOf<'shortcuts'>)}
@@ -79,7 +79,7 @@
 {/snippet}
 
 {#snippet proxyView(d: DialogOf<'proxy'>)}
-  <ProxyProfileDialog id={d.id} />
+  <ProxyServerDialog id={d.id} />
 {/snippet}
 
 {#snippet deleteProxyView(d: DialogOf<'delete-proxy'>)}

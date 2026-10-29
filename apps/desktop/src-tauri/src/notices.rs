@@ -285,7 +285,7 @@ mod tests {
                 .to_string_lossy()
                 .into_owned(),
             queue: QueueId(1),
-            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
             category: Category::Archive,
             status,
             total: None,

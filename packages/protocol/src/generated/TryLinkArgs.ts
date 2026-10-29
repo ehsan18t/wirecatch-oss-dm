@@ -6,7 +6,7 @@ import type { LinkTrial } from './LinkTrial';
  */
 export type TryLinkArgs = {
   /**
-   * The link, and the claims to try it against.
+   * The link, and the rules to try it against.
    */
   trial: LinkTrial;
 };

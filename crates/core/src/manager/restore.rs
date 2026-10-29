@@ -7,10 +7,10 @@ use std::sync::Arc;
 use chrono::NaiveDateTime;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AppSettings, DownloadStatus, Queue, Setting};
-use wirecatch_protocol::claims::QueueReason;
 use wirecatch_protocol::proxy::ProxyUse;
+use wirecatch_protocol::rules::QueueReason;
 use wirecatch_settings::DEFAULT_QUEUE_ID;
-use wirecatch_settings::proxy::SavedProfile;
+use wirecatch_settings::proxy::SavedProxyServer;
 use wirecatch_sites::public_suffix::SuffixList;
 use wirecatch_store::{Snapshot, StoredDownload};
 
@@ -95,13 +95,13 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
     }
 
     let mut settings = settings;
-    let profiles = snapshot.proxy_profiles;
+    let profiles = snapshot.proxy_servers;
     // A password stays only with its profile; its id stays used, so no new profile takes it.
-    ids.proxy_profile = profiles
+    ids.proxy_server = profiles
         .iter()
         .map(|p| p.id.0)
         .chain(snapshot.proxy_logins.keys().map(|id| id.0))
-        .fold(snapshot.last_ids.proxy_profile, i64::max);
+        .fold(snapshot.last_ids.proxy_server, i64::max);
     let mut proxy_logins = snapshot.proxy_logins;
     proxy_logins.retain(|id, _| profiles.iter().any(|p| p.id == *id));
     let settings_changed =
@@ -121,7 +121,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         dirty: BTreeSet::default(),
         batches: Batches::default(),
         proxy_logins,
-        proxy_profiles: profiles,
+        proxy_servers: profiles,
         last_checked: around.now,
         ids,
         closed: false,
@@ -142,12 +142,12 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
 fn forget_missing_profiles(
     settings: &mut AppSettings,
     queues: &mut [QueueSlot],
-    profiles: &[SavedProfile],
+    profiles: &[SavedProxyServer],
 ) -> bool {
     let saved = |proxy: ProxyUse| wirecatch_settings::proxy::check_use(proxy, profiles).is_ok();
     for slot in queues {
         if slot.queue.settings.proxy.own().is_some_and(|p| !saved(p)) {
-            slot.queue.settings.proxy = Setting::FollowApp;
+            slot.queue.settings.proxy = Setting::Global;
         }
     }
     if saved(settings.proxy.proxy) {
@@ -293,7 +293,7 @@ mod tests {
                 file_name: "f".into(),
                 path: "f".into(),
                 queue: QueueId(queue),
-                queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+                queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
                 category: Category::Other,
                 status,
                 total: Some(10),
@@ -372,7 +372,7 @@ mod tests {
         let queue = &restored.state.queue_list()[0].settings;
         assert_eq!(
             (queue.max_concurrent, queue.speed_limit),
-            (Setting::Own(1), Setting::FollowApp)
+            (Setting::Own(1), Setting::Global)
         );
     }
 
@@ -415,7 +415,7 @@ mod tests {
             ],
             batches: Vec::new(),
             proxy_logins: wirecatch_settings::proxy::Logins::new(),
-            proxy_profiles: Vec::new(),
+            proxy_servers: Vec::new(),
             recoveries: Vec::new(),
             not_private: None,
         };

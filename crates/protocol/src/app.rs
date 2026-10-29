@@ -3,11 +3,11 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ts_rs::TS;
 
-use crate::claims::{QueueReason, QueueTakes};
 use crate::extension::{ExtensionSettings, ExtensionSettingsPatch};
-use crate::proxy::{ProxyProfile, ProxyProfileSettings, ProxySettings, ProxyUse, QueueExceptions};
+use crate::proxy::{ProxyServer, ProxyServerSettings, ProxySettings, ProxyUse, QueueExceptions};
+use crate::rules::{AddDownloads, QueueReason};
 use crate::secret::Link;
-use crate::{DownloadId, ProxyProfileId, QuestionId, QueueId};
+use crate::{DownloadId, ProxyServerId, QuestionId, QueueId};
 
 /// One row of the download list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -196,30 +196,30 @@ pub struct Queue {
     pub status: QueueStatus,
 }
 
-/// A queue setting that follows the app's or is the queue's own (D72.1).
+/// A queue setting that uses the global value or is the queue's own (D72.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "source", content = "value", rename_all = "snake_case")]
 #[ts(export)]
 pub enum Setting<T> {
-    FollowApp,
+    Global,
     Own(T),
 }
 
 impl<T> Setting<T> {
-    /// The queue's own value, `None` when it follows the app.
+    /// The queue's own value, `None` when it uses the global one.
     #[must_use]
     pub fn own(self) -> Option<T> {
         match self {
-            Self::FollowApp => None,
+            Self::Global => None,
             Self::Own(value) => Some(value),
         }
     }
 
-    /// The queue's own value by reference, `None` when it follows the app.
+    /// The queue's own value by reference, `None` when it uses the global one.
     #[must_use]
     pub fn own_ref(&self) -> Option<&T> {
         match self {
-            Self::FollowApp => None,
+            Self::Global => None,
             Self::Own(value) => Some(value),
         }
     }
@@ -245,8 +245,8 @@ pub struct QueueSettings {
     pub exceptions: Setting<QueueExceptions>,
     /// When set, the queue only runs inside this window.
     pub schedule: Option<Schedule>,
-    /// Manual, or auto with the new downloads it claims (D72.2).
-    pub takes: QueueTakes,
+    /// Manual, or auto with the new downloads it rules (D72.2).
+    pub add_downloads: AddDownloads,
     /// When the person is told its downloads finished (D52).
     #[serde(default, with = "known_or_default")]
     #[ts(as = "QueueNotify")]
@@ -259,12 +259,12 @@ impl QueueSettings {
         Self {
             name: name.into(),
             description: String::new(),
-            max_concurrent: Setting::FollowApp,
-            speed_limit: Setting::FollowApp,
-            connections: Setting::FollowApp,
-            proxy: Setting::FollowApp,
-            exceptions: Setting::FollowApp,
-            takes: QueueTakes::Manual,
+            max_concurrent: Setting::Global,
+            speed_limit: Setting::Global,
+            connections: Setting::Global,
+            proxy: Setting::Global,
+            exceptions: Setting::Global,
+            add_downloads: AddDownloads::Manual,
             schedule: None,
             notify: QueueNotify::EachDownload,
         }
@@ -285,7 +285,7 @@ pub struct QueueStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct ProfileQueue {
+pub struct SettingsFileQueue {
     /// Its id where the profile was written; the profile's settings refer to it.
     pub id: QueueId,
     pub is_default: bool,
@@ -294,10 +294,10 @@ pub struct ProfileQueue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct ProfileProxy {
+pub struct SettingsFileProxy {
     /// Its id where the profile was written; the profile's settings and queues refer to it.
-    pub id: ProxyProfileId,
-    pub settings: ProxyProfileSettings,
+    pub id: ProxyServerId,
+    pub settings: ProxyServerSettings,
 }
 
 /// A queue that is done: nothing in it downloads or waits to start (D52). It covers the
@@ -1001,7 +1001,7 @@ pub enum StartNotice {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
-pub enum StartNoteTime {
+pub enum StartNoticeTime {
     /// Three seconds.
     #[default]
     ThreeSeconds,
@@ -1013,15 +1013,15 @@ pub enum StartNoteTime {
     TenSeconds,
 }
 
-impl StartNoteTime {
+impl StartNoticeTime {
     /// How long it stays, in seconds.
     #[must_use]
     pub const fn seconds(self) -> u64 {
         match self {
-            StartNoteTime::ThreeSeconds => 3,
-            StartNoteTime::FiveSeconds => 5,
-            StartNoteTime::EightSeconds => 8,
-            StartNoteTime::TenSeconds => 10,
+            StartNoticeTime::ThreeSeconds => 3,
+            StartNoticeTime::FiveSeconds => 5,
+            StartNoticeTime::EightSeconds => 8,
+            StartNoticeTime::TenSeconds => 10,
         }
     }
 
@@ -1037,7 +1037,7 @@ impl StartNoteTime {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
-pub enum FinishNoteTime {
+pub enum FinishNoticeTime {
     /// Five seconds.
     FiveSeconds,
     /// Eight seconds.
@@ -1049,15 +1049,15 @@ pub enum FinishNoteTime {
     UntilClosed,
 }
 
-impl FinishNoteTime {
+impl FinishNoticeTime {
     /// How long it stays in seconds, or `None` until the person closes it.
     #[must_use]
     pub const fn seconds(self) -> Option<u64> {
         match self {
-            FinishNoteTime::FiveSeconds => Some(5),
-            FinishNoteTime::EightSeconds => Some(8),
-            FinishNoteTime::FifteenSeconds => Some(15),
-            FinishNoteTime::UntilClosed => None,
+            FinishNoticeTime::FiveSeconds => Some(5),
+            FinishNoticeTime::EightSeconds => Some(8),
+            FinishNoticeTime::FifteenSeconds => Some(15),
+            FinishNoticeTime::UntilClosed => None,
         }
     }
 
@@ -1141,12 +1141,12 @@ pub struct AppSettingsPatch {
     pub close_to_tray: Option<bool>,
     /// The new [`AppSettings::finish_notice`].
     pub finish_notice: Option<FinishNotice>,
-    /// The new [`AppSettings::finish_note_time`].
-    pub finish_note_time: Option<FinishNoteTime>,
+    /// The new [`AppSettings::finish_notice_time`].
+    pub finish_notice_time: Option<FinishNoticeTime>,
     /// The new [`AppSettings::start_notice`].
     pub start_notice: Option<StartNotice>,
-    /// The new [`AppSettings::start_note_time`].
-    pub start_note_time: Option<StartNoteTime>,
+    /// The new [`AppSettings::start_notice_time`].
+    pub start_notice_time: Option<StartNoticeTime>,
     /// The new [`AppSettings::notify_during_do_not_disturb`].
     pub notify_during_do_not_disturb: Option<bool>,
     /// The new [`AppSettings::auto_update_addons`].
@@ -1275,8 +1275,8 @@ crate::exported::exported_consts! {
     /// [`ProcessingProgress::per_mille`] of a finished step: progress is counted in tenths of
     /// a percent.
     pub const PER_MILLE_DONE: u16 = 1000;
-    /// The only [`SettingsProfile::format_version`] this build reads and writes (D75).
-    pub const PROFILE_FORMAT_VERSION: u32 = 3;
+    /// The only [`SettingsFile::format_version`] this build reads and writes (D75).
+    pub const SETTINGS_FILE_FORMAT_VERSION: u32 = 3;
     /// Most download windows asking a question at once (D23); later questions wait until one
     /// of them closes.
     pub const MAX_QUESTION_WINDOWS: usize = 5;
@@ -1297,20 +1297,20 @@ crate::exported::exported_consts! {
     /// download complete window offer Try again for them (D52). The others need the person's
     /// answer first: a fresh link, another folder, or keeping the original.
     pub const RETRY_FIXES: &[FixAction] = &[FixAction::Retry, FixAction::FreeDiskSpace];
-    /// Every [`StartNoteTime`] with its seconds, in the order settings offer them (D65).
-    pub const START_NOTE_TIMES: &[(StartNoteTime, u64)] = &[
-        (StartNoteTime::ThreeSeconds, StartNoteTime::ThreeSeconds.seconds()),
-        (StartNoteTime::FiveSeconds, StartNoteTime::FiveSeconds.seconds()),
-        (StartNoteTime::EightSeconds, StartNoteTime::EightSeconds.seconds()),
-        (StartNoteTime::TenSeconds, StartNoteTime::TenSeconds.seconds()),
+    /// Every [`StartNoticeTime`] with its seconds, in the order settings offer them (D65).
+    pub const START_NOTICE_TIMES: &[(StartNoticeTime, u64)] = &[
+        (StartNoticeTime::ThreeSeconds, StartNoticeTime::ThreeSeconds.seconds()),
+        (StartNoticeTime::FiveSeconds, StartNoticeTime::FiveSeconds.seconds()),
+        (StartNoticeTime::EightSeconds, StartNoticeTime::EightSeconds.seconds()),
+        (StartNoticeTime::TenSeconds, StartNoticeTime::TenSeconds.seconds()),
     ];
-    /// Every [`FinishNoteTime`] with its seconds (`null` until closed), in the order settings
+    /// Every [`FinishNoticeTime`] with its seconds (`null` until closed), in the order settings
     /// offer them (D65).
-    pub const FINISH_NOTE_TIMES: &[(FinishNoteTime, Option<u64>)] = &[
-        (FinishNoteTime::FiveSeconds, FinishNoteTime::FiveSeconds.seconds()),
-        (FinishNoteTime::EightSeconds, FinishNoteTime::EightSeconds.seconds()),
-        (FinishNoteTime::FifteenSeconds, FinishNoteTime::FifteenSeconds.seconds()),
-        (FinishNoteTime::UntilClosed, FinishNoteTime::UntilClosed.seconds()),
+    pub const FINISH_NOTICE_TIMES: &[(FinishNoticeTime, Option<u64>)] = &[
+        (FinishNoticeTime::FiveSeconds, FinishNoticeTime::FiveSeconds.seconds()),
+        (FinishNoticeTime::EightSeconds, FinishNoticeTime::EightSeconds.seconds()),
+        (FinishNoticeTime::FifteenSeconds, FinishNoticeTime::FifteenSeconds.seconds()),
+        (FinishNoticeTime::UntilClosed, FinishNoticeTime::UntilClosed.seconds()),
     ];
     /// Every [`Accent`], in the order settings offer them. The design system in `packages/ui`
     /// reads this list and defines a palette for each of these but `system`; its tests fail on
@@ -1369,16 +1369,16 @@ pub struct AppSettings {
     pub finish_notice: FinishNotice,
     /// How long a browser note about finished downloads stays (D65).
     #[serde(default, with = "known_or_default")]
-    #[ts(as = "FinishNoteTime")]
-    pub finish_note_time: FinishNoteTime,
+    #[ts(as = "FinishNoticeTime")]
+    pub finish_notice_time: FinishNoticeTime,
     /// How the person is told that a browser download started without a window (D65).
     #[serde(default, with = "known_or_default")]
     #[ts(as = "StartNotice")]
     pub start_notice: StartNotice,
     /// How long a browser note about a download that started stays (D65).
     #[serde(default, with = "known_or_default")]
-    #[ts(as = "StartNoteTime")]
-    pub start_note_time: StartNoteTime,
+    #[ts(as = "StartNoticeTime")]
+    pub start_notice_time: StartNoticeTime,
     /// Notifications about downloads that finished or failed, and problems the person must know
     /// about, show even while the system's Do Not Disturb is on (D64). Off: Do Not Disturb holds
     /// them back, as it does any app's. The brief notice of a download that started is never
@@ -1429,9 +1429,9 @@ impl AppSettings {
             start_with_system,
             close_to_tray,
             finish_notice,
-            finish_note_time,
+            finish_notice_time,
             start_notice,
-            start_note_time,
+            start_notice_time,
             notify_during_do_not_disturb,
             auto_update_addons,
             show_progress_windows,
@@ -1452,9 +1452,9 @@ impl AppSettings {
             start_with_system: new_start_with_system,
             close_to_tray: new_close_to_tray,
             finish_notice: new_finish_notice,
-            finish_note_time: new_finish_note_time,
+            finish_notice_time: new_finish_notice_time,
             start_notice: new_start_notice,
-            start_note_time: new_start_note_time,
+            start_notice_time: new_start_notice_time,
             notify_during_do_not_disturb: new_notify_during_do_not_disturb,
             auto_update_addons: new_auto_update_addons,
             show_progress_windows: new_show_progress_windows,
@@ -1476,9 +1476,9 @@ impl AppSettings {
         set(start_with_system, new_start_with_system);
         set(close_to_tray, new_close_to_tray);
         set(finish_notice, new_finish_notice);
-        set(finish_note_time, new_finish_note_time);
+        set(finish_notice_time, new_finish_notice_time);
         set(start_notice, new_start_notice);
-        set(start_note_time, new_start_note_time);
+        set(start_notice_time, new_start_notice_time);
         set(
             notify_during_do_not_disturb,
             new_notify_during_do_not_disturb,
@@ -1554,7 +1554,7 @@ impl OutputDefaults {
 /// The file written by settings export and read by import (D6).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct SettingsProfile {
+pub struct SettingsFile {
     /// Version of this file's layout; an app refuses a profile newer than it understands.
     pub format_version: u32,
     /// Version of the app that wrote it.
@@ -1565,9 +1565,9 @@ pub struct SettingsProfile {
     /// Every setting.
     pub settings: AppSettings,
     /// Every queue, with its limits and schedule, in sidebar order.
-    pub queues: Vec<ProfileQueue>,
-    /// Every proxy profile, without its password or last test.
-    pub proxy_profiles: Vec<ProfileProxy>,
+    pub queues: Vec<SettingsFileQueue>,
+    /// Every proxy server, without its password or last test.
+    pub proxy_servers: Vec<SettingsFileProxy>,
     /// The installed add-ons, offered for installing on import.
     pub addons: Vec<AddonId>,
 }
@@ -1578,7 +1578,7 @@ pub struct SettingsProfile {
 pub struct AddRequest {
     /// The address to download.
     pub url: Link,
-    /// The queue picked; absent, the claims place it, else it joins the default queue (D72.3).
+    /// The queue picked; absent, the rules place it, else it joins the default queue (D72.3).
     pub queue: Option<QueueId>,
     /// Absolute folder; the category rule decides if absent.
     pub folder: Option<String>,
@@ -1640,8 +1640,8 @@ pub enum UiEvent {
     DownloadsRemoved(Vec<DownloadId>),
     /// Every queue, in sidebar order, after any queue changed.
     QueuesChanged(Vec<Queue>),
-    /// Every proxy profile, after any changed or was tested.
-    ProxyProfilesChanged(Vec<ProxyProfile>),
+    /// Every proxy server, after any changed or was tested.
+    ProxyServersChanged(Vec<ProxyServer>),
     /// Every setting, after any changed. Boxed: the settings are far larger than any other event.
     SettingsChanged(Box<AppSettings>),
     /// A browser capture started; the UI shows the toast with Change and Open folder (D4).

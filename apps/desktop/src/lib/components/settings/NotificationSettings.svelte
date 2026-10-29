@@ -2,17 +2,17 @@
   // Notifications: how Wirecatch tells you a download started (a note in the browser, D65), finished or failed (D52), and whether notifications show during the system's Do Not Disturb (D64). When it tells about finished downloads is each queue's choice, so the default queue's is named under the dropdown, with a way to change it.
   import type {
     FinishNotice,
-    FinishNoteTime,
+    FinishNoticeTime,
     StartNotice,
-    StartNoteTime,
+    StartNoticeTime,
   } from '@wirecatch/protocol';
   import type { Snippet } from 'svelte';
   import { Button, Select } from '@wirecatch/ui';
   import {
-    FINISH_NOTE_TIME_OPTIONS,
+    FINISH_NOTICE_TIME_OPTIONS,
     FINISH_NOTICE_OPTIONS,
     queueNotifyLine,
-    START_NOTE_TIME_OPTIONS,
+    START_NOTICE_TIME_OPTIONS,
     START_NOTICE_OPTIONS,
   } from '$lib/finish-notices';
   import { getApp } from '$lib/state/app.svelte';
@@ -26,9 +26,9 @@
 
   const controls: Record<SettingIn<'notifications'>, Snippet<[Row]>> = {
     start_notice: startNotice,
-    start_note_time: startNoteTime,
+    start_notice_time: startNoticeTime,
     finish_notice: finishNotice,
-    finish_note_time: finishNoteTime,
+    finish_notice_time: finishNoticeTime,
     notify_during_do_not_disturb: notifyDuringDoNotDisturb,
   };
 
@@ -47,14 +47,14 @@
   />
 {/snippet}
 
-{#snippet startNoteTime({ s, control }: Row)}
+{#snippet startNoticeTime({ s, control }: Row)}
   <Select
     {...control}
     class="w-56"
-    value={s.start_note_time}
-    options={START_NOTE_TIME_OPTIONS}
+    value={s.start_notice_time}
+    options={START_NOTICE_TIME_OPTIONS}
     disabled={s.start_notice !== 'browser'}
-    onchange={(time: StartNoteTime) => save((d) => void (d.start_note_time = time))}
+    onchange={(time: StartNoticeTime) => save((d) => void (d.start_notice_time = time))}
   />
 {/snippet}
 
@@ -81,14 +81,14 @@
   </div>
 {/snippet}
 
-{#snippet finishNoteTime({ s, control }: Row)}
+{#snippet finishNoticeTime({ s, control }: Row)}
   <Select
     {...control}
     class="w-56"
-    value={s.finish_note_time}
-    options={FINISH_NOTE_TIME_OPTIONS}
+    value={s.finish_notice_time}
+    options={FINISH_NOTICE_TIME_OPTIONS}
     disabled={s.finish_notice !== 'browser'}
-    onchange={(time: FinishNoteTime) => save((d) => void (d.finish_note_time = time))}
+    onchange={(time: FinishNoticeTime) => save((d) => void (d.finish_notice_time = time))}
   />
 {/snippet}
 

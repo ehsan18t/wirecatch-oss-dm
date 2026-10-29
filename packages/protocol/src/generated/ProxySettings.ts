@@ -15,5 +15,5 @@ export type ProxySettings = {
    * An FTP link whose proxy cannot carry FTP (anything but SOCKS5) goes directly
    * instead of failing (D71.4).
    */
-  ftp_direct: boolean;
+  ftp_bypass_proxy: boolean;
 };

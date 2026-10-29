@@ -1,12 +1,12 @@
 <script lang="ts">
-  // Deleting a proxy profile: what uses it (the app's proxy, queues with it as their own) and what they use instead (D73.4). Downloads already using it finish through it.
-  import type { ProxyProfileId, ProxyUse } from '@wirecatch/protocol';
+  // Deleting a proxy server: what uses it (the app's proxy, queues with it as their own) and what they use instead (D73.4). Downloads already using it finish through it.
+  import type { ProxyServerId, ProxyUse } from '@wirecatch/protocol';
   import { Button, Dialog, Field, Select, type FieldControl } from '@wirecatch/ui';
   import { shownName } from '$lib/proxy';
   import { getApp } from '$lib/state/app.svelte';
-  import { usersLine } from '$lib/state/proxy-profiles.svelte';
+  import { usersLine } from '$lib/state/proxy-servers.svelte';
 
-  let { id }: { id: ProxyProfileId } = $props();
+  let { id }: { id: ProxyServerId } = $props();
   const app = getApp();
 
   const profile = $derived(app.proxies.byId(id));
@@ -28,7 +28,7 @@
   function replacement(): ProxyUse {
     if (choice === SYSTEM || choice === DIRECT) return { kind: choice };
     const other = app.proxies.list.find((p) => String(p.id) === choice);
-    return other ? { kind: 'profile', id: other.id } : { kind: 'system' };
+    return other ? { kind: 'server', id: other.id } : { kind: 'system' };
   }
 
   async function remove() {

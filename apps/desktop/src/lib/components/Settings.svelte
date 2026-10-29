@@ -29,7 +29,7 @@
   import QueueSettings from './settings/QueueSettings.svelte';
   import SpeedSettings from './settings/SpeedSettings.svelte';
   import type { SectionProps } from './settings/row';
-  import TransferSettings from './settings/TransferSettings.svelte';
+  import ImportExportSettings from './settings/ImportExportSettings.svelte';
 
   const app = getApp();
 
@@ -44,7 +44,7 @@
     speed: SpeedSettings,
     queues: QueueSettings,
     network: NetworkSettings,
-    transfer: TransferSettings,
+    import_export: ImportExportSettings,
     advanced: AdvancedSettings,
   };
 

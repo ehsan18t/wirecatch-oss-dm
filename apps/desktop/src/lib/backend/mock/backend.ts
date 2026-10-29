@@ -9,13 +9,13 @@ import type {
   CaptureConfirmation,
   DownloadId,
   MediaSelection,
-  ProxyProfileDraft,
-  ProxyProfileId,
+  ProxyServerDraft,
+  ProxyServerId,
   ProxyUse,
   QuestionId,
   QueueId,
   QueueSettings,
-  SettingsProfile,
+  SettingsFile,
   StartupNotice,
   UiEvent,
   LinkTrial,
@@ -274,7 +274,7 @@ export class MockBackend extends MockShell implements Backend {
   }
 
   /** Puts a settings file where the file picker finds it, as if made elsewhere. */
-  putSettingsFile(path: string, profile: SettingsProfile) {
+  putSettingsFile(path: string, profile: SettingsFile) {
     this.#state.files.set(path, structuredClone(profile));
   }
 
@@ -409,24 +409,24 @@ export class MockBackend extends MockShell implements Backend {
     return this.#call(() => queues.tryLink(this.#state, trial));
   }
 
-  listProxyProfiles() {
-    return this.#call(() => this.#state.proxyProfiles.map((p) => structuredClone(p)));
+  listProxyServers() {
+    return this.#call(() => this.#state.proxyServers.map((p) => structuredClone(p)));
   }
 
-  createProxyProfile(draft: ProxyProfileDraft) {
-    return this.#call(() => proxies.createProxyProfile(this.#state, draft));
+  createProxyServer(draft: ProxyServerDraft) {
+    return this.#call(() => proxies.createProxyServer(this.#state, draft));
   }
 
-  updateProxyProfile(id: ProxyProfileId, draft: ProxyProfileDraft) {
-    return this.#call(() => proxies.updateProxyProfile(this.#state, id, draft));
+  updateProxyServer(id: ProxyServerId, draft: ProxyServerDraft) {
+    return this.#call(() => proxies.updateProxyServer(this.#state, id, draft));
   }
 
-  deleteProxyProfile(id: ProxyProfileId, replacement: ProxyUse) {
-    return this.#call(() => proxies.deleteProxyProfile(this.#state, id, replacement));
+  deleteProxyServer(id: ProxyServerId, replacement: ProxyUse) {
+    return this.#call(() => proxies.deleteProxyServer(this.#state, id, replacement));
   }
 
-  testProxyProfile(id: ProxyProfileId | null, draft: ProxyProfileDraft) {
-    return this.#call(() => proxies.testProxyProfile(this.#state, id, draft));
+  testProxyServer(id: ProxyServerId | null, draft: ProxyServerDraft) {
+    return this.#call(() => proxies.testProxyServer(this.#state, id, draft));
   }
 
   copySystemProxy() {

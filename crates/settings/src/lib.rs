@@ -2,17 +2,17 @@
 
 mod error;
 pub mod folders;
-pub mod profile;
 pub mod proxy;
+pub mod settings_file;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
 
 use wirecatch_protocol::app::{
     Accent, AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
-    DEFAULT_MAX_CONCURRENT_DOWNLOADS, FinishNoteTime, FinishNotice, MAX_CONCURRENT_DOWNLOADS,
+    DEFAULT_MAX_CONCURRENT_DOWNLOADS, FinishNotice, FinishNoticeTime, MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD, MAX_QUEUE_DESCRIPTION_CHARS, MediaDefaults, OutputDefaults,
-    PortablePath, Queue, QueueSettings, QueueStatus, Setting, StartNoteTime, StartNotice, Theme,
+    PortablePath, Queue, QueueSettings, QueueStatus, Setting, StartNotice, StartNoticeTime, Theme,
     VideoQuality,
 };
 use wirecatch_protocol::extension::{
@@ -21,14 +21,14 @@ use wirecatch_protocol::extension::{
 };
 use wirecatch_protocol::proxy::{AppExceptions, ProxySettings};
 
-use wirecatch_protocol::claims::QueueTakes;
-use wirecatch_queues::{claims, schedule};
+use wirecatch_protocol::rules::AddDownloads;
+use wirecatch_queues::{rules, schedule};
 use wirecatch_sites::local_network::{self, NotALocalSite};
 use wirecatch_sites::public_suffix::SuffixList;
 
 use crate::folders::KnownFolders;
 
-pub use error::{ProfileError, Result, SettingsError};
+pub use error::{Result, SettingsError, SettingsFileError};
 
 pub use wirecatch_protocol::DEFAULT_QUEUE_ID;
 
@@ -113,9 +113,9 @@ pub fn default_settings() -> AppSettings {
         start_with_system: false,
         close_to_tray: true,
         finish_notice: FinishNotice::Browser,
-        finish_note_time: FinishNoteTime::EightSeconds,
+        finish_notice_time: FinishNoticeTime::EightSeconds,
         start_notice: StartNotice::Browser,
-        start_note_time: StartNoteTime::ThreeSeconds,
+        start_notice_time: StartNoticeTime::ThreeSeconds,
         notify_during_do_not_disturb: true,
         auto_update_addons: true,
         show_progress_windows: true,
@@ -245,7 +245,7 @@ pub fn queue_within_limits(mut settings: QueueSettings) -> QueueSettings {
     }
     if let Setting::Own(limit) = settings.speed_limit {
         settings.speed_limit =
-            speed_limit_within_limits(Some(limit)).map_or(Setting::FollowApp, Setting::Own);
+            speed_limit_within_limits(Some(limit)).map_or(Setting::Global, Setting::Own);
     }
     settings
 }
@@ -452,8 +452,9 @@ pub fn validate_queue(mut queue: QueueSettings) -> Result<QueueSettings> {
         check_connections(connections)?;
     }
     queue.exceptions = crate::proxy::validate_queue_exceptions(queue.exceptions)?;
-    if let QueueTakes::Auto(claims) = queue.takes {
-        queue.takes = QueueTakes::Auto(claims::checked(claims).map_err(SettingsError::Invalid)?);
+    if let AddDownloads::Auto(rules) = queue.add_downloads {
+        queue.add_downloads =
+            AddDownloads::Auto(rules::checked(rules).map_err(SettingsError::Invalid)?);
     }
     if let Some(s) = &queue.schedule {
         let times_valid =
@@ -971,20 +972,20 @@ mod tests {
 
     #[test]
     fn an_auto_queue_keeps_its_claims_cleaned_and_refuses_one_that_names_nothing() {
-        use wirecatch_protocol::claims::QueueClaims;
+        use wirecatch_protocol::rules::QueueRules;
         let mut q = default_queue().settings;
-        q.takes = QueueTakes::Auto(QueueClaims {
+        q.add_downloads = AddDownloads::Auto(QueueRules {
             enabled: true,
             sites: vec![" example.com ".into(), String::new()],
-            ..QueueClaims::default()
+            ..QueueRules::default()
         });
-        let QueueTakes::Auto(kept) = validate_queue(q.clone()).unwrap().takes else {
+        let AddDownloads::Auto(kept) = validate_queue(q.clone()).unwrap().add_downloads else {
             panic!("the queue stopped being an auto queue");
         };
         assert_eq!(kept.sites, ["example.com"]);
-        q.takes = QueueTakes::Auto(QueueClaims {
+        q.add_downloads = AddDownloads::Auto(QueueRules {
             sites: vec!["*".into()],
-            ..QueueClaims::default()
+            ..QueueRules::default()
         });
         assert!(validate_queue(q).unwrap_err().to_string().contains("\"*\""));
     }

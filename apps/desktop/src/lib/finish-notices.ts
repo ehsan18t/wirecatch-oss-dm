@@ -2,15 +2,15 @@
 // words Settings, the queue dialog and the download complete window share.
 
 import {
-  FINISH_NOTE_TIMES,
+  FINISH_NOTICE_TIMES,
   RETRY_FIXES,
-  START_NOTE_TIMES,
+  START_NOTICE_TIMES,
   type DownloadSummary,
   type FinishNotice,
-  type FinishNoteTime,
+  type FinishNoticeTime,
   type QueueNotify,
   type StartNotice,
-  type StartNoteTime,
+  type StartNoticeTime,
 } from '@wirecatch/protocol';
 import type { SelectOption } from '@wirecatch/ui';
 
@@ -50,14 +50,13 @@ export const START_NOTICE_OPTIONS: readonly SelectOption<StartNotice>[] = [
   { value: 'nothing', label: 'Don’t notify', description: 'The download list shows it.' },
 ];
 
-/** How long a note about a download that started stays, from the protocol's seconds (`START_NOTE_TIMES`). */
-export const START_NOTE_TIME_OPTIONS: readonly SelectOption<StartNoteTime>[] = START_NOTE_TIMES.map(
-  ([value, seconds]) => ({ value, label: `${String(seconds)} seconds` }),
-);
+/** How long a note about a download that started stays, from the protocol's seconds (`START_NOTICE_TIMES`). */
+export const START_NOTICE_TIME_OPTIONS: readonly SelectOption<StartNoticeTime>[] =
+  START_NOTICE_TIMES.map(([value, seconds]) => ({ value, label: `${String(seconds)} seconds` }));
 
-/** How long a note about finished downloads stays, from the protocol's seconds (`FINISH_NOTE_TIMES`). */
-export const FINISH_NOTE_TIME_OPTIONS: readonly SelectOption<FinishNoteTime>[] =
-  FINISH_NOTE_TIMES.map(([value, seconds]) => ({
+/** How long a note about finished downloads stays, from the protocol's seconds (`FINISH_NOTICE_TIMES`). */
+export const FINISH_NOTICE_TIME_OPTIONS: readonly SelectOption<FinishNoticeTime>[] =
+  FINISH_NOTICE_TIMES.map(([value, seconds]) => ({
     value,
     label: seconds === null ? 'Until I close it' : `${String(seconds)} seconds`,
   }));

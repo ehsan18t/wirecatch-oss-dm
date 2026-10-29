@@ -3,6 +3,7 @@
 import type { Accent } from './Accent';
 import type { AddAction } from './AddAction';
 import type { AddDownloadArgs } from './AddDownloadArgs';
+import type { AddDownloads } from './AddDownloads';
 import type { AddRequest } from './AddRequest';
 import type { AddVideoPageArgs } from './AddVideoPageArgs';
 import type { AddedDownload } from './AddedDownload';
@@ -27,27 +28,26 @@ import type { Category } from './Category';
 import type { CategoryRule } from './CategoryRule';
 import type { ChangeSettingsArgs } from './ChangeSettingsArgs';
 import type { ChooseMediaArgs } from './ChooseMediaArgs';
-import type { Claim } from './Claim';
 import type { ClientKind } from './ClientKind';
 import type { ConfirmCaptureArgs } from './ConfirmCaptureArgs';
 import type { ControlWindowArgs } from './ControlWindowArgs';
-import type { CreateProxyProfileArgs } from './CreateProxyProfileArgs';
+import type { CreateProxyServerArgs } from './CreateProxyServerArgs';
 import type { CreateQueueArgs } from './CreateQueueArgs';
-import type { DeleteProxyProfileArgs } from './DeleteProxyProfileArgs';
+import type { DeleteProxyServerArgs } from './DeleteProxyServerArgs';
 import type { DeleteQueueArgs } from './DeleteQueueArgs';
 import type { DismissMediaChoiceArgs } from './DismissMediaChoiceArgs';
 import type { DownloadId } from './DownloadId';
 import type { DownloadStatus } from './DownloadStatus';
 import type { DownloadSummary } from './DownloadSummary';
-import type { DraftClaims } from './DraftClaims';
+import type { DraftRules } from './DraftRules';
 import type { EarlierDownloadArgs } from './EarlierDownloadArgs';
 import type { ErrorCode } from './ErrorCode';
 import type { Event } from './Event';
 import type { ExportSettingsArgs } from './ExportSettingsArgs';
 import type { ExtensionSettings } from './ExtensionSettings';
 import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
-import type { FinishNoteTime } from './FinishNoteTime';
 import type { FinishNotice } from './FinishNotice';
+import type { FinishNoticeTime } from './FinishNoticeTime';
 import type { FinishedGroup } from './FinishedGroup';
 import type { FinishedList } from './FinishedList';
 import type { FinishedQueue } from './FinishedQueue';
@@ -65,7 +65,7 @@ import type { ImportedFolder } from './ImportedFolder';
 import type { InstallAddonArgs } from './InstallAddonArgs';
 import type { KeepOriginalArgs } from './KeepOriginalArgs';
 import type { Link } from './Link';
-import type { LinkClaims } from './LinkClaims';
+import type { LinkMatch } from './LinkMatch';
 import type { LinkProtocol } from './LinkProtocol';
 import type { LinkTrial } from './LinkTrial';
 import type { MediaChoice } from './MediaChoice';
@@ -99,14 +99,12 @@ import type { PortablePath } from './PortablePath';
 import type { PreviewImportArgs } from './PreviewImportArgs';
 import type { ProcessingProgress } from './ProcessingProgress';
 import type { ProcessingStep } from './ProcessingStep';
-import type { ProfileProxy } from './ProfileProxy';
-import type { ProfileQueue } from './ProfileQueue';
 import type { ProtocolError } from './ProtocolError';
 import type { ProxyKind } from './ProxyKind';
-import type { ProxyProfile } from './ProxyProfile';
-import type { ProxyProfileDraft } from './ProxyProfileDraft';
-import type { ProxyProfileId } from './ProxyProfileId';
-import type { ProxyProfileSettings } from './ProxyProfileSettings';
+import type { ProxyServer } from './ProxyServer';
+import type { ProxyServerDraft } from './ProxyServerDraft';
+import type { ProxyServerId } from './ProxyServerId';
+import type { ProxyServerSettings } from './ProxyServerSettings';
 import type { ProxySettings } from './ProxySettings';
 import type { ProxyTestResult } from './ProxyTestResult';
 import type { ProxyTestRun } from './ProxyTestRun';
@@ -115,16 +113,15 @@ import type { QualityFallback } from './QualityFallback';
 import type { Question } from './Question';
 import type { QuestionId } from './QuestionId';
 import type { Queue } from './Queue';
-import type { QueueClaims } from './QueueClaims';
 import type { QueueExceptions } from './QueueExceptions';
 import type { QueueId } from './QueueId';
 import type { QueueNotify } from './QueueNotify';
 import type { QueueReason } from './QueueReason';
 import type { QueueReport } from './QueueReport';
+import type { QueueRules } from './QueueRules';
 import type { QueueSettings } from './QueueSettings';
 import type { QueueStatus } from './QueueStatus';
 import type { QueueSummary } from './QueueSummary';
-import type { QueueTakes } from './QueueTakes';
 import type { RefreshLinkArgs } from './RefreshLinkArgs';
 import type { RejectCaptureArgs } from './RejectCaptureArgs';
 import type { RemoveAddonArgs } from './RemoveAddonArgs';
@@ -135,29 +132,32 @@ import type { ReportUnreadableEventArgs } from './ReportUnreadableEventArgs';
 import type { ResumeArgs } from './ResumeArgs';
 import type { RetryArgs } from './RetryArgs';
 import type { Reveal } from './Reveal';
+import type { Rule } from './Rule';
+import type { RuleMatch } from './RuleMatch';
 import type { Schedule } from './Schedule';
 import type { SetDownloadFolderArgs } from './SetDownloadFolderArgs';
 import type { SetMaximizeButtonArgs } from './SetMaximizeButtonArgs';
 import type { SetQueueOrderArgs } from './SetQueueOrderArgs';
 import type { SetQueuePausedArgs } from './SetQueuePausedArgs';
-import type { SettingsProfile } from './SettingsProfile';
+import type { SettingsFile } from './SettingsFile';
+import type { SettingsFileProxy } from './SettingsFileProxy';
+import type { SettingsFileQueue } from './SettingsFileQueue';
 import type { ShowDownloadDetailsArgs } from './ShowDownloadDetailsArgs';
 import type { ShowProgressWindowArgs } from './ShowProgressWindowArgs';
-import type { StartNoteTime } from './StartNoteTime';
 import type { StartNotice } from './StartNotice';
+import type { StartNoticeTime } from './StartNoticeTime';
 import type { StartQueueNowArgs } from './StartQueueNowArgs';
 import type { StartupNotice } from './StartupNotice';
 import type { StreamAction } from './StreamAction';
 import type { SuffixListInfo } from './SuffixListInfo';
 import type { SystemAppearance } from './SystemAppearance';
-import type { TestProxyProfileArgs } from './TestProxyProfileArgs';
+import type { TestProxyServerArgs } from './TestProxyServerArgs';
 import type { Theme } from './Theme';
 import type { TimeOfDay } from './TimeOfDay';
-import type { TriedClaim } from './TriedClaim';
 import type { TryLinkArgs } from './TryLinkArgs';
 import type { UiEvent } from './UiEvent';
 import type { UpdateAddonArgs } from './UpdateAddonArgs';
-import type { UpdateProxyProfileArgs } from './UpdateProxyProfileArgs';
+import type { UpdateProxyServerArgs } from './UpdateProxyServerArgs';
 import type { UpdateQueueArgs } from './UpdateQueueArgs';
 import type { UserError } from './UserError';
 import type { VideoQuality } from './VideoQuality';
@@ -202,6 +202,15 @@ export function isAddAction(value: unknown): value is AddAction {
 /** Whether `value` has the shape of a {@link AddDownloadArgs}; fields it does not name are not checked. */
 export function isAddDownloadArgs(value: unknown): value is AddDownloadArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isAddRequest(value1['request']))(value);
+}
+
+/** Whether `value` has the shape of a {@link AddDownloads}; fields it does not name are not checked. */
+export function isAddDownloads(value: unknown): value is AddDownloads {
+  return (
+    ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'manual')(value) ||
+    (((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'auto')(value) &&
+      isQueueRules(value))
+  );
 }
 
 /** Whether `value` has the shape of a {@link AddRequest}; fields it does not name are not checked. */
@@ -306,9 +315,9 @@ export function isAppSettings(value: unknown): value is AppSettings {
     typeof value1['start_with_system'] === 'boolean' &&
     typeof value1['close_to_tray'] === 'boolean' &&
     isFinishNotice(value1['finish_notice']) &&
-    isFinishNoteTime(value1['finish_note_time']) &&
+    isFinishNoticeTime(value1['finish_notice_time']) &&
     isStartNotice(value1['start_notice']) &&
-    isStartNoteTime(value1['start_note_time']) &&
+    isStartNoticeTime(value1['start_notice_time']) &&
     typeof value1['notify_during_do_not_disturb'] === 'boolean' &&
     typeof value1['auto_update_addons'] === 'boolean' &&
     typeof value1['show_progress_windows'] === 'boolean' &&
@@ -338,9 +347,10 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
       typeof value1['start_with_system'] === 'boolean') &&
     (value1['close_to_tray'] === undefined || typeof value1['close_to_tray'] === 'boolean') &&
     (value1['finish_notice'] === undefined || isFinishNotice(value1['finish_notice'])) &&
-    (value1['finish_note_time'] === undefined || isFinishNoteTime(value1['finish_note_time'])) &&
+    (value1['finish_notice_time'] === undefined ||
+      isFinishNoticeTime(value1['finish_notice_time'])) &&
     (value1['start_notice'] === undefined || isStartNotice(value1['start_notice'])) &&
-    (value1['start_note_time'] === undefined || isStartNoteTime(value1['start_note_time'])) &&
+    (value1['start_notice_time'] === undefined || isStartNoticeTime(value1['start_notice_time'])) &&
     (value1['notify_during_do_not_disturb'] === undefined ||
       typeof value1['notify_during_do_not_disturb'] === 'boolean') &&
     (value1['auto_update_addons'] === undefined ||
@@ -509,28 +519,6 @@ export function isChooseMediaArgs(value: unknown): value is ChooseMediaArgs {
     isRecord(value1) && isQuestionId(value1['id']) && isMediaSelection(value1['selection']))(value);
 }
 
-/** Whether `value` has the shape of a {@link Claim}; fields it does not name are not checked. */
-export function isClaim(value: unknown): value is Claim {
-  return (
-    ((value1: unknown): boolean =>
-      isRecord(value1) && value1['kind'] === 'site' && typeof value1['claim'] === 'string')(
-      value,
-    ) ||
-    ((value1: unknown): boolean =>
-      isRecord(value1) && value1['kind'] === 'file_name' && typeof value1['claim'] === 'string')(
-      value,
-    ) ||
-    ((value1: unknown): boolean =>
-      isRecord(value1) && value1['kind'] === 'file_type' && typeof value1['claim'] === 'string')(
-      value,
-    ) ||
-    ((value1: unknown): boolean =>
-      isRecord(value1) && value1['kind'] === 'category' && isCategory(value1['claim']))(value) ||
-    ((value1: unknown): boolean =>
-      isRecord(value1) && value1['kind'] === 'protocol' && isLinkProtocol(value1['claim']))(value)
-  );
-}
-
 /** Whether `value` has the shape of a {@link ClientKind}; fields it does not name are not checked. */
 export function isClientKind(value: unknown): value is ClientKind {
   return value === 'extension' || value === 'bridge' || value === 'cli';
@@ -551,9 +539,9 @@ export function isControlWindowArgs(value: unknown): value is ControlWindowArgs 
   );
 }
 
-/** Whether `value` has the shape of a {@link CreateProxyProfileArgs}; fields it does not name are not checked. */
-export function isCreateProxyProfileArgs(value: unknown): value is CreateProxyProfileArgs {
-  return ((value1: unknown): boolean => isRecord(value1) && isProxyProfileDraft(value1['draft']))(
+/** Whether `value` has the shape of a {@link CreateProxyServerArgs}; fields it does not name are not checked. */
+export function isCreateProxyServerArgs(value: unknown): value is CreateProxyServerArgs {
+  return ((value1: unknown): boolean => isRecord(value1) && isProxyServerDraft(value1['draft']))(
     value,
   );
 }
@@ -565,10 +553,10 @@ export function isCreateQueueArgs(value: unknown): value is CreateQueueArgs {
   );
 }
 
-/** Whether `value` has the shape of a {@link DeleteProxyProfileArgs}; fields it does not name are not checked. */
-export function isDeleteProxyProfileArgs(value: unknown): value is DeleteProxyProfileArgs {
+/** Whether `value` has the shape of a {@link DeleteProxyServerArgs}; fields it does not name are not checked. */
+export function isDeleteProxyServerArgs(value: unknown): value is DeleteProxyServerArgs {
   return ((value1: unknown): boolean =>
-    isRecord(value1) && isProxyProfileId(value1['id']) && isProxyUse(value1['replacement']))(value);
+    isRecord(value1) && isProxyServerId(value1['id']) && isProxyUse(value1['replacement']))(value);
 }
 
 /** Whether `value` has the shape of a {@link DeleteQueueArgs}; fields it does not name are not checked. */
@@ -626,12 +614,12 @@ export function isDownloadSummary(value: unknown): value is DownloadSummary {
     (typeof value1['proxy'] === 'string' || value1['proxy'] === null))(value);
 }
 
-/** Whether `value` has the shape of a {@link DraftClaims}; fields it does not name are not checked. */
-export function isDraftClaims(value: unknown): value is DraftClaims {
+/** Whether `value` has the shape of a {@link DraftRules}; fields it does not name are not checked. */
+export function isDraftRules(value: unknown): value is DraftRules {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     (isQueueId(value1['queue']) || value1['queue'] === null) &&
-    isQueueTakes(value1['takes']))(value);
+    isAddDownloads(value1['add_downloads']))(value);
 }
 
 /** Whether `value` has the shape of a {@link EarlierDownloadArgs}; fields it does not name are not checked. */
@@ -744,20 +732,20 @@ export function isExtensionSettingsPatch(value: unknown): value is ExtensionSett
       value1['private_windows'] === null))(value);
 }
 
-/** Whether `value` has the shape of a {@link FinishNoteTime}; fields it does not name are not checked. */
-export function isFinishNoteTime(value: unknown): value is FinishNoteTime {
+/** Whether `value` has the shape of a {@link FinishNotice}; fields it does not name are not checked. */
+export function isFinishNotice(value: unknown): value is FinishNotice {
+  return (
+    value === 'notification' || value === 'browser' || value === 'window' || value === 'nothing'
+  );
+}
+
+/** Whether `value` has the shape of a {@link FinishNoticeTime}; fields it does not name are not checked. */
+export function isFinishNoticeTime(value: unknown): value is FinishNoticeTime {
   return (
     value === 'five_seconds' ||
     value === 'eight_seconds' ||
     value === 'fifteen_seconds' ||
     value === 'until_closed'
-  );
-}
-
-/** Whether `value` has the shape of a {@link FinishNotice}; fields it does not name are not checked. */
-export function isFinishNotice(value: unknown): value is FinishNotice {
-  return (
-    value === 'notification' || value === 'browser' || value === 'window' || value === 'nothing'
   );
 }
 
@@ -899,12 +887,12 @@ export function isLink(value: unknown): value is Link {
   return typeof value === 'string';
 }
 
-/** Whether `value` has the shape of a {@link LinkClaims}; fields it does not name are not checked. */
-export function isLinkClaims(value: unknown): value is LinkClaims {
+/** Whether `value` has the shape of a {@link LinkMatch}; fields it does not name are not checked. */
+export function isLinkMatch(value: unknown): value is LinkMatch {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
-    (isTriedClaim(value1['taken']) || value1['taken'] === null) &&
-    (isTriedClaim(value1['switched_off']) || value1['switched_off'] === null))(value);
+    (isRuleMatch(value1['matched']) || value1['matched'] === null) &&
+    (isRuleMatch(value1['switched_off']) || value1['switched_off'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link LinkProtocol}; fields it does not name are not checked. */
@@ -917,7 +905,7 @@ export function isLinkTrial(value: unknown): value is LinkTrial {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     typeof value1['url'] === 'string' &&
-    (isDraftClaims(value1['draft']) || value1['draft'] === null))(value);
+    (isDraftRules(value1['draft']) || value1['draft'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link MediaChoice}; fields it does not name are not checked. */
@@ -1226,23 +1214,6 @@ export function isProcessingStep(value: unknown): value is ProcessingStep {
   return value === 'joining' || value === 'finishing' || value === 'converting';
 }
 
-/** Whether `value` has the shape of a {@link ProfileProxy}; fields it does not name are not checked. */
-export function isProfileProxy(value: unknown): value is ProfileProxy {
-  return ((value1: unknown): boolean =>
-    isRecord(value1) &&
-    isProxyProfileId(value1['id']) &&
-    isProxyProfileSettings(value1['settings']))(value);
-}
-
-/** Whether `value` has the shape of a {@link ProfileQueue}; fields it does not name are not checked. */
-export function isProfileQueue(value: unknown): value is ProfileQueue {
-  return ((value1: unknown): boolean =>
-    isRecord(value1) &&
-    isQueueId(value1['id']) &&
-    typeof value1['is_default'] === 'boolean' &&
-    isQueueSettings(value1['settings']))(value);
-}
-
 /** Whether `value` has the shape of a {@link ProtocolError}; fields it does not name are not checked. */
 export function isProtocolError(value: unknown): value is ProtocolError {
   return ((value1: unknown): boolean =>
@@ -1256,33 +1227,33 @@ export function isProxyKind(value: unknown): value is ProxyKind {
   return value === 'http' || value === 'https' || value === 'socks5';
 }
 
-/** Whether `value` has the shape of a {@link ProxyProfile}; fields it does not name are not checked. */
-export function isProxyProfile(value: unknown): value is ProxyProfile {
+/** Whether `value` has the shape of a {@link ProxyServer}; fields it does not name are not checked. */
+export function isProxyServer(value: unknown): value is ProxyServer {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
-    isProxyProfileId(value1['id']) &&
-    isProxyProfileSettings(value1['settings']) &&
+    isProxyServerId(value1['id']) &&
+    isProxyServerSettings(value1['settings']) &&
     typeof value1['has_password'] === 'boolean' &&
     (isProxyTestRun(value1['last_test']) || value1['last_test'] === null))(value);
 }
 
-/** Whether `value` has the shape of a {@link ProxyProfileDraft}; fields it does not name are not checked. */
-export function isProxyProfileDraft(value: unknown): value is ProxyProfileDraft {
+/** Whether `value` has the shape of a {@link ProxyServerDraft}; fields it does not name are not checked. */
+export function isProxyServerDraft(value: unknown): value is ProxyServerDraft {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
-    isProxyProfileSettings(value1['settings']) &&
+    isProxyServerSettings(value1['settings']) &&
     (value1['password'] === undefined ||
       typeof value1['password'] === 'string' ||
       value1['password'] === null))(value);
 }
 
-/** Whether `value` has the shape of a {@link ProxyProfileId}; fields it does not name are not checked. */
-export function isProxyProfileId(value: unknown): value is ProxyProfileId {
+/** Whether `value` has the shape of a {@link ProxyServerId}; fields it does not name are not checked. */
+export function isProxyServerId(value: unknown): value is ProxyServerId {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
-/** Whether `value` has the shape of a {@link ProxyProfileSettings}; fields it does not name are not checked. */
-export function isProxyProfileSettings(value: unknown): value is ProxyProfileSettings {
+/** Whether `value` has the shape of a {@link ProxyServerSettings}; fields it does not name are not checked. */
+export function isProxyServerSettings(value: unknown): value is ProxyServerSettings {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     typeof value1['name'] === 'string' &&
@@ -1298,7 +1269,7 @@ export function isProxySettings(value: unknown): value is ProxySettings {
     isRecord(value1) &&
     isProxyUse(value1['proxy']) &&
     isAppExceptions(value1['exceptions']) &&
-    typeof value1['ftp_direct'] === 'boolean')(value);
+    typeof value1['ftp_bypass_proxy'] === 'boolean')(value);
 }
 
 /** Whether `value` has the shape of a {@link ProxyTestResult}; fields it does not name are not checked. */
@@ -1330,7 +1301,7 @@ export function isProxyUse(value: unknown): value is ProxyUse {
     ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'system')(value) ||
     ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'direct')(value) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) && value1['kind'] === 'profile' && isProxyProfileId(value1['id']))(value)
+      isRecord(value1) && value1['kind'] === 'server' && isProxyServerId(value1['id']))(value)
   );
 }
 
@@ -1370,19 +1341,6 @@ export function isQueue(value: unknown): value is Queue {
     isQueueStatus(value1['status']))(value);
 }
 
-/** Whether `value` has the shape of a {@link QueueClaims}; fields it does not name are not checked. */
-export function isQueueClaims(value: unknown): value is QueueClaims {
-  return ((value1: unknown): boolean =>
-    isRecord(value1) &&
-    typeof value1['enabled'] === 'boolean' &&
-    isArrayOf(value1['sites'], (value2: unknown) => typeof value2 === 'string') &&
-    isArrayOf(value1['file_names'], (value2: unknown) => typeof value2 === 'string') &&
-    isNameSyntax(value1['file_name_syntax']) &&
-    isArrayOf(value1['file_types'], (value2: unknown) => typeof value2 === 'string') &&
-    isArrayOf(value1['categories'], isCategory) &&
-    isArrayOf(value1['protocols'], isLinkProtocol))(value);
-}
-
 /** Whether `value` has the shape of a {@link QueueExceptions}; fields it does not name are not checked. */
 export function isQueueExceptions(value: unknown): value is QueueExceptions {
   return ((value1: unknown): boolean =>
@@ -1408,7 +1366,7 @@ export function isQueueReason(value: unknown): value is QueueReason {
   return (
     ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'picked')(value) ||
     ((value1: unknown): boolean =>
-      isRecord(value1) && value1['kind'] === 'claimed' && isClaim(value1['claim']))(value) ||
+      isRecord(value1) && value1['kind'] === 'matched' && isRule(value1['rule']))(value) ||
     ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'browser_queue')(value) ||
     ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'default_queue')(value)
   );
@@ -1424,41 +1382,54 @@ export function isQueueReport(value: unknown): value is QueueReport {
     isArrayOf(value1['failed'], isDownloadSummary))(value);
 }
 
+/** Whether `value` has the shape of a {@link QueueRules}; fields it does not name are not checked. */
+export function isQueueRules(value: unknown): value is QueueRules {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['enabled'] === 'boolean' &&
+    isArrayOf(value1['sites'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['file_names'], (value2: unknown) => typeof value2 === 'string') &&
+    isNameSyntax(value1['file_name_syntax']) &&
+    isArrayOf(value1['file_types'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['categories'], isCategory) &&
+    isArrayOf(value1['protocols'], isLinkProtocol))(value);
+}
+
 /** Whether `value` has the shape of a {@link QueueSettings}; fields it does not name are not checked. */
 export function isQueueSettings(value: unknown): value is QueueSettings {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     typeof value1['name'] === 'string' &&
     typeof value1['description'] === 'string' &&
-    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'follow_app')(
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'global')(
       value1['max_concurrent'],
     ) ||
       ((value2: unknown): boolean =>
         isRecord(value2) && value2['source'] === 'own' && typeof value2['value'] === 'number')(
         value1['max_concurrent'],
       )) &&
-    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'follow_app')(
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'global')(
       value1['speed_limit'],
     ) ||
       ((value2: unknown): boolean =>
         isRecord(value2) && value2['source'] === 'own' && typeof value2['value'] === 'number')(
         value1['speed_limit'],
       )) &&
-    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'follow_app')(
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'global')(
       value1['connections'],
     ) ||
       ((value2: unknown): boolean =>
         isRecord(value2) && value2['source'] === 'own' && typeof value2['value'] === 'number')(
         value1['connections'],
       )) &&
-    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'follow_app')(
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'global')(
       value1['proxy'],
     ) ||
       ((value2: unknown): boolean =>
         isRecord(value2) && value2['source'] === 'own' && isProxyUse(value2['value']))(
         value1['proxy'],
       )) &&
-    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'follow_app')(
+    (((value2: unknown): boolean => isRecord(value2) && value2['source'] === 'global')(
       value1['exceptions'],
     ) ||
       ((value2: unknown): boolean =>
@@ -1466,7 +1437,7 @@ export function isQueueSettings(value: unknown): value is QueueSettings {
         value1['exceptions'],
       )) &&
     (isSchedule(value1['schedule']) || value1['schedule'] === null) &&
-    isQueueTakes(value1['takes']) &&
+    isAddDownloads(value1['add_downloads']) &&
     isQueueNotify(value1['notify']))(value);
 }
 
@@ -1485,15 +1456,6 @@ export function isQueueSummary(value: unknown): value is QueueSummary {
     isQueueId(value1['id']) &&
     typeof value1['name'] === 'string' &&
     typeof value1['is_default'] === 'boolean')(value);
-}
-
-/** Whether `value` has the shape of a {@link QueueTakes}; fields it does not name are not checked. */
-export function isQueueTakes(value: unknown): value is QueueTakes {
-  return (
-    ((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'manual')(value) ||
-    (((value1: unknown): boolean => isRecord(value1) && value1['kind'] === 'auto')(value) &&
-      isQueueClaims(value))
-  );
 }
 
 /** Whether `value` has the shape of a {@link RefreshLinkArgs}; fields it does not name are not checked. */
@@ -1584,6 +1546,36 @@ export function isReveal(value: unknown): value is Reveal {
     (value1['details'] === undefined || typeof value1['details'] === 'boolean'))(value);
 }
 
+/** Whether `value` has the shape of a {@link Rule}; fields it does not name are not checked. */
+export function isRule(value: unknown): value is Rule {
+  return (
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'site' && typeof value1['value'] === 'string')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'file_name' && typeof value1['value'] === 'string')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'file_type' && typeof value1['value'] === 'string')(
+      value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'category' && isCategory(value1['value']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'protocol' && isLinkProtocol(value1['value']))(value)
+  );
+}
+
+/** Whether `value` has the shape of a {@link RuleMatch}; fields it does not name are not checked. */
+export function isRuleMatch(value: unknown): value is RuleMatch {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (isQueueId(value1['queue']) || value1['queue'] === null) &&
+    isRule(value1['rule']))(value);
+}
+
 /** Whether `value` has the shape of a {@link Schedule}; fields it does not name are not checked. */
 export function isSchedule(value: unknown): value is Schedule {
   return ((value1: unknown): boolean =>
@@ -1618,17 +1610,34 @@ export function isSetQueuePausedArgs(value: unknown): value is SetQueuePausedArg
     isRecord(value1) && isQueueId(value1['id']) && typeof value1['paused'] === 'boolean')(value);
 }
 
-/** Whether `value` has the shape of a {@link SettingsProfile}; fields it does not name are not checked. */
-export function isSettingsProfile(value: unknown): value is SettingsProfile {
+/** Whether `value` has the shape of a {@link SettingsFile}; fields it does not name are not checked. */
+export function isSettingsFile(value: unknown): value is SettingsFile {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     typeof value1['format_version'] === 'number' &&
     typeof value1['app_version'] === 'string' &&
     typeof value1['exported_at'] === 'number' &&
     isAppSettings(value1['settings']) &&
-    isArrayOf(value1['queues'], isProfileQueue) &&
-    isArrayOf(value1['proxy_profiles'], isProfileProxy) &&
+    isArrayOf(value1['queues'], isSettingsFileQueue) &&
+    isArrayOf(value1['proxy_servers'], isSettingsFileProxy) &&
     isArrayOf(value1['addons'], isAddonId))(value);
+}
+
+/** Whether `value` has the shape of a {@link SettingsFileProxy}; fields it does not name are not checked. */
+export function isSettingsFileProxy(value: unknown): value is SettingsFileProxy {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) && isProxyServerId(value1['id']) && isProxyServerSettings(value1['settings']))(
+    value,
+  );
+}
+
+/** Whether `value` has the shape of a {@link SettingsFileQueue}; fields it does not name are not checked. */
+export function isSettingsFileQueue(value: unknown): value is SettingsFileQueue {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isQueueId(value1['id']) &&
+    typeof value1['is_default'] === 'boolean' &&
+    isQueueSettings(value1['settings']))(value);
 }
 
 /** Whether `value` has the shape of a {@link ShowDownloadDetailsArgs}; fields it does not name are not checked. */
@@ -1641,19 +1650,19 @@ export function isShowProgressWindowArgs(value: unknown): value is ShowProgressW
   return ((value1: unknown): boolean => isRecord(value1) && isDownloadId(value1['id']))(value);
 }
 
-/** Whether `value` has the shape of a {@link StartNoteTime}; fields it does not name are not checked. */
-export function isStartNoteTime(value: unknown): value is StartNoteTime {
+/** Whether `value` has the shape of a {@link StartNotice}; fields it does not name are not checked. */
+export function isStartNotice(value: unknown): value is StartNotice {
+  return value === 'browser' || value === 'nothing';
+}
+
+/** Whether `value` has the shape of a {@link StartNoticeTime}; fields it does not name are not checked. */
+export function isStartNoticeTime(value: unknown): value is StartNoticeTime {
   return (
     value === 'three_seconds' ||
     value === 'five_seconds' ||
     value === 'eight_seconds' ||
     value === 'ten_seconds'
   );
-}
-
-/** Whether `value` has the shape of a {@link StartNotice}; fields it does not name are not checked. */
-export function isStartNotice(value: unknown): value is StartNotice {
-  return value === 'browser' || value === 'nothing';
 }
 
 /** Whether `value` has the shape of a {@link StartQueueNowArgs}; fields it does not name are not checked. */
@@ -1690,12 +1699,12 @@ export function isSystemAppearance(value: unknown): value is SystemAppearance {
     isRecord(value1) && (typeof value1['accent'] === 'string' || value1['accent'] === null))(value);
 }
 
-/** Whether `value` has the shape of a {@link TestProxyProfileArgs}; fields it does not name are not checked. */
-export function isTestProxyProfileArgs(value: unknown): value is TestProxyProfileArgs {
+/** Whether `value` has the shape of a {@link TestProxyServerArgs}; fields it does not name are not checked. */
+export function isTestProxyServerArgs(value: unknown): value is TestProxyServerArgs {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
-    (isProxyProfileId(value1['id']) || value1['id'] === null) &&
-    isProxyProfileDraft(value1['draft']))(value);
+    (isProxyServerId(value1['id']) || value1['id'] === null) &&
+    isProxyServerDraft(value1['draft']))(value);
 }
 
 /** Whether `value` has the shape of a {@link Theme}; fields it does not name are not checked. */
@@ -1709,14 +1718,6 @@ export function isTimeOfDay(value: unknown): value is TimeOfDay {
     isRecord(value1) && typeof value1['hour'] === 'number' && typeof value1['minute'] === 'number')(
     value,
   );
-}
-
-/** Whether `value` has the shape of a {@link TriedClaim}; fields it does not name are not checked. */
-export function isTriedClaim(value: unknown): value is TriedClaim {
-  return ((value1: unknown): boolean =>
-    isRecord(value1) &&
-    (isQueueId(value1['queue']) || value1['queue'] === null) &&
-    isClaim(value1['claim']))(value);
 }
 
 /** Whether `value` has the shape of a {@link TryLinkArgs}; fields it does not name are not checked. */
@@ -1741,8 +1742,8 @@ export function isUiEvent(value: unknown): value is UiEvent {
       isArrayOf(value1['data'], isQueue))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) &&
-      value1['type'] === 'proxy_profiles_changed' &&
-      isArrayOf(value1['data'], isProxyProfile))(value) ||
+      value1['type'] === 'proxy_servers_changed' &&
+      isArrayOf(value1['data'], isProxyServer))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'settings_changed' && isAppSettings(value1['data']))(
       value,
@@ -1826,10 +1827,10 @@ export function isUpdateAddonArgs(value: unknown): value is UpdateAddonArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isAddonId(value1['id']))(value);
 }
 
-/** Whether `value` has the shape of a {@link UpdateProxyProfileArgs}; fields it does not name are not checked. */
-export function isUpdateProxyProfileArgs(value: unknown): value is UpdateProxyProfileArgs {
+/** Whether `value` has the shape of a {@link UpdateProxyServerArgs}; fields it does not name are not checked. */
+export function isUpdateProxyServerArgs(value: unknown): value is UpdateProxyServerArgs {
   return ((value1: unknown): boolean =>
-    isRecord(value1) && isProxyProfileId(value1['id']) && isProxyProfileDraft(value1['draft']))(
+    isRecord(value1) && isProxyServerId(value1['id']) && isProxyServerDraft(value1['draft']))(
     value,
   );
 }
@@ -2013,19 +2014,19 @@ export const COMMAND_OUTPUTS: {
     isSuffixListInfo(value),
   set_queue_order: (value: unknown): value is CommandMap['set_queue_order']['output'] =>
     value === null,
-  try_link: (value: unknown): value is CommandMap['try_link']['output'] => isLinkClaims(value),
-  list_proxy_profiles: (value: unknown): value is CommandMap['list_proxy_profiles']['output'] =>
-    isArrayOf(value, isProxyProfile),
-  create_proxy_profile: (value: unknown): value is CommandMap['create_proxy_profile']['output'] =>
-    isProxyProfileId(value),
-  update_proxy_profile: (value: unknown): value is CommandMap['update_proxy_profile']['output'] =>
+  try_link: (value: unknown): value is CommandMap['try_link']['output'] => isLinkMatch(value),
+  list_proxy_servers: (value: unknown): value is CommandMap['list_proxy_servers']['output'] =>
+    isArrayOf(value, isProxyServer),
+  create_proxy_server: (value: unknown): value is CommandMap['create_proxy_server']['output'] =>
+    isProxyServerId(value),
+  update_proxy_server: (value: unknown): value is CommandMap['update_proxy_server']['output'] =>
     value === null,
-  delete_proxy_profile: (value: unknown): value is CommandMap['delete_proxy_profile']['output'] =>
+  delete_proxy_server: (value: unknown): value is CommandMap['delete_proxy_server']['output'] =>
     value === null,
-  test_proxy_profile: (value: unknown): value is CommandMap['test_proxy_profile']['output'] =>
+  test_proxy_server: (value: unknown): value is CommandMap['test_proxy_server']['output'] =>
     isProxyTestResult(value),
   copy_system_proxy: (value: unknown): value is CommandMap['copy_system_proxy']['output'] =>
-    isArrayOf(value, isProxyProfileId),
+    isArrayOf(value, isProxyServerId),
   show_proxy_settings: (value: unknown): value is CommandMap['show_proxy_settings']['output'] =>
     value === null,
   show_download_details: (value: unknown): value is CommandMap['show_download_details']['output'] =>

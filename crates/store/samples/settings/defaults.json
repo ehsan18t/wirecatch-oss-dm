@@ -3,49 +3,17 @@
   "categories": [
     {
       "category": "video",
-      "extensions": [
-        "mp4",
-        "mkv",
-        "webm",
-        "avi",
-        "mov",
-        "wmv",
-        "flv",
-        "m4v",
-        "mpg",
-        "mpeg",
-        "3gp"
-      ],
+      "extensions": ["mp4", "mkv", "webm", "avi", "mov", "wmv", "flv", "m4v", "mpg", "mpeg", "3gp"],
       "folder": "{Downloads}/Video"
     },
     {
       "category": "audio",
-      "extensions": [
-        "mp3",
-        "m4a",
-        "aac",
-        "flac",
-        "wav",
-        "ogg",
-        "opus",
-        "wma"
-      ],
+      "extensions": ["mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "wma"],
       "folder": "{Downloads}/Music"
     },
     {
       "category": "archive",
-      "extensions": [
-        "zip",
-        "rar",
-        "7z",
-        "tar",
-        "gz",
-        "tgz",
-        "bz2",
-        "xz",
-        "zst",
-        "iso"
-      ],
+      "extensions": ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "iso"],
       "folder": "{Downloads}/Compressed"
     },
     {
@@ -70,33 +38,12 @@
     },
     {
       "category": "program",
-      "extensions": [
-        "exe",
-        "msi",
-        "msix",
-        "appimage",
-        "deb",
-        "rpm",
-        "flatpak",
-        "apk",
-        "dmg"
-      ],
+      "extensions": ["exe", "msi", "msix", "appimage", "deb", "rpm", "flatpak", "apk", "dmg"],
       "folder": "{Downloads}/Programs"
     },
     {
       "category": "image",
-      "extensions": [
-        "jpg",
-        "jpeg",
-        "png",
-        "gif",
-        "webp",
-        "avif",
-        "heic",
-        "bmp",
-        "svg",
-        "tiff"
-      ],
+      "extensions": ["jpg", "jpeg", "png", "gif", "webp", "avif", "heic", "bmp", "svg", "tiff"],
       "folder": "{Downloads}/Images"
     }
   ],
@@ -118,9 +65,9 @@
   "start_with_system": false,
   "close_to_tray": true,
   "finish_notice": "browser",
-  "finish_note_time": "eight_seconds",
+  "finish_notice_time": "eight_seconds",
   "start_notice": "browser",
-  "start_note_time": "three_seconds",
+  "start_notice_time": "three_seconds",
   "notify_during_do_not_disturb": true,
   "auto_update_addons": true,
   "show_progress_windows": true,
@@ -156,6 +103,6 @@
       "use_hosts": true,
       "hosts": []
     },
-    "ftp_direct": false
+    "ftp_bypass_proxy": false
   }
 }

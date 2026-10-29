@@ -10,7 +10,7 @@ export type SectionId =
   | 'speed'
   | 'queues'
   | 'network'
-  | 'transfer'
+  | 'import_export'
   | 'advanced';
 
 export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[] = [
@@ -52,7 +52,7 @@ export const SECTIONS: readonly { id: SectionId; title: string; blurb: string }[
     blurb: 'How Wirecatch reaches the internet.',
   },
   {
-    id: 'transfer',
+    id: 'import_export',
     title: 'Import and export',
     blurb: 'Save your settings to a file, or load them from one, for example on another computer.',
   },

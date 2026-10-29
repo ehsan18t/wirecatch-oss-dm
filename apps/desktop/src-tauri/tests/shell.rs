@@ -132,7 +132,7 @@ fn capture() -> PendingCapture {
         category: Category::Archive,
         size: None,
         queue: QueueId(1),
-        queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+        queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
         page_url: None,
     }
 }
@@ -500,7 +500,7 @@ fn ended_row(id: i64, queue: i64, status: DownloadStatus) -> DownloadSummary {
         file_name: format!("file-{id}.zip"),
         path: format!("C:/Downloads/file-{id}.zip"),
         queue: QueueId(queue),
-        queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+        queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
         category: Category::Archive,
         status,
         total: Some(100),

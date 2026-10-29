@@ -233,7 +233,7 @@ export class DownloadWindowState {
       }
     },
     // A download window shows no proxy.
-    proxy_profiles_changed: ignore,
+    proxy_servers_changed: ignore,
     queues_changed: (e) => {
       this.queues = e.data;
     },

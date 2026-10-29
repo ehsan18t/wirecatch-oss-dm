@@ -139,7 +139,7 @@ export class FinishedWindowState {
       this.settings = e.data;
     },
     queues_changed: ignore,
-    proxy_profiles_changed: ignore,
+    proxy_servers_changed: ignore,
     addons_changed: ignore,
     suffix_list_checked: ignore,
     media_analysing: ignore,

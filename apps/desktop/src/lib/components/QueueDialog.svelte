@@ -20,14 +20,14 @@
   import {
     DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS,
-    FOLLOW_APP,
+    GLOBAL,
     MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD,
     MAX_QUEUE_DESCRIPTION_CHARS,
     ownSetting,
     ownValue,
     type QueueId,
-    type QueueClaims,
+    type QueueRules,
     type QueueNotify,
     type QueueSettings,
     type Weekday,
@@ -60,10 +60,10 @@
     readQueueLimit,
     speedLimitHelp,
   } from '$lib/limits';
-  import { claimsOf, takesOf } from '$lib/queue-claims';
+  import { rulesOf, addDownloadsOf } from '$lib/queue-rules';
   import { getApp } from '$lib/state/app.svelte';
   import ChoiceCard from './ChoiceCard.svelte';
-  import QueueClaimsCard from './QueueClaimsCard.svelte';
+  import QueueRulesCard from './QueueRulesCard.svelte';
   import QueueProxyCard from './QueueProxyCard.svelte';
   import SwitchCard from './SwitchCard.svelte';
   import TimeInput from './TimeInput.svelte';
@@ -103,13 +103,13 @@
   let days = $state<Weekday[]>(opened?.schedule?.days ?? []);
   // Picking single days is its own choice, kept while the days picked happen to make a pattern.
   let pickingDays = $state(dayPattern(opened?.schedule?.days ?? []) === 'custom');
-  let auto = $state(opened?.takes.kind === 'auto');
+  let auto = $state(opened?.add_downloads.kind === 'auto');
   // Kept while the form is switched to Manually, so switching back loses nothing.
-  let claims = $state<QueueClaims>(claimsOf(opened?.takes));
+  let rules = $state<QueueRules>(rulesOf(opened?.add_downloads));
   let notify = $state<QueueNotify>(opened?.notify ?? 'each_download');
-  let proxy = $state<QueueSettings['proxy']>($state.snapshot(opened?.proxy) ?? FOLLOW_APP);
+  let proxy = $state<QueueSettings['proxy']>($state.snapshot(opened?.proxy) ?? GLOBAL);
   let exceptions = $state<QueueSettings['exceptions']>(
-    $state.snapshot(opened?.exceptions) ?? FOLLOW_APP,
+    $state.snapshot(opened?.exceptions) ?? GLOBAL,
   );
   const appConnections = app.settings?.connections_per_download ?? DEFAULT_CONNECTIONS_PER_DOWNLOAD;
   let connectionsOn = $state(ownConnections !== null);
@@ -180,12 +180,12 @@
     return {
       name: name.trim(),
       description: description.trim(),
-      max_concurrent: concurrentOn ? ownSetting(Math.round(maxConcurrent)) : FOLLOW_APP,
+      max_concurrent: concurrentOn ? ownSetting(Math.round(maxConcurrent)) : GLOBAL,
       speed_limit: limit.limit,
-      connections: connectionsOn ? ownSetting(Math.round(connections)) : FOLLOW_APP,
+      connections: connectionsOn ? ownSetting(Math.round(connections)) : GLOBAL,
       proxy: $state.snapshot(proxy),
       exceptions: $state.snapshot(exceptions),
-      takes: takesOf(auto, $state.snapshot(claims)),
+      add_downloads: addDownloadsOf(auto, $state.snapshot(rules)),
       schedule: schedule.schedule,
       notify,
     };
@@ -324,12 +324,12 @@
       </SwitchCard>
     </section>
 
-    <QueueClaimsCard
+    <QueueRulesCard
       queue={original?.id ?? null}
       {name}
       {auto}
-      {claims}
-      onchange={(on: boolean, next: QueueClaims) => ([auto, claims] = [on, next])}
+      {rules}
+      onchange={(on: boolean, next: QueueRules) => ([auto, rules] = [on, next])}
     />
 
     <QueueProxyCard

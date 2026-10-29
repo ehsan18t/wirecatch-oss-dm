@@ -13,11 +13,11 @@ use wirecatch_protocol::app::{
     AppSettings, DownloadStatus, DownloadSummary, PendingCapture, Queue, Setting,
 };
 use wirecatch_protocol::extension::NewDownload;
-use wirecatch_protocol::proxy::{ProxyProfile, ProxyUse};
+use wirecatch_protocol::proxy::{ProxyServer, ProxyUse};
 use wirecatch_protocol::wire::QueueSummary;
-use wirecatch_protocol::{DownloadId, ProxyProfileId, QuestionId, QueueId};
+use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
 use wirecatch_queues::schedule::Gate;
-use wirecatch_settings::proxy::{Logins, SavedProfile};
+use wirecatch_settings::proxy::{Logins, SavedProxyServer};
 use wirecatch_sites::local_network::ChosenBy;
 use wirecatch_sites::public_suffix::SuffixList;
 use wirecatch_store::{LastIds, NameChoice, StoredDownload};
@@ -59,9 +59,9 @@ pub(super) struct State {
     pub dirty: BTreeSet<DownloadId>,
     /// What each queue at work has finished or failed so far (D52).
     pub batches: Batches,
-    /// The passwords of the proxy profiles, which never leave the app (D71.2).
+    /// The passwords of the proxy servers, which never leave the app (D71.2).
     pub proxy_logins: Logins,
-    pub proxy_profiles: Vec<SavedProfile>,
+    pub proxy_servers: Vec<SavedProxyServer>,
     /// When schedules were last evaluated, so a start time crossed since then is seen.
     pub last_checked: NaiveDateTime,
     pub ids: Counters,
@@ -74,7 +74,7 @@ pub(super) struct State {
 pub(super) struct Counters {
     pub download: i64,
     pub queue: i64,
-    pub proxy_profile: i64,
+    pub proxy_server: i64,
     pub pending: u64,
     pub run: u64,
     pub position: i64,
@@ -91,9 +91,9 @@ impl Counters {
         QueueId(self.queue)
     }
 
-    pub fn proxy_profile(&mut self) -> ProxyProfileId {
-        self.proxy_profile += 1;
-        ProxyProfileId(self.proxy_profile)
+    pub fn proxy_server(&mut self) -> ProxyServerId {
+        self.proxy_server += 1;
+        ProxyServerId(self.proxy_server)
     }
 
     /// A fresh question id, shared by pending captures and media.
@@ -112,12 +112,12 @@ impl Counters {
         self.position
     }
 
-    /// The highest download, queue and proxy profile ids handed out so far.
+    /// The highest download, queue and proxy server ids handed out so far.
     pub fn last(&self) -> LastIds {
         LastIds {
             download: self.download,
             queue: self.queue,
-            proxy_profile: self.proxy_profile,
+            proxy_server: self.proxy_server,
         }
     }
 }
@@ -296,14 +296,14 @@ impl State {
             ),
             None => (
                 app.proxy,
-                wirecatch_settings::proxy::exceptions(app, &Setting::FollowApp),
+                wirecatch_settings::proxy::exceptions(app, &Setting::Global),
             ),
         };
         let choice = wirecatch_settings::proxy::engine_choice(
             proxy,
             &exceptions,
-            app.ftp_direct,
-            &self.proxy_profiles,
+            app.ftp_bypass_proxy,
+            &self.proxy_servers,
             &self.proxy_logins,
         );
         (proxy, choice)
@@ -320,7 +320,7 @@ impl State {
                     .split_once("://")
                     .map_or(address.as_str(), |(_, a)| a);
                 let profile = match proxy {
-                    ProxyUse::Profile(id) => self.proxy_profiles.iter().find(|p| p.id == id),
+                    ProxyUse::Server(id) => self.proxy_servers.iter().find(|p| p.id == id),
                     _ => None,
                 };
                 let label = match profile {
@@ -337,11 +337,11 @@ impl State {
         }
     }
 
-    /// The proxy profiles as the windows see them, without their passwords.
-    pub fn proxy_profile_list(&self) -> Vec<ProxyProfile> {
-        self.proxy_profiles
+    /// The proxy servers as the windows see them, without their passwords.
+    pub fn proxy_server_list(&self) -> Vec<ProxyServer> {
+        self.proxy_servers
             .iter()
-            .map(|p| ProxyProfile {
+            .map(|p| ProxyServer {
                 id: p.id,
                 settings: p.settings.clone(),
                 has_password: self.proxy_logins.contains_key(&p.id),
@@ -604,7 +604,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
             file_name: "f".into(),
             path: "f".into(),
             queue: QueueId(1),
-            queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
             category: Category::Other,
             status: DownloadStatus::Queued,
             total: None,
@@ -650,7 +650,7 @@ mod tests {
                 file_name: "f".into(),
                 path: "f".into(),
                 queue: QueueId(1),
-                queue_reason: wirecatch_protocol::claims::QueueReason::DefaultQueue,
+                queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
                 category: Category::Other,
                 status: DownloadStatus::Downloading,
                 total: None,

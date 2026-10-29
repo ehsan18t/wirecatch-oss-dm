@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Test a link: which queue the claims send a link to and why, a switched-off queue that would have taken it included (D72.5, D72.7). The core matches, so this and the downloads never disagree.
+  // Test a link: which queue the rules send a link to and why, a switched-off queue that would have matched it included (D72.5, D72.7). The core matches, so this and the downloads never disagree.
   import { tick } from 'svelte';
-  import type { DraftClaims, QueueId } from '@wirecatch/protocol';
+  import type { DraftRules, QueueId } from '@wirecatch/protocol';
   import { Button, Field, Input, type FieldControl } from '@wirecatch/ui';
   import { trialLines } from '$lib/queue-reasons';
   import { getApp } from '$lib/state/app.svelte';
@@ -10,8 +10,8 @@
     draft,
     draftName = 'This queue',
   }: {
-    /** One queue's claims as its form has them, tried in its place; none tries the saved claims. */
-    draft?: (() => DraftClaims) | undefined;
+    /** One queue's rules as its form has them, tried in its place; none tries the saved rules. */
+    draft?: (() => DraftRules) | undefined;
     /** The name of the queue `draft` stands for. */
     draftName?: string;
   } = $props();
@@ -22,12 +22,12 @@
   let url = $state('');
   let lines = $state<string[]>([]);
   let problem = $state('');
-  /** The problem is the link's, not the claims'. */
+  /** The problem is the link's, not the rules'. */
   let linkWrong = $state(false);
   let busy = $state(false);
   let result = $state<HTMLElement | null>(null);
 
-  // An answer is for the link and the claims it was given: a change to either takes it away.
+  // An answer is for the link and the rules it was given: a change to either takes it away.
   $effect(() => {
     void JSON.stringify(draft?.());
     clear();

@@ -1,8 +1,8 @@
 <script lang="ts">
-  // Which queue a download joins, the default one marked in the list (not in the chosen value, where it would be noise). With `automatic`, Automatic comes first and stands for `null`: each link goes where the claims send it (D72.8). The Add dialog and the download windows' questions use it.
+  // Which queue a download joins, the default one marked in the list (not in the chosen value, where it would be noise). With `automatic`, Automatic comes first and stands for `null`: each link goes where the rules send it (D72.8). The Add dialog and the download windows' questions use it.
   import type { Queue, QueueId } from '@wirecatch/protocol';
   import { Field, type FieldControl, Select, type SelectOption } from '@wirecatch/ui';
-  import { claimsFact } from '$lib/queue-claims';
+  import { rulesFact } from '$lib/queue-rules';
 
   interface Props {
     queues: readonly Queue[];
@@ -37,7 +37,7 @@
       value: q.id,
       label: q.settings.name,
       description:
-        [q.is_default ? 'The default queue' : null, claimsFact(q.settings.takes)]
+        [q.is_default ? 'The default queue' : null, rulesFact(q.settings.add_downloads)]
           .filter((fact) => fact !== null)
           .join(' · ') || undefined,
     })),

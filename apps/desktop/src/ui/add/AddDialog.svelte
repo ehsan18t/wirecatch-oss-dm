@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Adding downloads by hand: links pasted or typed, one per line, then where they are saved, in which queue (Automatic, where the claims send each, unless one is picked), and whether they start now. The form is state (AddDraft), so links that reach the window while it is open join it. Opened with links, it starts on Download, so Enter sends them as they are; opened empty, on the links box.
+  // Adding downloads by hand: links pasted or typed, one per line, then where they are saved, in which queue (Automatic, where the rules send each, unless one is picked), and whether they start now. The form is state (AddDraft), so links that reach the window while it is open join it. Opened with links, it starts on Download, so Enter sends them as they are; opened empty, on the links box.
   import DownloadIcon from '~icons/lucide/download';
   import type { QueueId } from '@wirecatch/protocol';
   import { Button, Callout, Dialog, Field, type FieldControl, Kbd, TextArea } from '@wirecatch/ui';
