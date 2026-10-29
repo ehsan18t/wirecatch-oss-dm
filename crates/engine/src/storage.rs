@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::abandon::Abandoned;
 use crate::error::{IoAction, IoContext};
+use crate::file_work::FileWork;
 
 /// Suffix of the file that receives data while a download runs.
 pub const PART_EXT: &str = ".wcpart";
@@ -15,9 +16,11 @@ pub const STATE_EXT: &str = ".wcstate";
 /// Runs file system work on the blocking pool, off the async threads, where a
 /// slow disk, an antivirus scan or a network drive stalls nothing else.
 pub(crate) async fn blocking<T: Send + 'static>(
+    file_work: &FileWork,
     work: impl FnOnce() -> crate::Result<T> + Send + 'static,
 ) -> crate::Result<T> {
-    tokio::task::spawn_blocking(work)
+    file_work
+        .spawn_blocking(work)
         .await
         .map_err(|e| crate::Error::task(&e))?
 }
