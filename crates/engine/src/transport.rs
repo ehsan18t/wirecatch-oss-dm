@@ -212,7 +212,7 @@ pub(crate) async fn open(
 ) -> Result<Opened> {
     match url.scheme() {
         "http" | "https" => open_http(url, opts, clients, cancel, guard).await,
-        "ftp" | "ftps" | "ftpes" => {
+        _ if crate::url::is_ftp(url) => {
             // Going around a proxy the user set would be a surprise, and
             // possibly a leak: one that cannot carry FTP refuses it instead.
             let host = url.host_str().unwrap_or_default();

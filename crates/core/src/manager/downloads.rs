@@ -648,7 +648,7 @@ pub(super) fn parse_url(raw: &str) -> Result<Url> {
     Url::parse(trimmed)
         .ok()
         .filter(|url| {
-            matches!(url.scheme(), "http" | "https" | "ftp" | "ftps" | "ftpes")
+            wirecatch_engine::url::is_supported(url)
                 && url.host_str().is_some_and(|h| !h.is_empty())
         })
         .ok_or_else(|| CoreError::InvalidUrl(trimmed.to_string()))
