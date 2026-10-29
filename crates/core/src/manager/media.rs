@@ -123,6 +123,14 @@ pub(super) fn check_room(state: &State) -> Result<()> {
     Ok(())
 }
 
+/// A choice taken off the questions, with what was chosen, until its download is added.
+struct Taken {
+    pending: MediaPending,
+    plan: Plan,
+    choice: Box<MediaChoice>,
+    resolved: Resolved,
+}
+
 /// Who picked a video's quality.
 enum Picker {
     /// The person, in the quality window: the choices are remembered for next time.
@@ -365,12 +373,21 @@ impl Manager {
     /// described above; errors adding the download (its name, folder or queue), in
     /// which case the choice stays open; and [`CoreError::Closed`] once the manager has
     /// shut down.
+    ///
+    /// Runs to the end even when the caller stops waiting.
     pub async fn choose_media(
         &self,
         id: QuestionId,
         selection: MediaSelection,
     ) -> Result<wirecatch_protocol::DownloadId> {
-        self.choose(id, selection, Picker::Person).await
+        let taken = self.take_choice(id, &selection)?;
+        let manager = self.clone();
+        self.to_the_end(async move {
+            manager
+                .add_chosen(id, taken, selection, Picker::Person)
+                .await
+        })
+        .await
     }
 
     /// Downloads what the saved choices pick for a video, without asking (D50),
@@ -426,6 +443,12 @@ impl Manager {
         selection: MediaSelection,
         picker: Picker,
     ) -> Result<wirecatch_protocol::DownloadId> {
+        let taken = self.take_choice(id, &selection)?;
+        self.add_chosen(id, taken, selection, picker).await
+    }
+
+    /// Takes choice `id` off the questions for `selection`, checked against what it offered; the app's from then on.
+    fn take_choice(&self, id: QuestionId, selection: &MediaSelection) -> Result<Taken> {
         let (pending, plan, choice, resolved) = {
             let mut state = self.lock_open()?;
             let Some(MediaPending {
@@ -443,7 +466,7 @@ impl Manager {
                 )
             })?;
             let resolved = plan
-                .resolve(choice, &selection)
+                .resolve(choice, selection)
                 .map_err(|e| CoreError::Invalid(e.to_string()))?;
             if resolved.needs_ffmpeg && state.addon.tools.is_none() {
                 let (choice_url, addon) =
@@ -465,6 +488,28 @@ impl Manager {
             }
             (pending, plan, choice, resolved)
         };
+        Ok(Taken {
+            pending,
+            plan,
+            choice,
+            resolved,
+        })
+    }
+
+    /// Adds the download `taken` was chosen for, or puts its question back when it cannot be added.
+    async fn add_chosen(
+        &self,
+        id: QuestionId,
+        taken: Taken,
+        selection: MediaSelection,
+        picker: Picker,
+    ) -> Result<wirecatch_protocol::DownloadId> {
+        let Taken {
+            pending,
+            plan,
+            choice,
+            resolved,
+        } = taken;
         let instead_of = match &picker {
             Picker::Person => None,
             Picker::Saved { instead_of } => instead_of.clone(),

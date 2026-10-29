@@ -24,6 +24,8 @@ impl Manager {
     /// # Errors
     ///
     /// [`CoreError::Path`] when `folder` does not resolve, [`CoreError::File`] when it cannot be created or written to or the files cannot be moved there, [`CoreError::FilesSplit`] when, after that, some files already moved could not be put back (the download is then marked failed with that message and waits until it is tried again), [`CoreError::WrongState`] for an unfinished video, a download already being moved or one whose files an earlier move left split, [`CoreError::DownloadNotFound`] when there is no download `id`, and [`CoreError::Closed`] once the manager has shut down.
+    ///
+    /// Runs to the end even when the caller stops waiting.
     pub async fn set_download_folder(&self, id: DownloadId, folder: &str) -> Result<()> {
         let dir = self
             .inner
@@ -52,6 +54,18 @@ impl Manager {
             self.stop_run(entry, Stop::Requeue);
             exited
         };
+        let manager = self.clone();
+        self.to_the_end(async move { manager.finish_moving(id, dir, exited).await })
+            .await
+    }
+
+    /// Moves download `id`, already marked as moving, to `dir` once its run has exited.
+    async fn finish_moving(
+        &self,
+        id: DownloadId,
+        dir: PathBuf,
+        exited: Option<CancellationToken>,
+    ) -> Result<()> {
         // The engine must close the files before they can be moved; bounded by the
         // stop timeout.
         if let Some(exited) = exited {

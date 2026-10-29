@@ -302,6 +302,8 @@ impl Manager {
     /// [`CoreError::Path`] or [`CoreError::QueueNotFound`] when the answer's link,
     /// name, folder or queue cannot be used, in which case the question stays open; and
     /// [`CoreError::Closed`] once the manager has shut down.
+    ///
+    /// Runs to the end even when the caller stops waiting.
     pub async fn confirm_capture(
         &self,
         id: QuestionId,
@@ -318,6 +320,18 @@ impl Manager {
             }
             pending
         };
+        let manager = self.clone();
+        self.to_the_end(async move { manager.add_confirmed(id, pending, answer).await })
+            .await
+    }
+
+    /// Adds the confirmed capture `pending`, or puts its question back when it cannot be added.
+    async fn add_confirmed(
+        &self,
+        id: QuestionId,
+        pending: Pending,
+        answer: CaptureConfirmation,
+    ) -> Result<DownloadId> {
         match self.insert_confirmed(&pending, answer).await {
             Ok(row) => {
                 let mut state = self.lock();
