@@ -258,8 +258,6 @@
   /* Spacing: a 4px grid (`p-3` is 12px), and named lengths for what has a fixed size. */
   --spacing: 0.25rem;
   --spacing-titlebar: 2.75rem;
-  /* A Windows 11 caption button is 46px wide. */
-  --spacing-caption: 2.875rem;
   --spacing-control-xs: 1.5rem;
   --spacing-control-sm: 1.75rem;
   --spacing-control: 2rem;
@@ -508,10 +506,24 @@
   }
 }
 
-/* The frameless window's drag regions; interactive children opt out. */
+/* The frameless window's drag regions. What can be clicked in one refuses the drag by itself, as Tauri's `deep` drag region does, so a wrapper around a control never blocks the space beside it. */
 @utility drag {
   -webkit-app-region: drag;
   app-region: drag;
+  &
+    :where(
+      button,
+      a,
+      input,
+      select,
+      textarea,
+      [contenteditable]:not([contenteditable='false']),
+      [tabindex]:not([tabindex='-1']),
+      [role='button']
+    ) {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
 }
 
 @utility no-drag {

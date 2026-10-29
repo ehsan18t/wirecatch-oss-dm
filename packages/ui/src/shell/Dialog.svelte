@@ -24,7 +24,7 @@
   import IconButton from '../primitives/IconButton.svelte';
   import { DIALOG_SURFACE, SCRIM } from '../recipes/surface';
   import { ownsKey } from './layer-keys';
-  import ModalAnnouncer from './ModalAnnouncer.svelte';
+  import ModalToasts from './ModalToasts.svelte';
 
   interface Props {
     open: boolean;
@@ -207,7 +207,8 @@
           onclick={() => onclose?.()}
         />
       {/if}
-      <ModalAnnouncer />
     </section>
+    <!-- In the dialog, not its panel: the panel moves as it opens, and the toasts keep to the window's corner. -->
+    <ModalToasts />
   </dialog>
 {/if}

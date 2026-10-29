@@ -4,7 +4,7 @@
   import { cn } from '../lib/cn';
   import { findElement } from '../lib/dom';
   import { containTab, focusedElement, modalLayerOpen, restoreFocus } from '../lib/focus';
-  import ModalAnnouncer from './ModalAnnouncer.svelte';
+  import ModalToasts from './ModalToasts.svelte';
   import { expand, fade } from '../motion/motion';
   import { SCRIM } from '../recipes/surface';
   import { ownsKey } from './layer-keys';
@@ -115,7 +115,7 @@
       >
         {@render children()}
       </SlideOverPanel>
-      <ModalAnnouncer />
+      <ModalToasts />
     </dialog>
   {:else if docked}
     <!-- The column's width grows from nothing while the panel inside keeps its own, so its text never reflows as it opens. -->

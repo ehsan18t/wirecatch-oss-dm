@@ -993,12 +993,12 @@ pub enum Accent {
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum NotifyOnFinish {
-    /// A system notification with buttons to open the file or show it in its folder.
+    /// A system notification with buttons to open the file or show it in its folder. The default
+    /// (D90): a download usually finishes while its window or another program is in front.
+    #[default]
     Notification,
     /// A notice in the browser tab the person is looking at, with the same buttons (D65); a
-    /// system notification when no browser can show it. The default: a system notification
-    /// only when the person is not in the browser (D67).
-    #[default]
+    /// system notification when no browser can show it.
     Browser,
     /// The download complete window, which collects what finished until the person closes it.
     Window,
