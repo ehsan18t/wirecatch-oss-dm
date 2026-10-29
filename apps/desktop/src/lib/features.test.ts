@@ -2,25 +2,18 @@
 
 import { downloadId, SETTINGS_FILE_FORMAT_VERSION } from '@wirecatch/protocol';
 import { fireEvent, screen, within } from '@testing-library/svelte';
-import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { buildCommands } from './commands';
 import { SETTINGS, settingAnchor } from './settings-schema';
 import { SECTIONS } from './settings-sections';
-import { downloadWindow, renderApp, rowByName, settle } from './testing/setup';
+import { button, downloadWindow, rowByName, settle, setupWithUser } from './testing/setup';
 
 async function setup() {
-  const r = await renderApp();
-  const user = userEvent.setup();
-  const click = async (el: HTMLElement) => {
-    await user.click(el);
-    await settle();
-  };
+  const r = await setupWithUser();
   const palette = (id: string) => buildCommands(r.app).some((c) => c.id === id);
-  return { ...r, user, click, palette };
+  return { ...r, palette };
 }
 
-const button = (name: RegExp | string) => screen.getByRole('button', { name });
 const nav = () => within(screen.getByRole('navigation'));
 /** Settings, open at the section titled `title`. */
 async function openSection(click: (el: HTMLElement) => Promise<void>, title: string) {
