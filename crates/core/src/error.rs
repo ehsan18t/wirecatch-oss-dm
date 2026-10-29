@@ -31,7 +31,7 @@ pub enum CoreError {
 
     /// A link that is not an http, https, ftp, ftps or ftpes URL.
     #[error(
-        "\"{0}\" is not a valid link. Check that it starts with http://, https://, ftp:// or ftps://."
+        "\"{0}\" is not a valid link. Check that it starts with http://, https://, ftp://, ftps:// or ftpes://."
     )]
     InvalidUrl(String),
 

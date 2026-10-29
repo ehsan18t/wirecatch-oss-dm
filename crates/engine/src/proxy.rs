@@ -257,7 +257,7 @@ impl Scheme {
         match url.scheme() {
             "http" => Some(Self::Http),
             "https" => Some(Self::Https),
-            "ftp" | "ftps" | "ftpes" => Some(Self::Ftp),
+            _ if crate::url::is_ftp(url) => Some(Self::Ftp),
             _ => None,
         }
     }

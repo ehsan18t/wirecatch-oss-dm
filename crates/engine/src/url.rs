@@ -1,10 +1,28 @@
-//! Taking sign-in details out of a URL before it is shown, logged, stored or
-//! passed on.
+//! The links the engine downloads, and taking sign-in details out of a URL
+//! before it is shown, logged, stored or passed on.
 //!
 //! A link can carry a user name and password (`https://alice:secret@host/`).
 //! Where it goes after the request that needs them, they must not follow.
 
 use ::url::Url;
+
+/// The web schemes the engine downloads.
+pub const WEB_SCHEMES: [&str; 2] = ["http", "https"];
+
+/// The FTP schemes the engine downloads: plain, with implicit TLS (`ftps`) and with explicit TLS (`ftpes`).
+pub const FTP_SCHEMES: [&str; 3] = ["ftp", "ftps", "ftpes"];
+
+/// Whether the engine downloads links of `url`'s scheme.
+#[must_use]
+pub fn is_supported(url: &Url) -> bool {
+    WEB_SCHEMES.contains(&url.scheme()) || is_ftp(url)
+}
+
+/// Whether `url` is an FTP link the engine downloads.
+#[must_use]
+pub fn is_ftp(url: &Url) -> bool {
+    FTP_SCHEMES.contains(&url.scheme())
+}
 
 /// `url` without its `user:password@`, for passing on, logging or storing where
 /// credentials must not go. A URL that cannot carry credentials has none and
@@ -44,6 +62,25 @@ fn removed(outcome: Result<(), ()>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn web_and_ftp_links_are_downloaded_and_nothing_else() {
+        let link = |raw: &str| Url::parse(raw).unwrap();
+        for raw in [
+            "http://h/f",
+            "https://h/f",
+            "ftp://h/f",
+            "ftps://h/f",
+            "ftpes://h/f",
+        ] {
+            assert!(is_supported(&link(raw)), "{raw}");
+        }
+        for raw in ["file:///f", "sftp://h/f", "data:,x", "magnet:?xt=x"] {
+            assert!(!is_supported(&link(raw)), "{raw}");
+        }
+        assert!(is_ftp(&link("ftpes://h/f")));
+        assert!(!is_ftp(&link("https://h/f")));
+    }
 
     #[test]
     fn without_password_keeps_the_user_name() {

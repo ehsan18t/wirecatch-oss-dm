@@ -143,13 +143,13 @@ fn exit_code(ending: Ending, written: io::Result<()>) -> ExitCode {
 /// Turns the command line into an engine request, refusing combinations the engine cannot honour.
 fn build_request(args: Args) -> anyhow::Result<DownloadRequest> {
     let url = Url::parse(&args.url).with_context(|| refused_link(&args.url))?;
-    let is_ftp = match url.scheme() {
-        "http" | "https" => false,
-        "ftp" | "ftps" | "ftpes" => true,
-        other => bail!(
-            "wirecatch cannot download \"{other}\" links. Use an http, https, ftp, ftps or ftpes link"
-        ),
-    };
+    if !wirecatch_engine::url::is_supported(&url) {
+        bail!(
+            "wirecatch cannot download \"{}\" links. Use an http, https, ftp, ftps or ftpes link",
+            url.scheme()
+        );
+    }
+    let is_ftp = wirecatch_engine::url::is_ftp(&url);
     if is_ftp && !args.headers.is_empty() {
         bail!(
             "request headers (-H) only apply to http and https links. For FTP credentials, put them in the link: ftp://user:password@host/path"
