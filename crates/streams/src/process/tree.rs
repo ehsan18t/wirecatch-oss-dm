@@ -4,6 +4,29 @@ use std::io;
 
 use tokio::process::{Child, Command};
 
+/// How often a start that failed with `ETXTBSY` is tried again, and the pause before each.
+#[cfg(unix)]
+const BUSY_TRIES: u32 = 20;
+#[cfg(unix)]
+const BUSY_PAUSE: std::time::Duration = std::time::Duration::from_millis(25);
+
+/// Runs `start` again while it fails with `ETXTBSY`. A program written just before it starts (an add-on
+/// unpacked, then asked its version) is "busy" while a child forked meanwhile by another thread still holds
+/// the writer's handle, until that child execs; the race is the kernel's, so it is waited out, as Cargo does.
+#[cfg(unix)]
+fn while_text_file_busy<T>(mut start: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    let mut tries = 1;
+    loop {
+        match start() {
+            Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) && tries < BUSY_TRIES => {
+                tries += 1;
+                std::thread::sleep(BUSY_PAUSE);
+            }
+            result => return result,
+        }
+    }
+}
+
 /// A program and everything it starts.
 ///
 /// On Unix the group is the leader's process id. A group id is free for reuse once its last member is reaped, and the leader is reaped only by `Child::wait`, so the group is killed at most once ([`Tree::kill`] takes it) and always before the leader is reaped: [`Tree::exited`] tells that the leader exited without reaping it, and [`Tree::disarm`] is called once it has been reaped.
@@ -24,7 +47,7 @@ pub(super) fn spawn(mut command: Command) -> io::Result<(Child, Tree)> {
     {
         // Leader of a new process group whose id is its own.
         command.process_group(0);
-        let child = command.spawn()?;
+        let child = while_text_file_busy(|| command.spawn())?;
         let group = child
             .id()
             .and_then(|id| libc::pid_t::try_from(id).ok())
@@ -287,5 +310,42 @@ mod job {
             ));
         }
         Ok(())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_start_refused_as_text_file_busy_is_tried_again() {
+        let mut tries = 0;
+        let started = while_text_file_busy(|| {
+            tries += 1;
+            if tries < 3 {
+                Err(io::Error::from_raw_os_error(libc::ETXTBSY))
+            } else {
+                Ok(tries)
+            }
+        });
+        assert_eq!(started.unwrap(), 3);
+    }
+
+    #[test]
+    fn other_failures_and_a_start_that_stays_busy_are_given_up() {
+        let mut tries = 0;
+        let missing = while_text_file_busy::<()>(|| {
+            tries += 1;
+            Err(io::Error::from(io::ErrorKind::NotFound))
+        });
+        assert_eq!(missing.unwrap_err().kind(), io::ErrorKind::NotFound);
+        assert_eq!(tries, 1);
+        tries = 0;
+        let busy = while_text_file_busy::<()>(|| {
+            tries += 1;
+            Err(io::Error::from_raw_os_error(libc::ETXTBSY))
+        });
+        assert_eq!(busy.unwrap_err().raw_os_error(), Some(libc::ETXTBSY));
+        assert_eq!(tries, BUSY_TRIES);
     }
 }
