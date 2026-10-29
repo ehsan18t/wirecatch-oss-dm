@@ -41,7 +41,7 @@ impl Manager {
                     "A video can be moved to another folder once it has finished downloading. To save it somewhere else now, remove it and download it again.",
                 ));
             }
-            if entry.moving.is_some() {
+            if !entry.hold.is_free() {
                 return Err(CoreError::WrongState(
                     "This download is already being moved. Wait a moment and try again.",
                 ));
@@ -49,7 +49,7 @@ impl Manager {
             if entry.path().parent() == Some(dir.as_path()) {
                 return Ok(());
             }
-            entry.moving = Some(CancellationToken::new());
+            entry.hold.begin_move();
             let exited = entry.run.as_ref().map(|run| run.exited.clone());
             self.stop_run(entry, Stop::Requeue);
             exited
@@ -104,9 +104,7 @@ impl Manager {
             }
             return moved.map(|_| ());
         };
-        if let Some(done) = entry.moving.take() {
-            done.cancel();
-        }
+        entry.hold.end_move();
         match moved {
             Ok(new_path) => {
                 let new_name = naming::file_name_of(&new_path);

@@ -37,7 +37,7 @@ W9 is finished before the release. Features that close a gap in the app come fir
 12. **CORE-9 (done):** moving a download to another folder never replaces a file there, and a move that cannot delete the original leaves no duplicate behind; core uses the engine's no-replace move.
 13. **CORE-4 (done):** withdrawing a browser capture while it is being confirmed never downloads it twice.
 14. **Dropped downloads' file work (done):** a stopped run's queued file work cannot delete a new run's files (the drain handle in AUDIT's carried items).
-15. **One state for a download (CORE-12), one kind of question (rest of CORE-5) and cancel safety (CORE-6):** the flags become one phase, which removes the class of bug behind 13 and 14.
+15. **One state for a download (CORE-12), one kind of question (rest of CORE-5) and cancel safety (CORE-6) (done):** the flags become one phase, which removes the class of bug behind 13 and 14.
 16. **Saves and scans:** progress saves write only the progress (CORE-7), state changes stop scanning every download (CORE-10), and the system proxy is read off the manager's lock.
 17. **The rest of W9:** split the long modules (CORE-11), typed add-on errors (CORE-13, CMD-8), no logic on a person's fix (CORE-14), named layout strings (CORE-19), no bool parameters (CORE-25), `UnixMillis` (CORE-26), the latest write per row kept (CORE-8), the small-file cap in the engine (CORE-23), and the small items AUDIT lists for W9.
 

@@ -166,11 +166,8 @@ pub(super) struct Entry {
     pub through_proxy: Option<String>,
     /// Set while its partial files are being deleted; a new run waits for it.
     pub cleanup: Option<CancellationToken>,
-    /// Being removed: hidden from the list and from every operation, and never started.
-    pub removing: bool,
-    /// Set while its files are moved to another folder (cancelled when done); it is
-    /// not started meanwhile.
-    pub moving: Option<CancellationToken>,
+    /// A move or a removal under way, which keeps it from starting (CORE-12).
+    pub hold: Hold,
     /// Where a move that failed halfway and could not be undone left some of its
     /// files: that path stays taken (reserved) until the download is tried again
     /// or removed, so no other download takes the name next to them, and the
@@ -293,10 +290,81 @@ pub(super) enum Stop {
 }
 
 impl Entry {
-    /// Queued but not started while its files move to another name (see `moving`).
+    /// Queued but not started while its files move to another name.
     pub fn held_for_another_name(&mut self) {
-        self.moving = Some(CancellationToken::new());
+        self.hold.moving(CancellationToken::new());
         self.row.status = DownloadStatus::Queued;
+    }
+}
+
+/// What keeps a download from starting, besides a run of its own. A removal that finds a move under way waits for it, so the right files are deleted.
+#[derive(Debug, Default)]
+pub(super) enum Hold {
+    #[default]
+    Free,
+    /// Its files are moving to another folder or name; cancelled when done.
+    Moving(CancellationToken),
+    /// Being removed: hidden from the list and from every operation, and never started.
+    Removing {
+        after_move: Option<CancellationToken>,
+    },
+}
+
+impl Hold {
+    pub fn is_free(&self) -> bool {
+        matches!(self, Self::Free)
+    }
+
+    pub fn is_removing(&self) -> bool {
+        matches!(self, Self::Removing { .. })
+    }
+
+    /// Starts a move of a free download, ended by [`end_move`](Self::end_move).
+    pub fn begin_move(&mut self) {
+        debug_assert!(self.is_free(), "a move began while {self:?}");
+        *self = Self::Moving(CancellationToken::new());
+    }
+
+    /// Marks a move under way with `done`, kept through a removal.
+    fn moving(&mut self, done: CancellationToken) {
+        match self {
+            Self::Removing { after_move } => *after_move = Some(done),
+            _ => *self = Self::Moving(done),
+        }
+    }
+
+    /// Ends a move, waking a removal waiting for it.
+    pub fn end_move(&mut self) {
+        match std::mem::take(self) {
+            Self::Moving(done) => done.cancel(),
+            Self::Removing { after_move } => {
+                if let Some(done) = after_move {
+                    done.cancel();
+                }
+                *self = Self::Removing { after_move: None };
+            }
+            Self::Free => {}
+        }
+    }
+
+    pub fn begin_remove(&mut self) {
+        let after_move = match std::mem::take(self) {
+            Self::Moving(done) => Some(done),
+            Self::Removing { after_move } => after_move,
+            Self::Free => None,
+        };
+        *self = Self::Removing { after_move };
+    }
+
+    /// The move under way, for a removal to wait for.
+    pub fn move_under_way(&self) -> Option<CancellationToken> {
+        match self {
+            Self::Moving(done)
+            | Self::Removing {
+                after_move: Some(done),
+            } => Some(done.clone()),
+            _ => None,
+        }
     }
 }
 
@@ -406,7 +474,7 @@ impl State {
     pub fn entry(&self, id: DownloadId) -> Result<&Entry> {
         self.downloads
             .get(&id)
-            .filter(|e| !e.removing)
+            .filter(|e| !e.hold.is_removing())
             .ok_or(CoreError::DownloadNotFound(id))
     }
 
@@ -414,13 +482,13 @@ impl State {
     pub fn entry_mut(&mut self, id: DownloadId) -> Result<&mut Entry> {
         self.downloads
             .get_mut(&id)
-            .filter(|e| !e.removing)
+            .filter(|e| !e.hold.is_removing())
             .ok_or(CoreError::DownloadNotFound(id))
     }
 
     /// Every download that is not being removed.
     pub fn visible(&self) -> impl Iterator<Item = &Entry> {
-        self.downloads.values().filter(|e| !e.removing)
+        self.downloads.values().filter(|e| !e.hold.is_removing())
     }
 
     pub fn slot(&self, id: QueueId) -> Result<&QueueSlot> {
@@ -681,8 +749,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         resume_first: false,
         through_proxy: None,
         cleanup: None,
-        removing: false,
-        moving: None,
+        hold: Hold::Free,
         on_existing: None,
         stranded: None,
         media_job: None,
@@ -739,8 +806,7 @@ mod tests {
             resume_first: false,
             through_proxy: None,
             cleanup: None,
-            removing: false,
-            moving: None,
+            hold: Hold::Free,
             on_existing: None,
             stranded: None,
             media_job: None,
@@ -812,5 +878,18 @@ mod tests {
         let mut entry = running();
         entry.run = None;
         assert!(!entry.stop(Stop::Pause));
+    }
+
+    /// A removal that finds a move under way waits for it, and the move's end wakes it without making the download free again.
+    #[test]
+    fn a_removal_during_a_move_waits_for_it() {
+        let mut hold = Hold::default();
+        hold.begin_move();
+        hold.begin_remove();
+        let moved = hold.move_under_way().expect("the removal lost the move");
+        assert!(hold.is_removing());
+        hold.end_move();
+        assert!(moved.is_cancelled(), "the removal was never woken");
+        assert!(hold.is_removing() && hold.move_under_way().is_none());
     }
 }

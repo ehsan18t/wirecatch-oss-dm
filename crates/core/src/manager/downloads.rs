@@ -19,7 +19,7 @@ use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, QueueRequest};
 use super::run::{delete_files, mark_cancelled};
-use super::state::{Entry, State, Stop};
+use super::state::{Entry, Hold, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::headers;
 use crate::naming;
@@ -223,7 +223,7 @@ impl Manager {
             let mut state = self.lock_open()?;
             for id in ids {
                 if let Ok(entry) = state.entry_mut(*id) {
-                    entry.removing = true;
+                    entry.hold.begin_remove();
                 }
             }
         }
@@ -242,10 +242,11 @@ impl Manager {
             {
                 let mut state = self.lock_open()?;
                 for id in ids {
-                    let Some(entry) = state.downloads.get_mut(id).filter(|e| e.removing) else {
+                    let Some(entry) = state.downloads.get_mut(id).filter(|e| e.hold.is_removing())
+                    else {
                         continue;
                     };
-                    waits.extend(entry.moving.clone());
+                    waits.extend(entry.hold.move_under_way());
                     if let Some(run) = &entry.run {
                         waits.push(run.exited.clone());
                         self.stop_run(entry, Stop::Remove);
@@ -265,7 +266,11 @@ impl Manager {
         {
             let mut state = self.lock_open()?;
             for id in ids {
-                if !state.downloads.get(id).is_some_and(|e| e.removing) {
+                if !state
+                    .downloads
+                    .get(id)
+                    .is_some_and(|e| e.hold.is_removing())
+                {
                     continue;
                 }
                 self.close_file_exists(&mut state, *id);
@@ -306,7 +311,7 @@ impl Manager {
             let mut state = self.lock();
             for id in &ids {
                 if let Ok(entry) = state.entry_mut(*id) {
-                    entry.removing = true;
+                    entry.hold.begin_remove();
                 }
             }
         }
@@ -459,7 +464,11 @@ impl Manager {
     pub fn resume_all(&self) -> Result<()> {
         let mut state = self.lock_open()?;
         let mut paused = Vec::new();
-        for entry in state.downloads.values_mut().filter(|e| !e.removing) {
+        for entry in state
+            .downloads
+            .values_mut()
+            .filter(|e| !e.hold.is_removing())
+        {
             if entry.is_running() {
                 // Still stopping after a pause: it goes back in line once stopped.
                 entry.requeue_when_stopped(false);
@@ -635,8 +644,7 @@ impl Manager {
             resume_first: false,
             through_proxy: None,
             cleanup: None,
-            removing: false,
-            moving: None,
+            hold: Hold::Free,
             on_existing: None,
             stranded: None,
             media_job,

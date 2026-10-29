@@ -121,7 +121,7 @@ impl Manager {
         let mut state = self.lock();
         let state = &mut *state;
         for id in &state.dirty {
-            if let Some(entry) = state.downloads.get(id).filter(|e| !e.removing) {
+            if let Some(entry) = state.downloads.get(id).filter(|e| !e.hold.is_removing()) {
                 state.batches.observe(&entry.row);
             }
         }

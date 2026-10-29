@@ -56,7 +56,7 @@ impl Manager {
         if !state
             .downloads
             .get(&download)
-            .is_some_and(|e| !e.removing && e.run.is_none())
+            .is_some_and(|e| !e.hold.is_removing() && e.run.is_none())
         {
             return Err(CoreError::DownloadNotFound(download));
         }
