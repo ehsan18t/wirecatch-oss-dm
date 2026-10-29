@@ -396,12 +396,13 @@ async fn parallel_downloads_join_in_playlist_order() {
 async fn resuming_after_a_cancel_fetches_only_the_missing_segments() {
     let server = FileServer::start().await;
     let segments = media_playlist(&server, "r", 30, 4).unwrap();
-    for i in 0..30 {
-        server.delay(&format!("r/seg{i}.ts"), Duration::from_millis(40));
+    // The first ten come; the rest hang until the resume, so the cancel always leaves twenty.
+    for i in 10..30 {
+        server.hang(&format!("r/seg{i}.ts"), true);
     }
     let dir = private_dir("hls-resume").unwrap();
     let output = dir.join("v.mp4");
-    let mut req = request(&server, "r/index.m3u8", &output);
+    let mut req = request(server.url("r/index.m3u8"), &output);
     req.options.connections = 2;
 
     let progress = Arc::new(StreamProgress::default());
@@ -413,12 +414,15 @@ async fn resuming_after_a_cancel_fetches_only_the_missing_segments() {
         Outcome::Paused { segments_left, .. } => segments_left,
         other => panic!("{other:?}"),
     };
-    assert!((1..=20).contains(&left), "{left} left");
+    assert_eq!(left, 20, "the hung segments are left");
     assert!(
         dir.join("v.mp4.wcstream").is_dir(),
         "finished segments are kept"
     );
     let before = server.seen().len();
+    for i in 10..30 {
+        server.hang(&format!("r/seg{i}.ts"), false);
+    }
 
     let progress = Arc::new(StreamProgress::default());
     let outcome = download(req, progress.clone(), CancellationToken::new())
@@ -498,7 +502,7 @@ async fn resuming_checks_segment_sizes() {
     let dir = private_dir("hls-sizes").unwrap();
     let output = dir.join("v.ts");
     // Pause while the server holds the last segment, leaving three finished.
-    let req = request(&server, "s/index.m3u8", &output);
+    let req = request(server.url("s/index.m3u8"), &output);
     let progress = Arc::new(StreamProgress::default());
     let cancel = CancellationToken::new();
     server.hang("s/seg3.ts", true);
