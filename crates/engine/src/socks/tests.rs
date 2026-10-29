@@ -130,11 +130,10 @@ async fn a_destination_the_proxy_cannot_reach_says_why() {
 
 #[tokio::test]
 async fn a_proxy_that_is_not_there_is_a_proxy_failure() {
-    let closed = TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .local_addr()
-        .unwrap();
+    // Bound but not listening refuses connections and keeps the port: a dropped listener's port can go to another test's server.
+    let held = tokio::net::TcpSocket::new_v4().unwrap();
+    held.bind(SocketAddr::from(([127, 0, 0, 1], 0))).unwrap();
+    let closed = held.local_addr().unwrap();
     let failure = proxy(&format!("socks5://{closed}"))
         .connect(&SocketAddr::from(([127, 0, 0, 1], 21)).into())
         .await
