@@ -574,7 +574,7 @@ fn write_until_closed(
             && let Err(e) = apply_with_retries(&mut conn, &writes, pauses, inbox)
         {
             error!(error = %e, "could not save changes to the database");
-            let fresh = writes.len() > retried;
+            let fresh = retried == 0;
             kept = apply_one_by_one(&mut conn, writes);
             if kept.len() > MAX_KEPT {
                 error!(
@@ -583,7 +583,7 @@ fn write_until_closed(
                 );
                 kept.drain(..kept.len() - MAX_KEPT);
             }
-            // A quiet retry of writes already reported is not news.
+            // Reported once per spell of failures: while writes are kept, new ones failing too is not news, and how a spell splits into batches depends on timing.
             if fresh {
                 on_failure(e.to_string());
             }
@@ -1692,6 +1692,8 @@ mod tests {
         let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         other.execute_batch("BEGIN EXCLUSIVE").unwrap();
         store.save_downloads(vec![download(1), download(2)]);
+        store.flush().await;
+        // A second batch failing in the same spell is not reported again.
         store.delete_downloads(vec![DownloadId(3)]);
         store.flush().await;
         assert_eq!(reports.lock().unwrap().len(), 1, "{reports:?}");
