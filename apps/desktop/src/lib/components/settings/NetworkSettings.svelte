@@ -7,6 +7,7 @@
   import type { SettingIn } from '$lib/settings-schema';
   import { getApp } from '$lib/state/app.svelte';
   import type { Row, SectionProps } from './row';
+  import ProxyServerActions from './ProxyServerActions.svelte';
   import ProxyServerList from './ProxyServerList.svelte';
   import SettingRows from './SettingRows.svelte';
   import SettingToggle from './SettingToggle.svelte';
@@ -66,7 +67,10 @@
   {flash}
   {controls}
   stacked={['proxy_servers', 'proxy_exceptions', 'local_sites']}
+  actions={{ proxy_servers: proxyActions }}
 />
+
+{#snippet proxyActions()}<ProxyServerActions />{/snippet}
 
 {#snippet proxyChoice({ s, control }: Row)}
   <Select
