@@ -26,6 +26,7 @@ use wirecatch_store::{LastIds, NameChoice, StoredDownload};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::media::MediaPending;
+use super::questions::{Questions, Waiting};
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
 use crate::error::{CoreError, Result};
@@ -44,11 +45,11 @@ pub(super) struct State {
     pub claimed: Claimed,
     /// Downloads with a run, so the ticker visits only those.
     pub running: BTreeSet<DownloadId>,
-    pub pending: BTreeMap<QuestionId, Pending>,
+    pub pending: Questions<Pending>,
     /// Media captures being looked at, waiting for the media add-on, or waiting
     /// for the user's choice of quality. Their ids come from the same counter as
     /// `pending`, so the two never share one.
-    pub media: BTreeMap<QuestionId, MediaPending>,
+    pub media: Questions<MediaPending>,
     /// Downloads paused until the person says what to do with the file already in their
     /// folder (D88). Ids from the same counter as `pending`.
     pub file_exists: BTreeMap<QuestionId, Asked>,
@@ -305,6 +306,12 @@ impl Stop {
             self,
             Stop::Pause | Stop::Cancel | Stop::Restart | Stop::Remove
         )
+    }
+}
+
+impl Waiting for Pending {
+    fn handovers(&mut self) -> &mut Vec<String> {
+        &mut self.handovers
     }
 }
 

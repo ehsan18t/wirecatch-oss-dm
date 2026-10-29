@@ -38,6 +38,7 @@ use super::captures::origin_of;
 use super::downloads::parse_web_url;
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, Placed, QueueRequest};
+use super::questions::{MAX_HANDOVERS, Waiting, Withdrawn};
 use super::state::State;
 use crate::error::{CoreError, Result};
 use crate::headers;
@@ -46,10 +47,6 @@ use crate::headers::Origin;
 /// How long a page waits for the media add-on before it becomes a failed
 /// download, so a question is never asked long after the person moved on.
 const ADDON_WAIT_MILLIS: i64 = 30 * 60 * 1000;
-/// Most media captures that can wait at once.
-const MAX_PENDING_MEDIA: usize = 100;
-/// Most captures of one link that can share one choice.
-const MAX_HANDOVERS: usize = 32;
 
 /// Where a media capture came from.
 #[derive(Debug, Clone)]
@@ -113,14 +110,10 @@ impl Held {
     }
 }
 
-/// Refuses one more video while [`MAX_PENDING_MEDIA`] are waiting.
-pub(super) fn check_room(state: &State) -> Result<()> {
-    if state.media.len() >= MAX_PENDING_MEDIA {
-        return Err(CoreError::LimitReached(format!(
-            "{MAX_PENDING_MEDIA} videos are already waiting for your choice. Answer some of them first."
-        )));
+impl Waiting for MediaPending {
+    fn handovers(&mut self) -> &mut Vec<String> {
+        &mut self.handovers
     }
-    Ok(())
 }
 
 /// A choice taken off the questions, with what was chosen, until its download is added.
@@ -219,17 +212,13 @@ impl Manager {
             action: AddAction::AwaitingConfirmation,
         };
         // The same media captured again joins the one already waiting.
-        if let Some((&id, existing)) = state
+        if let Some(&id) = state
             .media
-            .iter_mut()
+            .iter()
             .find(|(_, m)| m.source.fetch.url == url && m.source.kind == kind)
+            .map(|(id, _)| id)
         {
-            if existing.handovers.len() >= MAX_HANDOVERS {
-                return Err(CoreError::LimitReached(
-                    "This video was sent many times and is already waiting for your choice. Answer that first.".into(),
-                ));
-            }
-            existing.handovers.push(capture.handover_id.clone());
+            state.media.join(id, &capture.handover_id)?;
             let handover = Handover {
                 reply: reply.clone(),
                 target: Target::Pending(id),
@@ -239,7 +228,7 @@ impl Manager {
             self.emit(UiEvent::CaptureRepeated(Repeated::Question(id)));
             return Ok(reply);
         }
-        check_room(&state)?;
+        state.media.check_room()?;
         let source = MediaSource::of(capture, url, kind, chosen_by);
         let title = capture
             .media
@@ -582,13 +571,7 @@ impl Manager {
         id: QuestionId,
         handover: &str,
     ) {
-        let Some(pending) = state.media.get_mut(&id) else {
-            return;
-        };
-        pending.handovers.retain(|h| h != handover);
-        if pending.handovers.is_empty()
-            && let Some(pending) = state.media.remove(&id)
-        {
+        if let Withdrawn::Closed(pending) = state.media.withdraw(id, handover) {
             if let MediaStage::Analysing(token) = &pending.stage {
                 token.cancel();
             }
@@ -604,7 +587,7 @@ impl Manager {
         let mut started = Vec::new();
         {
             let mut state = self.lock();
-            for (id, pending) in &mut state.media {
+            for (id, pending) in state.media.iter_mut() {
                 if matches!(pending.stage, MediaStage::NeedsAddon) {
                     let token = CancellationToken::new();
                     pending.stage = MediaStage::Analysing(token.clone());
