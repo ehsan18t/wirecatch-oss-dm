@@ -16,7 +16,7 @@ use wirecatch_protocol::{DownloadId, QuestionId};
 use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::downloads::parse_web_url;
-use super::media::{Held, MediaPending, MediaSource, check_room};
+use super::media::{Held, MediaPending, MediaSource};
 use super::placement::{Candidate, Placed, QueueRequest};
 use super::state::Entry;
 use crate::error::Result;
@@ -82,7 +82,7 @@ impl Manager {
         {
             return Ok(id);
         }
-        check_room(&state)?;
+        state.media.check_room()?;
         let source = MediaSource::page(Fetch::typed(url));
         let held = Held {
             handovers: Vec::new(),

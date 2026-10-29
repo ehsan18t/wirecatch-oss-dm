@@ -17,6 +17,7 @@ mod placement;
 mod policy;
 mod preferences;
 mod proxy;
+mod questions;
 mod queues;
 mod relocate;
 mod restore;

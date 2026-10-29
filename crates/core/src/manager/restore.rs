@@ -16,6 +16,7 @@ use wirecatch_store::{Snapshot, StoredDownload};
 
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
+use super::questions::Questions;
 use super::state::{Counters, Entry, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
@@ -112,8 +113,14 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         downloads: BTreeMap::new(),
         claimed: Claimed::default(),
         running: BTreeSet::default(),
-        pending: BTreeMap::new(),
-        media: BTreeMap::new(),
+        pending: Questions::new(
+            "downloads are already waiting for your confirmation. Answer some of them first.",
+            "This link was captured many times and is already waiting for your confirmation. Answer that first.",
+        ),
+        media: Questions::new(
+            "videos are already waiting for your choice. Answer some of them first.",
+            "This video was sent many times and is already waiting for your choice. Answer that first.",
+        ),
         file_exists: BTreeMap::new(),
         addon: AddonSlot::default(),
         suffixes: around.suffixes.clone(),

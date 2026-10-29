@@ -26,15 +26,11 @@ use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::downloads::{capture_action, parse_url};
 use super::handovers::{self, Handover, Target};
 use super::placement::{Candidate, Placed, QueueRequest};
+use super::questions::Withdrawn;
 use super::state::{Expectation, Pending, State};
 use crate::error::{CoreError, Result};
 use crate::headers::Origin;
 use crate::{headers, naming};
-
-/// Most captures that can wait for confirmation at once.
-const MAX_PENDING: usize = 100;
-/// Most captures of one link that can share one confirmation.
-const MAX_HANDOVERS_PER_CONFIRMATION: usize = 32;
 
 impl Manager {
     /// Takes over a download captured in the browser.
@@ -248,14 +244,14 @@ impl Manager {
                 }
                 Target::Pending(pending) => {
                     // Other tabs may still be waiting on the same question.
-                    if let Some(waiting) = state.pending.get_mut(&pending) {
-                        waiting.handovers.retain(|h| h != handover_id);
-                        if waiting.handovers.is_empty() {
-                            state.pending.remove(&pending);
+                    match state.pending.withdraw(pending, handover_id) {
+                        Withdrawn::Closed(_) => {
                             self.emit(UiEvent::ConfirmationClosed { id: pending });
                         }
-                    } else {
-                        self.withdraw_media_handover(&mut state, pending, handover_id);
+                        Withdrawn::StillAsked => {}
+                        Withdrawn::NotHere => {
+                            self.withdraw_media_handover(&mut state, pending, handover_id);
+                        }
                     }
                     state.handovers.remove(handover_id);
                     return Ok(WithdrawOutcome::Withdrawn);
@@ -459,18 +455,13 @@ impl Manager {
         };
         // The same link captured again joins the confirmation already showing.
         let url_text = url.to_string();
-        if let Some(existing) = state
+        if let Some(id) = state
             .pending
-            .values_mut()
+            .values()
             .find(|p| p.capture.url == url_text)
+            .map(|p| p.capture.id)
         {
-            if existing.handovers.len() >= MAX_HANDOVERS_PER_CONFIRMATION {
-                return Err(CoreError::LimitReached(
-                    "This link was captured many times and is already waiting for your confirmation. Answer that first.".into(),
-                ));
-            }
-            existing.handovers.push(capture.handover_id.clone());
-            let id = existing.capture.id;
+            state.pending.join(id, &capture.handover_id)?;
             let handover = Handover {
                 reply: reply.clone(),
                 target: Target::Pending(id),
@@ -480,11 +471,7 @@ impl Manager {
             self.emit(UiEvent::CaptureRepeated(Repeated::Question(id)));
             return Ok(reply);
         }
-        if state.pending.len() >= MAX_PENDING {
-            return Err(CoreError::LimitReached(format!(
-                "{MAX_PENDING} downloads are already waiting for your confirmation. Answer some of them first."
-            )));
-        }
+        state.pending.check_room()?;
         let file_name = naming::file_name(capture.suggested_name.as_deref(), url)?;
         let category = wirecatch_settings::category_of(&state.settings, &file_name);
         let folder =
