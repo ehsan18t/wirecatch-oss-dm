@@ -610,7 +610,7 @@ describe('media button messages', () => {
       ),
     ).toEqual({
       ok: false,
-      message: 'Wirecatch did not take it. This address cannot be downloaded.',
+      message: 'Wirecatch did not accept it. This address cannot be downloaded.',
     });
 
     const asks = await setup({ configure: (a) => (a.addBehavior = 'awaiting_confirmation') });
@@ -887,7 +887,7 @@ describe('popup media list', () => {
         key: 'page:https://www.youtube.com/watch?v=abc',
         kind: 'page',
         title: 'This YouTube page',
-        detail: 'Wirecatch reads it with its media add-on.',
+        detail: 'Wirecatch gets the video with its media add-on.',
         size: null,
       },
     ]);
@@ -926,7 +926,7 @@ describe('popup media list', () => {
         key: 'page:https://www.youtube.com/watch?v=abc',
         kind: 'page',
         title: 'This YouTube page',
-        detail: 'Wirecatch reads it with its media add-on.',
+        detail: 'Wirecatch gets the video with its media add-on.',
         size: null,
       },
     ]);

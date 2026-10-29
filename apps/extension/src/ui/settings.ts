@@ -24,7 +24,7 @@ export const SETTINGS = {
   askEachVideo: {
     label: 'Ask about each video',
     description:
-      'Choose a quality for each video. When off, videos use your Video and audio choices.',
+      'Choose a quality for each video. When off, videos use your Video and audio settings.',
   },
   defaultQueue: shared('default_queue'),
   speedLimit: shared('global_speed_limit'),

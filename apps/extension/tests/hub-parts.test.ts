@@ -108,7 +108,7 @@ describe('planMenuClick', () => {
   it('lets the browser download links that are not on the web', () => {
     const plan = planMenuClick({ linkUrl: 'ftp://example.com/setup.exe' }, undefined, true);
     expect(plan).toMatchObject({ kind: 'browser', url: 'ftp://example.com/setup.exe' });
-    expect(plan.kind === 'browser' && plan.message).toContain('only take web links');
+    expect(plan.kind === 'browser' && plan.message).toContain('only capture web links');
   });
 
   it('offers a program to Wirecatch like any other web link (D60)', () => {
@@ -211,7 +211,7 @@ describe('mediaAnswer', () => {
     });
     expect(
       mediaAnswer({ taken: false, reason: 'refused', detail: 'Not a video', uncertain: false }),
-    ).toEqual({ ok: false, message: 'Wirecatch did not take it. Not a video.' });
+    ).toEqual({ ok: false, message: 'Wirecatch did not accept it. Not a video.' });
     expect(
       mediaAnswer({ taken: false, reason: 'no_answer', detail: null, uncertain: true }).message,
     ).toContain('check its list');

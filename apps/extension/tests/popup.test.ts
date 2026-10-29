@@ -289,7 +289,7 @@ describe('popup', () => {
 
     await user.click(screen.getByRole('switch', { name: 'Global speed limit' }));
     await waitFor(() => expect(app.controls.global_speed_limit).toBe(FIRST_TOTAL_SPEED_LIMIT));
-    expect(screen.getByRole('spinbutton', { name: 'Total speed limit' })).toHaveProperty(
+    expect(screen.getByRole('spinbutton', { name: 'Global speed limit' })).toHaveProperty(
       'value',
       '5',
     );
@@ -384,7 +384,7 @@ describe('popup', () => {
       },
     });
     expect(screen.getByText('Closed')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Wirecatch is closed.' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Wirecatch is not running.' })).toBeTruthy();
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Open Wirecatch' }));
     const status = within(screen.getByRole('contentinfo')).getByRole('status');
     await waitFor(() => expect(status.textContent.trim()).toBe('Wirecatch is open.'));
@@ -424,7 +424,9 @@ describe('popup', () => {
     ).toBeTruthy();
     expect(screen.getByText('Details: Specified native messaging host not found.')).toBeTruthy();
     expect(
-      screen.getByText('Your settings are kept in Wirecatch, and show here once it is connected.'),
+      screen.getByText(
+        'Your settings are stored in Wirecatch and appear here once it is connected.',
+      ),
     ).toBeTruthy();
     expect(screen.queryByRole('switch', { name: 'Capture downloads' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Downloads/ })).toBeNull();
@@ -452,7 +454,7 @@ describe('popup', () => {
     });
     expect(
       screen.getByRole('heading', {
-        name: 'This copy of the extension is not the one Wirecatch trusts.',
+        name: 'Wirecatch does not recognize this copy of the extension.',
       }),
     ).toBeTruthy();
     expect(
@@ -470,7 +472,9 @@ describe('popup', () => {
       },
     });
     expect(
-      screen.getByText('Your settings are kept in Wirecatch, and show here once it is connected.'),
+      screen.getByText(
+        'Your settings are stored in Wirecatch and appear here once it is connected.',
+      ),
     ).toBeTruthy();
     expect(screen.queryByRole('switch')).toBeNull();
   });
@@ -518,7 +522,7 @@ describe('popup', () => {
     const { hub } = await openPopup();
     hub.notify('warning', 'First message.');
     hub.notify('error', 'Second message.');
-    const list = await screen.findByRole('list', { name: 'Messages' });
+    const list = await screen.findByRole('list', { name: 'Alerts' });
     await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(2));
     const dismiss = (message: string): HTMLElement =>
       screen.getByRole('button', { name: 'Dismiss', description: message });
@@ -528,7 +532,7 @@ describe('popup', () => {
     await waitFor(() => expect(document.activeElement).toBe(dismiss('First message.')));
 
     await user.click(dismiss('First message.'));
-    await waitFor(() => expect(screen.queryByRole('list', { name: 'Messages' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Alerts' })).toBeNull());
     expect(document.activeElement).toBe(screen.getByRole('main'));
   });
 

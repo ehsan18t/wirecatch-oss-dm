@@ -28,7 +28,7 @@
 </script>
 
 {#if notices.length > 0}
-  <ul aria-label="Messages" class="flex flex-col gap-2" bind:this={list}>
+  <ul aria-label="Alerts" class="flex flex-col gap-2" bind:this={list}>
     {#each notices as notice, index (notice.id)}
       {const messageId = $derived(`${uid}-notice-${String(index)}`)}
       <li>

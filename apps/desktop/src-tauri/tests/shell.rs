@@ -337,7 +337,7 @@ fn a_video_is_told_as_added_once_when_handed_over() -> TestResult {
         .iter()
         .map(|s| s.notice.body.clone())
         .collect();
-    assert_eq!(bodies, ["Keynote, reading the video", "file-9.zip"]);
+    assert_eq!(bodies, ["Keynote: getting video details", "file-9.zip"]);
     assert_eq!(titles(&handle), ["Download added", "Download added"]);
     task.abort();
     Ok(())

@@ -120,7 +120,7 @@ const isErrorAnswer = object({ status: literal('err') });
  * person as it is. A retry gets the same answer, so the advice is to update, not to try again.
  */
 export const UNREADABLE_ANSWER =
-  'Wirecatch answered in a way this version of the extension does not understand. Updating the extension may help.';
+  'Wirecatch sent a response this version of the extension cannot read. Updating the extension may help.';
 
 /** The delay before retry number `attempt` (counted from 0): past the end of the table, its last delay. */
 export function backoffDelay(backoff: Backoff, attempt: number): number {

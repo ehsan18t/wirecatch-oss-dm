@@ -183,7 +183,7 @@ describe('connection problems', () => {
       fix: 'Install Wirecatch, or open it once so it can connect to this browser.',
     });
     expect(describeProblem('host_untrusted')).toEqual({
-      title: 'This copy of the extension is not the one Wirecatch trusts.',
+      title: 'Wirecatch does not recognize this copy of the extension.',
       fix: 'Install the extension from the Wirecatch website or store, or update Wirecatch.',
     });
     expect(describeProblem('disconnected').fix).toContain('reconnects automatically');

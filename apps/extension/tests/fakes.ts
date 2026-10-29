@@ -304,7 +304,7 @@ export class FakeApp implements NativeTransport {
       this.starts += 1;
     }
     if (!this.running) {
-      return { status: 'err', value: { code: 'app_not_running', message: 'Wirecatch is closed.' } };
+      return { status: 'err', value: { code: 'app_not_running', message: 'Wirecatch is not running.' } };
     }
     if (this.helloError !== null) return { status: 'err', value: this.helloError };
     const version = this.chosenVersion ?? this.agreedVersion(params);

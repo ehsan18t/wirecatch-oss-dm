@@ -23,11 +23,11 @@ export function waitingNote(status: ConnectionStatus): string {
     case 'connecting':
       return 'Connecting to Wirecatch. Your settings show here once it is connected.';
     case 'connected':
-      return 'Getting your settings from Wirecatch.';
+      return 'Loading your settings from Wirecatch.';
     case 'unavailable':
       return status.problem.kind === 'app_closed'
-        ? 'Your settings are kept in Wirecatch, and show here once it is running.'
-        : 'Your settings are kept in Wirecatch, and show here once it is connected.';
+        ? 'Your settings are stored in Wirecatch and appear here once it is running.'
+        : 'Your settings are stored in Wirecatch and appear here once it is connected.';
   }
 }
 

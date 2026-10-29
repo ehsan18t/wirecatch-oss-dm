@@ -43,7 +43,7 @@
 {#snippet speedLimit({ def, s, control }: Row)}
   {#if s.global_speed_limit !== null}
     <NumberInput
-      label="Total speed limit"
+      label="Global speed limit"
       class="w-32"
       unit="MB/s"
       min={SPEED_FIELD.MB.min}

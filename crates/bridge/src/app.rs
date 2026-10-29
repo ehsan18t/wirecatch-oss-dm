@@ -238,7 +238,7 @@ impl Unavailable {
     pub(crate) fn not_running() -> Self {
         Self {
             code: ErrorCode::AppNotRunning,
-            message: "Wirecatch is closed. It opens again when the browser has a download for it, or when you open it.".to_owned(),
+            message: "Wirecatch is not running. It starts again when the browser has a download for it, or when you open it.".to_owned(),
         }
     }
 

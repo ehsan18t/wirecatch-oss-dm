@@ -142,7 +142,7 @@ export function describeTarget(target: MediaTarget): { title: string; detail: st
     case 'page':
       return {
         title: `This ${target.site ?? 'page'} page`,
-        detail: 'Wirecatch reads it with its media add-on.',
+        detail: 'Wirecatch gets the video with its media add-on.',
       };
   }
 }

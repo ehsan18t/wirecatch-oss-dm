@@ -110,7 +110,7 @@ describe('the settings screen', () => {
     const { app } = await openSettings('speed');
     await fireEvent.click(screen.getByRole('switch', { name: 'Global speed limit' }));
     await settle();
-    const field = spin('Total speed limit');
+    const field = spin('Global speed limit');
     await change(field, '2.5');
     expect(app.settings?.global_speed_limit).toBe(2.5 * MB);
     for (const typed of ['', 'fast']) {

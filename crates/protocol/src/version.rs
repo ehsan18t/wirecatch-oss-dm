@@ -99,7 +99,7 @@ pub enum VersionError {
     },
     /// The peer speaks only versions older than any this end speaks: the peer must be updated.
     #[error(
-        "the peer speaks protocol versions {} to {}, all older than this end's oldest, {}",
+        "the peer supports protocol versions {} to {}, all older than this end's oldest, {}",
         peer.oldest, peer.newest, ours.oldest
     )]
     PeerTooOld {
@@ -110,7 +110,7 @@ pub enum VersionError {
     },
     /// The peer speaks only versions newer than any this end speaks: this end must be updated.
     #[error(
-        "the peer speaks protocol versions {} to {}, all newer than this end's newest, {}",
+        "the peer supports protocol versions {} to {}, all newer than this end's newest, {}",
         peer.oldest, peer.newest, ours.newest
     )]
     PeerTooNew {

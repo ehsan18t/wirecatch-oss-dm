@@ -119,8 +119,7 @@ export const IGNORED_SITE =
 const NOTHING_FOUND =
   'Wirecatch has not found anything to download here yet. Play the video for a moment, then try again.';
 const TAB_GONE = 'This tab is closed.';
-const ITEM_GONE =
-  'This item is no longer on the page. Close this window and open it again to see what is there now.';
+const ITEM_GONE = 'This item is no longer on the page. Reopen the popup to see what is there now.';
 
 const MAX_TITLE = 200;
 

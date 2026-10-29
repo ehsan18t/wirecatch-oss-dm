@@ -35,7 +35,7 @@ type Result = { ok: true; message?: string } | { ok: false; message: string };
 /** What a request gets when the background script went away before it answered. */
 const RESTARTED: Result = {
   ok: false,
-  message: 'The extension restarted. Close and reopen this window.',
+  message: 'The extension restarted. Close and reopen this popup.',
 };
 
 /**

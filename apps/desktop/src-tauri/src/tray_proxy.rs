@@ -22,7 +22,7 @@ pub struct ProxyItem {
 #[must_use]
 pub fn items(app: &ProxySettings, profiles: &[ProxyProfile]) -> Vec<ProxyItem> {
     let fixed = [
-        (ProxyUse::System, "The computer's proxy".to_owned()),
+        (ProxyUse::System, "System proxy".to_owned()),
         (ProxyUse::Direct, "No proxy".to_owned()),
     ];
     let saved = profiles
@@ -110,7 +110,7 @@ mod tests {
         assert_eq!(
             shown,
             [
-                ("The computer's proxy", false),
+                ("System proxy", false),
                 ("No proxy", false),
                 ("Office", true),
                 ("proxy.example:8080", false),

@@ -491,7 +491,7 @@ export class Hub {
     if (snapshot.status.state === 'unavailable') {
       badge.set('!', 'Wirecatch is not connected. Click for details.');
     } else if (snapshot.notices.length > 0) {
-      badge.set('!', 'Wirecatch has messages for you. Click to read them.');
+      badge.set('!', 'Wirecatch has alerts for you. Click to see them.');
     } else {
       badge.set('', 'Wirecatch');
     }

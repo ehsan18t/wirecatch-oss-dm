@@ -754,7 +754,7 @@ Decided on 2026-10-29. Labels and help text use the terms people know from other
 2. Inherited values: a value every queue uses unless it sets its own is "global" ("Global speed limit", "Uses the global limit: 3 at once", "Global proxy (Office)"), never "the app's".
 3. Proxy: "System proxy" for the operating system's setting, "Proxy servers" for the saved ones, "Bypass proxy for" for exceptions, "System proxy exceptions" for the system's bypass list.
 4. Schedules: a queue "runs on a schedule"; started outside it, it was started "manually" and "ignores the schedule". Never "hours" or "by hand".
-5. Notifications: "notification" is the system's; "notice" is the small card in the browser tab. Wirecatch "notifies" you, never "tells" you.
+5. Notifications: "notification" is the system's; "notice" is the small card in the browser tab; "alerts" are the list of problems in the extension's popup. Wirecatch "notifies" you, never "tells" you.
 6. Browser downloads are "captured", the word the code uses, in the app and the popup alike; "Sites to ignore" are left to the browser.
 7. A settings file is exported and imported ("Export settings", "Import settings").
 8. A place in settings is written "Settings > Media".
