@@ -1212,11 +1212,10 @@ async fn a_direct_media_file_downloads_like_any_file() -> TestResult {
     Ok(())
 }
 
-/// The real ffmpeg (set `WIRECATCH_TEST_FFMPEG`) joins real video and audio.
+/// A real ffmpeg joins real video and audio.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn real_ffmpeg_joins_real_video_and_audio() -> TestResult {
     let Some(ffmpeg) = real_ffmpeg() else {
-        eprintln!("skipped: set WIRECATCH_TEST_FFMPEG to a real ffmpeg to run this test");
         return Ok(());
     };
     let scratch = tempfile::tempdir().unwrap();

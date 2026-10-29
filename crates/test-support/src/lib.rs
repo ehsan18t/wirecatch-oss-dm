@@ -82,6 +82,41 @@ pub const PATIENCE: Duration = Duration::from_secs(120);
 /// A window in which something must not happen: a test that checks nothing came (no request, no event, no rerun) waits this long first. Short, since it can only miss a fault, never fail a correct run (docs/ENGINEERING.md, section 7).
 pub const QUIET: Duration = Duration::from_millis(300);
 
+/// A real ffmpeg from `WIRECATCH_TEST_FFMPEG` or the `PATH`.
+///
+/// Without one the test is skipped with a note, unless
+/// `WIRECATCH_REQUIRE_FFMPEG=1` (set in CI): then it fails, so a missing
+/// ffmpeg can never make these tests pass silently.
+#[must_use]
+pub fn real_ffmpeg() -> Option<PathBuf> {
+    let configured = std::env::var_os("WIRECATCH_TEST_FFMPEG").map(PathBuf::from);
+    let found = match &configured {
+        Some(path) if path.is_file() => Some(path.clone()),
+        Some(_) => None,
+        None => {
+            let name = format!("ffmpeg{}", std::env::consts::EXE_SUFFIX);
+            std::env::var_os("PATH").and_then(|paths| {
+                std::env::split_paths(&paths)
+                    .map(|d| d.join(&name))
+                    .find(|p| p.is_file())
+            })
+        }
+    };
+    if found.is_none() {
+        let why = match &configured {
+            Some(path) => format!(
+                "WIRECATCH_TEST_FFMPEG is {}, which is not a file",
+                path.display()
+            ),
+            None => "no ffmpeg on PATH and WIRECATCH_TEST_FFMPEG is not set".to_string(),
+        };
+        let required = std::env::var("WIRECATCH_REQUIRE_FFMPEG").is_ok_and(|v| v == "1");
+        assert!(!required, "WIRECATCH_REQUIRE_FFMPEG=1 but {why}");
+        eprintln!("skipped: {why}");
+    }
+    found
+}
+
 /// A new, empty folder for one test that only its owner can enter, removed on
 /// drop, so a test that fails leaves nothing behind. It dereferences to its
 /// [`Path`].
