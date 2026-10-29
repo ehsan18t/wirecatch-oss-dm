@@ -13,8 +13,8 @@ export const field = tv({
     'outline-none focus-within:border-accent focus-within:bg-raised focus-within:shadow-focus-field',
     // Forced colours drop the shadow and paint every border alike, so there the box shows focus with an outline. `outline-solid` because `outline-none` above set the style the width utility reads.
     'forced-colors:focus-within:outline-2 forced-colors:focus-within:outline-solid forced-colors:focus-within:outline-sys-highlight',
-    // A disabled control inside the box dims it; so does a box that is the control itself (Select's trigger).
-    'has-disabled:pointer-events-none has-disabled:opacity-disabled disabled:pointer-events-none disabled:opacity-disabled',
+    // The box dims for its own text control disabled, never for a disabled step button inside it (NumberInput at its minimum); so does a box that is the control itself (Select's trigger).
+    'has-[input:disabled,textarea:disabled]:pointer-events-none has-[input:disabled,textarea:disabled]:opacity-disabled disabled:pointer-events-none disabled:opacity-disabled',
     'forced-colors:border-sys-text',
   ],
   variants: {
