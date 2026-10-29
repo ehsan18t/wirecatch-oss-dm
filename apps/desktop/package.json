@@ -17,7 +17,7 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
-    "e2e": "playwright test",
+    "e2e": "pnpm build:mock && playwright test",
     "e2e:screenshots": "playwright test -c playwright.screenshots.config.ts",
     "e2e:perf": "pnpm build:mock && playwright test -c playwright.perf.config.ts",
     "e2e:gallery": "pnpm build:gallery && playwright test -c playwright.gallery.config.ts",
