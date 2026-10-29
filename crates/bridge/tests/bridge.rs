@@ -24,12 +24,10 @@ use wirecatch_protocol::wire::{
     Call, ClientKind, ErrorCode, Hello, HelloReply, Message, Outcome, ProtocolError, Reply,
 };
 use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
+use wirecatch_test_support::bridge::{ENDPOINT_VAR, LAUNCH_VAR, START_BUDGET_VAR};
 use wirecatch_test_support::{PATIENCE, PrivateDir, TestResult, private_dir};
 
 const BRIDGE: &str = env!("CARGO_BIN_EXE_wirecatch-bridge");
-const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
-const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
-const START_BUDGET_VAR: &str = "WIRECATCH_BRIDGE_TEST_START_BUDGET_MS";
 const CHROME_ORIGIN: &str = CHROMIUM_EXTENSION_ORIGIN;
 const FIREFOX_ID: &str = FIREFOX_EXTENSION_ID;
 

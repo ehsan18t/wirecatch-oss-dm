@@ -42,6 +42,7 @@ fn build_bridge() -> PathBuf {
             "wirecatch-bridge",
             "--features",
             "test-overrides",
+            "--locked",
             "--message-format",
             "json-render-diagnostics",
             "--manifest-path",
