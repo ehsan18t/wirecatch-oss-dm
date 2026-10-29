@@ -815,6 +815,10 @@ Decided with the maintainer on 2026-10-29. A download used to take the next free
 4. Replace and Keep both restart the download with that decision, so its next run takes the path at once. The engine replaces a file only on a run the person chose Replace for (`ExistingFile::Replace`); every other run refuses (`ExistingFile::Refuse`), and a file saved under its name meanwhile makes the finished download move its part and resume files to the next free name and finish there (D30.7).
 5. Videos keep taking the next free name for now: their file is placed when their job ends, not when a server answers, and get this setting in a change of their own.
 
+### D90. The browser notice offers Open
+
+Decided with the maintainer on 2026-10-29. It amends D65.4: a notice in the browser about a finished download now offers the system notification's buttons, Open included. A website can still lay a decoy over the notice so a press lands on Open unseen, but Open opens a document, picture, video or audio file directly and anything else, a program, a script or a file of unknown type, only after the shell's own warning (`files::open_download`), which no page can cover. So a decoy can at most open a harmless file.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
