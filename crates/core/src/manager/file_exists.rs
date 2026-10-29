@@ -3,7 +3,7 @@
 //! leaves the download to the next free name, and a duplicate is replaced, kept as the download,
 //! or asked about, as `when_file_exists` says.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use tracing::warn;
@@ -16,7 +16,7 @@ use wirecatch_protocol::{DownloadId, QuestionId};
 use super::Manager;
 use super::run::{mark_cancelled, mark_completed};
 use super::settle::ServerAnswer;
-use super::state::{Found, OnExisting, State};
+use super::state::{Asked, Found, OnExisting, State};
 use crate::error::{CoreError, Result};
 use crate::naming;
 
@@ -24,7 +24,11 @@ impl Manager {
     /// Every open [`FileExistsQuestion`], oldest first.
     #[must_use]
     pub fn pending_file_exists(&self) -> Vec<FileExistsQuestion> {
-        self.lock().file_exists.values().cloned().collect()
+        self.lock()
+            .file_exists
+            .values()
+            .map(|asked| asked.question.clone())
+            .collect()
     }
 
     /// Answers question `id`: the download replaces the file in the folder, takes the next free
@@ -43,7 +47,7 @@ impl Manager {
     ) -> Result<DownloadId> {
         let mut guard = self.lock_open()?;
         let state = &mut *guard;
-        let question = state
+        let Asked { question, path } = state
             .file_exists
             .remove(&id)
             .ok_or(CoreError::ConfirmationNotFound(id))?;
@@ -58,7 +62,7 @@ impl Manager {
         }
         let remembered = match answer.choice {
             FileExistsChoice::Replace => {
-                replace_at(state, download, &question_path(&question));
+                replace_at(state, download, &path);
                 WhenFileExists::Replace
             }
             FileExistsChoice::KeepBoth => {
@@ -171,7 +175,13 @@ impl Manager {
             size: found.size,
             saved_at: found.saved_at,
         };
-        state.file_exists.insert(question.id, question.clone());
+        state.file_exists.insert(
+            question.id,
+            Asked {
+                question: question.clone(),
+                path: found.path.clone(),
+            },
+        );
         self.emit(UiEvent::FileExistsRequested(question));
     }
 
@@ -181,8 +191,8 @@ impl Manager {
         let closed: Vec<QuestionId> = state
             .file_exists
             .values()
-            .filter(|q| q.download == id)
-            .map(|q| q.id)
+            .filter(|asked| asked.question.download == id)
+            .map(|asked| asked.question.id)
             .collect();
         for question in closed {
             state.file_exists.remove(&question);
@@ -268,9 +278,4 @@ fn settle_at(entry: &mut super::state::Entry, path: &Path) {
 fn saved_at(path: &Path) -> Option<i64> {
     let modified = std::fs::metadata(path).ok()?.modified().ok()?;
     i64::try_from(modified.duration_since(UNIX_EPOCH).ok()?.as_millis()).ok()
-}
-
-/// The path a question's answer is about.
-fn question_path(question: &FileExistsQuestion) -> PathBuf {
-    Path::new(&question.folder).join(&question.file_name)
 }

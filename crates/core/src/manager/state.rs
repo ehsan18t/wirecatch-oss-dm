@@ -51,7 +51,7 @@ pub(super) struct State {
     pub media: BTreeMap<QuestionId, MediaPending>,
     /// Downloads paused until the person says what to do with the file already in their
     /// folder (D88). Ids from the same counter as `pending`.
-    pub file_exists: BTreeMap<QuestionId, FileExistsQuestion>,
+    pub file_exists: BTreeMap<QuestionId, Asked>,
     /// The media add-on.
     pub addon: AddonSlot,
     /// The Public Suffix List every decision about sites reads (D39, D44).
@@ -186,6 +186,13 @@ pub(super) struct Entry {
     /// the media add-on is installed, that page is read for its video instead
     /// (D51). Not saved, so a download restored after a restart is not checked.
     pub video_check: bool,
+}
+
+/// A [`FileExistsQuestion`] and the file it is about, whose path its words may not hold exactly
+/// (a name that is not valid Unicode).
+pub(super) struct Asked {
+    pub question: FileExistsQuestion,
+    pub path: PathBuf,
 }
 
 /// What a download does about the file already in its folder, once decided (D88).
