@@ -831,6 +831,13 @@ It also amends D65.1 (D67): "When a download finishes" is a system notification 
 ### D91. Settings and Downloads switch at the sidebar's foot
 
 Decided with the maintainer on 2026-10-29. It amends D47: on the settings screen the "Back to downloads" item at the top of the settings list goes, and the foot of the sidebar shows Downloads where the downloads screen shows Settings. One place switches between the two screens, in the docked sidebar, the icon rail and the drawer. Escape and the palette's "Back to downloads" still leave settings.
+### D92. The title bar: small window buttons, drag from anywhere
+
+Decided with the maintainer on 2026-10-29, from a mockup of four styles. It amends D47 (the "wire" caption glyphs).
+
+1. The window buttons are small rounded buttons set in from the window's edge, with Windows 11's minimize, maximize, restore and close shapes in a muted colour and no background; only the one under the pointer fills, grey, or red for Close.
+2. Every part of the title bar that is not a control drags the window, and a double-click there maximizes it: Tauri's drag region covers the whole bar (`data-tauri-drag-region="deep"`), and controls refuse the drag by themselves, in the CSS app region too. Wrappers around the controls no longer block the space beside them.
+3. The search box shows no keyboard shortcut, and the speed readout is hidden while nothing runs, keeping its place.
 
 ## Assumptions (not yet confirmed)
 

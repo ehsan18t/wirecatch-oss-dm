@@ -1,5 +1,5 @@
 <script lang="ts">
-  // How fast everything moves right now, in the title bar, and in its tooltip what is going on. It is not a live region: a speed changes every second, and a screen reader would hear nothing else.
+  // How fast everything moves right now, in the title bar, and in its tooltip what is going on. Hidden while nothing runs, keeping its place so the bar never shifts. It is not a live region: a speed changes every second, and a screen reader would hear nothing else.
   import ArrowDown from '~icons/lucide/arrow-down';
   import { formatSpeed } from '@wirecatch/units';
   import { cn, Icon, tooltip } from '@wirecatch/ui';
@@ -8,7 +8,7 @@
   const app = getApp();
 
   /** What the readout says when no bytes move, by what is going on. */
-  const HEADLINE = { idle: 'Idle', finishing: 'Finishing videos', starting: 'Starting' } as const;
+  const HEADLINE = { idle: '', finishing: 'Finishing videos', starting: 'Starting' } as const;
 
   const speed = $derived(formatSpeed(app.downloads.totalSpeed));
   const active = $derived(app.counts.status.active);
@@ -34,6 +34,7 @@
   class={cn(
     'flex h-control items-center gap-1.5 rounded-sm px-2 text-small tabular-nums',
     speed ? 'text-ink' : 'text-ink-subtle',
+    !speed && headline === 'idle' && 'invisible',
   )}
   {@attach tooltip(() => `Total download speed. ${summary}.`)}
 >
