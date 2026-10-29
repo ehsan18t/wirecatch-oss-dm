@@ -10,6 +10,21 @@ const MEASURED = String.raw`\.elapsed\(\)|duration_since\(|\.at\s*-`;
 /** A wait given a fixed `Duration` written in place: `timeout(Duration::from_secs(2), ..)`, `outcome_within(id, Duration::from_secs(1))`. */
 const FIXED_WAIT = String.raw`(?:\btimeout|_within)\((?:[^()]|\([^()]*\))*?Duration::from_\w+\(`;
 
+/** Below this, a named wait or deadline is short: `PATIENCE` in test-support, two minutes. */
+const PATIENCE_SECONDS = 120;
+
+/** The `Duration` constants a file names, with their length in seconds: `const PROMPT: Duration = Duration::from_secs(3);`. */
+function durationConstants(code) {
+  const unit = { secs: 1, millis: 1e-3, micros: 1e-6, nanos: 1e-9 };
+  return new Map(
+    [
+      ...code.matchAll(
+        /\bconst\s+(\w+)\s*:\s*Duration\s*=\s*Duration::from_(secs|millis|micros|nanos)\(\s*([\d_]+)\s*\)/g,
+      ),
+    ].map((m) => [m[1], Number(m[3].replaceAll('_', '')) * unit[m[2]]]),
+  );
+}
+
 /** What only a window in which something must not happen does with its wait. */
 const NOTHING_CAME = /\.is_err\(\)|\.is_none\(\)/;
 
@@ -72,6 +87,47 @@ function measuredNames(body, helpers) {
     .map((name) => String.raw`\b${name}\b`);
 }
 
+/** The patterns of a short wait in `code`: one given a fixed `Duration` or a short constant, and a deadline a short time away. */
+function shortWaits(code) {
+  const short = [...durationConstants(code)]
+    .filter(([, seconds]) => seconds < PATIENCE_SECONDS)
+    .map(([name]) => name);
+  // A short duration in place, or a constant of one: `Duration::from_secs(3)`, `PROMPT`.
+  const duration = [
+    String.raw`Duration::from_\w+\(`,
+    ...short.map((name) => String.raw`\b${name}\b`),
+  ];
+  const waits = [FIXED_WAIT];
+  if (short.length > 0) {
+    waits.push(String.raw`(?:\btimeout|_within)\(\s*(?:${short.join('|')})\b`);
+  }
+  return {
+    wait: new RegExp(waits.join('|'), 'g'),
+    deadline: new RegExp(
+      String.raw`let\s+(\w+)\s*=\s*(?:[\w:]+::)?Instant::now\(\)\s*\+\s*(?:${duration.join('|')})`,
+      'g',
+    ),
+  };
+}
+
+/** Where in `body` a wait has to succeed in a short time: a short wait not expected to run out, or a deadline a short time away that the test asserts is not yet past (`assert!(Instant::now() < deadline, ..)`). */
+function shortWaitsIn(body, { wait, deadline }) {
+  const found = [];
+  for (const match of body.matchAll(wait)) {
+    const statementEnd = body.indexOf(';', match.index);
+    const statement = body.slice(match.index, statementEnd === -1 ? body.length : statementEnd);
+    if (!NOTHING_CAME.test(statement)) found.push(match.index);
+  }
+  for (const match of body.matchAll(deadline)) {
+    const name = match[1];
+    const asserted = new RegExp(
+      String.raw`assert!\([^;]*now\(\)\s*<=?\s*${name}\b|assert!\([^;]*\b${name}\s*>=?\s*[\w:]*now\(\)`,
+    );
+    if (asserted.test(body.slice(match.index))) found.push(match.index);
+  }
+  return found;
+}
+
 /**
  * The places in one Rust file where a test races the machine, as `{ line, code }`: an upper bound on a measured duration, or a fixed `Duration` written into a wait that has to succeed. A `while` condition, and a wait whose test is that nothing came (`is_err()`, `is_none()`), are windows in which something must not happen, which can only miss a fault, so they are not races. Each statement is read on one line for the bounds, and duration names are read one function at a time.
  */
@@ -81,6 +137,7 @@ export function timingRaces(file, text) {
   if (tests.length === 0) return [];
   const paused = pausedRegions(code);
   const helpers = measuringHelpers(code);
+  const short = shortWaits(code);
   const lines = text.split('\n');
   const lineAt = (index) => code.slice(0, index).split('\n').length;
   const found = new Map();
@@ -96,11 +153,7 @@ export function timingRaces(file, text) {
       if (bound.test(line) && !/\bwhile\b/.test(line)) report(start + offset);
       offset += line.length + 1;
     }
-    for (const wait of body.matchAll(new RegExp(FIXED_WAIT, 'g'))) {
-      const statementEnd = body.indexOf(';', wait.index);
-      const statement = body.slice(wait.index, statementEnd === -1 ? body.length : statementEnd);
-      if (!NOTHING_CAME.test(statement)) report(start + wait.index);
-    }
+    for (const index of shortWaitsIn(body, short)) report(start + index);
   }
   return [...found].sort(([a], [b]) => a - b).map(([line, codeLine]) => ({ line, code: codeLine }));
 }
