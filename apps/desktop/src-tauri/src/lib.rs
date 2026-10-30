@@ -80,8 +80,7 @@ use crate::host::Core;
 use crate::lifecycle::Lifecycle;
 use crate::window::{Launch, LaunchLinks};
 
-/// Shown by a copy of Wirecatch that finds another one already serving this user.
-pub const ALREADY_RUNNING: &str = "Wirecatch is already running for you, so this copy will close. Look for its icon in the tray, or open it from the Start menu again.";
+pub use wirecatch_shell::launch::ALREADY_RUNNING;
 
 /// The start-at-sign-in entry's name for this build (the `Run` registry value on Windows): its
 /// channel's name. The NSIS uninstall hook removes the release one by the same name.
@@ -234,33 +233,7 @@ fn setup(app: &mut tauri::App, launch: &Launch) -> Result<(), Box<dyn std::error
 
     window::handle_launch(&handle, launch);
 
-    if bridge::registers_on_start() {
-        #[cfg(unix)]
-        let private_dir = data_dir.join("bin");
-        bridge::register_in_background(move || {
-            let app_exe = std::env::current_exe()
-                .map_err(|e| tracing::warn!("could not find the app's own file: {e}"))
-                .ok()?;
-            // Under an AppImage the bundled bridge sits in a mount that goes away when the app
-            // exits, so a private copy is registered instead.
-            #[cfg(unix)]
-            let chosen = match std::env::var_os(appimage::APPIMAGE_VAR) {
-                Some(appimage) => bridge::bundled_bridge(&app_exe).and_then(|bundled| {
-                    appimage::install_private_bridge(
-                        &bundled,
-                        std::path::Path::new(&appimage),
-                        &private_dir,
-                    )
-                }),
-                None => bridge::bridge_to_register(&app_exe),
-            };
-            #[cfg(not(unix))]
-            let chosen = bridge::bridge_to_register(&app_exe);
-            chosen.map_err(|e| tracing::warn!("{e}")).ok()
-        });
-    } else {
-        tracing::info!("debug build: not registering the browser bridge");
-    }
+    bridge::register_on_start(&data_dir);
     Ok(())
 }
 
@@ -448,12 +421,6 @@ mod tests {
             unavailable_title(),
             format!("{} could not open its download list", host::CHANNEL.name())
         );
-    }
-
-    #[test]
-    fn the_already_running_message_is_plain() {
-        assert!(ALREADY_RUNNING.contains("already running"));
-        assert!(!ALREADY_RUNNING.contains('\u{2014}'));
     }
 
     #[test]

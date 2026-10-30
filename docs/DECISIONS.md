@@ -928,6 +928,16 @@ Decided with the maintainer on 2026-10-30. A download through a proxy that nothi
 4. hyper-util's SOCKS error hides its cause from `source`, so its debug text is read for the system's refusal, as the engine already does to recognise a refused proxy login; the engine's proxy tests catch a rewording.
 5. Release notes for the next release of `wirecatch-engine`. Changed: a download or `Fetcher` request through a proxy that refuses the connection ends at once instead of retrying.
 
+### D103. A second launch hands its command line over the app's own endpoint
+
+Decided on 2026-10-30 while building the GPUI shell (D95.5, D99.3). The Tauri app keeps one copy running with `tauri-plugin-single-instance`; the GPUI app has no such plugin.
+
+1. One copy runs per user. A launch first claims the endpoint, as before, so the copy that holds it is the one running (D41).
+2. A launch that finds the endpoint taken connects to it as a client of the new kind `app` and asks the running copy for what its command line asks: `open_links` with its links (the main window comes up with the Add dialog holding them), `show_window` without links, and nothing for `--background` alone. Then it exits.
+3. `open_links` is part of protocol version 2, which is not released yet. It carries at most `MAX_OPEN_LINKS` links (20), the limit the command line already had; the app keeps the first ones. A running copy too old for it is asked only to show its window.
+4. When the hand-over fails (the running copy is too old to accept an `app` client, or does not answer), the launch says that Wirecatch is already running, as the Tauri app does, and exits.
+5. Reading the command line and the hand-over live in `wirecatch-shell` (`launch`), which the Tauri app also reads its command line with.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

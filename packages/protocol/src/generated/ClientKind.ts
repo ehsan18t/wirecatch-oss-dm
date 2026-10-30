@@ -3,4 +3,4 @@
 /**
  * The kind of program on the other end of a connection.
  */
-export type ClientKind = 'extension' | 'bridge' | 'cli';
+export type ClientKind = 'extension' | 'bridge' | 'cli' | 'app';

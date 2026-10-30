@@ -1,5 +1,5 @@
 //! The Wirecatch desktop app on GPUI (D95, D99). It is built beside the Tauri app until it shows
-//! every screen; for now it opens the main window on the download list.
+//! every screen. One copy runs per user: a second launch hands its command line to it (D103).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -13,7 +13,11 @@ mod text;
 mod theme;
 mod ui;
 
-use wirecatch_shell::{elevation, host};
+use wirecatch_ipc::IpcError;
+use wirecatch_shell::launch::{self, Launch};
+use wirecatch_shell::{bridge, elevation, host};
+
+use crate::library::Asked;
 
 /// Which lines the app logs unless the log filter variable chooses others (`wirecatch-logging`).
 const LOG_FILTER: &str = "info";
@@ -29,13 +33,32 @@ fn main() {
             return;
         }
     }
-    let backend = match backend::Backend::start() {
-        Ok(backend) => backend,
+    let args: Vec<String> = std::env::args().collect();
+    let launch = Launch::from_args(&args);
+    let runtime = match backend::Backend::runtime() {
+        Ok(runtime) => runtime,
         Err(e) => {
             tracing::error!("could not start the download manager's threads: {e}");
             return;
         }
     };
+    // Claimed before the database opens: a second manager on the same list must not start.
+    let listener = match runtime.block_on(async { bridge::bind() }) {
+        Ok(listener) => Some(listener),
+        Err(IpcError::AlreadyInUse { endpoint }) => {
+            tracing::info!("another copy holds {endpoint}; handing this launch to it");
+            if let Err(e) = runtime.block_on(launch::hand_over(&launch)) {
+                tracing::error!("could not hand this launch to the running copy: {e}");
+                launch::say_already_running();
+            }
+            return;
+        }
+        Err(e) => {
+            tracing::error!("browser downloads cannot reach Wirecatch: {e}");
+            None
+        }
+    };
+    let backend = backend::Backend::start(runtime, listener);
     gpui_kit::application()
         .with_assets(ui::icon::Assets)
         .run(move |cx| {
@@ -43,10 +66,14 @@ fn main() {
             main_window::bind_keys(cx);
             theme::init(cx);
             cx.set_global(backend);
-            let library = library::Library::new(cx);
-            if let Err(e) = main_window::MainWindow::open(library, cx) {
-                tracing::error!("could not open the main window: {e}");
-                cx.quit();
+            main_window::run(library::Library::new(cx), cx);
+            if launch.shows_window() {
+                let asked = if launch.links.is_empty() {
+                    Asked::Window
+                } else {
+                    Asked::Links(launch.links.clone())
+                };
+                main_window::bring_up(&asked, cx);
             }
         });
 }

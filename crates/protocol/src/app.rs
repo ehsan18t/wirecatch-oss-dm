@@ -1773,6 +1773,8 @@ pub enum UiEvent {
     },
     /// A client asked to see Wirecatch (the extension's "Open Wirecatch"): the desktop shows its main window.
     WindowRequested,
+    /// A second launch of the app handed over links (D103): the desktop shows its main window with the Add dialog holding them.
+    LinksRequested(Vec<String>),
     /// A client asked for the browser settings (the popup's settings button, D61): the desktop shows its main window on them.
     BrowserSettingsRequested,
     /// A browser showed the notice with this id (D65): the desktop tells no one else.

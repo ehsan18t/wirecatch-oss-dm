@@ -104,6 +104,7 @@ export type { NotifyOnFinish } from './generated/NotifyOnFinish';
 export type { NotifyOnStart } from './generated/NotifyOnStart';
 export type { OpenFileArgs } from './generated/OpenFileArgs';
 export type { OpenFolderArgs } from './generated/OpenFolderArgs';
+export type { OpenLinks } from './generated/OpenLinks';
 export type { Outcome } from './generated/Outcome';
 export type { OutputDefaults } from './generated/OutputDefaults';
 export type { OutputDefaultsPatch } from './generated/OutputDefaultsPatch';

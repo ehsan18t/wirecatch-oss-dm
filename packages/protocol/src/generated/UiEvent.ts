@@ -91,6 +91,7 @@ export type UiEvent =
       };
     }
   | { type: 'window_requested' }
+  | { type: 'links_requested'; data: Array<string> }
   | { type: 'browser_settings_requested' }
   | { type: 'notice_shown'; data: NoticeId }
   | { type: 'notice_pressed'; data: NoticePressed }

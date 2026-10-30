@@ -31,6 +31,9 @@ crate::exported::exported_consts! {
     /// ([`Call::NoticeShown`]) before it shows the system notification instead (D65). A browser
     /// gives no notice that waited longer for its frame, since the person was told by then.
     pub const NOTICE_ANSWER_WAIT_MS: u64 = 1_000;
+
+    /// The most links one [`Call::OpenLinks`] hands over; the app keeps the first ones.
+    pub const MAX_OPEN_LINKS: usize = 20;
 }
 
 /// One frame on a local connection.
@@ -148,6 +151,10 @@ pub enum Call {
     NoticeShown(NoticeShown),
     /// Says the person pressed one of a notice's buttons (D65); answered with [`Reply::Done`].
     NoticePressed(NoticePressed),
+    /// Brings the app's main window to the front with the Add dialog holding these links: a
+    /// second launch of the app handing over its command line (D103); answered with
+    /// [`Reply::Done`].
+    OpenLinks(OpenLinks),
 }
 
 impl Call {
@@ -169,6 +176,7 @@ impl Call {
             Call::ShowBrowserSettings => CallMethod::ShowBrowserSettings,
             Call::NoticeShown(_) => CallMethod::NoticeShown,
             Call::NoticePressed(_) => CallMethod::NoticePressed,
+            Call::OpenLinks(_) => CallMethod::OpenLinks,
         }
     }
 }
@@ -207,6 +215,8 @@ pub enum CallMethod {
     NoticeShown,
     /// [`Call::NoticePressed`].
     NoticePressed,
+    /// [`Call::OpenLinks`].
+    OpenLinks,
     /// A method this build does not have, from a newer client.
     #[serde(other)]
     Unknown,
@@ -415,6 +425,16 @@ pub enum ClientKind {
     Bridge,
     /// The `wirecatch` command-line tool.
     Cli,
+    /// A second launch of the desktop app, handing its command line to the running one (D103).
+    App,
+}
+
+/// Links for the Add dialog ([`Call::OpenLinks`]), at most [`MAX_OPEN_LINKS`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct OpenLinks {
+    /// The links, as given on the command line.
+    pub links: Vec<String>,
 }
 
 /// The browser the extension runs in.
@@ -599,6 +619,9 @@ mod tests {
             CallMethod::NoticePressed => Call::NoticePressed(NoticePressed {
                 id: crate::extension::NoticeId(1),
                 button: Some(0),
+            }),
+            CallMethod::OpenLinks => Call::OpenLinks(OpenLinks {
+                links: vec!["https://example.com/a.zip".into()],
             }),
             CallMethod::Unknown => return None,
         })

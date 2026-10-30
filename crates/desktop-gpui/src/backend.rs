@@ -1,5 +1,6 @@
 //! The download manager behind every window: opened on a Tokio runtime of its own, since GPUI's
-//! executor is not Tokio's, and reached from the interface through [`Backend::run`].
+//! executor is not Tokio's, and reached from the interface through [`Backend::run`]. Once it
+//! opens, it also serves the browser bridge.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -7,8 +8,10 @@ use std::sync::Arc;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::{AnyWindowHandle, App, Global};
 use wirecatch_core::{Manager, ManagerConfig};
+use wirecatch_ipc::Listener;
 use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::host::{self, Core, Unopened};
+use wirecatch_shell::{bridge, launch};
 
 /// The manager this process hosts and the runtime its work runs on.
 pub struct Backend {
@@ -19,21 +22,26 @@ pub struct Backend {
 impl Global for Backend {}
 
 impl Backend {
-    /// Starts the runtime and begins opening the manager in the background, so the first window
-    /// never waits on the database.
+    /// The runtime the manager's work runs on.
     ///
     /// # Errors
     ///
-    /// The runtime could not start: the system refused threads.
-    pub fn start() -> std::io::Result<Self> {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
+    /// The system refused threads.
+    pub fn runtime() -> std::io::Result<tokio::runtime::Runtime> {
+        tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .thread_name("wirecatch-core")
-            .build()?;
-        let core = Arc::new(Core::new(config()));
-        let opening = Arc::clone(&core);
-        runtime.spawn(async move { opening.opened().await.map(|_| ()).map_err(Unopened::clone) });
-        Ok(Self { runtime, core })
+            .build()
+    }
+
+    /// Begins opening the manager in the background, so the first window never waits on the
+    /// database, then serves the browser on `listener`; registers the bridge with the browsers.
+    pub fn start(runtime: tokio::runtime::Runtime, listener: Option<Listener>) -> Self {
+        let config = config();
+        bridge::register_on_start(&config.data_dir);
+        let core = Arc::new(Core::new(config));
+        runtime.spawn(serve(Arc::clone(&core), listener));
+        Self { runtime, core }
     }
 
     /// Runs `work` with the manager on the runtime, once it has opened; its result comes back
@@ -82,6 +90,29 @@ pub fn act(
     work: impl FnOnce(&Manager) -> Result<(), ProtocolError> + Send + 'static,
 ) {
     command(window, cx, move |manager| async move { work(&manager) });
+}
+
+/// Serves the browser once the manager opens, or tells it why the manager could not open.
+async fn serve(core: Arc<Core>, listener: Option<Listener>) {
+    match core.opened().await {
+        Ok(manager) => {
+            if let Some(listener) = listener {
+                bridge::serve(listener, manager.clone()).await;
+            }
+        }
+        // Past the endpoint beside an elevated copy, whose pipe keeps the probe out (D41.8).
+        Err(unopened) if unopened.another_copy => {
+            tracing::error!("{}; this copy exits", unopened.reason);
+            drop(listener);
+            _ = tokio::task::spawn_blocking(launch::say_already_running).await;
+            std::process::exit(0);
+        }
+        Err(unopened) => {
+            if let Some(listener) = listener {
+                bridge::serve_unavailable(listener, unopened.reason.message.clone()).await;
+            }
+        }
+    }
 }
 
 /// Where the manager keeps its data and which folders it saves to.

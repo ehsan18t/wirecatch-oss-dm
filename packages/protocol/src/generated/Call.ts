@@ -5,6 +5,7 @@ import type { Hello } from './Hello';
 import type { NewDownload } from './NewDownload';
 import type { NoticePressed } from './NoticePressed';
 import type { NoticeShown } from './NoticeShown';
+import type { OpenLinks } from './OpenLinks';
 import type { WithdrawRequest } from './WithdrawRequest';
 
 /**
@@ -24,4 +25,5 @@ export type Call =
   | { method: 'update_browser_controls'; params: BrowserControlsPatch }
   | { method: 'show_browser_settings' }
   | { method: 'notice_shown'; params: NoticeShown }
-  | { method: 'notice_pressed'; params: NoticePressed };
+  | { method: 'notice_pressed'; params: NoticePressed }
+  | { method: 'open_links'; params: OpenLinks };

@@ -37,29 +37,11 @@ pub fn decide(elevation: io::Result<Elevation>) -> Start {
 /// Shows the refusal. A message box, because nothing else of the app exists yet.
 pub fn explain_refusal() {
     tracing::error!("{ELEVATED_TITLE}: {ELEVATED_MESSAGE}");
-    #[cfg(windows)]
-    message_box(ELEVATED_TITLE, ELEVATED_MESSAGE);
-}
-
-#[cfg(windows)]
-fn message_box(title: &str, text: &str) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONWARNING, MB_OK, MessageBoxW};
-
-    let wide = |s: &str| {
-        s.encode_utf16()
-            .chain(std::iter::once(0))
-            .collect::<Vec<u16>>()
-    };
-    let (title, text) = (wide(title), wide(text));
-    // SAFETY: both buffers are NUL-terminated UTF-16 that outlive the call, and a null owner window is allowed.
-    unsafe {
-        MessageBoxW(
-            std::ptr::null_mut(),
-            text.as_ptr(),
-            title.as_ptr(),
-            MB_OK | MB_ICONWARNING,
-        )
-    };
+    crate::message_box::show(
+        crate::message_box::Tone::Warning,
+        ELEVATED_TITLE,
+        ELEVATED_MESSAGE,
+    );
 }
 
 #[cfg(test)]

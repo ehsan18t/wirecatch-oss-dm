@@ -1,5 +1,5 @@
 //! What the desktop app does besides drawing its windows, shared by every interface that hosts the
-//! download manager (D13, D99): opening the manager, serving the browser bridge, start at sign-in,
+//! download manager (D13, D99): opening the manager, serving the browser bridge, handing a second launch to the running copy, start at sign-in,
 //! refusing to run elevated, and each interface command as a plain function on the manager.
 
 pub mod activity;
@@ -9,4 +9,6 @@ pub mod autostart;
 pub mod bridge;
 pub mod elevation;
 pub mod host;
+pub mod launch;
+pub mod message_box;
 pub mod tray_proxy;

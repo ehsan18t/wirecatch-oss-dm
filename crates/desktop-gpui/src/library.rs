@@ -45,6 +45,15 @@ pub struct SettingsChanged;
 
 impl EventEmitter<SettingsChanged> for Library {}
 
+/// Something outside the window asked to see the app: the browser, or a second launch (D103).
+pub enum Asked {
+    Window,
+    Links(Vec<String>),
+    BrowserSettings,
+}
+
+impl EventEmitter<Asked> for Library {}
+
 impl Library {
     /// Starts loading from the manager.
     pub fn new(cx: &mut gpui_kit::App) -> Entity<Self> {
@@ -148,6 +157,9 @@ impl Library {
                 self.settings = Some(*settings);
                 cx.emit(SettingsChanged);
             }
+            UiEvent::WindowRequested => return cx.emit(Asked::Window),
+            UiEvent::LinksRequested(links) => return cx.emit(Asked::Links(links)),
+            UiEvent::BrowserSettingsRequested => return cx.emit(Asked::BrowserSettings),
             _ => return,
         }
         cx.notify();
