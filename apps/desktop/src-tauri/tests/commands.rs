@@ -236,13 +236,13 @@ async fn commands_drive_the_core_and_state_survives_a_restart() -> TestResult {
     assert!(row(&manager, first).is_none());
 
     // The tray's Pause all and Resume all.
-    perform(TrayAction::PauseAll, Some(&manager), &NoShell)?;
+    perform(TrayAction::PauseAll, Some(&manager), &mut NoShell)?;
     assert!(
         api::list_downloads(&manager)
             .iter()
             .all(|r| !running(r) && r.status != DownloadStatus::Queued)
     );
-    perform(TrayAction::ResumeAll, Some(&manager), &NoShell)?;
+    perform(TrayAction::ResumeAll, Some(&manager), &mut NoShell)?;
     wait_for(&manager, second, "resumed by Resume all", |r| {
         r.status != DownloadStatus::Paused
     })
@@ -286,8 +286,8 @@ async fn commands_drive_the_core_and_state_survives_a_restart() -> TestResult {
 struct NoShell;
 
 impl Shell for NoShell {
-    fn open_window(&self) {}
-    fn quit(&self) {}
+    fn open_window(&mut self) {}
+    fn quit(&mut self) {}
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
