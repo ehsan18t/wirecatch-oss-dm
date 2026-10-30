@@ -307,6 +307,8 @@ pub async fn watch<R: Runtime>(app: AppHandle<R>, manager: Manager) {
             event = events.recv() => match event {
                 Ok(event) => {
                     finished_window::follow(&app, &event);
+                    browser_notices::follow(&app, &event);
+                    browser_notices::follow(&app, &event);
                     teller.ended(activity.apply(&event), Instant::now());
                     match event {
                         UiEvent::SettingsChanged(new) => {

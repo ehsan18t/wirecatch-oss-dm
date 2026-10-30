@@ -47,6 +47,11 @@ export class NoticesPage {
     this.#notices.push({ toast, id: notice.id });
   }
 
+  /** The app took notice `id` back. */
+  withdraw(id: NoticeId): void {
+    for (const notice of this.#notices) if (notice.id === id) this.toaster.dismiss(notice.toast);
+  }
+
   /** The list changed: once every notice is gone, the frame may go. It reads the list first, so an effect calling it follows every change. */
   changed(): void {
     const { list } = this.toaster;

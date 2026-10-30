@@ -1,9 +1,10 @@
 /** What the hub is given: the connection, browser APIs and stores, and the shapes it hands back. */
-import type { BrowserNotice, ExtensionSettings } from '@wirecatch/protocol';
+import type { ExtensionSettings } from '@wirecatch/protocol';
 import type { DownloadControl } from '../capture/handover';
 import type { CookieContext, CookieStore } from '../cookies';
 import type { MediaSendResult, MediaView } from '../media/center';
 import type { Alert } from '../messages';
+import type { NoticeEvent } from '../notices/center';
 import type { NativeClient } from '../native/client';
 import { REQUEST_TIMEOUT_MS, START_WAIT_MS, WITHDRAW_TIMEOUT_MS } from '../native/timing';
 
@@ -80,7 +81,7 @@ export interface HubDeps {
   /** The media lists the popup shows (`MediaCenter`); without it the popup's media commands fail. */
   media?: MediaCommands;
   /** Shows the app's notices in the tab the person is looking at (`NoticeCenter`, D65); without it, the app shows them in system notifications. */
-  notices?: { show: (notice: BrowserNotice) => Promise<void> };
+  notices?: { follow: (event: NoticeEvent) => Promise<void> };
 }
 
 /** What the popup's media commands need from the background's media side. */

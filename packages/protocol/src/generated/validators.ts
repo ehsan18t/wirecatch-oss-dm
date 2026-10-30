@@ -679,6 +679,10 @@ export function isEvent(value: unknown): value is Event {
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'notice_requested' && isBrowserNotice(value1['data']))(
       value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['type'] === 'notice_withdrawn' && isNoticeId(value1['data']))(
+      value,
     )
   );
 }

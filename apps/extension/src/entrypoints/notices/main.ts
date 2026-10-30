@@ -18,8 +18,12 @@ const page = new NoticesPage((message) => {
   if (connected) port.postMessage(message);
 });
 port.onMessage.addListener((message: unknown) => {
-  if (isToNoticesPage(message)) page.show(message.notice);
-  else log.warn('notices', 'The background sent a message the notices page does not know');
+  if (!isToNoticesPage(message)) {
+    log.warn('notices', 'The background sent a message the notices page does not know');
+    return;
+  }
+  if (message.type === 'notice') page.show(message.notice);
+  else page.withdraw(message.id);
 });
 // The background restarted or let this frame go: its notices' buttons lead nowhere now, so they go,
 // and the frame shrinks to nothing; the background places a fresh one for the next notice.

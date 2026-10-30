@@ -83,6 +83,11 @@ function fakePort(name = NOTICES_PORT) {
   };
 }
 
+/** The notices among `received`. */
+function noticesIn(received: ToNoticesPage[]): BrowserNotice[] {
+  return received.flatMap((m) => (m.type === 'notice' ? [m.notice] : []));
+}
+
 function center(overrides: Partial<NoticeCenterDeps> = {}, clock = { now: 0 }) {
   const shown: NoticeId[] = [];
   const pressed: [NoticeId, number][] = [];
@@ -126,11 +131,11 @@ describe('the notice center', () => {
     expect(told.shown).toEqual([]);
 
     const page = provedPage(notices);
-    expect(page.received.map((m) => m.notice.id)).toEqual([noticeId(1), noticeId(2)]);
+    expect(noticesIn(page.received).map((n) => n.id)).toEqual([noticeId(1), noticeId(2)]);
     page.send({ type: 'shown', id: noticeId(1) });
     page.send({ type: 'shown', id: noticeId(99) });
     await notices.show(notice(3));
-    expect(page.received.at(-1)?.notice.id).toBe(noticeId(3));
+    expect(noticesIn(page.received).at(-1)?.id).toBe(noticeId(3));
     await flush();
     expect(told.shown).toEqual([noticeId(1)]);
   });
@@ -210,7 +215,7 @@ describe('the notice center', () => {
     await notices.show(notice(2));
     clock.now = NOTICE_ANSWER_WAIT_MS + 1;
     const page = provedPage(notices);
-    expect(page.received.map((m) => m.notice.id)).toEqual([noticeId(2)]);
+    expect(noticesIn(page.received).map((n) => n.id)).toEqual([noticeId(2)]);
   });
 
   it('moves the notices still open to the tab the person turns to, and a closed one never comes back', async () => {
@@ -233,9 +238,7 @@ describe('the notice center', () => {
     await notices.focusChanged();
     expect(told.unmounted).toEqual([7]);
     const second = provedPage(notices, 'token-9');
-    expect(second.received.map((m) => m.notice)).toEqual([
-      notice(1, { kind: 'failed', stays_ms: null }),
-    ]);
+    expect(noticesIn(second.received)).toEqual([notice(1, { kind: 'failed', stays_ms: null })]);
 
     second.send({ type: 'gone', id: noticeId(1) });
     second.send({ type: 'empty', last: noticeId(1) });
@@ -260,8 +263,23 @@ describe('the notice center', () => {
     clock.now = 3000;
     tab.now = 9;
     await notices.focusChanged();
-    const moved = provedPage(notices, 'token-9').received.map((m) => m.notice);
+    const moved = noticesIn(provedPage(notices, 'token-9').received);
     expect(moved).toEqual([notice(1, { stays_ms: 5000 })]);
+  });
+
+  it('takes a notice the app took back off the page, and never moves it again', async () => {
+    const tab = { now: 7 };
+    const { notices } = center({
+      focusedTab: () => Promise.resolve(tab.now),
+      mount: (tabId) => Promise.resolve(`token-${String(tabId)}`),
+    });
+    await notices.show(notice(1, { kind: 'failed', stays_ms: null }));
+    const page = provedPage(notices, 'token-7');
+    notices.withdraw(noticeId(1));
+    expect(page.received.at(-1)).toEqual({ type: 'withdraw', id: noticeId(1) });
+    tab.now = 9;
+    await notices.focusChanged();
+    expect(provedPage(notices, 'token-9').received).toEqual([]);
   });
 
   it('keeps the frame while the browser is not in front', async () => {
@@ -424,6 +442,20 @@ describe('the notices page', () => {
     flushSync();
     expect(notices.toaster.list).toEqual([]);
     expect(sent.filter((m) => m.type === 'gone')).toEqual([]);
+    notices.dispose();
+  });
+
+  it('lets a notice the app took back go', () => {
+    const { notices, sent } = page();
+    notices.show(notice(1, { stays_ms: null }));
+    notices.show(notice(2, { stays_ms: null }));
+    flushSync();
+    notices.withdraw(noticeId(1));
+    flushSync();
+    expect(notices.toaster.list.map((t) => t.message)).toEqual(['file-2.zip']);
+    expect(sent.filter((m) => m.type === 'gone')).toEqual([{ type: 'gone', id: noticeId(1) }]);
+    notices.toaster.clear();
+    flushSync();
     notices.dispose();
   });
 

@@ -472,7 +472,8 @@ async fn settings_changes_reach_every_client() -> TestResult {
                 Event::ExtensionSettingsChanged(_) => {}
                 other @ (Event::QueuesChanged(_)
                 | Event::BrowserControlsChanged(_)
-                | Event::NoticeRequested(_)) => {
+                | Event::NoticeRequested(_)
+                | Event::NoticeWithdrawn(_)) => {
                     panic!("unexpected event {other:?}")
                 }
             }
