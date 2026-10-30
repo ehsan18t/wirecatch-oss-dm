@@ -583,7 +583,7 @@ mod tests {
     async fn paused_download() -> (Manager, DownloadId, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
         let folders = KnownFolders::under_home(dir.path().join("home"));
-        let config = ManagerConfig::new(dir.path().join("data"), folders);
+        let config = ManagerConfig::for_tests(dir.path().join("data"), folders);
         let manager = Manager::open(config).await.unwrap();
         let id = manager
             .add_download(AddRequest {

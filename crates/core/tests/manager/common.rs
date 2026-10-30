@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 use chrono::{NaiveDate, NaiveDateTime};
 use tempfile::TempDir;
 use wirecatch_core::{
-    DEFAULT_CAPTURE_TIMEOUT, DEFAULT_STOP_TIMEOUT, KnownFolders, Manager, ManagerConfig,
-    ManualClock,
+    ComputerProxy, DEFAULT_CAPTURE_TIMEOUT, DEFAULT_STOP_TIMEOUT, KnownFolders, Manager,
+    ManagerConfig, ManualClock,
 };
 use wirecatch_engine::Backoff;
 use wirecatch_protocol::DownloadId;
@@ -230,7 +230,9 @@ async fn open(
         .with_clock(clock.clone())
         .with_stop_timeout(stop_timeout)
         .with_capture_timeout(capture_timeout)
-        .with_retry_backoff(QUICK_RETRIES);
+        .with_retry_backoff(QUICK_RETRIES)
+        // The machine's proxy variables and system setting never reach a test.
+        .with_computer_proxy(ComputerProxy::Given(None));
     // Tests never reach the internet: no update check unless a test asks.
     config.addon_sources.ytdlp_releases = None;
     if let Some(tweak) = tweak {
