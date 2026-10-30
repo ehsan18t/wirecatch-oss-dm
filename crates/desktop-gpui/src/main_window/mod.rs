@@ -172,12 +172,12 @@ pub fn run(library: Entity<Library>, cx: &mut App) {
 /// Brings the main window up for `asked`, opening it when it is not open: at a start in the
 /// background, or after it was closed.
 pub fn bring_up(asked: &Asked, cx: &mut App) {
+    if lifecycle::start_again_later(asked, cx) {
+        return;
+    }
     let Some(running) = cx.try_global::<Running>() else {
         return;
     };
-    if lifecycle::is_quitting(cx) {
-        return;
-    }
     let (library, shown) = (running.library.clone(), running.shown.clone());
     if shown.is_some_and(|shown| answer_in(&shown, asked, cx)) {
         return;
