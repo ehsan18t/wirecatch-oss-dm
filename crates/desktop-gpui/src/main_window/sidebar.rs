@@ -17,6 +17,7 @@ use wirecatch_queues::schedule;
 use wirecatch_shell::api;
 
 use super::{Group, MainWindow, View};
+use crate::components::heading;
 use crate::icons::AppIcon;
 use crate::text;
 
@@ -106,7 +107,7 @@ impl MainWindow {
         });
         v_flex()
             .gap_px()
-            .child(section_heading("Queues", cx))
+            .child(heading::section("Queues", cx).px_2().pb_1())
             .children(shown)
             .children(toggle)
     }
@@ -448,14 +449,4 @@ fn group_icon(group: Group) -> Icon {
         Group::Finished => Icon::new(IconName::CircleCheck),
         Group::Cancelled => Icon::new(AppIcon::Ban),
     }
-}
-
-fn section_heading(label: &'static str, cx: &App) -> impl IntoElement {
-    div()
-        .px_2()
-        .pb_1()
-        .text_xs()
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(cx.theme().muted_foreground)
-        .child(label)
 }

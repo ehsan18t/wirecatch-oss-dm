@@ -20,6 +20,7 @@ use wirecatch_shell::api;
 
 use super::list::{act, status_tone};
 use super::{Group, confirm};
+use crate::components::{Callout, heading};
 use crate::library::Library;
 use crate::{files, text};
 
@@ -293,41 +294,29 @@ fn failure(
     fix: Option<FixAction>,
     cx: &mut Context<'_, Details>,
 ) -> impl IntoElement + use<> {
-    let theme = cx.theme();
-    v_flex()
-        .p_3()
-        .gap_2()
-        .rounded(theme.radius)
-        .bg(theme.danger.opacity(0.12))
-        .text_color(theme.danger)
-        .text_sm()
-        .child(message.to_owned())
-        .child(
-            h_flex()
-                .gap_2()
-                .when_some(
-                    fix.filter(|fix| *fix != FixAction::Retry),
-                    |buttons, fix| {
-                        buttons.child(
-                            Button::new("details-fix")
-                                .small()
-                                .primary()
-                                .label(text::fix_label(fix))
-                                .on_click(cx.listener(move |_, _, window, cx| {
-                                    run_fix(id, fix, window, cx);
-                                })),
-                        )
-                    },
-                )
-                .child(
-                    Button::new("details-retry")
+    Callout::danger(message.to_owned())
+        .when_some(
+            fix.filter(|fix| *fix != FixAction::Retry),
+            |callout, fix| {
+                callout.action(
+                    Button::new("details-fix")
                         .small()
-                        .outline()
-                        .label("Try again")
+                        .primary()
+                        .label(text::fix_label(fix))
                         .on_click(cx.listener(move |_, _, window, cx| {
-                            act(window, cx, move |manager| api::retry(manager, id));
+                            run_fix(id, fix, window, cx);
                         })),
-                ),
+                )
+            },
+        )
+        .action(
+            Button::new("details-retry")
+                .small()
+                .outline()
+                .label("Try again")
+                .on_click(cx.listener(move |_, _, window, cx| {
+                    act(window, cx, move |manager| api::retry(manager, id));
+                })),
         )
 }
 
@@ -442,13 +431,7 @@ fn activity(row: &DownloadSummary, cx: &App) -> impl IntoElement {
         .gap_2()
         .border_t_1()
         .border_color(theme.border)
-        .child(
-            div()
-                .text_xs()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.muted_foreground)
-                .child("Activity"),
-        )
+        .child(heading::section("Activity", cx))
         .child(line(
             text::date(row.added_at),
             format!("Added from {}", text::host(&row.url)),

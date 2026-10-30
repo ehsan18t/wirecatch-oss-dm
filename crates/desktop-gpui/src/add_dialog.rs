@@ -12,8 +12,8 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, FontWeight, IntoElement, ParentElement as _,
-    PathPromptOptions, Render, SharedString, Styled as _, Subscription, Window, div, px,
+    App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, PathPromptOptions,
+    Render, SharedString, Styled as _, Subscription, Window, div, px,
 };
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AddRequest, Setting};
@@ -21,6 +21,7 @@ use wirecatch_shell::api;
 use wirecatch_sites::video_sites::video_site_for;
 
 use crate::backend::Backend;
+use crate::components::{Callout, Field};
 use crate::library::Library;
 use crate::links;
 
@@ -352,32 +353,21 @@ impl Render for AddForm {
             .text_sm()
             .pb_1()
             .when_some(self.problem.clone(), |form, (title, message)| {
-                form.child(problem(title, message, cx))
+                form.child(Callout::danger(message).title(title))
             })
-            .child(field(
-                "Links",
-                Textarea::new(&self.links).aria_label("Links"),
-                self.invalid.clone().unwrap_or(hint),
-                self.invalid.is_some(),
-                cx,
-            ))
+            .child(
+                Field::new("Links", Textarea::new(&self.links).aria_label("Links"))
+                    .note(self.invalid.clone().unwrap_or(hint))
+                    .wrong(self.invalid.is_some()),
+            )
             .when(urls.len() <= 1, |form| {
-                form.child(field(
-                    "File name",
-                    Input::new(&self.file_name),
-                    "Leave empty for the name the server gives.".to_owned(),
-                    false,
-                    cx,
-                ))
+                form.child(
+                    Field::new("File name", Input::new(&self.file_name))
+                        .note("Leave empty for the name the server gives."),
+                )
             })
-            .child(field("Save to", folder_row, String::new(), false, cx))
-            .child(field(
-                "Queue",
-                Select::new(&self.queue),
-                queue_hint.to_owned(),
-                false,
-                cx,
-            ))
+            .child(Field::new("Save to", folder_row))
+            .child(Field::new("Queue", Select::new(&self.queue)).note(queue_hint))
     }
 }
 
@@ -428,48 +418,4 @@ impl AddForm {
                     .on_click(cx.listener(|_, _, _, cx| Self::choose_folder(cx))),
             )
     }
-}
-
-/// What went wrong sending the links, above the form.
-fn problem(title: String, message: String, cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
-    v_flex()
-        .p_3()
-        .gap_1()
-        .rounded(theme.radius)
-        .bg(theme.danger.opacity(0.12))
-        .child(
-            div()
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(theme.danger)
-                .child(title),
-        )
-        .child(div().child(message))
-}
-
-/// A labelled control with its note under it, in the danger colour when it says what is wrong.
-fn field(
-    label: &'static str,
-    control: impl IntoElement,
-    note: String,
-    wrong: bool,
-    cx: &App,
-) -> impl IntoElement {
-    let theme = cx.theme();
-    v_flex()
-        .gap_1p5()
-        .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(label))
-        .child(control)
-        .when(!note.is_empty(), |field| {
-            field.child(
-                div()
-                    .text_xs()
-                    .text_color(if wrong {
-                        theme.danger
-                    } else {
-                        theme.muted_foreground
-                    })
-                    .child(note),
-            )
-        })
 }
