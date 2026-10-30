@@ -1,10 +1,10 @@
-# Runs the quality gate (scripts/gate.mjs) on Windows and Ubuntu. Every check and every tool version lives in the gate script; this file installs what a runner lacks and decides where each group runs. Together the jobs run exactly what `pnpm gate` runs.
+# Runs the quality gate (scripts/gate.mjs) on Windows and Ubuntu. Every check and every tool version lives in the gate script; this file installs what a runner lacks and decides where each group runs. Together the jobs run what `pnpm gate --no-desktop` runs: on this branch the Tauri app is left out (D100).
 # Actions are pinned to commit SHAs; the version each SHA belongs to is in the comment.
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, gpui]
   pull_request:
   workflow_dispatch:
 
@@ -19,6 +19,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  # Line numbers in backtraces without full debug info, which is most of what linking costs on Windows.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
   # The oldest Node that "engines" in package.json allows, which every job runs.
   NODE_VERSION: "22"
   # The Node developers run, which the JavaScript job also runs on one system: runtimes differ in what their URL parser accepts (D68).
@@ -31,12 +33,14 @@ env:
 # Every job has a time limit well above its slowest healthy run, so a stall fails in minutes instead of holding a run for an hour (D57). Rust's leaves room for a build from an empty cache, which every new stable Rust release brings.
 jobs:
   rust:
-    name: Rust (${{ matrix.os }})
+    name: Rust ${{ matrix.part }} (${{ matrix.os }})
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        # The gate's two halves of the Rust group, side by side: each builds what it needs, so neither waits on the other.
+        part: [lint, test]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -67,25 +71,26 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install
 
-      # Saved on main only, also when a check fails, so one failing test does not throw away the dependency builds. Pull requests restore main's caches.
+      # One cache per half, since a lint build holds metadata and a test build machine code. Saved on main and on the gpui integration branch (D99), also when a check fails, so one failing test does not throw away the dependency builds. Pull requests restore their base branch's caches.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           prefix-key: ${{ env.CACHE_PREFIX }}
+          key: ${{ matrix.part }}
           cache-on-failure: true
           cache-bin: false
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/gpui' }}
 
       # The streams and media tests need a real ffmpeg; they skip without one, so Linux CI is where real joins and conversions are proven. It is the build the media add-on installs, from the add-on's pinned address and checked against its pinned SHA-256 (`crates/addons/src/manifest.rs`, printed by the ffmpeg_release example), and the cache keeps it until that file changes.
       - name: Restore ffmpeg
         id: ffmpeg
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.part == 'test'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ hashFiles('crates/addons/src/manifest.rs') }}
 
       - name: Download ffmpeg
-        if: runner.os == 'Linux' && steps.ffmpeg.outputs.cache-hit != 'true'
+        if: runner.os == 'Linux' && matrix.part == 'test' && steps.ffmpeg.outputs.cache-hit != 'true'
         run: |
           release=$(cargo run --quiet --locked -p wirecatch-core --example ffmpeg_release)
           read -r url sha256 program <<< "$release"
@@ -96,20 +101,20 @@ jobs:
           echo "$program" > ~/ffmpeg/program
 
       - name: Use ffmpeg
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.part == 'test'
         run: |
           ffmpeg="$HOME/ffmpeg/$(cat ~/ffmpeg/program)"
           "$ffmpeg" -hide_banner -version | head -n 1
           echo "WIRECATCH_TEST_FFMPEG=$ffmpeg" >> "$GITHUB_ENV"
           echo "WIRECATCH_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
 
-      # Every test binary runs even after one fails, so one failure cannot hide what the others would show.
-      - name: Gate (Rust)
-        run: node scripts/gate.mjs rust --no-fail-fast
+      # Every test binary runs even after one fails, so one failure cannot hide what the others would show. The Tauri app no longer changes on this branch, so it is left out (D100).
+      - name: Gate (Rust ${{ matrix.part }})
+        run: node scripts/gate.mjs rust-${{ matrix.part }} --no-fail-fast --no-desktop
 
       # The published engine: its package and its minimum Rust version. Once per run is enough; its http3 feature is checked in the Rust group, on every system.
       - name: Gate (engine release checks)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.part == 'lint'
         run: node scripts/gate.mjs release
 
       - name: Disk margin
@@ -138,7 +143,7 @@ jobs:
           prefix-key: ${{ env.CACHE_PREFIX }}
           cache-on-failure: true
           cache-bin: false
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/gpui' }}
 
       # Uses the pnpm version from "packageManager" in package.json.
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -189,7 +194,7 @@ jobs:
           prefix-key: ${{ env.CACHE_PREFIX }}
           cache-on-failure: true
           cache-bin: false
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/gpui' }}
 
       # Uses the pnpm version from "packageManager" in package.json.
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -203,7 +208,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Gate (JavaScript)
-        run: node scripts/gate.mjs js ${{ runner.os != 'Linux' && '--skip=protocol' || '' }}
+        run: node scripts/gate.mjs js --no-desktop ${{ runner.os != 'Linux' && '--skip=protocol' || '' }}
 
       # The commits the commit check covers: a pull request's own, or the ones a push brought. A new branch or a manual run has no earlier commit to compare with, so it checks against main. After a force push the earlier commit is in no branch, so it is fetched by its hash; when GitHub no longer has it, only the newest commit is checked.
       - name: Choose the commits to check
@@ -231,7 +236,7 @@ jobs:
       # The repository rules read files, manifests and commits, and answer the same on every system, so they run once.
       - name: Gate (repository rules)
         if: runner.os == 'Linux' && matrix.node == 'oldest'
-        run: node scripts/gate.mjs repo
+        run: node scripts/gate.mjs repo --no-desktop
 
   # The checks in a real browser, alongside the JavaScript job: they take minutes and need no Rust. They run on both systems because each lays text out in its own fonts.
   browser:
@@ -260,7 +265,7 @@ jobs:
       - name: Gate (browser)
         env:
           WIRECATCH_REQUIRE_BROWSER: "1"
-        run: node scripts/gate.mjs browser
+        run: node scripts/gate.mjs browser --no-desktop
 
       # What a failed browser test saw: Playwright's snapshot of the page and its error context, for a failure that does not happen locally.
       - name: Keep the failed browser tests' results
@@ -268,8 +273,6 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-results-${{ matrix.os }}
-          path: |
-            apps/desktop/test-results
-            apps/extension/test-results
+          path: apps/extension/test-results
           retention-days: 14
           if-no-files-found: ignore

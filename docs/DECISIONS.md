@@ -900,6 +900,15 @@ Decided with the maintainer on 2026-10-30. It carries out D95.
 5. Its tests are Rust: GPUI's own test context drives the real views. A visible change is checked on screenshots of the real windows with sample downloads, in both themes.
 6. The app draws through its own UI library on top of gpui-kit, `crates/desktop-gpui/src/ui`: the scale (text roles and icon sizes), the pieces screens are made of (callout, field, file tile, search field, dialog) and the layouts they are arranged in. It builds on gpui-kit's components rather than replacing them. Screens name a role or a piece, never a size or a colour of their own, so one change to the library reaches every screen. Icons come from gpui-kit's Lucide catalogue, embedding only the ones the app names.
 
+### D100. CI on the gpui branch leaves the Tauri app out and runs its Rust checks in two halves
+
+Decided with the maintainer on 2026-10-30. Pull requests into `gpui` built GPUI from an empty cache and passed the Rust job's 20-minute limit; the aim is a Rust result in under ten minutes. It amends D57 and D78 for the `gpui` branch.
+
+1. The Tauri app's code stays until the GPUI app replaces it (D99), but it no longer changes, so CI passes `--no-desktop`: its crate is not compiled, its package is not checked, linted, tested or built, and its browser checks and Tauri version check say they are left out. `pnpm gate` without the option still runs them locally. The weekly measurement of the Tauri list is removed.
+2. The gate's `rust` group is two groups, `rust-lint` (format, policy, clippy, docs) and `rust-test` (the tests, http3 included); CI runs each as its own job on Windows and Ubuntu, side by side, each with its own cache.
+3. The Rust caches are saved on `main` and on `gpui`, and CI runs on pushes to both, so pull requests into `gpui` start from a warm cache.
+4. CI builds with line tables only for debug info, which keeps line numbers in backtraces at a fraction of the link time.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
