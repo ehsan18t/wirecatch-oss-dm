@@ -42,7 +42,7 @@ use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 use tracing::warn;
 use wirecatch_addons::manifest::MediaAddonSources;
-use wirecatch_engine::{CancellationToken, ManualProxies, RateLimiter, Url};
+use wirecatch_engine::{Backoff, CancellationToken, ManualProxies, RateLimiter, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{StartupNotice, UiEvent};
 use wirecatch_protocol::extension::{BrowserNotice, NoticeId, NoticePressed};
@@ -95,6 +95,8 @@ pub struct ManagerConfig {
     /// fresh addresses, after the server refused one or said it expired. One
     /// entry per automatic try; once they are used up, the download fails.
     pub media_refresh_delays: Vec<Duration>,
+    /// The pauses between a download's failed attempts (the engine's default).
+    pub retry_backoff: Backoff,
     /// Where a newer Public Suffix List is fetched from (D44), or `None` to keep the list
     /// built in, as [`new`](Self::new) does so no test reaches the internet. The app
     /// fetches it from publicsuffix.org ([`with_official_suffix_list`](Self::with_official_suffix_list)).
@@ -146,6 +148,7 @@ impl ManagerConfig {
             addon_sources: MediaAddonSources::official(),
             media_timeout: DEFAULT_MEDIA_TIMEOUT,
             media_refresh_delays: DEFAULT_MEDIA_REFRESH_DELAYS.to_vec(),
+            retry_backoff: Backoff::default(),
             suffix_list_source: None,
             proxy_test_url: None,
         }
@@ -204,6 +207,13 @@ impl ManagerConfig {
     #[must_use]
     pub fn with_media_refresh_delays(mut self, delays: Vec<Duration>) -> Self {
         self.media_refresh_delays = delays;
+        self
+    }
+
+    /// Uses `backoff` as the [`retry_backoff`](Self::retry_backoff).
+    #[must_use]
+    pub fn with_retry_backoff(mut self, backoff: Backoff) -> Self {
+        self.retry_backoff = backoff;
         self
     }
 
@@ -266,6 +276,7 @@ struct Inner {
     suffix_checking: tokio::sync::Mutex<()>,
     media_timeout: Duration,
     media_refresh_delays: Arc<[Duration]>,
+    retry_backoff: Backoff,
     /// Shared by every download for the global speed limit.
     global_limiter: Arc<RateLimiter>,
     ui_events: broadcast::Sender<UiEvent>,
@@ -373,6 +384,7 @@ impl Manager {
             suffix_checking: tokio::sync::Mutex::new(()),
             media_timeout: config.media_timeout,
             media_refresh_delays: config.media_refresh_delays.into(),
+            retry_backoff: config.retry_backoff,
             global_limiter,
             ui_events,
             wire_events: broadcast::Sender::new(WIRE_EVENT_BUFFER),

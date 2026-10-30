@@ -142,7 +142,8 @@
 //! # Busy servers
 //!
 //! Network errors, timeouts and `408`, `425`, `429`, `500`, `502`, `503` and
-//! `504` answers are retried with growing pauses (see [`Error::is_retryable`]).
+//! `504` answers are retried with growing pauses (see [`Error::is_retryable`] and
+//! [`DownloadOptions::retry_backoff`]).
 //! A server that accepts a connection but never answers counts as a timeout
 //! after [`DownloadOptions::stall_timeout`], and cancelling never waits for it.
 //! A `429` or `503` with `Retry-After` is retried no sooner than the server asked,
@@ -284,6 +285,7 @@ pub use net_guard::{AddressKind, PrivateNetwork};
 pub use options::{DownloadOptions, MAX_BUFFER_SIZE, MAX_CONNECTIONS};
 pub use progress::Progress;
 pub use proxy::{ManualProxies, ProxyChoice, ProxyRoute, ProxySetting};
+pub use retry::Backoff;
 pub use state::resume_file_url;
 pub use storage::{PART_EXT, STATE_EXT};
 pub use tokio_util::sync::CancellationToken;
