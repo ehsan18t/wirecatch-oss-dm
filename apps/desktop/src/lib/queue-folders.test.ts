@@ -76,4 +76,23 @@ describe('a download window follows the queue picked in it', () => {
     await click(window.getByRole('button', { name: 'Use default' }));
     expect(window.getByText(OVERNIGHT)).toBeInTheDocument();
   });
+
+  it('says who chose the folder, and a pick of the app’s own folder stays the app’s', async () => {
+    const { backend, click } = await setupWithUser();
+    backend.simulateConfirmation();
+    const window = within(await downloadWindow());
+    expect(window.getByText('Default folder for this file type')).toBeInTheDocument();
+
+    await click(window.getByRole('combobox', { name: 'Queue' }));
+    await click(screen.getByRole('option', { name: /Overnight/ }));
+    expect(window.getByText('Overnight queue folder')).toBeInTheDocument();
+
+    vi.spyOn(backend, 'pickFolder').mockResolvedValueOnce(OVERNIGHT);
+    await click(window.getByRole('button', { name: 'Change' }));
+    expect(window.getByText('Overnight queue folder')).toBeInTheDocument();
+    expect(window.queryByRole('button', { name: 'Use default' })).toBeNull();
+
+    await click(window.getByRole('button', { name: 'Change' }));
+    expect(window.getByText('Custom folder')).toBeInTheDocument();
+  });
 });

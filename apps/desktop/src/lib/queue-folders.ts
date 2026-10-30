@@ -24,6 +24,20 @@ export function folderInQueue(
   return ownFolder(queues, queue) ?? proposal.type_folder;
 }
 
+/** Who chose the folder a download window shows: the person, the queue, or the file type. A `type_folder` of null is a folder picked when the link was added. */
+export function folderChosenBy(
+  queues: readonly Queue[],
+  queue: QueueId,
+  proposal: { type_folder: string | null },
+  picked: string | null,
+): string {
+  if (picked !== null || proposal.type_folder === null) return 'Custom folder';
+  const own = queues.find((q) => q.id === queue);
+  return own?.settings.folder.source === 'own'
+    ? `${own.settings.name} queue folder`
+    : 'Default folder for this file type';
+}
+
 function ownFolder(queues: readonly Queue[], queue: QueueId): string | null {
   const folder = queues.find((q) => q.id === queue)?.settings.folder;
   return folder?.source === 'own' ? displayPath(folder.value) : null;
