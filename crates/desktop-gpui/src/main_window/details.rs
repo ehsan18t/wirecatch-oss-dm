@@ -20,6 +20,7 @@ use wirecatch_shell::api;
 
 use super::list::{act, status_tone};
 use super::{Group, confirm};
+use crate::components::layout::{self, Rule};
 use crate::components::{Callout, heading};
 use crate::library::Library;
 use crate::{files, text};
@@ -28,6 +29,9 @@ const WIDTH: f32 = 600.;
 
 /// The label column of Saved to and From.
 const PLACE_LABEL_WIDTH: f32 = 112.;
+
+/// The date column of Activity.
+const ACTIVITY_LABEL_WIDTH: f32 = 132.;
 
 /// The tallest the details grow before their middle scrolls.
 const MAX_HEIGHT: f32 = 640.;
@@ -109,41 +113,34 @@ impl Render for Details {
 fn header(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElement {
     let theme = cx.theme();
     let tone = status_tone(row, cx);
-    h_flex()
-        .px_4()
-        .py_3()
-        .gap_2()
-        .items_start()
-        .border_b_1()
-        .border_color(theme.border)
-        .child(
-            v_flex()
-                .flex_1()
-                .min_w_0()
-                .gap_1()
-                .child(
-                    div()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(row.file_name.clone()),
-                )
-                .child(
-                    h_flex()
-                        .gap_2()
-                        .text_xs()
-                        .child(
-                            h_flex()
-                                .gap_1()
-                                .text_color(tone)
-                                .child(div().size(px(6.)).rounded_full().bg(tone))
-                                .child(text::status_label(row.status)),
-                        )
-                        .child(
-                            div()
-                                .text_color(theme.muted_foreground)
-                                .child(text::host(&row.url).to_owned()),
-                        ),
-                ),
-        )
+    layout::bar(Rule::Below, cx).items_start().child(
+        v_flex()
+            .flex_1()
+            .min_w_0()
+            .gap_1()
+            .child(
+                div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(row.file_name.clone()),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .text_xs()
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .text_color(tone)
+                            .child(div().size(px(6.)).rounded_full().bg(tone))
+                            .child(text::status_label(row.status)),
+                    )
+                    .child(
+                        div()
+                            .text_color(theme.muted_foreground)
+                            .child(text::host(&row.url).to_owned()),
+                    ),
+            ),
+    )
 }
 
 /// What is happening now: the problem and its fix, or why it waits; the speed and progress.
@@ -160,7 +157,7 @@ fn now_section(
     };
     let theme = cx.theme();
     let live = Group::of(row.status) == Group::Downloading;
-    let mut section = v_flex().px_4().py_3().gap_3();
+    let mut section = layout::section(Rule::None, cx).gap_3();
     if let Some(failed) = failed {
         section = section.child(failed);
     } else if let Some(detail) = text::status_detail(row, queue) {
@@ -331,10 +328,7 @@ fn places(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElem
             row.waiting,
             Some(wirecatch_protocol::app::WaitReason::ServerRefused { .. })
         );
-    v_flex()
-        .px_4()
-        .py_3()
-        .gap_0()
+    layout::section(Rule::None, cx)
         .text_sm()
         .child(place(
             IconName::FolderOpen,
@@ -385,52 +379,27 @@ fn place(
     action: Option<AnyElement>,
     cx: &App,
 ) -> impl IntoElement {
-    let theme = cx.theme();
-    h_flex()
-        .py_2()
-        .gap_3()
-        .child(
-            h_flex()
-                .w(px(PLACE_LABEL_WIDTH))
-                .flex_shrink_0()
-                .gap_1p5()
-                .text_color(theme.muted_foreground)
-                .child(Icon::new(icon).xsmall())
-                .child(label),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .font_weight(FontWeight::MEDIUM)
-                .truncate()
-                .child(SharedString::from(value)),
-        )
-        .children(action)
+    layout::label_row(
+        PLACE_LABEL_WIDTH,
+        h_flex()
+            .gap_1p5()
+            .child(Icon::new(icon).xsmall())
+            .child(label),
+        div()
+            .font_weight(FontWeight::MEDIUM)
+            .truncate()
+            .child(SharedString::from(value)),
+        cx,
+    )
+    .py_2()
+    .children(action)
 }
 
 /// What happened to it.
 fn activity(row: &DownloadSummary, cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
-    let line = |when: String, what: String| {
-        h_flex()
-            .gap_3()
-            .text_sm()
-            .child(
-                div()
-                    .w(px(132.))
-                    .flex_shrink_0()
-                    .text_color(theme.muted_foreground)
-                    .child(when),
-            )
-            .child(div().flex_1().min_w_0().child(what))
-    };
-    v_flex()
-        .px_4()
-        .py_3()
+    let line = |when: String, what: String| layout::label_row(ACTIVITY_LABEL_WIDTH, when, what, cx);
+    layout::section(Rule::Above, cx)
         .gap_2()
-        .border_t_1()
-        .border_color(theme.border)
         .child(heading::section("Activity", cx))
         .child(line(
             text::date(row.added_at),
@@ -448,7 +417,6 @@ fn footer(
     library: Entity<Library>,
     cx: &mut Context<'_, Details>,
 ) -> impl IntoElement {
-    let theme = cx.theme();
     let id = row.id;
     let main: Option<(&'static str, IconName, bool)> = match row.status {
         DownloadStatus::Completed => Some(("Open", IconName::ExternalLink, true)),
@@ -463,12 +431,7 @@ fn footer(
         DownloadStatus::Completed | DownloadStatus::Cancelled
     );
     let link = text::link_for_display(&row.url);
-    h_flex()
-        .px_4()
-        .py_3()
-        .gap_2()
-        .border_t_1()
-        .border_color(theme.border)
+    layout::bar(Rule::Above, cx)
         .when_some(main, |bar, (label, icon, primary)| {
             let button = Button::new("details-main").small().icon(icon).label(label);
             let button = if primary {

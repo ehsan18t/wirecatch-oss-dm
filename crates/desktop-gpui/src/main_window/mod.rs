@@ -12,7 +12,7 @@ use std::collections::HashSet;
 
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::input::{InputEvent, InputState};
-use gpui_kit::component::{ActiveTheme as _, TitleBar, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, TitleBar, v_flex};
 use gpui_kit::{
     App, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
     KeyBinding, ParentElement as _, Render, SharedString, Styled as _, Subscription, Window,
@@ -22,6 +22,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
 
+use crate::components::layout;
 use crate::library::{Library, SettingsChanged};
 use crate::{add_dialog, links, theme};
 
@@ -264,15 +265,10 @@ impl Render for MainWindow {
             .text_color(theme.foreground)
             .text_sm()
             .child(self.title_bar(cx))
-            .child(
-                h_flex().flex_1().min_h_0().child(self.sidebar(cx)).child(
-                    v_flex()
-                        .flex_1()
-                        .min_w_0()
-                        .h_full()
-                        .child(self.header(cx))
-                        .child(self.list(window, cx)),
-                ),
-            )
+            .child(layout::body(
+                self.sidebar(cx).into_any_element(),
+                self.header(cx).into_any_element(),
+                self.list(window, cx),
+            ))
     }
 }

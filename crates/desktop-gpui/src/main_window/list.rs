@@ -20,6 +20,7 @@ use wirecatch_shell::api;
 
 use super::{Group, MainWindow, View, details};
 use crate::backend::Backend;
+use crate::components::layout::PageHeader;
 use crate::{files, text};
 
 /// Every line is this tall, headings included, so the list can lay out only what shows.
@@ -91,31 +92,8 @@ impl MainWindow {
                 self.view,
                 View::Group(Group::Finished | Group::Attention | Group::Cancelled)
             );
-        let theme = cx.theme();
-        h_flex()
-            .px_5()
-            .py_3()
-            .gap_4()
-            .border_b_1()
-            .border_color(theme.border)
-            .child(
-                v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(self.title(cx)),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.muted_foreground)
-                            .child(summary),
-                    ),
-            )
-            .child(
+        PageHeader::new(self.title(cx), summary)
+            .action(
                 Button::new("new-download")
                     .small()
                     .primary()
@@ -125,7 +103,7 @@ impl MainWindow {
                     ),
             )
             .when(offers_all, |header| {
-                header.child(if any_paused {
+                header.action(if any_paused {
                     Button::new("resume-all")
                         .small()
                         .outline()

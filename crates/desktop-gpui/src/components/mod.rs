@@ -4,6 +4,7 @@ pub mod callout;
 pub mod dialog;
 pub mod field;
 pub mod heading;
+pub mod layout;
 
 pub use callout::Callout;
 pub use field::Field;
