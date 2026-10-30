@@ -7,12 +7,15 @@ mod add_dialog;
 mod backend;
 mod files;
 mod library;
+mod lifecycle;
 mod links;
 mod main_window;
 mod text;
 mod theme;
+mod tray;
 mod ui;
 
+use gpui_kit::QuitMode;
 use wirecatch_ipc::IpcError;
 use wirecatch_shell::launch::{self, Launch};
 use wirecatch_shell::{bridge, elevation, host};
@@ -61,12 +64,15 @@ fn main() {
     let backend = backend::Backend::start(runtime, listener);
     gpui_kit::application()
         .with_assets(ui::icon::Assets)
+        .with_quit_mode(QuitMode::Explicit)
         .run(move |cx| {
             gpui_kit::init(cx);
             main_window::bind_keys(cx);
             theme::init(cx);
             cx.set_global(backend);
-            main_window::run(library::Library::new(cx), cx);
+            let library = library::Library::new(cx);
+            tray::start(&library, cx);
+            main_window::run(library, cx);
             if launch.shows_window() {
                 let asked = if launch.links.is_empty() {
                     Asked::Window

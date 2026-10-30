@@ -32,7 +32,7 @@ use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
 
 use crate::library::{Asked, Library, SettingsChanged};
 use crate::ui::{Role, Typed as _, layout};
-use crate::{add_dialog, links, theme};
+use crate::{add_dialog, lifecycle, links, theme};
 
 actions!(
     main_window,
@@ -173,6 +173,9 @@ pub fn bring_up(asked: &Asked, cx: &mut App) {
     let Some(running) = cx.try_global::<Running>() else {
         return;
     };
+    if lifecycle::is_quitting(cx) {
+        return;
+    }
     let (library, shown) = (running.library.clone(), running.shown.clone());
     if shown.is_some_and(|shown| answer_in(&shown, asked, cx)) {
         return;
@@ -184,7 +187,7 @@ pub fn bring_up(asked: &Asked, cx: &mut App) {
         }
         Err(e) => {
             tracing::error!("could not open the main window: {e}");
-            cx.quit();
+            lifecycle::quit(cx);
         }
     }
 }
@@ -273,6 +276,17 @@ impl MainWindow {
             }
         });
         let redraw = cx.observe(&library, |_, _, cx| cx.notify());
+        let closing = library.downgrade();
+        window.on_window_should_close(cx, move |_, cx| {
+            let close_to_tray = closing
+                .read_with(cx, |library, _| {
+                    library.settings.as_ref().map(|s| s.close_to_tray)
+                })
+                .ok()
+                .flatten();
+            lifecycle::window_closing(close_to_tray, cx);
+            true
+        });
         let search = cx.new(|cx| InputState::new(window, cx).placeholder(ALL_PLACEHOLDER));
         let searched = cx.subscribe_in(
             &search,

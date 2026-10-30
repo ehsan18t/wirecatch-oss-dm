@@ -938,6 +938,15 @@ Decided on 2026-10-30 while building the GPUI shell (D95.5, D99.3). The Tauri ap
 4. When the hand-over fails (the running copy is too old to accept an `app` client, or does not answer), the launch says that Wirecatch is already running, as the Tauri app does, and exits.
 5. Reading the command line and the hand-over live in `wirecatch-shell` (`launch`), which the Tauri app also reads its command line with.
 
+### D104. The GPUI app's tray icon runs on its own message loop, with no GTK
+
+Decided on 2026-10-31 while building the GPUI shell (D95.5, D99.3). GPUI has no tray icon.
+
+1. The tray icon and its menu come from `tray-icon`, the crate Tauri's own tray uses. On Windows it runs on GPUI's message loop. On Linux it uses its StatusNotifierItem backend over D-Bus (`ksni`), not AppIndicator, which would need a GTK loop the app does not run; a desktop with no StatusNotifier host shows no icon, and a second launch still brings the window up (D103).
+2. The menu and its actions are the Tauri app's (D13, D73.15): Open, Pause all, Resume all, the Proxy submenu, Quit. A left click opens the window, and the tooltip shows what is downloading or why the download list could not open. The actions, the tooltip texts and the quit sequence live in `wirecatch-shell` (`tray`, `quit`, `activity`, `tray_proxy`), which both apps use.
+3. Closing the main window with `close_to_tray` on and an icon in the tray closes the window; the app keeps running, and the window is drawn anew when it is opened again. D13's hidden window was for a web view, which was slow to make again; a GPUI window is not. With `close_to_tray` off, or no icon, closing it quits.
+4. A quit takes the windows and the icon away at once, stops every download so it continues on the next start (waiting at most `QUIT_PATIENCE`), then exits. A launch that arrives while quitting brings nothing up; unlike the Tauri app, the GPUI app does not start again once it has exited.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
