@@ -60,6 +60,9 @@ impl MainWindow {
     }
 
     fn no_match(&self, needle: &str, cx: &mut Context<'_, Self>) -> Empty {
+        if !self.typed_links(cx).is_empty() {
+            return not_downloaded(cx);
+        }
         let mut actions = vec![
             Button::new("clear-search")
                 .label("Clear the search")
@@ -159,6 +162,22 @@ fn unreachable_engine(reason: String, cx: &mut Context<'_, MainWindow>) -> Empty
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.library.update(cx, |_, cx| Library::load(cx));
                 }))
+                .into_any_element(),
+        ],
+    }
+}
+
+/// The field holds links none of the downloads has.
+fn not_downloaded(cx: &mut Context<'_, MainWindow>) -> Empty {
+    Empty {
+        icon: IconName::Globe,
+        title: "Not in your downloads yet".to_owned(),
+        note: "Press Enter to download it, or keep typing to search.".to_owned(),
+        actions: vec![
+            Button::new("download-typed-empty")
+                .primary()
+                .label("Download")
+                .on_click(cx.listener(|this, _, window, cx| this.download_typed(window, cx)))
                 .into_any_element(),
         ],
     }
