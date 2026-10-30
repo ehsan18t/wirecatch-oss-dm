@@ -84,6 +84,7 @@ async fn a_duplicate_waits_for_an_answer_by_default() -> TestResult {
     assert_eq!(question.file_name, NAME);
     assert_eq!(Path::new(&question.folder), dir);
     assert_eq!(question.size, LEN as u64);
+    assert!(question.same_file);
     assert_eq!(h.manager.pending_file_exists(), vec![question.clone()]);
     let waiting = h.wait_status(row.id, DownloadStatus::Paused).await;
     assert_eq!(waiting.done, 0);
@@ -185,39 +186,43 @@ async fn replace_and_keep_both_need_no_question_once_chosen() -> TestResult {
     Ok(())
 }
 
+/// A different file with the same name is asked about too, and the question says it differs (D96).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_file_of_another_size_only_shares_the_name() -> TestResult {
+async fn a_file_of_another_size_is_asked_about_as_a_different_file() -> TestResult {
     let server = server().await;
     let h = Harness::new().await?;
     let other = vec![b'x'; LEN + 1];
     let dir = folder_with(&h, &other)?;
+    let mut events = h.manager.subscribe();
     let row = add_into(&h, server.url("report").as_str(), &dir).await?;
 
-    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
-    assert_eq!(Path::new(&done.path), dir.join("report (1).pdf"));
+    let question = asked(&mut events).await?;
+    assert_eq!(question.download, row.id);
+    assert!(!question.same_file);
     assert_eq!(std::fs::read(dir.join(NAME))?, other);
-    assert_eq!(h.manager.pending_file_exists(), vec![]);
     Ok(())
 }
 
-/// The list knows where its finished files came from: one from another link only shares the name,
-/// the same link again is a duplicate.
+/// The list knows where its finished files came from: one from another link is a different file,
+/// the same link again looks like the same file.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_finished_download_from_another_link_only_shares_the_name() -> TestResult {
+async fn a_finished_download_from_another_link_is_a_different_file() -> TestResult {
     let server = server().await;
     let h = Harness::new().await?;
     let dir = h.root.path().join("saved");
     let first = add_into(&h, server.url("a").as_str(), &dir).await?;
     h.wait_status(first.id, DownloadStatus::Completed).await;
 
-    let other = add_into(&h, server.url("b").as_str(), &dir).await?;
-    let other = h.wait_status(other.id, DownloadStatus::Completed).await;
-    assert_eq!(Path::new(&other.path), dir.join("report (1).pdf"));
-
     let mut events = h.manager.subscribe();
+    let other = add_into(&h, server.url("b").as_str(), &dir).await?;
+    let question = asked(&mut events).await?;
+    assert_eq!((question.download, question.same_file), (other.id, false));
+    h.manager
+        .answer_file_exists(question.id, answer(FileExistsChoice::Cancel, false))?;
+
     let again = add_into(&h, server.url("a").as_str(), &dir).await?;
     let question = asked(&mut events).await?;
-    assert_eq!(question.download, again.id);
+    assert_eq!((question.download, question.same_file), (again.id, true));
     Ok(())
 }
 

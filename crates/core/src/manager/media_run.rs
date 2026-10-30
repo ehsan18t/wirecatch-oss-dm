@@ -27,7 +27,7 @@ use wirecatch_media::convert;
 use wirecatch_media::describe;
 use wirecatch_media::ffmpeg::{FfmpegError, Finished};
 use wirecatch_media::merge;
-use wirecatch_protocol::app::{FixAction, ProcessingStep, UserError};
+use wirecatch_protocol::app::{FixAction, ProcessingStep, UserError, WhenFileExists};
 use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::{DownloadId, Secret};
 use wirecatch_streams::{Choice, Role, StreamProgress, StreamRequest};
@@ -36,7 +36,7 @@ use super::Manager;
 use super::media::{addon_missing, cookie_header, media_options};
 use super::policy::RunPolicy;
 use super::run::{MediaDone, RunEnd};
-use super::state::{Gauge, State};
+use super::state::{Found, Gauge, OnExisting, State};
 use crate::clock::Clock;
 use crate::headers;
 use crate::headers::Origin;
@@ -68,6 +68,42 @@ struct Job {
     reserve: Reserve,
     /// The run's, shared by its engine downloads.
     file_work: FileWork,
+    /// What happens when its name is taken by a file in the folder (D96).
+    taken: Taken,
+}
+
+/// What a finished file does when a file in the folder already has its name (D96).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Taken {
+    Replace,
+    KeepExisting,
+    KeepBoth,
+    Ask,
+}
+
+impl Taken {
+    /// The person's answer for this download, else the setting.
+    fn of(answered: Option<OnExisting>, setting: WhenFileExists) -> Self {
+        match (answered, setting) {
+            (Some(OnExisting::Replace), _) | (None, WhenFileExists::Replace) => Taken::Replace,
+            (Some(OnExisting::KeepBoth), _) | (None, WhenFileExists::KeepBoth) => Taken::KeepBoth,
+            (None, WhenFileExists::KeepExisting) => Taken::KeepExisting,
+            (None, WhenFileExists::Ask) => Taken::Ask,
+        }
+    }
+}
+
+/// Where [`place`] put a finished file.
+#[derive(Debug, PartialEq, Eq)]
+enum Placed {
+    At(PathBuf),
+    /// The file already in the folder is kept as the download, and the new one discarded.
+    Kept {
+        path: PathBuf,
+        size: u64,
+    },
+    /// The name is taken and the person is asked; the new file waits in the work folder.
+    Asks(Found),
 }
 
 /// Reserves a path for a finished file (`true` to reserve, `false` to give a
@@ -138,6 +174,7 @@ impl Manager {
                 })
             },
             file_work: FileWork::new(),
+            taken: Taken::of(entry.on_existing, state.settings.when_file_exists),
         };
         self.launch(state, id, run_id, answered, move |cancel, file_work| {
             let work = Job { file_work, ..work };
@@ -163,6 +200,10 @@ async fn run(
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<MediaDone, UserError> {
+    let work = wirecatch_media::work_dir(&job.output);
+    if let Some((file, sidecars)) = waiting_to_place(&work).await {
+        return finish(&file, &job, &work, &sidecars).await;
+    }
     let result = match what {
         MediaJob::Stream { video, audio } => run_stream(&job, video, audio, progress, cancel).await,
         MediaJob::Page {
@@ -998,31 +1039,79 @@ async fn finish(
     );
     let reserve = job.reserve.clone();
     let sidecars = sidecars.to_vec();
+    let taken = job.taken;
     let moved = job
         .file_work
-        .spawn_blocking(move || -> std::io::Result<(PathBuf, u64)> {
+        .spawn_blocking(move || -> std::io::Result<MediaDone> {
             // Marked before it is put in place, so it is never there unmarked.
             wirecatch_files::zone::mark(&file, &url, referrer.as_deref());
-            let target = place(&file, &planned, &reserve)?;
-            let bytes = std::fs::metadata(&target)?.len();
+            let (target, bytes) = match place(&file, &planned, &reserve, taken)? {
+                Placed::At(target) => {
+                    let bytes = std::fs::metadata(&target)?.len();
+                    (target, bytes)
+                }
+                Placed::Kept { path, size } => (path, size),
+                // The work folder stays, with the file in it, for the answer.
+                Placed::Asks(found) => {
+                    remember_placing(&work, &file, &sidecars)?;
+                    return Ok(MediaDone::FileExists(found));
+                }
+            };
             let anywhere: Reserve = Arc::new(|_: &Path, _| true);
             for (subtitle, language) in &sidecars {
                 wirecatch_files::zone::mark(subtitle, &url, referrer.as_deref());
                 let beside = sidecar_path(&target, language);
-                if let Err(e) = place(subtitle, &beside, &anywhere) {
+                if let Err(e) = place(subtitle, &beside, &anywhere, Taken::KeepBoth) {
                     warn!(error = %e, "could not put a subtitle file next to the video");
                 }
             }
             wirecatch_files::discard::dir(&work);
-            Ok((target, bytes))
+            Ok(MediaDone::Completed {
+                path: target,
+                bytes,
+            })
         })
         .await
         .map_err(|e| UserError {
             message: format!("Something went wrong inside Wirecatch ({e}). Try again."),
             fix: Some(FixAction::Retry),
         })?;
-    let (path, bytes) = moved.map_err(|e| disk(&e, output))?;
-    Ok(MediaDone::Completed { path, bytes })
+    moved.map_err(|e| disk(&e, output))
+}
+
+/// Names a file kept in the work folder for an answer about its taken name, so the next run puts
+/// it in place without downloading it again: the file first, then each subtitle and its language.
+const PLACING: &str = "placing.done";
+
+fn remember_placing(
+    work: &Path,
+    file: &Path,
+    sidecars: &[(PathBuf, String)],
+) -> std::io::Result<()> {
+    let name = |path: &Path| crate::naming::file_name_of(path);
+    let mut lines = vec![name(file)];
+    lines.extend(
+        sidecars
+            .iter()
+            .map(|(path, language)| format!("{}\t{language}", name(path))),
+    );
+    std::fs::write(work.join(PLACING), lines.join("\n"))
+}
+
+/// The file, and its subtitles, an earlier run left in `work` to be put in place.
+async fn waiting_to_place(work: &Path) -> Option<(PathBuf, Vec<(PathBuf, String)>)> {
+    let listed = tokio::fs::read_to_string(work.join(PLACING)).await.ok()?;
+    let mut lines = listed.lines();
+    let file = work.join(lines.next()?.trim());
+    if !tokio::fs::metadata(&file).await.is_ok_and(|m| m.is_file()) {
+        return None;
+    }
+    let sidecars = lines
+        .filter_map(|line| line.split_once('\t'))
+        .map(|(name, language)| (work.join(name), language.to_string()))
+        .filter(|(path, _)| path.is_file())
+        .collect();
+    Some((file, sidecars))
 }
 
 /// Where a subtitle file in `language` goes next to `file`:
@@ -1108,13 +1197,42 @@ fn final_path(file: &Path, planned: &Path) -> PathBuf {
 }
 
 /// Moves the finished `file` to `planned` (with the file's own media
-/// extension, see [`final_path`]) or, if that name is taken on disk or by
-/// another download, to `name (1).ext` and so on. An existing file is never
-/// replaced. Blocks on the disk.
-fn place(file: &Path, planned: &Path, reserve: &Reserve) -> std::io::Result<PathBuf> {
+/// extension, see [`final_path`]). When a file in the folder has that name, `taken` says what
+/// happens; keeping both, or a name another download holds, goes on to `name (1).ext` and so on,
+/// and never replaces a file. Blocks on the disk.
+fn place(file: &Path, planned: &Path, reserve: &Reserve, taken: Taken) -> std::io::Result<Placed> {
     let wanted = final_path(file, planned);
     let dir = wanted.parent().unwrap_or(Path::new(""));
     let name = crate::naming::file_name_of(&wanted);
+    // Not `finished_size`: this download's own work folder sits beside the name.
+    if let Some(size) = std::fs::metadata(&wanted)
+        .ok()
+        .filter(std::fs::Metadata::is_file)
+        .map(|m| m.len())
+    {
+        match taken {
+            Taken::KeepBoth => {}
+            // Rename replaces a file at the target on both systems.
+            Taken::Replace => {
+                std::fs::rename(file, &wanted)?;
+                return Ok(Placed::At(wanted));
+            }
+            Taken::KeepExisting => {
+                wirecatch_files::discard::file(file);
+                return Ok(Placed::Kept { path: wanted, size });
+            }
+            Taken::Ask => {
+                let same = std::fs::metadata(file).is_ok_and(|m| m.len() == size);
+                return Ok(Placed::Asks(Found {
+                    saved_at: super::file_exists::saved_at(&wanted),
+                    path: wanted,
+                    size,
+                    then: WhenFileExists::Ask,
+                    same,
+                }));
+            }
+        }
+    }
     for n in 0..10_000 {
         let candidate = crate::naming::candidate(dir, &name, n);
         if !crate::naming::is_free_on_disk(&candidate) {
@@ -1138,7 +1256,7 @@ fn place(file: &Path, planned: &Path, reserve: &Reserve) -> std::io::Result<Path
             Err(_) => std::fs::rename(file, &candidate).map(|()| true),
         };
         match moved {
-            Ok(true) => return Ok(candidate),
+            Ok(true) => return Ok(Placed::At(candidate)),
             Ok(false) | Err(_) if reserved => {
                 reserve(&candidate, false);
                 moved?;
@@ -1424,6 +1542,7 @@ mod tests {
                 clock: Arc::new(crate::clock::SystemClock),
                 reserve: Arc::new(|_: &Path, _| true),
                 file_work: FileWork::new(),
+                taken: Taken::KeepBoth,
             };
             let request = stream_request(&job, Path::new("/v/w/out"), Pick::Auto, Pick::Auto);
             assert_eq!(request.private_network, rule, "{chosen_by:?}");
@@ -1449,6 +1568,7 @@ mod tests {
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
             file_work: FileWork::new(),
+            taken: Taken::KeepBoth,
         };
         let options = part_options(&job, &format, PrivateNetwork::Block);
         assert_eq!(options.private_network, PrivateNetwork::Block);
@@ -1480,6 +1600,7 @@ mod tests {
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
             file_work: FileWork::new(),
+            taken: Taken::KeepBoth,
         };
         let progress = MediaProgress::default();
         let ended = run(
@@ -1530,6 +1651,7 @@ mod tests {
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
             file_work: FileWork::new(),
+            taken: Taken::KeepBoth,
         };
         let done = run_stream(
             &job,
@@ -1575,6 +1697,7 @@ mod tests {
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
             file_work: FileWork::new(),
+            taken: Taken::KeepBoth,
         };
         let done = finish(&part, &job, &work, &[]).await.unwrap();
         let MediaDone::Completed { path, .. } = done else {
@@ -1590,17 +1713,18 @@ mod tests {
     }
 
     #[test]
-    fn a_finished_video_never_replaces_a_file_or_takes_a_reserved_name() {
+    fn keeping_both_never_replaces_a_file_or_takes_a_reserved_name() {
         let dir = tempfile::tempdir().unwrap();
         let planned = dir.path().join("out.mp4");
         std::fs::write(&planned, b"someone else's").unwrap();
         let file = dir.path().join("video.mp4");
         std::fs::write(&file, b"video").unwrap();
         let free: Reserve = Arc::new(|_: &Path, _| true);
-        let placed = place(&file, &planned, &free).unwrap();
-        assert_eq!(placed, dir.path().join("out (1).mp4"));
+        let placed = place(&file, &planned, &free, Taken::KeepBoth).unwrap();
+        let next = dir.path().join("out (1).mp4");
+        assert_eq!(placed, Placed::At(next.clone()));
         assert_eq!(std::fs::read(&planned).unwrap(), b"someone else's");
-        assert_eq!(std::fs::read(&placed).unwrap(), b"video");
+        assert_eq!(std::fs::read(&next).unwrap(), b"video");
         assert!(!file.exists());
 
         // Another extension: a name another download holds is skipped.
@@ -1608,8 +1732,54 @@ mod tests {
         std::fs::write(&file, b"webm").unwrap();
         let held = dir.path().join("out.webm");
         let reserve: Reserve = Arc::new(move |p: &Path, _| p != held);
-        let placed = place(&file, &planned, &reserve).unwrap();
-        assert_eq!(placed, dir.path().join("out (1).webm"));
+        let placed = place(&file, &planned, &reserve, Taken::KeepBoth).unwrap();
+        assert_eq!(placed, Placed::At(dir.path().join("out (1).webm")));
+    }
+
+    /// A taken name does what the setting says, as a file download does (D96).
+    #[test]
+    fn a_taken_name_is_replaced_kept_or_asked_about() {
+        let dir = tempfile::tempdir().unwrap();
+        let planned = dir.path().join("out.mp4");
+        let free: Reserve = Arc::new(|_: &Path, _| true);
+        let finished = |content: &[u8]| {
+            let file = dir.path().join("video.mp4");
+            std::fs::write(&file, content).unwrap();
+            file
+        };
+        std::fs::write(&planned, b"older").unwrap();
+
+        let file = finished(b"newer");
+        let placed = place(&file, &planned, &free, Taken::Ask).unwrap();
+        let Placed::Asks(found) = placed else {
+            panic!("not asked: {placed:?}");
+        };
+        assert_eq!(
+            (found.path.as_path(), found.size, found.same),
+            (planned.as_path(), 5, true)
+        );
+        assert!(file.exists(), "the new file waits for the answer");
+        let other = finished(b"different size");
+        let Placed::Asks(found) = place(&other, &planned, &free, Taken::Ask).unwrap() else {
+            panic!("not asked");
+        };
+        assert!(!found.same);
+
+        let placed = place(&other, &planned, &free, Taken::KeepExisting).unwrap();
+        assert_eq!(
+            placed,
+            Placed::Kept {
+                path: planned.clone(),
+                size: 5
+            }
+        );
+        assert_eq!(std::fs::read(&planned).unwrap(), b"older");
+        assert!(!other.exists());
+
+        let file = finished(b"newer");
+        let placed = place(&file, &planned, &free, Taken::Replace).unwrap();
+        assert_eq!(placed, Placed::At(planned.clone()));
+        assert_eq!(std::fs::read(&planned).unwrap(), b"newer");
     }
 
     #[test]
