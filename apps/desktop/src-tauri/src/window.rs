@@ -4,61 +4,12 @@
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager as _, Runtime, WebviewWindowBuilder};
-use wirecatch_engine::units::KIB_USIZE;
 use wirecatch_protocol::desktop::{REVEAL_EVENT, Reveal};
 
 /// Label of the one window, as declared in `tauri.conf.json`.
 pub const MAIN_WINDOW: &str = "main";
 
-/// The flag the bridge (and the start-with-system entry) passes: run with no window.
-pub const BACKGROUND_FLAG: &str = "--background";
-
-/// True when the command line asks to start without a window. `args` includes the program name.
-pub fn wants_background<I, S>(args: I) -> bool
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    args.into_iter()
-        .skip(1)
-        .any(|a| a.as_ref() == BACKGROUND_FLAG)
-}
-
-/// Most links taken from one command line, and kept waiting for the interface at once.
-pub const MAX_LAUNCH_LINKS: usize = 20;
-
-/// Longest link taken from a command line, in bytes.
-pub const MAX_LINK_LEN: usize = 8 * KIB_USIZE;
-
-/// Schemes a command-line link may use.
-const LINK_SCHEMES: [&str; 5] = ["http://", "https://", "ftp://", "ftps://", "ftpes://"];
-
-/// Whether `arg` (already trimmed) is a link the Add dialog may offer: a known scheme with
-/// something after it, no control characters, and not absurdly long.
-fn is_launch_link(arg: &str) -> bool {
-    if arg.len() > MAX_LINK_LEN || arg.chars().any(char::is_control) {
-        return false;
-    }
-    let lower = arg.to_ascii_lowercase();
-    LINK_SCHEMES
-        .iter()
-        .any(|scheme| lower.starts_with(scheme) && lower.len() > scheme.len())
-}
-
-/// Web and FTP links on a command line (program name first), in order, for the Add dialog.
-/// Anything else on the command line is ignored, and at most [`MAX_LAUNCH_LINKS`] are taken.
-pub fn links_from_args<I, S>(args: I) -> Vec<String>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    args.into_iter()
-        .skip(1)
-        .map(|a| a.as_ref().trim().to_owned())
-        .filter(|a| is_launch_link(a))
-        .take(MAX_LAUNCH_LINKS)
-        .collect()
-}
+pub use wirecatch_shell::launch::{BACKGROUND_FLAG, Launch, MAX_LAUNCH_LINKS, wants_background};
 
 /// Links from the command line that the interface has not picked up yet.
 #[derive(Default)]
@@ -139,33 +90,6 @@ pub fn reveal<R: Runtime>(app: &AppHandle<R>, reveal: &Reveal) {
             "show what the main window was asked for",
             app.emit_to(MAIN_WINDOW, REVEAL_EVENT, reveal),
         );
-    }
-}
-
-/// What a launch asks for, read from its command line.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Launch {
-    /// Started for the browser or at sign-in: show nothing.
-    pub background: bool,
-    /// Links to offer in the Add dialog.
-    pub links: Vec<String>,
-}
-
-impl Launch {
-    /// Reads a command line (program name first).
-    #[must_use]
-    pub fn from_args(args: &[String]) -> Self {
-        Self {
-            background: wants_background(args),
-            links: links_from_args(args),
-        }
-    }
-
-    /// Whether this launch should bring up the window. A link always does, even with
-    /// `--background`, because the person asked to download something.
-    #[must_use]
-    pub fn shows_window(&self) -> bool {
-        !self.background || !self.links.is_empty()
     }
 }
 
@@ -283,85 +207,15 @@ pub fn handle_launch<R: Runtime>(app: &AppHandle<R>, launch: &Launch) {
 mod tests {
     use super::*;
 
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(ToString::to_string).collect()
-    }
-
     #[test]
-    fn background_flag_is_read_after_the_program_name() {
-        assert!(wants_background(["wirecatch-app", "--background"]));
-        assert!(!wants_background(["wirecatch-app"]));
-        assert!(!wants_background(["--background"]));
-        assert!(!wants_background(["wirecatch-app", "--backgrounds"]));
-    }
-
-    #[test]
-    fn links_are_picked_from_the_command_line() {
-        let found = links_from_args([
-            "C:\\Apps\\wirecatch-app.exe",
-            "https://example.com/a.zip",
-            "--background",
-            "notes.txt",
-            "HTTP://EXAMPLE.COM/B",
-            "ftp://files.example.com/c.iso",
-            "https://",
-        ]);
-        assert_eq!(
-            found,
-            [
-                "https://example.com/a.zip",
-                "HTTP://EXAMPLE.COM/B",
-                "ftp://files.example.com/c.iso"
-            ]
-        );
-        assert_eq!(
-            links_from_args(["https://not-the-program-name.example"]),
-            [] as [String; 0]
-        );
-    }
-
-    #[test]
-    fn odd_or_hostile_arguments_are_not_taken_as_links() {
-        let long = format!("https://example.com/{}", "a".repeat(MAX_LINK_LEN));
-        let found = links_from_args([
-            "app",
-            "  https://example.com/ok  ",
-            "ftpes://files.example.com/x",
-            "https://example.com/a\nb",
-            "https://example.com/\u{7}bell",
-            "file:///C:/Windows/system32/calc.exe",
-            "javascript:alert(1)",
-            "data:text/html,hi",
-            long.as_str(),
-        ]);
-        assert_eq!(
-            found,
-            ["https://example.com/ok", "ftpes://files.example.com/x"]
-        );
-    }
-
-    #[test]
-    fn at_most_twenty_links_are_taken_and_kept() {
-        let many: Vec<String> = std::iter::once("app".to_string())
-            .chain((0..50).map(|i| format!("https://example.com/{i}")))
+    fn at_most_twenty_links_are_kept() {
+        let found: Vec<String> = (0..MAX_LAUNCH_LINKS)
+            .map(|i| format!("https://example.com/{i}"))
             .collect();
-        let found = links_from_args(&many);
-        assert_eq!(found.len(), MAX_LAUNCH_LINKS);
-        assert_eq!(found[0], "https://example.com/0");
-
         let waiting = LaunchLinks::default();
         waiting.push(found.clone());
         waiting.push(found);
         assert_eq!(waiting.take().len(), MAX_LAUNCH_LINKS);
-    }
-
-    #[test]
-    fn a_background_launch_shows_nothing_unless_it_brings_a_link() {
-        assert!(!Launch::from_args(&args(&["app", "--background"])).shows_window());
-        assert!(Launch::from_args(&args(&["app"])).shows_window());
-        let with_link = Launch::from_args(&args(&["app", "--background", "https://x.example/f"]));
-        assert!(with_link.shows_window());
-        assert_eq!(with_link.links, ["https://x.example/f"]);
     }
 
     #[test]
