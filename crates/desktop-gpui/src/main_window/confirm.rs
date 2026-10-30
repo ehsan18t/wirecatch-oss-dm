@@ -127,7 +127,7 @@ pub(super) fn remove(
         asked,
         delete_files: false,
     });
-    window.open_dialog(cx, move |dialog, _, cx| {
+    crate::components::dialog::open(window, cx, move |dialog, _, cx| {
         let deletes = {
             let form = form.read(cx);
             form.delete_files && form.asked.finished > 0
@@ -211,7 +211,7 @@ pub(super) fn cancel(
     };
     let name = asked.one.clone();
     let ids = asked.ids;
-    window.open_dialog(cx, move |dialog, _, cx| {
+    crate::components::dialog::open(window, cx, move |dialog, _, cx| {
         let ids = ids.clone();
         let theme = cx.theme();
         dialog

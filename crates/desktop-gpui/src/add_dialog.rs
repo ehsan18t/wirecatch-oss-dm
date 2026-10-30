@@ -73,7 +73,7 @@ pub fn open(
     cx: &mut App,
 ) {
     let form = cx.new(|cx| AddForm::new(library, urls, queue, window, cx));
-    window.open_dialog(cx, move |dialog, _, cx| {
+    crate::components::dialog::open(window, cx, move |dialog, _, cx| {
         let count = form.read(cx).link_count(cx);
         let send = form.clone();
         let paused = form.clone();

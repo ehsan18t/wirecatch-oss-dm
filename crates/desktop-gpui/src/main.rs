@@ -5,6 +5,7 @@
 
 mod add_dialog;
 mod backend;
+mod components;
 mod files;
 mod icons;
 mod library;

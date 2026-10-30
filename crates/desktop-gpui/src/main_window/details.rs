@@ -64,7 +64,7 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
             _subscriptions: vec![follow],
         }
     });
-    window.open_dialog(cx, move |dialog, _, _| {
+    crate::components::dialog::open(window, cx, move |dialog, _, _| {
         dialog.w(px(WIDTH)).p_0().child(details.clone())
     });
 }
