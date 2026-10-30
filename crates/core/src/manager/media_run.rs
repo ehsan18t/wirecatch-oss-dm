@@ -1080,9 +1080,21 @@ async fn finish(
 }
 
 /// Names a file kept in the work folder for an answer about its taken name, so the next run puts
-/// it in place without downloading it again: the link it came from, the file, then each subtitle
-/// and its language. A later download at the same path from another link ignores it.
+/// it in place without downloading it again: a digest of the link it came from (a link can carry
+/// a token, which stays out of the folder), the file, then each subtitle and its language. A
+/// later download at the same path from another link ignores it.
 const PLACING: &str = "placing.done";
+
+fn link_digest(url: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hex = String::with_capacity(64);
+    for byte in Sha256::digest(url.as_bytes()) {
+        for nibble in [byte >> 4, byte & 0xf] {
+            hex.extend(char::from_digit(u32::from(nibble), 16));
+        }
+    }
+    hex
+}
 
 fn remember_placing(
     work: &Path,
@@ -1091,7 +1103,7 @@ fn remember_placing(
     sidecars: &[(PathBuf, String)],
 ) -> std::io::Result<()> {
     let name = |path: &Path| crate::naming::file_name_of(path);
-    let mut lines = vec![url.to_string(), name(file)];
+    let mut lines = vec![link_digest(url), name(file)];
     lines.extend(
         sidecars
             .iter()
@@ -1105,7 +1117,7 @@ fn remember_placing(
 async fn waiting_to_place(work: &Path, url: &Url) -> Option<(PathBuf, Vec<(PathBuf, String)>)> {
     let listed = tokio::fs::read_to_string(work.join(PLACING)).await.ok()?;
     let mut lines = listed.lines();
-    if lines.next()? != url.as_str() {
+    if lines.next()? != link_digest(url.as_str()) {
         return None;
     }
     let inside = |name: &str| {

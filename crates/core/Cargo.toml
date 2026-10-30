@@ -34,6 +34,7 @@ tracing.workspace = true
 
 # Stands in for the media add-on's programs in this crate's tests, which take its path from
 # `CARGO_BIN_EXE_fake_media_tool`, so cargo builds it for every test run.
+sha2 = "0.10.9"
 [[bin]]
 name = "fake_media_tool"
 path = "src/bin/fake_media_tool.rs"
@@ -47,7 +48,6 @@ lzma-rust2 = { version = "0.23.0", default-features = false, features = ["std", 
 pgp = { version = "0.21.0", default-features = false }
 rand = "0.8.6"
 rusqlite.workspace = true
-sha2 = "0.10.9"
 tar = { version = "0.4.44", default-features = false }
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 tempfile.workspace = true
