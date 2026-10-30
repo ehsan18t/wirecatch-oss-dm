@@ -294,6 +294,7 @@ mod tests {
             file_name: "report.pdf".into(),
             folder: "Downloads".into(),
             size: 1,
+            same_file: true,
             saved_at: None,
         }];
         let ids = open_question_ids(
