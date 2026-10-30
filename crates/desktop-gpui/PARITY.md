@@ -58,7 +58,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Queue: rules with Test a link.
 - [x] Queue: proxy, with New proxy, and the hosts that skip it.
 - [ ] Get a new link.
-- [ ] Export and import settings, with the preview.
+- [x] Export and import settings, with the preview.
 - [ ] Keyboard shortcuts.
 - [ ] Remove the add-on.
 - [x] Proxy server, with Test connection.
@@ -67,7 +67,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 ## Settings
 
 - [x] General: theme, accent, start at sign-in, close to tray, updates, suffix list, log folder.
-- [ ] General: backup (with the Export and import dialog).
+- [x] General: backup (with the Export and import dialog).
 - [x] Notifications.
 - [x] Saving files: folder, if the file exists, folders by file type.
 - [x] Browser.

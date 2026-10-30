@@ -16,7 +16,7 @@ const environmentName = (slug) => slug.toUpperCase().replaceAll('-', '_');
 /** The constants generated: their name, what they mean, their value, and which languages use them. */
 const CONSTANTS = [
   ['PRODUCT_NAME', 'The product name people see.', (p) => p.product.name, BOTH],
-  ['PRODUCT_SLUG', 'The lowercase product name used in file names.', (p) => p.product.slug, TS],
+  ['PRODUCT_SLUG', 'The lowercase product name used in file names.', (p) => p.product.slug, BOTH],
   [
     'PRODUCT_VERSION',
     'The release version of the app and the extension.',

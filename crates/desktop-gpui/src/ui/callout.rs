@@ -1,4 +1,5 @@
-//! A tinted box that says what went wrong, with the buttons that fix it.
+//! A tinted box that says what went wrong, with the buttons that fix it, or what is about to
+//! happen.
 
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -9,8 +10,15 @@ use gpui_kit::{
     Window, div,
 };
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tone {
+    Danger,
+    Info,
+}
+
 #[derive(IntoElement)]
 pub struct Callout {
+    tone: Tone,
     title: Option<SharedString>,
     message: SharedString,
     actions: Vec<AnyElement>,
@@ -18,7 +26,16 @@ pub struct Callout {
 
 impl Callout {
     pub fn danger(message: impl Into<SharedString>) -> Self {
+        Self::of(Tone::Danger, message)
+    }
+
+    pub fn info(message: impl Into<SharedString>) -> Self {
+        Self::of(Tone::Info, message)
+    }
+
+    fn of(tone: Tone, message: impl Into<SharedString>) -> Self {
         Self {
+            tone,
             title: None,
             message: message.into(),
             actions: Vec::new(),
@@ -40,23 +57,27 @@ impl RenderOnce for Callout {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let titled = self.title.is_some();
+        let tint = match self.tone {
+            Tone::Danger => theme.danger,
+            Tone::Info => theme.info,
+        };
         v_flex()
             .p_3()
             .gap_1()
             .rounded(theme.radius)
-            .bg(theme.danger.opacity(0.12))
+            .bg(tint.opacity(0.12))
             .text_role(Role::Body, cx)
             .when_some(self.title, |callout, title| {
                 callout.child(
                     div()
                         .text_role(Role::Strong, cx)
-                        .text_color(theme.danger)
+                        .text_color(tint)
                         .child(title),
                 )
             })
             .child(
                 div()
-                    .when(!titled, |message| message.text_color(theme.danger))
+                    .when(!titled, |message| message.text_color(tint))
                     .child(self.message),
             )
             .when(!self.actions.is_empty(), |callout| {
