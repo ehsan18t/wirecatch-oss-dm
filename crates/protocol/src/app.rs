@@ -1863,6 +1863,10 @@ pub struct FileExistsQuestion {
     /// Size of the file in the folder, in bytes.
     #[ts(type = "number")]
     pub size: u64,
+    /// The file in the folder looks like the one the download would save; otherwise it is a
+    /// different file with the same name (D96).
+    #[serde(default)]
+    pub same_file: bool,
     /// When the file in the folder was last changed, in Unix time in milliseconds.
     #[ts(type = "number | null")]
     pub saved_at: Option<i64>,

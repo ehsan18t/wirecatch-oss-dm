@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A download whose file is already in its folder (D88): replace it, keep both, or cancel, and whether to remember the choice. Keep both is the main button: it never loses a file.
+  // A download whose file name is already taken in its folder (D88, D96), saying whether it looks like the same file: replace it, keep both, or cancel, and whether to remember the choice. Keep both is the main button: it never loses a file.
   import type { FileExistsChoice, FileExistsQuestion } from '@wirecatch/protocol';
   import { formatBytes } from '@wirecatch/units';
   import { Button, Checkbox, textIfCut, tooltip } from '@wirecatch/ui';
@@ -19,7 +19,12 @@
   }
 </script>
 
-<WindowFrame title="This file is already in the folder" error={win.error}>
+<WindowFrame
+  title={question.same_file
+    ? 'This file is already in the folder'
+    : 'A file with this name already exists'}
+  error={win.error}
+>
   <div class="flex flex-col gap-3 text-ui text-ink">
     <div class="flex flex-col gap-1">
       <p class="text-small text-ink-muted">In the folder now</p>
@@ -34,8 +39,12 @@
       </div>
     </div>
     <p>
-      A file with the same name and size is already there, so it is probably this download. Replace
-      overwrites it; Keep both saves this one under a new name.
+      {#if question.same_file}
+        A file with the same name and size is already there, so it is probably this download.
+      {:else}
+        It is a different file with the same name.
+      {/if}
+      Replace overwrites it; Keep both saves this one under a new name.
     </p>
     <div class="border-t border-line pt-4">
       <Checkbox

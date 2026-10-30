@@ -24,7 +24,7 @@ const SAMPLE = {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Sample data only: a download pauses because its file is already in its folder; returns the question's id. */
-export function simulateFileExists(state: MockState): QuestionId {
+export function simulateFileExists(state: MockState, sameFile = true): QuestionId {
   const row = state.create(SAMPLE.url, { start: false, size: SAMPLE.size });
   state.changed([row]);
   const question: FileExistsQuestion = {
@@ -34,6 +34,7 @@ export function simulateFileExists(state: MockState): QuestionId {
     file_name: row.file_name,
     folder: row.path.slice(0, row.path.length - row.file_name.length - 1),
     size: SAMPLE.size,
+    same_file: sameFile,
     saved_at: state.now() - DAY_MS,
   };
   state.fileExists.push(question);

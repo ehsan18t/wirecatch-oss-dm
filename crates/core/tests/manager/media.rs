@@ -7,13 +7,13 @@ use std::time::Duration;
 
 use wirecatch_core::CoreError;
 use wirecatch_protocol::app::{
-    AddRequest, AddonId, AddonState, Category, DownloadStatus, DownloadSummary, FixAction,
-    MediaChoice, MediaSelection, OutputFormat, QualityFallback, Repeated, UiEvent, VideoQuality,
-    WaitReason,
+    AddRequest, AddonId, AddonState, Category, DownloadStatus, DownloadSummary, FileExistsAnswer,
+    FileExistsChoice, FixAction, MediaChoice, MediaSelection, OutputFormat, QualityFallback,
+    Repeated, UiEvent, VideoQuality, WaitReason, WhenFileExists,
 };
 use wirecatch_protocol::extension::{AddAction, MediaKind, NewDownload};
 
-use crate::common::{Harness, PATIENCE, QUIET, TestResult, extension, test_data, wait_until};
+use crate::common::{Harness, PATIENCE, QUIET, TestResult, extension, test_data, tune, wait_until};
 use crate::media_support::{
     FileServer, Releases, args, harness, harness_refreshing, install, media_capture, next_event,
     publish, real_ffmpeg, tell_tool, use_real_ffmpeg, ytdlp_calls,
@@ -160,6 +160,63 @@ async fn an_hls_capture_becomes_a_choice_and_then_a_file() -> TestResult {
     // The browser's cookies went to the playlist's own server.
     let seen = server.seen_at("hls/master.m3u8");
     assert!(seen.iter().any(|s| s.headers.get("cookie").is_some()));
+    Ok(())
+}
+
+/// A stream whose name is taken in the folder asks, as a file does, and the answer puts it in place
+/// without downloading it again (D96).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stream_whose_name_is_taken_asks_and_then_replaces() -> TestResult {
+    let server = FileServer::start().await;
+    let best = hls(&server, false, false);
+    let h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    let capture = media_capture(
+        server.url("hls/master.m3u8"),
+        MediaKind::Hls,
+        Some("Holiday clip"),
+    );
+    let download =
+        async |h: &Harness, ui: &mut tokio::sync::broadcast::Receiver<UiEvent>, tab: &str| {
+            let capture = NewDownload {
+                handover_id: tab.into(),
+                ..capture.clone()
+            };
+            h.manager.add_capture(capture).await.unwrap();
+            let choice = choice_requested(ui).await;
+            h.manager
+                .choose_media(choice.id, select(&choice.options[0].id))
+                .await
+                .unwrap();
+        };
+    download(&h, &mut ui, "first").await;
+    let first = h.manager.list_downloads().remove(0);
+    let first = h.wait_status(first.id, DownloadStatus::Completed).await;
+    std::fs::write(&first.path, b"edited since")?;
+
+    download(&h, &mut ui, "second").await;
+    let question = next_event(&mut ui, "the name is asked about", |e| match e {
+        UiEvent::FileExistsRequested(question) => Some(question.clone()),
+        _ => None,
+    })
+    .await;
+    assert!(!question.same_file);
+    assert_eq!(std::fs::read(&first.path)?, b"edited since");
+    let fetched = server.seen_at("hls/720/seg0.ts").len();
+
+    h.manager.answer_file_exists(
+        question.id,
+        FileExistsAnswer {
+            choice: FileExistsChoice::Replace,
+            remember: false,
+        },
+    )?;
+    let done = h
+        .wait_status(question.download, DownloadStatus::Completed)
+        .await;
+    assert_eq!(done.path, first.path);
+    assert_eq!(std::fs::read(&done.path)?, best);
+    assert_eq!(server.seen_at("hls/720/seg0.ts").len(), fetched);
     Ok(())
 }
 
@@ -434,13 +491,16 @@ fn hls_for_mkv(server: &FileServer) {
     }
 }
 
-/// A typed name that core cut to length and then numbered, because a file had the name, still finishes when the join changes its extension: it is longer than the names the engine makes itself. Chinese takes three bytes a character but one UTF-16 unit, so the work folders under its name stay within what Windows starts a program in.
+/// A typed name that core cut to length, and that is numbered when the file is put in place because a file has the name and the setting keeps both (D96), still finishes when the join changes its extension: it is longer than the names the engine makes itself. Chinese takes three bytes a character but one UTF-16 unit, so the work folders under its name stay within what Windows starts a program in.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_long_numbered_name_finishes_in_the_container_the_join_picks() -> TestResult {
     let server = FileServer::start().await;
     hls_for_mkv(&server);
     let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tune(&h.manager, |s| {
+        s.when_file_exists = WhenFileExists::KeepBoth;
+    })?;
     let mut ui = h.manager.subscribe();
     h.manager
         .add_capture(media_capture(
@@ -455,13 +515,14 @@ async fn a_long_numbered_name_finishes_in_the_container_the_join_picks() -> Test
     let typed = format!("{}.mp4", "中".repeat(150));
     let folder = Path::new(&choice.folder);
     std::fs::create_dir_all(folder)?;
-    let taken = folder.join(wirecatch_engine::naming::sanitize(&typed));
+    let planned = folder.join(wirecatch_engine::naming::sanitize(&typed));
+    let taken = planned.with_extension("mkv");
     std::fs::write(&taken, b"theirs")?;
     let mut selection = select(&video.id);
     selection.file_name = Some(typed);
     h.manager.choose_media(choice.id, selection).await.unwrap();
     let row = h.manager.list_downloads().remove(0);
-    assert!(row.file_name.ends_with(" (1).mp4"), "{}", row.file_name);
+    assert_eq!(Path::new(&row.path), planned);
     let done = wait_until("the download to end", || {
         h.manager
             .list_downloads()
@@ -472,7 +533,8 @@ async fn a_long_numbered_name_finishes_in_the_container_the_join_picks() -> Test
     .await;
     assert_eq!(done.status, DownloadStatus::Completed, "{:?}", done.error);
     let finished = Path::new(&done.path);
-    assert_eq!(finished, Path::new(&row.path).with_extension("mkv"));
+    let stem = taken.file_stem().unwrap().to_string_lossy().into_owned();
+    assert_eq!(finished, folder.join(format!("{stem} (1).mkv")));
     assert!(finished.is_file());
     assert_eq!(std::fs::read(&taken)?, b"theirs");
     Ok(())
@@ -1342,6 +1404,10 @@ async fn a_page_cannot_save_a_program() -> TestResult {
     let server = FileServer::start().await;
     let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
+    // Both pages are called Invoice; the second keeps both rather than asking (D96).
+    tune(&h.manager, |s| {
+        s.when_file_exists = WhenFileExists::KeepBoth;
+    })?;
     server.put("fmt/payload.exe", b"MZ not a video".to_vec());
     let info = serde_json::json!({
         "title": "Invoice",

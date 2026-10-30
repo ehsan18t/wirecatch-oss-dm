@@ -32,6 +32,11 @@ export type FileExistsQuestion = {
    */
   size: number;
   /**
+   * The file in the folder looks like the one the download would save; otherwise it is a
+   * different file with the same name (D96).
+   */
+  same_file: boolean;
+  /**
    * When the file in the folder was last changed, in Unix time in milliseconds.
    */
   saved_at: number | null;

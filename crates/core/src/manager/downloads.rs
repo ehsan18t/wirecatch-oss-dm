@@ -527,6 +527,8 @@ impl Manager {
     /// racing), which adds nothing.
     pub(super) async fn insert(&self, new: NewEntry) -> Result<Option<DownloadSummary>> {
         let (dir, name, category) = self.destination(&new)?;
+        // A stream or page settles a taken name when it puts its file in place (D96).
+        let placed_later = matches!(new.kind, Kind::Media(_));
         // Checking the disk blocks, so it happens off the lock and off async threads;
         // if another add claimed the same path meanwhile, look again.
         loop {
@@ -535,9 +537,12 @@ impl Manager {
             let (dir, name, manager) = (dir.clone(), name.clone(), self.clone());
             let path = self
                 .blocking(move || {
-                    Ok(naming::unique_path(&dir, &name, |path| {
-                        manager.lock().claimed.contains(path)
-                    }))
+                    let claimed = |path: &Path| manager.lock().claimed.contains(path);
+                    Ok(if placed_later {
+                        naming::unclaimed_path(&dir, &name, claimed)
+                    } else {
+                        naming::unique_path(&dir, &name, claimed)
+                    })
                 })
                 .await?;
 
