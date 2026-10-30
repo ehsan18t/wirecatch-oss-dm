@@ -428,8 +428,8 @@ export class Hub {
     return this.#app.noticeShown(id);
   }
 
-  /** Tells the app the person pressed one of a notice's buttons (D65). */
-  noticePressed(id: NoticeId, button: number): Promise<void> {
+  /** Tells the app the person pressed one of a notice's buttons, or its text (D65). */
+  noticePressed(id: NoticeId, button: number | null): Promise<void> {
     return this.#app.noticePressed(id, button);
   }
 

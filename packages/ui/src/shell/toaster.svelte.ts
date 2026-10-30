@@ -18,6 +18,8 @@ export interface Toast {
   duration: number;
   /** What it offers to do, in order; each dismisses the toast. */
   actions: readonly ToastAction[];
+  /** What a click on its text does, which dismisses it too: show what it is about. */
+  open?: (() => void) | undefined;
 }
 
 export interface ToastOptions {
@@ -25,6 +27,8 @@ export interface ToastOptions {
   duration?: number | undefined;
   /** What to do about it, in order. A toast with actions stays longer; each action must also be reachable elsewhere, as the toast goes away on its own. */
   actions?: readonly ToastAction[] | undefined;
+  /** What a click on its text does; it dismisses the toast. */
+  open?: (() => void) | undefined;
 }
 
 /** How long a toast stays, by what it says; `action` for one that offers something to do. Longer for worse news, which takes longer to read and act on. */
@@ -81,6 +85,7 @@ export class Toaster {
       title: options.title,
       duration,
       actions,
+      open: options.open,
     };
     this.list = [...this.list, toast];
     this.announcement = {

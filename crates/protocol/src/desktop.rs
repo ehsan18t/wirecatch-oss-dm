@@ -136,8 +136,8 @@ pub struct SystemAppearance {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Reveal {
-    /// The queue they finished in, for a queue's summary: the list shows that queue. `None`
-    /// shows every download.
+    /// The queue they are in, or finished in for a queue's summary: the list shows that queue.
+    /// `None` shows every download.
     pub queue: Option<QueueId>,
     /// The downloads, the one to scroll to first.
     pub ids: Vec<DownloadId>,

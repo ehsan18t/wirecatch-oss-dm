@@ -23,10 +23,10 @@
   import Button from '../primitives/Button.svelte';
   import Icon from '../primitives/Icon.svelte';
   import IconButton from '../primitives/IconButton.svelte';
-  import { TONE_FILL, TONE_TEXT } from '../recipes/control';
+  import { FOCUS_RING, TONE_FILL, TONE_TEXT } from '../recipes/control';
   import { FLYOUT_SURFACE } from '../recipes/surface';
   import LiveRegions from '../internal/LiveRegions.svelte';
-  import type { Announcement, Toaster } from './toaster.svelte';
+  import type { Announcement, Toast, Toaster } from './toaster.svelte';
 
   interface Props {
     toaster: Toaster;
@@ -107,6 +107,12 @@
     toaster.clear();
   }
 
+  /** A click on the toast's text: what it is about opens, and the toast goes. */
+  function open(toast: Toast) {
+    toast.open?.();
+    dismiss(toast.id);
+  }
+
   /** Before a focused toast goes, focus moves to its neighbour, or back to where it came from. */
   function dismiss(id: string) {
     if (toastElement(id)?.contains(document.activeElement)) {
@@ -151,10 +157,21 @@
         ></span>
         <Icon icon={ICON[toast.tone]} size="lg" class={cn('mt-px', TONE_TEXT[toast.tone])} />
         <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-          {#if toast.title}
-            <p class="truncate text-ui font-semibold text-ink">{toast.title}</p>
-          {/if}
-          <p class="text-ui wrap-break-word text-ink-muted">{toast.message}</p>
+          <svelte:element
+            this={toast.open ? 'button' : 'div'}
+            type={toast.open ? 'button' : undefined}
+            role={toast.open ? 'button' : undefined}
+            class={cn(
+              'flex min-w-0 flex-col gap-0.5 text-left',
+              toast.open && cn('cursor-pointer rounded-sm', FOCUS_RING),
+            )}
+            onclick={toast.open ? () => open(toast) : undefined}
+          >
+            {#if toast.title}
+              <span class="block truncate text-ui font-semibold text-ink">{toast.title}</span>
+            {/if}
+            <span class="block text-ui wrap-break-word text-ink-muted">{toast.message}</span>
+          </svelte:element>
           {#if toast.actions.length > 0}
             <div class="mt-1 flex flex-wrap gap-x-3">
               {#each toast.actions as action (action.label)}

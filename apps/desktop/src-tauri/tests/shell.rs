@@ -297,7 +297,7 @@ fn a_note_goes_to_the_browser_that_shows_it_or_to_a_notification() -> TestResult
         &handle,
         &wirecatch_protocol::extension::NoticePressed {
             id: unanswered.id,
-            button: 0,
+            button: Some(0),
         },
     );
     wait_until("the notification that it could not try again", || {

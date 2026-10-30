@@ -605,7 +605,7 @@ async fn a_note_reaches_the_browsers_and_their_answers_reach_the_app() -> TestRe
     while !matches!(ui.recv().await.unwrap(), UiEvent::NoticeShown(NoticeId(4))) {}
     let pressed = NoticePressed {
         id: NoticeId(4),
-        button: 0,
+        button: Some(0),
     };
     let reply = client.call(Call::NoticePressed(pressed.clone())).await?;
     assert_eq!(reply.unwrap(), Reply::Done);

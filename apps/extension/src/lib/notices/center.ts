@@ -40,8 +40,8 @@ export interface NoticeCenterDeps {
   unmount: (tabId: number) => Promise<void>;
   /** Tells the app the notice is on screen. */
   shown: (id: NoticeId) => Promise<void>;
-  /** Tells the app the person pressed one of the notice's buttons. */
-  pressed: (id: NoticeId, button: number) => Promise<void>;
+  /** Tells the app the person pressed one of the notice's buttons, or its text (`button` null). */
+  pressed: (id: NoticeId, button: number | null) => Promise<void>;
   /** Milliseconds since some fixed point. */
   now: () => number;
 }

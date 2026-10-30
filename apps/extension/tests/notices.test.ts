@@ -90,7 +90,7 @@ function noticesIn(received: ToNoticesPage[]): BrowserNotice[] {
 
 function center(overrides: Partial<NoticeCenterDeps> = {}, clock = { now: 0 }) {
   const shown: NoticeId[] = [];
-  const pressed: [NoticeId, number][] = [];
+  const pressed: [NoticeId, number | null][] = [];
   const unmounted: number[] = [];
   const told = { shown, pressed, unmounted };
   const deps: NoticeCenterDeps = {
@@ -169,8 +169,12 @@ describe('the notice center', () => {
     page.send({ type: 'pressed', id: noticeId(1), button: 1 });
     page.send({ type: 'pressed', id: noticeId(99), button: 0 });
     page.send({ type: 'pressed', id: noticeId(1), button: -1 });
+    page.send({ type: 'pressed', id: noticeId(1), button: null });
     await flush();
-    expect(told.pressed).toEqual([[noticeId(1), 1]]);
+    expect(told.pressed).toEqual([
+      [noticeId(1), 1],
+      [noticeId(1), null],
+    ]);
   });
 
   it('takes the frame away once empty, but not when a newer notice crossed the word', async () => {
@@ -442,6 +446,15 @@ describe('the notices page', () => {
     flushSync();
     expect(notices.toaster.list).toEqual([]);
     expect(sent.filter((m) => m.type === 'gone')).toEqual([]);
+    notices.dispose();
+  });
+
+  it('opens the download in the app from the notice’s text', async () => {
+    const { notices, sent } = page();
+    notices.show(notice(1));
+    flushSync();
+    await userEvent.click(screen.getByRole('button', { name: /Download finished/ }));
+    expect(sent).toContainEqual({ type: 'pressed', id: noticeId(1), button: null });
     notices.dispose();
   });
 

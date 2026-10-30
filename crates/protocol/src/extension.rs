@@ -295,14 +295,15 @@ pub struct NoticeShown {
     pub id: NoticeId,
 }
 
-/// The person pressed one of a notice's buttons.
+/// The person pressed one of a notice's buttons, or the notice itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct NoticePressed {
     /// The notice.
     pub id: NoticeId,
-    /// The button's place among [`BrowserNotice::buttons`].
-    pub button: u32,
+    /// The button's place among [`BrowserNotice::buttons`]; none for the notice itself, which
+    /// shows its download in the app.
+    pub button: Option<u32>,
 }
 
 /// The settings that are the extension's own. The app stores them; the extension only edits
