@@ -73,7 +73,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Browser.
 - [x] Media: asking, resolution, formats, audio quality, subtitles, chapters, video sites.
 - [x] Media: the add-on card.
-- [ ] Media: subtitle languages.
+- [x] Media: subtitle languages.
 - [x] Speed and queues, with Test a link.
 - [x] Network: the global proxy, proxy servers, hosts that skip the proxy, FTP past proxies, local network sites.
 - [x] Settings search.
