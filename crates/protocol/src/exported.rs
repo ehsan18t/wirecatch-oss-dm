@@ -622,6 +622,16 @@ mod tests {
             crate::version::since_tables(),
             format_tables(),
             audio_tables(),
+            vec![Constant::json(
+                "SUBTITLE_LANGUAGES",
+                &[
+                    " The subtitle languages a person can pick from, by ISO 639-1 code, named in English",
+                    " (`languages::LANGUAGES`).",
+                ],
+                "readonly { code: string; name: string; also_called: string | null }[]",
+                &[],
+                &crate::languages::LANGUAGES,
+            )],
             vec![Constant::json_naming(
                 "DEFAULT_EXTENSION_SETTINGS",
                 &[

@@ -19,6 +19,7 @@ pub mod app;
 pub mod desktop;
 pub mod extension;
 pub mod frame;
+pub mod languages;
 pub mod media_start;
 pub mod proxy;
 pub mod rules;
