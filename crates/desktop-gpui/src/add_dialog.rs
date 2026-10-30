@@ -19,7 +19,7 @@ use wirecatch_sites::video_sites::video_site_for;
 use crate::backend::Backend;
 use crate::library::Library;
 use crate::ui::{Callout, Field, FolderRow};
-use crate::{files, links};
+use crate::{files, links, text};
 
 /// Said when the box holds no link to send.
 /// Where links go with no folder picked and no queue folder.
@@ -373,7 +373,7 @@ impl AddForm {
             .and_then(|id| self.library.read(cx).queue(id))
             .map(|queue| &queue.settings.folder)
         {
-            Some(Setting::Own(folder)) => folder.0.clone(),
+            Some(Setting::Own(folder)) => text::folder(&folder.0),
             Some(Setting::Global) | None => FOLDER_BY_TYPE.to_owned(),
         };
         FolderRow::new(

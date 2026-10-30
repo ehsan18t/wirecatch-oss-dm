@@ -2,21 +2,17 @@
 //! FTP past other proxies, and the sites that may reach the person's own network. Each change
 //! applies to downloads that start after it.
 
-use std::rc::Rc;
-use std::time::Duration;
-
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, h_flex, v_flex,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Axis, ElementId, Entity, Focusable as _, IntoElement,
-    ParentElement as _, SharedString, Styled as _, Subscription, Task, Window, div,
+    AnyElement, App, Axis, ElementId, Entity, IntoElement, ParentElement as _, SharedString,
+    Styled as _, Window, div,
 };
 use wirecatch_protocol::app::{AppSettingsPatch, Setting, Update};
 use wirecatch_protocol::proxy::{
@@ -24,7 +20,7 @@ use wirecatch_protocol::proxy::{
 };
 use wirecatch_shell::api;
 
-use super::{change, current};
+use super::{Typing, change, current, list_field};
 use crate::backend::command;
 use crate::library::Library;
 use crate::main_window::proxy_dialog::{self, Users};
@@ -33,8 +29,6 @@ use crate::ui::{Role, Typed as _};
 
 const SYSTEM: &str = "system";
 const DIRECT: &str = "direct";
-/// How long a list field waits after the last keystroke before saving.
-const SAVE_AFTER: Duration = Duration::from_millis(800);
 const HOSTS_HELP: &str = "One per line. A host covers its subdomains; IP addresses, ranges (10.0.0.0/8) and <local> (names without a dot) work too.";
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
@@ -82,9 +76,10 @@ fn local_network(library: &Entity<Library>) -> SettingGroup {
     let sites = {
         let library = library.clone();
         SettingField::render(move |_, window, cx| {
-            lines_field(
-                "local-sites",
+            list_field(
+                "local-sites".into(),
                 &current(&library, cx, |s| s.local_sites.clone(), Vec::new()),
+                Typing::Lines,
                 "wiki.example.com",
                 |sites, cx| {
                     change(
@@ -400,9 +395,10 @@ fn exceptions(library: &Entity<Library>, window: &mut Window, cx: &mut App) -> A
                 v_flex()
                     .pl_6()
                     .gap_1p5()
-                    .child(lines_field(
-                        "global-hosts-list",
+                    .child(list_field(
+                        "global-hosts-list".into(),
                         &exceptions.hosts,
+                        Typing::Lines,
                         "intranet.example.com",
                         move |listed, cx| {
                             change_proxy(&hosts, cx, |proxy| proxy.exceptions.hosts = listed);
@@ -438,78 +434,4 @@ fn change_proxy(library: &Entity<Library>, cx: &mut App, edit: impl FnOnce(&mut 
         },
         cx,
     );
-}
-
-/// One value per line, saved a moment after typing stops or when the field loses focus, so a
-/// value half typed is not sent.
-fn lines_field(
-    key: &'static str,
-    saved: &[String],
-    placeholder: &'static str,
-    save: impl Fn(Vec<String>, &mut App) + 'static,
-    window: &mut Window,
-    cx: &mut App,
-) -> AnyElement {
-    struct Lines {
-        input: Entity<TextareaState>,
-        pending: Option<Task<()>>,
-        _saving: Subscription,
-    }
-    let shown = saved.join(
-        "
-",
-    );
-    let save = Rc::new(save);
-    let lines = window.use_keyed_state(SharedString::from(key), cx, |window, cx| {
-        let input = cx.new(|cx| {
-            TextareaState::new(window, cx)
-                .auto_grow(2, 8)
-                .placeholder(placeholder)
-                .default_value(shown.clone())
-        });
-        let saving = cx.subscribe(
-            &input,
-            move |lines: &mut Lines, input, event: &InputEvent, cx| {
-                let save = save.clone();
-                match event {
-                    InputEvent::Change => {
-                        let input = input.clone();
-                        // Replacing the task drops the one waiting, so only the last change saves.
-                        lines.pending = Some(cx.spawn(async move |_, cx| {
-                            cx.background_executor().timer(SAVE_AFTER).await;
-                            cx.update(|cx| save(listed(&input, cx), cx));
-                        }));
-                    }
-                    InputEvent::Blur => {
-                        lines.pending = None;
-                        save(listed(&input, cx), cx);
-                    }
-                    InputEvent::PressEnter { .. } | InputEvent::Focus => {}
-                }
-            },
-        );
-        Lines {
-            input,
-            pending: None,
-            _saving: saving,
-        }
-    });
-    let input = lines.read(cx).input.clone();
-    // A change made elsewhere shows, unless the person is typing here.
-    if !input.read(cx).focus_handle(cx).is_focused(window) && input.read(cx).value() != shown {
-        input.update(cx, |state, cx| state.set_value(shown, window, cx));
-    }
-    Textarea::new(&input).into_any_element()
-}
-
-/// The lines of `input` that hold something, trimmed.
-fn listed(input: &Entity<TextareaState>, cx: &App) -> Vec<String> {
-    input
-        .read(cx)
-        .value()
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect()
 }

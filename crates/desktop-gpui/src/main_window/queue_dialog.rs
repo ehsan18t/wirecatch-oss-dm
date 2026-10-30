@@ -525,7 +525,7 @@ impl QueueForm {
 impl Render for QueueForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let folder = FolderRow::new(
-            self.folder.clone(),
+            self.folder.as_deref().map(text::folder),
             FOLDER_BY_TYPE,
             cx.listener(|_, _, _, cx| Self::choose_folder(cx)),
             cx.listener(|form, _, _, cx| {
