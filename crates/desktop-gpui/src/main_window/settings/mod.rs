@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use gpui_kit::component::group_box::GroupBoxVariant;
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
-use gpui_kit::component::setting::{SettingField, Settings};
+use gpui_kit::component::setting::{SelectIndex, SettingField, SettingPage, Settings};
 use gpui_kit::component::{ActiveTheme as _, Sizable as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Div, Entity, Focusable as _, IntoElement as _,
@@ -34,7 +34,12 @@ impl MainWindow {
     /// The settings pages with their own navigation, which ends in the way back to the downloads
     /// where the main navigation has Settings.
     pub(super) fn settings(&self, cx: &mut Context<'_, Self>) -> Div {
-        let pages = screen(&self.library, &cx.entity().downgrade(), cx);
+        let pages = screen(
+            &self.library,
+            &cx.entity().downgrade(),
+            self.settings_on,
+            cx,
+        );
         let switch = self.screen_switch(cx);
         div().relative().flex_1().min_h_0().child(pages).child(
             div()
@@ -51,29 +56,79 @@ impl MainWindow {
 /// How long a list field waits after the last keystroke before saving.
 const SAVE_AFTER: Duration = Duration::from_millis(800);
 
-/// Every page, in the order D85 gives, headed like the downloads' page.
-fn screen(library: &Entity<Library>, main: &WeakEntity<MainWindow>, cx: &App) -> Settings {
+/// A settings page.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Page {
+    General,
+    Files,
+    Notifications,
+    Browser,
+    Media,
+    Speed,
+    Network,
+}
+
+/// Every page, in the order D85 gives.
+const PAGES: [Page; 7] = [
+    Page::General,
+    Page::Files,
+    Page::Notifications,
+    Page::Browser,
+    Page::Media,
+    Page::Speed,
+    Page::Network,
+];
+
+/// The page the settings screen opens on. A new `opening` starts the screen afresh on `page`,
+/// since the pages keep the one picked last.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct OpenOn {
+    pub opening: usize,
+    pub page: Option<Page>,
+}
+
+fn page(
+    page: Page,
+    library: &Entity<Library>,
+    main: &WeakEntity<MainWindow>,
+    cx: &App,
+) -> SettingPage {
+    match page {
+        Page::General => general::page(library),
+        Page::Files => files::page(library),
+        Page::Notifications => notifications::page(library, cx),
+        Page::Browser => browser::page(library, cx),
+        Page::Media => media::page(library, cx),
+        Page::Speed => speed::page(library, main, cx),
+        Page::Network => network::page(library, cx),
+    }
+}
+
+/// Every page, headed like the downloads' page.
+fn screen(
+    library: &Entity<Library>,
+    main: &WeakEntity<MainWindow>,
+    open_on: OpenOn,
+    cx: &App,
+) -> Settings {
     let header = StyleRefinement::default()
         .px_5()
         .py_3()
         .text_role(Role::PageTitle, cx);
-    Settings::new("settings")
+    let first = open_on
+        .page
+        .and_then(|page| PAGES.iter().position(|known| *known == page))
+        .unwrap_or_default();
+    Settings::new(("settings", open_on.opening))
+        .default_selected_index(SelectIndex {
+            page_ix: first,
+            group_ix: None,
+        })
         .small()
         .sidebar_width(px(sidebar::WIDTH))
         .sidebar_size_range(px(sidebar::WIDTH)..px(sidebar::WIDTH))
         .with_group_variant(GroupBoxVariant::Outline)
-        .pages(
-            [
-                general::page(library),
-                files::page(library),
-                notifications::page(library, cx),
-                browser::page(library, cx),
-                media::page(library, cx),
-                speed::page(library, main, cx),
-                network::page(library, cx),
-            ]
-            .map(|page| page.header_style(&header)),
-        )
+        .pages(PAGES.map(|shown| page(shown, library, main, cx).header_style(&header)))
 }
 
 /// Sends `patch` to the manager; a refusal shows in the window in front.

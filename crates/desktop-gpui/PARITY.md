@@ -9,7 +9,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Light and dark colours with the Theme and Accent settings, following the system's scheme.
 - [ ] The system accent colour on Windows (`appearance.rs`).
 - [x] The manager could not open: "{app} cannot reach its download engine", with Try again.
-- [ ] Another copy already runs: say so and close (`lib.rs` `say_already_running`).
+- [x] Another copy already runs: say so and close (`lib.rs` `say_already_running`).
 - [x] Search, focused with Ctrl+K: names and links, a search unfolds groups, "N downloads matching …", the view in the placeholder.
 - [ ] Search: Escape clears, Down moves into the list; "Search settings" on the settings screen.
 - [ ] The waiting questions, with their count (`show_question_windows`).
@@ -90,9 +90,9 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 
 - [ ] Tray: Open, Pause all or Resume all, Proxy submenu, Quit; tooltip; no tray means closing quits.
 - [ ] Close to tray; quit stops downloads within a time limit.
-- [ ] Single instance: a second launch focuses the running app and passes its links.
-- [ ] `--background`; links on the command line.
-- [ ] Browser bridge: serve it, register it on start (not in debug builds), the AppImage copy.
+- [x] Single instance: a second launch focuses the running app and passes its links (D103).
+- [x] `--background`; links on the command line.
+- [x] Browser bridge: serve it, register it on start (not in debug builds), the AppImage copy.
 - [ ] System notifications with buttons (D52), browser notices with the system fallback (D65), a notice opening its download (D98).
 - [ ] Open a file, with the warning for programs; show in folder; folder and file pickers.
 - [ ] Start at sign-in.
