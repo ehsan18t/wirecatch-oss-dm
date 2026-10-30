@@ -1,24 +1,49 @@
 //! The main window: the title bar, the navigation of views and queues, the download list and the
 //! status bar (D36, D91).
 
+mod confirm;
+mod details;
+mod empty;
 mod list;
 mod sidebar;
-mod status_bar;
+mod title_bar;
 
 use std::collections::HashSet;
 
-use gpui_kit::component::{ActiveTheme as _, TitleBar, h_flex, v_flex};
+use gpui_kit::component::WindowExt as _;
+use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::{ActiveTheme as _, TitleBar, v_flex};
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, WindowBounds,
-    WindowOptions, div, px, size,
+    App, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
+    KeyBinding, ParentElement as _, Render, SharedString, Styled as _, Subscription, Window,
+    WindowBounds, WindowOptions, actions, px, size,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
 
 use crate::library::{Library, SettingsChanged};
-use crate::theme;
+use crate::ui::{Role, Typed as _, layout};
+use crate::{add_dialog, links, theme};
+
+actions!(main_window, [NewDownload, PasteLinks, Dismiss, FocusSearch]);
+
+/// The key context the main window's shortcuts work in; a text field's own keys come first.
+const KEY_CONTEXT: &str = "MainWindow";
+
+/// Said when Ctrl+V finds no link to add.
+const NO_LINK_PASTED: &str =
+    "There is no link in what you pasted. Copy the full address, starting with https://.";
+
+/// The main window's shortcuts. Call once at start.
+pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("ctrl-n", NewDownload, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-v", PasteLinks, Some(KEY_CONTEXT)),
+        KeyBinding::new("escape", Dismiss, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-k", FocusSearch, Some(KEY_CONTEXT)),
+    ]);
+}
 
 /// Where a download's row sits in the list, in the order the groups show.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -94,6 +119,17 @@ pub struct MainWindow {
     view: View,
     selected: HashSet<DownloadId>,
     folded: HashSet<Group>,
+    /// The title bar's search, which narrows the list to names and links holding it.
+    search: Entity<InputState>,
+    /// The figure columns the list has room for; the rest fold under the name.
+    columns: list::Columns,
+    /// The queue under the pointer, which shows its menu.
+    hovered_queue: Option<QueueId>,
+    /// Every queue shows in the navigation, not only the first few.
+    all_queues: bool,
+    /// The row under the pointer, which shows its buttons.
+    hovered: Option<DownloadId>,
+    focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -128,6 +164,14 @@ impl MainWindow {
             }
         });
         let redraw = cx.observe(&library, |_, _, cx| cx.notify());
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search downloads"));
+        let searched = cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                cx.notify();
+            }
+        });
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
         Self {
             library,
             view: View::All,
@@ -136,14 +180,56 @@ impl MainWindow {
                 .into_iter()
                 .filter(|g| g.starts_folded())
                 .collect(),
-            _subscriptions: vec![restyle, follow_system, redraw],
+            hovered: None,
+            hovered_queue: None,
+            all_queues: false,
+            columns: list::Columns::ALL,
+            focus,
+            search,
+            _subscriptions: vec![restyle, follow_system, redraw, searched],
         }
     }
 
-    fn show(&mut self, view: View, cx: &mut Context<'_, Self>) {
+    fn show(&mut self, view: View, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.view = view;
         self.selected.clear();
+        let placeholder = match view {
+            View::All => "Search downloads".to_owned(),
+            View::Group(_) | View::Queue(_) => format!("Search {}", self.title(cx)),
+        };
+        self.search.update(cx, |search, cx| {
+            search.set_placeholder(placeholder, window, cx);
+        });
         cx.notify();
+    }
+
+    /// Escape outside a field clears the selection; a dialog closes on its own Escape first.
+    fn dismiss(&mut self, cx: &mut Context<'_, Self>) {
+        self.selected.clear();
+        cx.notify();
+    }
+
+    /// Opens the Add dialog, on the queue shown when a queue is.
+    fn new_download(&mut self, urls: &[String], window: &mut Window, cx: &mut Context<'_, Self>) {
+        let queue = match self.view {
+            View::Queue(queue) => Some(queue),
+            View::All | View::Group(_) => None,
+        };
+        add_dialog::open(self.library.clone(), urls, queue, window, cx);
+    }
+
+    /// Ctrl+V outside a text field: the links in what was copied go to the Add dialog.
+    fn paste_links(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        let copied = cx
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .unwrap_or_default();
+        let urls = links::extract(&copied);
+        if urls.is_empty() {
+            window.push_notification(NO_LINK_PASTED, cx);
+        } else {
+            self.new_download(&urls, window, cx);
+        }
     }
 
     fn title(&self, cx: &App) -> SharedString {
@@ -163,37 +249,25 @@ impl Render for MainWindow {
         let theme = cx.theme();
         v_flex()
             .id("main-window")
+            .key_context(KEY_CONTEXT)
+            .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &NewDownload, window, cx| {
+                this.new_download(&[], window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PasteLinks, window, cx| this.paste_links(window, cx)))
+            .on_action(cx.listener(|this, _: &Dismiss, _, cx| this.dismiss(cx)))
+            .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
+                this.search
+                    .update(cx, |search, cx| search.focus(window, cx));
+            }))
             .size_full()
             .bg(theme.background)
-            .text_color(theme.foreground)
-            .text_sm()
-            .child(title_bar(cx))
-            .child(
-                h_flex().flex_1().min_h_0().child(self.sidebar(cx)).child(
-                    v_flex()
-                        .flex_1()
-                        .min_w_0()
-                        .h_full()
-                        .child(self.header(cx))
-                        .child(self.list(window, cx)),
-                ),
-            )
-            .child(self.status_bar(cx))
+            .text_role(Role::Body, cx)
+            .child(self.title_bar(cx))
+            .child(layout::body(
+                self.sidebar(cx).into_any_element(),
+                self.header(cx).into_any_element(),
+                self.list(window, cx),
+            ))
     }
-}
-
-/// The title bar: the app's mark and name, with the window's buttons.
-fn title_bar(cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
-    TitleBar::new().child(
-        h_flex()
-            .gap_2()
-            .child(div().size(px(8.)).rounded_full().bg(theme.primary))
-            .child(
-                div()
-                    .text_xs()
-                    .font_weight(gpui_kit::FontWeight::SEMIBOLD)
-                    .child(wirecatch_shell::host::CHANNEL.name()),
-            ),
-    )
 }

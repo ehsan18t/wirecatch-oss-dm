@@ -12,7 +12,9 @@ publish = false
 [dependencies]
 gpui-kit = "0.8.1"
 wirecatch-core.workspace = true
+wirecatch-queues.workspace = true
 wirecatch-shell.workspace = true
+wirecatch-sites.workspace = true
 wirecatch-ipc.workspace = true
 wirecatch-logging = { workspace = true, features = ["setup"] }
 wirecatch-product.workspace = true
@@ -21,6 +23,8 @@ dirs = "7.0.0"
 chrono = { workspace = true, features = ["clock"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
 tracing = { workspace = true }
+regex.workspace = true
+url.workspace = true
 
 [lints]
 workspace = true

@@ -4,7 +4,7 @@
 use std::rc::Rc;
 
 use gpui_kit::component::{Theme, ThemeMode, ThemeRegistry};
-use gpui_kit::{App, Hsla, WindowAppearance, rgb};
+use gpui_kit::{App, Hsla, SharedString, WindowAppearance, rgb};
 use wirecatch_protocol::app::{Accent, Theme as ThemeSetting};
 
 const THEMES: &str = include_str!("../assets/theme.json");
@@ -15,6 +15,22 @@ const DARK: &str = "Wirecatch Dark";
 /// scheme's bright ones.
 const ON_ACCENT_LIGHT: u32 = 0x00ff_ffff;
 const ON_ACCENT_DARK: u32 = 0x000b_0d12;
+
+/// A destructive button: a deep red with white text in both schemes, where the dark scheme's pale
+/// danger colour, made to read as text, would fill it in pastel.
+const DANGER_FILL_LIGHT: u32 = 0x00b3_261e;
+const DANGER_FILL_DARK: u32 = 0x00c9_372c;
+
+/// Sharper than Segoe UI at small sizes; Windows 11 has it, older systems keep the system font.
+const PREFERRED_FONT: &str = "Segoe UI Variable Text";
+
+fn preferred_font(cx: &App) -> Option<SharedString> {
+    cx.text_system()
+        .all_font_names()
+        .iter()
+        .any(|name| name == PREFERRED_FONT)
+        .then(|| PREFERRED_FONT.into())
+}
 
 /// Registers the two schemes. Call once, after `gpui_kit::init`. Should `assets/theme.json` not
 /// parse (its test catches that first), the windows keep gpui-kit's own colours.
@@ -56,11 +72,29 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
         cx,
     );
     let (tone, on_tone) = accent_colors(accent, dark);
+    let danger_fill: Hsla = rgb(if dark {
+        DANGER_FILL_DARK
+    } else {
+        DANGER_FILL_LIGHT
+    })
+    .into();
+    let font = preferred_font(cx);
     Theme::update(cx, |theme| {
+        if let Some(font) = font {
+            theme.font_family = font;
+        }
         theme.primary = tone;
         theme.primary_hover = tone.opacity(0.9);
         theme.primary_active = tone.opacity(0.8);
         theme.primary_foreground = on_tone;
+        theme.button_primary = tone;
+        theme.button_primary_hover = tone.opacity(0.9);
+        theme.button_primary_active = tone.opacity(0.8);
+        theme.button_primary_foreground = on_tone;
+        theme.button_danger = danger_fill;
+        theme.button_danger_hover = danger_fill.opacity(0.9);
+        theme.button_danger_active = danger_fill.opacity(0.8);
+        theme.button_danger_foreground = rgb(ON_ACCENT_LIGHT).into();
         theme.ring = tone;
         theme.caret = tone;
         theme.link = tone;
@@ -80,9 +114,8 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
     });
 }
 
-/// The accent in this scheme and the text that goes on it. Each pair is the one the web
-/// interface's tokens hold to 4.5:1 (`packages/ui/src/tokens.css`). The system accent is not
-/// read yet, so it shows Wirecatch's own.
+/// The accent in this scheme and the text that goes on it, each pair at 4.5:1 contrast or more.
+/// The system accent is not read yet, so it shows Wirecatch's own.
 fn accent_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
     let (light_tone, dark_tone) = match accent {
         Accent::Cyan | Accent::System => (0x000a_6b70, 0x004f_d1c7),

@@ -63,6 +63,7 @@ That runs every check CI runs (`node scripts/gate.mjs --list` shows them; `pnpm 
 - Changing `config/product.toml` or `config/templates/` means running `pnpm product:generate` and committing the generated files; the gate fails otherwise. Before a release, `node scripts/gate.mjs publish` must pass: no identity value may still be a `TODO-PRODUCT-` placeholder.
 - `wirecatch-bridge/test-overrides` is for tests only and is never enabled in a build.
 - Benchmark: `cargo run --release -p wirecatch-engine --example bench_local`.
+- Run the GPUI app with `cargo ui`: a dev build with GPUI optimised, so motion runs at the display's rate.
 
 ## How to work here
 

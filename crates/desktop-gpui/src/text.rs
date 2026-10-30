@@ -2,8 +2,10 @@
 
 use chrono::{Local, TimeZone as _};
 use wirecatch_protocol::app::{
-    DownloadStatus, DownloadSummary, PER_MILLE_DONE, ProcessingStep, TimeOfDay, WaitReason,
+    Category, DownloadStatus, DownloadSummary, FixAction, MediaSummary, PER_MILLE_DONE,
+    ProcessingStep, TimeOfDay, WaitReason,
 };
+use wirecatch_protocol::extension::MediaKind;
 use wirecatch_shell::activity::format_bytes;
 
 const SECONDS_PER_MINUTE: u64 = 60;
@@ -161,6 +163,149 @@ pub fn status_short(row: &DownloadSummary) -> String {
     status_label(row.status).to_owned()
 }
 
+/// What each processing step is, in a sentence.
+pub fn processing_detail(step: ProcessingStep) -> &'static str {
+    match step {
+        ProcessingStep::Joining => {
+            "The video and audio are downloaded; Wirecatch is merging them into one file."
+        }
+        ProcessingStep::Finishing => {
+            "The download is done; Wirecatch is adding the extras you chose, such as subtitles or chapters. This takes a few seconds."
+        }
+        ProcessingStep::Converting => {
+            "The download is done; Wirecatch is converting it to the format you chose. Pausing stops the conversion; the downloaded file is kept, and conversion starts over when you resume."
+        }
+    }
+}
+
+/// Why a download waits, in a full sentence for its details.
+pub fn wait_long(wait: &WaitReason, queue: &str) -> String {
+    match wait {
+        WaitReason::QueuePaused => format!("{queue} is paused. Resume the queue to start it."),
+        WaitReason::QueueSchedule {
+            starts_at: Some(at),
+        } => {
+            format!("Waiting for {queue}, which starts at {}.", time(*at))
+        }
+        WaitReason::QueueSchedule { starts_at: None } => {
+            format!("{queue} is outside its schedule.")
+        }
+        WaitReason::QueueFull { running, limit } => format!(
+            "{queue} is running {running} of {limit}. This starts when one of them finishes."
+        ),
+        WaitReason::GlobalLimit { running, limit } => format!(
+            "Global limit: {running} of {limit} downloads are running. This starts when one of them finishes."
+        ),
+        WaitReason::InLine { position } => format!("{} in line in {queue}.", ordinal(*position)),
+        WaitReason::ServerRefused { retry_at } => format!(
+            "The video's server refused it for now, which sites sometimes do for a few minutes. Wirecatch tries again automatically at {} and keeps what was already downloaded.",
+            clock(*retry_at)
+        ),
+    }
+}
+
+/// What a download is doing in a sentence, when there is more to say than its status.
+pub fn status_detail(row: &DownloadSummary, queue: &str) -> Option<String> {
+    if let Some(wait) = shown_wait(row) {
+        return Some(wait_long(wait, queue));
+    }
+    (row.status == DownloadStatus::Processing).then(|| {
+        processing_detail(
+            row.processing
+                .as_ref()
+                .map_or(ProcessingStep::Joining, |p| p.step),
+        )
+        .to_owned()
+    })
+}
+
+/// What a media download is: its quality, where it came from, and the resolution it stands in
+/// for when it was picked without asking (D50).
+pub fn media_line(media: &MediaSummary) -> String {
+    let from = match media.source {
+        MediaKind::Hls | MediaKind::Dash => "from a video stream",
+        MediaKind::Direct => "from a media file",
+        MediaKind::Page => "from a video page",
+    };
+    let line = format!("{}, {from}.", media.quality);
+    match &media.instead_of {
+        Some(wanted) => format!("{line} {wanted} wasn’t offered."),
+        None => line,
+    }
+}
+
+/// The fix a failure offers, as its button says it.
+pub fn fix_label(fix: FixAction) -> &'static str {
+    match fix {
+        FixAction::Retry => "Try again",
+        FixAction::RefreshLink => "Get a new link",
+        FixAction::ChooseFolder => "Change folder",
+        FixAction::FreeDiskSpace => "Open folder",
+        FixAction::KeepOriginal => "Keep the original",
+        FixAction::ProxySettings => "Proxy settings",
+        FixAction::ChangeQueue => "Change queue",
+    }
+}
+
+/// The kind of file: its type in capitals (`ZIP file`), or the category without one.
+pub fn file_kind(name: &str, category: Category) -> String {
+    match name.rsplit_once('.') {
+        Some((stem, ext))
+            if !stem.is_empty()
+                && (1..=8).contains(&ext.len())
+                && ext.chars().all(|c| c.is_ascii_alphanumeric()) =>
+        {
+            format!("{} file", ext.to_ascii_uppercase())
+        }
+        _ => category_label(category).to_owned(),
+    }
+}
+
+pub fn category_label(category: Category) -> &'static str {
+    match category {
+        Category::Video => "Video",
+        Category::Audio => "Music and audio",
+        Category::Archive => "Archives",
+        Category::Document => "Documents",
+        Category::Program => "Programs",
+        Category::Image => "Images",
+        Category::Other => "Other files",
+    }
+}
+
+/// A moment for the details: `Today, 14:05`, `Yesterday, 09:12` or `3 Oct 2026, 09:12`.
+pub fn date(ms: i64) -> String {
+    let Some(at) = Local.timestamp_millis_opt(ms).single() else {
+        return String::new();
+    };
+    let today = Local::now().date_naive();
+    let day = at.date_naive();
+    let time = at.format("%H:%M");
+    if day == today {
+        format!("Today, {time}")
+    } else if today.pred_opt() == Some(day) {
+        format!("Yesterday, {time}")
+    } else {
+        format!("{}, {time}", at.format("%-d %b %Y"))
+    }
+}
+
+/// A link as it may be shown or copied: a password in it becomes `***`, and a user name without
+/// one too, since some sites put a token there.
+pub fn link_for_display(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_owned();
+    };
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let Some(at) = rest[..end].rfind('@') else {
+        return url.to_owned();
+    };
+    let masked = rest[..at]
+        .split_once(':')
+        .map_or_else(|| "***".to_owned(), |(name, _)| format!("{name}:***"));
+    format!("{scheme}://{masked}{}", &rest[at..])
+}
+
 /// The host of a link, for the line under a running download's name.
 pub fn host(url: &str) -> &str {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
@@ -221,6 +366,29 @@ mod tests {
                 "1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "101st"
             ]
         );
+    }
+
+    #[test]
+    fn a_password_in_a_link_is_never_shown() {
+        assert_eq!(
+            link_for_display("https://ada:secret@example.com/a"),
+            "https://ada:***@example.com/a"
+        );
+        assert_eq!(
+            link_for_display("https://token@example.com/a@b"),
+            "https://***@example.com/a@b"
+        );
+        assert_eq!(
+            link_for_display("https://example.com/a"),
+            "https://example.com/a"
+        );
+    }
+
+    #[test]
+    fn the_kind_is_the_type_or_the_category() {
+        assert_eq!(file_kind("setup.exe", Category::Program), "EXE file");
+        assert_eq!(file_kind("README", Category::Document), "Documents");
+        assert_eq!(file_kind(".hidden", Category::Other), "Other files");
     }
 
     #[test]

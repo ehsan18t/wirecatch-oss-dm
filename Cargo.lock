@@ -11842,14 +11842,18 @@ dependencies = [
  "chrono",
  "dirs 7.0.0",
  "gpui-kit",
+ "regex",
  "tokio",
  "tracing",
+ "url",
  "wirecatch-core",
  "wirecatch-ipc",
  "wirecatch-logging",
  "wirecatch-product",
  "wirecatch-protocol",
+ "wirecatch-queues",
  "wirecatch-shell",
+ "wirecatch-sites",
 ]
 
 [[package]]

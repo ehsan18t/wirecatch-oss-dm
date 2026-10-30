@@ -3,11 +3,15 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod add_dialog;
 mod backend;
+mod files;
 mod library;
+mod links;
 mod main_window;
 mod text;
 mod theme;
+mod ui;
 
 use wirecatch_shell::{elevation, host};
 
@@ -33,9 +37,10 @@ fn main() {
         }
     };
     gpui_kit::application()
-        .with_assets(gpui_kit::assets::Assets)
+        .with_assets(ui::icon::Assets)
         .run(move |cx| {
             gpui_kit::init(cx);
+            main_window::bind_keys(cx);
             theme::init(cx);
             cx.set_global(backend);
             let library = library::Library::new(cx);
