@@ -50,9 +50,6 @@ tokio = { workspace = true, features = ["sync", "time", "macros"] }
 tracing = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-# The same version tauri-plugin-autostart uses, to read the start-at-sign-in entry's state, to
-# register the app's notification identity, and to read the Windows build (D64).
-winreg = "0.10.1"
 # The version Tauri already uses, to keep a download window behind the window that took the
 # focus from it (D23), and to lay the window that offers the snap layouts over the maximize button (D36).
 windows-sys = { version = "0.61.2", features = [
@@ -64,12 +61,9 @@ windows-sys = { version = "0.61.2", features = [
 ] }
 # The version Tauri already uses: the accent colour chosen in Windows, and whether it is set to dark
 # apps, for a new window's background (D45).
-# And the system's own notifications, with buttons, under the app's identity (D52).
 windows = { version = "0.62.2", features = [
-    "Data_Xml_Dom",
     "Foundation",
     "UI",
-    "UI_Notifications",
     "UI_ViewManagement",
 ] }
 
@@ -79,11 +73,6 @@ windows-core = "0.62.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-# The desktop's notification service, with the buttons of a notification (D52); the version
-# Tauri's notification plugin used before.
-notify-rust = "4.18.2"
 
 [dev-dependencies]
 tempfile.workspace = true

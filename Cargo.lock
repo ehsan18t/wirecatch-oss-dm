@@ -11852,7 +11852,6 @@ name = "wirecatch-desktop"
 version = "0.1.0"
 dependencies = [
  "libc",
- "notify-rust",
  "serde",
  "serde_json",
  "tauri",
@@ -11869,7 +11868,6 @@ dependencies = [
  "windows 0.62.2",
  "windows-core 0.62.2",
  "windows-sys 0.61.2",
- "winreg 0.10.1",
  "wirecatch-core",
  "wirecatch-engine",
  "wirecatch-ipc",
@@ -12093,12 +12091,15 @@ name = "wirecatch-shell"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "notify-rust",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
  "tracing",
  "url",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
  "windows-sys 0.61.2",
  "winreg 0.10.1",
  "wirecatch-core",

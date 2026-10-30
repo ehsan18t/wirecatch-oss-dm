@@ -1,6 +1,6 @@
 //! What the person is told when downloads finish or fail (D52), or start without a window of their
-//! own (D63): the words and buttons of each notification. Shown by [`crate::system_notifications`];
-//! when to tell is decided in [`crate::background`].
+//! own (D63): the words and buttons of each notification. Shown by [`crate::system_notifications`]
+//! or [`crate::browser_notices`]; when to tell is decided by [`crate::teller`].
 
 use std::path::Path;
 
@@ -56,6 +56,35 @@ pub struct Notification {
     /// Whether it matters enough to show during the system's Do Not Disturb, while the person
     /// allows it (D64): what ended and what went wrong do; news does not.
     pub important: bool,
+}
+
+/// A notification with words only about something the person must know; a click shows the main
+/// window.
+#[must_use]
+pub fn plain(title: String, body: String) -> Notification {
+    Notification {
+        title,
+        body,
+        buttons: Vec::new(),
+        click: Act::Show(Reveal {
+            queue: None,
+            ids: Vec::new(),
+            browser_settings: false,
+            proxy_settings: false,
+            details: false,
+        }),
+        lasts: Lasts::Kept,
+        important: true,
+    }
+}
+
+/// What a click did: a button by its place, or the notification itself.
+#[must_use]
+pub fn chosen(notification: &Notification, button: Option<usize>) -> Option<Act> {
+    match button {
+        None => Some(notification.click.clone()),
+        Some(at) => notification.buttons.get(at).map(|b| b.act.clone()),
+    }
 }
 
 const OPEN: &str = "Open";

@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager as _, Runtime};
 use tauri_plugin_updater::{Update, UpdaterExt as _};
 use wirecatch_core::UpdaterProxy;
 
-use crate::notifications::Notification;
+use wirecatch_shell::notifications::Notification;
 
 /// How long after start the first check waits, so it never competes with startup.
 pub const FIRST_CHECK_AFTER: Duration = Duration::from_secs(60);
@@ -77,7 +77,7 @@ fn update_ready_notice(version: &str) -> Notification {
     let name = crate::host::CHANNEL.name();
     Notification {
         important: false,
-        ..crate::system_notifications::plain(
+        ..wirecatch_shell::notifications::plain(
             format!("{name} {version} is ready"),
             format!("It installs the next time you quit {name}."),
         )
