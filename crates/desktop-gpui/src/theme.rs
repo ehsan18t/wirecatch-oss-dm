@@ -14,11 +14,11 @@ const DARK: &str = "Wirecatch Dark";
 /// Text on a filled accent: white on the light scheme's deep tones, near black on the dark
 /// scheme's bright ones.
 const ON_ACCENT_LIGHT: u32 = 0x00ff_ffff;
-const ON_ACCENT_DARK: u32 = 0x000b_0d12;
+const ON_ACCENT_DARK: u32 = 0x0012_1110;
 
 /// A destructive button: a deep red with white text in both schemes, where the dark scheme's pale
 /// danger colour, made to read as text, would fill it in pastel.
-const DANGER_FILL_LIGHT: u32 = 0x00b3_261e;
+const DANGER_FILL_LIGHT: u32 = 0x00b6_322d;
 const DANGER_FILL_DARK: u32 = 0x00c9_372c;
 
 /// Sharper than Segoe UI at small sizes; Windows 11 has it, older systems keep the system font.
@@ -109,6 +109,8 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
         theme.list_active_border = tone.opacity(0.6);
         theme.table_active = tone.opacity(0.14);
         theme.table_active_border = tone.opacity(0.6);
+        theme.sidebar_accent = tone.opacity(0.12);
+        theme.sidebar_accent_foreground = tone;
         theme.sidebar_primary = tone;
         theme.sidebar_primary_foreground = on_tone;
     });
@@ -118,16 +120,16 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
 /// The system accent is not read yet, so it shows Wirecatch's own.
 pub fn accent_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
     let (light_tone, dark_tone) = match accent {
-        Accent::Cyan | Accent::System => (0x000a_6b70, 0x004f_d1c7),
-        Accent::Blue => (0x0000_65b8, 0x0061_cdff),
-        Accent::Indigo => (0x0047_47c9, 0x00a5_b4fc),
-        Accent::Purple => (0x006b_33cc, 0x00be_99ff),
-        Accent::Pink => (0x00b0_1f67, 0x00f9_8bc2),
-        Accent::Red => (0x00b8_1d2a, 0x00ff_858f),
-        Accent::Orange => (0x00a3_4008, 0x00ff_a352),
-        Accent::Amber => (0x008c_5a00, 0x00f5_b942),
-        Accent::Teal => (0x0003_6e56, 0x003f_d8a8),
-        Accent::Green => (0x000b_6f3d, 0x0059_cf94),
+        Accent::Cyan | Accent::System => (0x0007_7c86, 0x0044_d4e2),
+        Accent::Blue => (0x0035_71ba, 0x0092_c1fd),
+        Accent::Indigo => (0x0065_68bd, 0x00b1_b7fd),
+        Accent::Purple => (0x0086_5eb1, 0x00d0_aafc),
+        Accent::Pink => (0x00ac_507c, 0x00f9_9dc6),
+        Accent::Red => (0x00b4_514c, 0x00fd_a19a),
+        Accent::Orange => (0x00ae_5724, 0x00fd_a578),
+        Accent::Amber => (0x0098_6603, 0x00eb_b25f),
+        Accent::Teal => (0x000a_7f6f, 0x0052_d7c1),
+        Accent::Green => (0x0019_8044, 0x007f_d497),
     };
     if dark {
         (rgb(dark_tone).into(), rgb(ON_ACCENT_DARK).into())
