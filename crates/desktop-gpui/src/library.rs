@@ -1,10 +1,12 @@
-//! What the windows show of the download manager: the downloads, the queues and the settings,
+//! What the windows show of the download manager: the downloads, the queues, the proxy servers
+//! and the settings,
 //! loaded once and kept current from the manager's events, in the order the manager lists them.
 
 use gpui_kit::{AppContext as _, Context, Entity, EventEmitter};
 use tokio::sync::broadcast::error::RecvError;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AppSettings, DownloadSummary, Queue, UiEvent};
+use wirecatch_protocol::proxy::ProxyServer;
 use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::api;
 
@@ -23,7 +25,17 @@ pub struct Library {
     pub loaded: Loaded,
     pub downloads: Vec<DownloadSummary>,
     pub queues: Vec<Queue>,
+    pub proxies: Vec<ProxyServer>,
     pub settings: Option<AppSettings>,
+}
+
+/// Everything read at once, with the events that follow it.
+struct Snapshot {
+    events: tokio::sync::broadcast::Receiver<UiEvent>,
+    downloads: Vec<DownloadSummary>,
+    queues: Vec<Queue>,
+    proxies: Vec<ProxyServer>,
+    settings: AppSettings,
 }
 
 /// The settings changed: the theme may have.
@@ -40,6 +52,7 @@ impl Library {
                 loaded: Loaded::Loading,
                 downloads: Vec::new(),
                 queues: Vec::new(),
+                proxies: Vec::new(),
                 settings: None,
             }
         })
@@ -50,10 +63,13 @@ impl Library {
     pub fn load(cx: &mut Context<'_, Self>) {
         let snapshot = Backend::run(cx, |manager| async move {
             let events = manager.subscribe();
-            let downloads = api::list_downloads(&manager);
-            let queues = api::list_queues(&manager);
-            let settings = api::get_settings(&manager);
-            (events, downloads, queues, settings)
+            Snapshot {
+                downloads: api::list_downloads(&manager),
+                queues: api::list_queues(&manager),
+                proxies: api::list_proxy_servers(&manager),
+                settings: api::get_settings(&manager),
+                events,
+            }
         });
         // Ends once the library is gone, or when it reloads after missing events.
         cx.spawn(async move |this, cx| {
@@ -62,10 +78,18 @@ impl Library {
                 return;
             };
             let mut events = match opened {
-                Ok((events, downloads, queues, settings)) => {
+                Ok(snapshot) => {
+                    let Snapshot {
+                        events,
+                        downloads,
+                        queues,
+                        proxies,
+                        settings,
+                    } = snapshot;
                     let updated = this.update(cx, |library, cx| {
                         library.downloads = downloads;
                         library.queues = queues;
+                        library.proxies = proxies;
                         library.settings = Some(settings);
                         library.loaded = Loaded::Ready;
                         cx.emit(SettingsChanged);
@@ -112,6 +136,7 @@ impl Library {
             }
             UiEvent::DownloadsRemoved(ids) => self.downloads.retain(|row| !ids.contains(&row.id)),
             UiEvent::QueuesChanged(queues) => self.queues = queues,
+            UiEvent::ProxyServersChanged(proxies) => self.proxies = proxies,
             UiEvent::SettingsChanged(settings) => {
                 self.settings = Some(*settings);
                 cx.emit(SettingsChanged);

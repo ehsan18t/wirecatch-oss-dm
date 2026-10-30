@@ -2,6 +2,7 @@
 //! changed through the manager, so every window shows the change once the manager makes it.
 
 mod general;
+mod network;
 mod notifications;
 
 use gpui_kit::component::group_box::GroupBoxVariant;
@@ -49,8 +50,12 @@ fn screen(library: &Entity<Library>, cx: &App) -> Settings {
         .sidebar_size_range(px(sidebar::WIDTH)..px(sidebar::WIDTH))
         .with_group_variant(GroupBoxVariant::Outline)
         .pages(
-            [general::page(library), notifications::page(library, cx)]
-                .map(|page| page.header_style(&header)),
+            [
+                general::page(library),
+                notifications::page(library, cx),
+                network::page(library, cx),
+            ]
+            .map(|page| page.header_style(&header)),
         )
 }
 
