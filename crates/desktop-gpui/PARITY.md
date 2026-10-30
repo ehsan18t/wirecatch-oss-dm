@@ -15,8 +15,10 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 - [ ] Title bar: the waiting-questions bell with its count (`show_question_windows`).
 - [ ] Navigation toggle; collapsed rail and narrow-window drawer (D91).
 - [x] Navigation: All downloads, the six status views with counts, the queues with count or speed.
-- [ ] Queues: the first three, "N more queues" / "Fewer queues"; Rules badge, proxy icon, status text, dimmed when Rules are off.
-- [ ] Queue "…" menu: Start now (outside its schedule), Pause or Resume the queue, Edit queue, Move up, Move down.
+- [x] Queues: the first three, "N more queues" / "Fewer queues"; the Rules badge, status text, dimmed when Rules are off.
+- [ ] Queues: the proxy icon while a saved profile is in use (D73.13); "+ New queue" (with the Queue dialog).
+- [x] Queue "…" menu: Start now (outside its schedule), Pause or Resume the queue, Move up, Move down.
+- [ ] Queue menu: Edit queue (with the Queue dialog).
 - [ ] Drag queues to reorder them, the default queue first (D72.9).
 - [ ] Navigation footer: Settings (Ctrl+,), Find any action (Ctrl+Shift+P), Keyboard shortcuts (F1).
 - [x] List header: the view's title and summary; Pause all or Resume all.

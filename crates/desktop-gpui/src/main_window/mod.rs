@@ -122,6 +122,10 @@ pub struct MainWindow {
     search: Entity<InputState>,
     /// The figure columns the list has room for; the rest fold under the name.
     columns: list::Columns,
+    /// The queue under the pointer, which shows its menu.
+    hovered_queue: Option<QueueId>,
+    /// Every queue shows in the navigation, not only the first few.
+    all_queues: bool,
     /// The row under the pointer, which shows its buttons.
     hovered: Option<DownloadId>,
     focus: FocusHandle,
@@ -176,6 +180,8 @@ impl MainWindow {
                 .filter(|g| g.starts_folded())
                 .collect(),
             hovered: None,
+            hovered_queue: None,
+            all_queues: false,
             columns: list::Columns::ALL,
             focus,
             search,

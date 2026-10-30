@@ -11851,6 +11851,7 @@ dependencies = [
  "wirecatch-logging",
  "wirecatch-product",
  "wirecatch-protocol",
+ "wirecatch-queues",
  "wirecatch-shell",
  "wirecatch-sites",
 ]

@@ -6,6 +6,7 @@
 mod add_dialog;
 mod backend;
 mod files;
+mod icons;
 mod library;
 mod links;
 mod main_window;
@@ -36,7 +37,7 @@ fn main() {
         }
     };
     gpui_kit::application()
-        .with_assets(gpui_kit::assets::Assets)
+        .with_assets(icons::Assets)
         .run(move |cx| {
             gpui_kit::init(cx);
             main_window::bind_keys(cx);
