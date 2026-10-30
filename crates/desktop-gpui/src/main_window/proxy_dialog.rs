@@ -2,6 +2,8 @@
 //! it is saved; and deleting one, with what its users switch to. A saved password is never shown;
 //! it stays while the type, server, port and user name stay (D71.2).
 
+use std::rc::Rc;
+
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState, NumberInput};
 use gpui_kit::component::select::{Select, SelectItem, SelectState};
@@ -34,14 +36,18 @@ const KINDS: [(ProxyKind, &str); 3] = [
 const SOCKS_PORT: u16 = 1080;
 const HTTP_PROXY_PORT: u16 = 8080;
 
-/// Opens the editor on proxy server `id`, or on a new one.
+/// Called with a new proxy's id once it is saved.
+pub(super) type Created = Rc<dyn Fn(ProxyServerId, &mut Window, &mut App)>;
+
+/// Opens the editor on proxy server `id`, or on a new one, which `created` then gets.
 pub(super) fn open(
     library: &Entity<Library>,
     id: Option<ProxyServerId>,
+    created: Option<Created>,
     window: &mut Window,
     cx: &mut App,
 ) {
-    let form = cx.new(|cx| ProxyForm::new(library, id, window, cx));
+    let form = cx.new(|cx| ProxyForm::new(library, id, created, window, cx));
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let saving = form.clone();
         let state = form.read(cx);
@@ -107,6 +113,7 @@ enum Password {
 
 struct ProxyForm {
     original: Option<ProxyServer>,
+    created: Option<Created>,
     name: Entity<InputState>,
     kind: ProxyKind,
     host: Entity<InputState>,
@@ -124,6 +131,7 @@ impl ProxyForm {
     fn new(
         library: &Entity<Library>,
         id: Option<ProxyServerId>,
+        created: Option<Created>,
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) -> Self {
@@ -189,6 +197,7 @@ impl ProxyForm {
         });
         Self {
             original,
+            created,
             name,
             kind,
             host,
@@ -277,8 +286,8 @@ impl ProxyForm {
         cx.notify();
         let saved = Backend::run(cx, move |manager| async move {
             match id {
-                Some(id) => api::update_proxy_server(&manager, id, draft),
-                None => api::create_proxy_server(&manager, draft).map(|_| ()),
+                Some(id) => api::update_proxy_server(&manager, id, draft).map(|()| None),
+                None => api::create_proxy_server(&manager, draft).map(Some),
             }
         });
         cx.spawn_in(window, async move |form, cx| {
@@ -290,7 +299,12 @@ impl ProxyForm {
             _ = form.update_in(cx, |form, window, cx| {
                 form.stage = Stage::Editing;
                 match outcome {
-                    Ok(()) => window.close_dialog(cx),
+                    Ok(made) => {
+                        window.close_dialog(cx);
+                        if let (Some(id), Some(created)) = (made, form.created.clone()) {
+                            created(id, window, cx);
+                        }
+                    }
                     Err(problem) => {
                         form.outcome = Some(Err(problem));
                         cx.notify();

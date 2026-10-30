@@ -1,6 +1,6 @@
 //! Making a queue or changing one (D72): its name and description, its own folder (D94), its own
 //! limits, its hours and when it tells of finished downloads. A limit follows the app's until it
-//! is switched on (D72.1). Its rules have their own editor; its proxy is kept as it is.
+//! is switched on (D72.1). Its rules and its proxy have editors of their own.
 
 use chrono::{NaiveTime, Timelike as _};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -19,6 +19,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_shell::api;
 
+use super::queue_proxy::ProxyForm;
 use super::queue_rules::RulesForm;
 use super::{MainWindow, View};
 use crate::backend::Backend;
@@ -216,6 +217,7 @@ pub struct QueueForm {
     problem: Option<String>,
     stage: Stage,
     rules: Entity<RulesForm>,
+    proxy: Entity<ProxyForm>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -279,14 +281,12 @@ impl QueueForm {
         );
         let edited =
             forget_problem_on_edit([&name, &description, &concurrent, &limit, &connections], cx);
-        let rules = {
-            let (library, name) = (library.clone(), name.clone());
-            cx.new(|cx| RulesForm::new(library, queue, name, &opened.add_downloads, window, cx))
-        };
+        let (rules, proxy) = editors(&library, queue, &name, &opened, window, cx);
         Self {
             library,
             main,
             rules,
+            proxy,
             name,
             description,
             folder: opened.folder.own_ref().map(|folder| folder.0.clone()),
@@ -358,6 +358,8 @@ impl QueueForm {
         };
         settings.notify = self.notify;
         settings.add_downloads = self.rules.read(cx).add_downloads(cx);
+        settings.proxy = self.proxy.read(cx).proxy();
+        settings.exceptions = self.proxy.read(cx).exceptions(cx);
         Ok(settings)
     }
 
@@ -553,6 +555,11 @@ impl Render for QueueForm {
                 vec![self.rules.clone().into_any_element()],
                 cx,
             ))
+            .child(group(
+                "Network",
+                vec![self.proxy.clone().into_any_element()],
+                cx,
+            ))
             .child(group("Schedule", vec![self.schedule_row(cx)], cx))
             .child(group("Notifications", vec![self.notify_row(cx)], cx))
     }
@@ -716,6 +723,37 @@ impl QueueForm {
             ))
             .into_any_element()
     }
+}
+
+/// The rules and proxy editors, which keep their own state.
+fn editors(
+    library: &Entity<Library>,
+    queue: Option<QueueId>,
+    name: &Entity<InputState>,
+    opened: &QueueSettings,
+    window: &mut Window,
+    cx: &mut Context<'_, QueueForm>,
+) -> (Entity<RulesForm>, Entity<ProxyForm>) {
+    let rules = cx.new(|cx| {
+        RulesForm::new(
+            library.clone(),
+            queue,
+            name.clone(),
+            &opened.add_downloads,
+            window,
+            cx,
+        )
+    });
+    let proxy = cx.new(|cx| {
+        ProxyForm::new(
+            library.clone(),
+            opened.proxy,
+            opened.exceptions.clone(),
+            window,
+            cx,
+        )
+    });
+    (rules, proxy)
 }
 
 /// A field edited takes away the problem the form showed.
