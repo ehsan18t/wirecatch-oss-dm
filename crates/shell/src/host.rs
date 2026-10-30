@@ -167,7 +167,7 @@ pub fn needs_move(old: &Path, new: &Path) -> bool {
     old != new && old.is_dir() && !holds_data(new)
 }
 
-/// Moves the data folder `old` to `new` when [`needs_move`] says so: a rename on the same drive, otherwise [`copy_then_delete`], which never leaves a partial copy at `new`; into a `new` that other programs made already, entry by entry ([`merge`]). Returns the folder to use and what happened. Blocks on the disk.
+/// Moves the data folder `old` to `new` when [`needs_move`] says so: a rename on the same drive, otherwise [`copy_then_delete`], which never leaves a partial copy at `new`; into a `new` that other programs made already, entry by entry. Returns the folder to use and what happened. Blocks on the disk.
 #[must_use]
 pub fn migrate(old: &Path, new: &Path) -> (PathBuf, Migration) {
     if !needs_move(old, new) {
