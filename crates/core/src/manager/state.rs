@@ -21,7 +21,7 @@ use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
 use wirecatch_queues::schedule::Gate;
 use wirecatch_settings::folders::KnownFolders;
-use wirecatch_settings::proxy::{Logins, SavedProxyServer};
+use wirecatch_settings::proxy::{ComputerProxy, Logins, SavedProxyServer};
 use wirecatch_sites::local_network::ChosenBy;
 use wirecatch_sites::public_suffix::SuffixList;
 use wirecatch_store::{LastIds, NameChoice, StoredDownload};
@@ -51,6 +51,8 @@ pub(super) struct State {
     /// The system's proxy setting as last read, for the proxy a run is shown going through: read off
     /// the lock, as on Windows it is in the registry. The run itself reads it when it connects.
     pub system_proxy: Option<ManualProxies>,
+    /// Where the computer's proxy is read from ([`ManagerConfig::computer_proxy`](crate::ManagerConfig::computer_proxy)).
+    pub computer_proxy: ComputerProxy,
     /// Every unfinished download, and any finished since [`State::prune_finished`] last ran: the scheduler visits these, not the whole history (CORE-10). A finished download never becomes unfinished again, so only adding one puts it here.
     pub unfinished: BTreeSet<DownloadId>,
     pub pending: Questions<Pending>,
@@ -434,6 +436,7 @@ impl State {
             app.ftp_bypass_proxy,
             &self.proxy_servers,
             &self.proxy_logins,
+            &self.computer_proxy,
         );
         (proxy, choice)
     }

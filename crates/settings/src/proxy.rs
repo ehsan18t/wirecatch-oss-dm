@@ -248,6 +248,50 @@ pub fn exceptions(app: &ProxySettings, own: &Setting<QueueExceptions>) -> Except
     }
 }
 
+/// Where the computer's proxy and bypass list (D73.6) come from.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ComputerProxy {
+    /// The environment's proxy variables, else the system's setting, read when asked.
+    #[default]
+    Read,
+    /// This setting, `None` for none, and nothing read from the computer.
+    Given(Option<ManualProxies>),
+}
+
+impl ComputerProxy {
+    /// The computer's proxy, or `None` when it sets none.
+    #[must_use]
+    pub fn proxies(&self) -> Option<ManualProxies> {
+        match self {
+            Self::Read => ManualProxies::from_system(),
+            Self::Given(given) => given.clone(),
+        }
+    }
+
+    /// The computer's bypass list.
+    #[must_use]
+    pub fn exceptions(&self) -> String {
+        match self {
+            Self::Read => ManualProxies::system_exceptions(),
+            Self::Given(given) => given
+                .as_ref()
+                .map(|given| given.exceptions.clone())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// The computer's proxy with nothing added, as the engine takes it.
+    #[must_use]
+    pub fn choice(&self) -> ProxyChoice {
+        match self {
+            Self::Read => ProxyChoice::System,
+            Self::Given(given) => given
+                .clone()
+                .map_or(ProxyChoice::Direct, ProxyChoice::Manual),
+        }
+    }
+}
+
 /// The proxies the engine follows for `proxy` with `exceptions`. `profiles` and `logins` are the
 /// saved profiles and their passwords.
 #[must_use]
@@ -257,9 +301,10 @@ pub fn engine_choice(
     ftp_bypass_proxy: bool,
     profiles: &[SavedProxyServer],
     logins: &Logins,
+    computer: &ComputerProxy,
 ) -> ProxyChoice {
     let manual = |mut manual: ManualProxies| {
-        manual.exceptions = exception_list(exceptions);
+        manual.exceptions = exception_list(exceptions, computer);
         manual.ftp_direct = ftp_bypass_proxy;
         ProxyChoice::Manual(manual)
     };
@@ -269,17 +314,17 @@ pub fn engine_choice(
         ProxyUse::System
             if exceptions.system && exceptions.hosts.is_empty() && !ftp_bypass_proxy =>
         {
-            ProxyChoice::System
+            computer.choice()
         }
         // None only when the computer sets no proxy, so System would go directly too.
-        ProxyUse::System => ManualProxies::from_system().map_or(ProxyChoice::Direct, manual),
+        ProxyUse::System => computer.proxies().map_or(ProxyChoice::Direct, manual),
         ProxyUse::Server(id) => {
             let Some(profile) = profiles.iter().find(|p| p.id == id) else {
                 tracing::warn!(
                     profile = id.0,
                     "a proxy server that is not saved was chosen; following the computer's proxy instead"
                 );
-                return ProxyChoice::System;
+                return computer.choice();
             };
             let mut proxies = ManualProxies::default();
             proxies.all = profile_url(&profile.settings, logins.get(&id));
@@ -289,10 +334,10 @@ pub fn engine_choice(
 }
 
 /// `exceptions` as one list in the form [`ManualProxies::exceptions`] takes.
-fn exception_list(exceptions: &Exceptions) -> String {
+fn exception_list(exceptions: &Exceptions, computer: &ComputerProxy) -> String {
     let mut list = Vec::with_capacity(exceptions.hosts.len() + 1);
     if exceptions.system {
-        let system = ManualProxies::system_exceptions();
+        let system = computer.exceptions();
         if !system.trim().is_empty() {
             list.push(system);
         }
@@ -401,8 +446,8 @@ pub fn copies(
 /// variables, or else the system's setting. Passwords are left out, so they never reach a
 /// window. Empty when the computer sets no proxy.
 #[must_use]
-pub fn from_system() -> Vec<ProxyServerSettings> {
-    let Some(system) = ManualProxies::from_system() else {
+pub fn from_system(computer: &ComputerProxy) -> Vec<ProxyServerSettings> {
+    let Some(system) = computer.proxies() else {
         return Vec::new();
     };
     let mut profiles: Vec<ProxyServerSettings> = Vec::new();

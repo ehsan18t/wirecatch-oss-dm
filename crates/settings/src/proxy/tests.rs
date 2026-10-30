@@ -245,6 +245,7 @@ fn a_profile_reaches_the_engine_as_a_url_with_its_login_and_exceptions() {
         true,
         &profiles,
         &logins,
+        &ComputerProxy::Read,
     ));
     assert_eq!(
         manual.all.as_deref(),
@@ -267,7 +268,8 @@ fn a_profile_that_is_gone_falls_back_to_the_computers_proxy() {
             &only(&[]),
             false,
             &[],
-            &Logins::new()
+            &Logins::new(),
+            &ComputerProxy::Read,
         ),
         ProxyChoice::System
     );
@@ -282,18 +284,71 @@ fn the_computers_proxy_is_left_to_the_engine_unless_something_is_added() {
         hosts: Vec::new(),
     };
     let none = Logins::new();
+    let read = ComputerProxy::Read;
     assert_eq!(
-        engine_choice(ProxyUse::System, &plain, false, &[], &none),
+        engine_choice(ProxyUse::System, &plain, false, &[], &none, &read),
         ProxyChoice::System
     );
     assert_eq!(
-        engine_choice(ProxyUse::Direct, &plain, true, &[], &none),
+        engine_choice(ProxyUse::Direct, &plain, true, &[], &none, &read),
         ProxyChoice::Direct
     );
+    let added = only(&["a.example"]);
     assert_ne!(
-        engine_choice(ProxyUse::System, &only(&["a.example"]), false, &[], &none),
+        engine_choice(ProxyUse::System, &added, false, &[], &none, &read),
         ProxyChoice::System
     );
+}
+
+/// A given computer's proxy stands in for the environment and the system's setting.
+#[test]
+fn a_given_computers_proxy_is_used_in_place_of_reading_it() {
+    let mut office = ManualProxies::default();
+    office.all = Some("http://proxy.example:8080".into());
+    office.exceptions = "intranet.example".into();
+    let given = ComputerProxy::Given(Some(office.clone()));
+    let nothing = ComputerProxy::Given(None);
+    let plain = Exceptions {
+        system: true,
+        hosts: Vec::new(),
+    };
+    let added = Exceptions {
+        system: true,
+        hosts: vec!["files.example".into()],
+    };
+    let none = Logins::new();
+    let profiles = [saved(2, profile(ProxyKind::Socks5, "127.0.0.1", 1080))];
+    let choice = |proxy, exceptions, computer| {
+        engine_choice(proxy, exceptions, false, &profiles, &none, computer)
+    };
+
+    assert_eq!(
+        choice(ProxyUse::System, &plain, &given),
+        ProxyChoice::Manual(office)
+    );
+    assert_eq!(
+        manual_proxies(choice(ProxyUse::System, &added, &given)).exceptions,
+        "intranet.example,files.example"
+    );
+    let server = ProxyUse::Server(ProxyServerId(2));
+    assert_eq!(
+        manual_proxies(choice(server, &plain, &given)).exceptions,
+        "intranet.example"
+    );
+    assert_eq!(
+        manual_proxies(choice(server, &plain, &nothing)).exceptions,
+        ""
+    );
+    assert_eq!(
+        choice(ProxyUse::System, &plain, &nothing),
+        ProxyChoice::Direct
+    );
+    assert_eq!(
+        choice(ProxyUse::Server(ProxyServerId(9)), &plain, &nothing),
+        ProxyChoice::Direct
+    );
+    assert_eq!(from_system(&nothing), Vec::new());
+    assert_eq!(from_system(&given).len(), 1);
 }
 
 #[test]

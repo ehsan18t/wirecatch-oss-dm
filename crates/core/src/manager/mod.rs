@@ -42,12 +42,13 @@ use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 use tracing::warn;
 use wirecatch_addons::manifest::MediaAddonSources;
-use wirecatch_engine::{CancellationToken, ManualProxies, RateLimiter, Url};
+use wirecatch_engine::{CancellationToken, RateLimiter, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{StartupNotice, UiEvent};
 use wirecatch_protocol::extension::{BrowserNotice, NoticeId, NoticePressed};
 use wirecatch_protocol::wire::Event;
 use wirecatch_settings::folders::KnownFolders;
+use wirecatch_settings::proxy::ComputerProxy;
 use wirecatch_sites::public_suffix::SuffixList;
 use wirecatch_store::{Recovery, Store};
 
@@ -104,6 +105,10 @@ pub struct ManagerConfig {
     /// reach. The app sends it to [`PROXY_TEST_URL`](crate::PROXY_TEST_URL)
     /// ([`with_official_proxy_test`](Self::with_official_proxy_test)).
     pub proxy_test_url: Option<Url>,
+    /// Where the computer's proxy and bypass list (D73.6) come from: read from the environment
+    /// and the system's setting, as [`new`](Self::new) does, or given, so a test does not
+    /// depend on the machine it runs on.
+    pub computer_proxy: ComputerProxy,
 }
 
 /// The default [`ManagerConfig::capture_timeout`].
@@ -148,7 +153,15 @@ impl ManagerConfig {
             media_refresh_delays: DEFAULT_MEDIA_REFRESH_DELAYS.to_vec(),
             suffix_list_source: None,
             proxy_test_url: None,
+            computer_proxy: ComputerProxy::Read,
         }
+    }
+
+    /// Takes the computer's proxy from `computer`; see [`computer_proxy`](Self::computer_proxy).
+    #[must_use]
+    pub fn with_computer_proxy(mut self, computer: ComputerProxy) -> Self {
+        self.computer_proxy = computer;
+        self
     }
 
     /// Tests a proxy setting with a request to `url`; see
@@ -295,10 +308,11 @@ impl Drop for Inner {
 }
 
 /// What the state holds besides the download list, read from the disk and the system at start.
-fn load_beside_the_list(state: &mut State, dir: &Path, addon_dir: &Path) {
+fn load_beside_the_list(state: &mut State, dir: &Path, addon_dir: &Path, computer: ComputerProxy) {
     state.addon = addons::AddonSlot::load(addon_dir);
     state.suffix_check = suffix_list::SuffixCheck::load(dir);
-    state.system_proxy = ManualProxies::from_system();
+    state.system_proxy = computer.proxies();
+    state.computer_proxy = computer;
 }
 
 impl Manager {
@@ -330,6 +344,7 @@ impl Manager {
         let (addons_at, temp_at) = (addon_dir.clone(), temp_dir.clone());
         // Restoring checks the disk for finished files, so it runs off async threads too.
         let notices_dir = dir.clone();
+        let computer = config.computer_proxy.clone();
         let (store, restored, recoveries, not_private) = blocking(&runtime, move || {
             let (store, mut snapshot) = Store::open(&dir, on_failure)?;
             let recoveries = std::mem::take(&mut snapshot.recoveries);
@@ -341,7 +356,7 @@ impl Manager {
                 suffixes: SuffixList::load(&dir, now_millis),
             };
             let mut restored = restore::restore(snapshot, &around);
-            load_beside_the_list(&mut restored.state, &dir, &addons_at);
+            load_beside_the_list(&mut restored.state, &dir, &addons_at, computer);
             // Cookies files left by a crash: nothing may keep them.
             wirecatch_files::discard::dir(&temp_at);
             Ok((store, restored, recoveries, not_private))
@@ -515,9 +530,11 @@ impl Manager {
             weak.clone(),
             self.inner.stopped.clone(),
         ));
+        let computer = self.lock().computer_proxy.clone();
         self.spawn(proxy::run_system_proxy_reads(
             weak,
             self.inner.stopped.clone(),
+            computer,
         ));
     }
 

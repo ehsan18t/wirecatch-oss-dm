@@ -10,7 +10,7 @@ use wirecatch_protocol::app::{AppSettings, DownloadStatus, Queue, Setting};
 use wirecatch_protocol::proxy::ProxyUse;
 use wirecatch_protocol::rules::QueueReason;
 use wirecatch_settings::DEFAULT_QUEUE_ID;
-use wirecatch_settings::proxy::SavedProxyServer;
+use wirecatch_settings::proxy::{ComputerProxy, SavedProxyServer};
 use wirecatch_sites::public_suffix::SuffixList;
 use wirecatch_store::{Snapshot, StoredDownload};
 
@@ -106,6 +106,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         running: BTreeSet::default(),
         unfinished: BTreeSet::default(),
         system_proxy: None,
+        computer_proxy: ComputerProxy::Read,
         pending: questions::captures(),
         media: questions::videos(),
         file_exists: BTreeMap::new(),
