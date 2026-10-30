@@ -23,12 +23,14 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, TitleBar, v_flex};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Context, Entity, FocusHandle, Global,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, SharedString,
-    Styled as _, Subscription, WeakEntity, Window, WindowBounds, WindowOptions, actions, px, size,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, ScrollStrategy,
+    SharedString, Styled as _, Subscription, UniformListScrollHandle, WeakEntity, Window,
+    WindowBounds, WindowOptions, actions, px, size,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
+use wirecatch_protocol::desktop::Reveal;
 
 use crate::library::{Asked, Library, SettingsChanged};
 use crate::ui::{Role, Typed as _, layout};
@@ -192,6 +194,17 @@ pub fn bring_up(asked: &Asked, cx: &mut App) {
     }
 }
 
+/// Brings the main window up and runs `work` in it.
+pub fn bring_up_with(cx: &mut App, work: impl FnOnce(&mut Window, &mut App)) {
+    bring_up(&Asked::Window, cx);
+    if let Some(shown) = cx
+        .try_global::<Running>()
+        .and_then(|running| running.shown.clone())
+    {
+        _ = shown.window.update(cx, |_, window, cx| work(window, cx));
+    }
+}
+
 /// Whether the window in `shown` was still open to answer `asked`.
 fn answer_in(shown: &Shown, asked: &Asked, cx: &mut App) -> bool {
     shown
@@ -219,6 +232,7 @@ pub struct MainWindow {
     all_queues: bool,
     /// The row under the pointer, which shows its buttons.
     hovered: Option<DownloadId>,
+    scroll: UniformListScrollHandle,
     settings_on: settings::OpenOn,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
@@ -246,21 +260,61 @@ impl MainWindow {
         })
     }
 
-    /// Answers `asked`: brings this window to the front, with the Add dialog holding the links
-    /// or on the browser settings.
+    /// Answers `asked`: brings this window to the front, with the Add dialog holding the links,
+    /// on the browser settings, or on the downloads a notification is about.
     fn answer(&mut self, asked: &Asked, window: &mut Window, cx: &mut Context<'_, Self>) {
         window.activate_window();
         match asked {
             Asked::Window => {}
             Asked::Links(links) => self.new_download(links, window, cx),
-            Asked::BrowserSettings => {
-                self.settings_on = settings::OpenOn {
-                    opening: self.settings_on.opening + 1,
-                    page: Some(settings::Page::Browser),
-                };
-                self.screen = Screen::Settings;
-                cx.notify();
-            }
+            Asked::BrowserSettings => self.open_settings(settings::Page::Browser, cx),
+            Asked::Reveal(reveal) => self.reveal(reveal, window, cx),
+        }
+    }
+
+    fn open_settings(&mut self, page: settings::Page, cx: &mut Context<'_, Self>) {
+        self.settings_on = settings::OpenOn {
+            opening: self.settings_on.opening + 1,
+            page: Some(page),
+        };
+        self.screen = Screen::Settings;
+        cx.notify();
+    }
+
+    /// Shows `reveal`'s downloads selected in their queue, the first in view, or in every download
+    /// when the queue is gone (D98); or the settings page it names.
+    fn reveal(&mut self, reveal: &Reveal, window: &mut Window, cx: &mut Context<'_, Self>) {
+        if reveal.browser_settings {
+            return self.open_settings(settings::Page::Browser, cx);
+        }
+        if reveal.proxy_settings {
+            return self.open_settings(settings::Page::Network, cx);
+        }
+        self.screen = Screen::Downloads;
+        let library = self.library.read(cx);
+        let view = reveal
+            .queue
+            .filter(|queue| library.queue(*queue).is_some())
+            .map_or(View::All, View::Queue);
+        let groups: Vec<Group> = library
+            .downloads
+            .iter()
+            .filter(|row| reveal.ids.contains(&row.id))
+            .map(|row| Group::of(row.status))
+            .collect();
+        self.search
+            .update(cx, |search, cx| search.set_value("", window, cx));
+        self.show(view, window, cx);
+        for group in groups {
+            self.folded.remove(&group);
+        }
+        self.selected = reveal.ids.iter().copied().collect();
+        if let Some(line) = reveal
+            .ids
+            .first()
+            .and_then(|first| self.line_of(*first, cx))
+        {
+            self.scroll.scroll_to_item(line, ScrollStrategy::Center);
         }
     }
 
@@ -309,6 +363,7 @@ impl MainWindow {
                 .filter(|g| g.starts_folded())
                 .collect(),
             hovered: None,
+            scroll: UniformListScrollHandle::new(),
             settings_on: settings::OpenOn::default(),
             hovered_queue: None,
             all_queues: false,

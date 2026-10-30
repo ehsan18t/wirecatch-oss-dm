@@ -22,7 +22,7 @@ wirecatch-product.workspace = true
 wirecatch-protocol.workspace = true
 dirs = "7.0.0"
 chrono = { workspace = true, features = ["clock"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macros"] }
 tracing = { workspace = true }
 regex.workspace = true
 url.workspace = true

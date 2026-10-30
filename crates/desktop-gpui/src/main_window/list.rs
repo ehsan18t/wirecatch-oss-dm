@@ -59,9 +59,18 @@ impl MainWindow {
                     .collect::<Vec<_>>()
             }),
         )
+        .track_scroll(&self.scroll)
         .flex_1()
         .pb_4()
         .into_any_element()
+    }
+
+    /// Where download `id` is among the list's lines, if it shows.
+    pub(super) fn line_of(&self, id: DownloadId, cx: &App) -> Option<usize> {
+        let downloads = &self.library.read(cx).downloads;
+        self.lines(cx)
+            .iter()
+            .position(|line| matches!(line, Line::Row(index) if downloads[*index].id == id))
     }
 
     /// The list's lines: the view's downloads that hold the search in their name or link, by
