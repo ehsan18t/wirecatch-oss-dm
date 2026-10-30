@@ -597,6 +597,927 @@ export const AUDIO_DEFAULT_KBPS: Readonly<Partial<Record<OutputFormat, number>>>
 };
 
 /**
+ * The subtitle languages a person can pick from, by ISO 639-1 code, named in English
+ * (`languages::LANGUAGES`).
+ */
+export const SUBTITLE_LANGUAGES: readonly {
+  code: string;
+  name: string;
+  also_called: string | null;
+}[] = [
+  {
+    also_called: null,
+    code: 'aa',
+    name: 'Afar',
+  },
+  {
+    also_called: null,
+    code: 'ab',
+    name: 'Abkhazian',
+  },
+  {
+    also_called: null,
+    code: 'af',
+    name: 'Afrikaans',
+  },
+  {
+    also_called: null,
+    code: 'ak',
+    name: 'Akan',
+  },
+  {
+    also_called: null,
+    code: 'am',
+    name: 'Amharic',
+  },
+  {
+    also_called: null,
+    code: 'an',
+    name: 'Aragonese',
+  },
+  {
+    also_called: null,
+    code: 'ar',
+    name: 'Arabic',
+  },
+  {
+    also_called: null,
+    code: 'as',
+    name: 'Assamese',
+  },
+  {
+    also_called: null,
+    code: 'av',
+    name: 'Avaric',
+  },
+  {
+    also_called: null,
+    code: 'ay',
+    name: 'Aymara',
+  },
+  {
+    also_called: null,
+    code: 'az',
+    name: 'Azerbaijani',
+  },
+  {
+    also_called: null,
+    code: 'ba',
+    name: 'Bashkir',
+  },
+  {
+    also_called: null,
+    code: 'be',
+    name: 'Belarusian',
+  },
+  {
+    also_called: null,
+    code: 'bg',
+    name: 'Bulgarian',
+  },
+  {
+    also_called: null,
+    code: 'bi',
+    name: 'Bislama',
+  },
+  {
+    also_called: null,
+    code: 'bm',
+    name: 'Bambara',
+  },
+  {
+    also_called: 'Bengali',
+    code: 'bn',
+    name: 'Bangla',
+  },
+  {
+    also_called: null,
+    code: 'bo',
+    name: 'Tibetan',
+  },
+  {
+    also_called: null,
+    code: 'br',
+    name: 'Breton',
+  },
+  {
+    also_called: null,
+    code: 'bs',
+    name: 'Bosnian',
+  },
+  {
+    also_called: null,
+    code: 'ca',
+    name: 'Catalan',
+  },
+  {
+    also_called: null,
+    code: 'ce',
+    name: 'Chechen',
+  },
+  {
+    also_called: null,
+    code: 'ch',
+    name: 'Chamorro',
+  },
+  {
+    also_called: null,
+    code: 'co',
+    name: 'Corsican',
+  },
+  {
+    also_called: null,
+    code: 'cr',
+    name: 'Cree',
+  },
+  {
+    also_called: null,
+    code: 'cs',
+    name: 'Czech',
+  },
+  {
+    also_called: null,
+    code: 'cu',
+    name: 'Church Slavic',
+  },
+  {
+    also_called: null,
+    code: 'cv',
+    name: 'Chuvash',
+  },
+  {
+    also_called: null,
+    code: 'cy',
+    name: 'Welsh',
+  },
+  {
+    also_called: null,
+    code: 'da',
+    name: 'Danish',
+  },
+  {
+    also_called: null,
+    code: 'de',
+    name: 'German',
+  },
+  {
+    also_called: 'Dhivehi Maldivian',
+    code: 'dv',
+    name: 'Divehi',
+  },
+  {
+    also_called: null,
+    code: 'dz',
+    name: 'Dzongkha',
+  },
+  {
+    also_called: null,
+    code: 'ee',
+    name: 'Ewe',
+  },
+  {
+    also_called: null,
+    code: 'el',
+    name: 'Greek',
+  },
+  {
+    also_called: null,
+    code: 'en',
+    name: 'English',
+  },
+  {
+    also_called: null,
+    code: 'eo',
+    name: 'Esperanto',
+  },
+  {
+    also_called: null,
+    code: 'es',
+    name: 'Spanish',
+  },
+  {
+    also_called: null,
+    code: 'et',
+    name: 'Estonian',
+  },
+  {
+    also_called: null,
+    code: 'eu',
+    name: 'Basque',
+  },
+  {
+    also_called: null,
+    code: 'fa',
+    name: 'Persian',
+  },
+  {
+    also_called: null,
+    code: 'ff',
+    name: 'Fula',
+  },
+  {
+    also_called: null,
+    code: 'fi',
+    name: 'Finnish',
+  },
+  {
+    also_called: null,
+    code: 'fj',
+    name: 'Fijian',
+  },
+  {
+    also_called: null,
+    code: 'fo',
+    name: 'Faroese',
+  },
+  {
+    also_called: null,
+    code: 'fr',
+    name: 'French',
+  },
+  {
+    also_called: null,
+    code: 'fy',
+    name: 'Western Frisian',
+  },
+  {
+    also_called: null,
+    code: 'ga',
+    name: 'Irish',
+  },
+  {
+    also_called: null,
+    code: 'gd',
+    name: 'Scottish Gaelic',
+  },
+  {
+    also_called: null,
+    code: 'gl',
+    name: 'Galician',
+  },
+  {
+    also_called: null,
+    code: 'gn',
+    name: 'Guarani',
+  },
+  {
+    also_called: null,
+    code: 'gu',
+    name: 'Gujarati',
+  },
+  {
+    also_called: null,
+    code: 'gv',
+    name: 'Manx',
+  },
+  {
+    also_called: null,
+    code: 'ha',
+    name: 'Hausa',
+  },
+  {
+    also_called: null,
+    code: 'he',
+    name: 'Hebrew',
+  },
+  {
+    also_called: null,
+    code: 'hi',
+    name: 'Hindi',
+  },
+  {
+    also_called: null,
+    code: 'ho',
+    name: 'Hiri Motu',
+  },
+  {
+    also_called: null,
+    code: 'hr',
+    name: 'Croatian',
+  },
+  {
+    also_called: null,
+    code: 'ht',
+    name: 'Haitian Creole',
+  },
+  {
+    also_called: null,
+    code: 'hu',
+    name: 'Hungarian',
+  },
+  {
+    also_called: null,
+    code: 'hy',
+    name: 'Armenian',
+  },
+  {
+    also_called: null,
+    code: 'hz',
+    name: 'Herero',
+  },
+  {
+    also_called: null,
+    code: 'ia',
+    name: 'Interlingua',
+  },
+  {
+    also_called: null,
+    code: 'id',
+    name: 'Indonesian',
+  },
+  {
+    also_called: null,
+    code: 'ie',
+    name: 'Interlingue',
+  },
+  {
+    also_called: null,
+    code: 'ig',
+    name: 'Igbo',
+  },
+  {
+    also_called: 'Nuosu',
+    code: 'ii',
+    name: 'Sichuan Yi',
+  },
+  {
+    also_called: null,
+    code: 'ik',
+    name: 'Inupiaq',
+  },
+  {
+    also_called: null,
+    code: 'io',
+    name: 'Ido',
+  },
+  {
+    also_called: null,
+    code: 'is',
+    name: 'Icelandic',
+  },
+  {
+    also_called: null,
+    code: 'it',
+    name: 'Italian',
+  },
+  {
+    also_called: null,
+    code: 'iu',
+    name: 'Inuktitut',
+  },
+  {
+    also_called: null,
+    code: 'ja',
+    name: 'Japanese',
+  },
+  {
+    also_called: null,
+    code: 'jv',
+    name: 'Javanese',
+  },
+  {
+    also_called: null,
+    code: 'ka',
+    name: 'Georgian',
+  },
+  {
+    also_called: null,
+    code: 'kg',
+    name: 'Kongo',
+  },
+  {
+    also_called: null,
+    code: 'ki',
+    name: 'Kikuyu',
+  },
+  {
+    also_called: null,
+    code: 'kj',
+    name: 'Kuanyama',
+  },
+  {
+    also_called: null,
+    code: 'kk',
+    name: 'Kazakh',
+  },
+  {
+    also_called: 'Greenlandic',
+    code: 'kl',
+    name: 'Kalaallisut',
+  },
+  {
+    also_called: null,
+    code: 'km',
+    name: 'Khmer',
+  },
+  {
+    also_called: null,
+    code: 'kn',
+    name: 'Kannada',
+  },
+  {
+    also_called: null,
+    code: 'ko',
+    name: 'Korean',
+  },
+  {
+    also_called: null,
+    code: 'kr',
+    name: 'Kanuri',
+  },
+  {
+    also_called: null,
+    code: 'ks',
+    name: 'Kashmiri',
+  },
+  {
+    also_called: null,
+    code: 'ku',
+    name: 'Kurdish',
+  },
+  {
+    also_called: null,
+    code: 'kv',
+    name: 'Komi',
+  },
+  {
+    also_called: null,
+    code: 'kw',
+    name: 'Cornish',
+  },
+  {
+    also_called: 'Kirghiz',
+    code: 'ky',
+    name: 'Kyrgyz',
+  },
+  {
+    also_called: null,
+    code: 'la',
+    name: 'Latin',
+  },
+  {
+    also_called: null,
+    code: 'lb',
+    name: 'Luxembourgish',
+  },
+  {
+    also_called: null,
+    code: 'lg',
+    name: 'Ganda',
+  },
+  {
+    also_called: null,
+    code: 'li',
+    name: 'Limburgish',
+  },
+  {
+    also_called: null,
+    code: 'ln',
+    name: 'Lingala',
+  },
+  {
+    also_called: null,
+    code: 'lo',
+    name: 'Lao',
+  },
+  {
+    also_called: null,
+    code: 'lt',
+    name: 'Lithuanian',
+  },
+  {
+    also_called: null,
+    code: 'lu',
+    name: 'Luba-Katanga',
+  },
+  {
+    also_called: null,
+    code: 'lv',
+    name: 'Latvian',
+  },
+  {
+    also_called: null,
+    code: 'mg',
+    name: 'Malagasy',
+  },
+  {
+    also_called: null,
+    code: 'mh',
+    name: 'Marshallese',
+  },
+  {
+    also_called: null,
+    code: 'mi',
+    name: 'Māori',
+  },
+  {
+    also_called: null,
+    code: 'mk',
+    name: 'Macedonian',
+  },
+  {
+    also_called: null,
+    code: 'ml',
+    name: 'Malayalam',
+  },
+  {
+    also_called: null,
+    code: 'mn',
+    name: 'Mongolian',
+  },
+  {
+    also_called: null,
+    code: 'mr',
+    name: 'Marathi',
+  },
+  {
+    also_called: null,
+    code: 'ms',
+    name: 'Malay',
+  },
+  {
+    also_called: null,
+    code: 'mt',
+    name: 'Maltese',
+  },
+  {
+    also_called: null,
+    code: 'my',
+    name: 'Burmese',
+  },
+  {
+    also_called: null,
+    code: 'na',
+    name: 'Nauru',
+  },
+  {
+    also_called: null,
+    code: 'nb',
+    name: 'Norwegian Bokmål',
+  },
+  {
+    also_called: null,
+    code: 'nd',
+    name: 'North Ndebele',
+  },
+  {
+    also_called: null,
+    code: 'ne',
+    name: 'Nepali',
+  },
+  {
+    also_called: null,
+    code: 'ng',
+    name: 'Ndonga',
+  },
+  {
+    also_called: null,
+    code: 'nl',
+    name: 'Dutch',
+  },
+  {
+    also_called: null,
+    code: 'nn',
+    name: 'Norwegian Nynorsk',
+  },
+  {
+    also_called: null,
+    code: 'no',
+    name: 'Norwegian',
+  },
+  {
+    also_called: null,
+    code: 'nr',
+    name: 'South Ndebele',
+  },
+  {
+    also_called: null,
+    code: 'nv',
+    name: 'Navajo',
+  },
+  {
+    also_called: 'Chichewa Chewa',
+    code: 'ny',
+    name: 'Nyanja',
+  },
+  {
+    also_called: null,
+    code: 'oc',
+    name: 'Occitan',
+  },
+  {
+    also_called: null,
+    code: 'oj',
+    name: 'Ojibwa',
+  },
+  {
+    also_called: null,
+    code: 'om',
+    name: 'Oromo',
+  },
+  {
+    also_called: 'Oriya',
+    code: 'or',
+    name: 'Odia',
+  },
+  {
+    also_called: 'Ossetic',
+    code: 'os',
+    name: 'Ossetic',
+  },
+  {
+    also_called: 'Panjabi',
+    code: 'pa',
+    name: 'Punjabi',
+  },
+  {
+    also_called: null,
+    code: 'pi',
+    name: 'Pali',
+  },
+  {
+    also_called: null,
+    code: 'pl',
+    name: 'Polish',
+  },
+  {
+    also_called: null,
+    code: 'ps',
+    name: 'Pashto',
+  },
+  {
+    also_called: null,
+    code: 'pt',
+    name: 'Portuguese',
+  },
+  {
+    also_called: null,
+    code: 'qu',
+    name: 'Quechua',
+  },
+  {
+    also_called: null,
+    code: 'rm',
+    name: 'Romansh',
+  },
+  {
+    also_called: null,
+    code: 'rn',
+    name: 'Rundi',
+  },
+  {
+    also_called: null,
+    code: 'ro',
+    name: 'Romanian',
+  },
+  {
+    also_called: null,
+    code: 'ru',
+    name: 'Russian',
+  },
+  {
+    also_called: null,
+    code: 'rw',
+    name: 'Kinyarwanda',
+  },
+  {
+    also_called: null,
+    code: 'sa',
+    name: 'Sanskrit',
+  },
+  {
+    also_called: null,
+    code: 'sc',
+    name: 'Sardinian',
+  },
+  {
+    also_called: null,
+    code: 'sd',
+    name: 'Sindhi',
+  },
+  {
+    also_called: null,
+    code: 'se',
+    name: 'Northern Sami',
+  },
+  {
+    also_called: null,
+    code: 'sg',
+    name: 'Sango',
+  },
+  {
+    also_called: null,
+    code: 'si',
+    name: 'Sinhala',
+  },
+  {
+    also_called: null,
+    code: 'sk',
+    name: 'Slovak',
+  },
+  {
+    also_called: null,
+    code: 'sl',
+    name: 'Slovenian',
+  },
+  {
+    also_called: null,
+    code: 'sm',
+    name: 'Samoan',
+  },
+  {
+    also_called: null,
+    code: 'sn',
+    name: 'Shona',
+  },
+  {
+    also_called: null,
+    code: 'so',
+    name: 'Somali',
+  },
+  {
+    also_called: null,
+    code: 'sq',
+    name: 'Albanian',
+  },
+  {
+    also_called: null,
+    code: 'sr',
+    name: 'Serbian',
+  },
+  {
+    also_called: null,
+    code: 'ss',
+    name: 'Swati',
+  },
+  {
+    also_called: null,
+    code: 'st',
+    name: 'Southern Sotho',
+  },
+  {
+    also_called: null,
+    code: 'su',
+    name: 'Sundanese',
+  },
+  {
+    also_called: null,
+    code: 'sv',
+    name: 'Swedish',
+  },
+  {
+    also_called: null,
+    code: 'sw',
+    name: 'Swahili',
+  },
+  {
+    also_called: null,
+    code: 'ta',
+    name: 'Tamil',
+  },
+  {
+    also_called: null,
+    code: 'te',
+    name: 'Telugu',
+  },
+  {
+    also_called: null,
+    code: 'tg',
+    name: 'Tajik',
+  },
+  {
+    also_called: null,
+    code: 'th',
+    name: 'Thai',
+  },
+  {
+    also_called: null,
+    code: 'ti',
+    name: 'Tigrinya',
+  },
+  {
+    also_called: null,
+    code: 'tk',
+    name: 'Turkmen',
+  },
+  {
+    also_called: null,
+    code: 'tl',
+    name: 'Filipino',
+  },
+  {
+    also_called: null,
+    code: 'tn',
+    name: 'Tswana',
+  },
+  {
+    also_called: null,
+    code: 'to',
+    name: 'Tongan',
+  },
+  {
+    also_called: null,
+    code: 'tr',
+    name: 'Turkish',
+  },
+  {
+    also_called: null,
+    code: 'ts',
+    name: 'Tsonga',
+  },
+  {
+    also_called: null,
+    code: 'tt',
+    name: 'Tatar',
+  },
+  {
+    also_called: null,
+    code: 'tw',
+    name: 'Akan',
+  },
+  {
+    also_called: null,
+    code: 'ty',
+    name: 'Tahitian',
+  },
+  {
+    also_called: 'Uighur',
+    code: 'ug',
+    name: 'Uyghur',
+  },
+  {
+    also_called: null,
+    code: 'uk',
+    name: 'Ukrainian',
+  },
+  {
+    also_called: null,
+    code: 'ur',
+    name: 'Urdu',
+  },
+  {
+    also_called: null,
+    code: 'uz',
+    name: 'Uzbek',
+  },
+  {
+    also_called: null,
+    code: 've',
+    name: 'Venda',
+  },
+  {
+    also_called: null,
+    code: 'vi',
+    name: 'Vietnamese',
+  },
+  {
+    also_called: null,
+    code: 'vo',
+    name: 'Volapük',
+  },
+  {
+    also_called: null,
+    code: 'wa',
+    name: 'Walloon',
+  },
+  {
+    also_called: null,
+    code: 'wo',
+    name: 'Wolof',
+  },
+  {
+    also_called: null,
+    code: 'xh',
+    name: 'Xhosa',
+  },
+  {
+    also_called: null,
+    code: 'yi',
+    name: 'Yiddish',
+  },
+  {
+    also_called: null,
+    code: 'yo',
+    name: 'Yoruba',
+  },
+  {
+    also_called: null,
+    code: 'za',
+    name: 'Zhuang',
+  },
+  {
+    also_called: null,
+    code: 'zh',
+    name: 'Chinese',
+  },
+  {
+    also_called: null,
+    code: 'zu',
+    name: 'Zulu',
+  },
+];
+
+/**
  * The extension's settings on a fresh install (`ExtensionSettings::default`), which
  * the extension judges browser downloads by until it first hears from the app.
  */

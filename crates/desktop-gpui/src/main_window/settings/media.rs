@@ -2,13 +2,17 @@
 //! the resolution and what to do when a video lacks it, and what videos and audio alone are
 //! saved as, each with its own choices.
 
+use gpui_kit::component::IndexPath;
+use gpui_kit::component::combobox::{Combobox, ComboboxEvent, ComboboxState};
+use gpui_kit::component::searchable_list::{SearchableListItem, SearchableVec};
 use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
-use gpui_kit::{App, Axis, Entity, SharedString};
+use gpui_kit::{App, Axis, Entity, IntoElement as _, SharedString, Styled as _, px};
 use wirecatch_protocol::app::{
-    AddonId, AppSettingsPatch, MediaDefaultsPatch, OutputDefaultsPatch, OutputFormat,
+    AddonId, AppSettings, AppSettingsPatch, MediaDefaultsPatch, OutputDefaultsPatch, OutputFormat,
     QualityFallback, UnembeddedSubtitles, Update, VideoQuality,
 };
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
+use wirecatch_protocol::languages::LANGUAGES;
 
 use super::{Typing, change, choice, current, list_field, switch};
 use crate::library::Library;
@@ -224,6 +228,24 @@ fn video_subtitles(library: &Entity<Library>, cx: &App) -> SettingGroup {
         .title("Video subtitles")
         .item(
             SettingItem::new(
+                "Subtitle languages",
+                languages(
+                    library,
+                    "video-languages",
+                    |s| s.media.video.subtitle_languages.clone(),
+                    |languages| {
+                        video_patch(OutputDefaultsPatch {
+                            subtitle_languages: Some(languages),
+                            ..OutputDefaultsPatch::default()
+                        })
+                    },
+                ),
+            )
+            .description("The creator's subtitles, or auto-generated ones if allowed. Languages a video doesn't have are skipped.")
+            .keywords(["subtitles", "captions", "languages"]),
+        )
+        .item(
+            SettingItem::new(
                 "Use auto-generated subtitles",
                 switch(
                     library,
@@ -303,6 +325,24 @@ fn audio(library: &Entity<Library>, cx: &App) -> SettingGroup {
         );
     }
     group
+        .item(
+            SettingItem::new(
+                "Subtitle languages",
+                languages(
+                    library,
+                    "audio-languages",
+                    |s| s.media.audio.subtitle_languages.clone(),
+                    |languages| {
+                        audio_patch(OutputDefaultsPatch {
+                            subtitle_languages: Some(languages),
+                            ..OutputDefaultsPatch::default()
+                        })
+                    },
+                ),
+            )
+            .description("Saved as .srt files next to the audio file.")
+            .keywords(["subtitles", "captions", "languages"]),
+        )
         .item(
             SettingItem::new(
                 "Use auto-generated subtitles",
@@ -418,6 +458,95 @@ fn kbps_for(format: OutputFormat, kbps: Option<u32>) -> Option<u32> {
         .iter()
         .copied()
         .min_by_key(|choice| (choice.abs_diff(wanted), *choice))
+}
+
+/// A language to pick subtitles in, found by its name, its code or another name.
+#[derive(Clone)]
+struct LanguageChoice {
+    title: SharedString,
+    code: String,
+    also_called: Option<&'static str>,
+}
+
+impl SearchableListItem for LanguageChoice {
+    type Value = String;
+
+    fn title(&self) -> SharedString {
+        self.title.clone()
+    }
+
+    fn value(&self) -> &Self::Value {
+        &self.code
+    }
+
+    fn matches(&self, query: &str) -> bool {
+        let query = query.to_lowercase();
+        self.title.to_lowercase().contains(&query)
+            || self
+                .also_called
+                .is_some_and(|names| names.to_lowercase().contains(&query))
+    }
+}
+
+/// Every language, by name with its code, and a code saved earlier that the list lacks.
+fn language_choices(saved: &[String]) -> Vec<LanguageChoice> {
+    let mut choices: Vec<LanguageChoice> = LANGUAGES
+        .iter()
+        .map(|language| LanguageChoice {
+            title: format!("{} ({})", language.name, language.code).into(),
+            code: language.code.to_owned(),
+            also_called: language.also_called,
+        })
+        .collect();
+    for code in saved {
+        if !LANGUAGES.iter().any(|language| language.code == code) {
+            choices.push(LanguageChoice {
+                title: format!("{code} ({code})").into(),
+                code: code.clone(),
+                also_called: None,
+            });
+        }
+    }
+    choices.sort_by(|a, b| a.title.cmp(&b.title));
+    choices
+}
+
+/// Subtitle languages, picked from a searchable list; each change is saved as it is made.
+fn languages(
+    library: &Entity<Library>,
+    key: &'static str,
+    read: fn(&AppSettings) -> Vec<String>,
+    patch: fn(Vec<String>) -> AppSettingsPatch,
+) -> SettingField<SharedString> {
+    let library = library.clone();
+    SettingField::render(move |_, window, cx| {
+        let saved = current(&library, cx, read, Vec::new());
+        let state = window.use_keyed_state(SharedString::from(key), cx, |window, cx| {
+            let choices = language_choices(&saved);
+            let picked = saved
+                .iter()
+                .filter_map(|code| choices.iter().position(|choice| &choice.code == code))
+                .map(|row| IndexPath::default().row(row))
+                .collect();
+            let state = ComboboxState::new(SearchableVec::new(choices), picked, window, cx)
+                .multiple(true)
+                .searchable(true);
+            cx.subscribe_self(
+                move |_, event: &ComboboxEvent<SearchableVec<LanguageChoice>>, cx| {
+                    if let ComboboxEvent::Change(codes) = event {
+                        change(patch(codes.clone()), cx);
+                    }
+                },
+            )
+            .detach();
+            state
+        });
+        Combobox::new(&state)
+            .w(px(280.))
+            .placeholder("None")
+            .search_placeholder("Search languages")
+            .into_any_element()
+    })
 }
 
 #[cfg(test)]
