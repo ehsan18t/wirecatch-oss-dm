@@ -5,6 +5,7 @@ mod command_bar;
 mod confirm;
 mod details;
 mod empty;
+mod link_trial;
 mod list;
 mod proxy_dialog;
 mod queue_dialog;

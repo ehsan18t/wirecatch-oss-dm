@@ -736,7 +736,7 @@ fn editors(
 ) -> (Entity<RulesForm>, Entity<ProxyForm>) {
     let rules = cx.new(|cx| {
         RulesForm::new(
-            library.clone(),
+            library,
             queue,
             name.clone(),
             &opened.add_downloads,

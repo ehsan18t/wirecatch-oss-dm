@@ -2,24 +2,21 @@
 //! kind of rule sits behind its own checkbox, and unchecking keeps its values until the queue is
 //! saved (D84.5). Test a link asks the core what the rules as typed do with a link (D72.7).
 
-use gpui_kit::component::button::Button;
+use std::rc::Rc;
+
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::dialog::Confirm;
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, Styled as _, Subscription, Window, div,
+    AnyElement, App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render,
+    Styled as _, Subscription, Window, div,
 };
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::Category;
-use wirecatch_protocol::rules::{
-    AddDownloads, DraftRules, LinkMatch, LinkProtocol, LinkTrial, NameSyntax, QueueRules,
-};
-use wirecatch_shell::api;
+use wirecatch_protocol::rules::{AddDownloads, DraftRules, LinkProtocol, NameSyntax, QueueRules};
 
-use crate::backend::Backend;
+use super::link_trial::{Draft, Drafted, LinkTrial};
 use crate::library::Library;
 use crate::text;
 use crate::ui::{Role, SwitchRow, Typed as _, choice};
@@ -49,14 +46,7 @@ enum Kind {
     Protocols,
 }
 
-/// What Test a link found: where the link goes and why, or why it could not be tried.
-enum Answer {
-    Lines(Vec<String>),
-    Problem(String),
-}
-
 pub struct RulesForm {
-    library: Entity<Library>,
     /// The queue edited; `None` for one not made yet.
     queue: Option<QueueId>,
     /// The queue's name as its form has it.
@@ -69,15 +59,13 @@ pub struct RulesForm {
     file_types: Entity<InputState>,
     categories: Vec<Category>,
     protocols: Vec<LinkProtocol>,
-    link: Entity<InputState>,
-    answer: Option<Answer>,
-    trying: bool,
+    trial: Entity<LinkTrial>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl RulesForm {
     pub fn new(
-        library: Entity<Library>,
+        library: &Entity<Library>,
         queue: Option<QueueId>,
         name: Entity<InputState>,
         saved: &AddDownloads,
@@ -95,8 +83,9 @@ impl RulesForm {
             state.set_value(rules.file_types.join(", "), window, cx);
             state
         });
-        let link =
-            cx.new(|cx| InputState::new(window, cx).placeholder("https://example.com/file.zip"));
+        let me = cx.entity().downgrade();
+        let drafted: Drafted = Rc::new(move |cx| me.upgrade().map(|form| form.read(cx).draft(cx)));
+        let trial = cx.new(|cx| LinkTrial::new(library.clone(), Some(drafted), window, cx));
         let checked = [
             (Kind::Sites, !rules.sites.is_empty()),
             (Kind::FileNames, !rules.file_names.is_empty()),
@@ -107,22 +96,15 @@ impl RulesForm {
         .into_iter()
         .filter_map(|(kind, used)| used.then_some(kind))
         .collect();
-        let mut subscriptions = vec![cx.subscribe_in(
-            &link,
-            window,
-            |form: &mut Self, _, event: &InputEvent, window, cx| match event {
-                InputEvent::Change => form.forget_answer(cx),
-                InputEvent::PressEnter { .. } => form.try_link(window, cx),
-                _ => {}
-            },
-        )];
-        subscriptions.extend([&sites, &file_names].map(|field| {
-            cx.subscribe(field, |form: &mut Self, _, event: &InputEvent, cx| {
-                if matches!(event, InputEvent::Change) {
-                    form.forget_answer(cx);
-                }
+        let mut subscriptions: Vec<Subscription> = [&sites, &file_names]
+            .map(|field| {
+                cx.subscribe(field, |form: &mut Self, _, event: &InputEvent, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        form.forget_answer(cx);
+                    }
+                })
             })
-        }));
+            .into();
         subscriptions.push(cx.subscribe(
             &file_types,
             |form: &mut Self, _, event: &InputEvent, cx| {
@@ -132,7 +114,6 @@ impl RulesForm {
             },
         ));
         Self {
-            library,
             queue,
             name,
             on,
@@ -143,9 +124,7 @@ impl RulesForm {
             file_types,
             categories: rules.categories,
             protocols: rules.protocols,
-            link,
-            answer: None,
-            trying: false,
+            trial,
             _subscriptions: subscriptions,
         }
     }
@@ -193,8 +172,17 @@ impl RulesForm {
 
     /// An answer is for the link and the rules it was given: a change to either takes it away.
     fn forget_answer(&mut self, cx: &mut Context<'_, Self>) {
-        if self.answer.take().is_some() {
-            cx.notify();
+        self.trial.update(cx, LinkTrial::forget);
+    }
+
+    /// The rules as typed, to try a link against in place of the saved ones.
+    fn draft(&self, cx: &App) -> Draft {
+        Draft {
+            rules: DraftRules {
+                queue: self.queue,
+                add_downloads: self.add_downloads(cx),
+            },
+            name: self.name.read(cx).value().trim().to_owned(),
         }
     }
 
@@ -203,85 +191,8 @@ impl RulesForm {
         if on {
             self.checked.push(kind);
         }
-        self.answer = None;
+        self.forget_answer(cx);
         cx.notify();
-    }
-
-    fn try_link(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        let url = self.link.read(cx).value().trim().to_owned();
-        if url.is_empty() || self.trying {
-            return;
-        }
-        let trial = LinkTrial {
-            url,
-            draft: Some(DraftRules {
-                queue: self.queue,
-                add_downloads: self.add_downloads(cx),
-            }),
-        };
-        self.trying = true;
-        cx.notify();
-        let tried = Backend::run(
-            cx,
-            move |manager| async move { api::try_link(&manager, &trial) },
-        );
-        cx.spawn_in(window, async move |form, cx| {
-            let found = match tried.await {
-                Ok(Ok(result)) => result.map_err(|error| error.message),
-                Ok(Err(unopened)) => Err(unopened.reason.message),
-                Err(_) => return,
-            };
-            _ = form.update(cx, |form, cx| {
-                form.trying = false;
-                form.answer = Some(match found {
-                    Ok(found) => Answer::Lines(form.answer_lines(&found, cx)),
-                    Err(problem) => Answer::Problem(problem),
-                });
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    /// Where the link goes and why, then the switched-off queue that would have matched it.
-    fn answer_lines(&self, found: &LinkMatch, cx: &App) -> Vec<String> {
-        let library = self.library.read(cx);
-        let name = |queue: Option<QueueId>| {
-            if queue.is_none() || queue == self.queue {
-                let typed = self.name.read(cx).value().trim().to_owned();
-                return if typed.is_empty() {
-                    "This queue".to_owned()
-                } else {
-                    typed
-                };
-            }
-            queue
-                .and_then(|id| library.queue(id))
-                .map_or_else(|| "A deleted queue".to_owned(), |q| q.settings.name.clone())
-        };
-        let mut lines = vec![match &found.matched {
-            Some(matched) => format!(
-                "Queue: {}. Its rules match {}.",
-                name(matched.queue),
-                text::rule_phrase(&matched.rule)
-            ),
-            None => format!(
-                "Queue: {}. No queue's rules match it.",
-                library
-                    .queues
-                    .iter()
-                    .find(|queue| queue.is_default)
-                    .map_or("Main", |queue| queue.settings.name.as_str())
-            ),
-        }];
-        if let Some(off) = &found.switched_off {
-            lines.push(format!(
-                "{} would match {}, but its rules are off.",
-                name(off.queue),
-                text::rule_phrase(&off.rule)
-            ));
-        }
-        lines
     }
 }
 
@@ -346,7 +257,7 @@ impl Render for RulesForm {
             .help(HELP)
             .on_toggle(cx.listener(|form, on: &bool, _, cx| {
                 form.on = *on;
-                form.answer = None;
+                form.forget_answer(cx);
                 cx.notify();
             }))
             .fields(fields)
@@ -399,7 +310,7 @@ impl RulesForm {
                     } else {
                         NameSyntax::Wildcards
                     };
-                    form.answer = None;
+                    form.forget_answer(cx);
                     cx.notify();
                 }),
                 cx,
@@ -427,7 +338,7 @@ impl RulesForm {
                     .filter_map(|i| CATEGORIES.get(*i))
                     .copied()
                     .collect();
-                form.answer = None;
+                form.forget_answer(cx);
                 cx.notify();
             }),
             cx,
@@ -449,7 +360,7 @@ impl RulesForm {
                     .filter_map(|i| PROTOCOLS.get(*i))
                     .map(|(protocol, _)| *protocol)
                     .collect();
-                form.answer = None;
+                form.forget_answer(cx);
                 cx.notify();
             }),
             cx,
@@ -457,64 +368,20 @@ impl RulesForm {
         .into_any_element()
     }
 
-    /// Test a link: a field and Try, with what the rules do with the link under it.
+    /// Test a link, under the rules it tries.
     fn trial(&self, cx: &mut Context<'_, Self>) -> AnyElement {
-        let theme = cx.theme();
-        let answer = match &self.answer {
-            Some(Answer::Lines(lines)) => {
-                v_flex()
-                    .gap_0p5()
-                    .children(lines.iter().enumerate().map(|(index, line)| {
-                        div()
-                            .text_role(
-                                if index == 0 {
-                                    Role::Body
-                                } else {
-                                    Role::Secondary
-                                },
-                                cx,
-                            )
-                            .child(line.clone())
-                    }))
-            }
-            Some(Answer::Problem(problem)) => v_flex().child(
-                div()
-                    .text_role(Role::Body, cx)
-                    .text_color(theme.danger)
-                    .child(problem.clone()),
-            ),
-            None => v_flex(),
-        };
         v_flex()
             .pt_2()
             .gap_2()
             .border_t_1()
-            .border_color(theme.border)
+            .border_color(cx.theme().border)
             .child(
                 div()
                     .pt_2()
                     .text_role(Role::Strong, cx)
                     .child("Test a link"),
             )
-            .child(
-                h_flex()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex_1()
-                            // Enter tries the link; let through, the dialog's Confirm saves the queue.
-                            .on_action(|_: &Confirm, _, _| {})
-                            .child(Input::new(&self.link)),
-                    )
-                    .child(
-                        Button::new("try-link")
-                            .label("Try")
-                            .loading(self.trying)
-                            .disabled(self.link.read(cx).value().trim().is_empty())
-                            .on_click(cx.listener(|form, _, window, cx| form.try_link(window, cx))),
-                    ),
-            )
-            .child(answer)
+            .child(self.trial.clone())
             .into_any_element()
     }
 }
