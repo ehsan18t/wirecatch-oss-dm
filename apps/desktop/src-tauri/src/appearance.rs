@@ -414,11 +414,22 @@ mod tests {
             themes: THEMES,
             accents: ACCENTS,
         };
-        let cases = serde_json::json!({
-            "dark_green": case(Theme::Dark, Accent::Green, Some("#0078d4")).script(),
-            "system_accent_on_windows": case(Theme::Light, Accent::System, Some("#a94dc1")).script(),
-            "system_accent_on_linux": case(Theme::System, Accent::System, None).script(),
-        });
+        // Sorted by name whatever serde_json's features: `preserve_order`, which another crate in
+        // the workspace may turn on, would keep a `json!` object in the order written.
+        let cases = std::collections::BTreeMap::from([
+            (
+                "dark_green",
+                case(Theme::Dark, Accent::Green, Some("#0078d4")).script(),
+            ),
+            (
+                "system_accent_on_windows",
+                case(Theme::Light, Accent::System, Some("#a94dc1")).script(),
+            ),
+            (
+                "system_accent_on_linux",
+                case(Theme::System, Accent::System, None).script(),
+            ),
+        ]);
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../src/lib/first-paint.generated.json");
         let written = format!("{}\n", serde_json::to_string_pretty(&cases).unwrap());
