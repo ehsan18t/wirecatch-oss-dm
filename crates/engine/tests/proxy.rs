@@ -6,13 +6,13 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error, ManualProxies, Outcome, Progress, ProxyChoice,
-    ProxySetting, Url, download,
+    Backoff, CancellationToken, DownloadRequest, Error, ManualProxies, Outcome, Progress,
+    ProxyChoice, ProxySetting, Url, download,
 };
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer};
 use wirecatch_test_support::http::{Config, TestServer};
 use wirecatch_test_support::proxy::{LoginWall, SocksConfig, SocksServer};
-use wirecatch_test_support::{TestResult, private_dir, test_data};
+use wirecatch_test_support::{PATIENCE, TestResult, private_dir, test_data};
 
 /// Manual proxies with `all` for every protocol.
 fn every_protocol(proxy: &str) -> ManualProxies {
@@ -258,4 +258,46 @@ async fn ftp_goes_by_name_through_a_socks5h_proxy_that_wants_a_login() {
         "{destinations:?}"
     );
     assert!(destinations.len() >= 2, "{destinations:?}");
+}
+
+/// A proxy that refuses the connection is not running: the download ends at
+/// once instead of waiting through its retries. Pauses longer than
+/// [`PATIENCE`] make a retry fail the test.
+#[tokio::test]
+async fn a_proxy_that_refuses_the_connection_ends_the_download_at_once() -> TestResult {
+    let http = TestServer::start(test_data(1024), Config::default()).await;
+    let ftp = FtpServer::start(FtpConfig::default()).await;
+    let closed = std::net::TcpListener::bind("127.0.0.1:0")?
+        .local_addr()?
+        .port();
+    let cases = [
+        (http.url("/f.bin"), format!("socks5://127.0.0.1:{closed}")),
+        (http.url("/f.bin"), format!("http://127.0.0.1:{closed}")),
+        (
+            ftp.url("ftp", "", "f.bin"),
+            format!("socks5://127.0.0.1:{closed}"),
+        ),
+    ];
+    for (url, proxy) in cases {
+        let dir = private_dir("proxy-refused")?;
+        let mut request = DownloadRequest::new(url.clone(), dir.path());
+        request.options.proxy = ProxyChoice::Manual(every_protocol(&proxy));
+        request.options.retry_backoff = Backoff::new(2 * PATIENCE, 2 * PATIENCE);
+        let ended = tokio::time::timeout(
+            PATIENCE,
+            download(
+                request,
+                Arc::new(Progress::default()),
+                CancellationToken::new(),
+            ),
+        )
+        .await
+        .map_err(|_| format!("{url} through {proxy} was retried"))?;
+        let error = ended.expect_err("nothing listens on the proxy's port");
+        assert!(
+            matches!(&error, Error::Network(e) if e.is_connect()),
+            "{proxy} {url}: {error:?}"
+        );
+    }
+    Ok(())
 }

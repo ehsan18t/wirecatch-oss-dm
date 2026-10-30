@@ -5,11 +5,14 @@ use std::hash::{BuildHasher, Hasher};
 use std::time::Duration;
 
 use reqwest::StatusCode;
+use url::Url;
 
 use crate::error::Error;
 use crate::ftp::reply;
 use crate::http;
 use crate::numeric::saturating_cast;
+use crate::options::DownloadOptions;
+use crate::proxy::Proxies;
 
 /// Consecutive refused attempts, while other connections of the same download
 /// are receiving data, after which a connection gives up its part to them.
@@ -123,15 +126,35 @@ pub(crate) enum Refusals {
     StepBack,
 }
 
+/// What the retry policy allows the requests for one link.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Retries {
+    /// The most attempts in a row that receive nothing
+    /// ([`DownloadOptions::max_retries`]).
+    pub max: u32,
+    pub backoff: Backoff,
+    /// Whether the link's connections go to a proxy, so a connection the
+    /// system reports refused is the proxy's.
+    pub through_proxy: bool,
+}
+
+impl Retries {
+    /// The rules `opts` set for `url`, going the way `proxies` send it.
+    pub fn for_link(opts: &DownloadOptions, proxies: &Proxies, url: &Url) -> Self {
+        Self {
+            max: opts.max_retries,
+            backoff: opts.retry_backoff,
+            through_proxy: proxies.goes_through(url),
+        }
+    }
+}
+
 /// The one retry policy: a connection's or a request's failed attempts in a
 /// row, and what follows the next one.
 #[derive(Debug)]
 pub(crate) struct Attempts {
     refusal_policy: Refusals,
-    /// The most attempts in a row that receive nothing
-    /// ([`DownloadOptions::max_retries`](crate::DownloadOptions::max_retries)).
-    max_retries: u32,
-    backoff: Backoff,
+    retries: Retries,
     /// Attempts in a row that received nothing.
     failures: u32,
     /// Of those, attempts the server turned away.
@@ -139,13 +162,11 @@ pub(crate) struct Attempts {
 }
 
 impl Attempts {
-    /// No failed attempt yet; at most `max_retries` in a row that receive
-    /// nothing, with `backoff`'s pauses between them.
-    pub fn new(refusal_policy: Refusals, max_retries: u32, backoff: Backoff) -> Self {
+    /// No failed attempt yet.
+    pub fn new(refusal_policy: Refusals, retries: Retries) -> Self {
         Self {
             refusal_policy,
-            max_retries,
-            backoff,
+            retries,
             failures: 0,
             refusals: 0,
         }
@@ -163,6 +184,13 @@ impl Attempts {
         retry_after: Option<Duration>,
         progressed: bool,
     ) -> Next {
+        // A proxy that refuses connections is not running, and waiting does not
+        // start it (D102).
+        if self.retries.through_proxy
+            && matches!(error, Error::Network(e) if e.is_refused_by_system())
+        {
+            return Next::GiveUp;
+        }
         let refused = self.refusal_policy == Refusals::StepBack && is_refusal(error);
         if !(error.is_retryable() || refused) {
             return Next::GiveUp;
@@ -171,7 +199,7 @@ impl Attempts {
         // (`DownloadOptions::max_retries`).
         if progressed {
             self.failures = 0;
-        } else if self.failures >= self.max_retries {
+        } else if self.failures >= self.retries.max {
             return Next::GiveUp;
         } else {
             self.failures += 1;
@@ -181,8 +209,9 @@ impl Attempts {
         } else {
             0
         };
-        let delay = self.backoff.delay(self.failures, retry_after);
-        let long_wait = retry_after.is_some() || delay > self.backoff.max;
+        let backoff = self.retries.backoff;
+        let delay = backoff.delay(self.failures, retry_after);
+        let long_wait = retry_after.is_some() || delay > backoff.max;
         if self.refusals > 0 && (self.refusals >= REFUSALS_BEFORE_STEPPING_BACK || long_wait) {
             Next::StepBackOrRetry(delay)
         } else {
@@ -213,6 +242,8 @@ pub(crate) fn is_refusal(error: &Error) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
+
     use super::*;
 
     #[test]
@@ -233,6 +264,15 @@ mod tests {
         assert_eq!(tiny.pause(1), Duration::from_nanos(1));
     }
 
+    /// At most `max` attempts in a row with the default pauses, directly.
+    fn retries(max: u32) -> Retries {
+        Retries {
+            max,
+            backoff: Backoff::default(),
+            through_proxy: false,
+        }
+    }
+
     fn ftp(code: u16) -> Error {
         Error::FtpReply {
             code,
@@ -243,7 +283,7 @@ mod tests {
 
     /// What two failed attempts in a row, receiving nothing, lead to.
     fn refused_twice(error: &Error) -> (Next, Next) {
-        let mut attempts = Attempts::new(Refusals::StepBack, 6, Backoff::default());
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(6));
         let first = attempts.after_failure(error, None, false);
         let second = attempts.after_failure(error, None, false);
         (first, second)
@@ -268,15 +308,15 @@ mod tests {
         let (_, second) = refused_twice(&ftp(450));
         assert!(matches!(second, Next::Retry(_)), "{second:?}");
         // A permanent failure ends at once.
-        let mut attempts = Attempts::new(Refusals::StepBack, 6, Backoff::default());
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(6));
         assert_eq!(attempts.after_failure(&ftp(550), None, false), Next::GiveUp);
     }
 
     #[test]
     fn the_retry_budget_and_progress() {
-        let mut attempts = Attempts::new(Refusals::StepBack, 0, Backoff::default());
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(0));
         assert_eq!(attempts.after_failure(&ftp(421), None, false), Next::GiveUp);
-        let mut attempts = Attempts::new(Refusals::StepBack, 1, Backoff::default());
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(1));
         assert!(matches!(
             attempts.after_failure(&ftp(450), None, false),
             Next::Retry(_)
@@ -284,7 +324,7 @@ mod tests {
         assert_eq!(attempts.after_failure(&ftp(450), None, false), Next::GiveUp);
         // An attempt that received something does not count, and starts the
         // count again.
-        let mut attempts = Attempts::new(Refusals::StepBack, 1, Backoff::default());
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(1));
         attempts.after_failure(&ftp(450), None, false);
         assert!(matches!(
             attempts.after_failure(&ftp(450), None, true),
@@ -295,7 +335,7 @@ mod tests {
             Next::Retry(_)
         ));
         // A refusal that asks for a long wait steps back at once.
-        let mut attempts = Attempts::new(Refusals::StepBack, 6, Backoff::default());
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(6));
         let busy = Error::HttpStatus {
             status: 503,
             url: "https://h/f".into(),
@@ -327,7 +367,7 @@ mod tests {
 
     #[test]
     fn a_lone_request_treats_refusals_as_failures() {
-        let mut attempts = Attempts::new(Refusals::AsFailures, 6, Backoff::default());
+        let mut attempts = Attempts::new(Refusals::AsFailures, retries(6));
         assert_eq!(attempts.after_failure(&ftp(530), None, false), Next::GiveUp);
         let busy = Error::HttpStatus {
             status: 503,
@@ -339,6 +379,41 @@ mod tests {
                 Next::Retry(_)
             ));
         }
+    }
+
+    #[test]
+    fn a_proxy_that_refuses_the_connection_is_given_up_on() {
+        // ECONNREFUSED as each system numbers it.
+        let code = if cfg!(windows) { 10061 } else { 111 };
+        let refused = || Error::socket("connecting", io::Error::from_raw_os_error(code), true);
+        let mut through = Retries {
+            through_proxy: true,
+            ..retries(6)
+        };
+        let mut attempts = Attempts::new(Refusals::StepBack, through);
+        assert_eq!(
+            attempts.after_failure(&refused(), None, false),
+            Next::GiveUp
+        );
+        // Straight to the server, the refusal is retried as before.
+        through.through_proxy = false;
+        let mut attempts = Attempts::new(Refusals::AsFailures, through);
+        assert!(matches!(
+            attempts.after_failure(&refused(), None, false),
+            Next::Retry(_)
+        ));
+        // The server's refusal relayed by a SOCKS proxy is not the proxy's.
+        let relayed = Error::socket(
+            "connecting through the proxy",
+            io::Error::new(io::ErrorKind::ConnectionRefused, "refused by the server"),
+            true,
+        );
+        let mut attempts = Attempts::new(Refusals::AsFailures, retries(6));
+        attempts.retries.through_proxy = true;
+        assert!(matches!(
+            attempts.after_failure(&relayed, None, false),
+            Next::Retry(_)
+        ));
     }
 
     #[test]
