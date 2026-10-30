@@ -21,10 +21,13 @@ chrono.workspace = true
 # app downloads, both its sections: which names are open to anyone's
 # registration (D39, D44). Its default feature adds each rule's ASCII form.
 publicsuffix = "2.3.0"
+regex.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "time"] }
 tracing.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 wirecatch-test-support = { path = "../test-support" }
