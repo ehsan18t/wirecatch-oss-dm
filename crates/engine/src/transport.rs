@@ -18,7 +18,7 @@ use crate::net_guard::Guard;
 use crate::options::DownloadOptions;
 use crate::request::RequestContext;
 
-use crate::retry::{Attempts, Next, Refusals};
+use crate::retry::{Attempts, Next, Refusals, Retries};
 
 /// Where the file comes from; shared by every connection of one download.
 #[expect(
@@ -221,7 +221,8 @@ pub(crate) async fn open(
                 .ftp_route(host)
                 .map_err(|setting| Error::FtpProxyUnsupported { setting })?;
             let target = ftp::Target::new(url, opts, clients.tls(), via)?;
-            let probe = with_retries(opts, cancel, || ftp::probe(&target, cancel)).await?;
+            let retries = Retries::for_link(opts, clients.proxies(), url);
+            let probe = with_retries(retries, cancel, || ftp::probe(&target, cancel)).await?;
             Ok(Opened {
                 final_url: target.display_url().clone(),
                 ranged: probe.ranged,
@@ -252,7 +253,11 @@ async fn open_http(
     session.guard = guard;
     let client = clients.build()?;
     let limit = opts.request_limit();
-    let probe = with_retries(opts, cancel, || http::probe(&client, &url, &session, limit)).await?;
+    let retries = Retries::for_link(opts, clients.proxies(), &url);
+    let probe = with_retries(retries, cancel, || {
+        http::probe(&client, &url, &session, limit)
+    })
+    .await?;
     #[cfg(feature = "http3")]
     let h3 = if opts.http3 {
         http3::Origin::advertised(
@@ -293,7 +298,7 @@ async fn open_http(
 /// A 429 or 503 with `Retry-After` waits as long as the server asked (up to
 /// five minutes) instead of the usual backoff.
 async fn with_retries<T, F, Fut>(
-    opts: &DownloadOptions,
+    retries: Retries,
     cancel: &CancellationToken,
     mut attempt: F,
 ) -> Result<T>
@@ -301,7 +306,7 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, Failure>>,
 {
-    let mut attempts = Attempts::new(Refusals::AsFailures, opts.max_retries, opts.retry_backoff);
+    let mut attempts = Attempts::new(Refusals::AsFailures, retries);
     loop {
         let failure = match attempt().await {
             Ok(value) => return Ok(value),

@@ -228,8 +228,10 @@
 //! A proxy may be `http://`, `https://`, `socks4://`, `socks5://` or
 //! `socks5h://` (the proxy resolves names), with a login in its URL
 //! (`http://user:password@proxy.example:8080`). A proxy that refuses the
-//! login ends the download with [`Error::ProxyLoginRefused`]. HTTP/3 is not
-//! used through a proxy, since QUIC would go around it.
+//! login ends the download with [`Error::ProxyLoginRefused`]. One that refuses
+//! the connection itself (nothing listens at its address) ends it at once with
+//! that [`Error::Network`], without retrying. HTTP/3 is not used through a
+//! proxy, since QUIC would go around it.
 //!
 //! # HTTP/3 (experimental)
 //!

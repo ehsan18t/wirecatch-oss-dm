@@ -42,7 +42,7 @@ pub struct DownloadOptions {
     /// Bytes collected per connection before each disk write (default 1 MiB).
     pub buffer_size: usize,
     /// Consecutive failed attempts without progress before a connection gives
-    /// up (default 6).
+    /// up (default 6). A proxy that refuses the connection is not retried.
     pub max_retries: u32,
     /// The pauses between those attempts (default 500 ms, doubling up to
     /// 10 s). A server's `Retry-After` takes their place.
