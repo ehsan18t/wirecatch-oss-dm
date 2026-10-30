@@ -6,6 +6,7 @@ use wirecatch_protocol::app::{
     ProcessingStep, TimeOfDay, WaitReason,
 };
 use wirecatch_protocol::extension::MediaKind;
+use wirecatch_protocol::rules::{LinkProtocol, Rule};
 use wirecatch_shell::activity::format_bytes;
 
 const SECONDS_PER_MINUTE: u64 = 60;
@@ -258,6 +259,33 @@ pub fn file_kind(name: &str, category: Category) -> String {
             format!("{} file", ext.to_ascii_uppercase())
         }
         _ => category_label(category).to_owned(),
+    }
+}
+
+/// What `rule` matches: `youtube.com`, `files named *.iso`, `.iso files`, `videos`.
+pub fn rule_phrase(rule: &Rule) -> String {
+    match rule {
+        Rule::Site(site) => site.clone(),
+        Rule::FileName(name) => format!("files named {name}"),
+        Rule::FileType(extension) => format!(".{extension} files"),
+        Rule::Category(category) => match category {
+            Category::Video => "videos",
+            Category::Audio => "music and audio",
+            Category::Archive => "archives",
+            Category::Document => "documents",
+            Category::Program => "programs",
+            Category::Image => "images",
+            Category::Other => "other files",
+        }
+        .to_owned(),
+        Rule::Protocol(protocol) => format!(
+            "{} links",
+            match protocol {
+                LinkProtocol::Http => "HTTP",
+                LinkProtocol::Https => "HTTPS",
+                LinkProtocol::Ftp => "FTP",
+            }
+        ),
     }
 }
 
