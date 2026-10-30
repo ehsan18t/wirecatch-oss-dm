@@ -1,11 +1,11 @@
-//! What the windows show of the download manager: the downloads, the queues, the proxy servers
-//! and the settings,
+//! What the windows show of the download manager: the downloads, the queues, the proxy servers,
+//! the add-ons and the settings,
 //! loaded once and kept current from the manager's events, in the order the manager lists them.
 
 use gpui_kit::{AppContext as _, Context, Entity, EventEmitter};
 use tokio::sync::broadcast::error::RecvError;
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{AppSettings, DownloadSummary, Queue, UiEvent};
+use wirecatch_protocol::app::{AddonInfo, AppSettings, DownloadSummary, Queue, UiEvent};
 use wirecatch_protocol::proxy::ProxyServer;
 use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::api;
@@ -26,6 +26,7 @@ pub struct Library {
     pub downloads: Vec<DownloadSummary>,
     pub queues: Vec<Queue>,
     pub proxies: Vec<ProxyServer>,
+    pub addons: Vec<AddonInfo>,
     pub settings: Option<AppSettings>,
 }
 
@@ -35,6 +36,7 @@ struct Snapshot {
     downloads: Vec<DownloadSummary>,
     queues: Vec<Queue>,
     proxies: Vec<ProxyServer>,
+    addons: Vec<AddonInfo>,
     settings: AppSettings,
 }
 
@@ -53,6 +55,7 @@ impl Library {
                 downloads: Vec::new(),
                 queues: Vec::new(),
                 proxies: Vec::new(),
+                addons: Vec::new(),
                 settings: None,
             }
         })
@@ -67,6 +70,7 @@ impl Library {
                 downloads: api::list_downloads(&manager),
                 queues: api::list_queues(&manager),
                 proxies: api::list_proxy_servers(&manager),
+                addons: api::list_addons(&manager),
                 settings: api::get_settings(&manager),
                 events,
             }
@@ -84,12 +88,14 @@ impl Library {
                         downloads,
                         queues,
                         proxies,
+                        addons,
                         settings,
                     } = snapshot;
                     let updated = this.update(cx, |library, cx| {
                         library.downloads = downloads;
                         library.queues = queues;
                         library.proxies = proxies;
+                        library.addons = addons;
                         library.settings = Some(settings);
                         library.loaded = Loaded::Ready;
                         cx.emit(SettingsChanged);
@@ -137,6 +143,7 @@ impl Library {
             UiEvent::DownloadsRemoved(ids) => self.downloads.retain(|row| !ids.contains(&row.id)),
             UiEvent::QueuesChanged(queues) => self.queues = queues,
             UiEvent::ProxyServersChanged(proxies) => self.proxies = proxies,
+            UiEvent::AddonsChanged(addons) => self.addons = addons,
             UiEvent::SettingsChanged(settings) => {
                 self.settings = Some(*settings);
                 cx.emit(SettingsChanged);
