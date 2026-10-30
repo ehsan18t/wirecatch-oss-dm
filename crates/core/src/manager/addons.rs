@@ -856,6 +856,7 @@ impl Manager {
         let mut options = crate::headers::download_options(ADDON_NETWORK, policy.proxy);
         options.connections = policy.connections;
         options.rate_limiters = policy.limiters;
+        options.retry_backoff = policy.retry_backoff;
         options
     }
 

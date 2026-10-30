@@ -7,7 +7,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use wirecatch_engine::{
-    CancellationToken, DownloadOptions, DownloadRequest, Error, Fetcher, MAX_BUFFER_SIZE,
+    Backoff, CancellationToken, DownloadOptions, DownloadRequest, Error, Fetcher, MAX_BUFFER_SIZE,
     MAX_CONNECTIONS, Progress, download,
 };
 use wirecatch_test_support::http::{Config, TestServer};
@@ -19,7 +19,7 @@ const DEADLINE: Duration = Duration::from_secs(10);
 /// An option's name and a way to set it out of range.
 type Unworkable = (&'static str, fn(&mut DownloadOptions));
 
-/// Each option set to a value that cannot work: zero, or above its limit.
+/// Each option set to a value that cannot work: zero, or out of its range.
 fn unworkable() -> Vec<Unworkable> {
     vec![
         ("connections", |o| o.connections = 0),
@@ -27,6 +27,10 @@ fn unworkable() -> Vec<Unworkable> {
         ("min_split", |o| o.min_split = 0),
         ("buffer_size", |o| o.buffer_size = 0),
         ("buffer_size", |o| o.buffer_size = MAX_BUFFER_SIZE + 1),
+        ("retry_backoff", |o| o.retry_backoff.first = Duration::ZERO),
+        ("retry_backoff", |o| {
+            o.retry_backoff = Backoff::new(Duration::from_secs(2), Duration::from_secs(1));
+        }),
         ("stall_timeout", |o| o.stall_timeout = Duration::ZERO),
         ("connect_timeout", |o| o.connect_timeout = Duration::ZERO),
         ("checkpoint_interval", |o| {

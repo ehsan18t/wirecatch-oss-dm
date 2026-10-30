@@ -22,7 +22,7 @@ use crate::net_guard::{PrivateNetwork, private_guard};
 use crate::numeric::clamp_to_len;
 use crate::options::DownloadOptions;
 use crate::receive::{Received, receive, skip_start};
-use crate::retry::{Attempts, Next, Refusals};
+use crate::retry::{Attempts, Backoff, Next, Refusals};
 use crate::units::KIB_USIZE;
 
 /// Size of the write buffer used by [`Fetcher::save`].
@@ -104,6 +104,7 @@ struct Inner {
     clients: Vec<Client>,
     next: AtomicUsize,
     max_retries: u32,
+    retry_backoff: Backoff,
     stall_timeout: Duration,
     rate_limiters: Vec<Arc<RateLimiter>>,
     cancel: CancellationToken,
@@ -217,6 +218,7 @@ impl Fetcher {
                 clients,
                 next: AtomicUsize::new(0),
                 max_retries: options.max_retries,
+                retry_backoff: options.retry_backoff,
                 stall_timeout: options.stall_timeout,
                 rate_limiters: options.rate_limiters.clone(),
                 cancel,
@@ -352,7 +354,11 @@ impl Fetcher {
             written: 0,
             first: None,
         };
-        let mut attempts = Attempts::new(Refusals::AsFailures, self.inner.max_retries);
+        let mut attempts = Attempts::new(
+            Refusals::AsFailures,
+            self.inner.max_retries,
+            self.inner.retry_backoff,
+        );
         loop {
             let before = position.written;
             let attempt = self

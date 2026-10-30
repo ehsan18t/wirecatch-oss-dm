@@ -495,6 +495,7 @@ fn engine_request(
     let options = &mut request.options;
     options.connections = policy.connections;
     options.rate_limiters = policy.limiters;
+    options.retry_backoff = policy.retry_backoff;
     options.headers = headers::to_map(&entry.origin.headers);
     if let Some(agent) = &entry.origin.user_agent {
         options.user_agent.clone_from(agent);
@@ -519,6 +520,7 @@ mod tests {
             connections: 1,
             limiters: Vec::new(),
             proxy: ProxyChoice::System,
+            retry_backoff: wirecatch_engine::Backoff::default(),
         };
         let run = |url: &str, chosen_by| {
             engine_request(

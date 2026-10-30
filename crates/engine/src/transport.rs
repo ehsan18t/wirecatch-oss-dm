@@ -301,7 +301,7 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, Failure>>,
 {
-    let mut attempts = Attempts::new(Refusals::AsFailures, opts.max_retries);
+    let mut attempts = Attempts::new(Refusals::AsFailures, opts.max_retries, opts.retry_backoff);
     loop {
         let failure = match attempt().await {
             Ok(value) => return Ok(value),

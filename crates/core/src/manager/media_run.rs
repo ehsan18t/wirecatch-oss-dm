@@ -143,6 +143,7 @@ impl Manager {
         );
         options.connections = policy.connections;
         options.rate_limiters = policy.limiters;
+        options.retry_backoff = policy.retry_backoff;
         let tools = state.addon.tools.clone();
         let manager = Arc::downgrade(&self.inner);
         let work = Job {
