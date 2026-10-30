@@ -1,14 +1,30 @@
-//! Opening a finished download and showing it in its folder. A program asks first (D43.1).
+//! Opening a finished download, showing it in its folder, and picking a folder. A program asks
+//! first (D43.1).
 
+use std::future::Future;
 use std::path::PathBuf;
 
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::ButtonVariant;
-use gpui_kit::{App, Window};
+use gpui_kit::{App, PathPromptOptions, Window};
 use wirecatch_protocol::DownloadId;
 use wirecatch_shell::api::{self, ProgramWarning, Reveal, ToOpen};
 
 use crate::backend::Backend;
+
+/// Asks for a folder to save in; `None` when none is picked.
+pub fn choose_folder(cx: &mut App) -> impl Future<Output = Option<String>> + use<> {
+    let picked = cx.prompt_for_paths(PathPromptOptions {
+        files: false,
+        directories: true,
+        multiple: false,
+        prompt: Some("Save here".into()),
+    });
+    async move {
+        let folder = picked.await.ok()?.ok()??.into_iter().next()?;
+        Some(folder.to_string_lossy().into_owned())
+    }
+}
 
 /// Opens download `id`'s finished file; a program opens only once the person agrees in `window`.
 pub fn open(id: DownloadId, window: &mut Window, cx: &mut App) {

@@ -2,8 +2,6 @@
 //! link, where they are saved, in which queue (Automatic, where the rules send each, unless one is
 //! picked), and whether they start now. A link to a video page is read for its qualities (D51).
 
-use std::path::PathBuf;
-
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::component::select::{Select, SelectItem, SelectState};
@@ -12,8 +10,8 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, PathPromptOptions,
-    Render, SharedString, Styled as _, Subscription, Window, div, px,
+    App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, SharedString,
+    Styled as _, Subscription, Window, div, px,
 };
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AddRequest, Setting};
@@ -22,8 +20,8 @@ use wirecatch_sites::video_sites::video_site_for;
 
 use crate::backend::Backend;
 use crate::library::Library;
-use crate::links;
 use crate::ui::{Callout, Field};
+use crate::{files, links};
 
 /// Said when the box holds no link to send.
 /// Where links go with no folder picked and no queue folder.
@@ -193,21 +191,13 @@ impl AddForm {
     }
 
     fn choose_folder(cx: &mut Context<'_, Self>) {
-        let picked = cx.prompt_for_paths(PathPromptOptions {
-            files: false,
-            directories: true,
-            multiple: false,
-            prompt: Some("Save here".into()),
-        });
+        let picked = files::choose_folder(cx);
         cx.spawn(async move |form, cx| {
-            let Ok(Ok(Some(paths))) = picked.await else {
-                return;
-            };
-            let Some(folder) = paths.into_iter().next().map(PathBuf::into_os_string) else {
+            let Some(folder) = picked.await else {
                 return;
             };
             _ = form.update(cx, |form, cx| {
-                form.folder = Some(folder.to_string_lossy().into_owned());
+                form.folder = Some(folder);
                 cx.notify();
             });
         })
