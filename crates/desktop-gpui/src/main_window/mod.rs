@@ -60,12 +60,16 @@ actions!(
         PauseOrResume,
         OpenSelected,
         ShowDetails,
-        RemoveSelected
+        RemoveSelected,
+        SearchToList
     ]
 );
 
 /// The key context the main window's shortcuts work in; a text field's own keys come first.
 const KEY_CONTEXT: &str = "MainWindow";
+
+/// The search field's context, where Down leaves the field for the list.
+const SEARCH_CONTEXT: &str = "MainSearch";
 
 const ALL_PLACEHOLDER: &str = "Search downloads or paste links";
 
@@ -94,6 +98,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("enter", OpenSelected, Some(KEY_CONTEXT)),
         KeyBinding::new("alt-enter", ShowDetails, Some(KEY_CONTEXT)),
         KeyBinding::new("delete", RemoveSelected, Some(KEY_CONTEXT)),
+        // Bound after the field's own Down, which it outranks in the field.
+        KeyBinding::new("down", SearchToList, Some("MainSearch > Input")),
     ]);
 }
 
@@ -380,7 +386,11 @@ impl MainWindow {
             lifecycle::window_closing(close_to_tray, cx);
             true
         });
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder(ALL_PLACEHOLDER));
+        let search = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(ALL_PLACEHOLDER)
+                .clean_on_escape()
+        });
         let searched = cx.subscribe_in(
             &search,
             window,
@@ -515,6 +525,10 @@ impl Render for MainWindow {
             .on_action(cx.listener(|this, _: &ToggleSettings, _, cx| this.toggle_settings(cx)))
             .when(self.screen == Screen::Downloads, |window| {
                 window
+                    .on_action(cx.listener(|this, _: &SearchToList, window, cx| {
+                        this.focus.focus(window, cx);
+                        this.step(Step::Down, false, cx);
+                    }))
                     .on_action(
                         cx.listener(|this, _: &CursorUp, _, cx| this.step(Step::Up, false, cx)),
                     )
