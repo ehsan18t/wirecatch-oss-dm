@@ -893,7 +893,7 @@ Decided with the maintainer on 2026-10-30. It adds to D52.5 and D65.
 
 Decided with the maintainer on 2026-10-30. It carries out D95.
 
-1. The GPUI app is built beside the Tauri app, as `apps/desktop-gpui` (`wirecatch-desktop-gpui`), and merges to main a part at a time. The Tauri app keeps working until the GPUI app has every screen; one change then removes Tauri, the Svelte desktop interface and their checks, and the GPUI app takes `apps/desktop`.
+1. The GPUI app is built beside the Tauri app, as `crates/desktop-gpui` (`wirecatch-desktop-gpui`; every folder of `apps/` is a JavaScript package), and merges to main a part at a time. The Tauri app keeps working until the GPUI app has every screen; one change then removes Tauri, the Svelte desktop interface and their checks.
 2. It depends on `gpui-kit` alone, the newest release on crates.io (0.8.1), which brings GPUI and gpui-component; both are Apache-2.0. No git dependency is added (`deny.toml`).
 3. The shell's code that does not touch Tauri moves, unchanged where it can, into a crate both apps use, rather than being written twice; what Tauri does for the shell (windows, tray, dialogs, single instance) is replaced in the GPUI app itself.
 4. The look is the project's own, laid out the way Zed is: dense, quiet surfaces, one accent, text before chrome. The Theme and Accent settings stay as they are (Cyan by default), so the settings file and the protocol do not change.
