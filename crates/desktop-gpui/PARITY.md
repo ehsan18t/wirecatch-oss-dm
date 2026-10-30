@@ -20,7 +20,8 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Queue "…" menu: Start now (outside its schedule), Pause or Resume the queue, Move up, Move down.
 - [ ] Queue menu: Edit queue (with the Queue dialog).
 - [ ] Drag queues to reorder them, the default queue first (D72.9).
-- [ ] Settings (Ctrl+,), Find any action (Ctrl+Shift+P) and Keyboard shortcuts (F1), reachable from the main window.
+- [x] Settings (Ctrl+,), at the foot of the navigation, where the settings screen offers Downloads.
+- [ ] Find any action (Ctrl+Shift+P) and Keyboard shortcuts (F1), reachable from the main window.
 - [x] List header: the view's title and summary; Pause all or Resume all.
 - [ ] List header in a queue view: description, schedule and limits, Start now, Pause or Resume queue, Edit queue; "about X left"; "matching '…'".
 - [x] New download button (Ctrl+N).
@@ -61,14 +62,16 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 
 ## Settings
 
-- [ ] General: theme, accent, start at sign-in, close to tray, updates, suffix list, backup, log folder.
-- [ ] Notifications.
+- [x] General: theme, accent, start at sign-in, close to tray, updates, suffix list, log folder.
+- [ ] General: backup (with the Export and import dialog).
+- [x] Notifications.
 - [ ] Saving files: folder, if the file exists, folders by file type.
 - [ ] Browser.
 - [ ] Media, with the add-on card.
 - [ ] Speed and queues, with Test a link.
 - [ ] Network: proxies.
-- [ ] Settings search; jump to a setting from the palette.
+- [x] Settings search.
+- [ ] Jump to a setting from the palette.
 
 ## Download windows (D23, D43)
 

@@ -17,7 +17,8 @@ use wirecatch_protocol::rules::AddDownloads;
 use wirecatch_queues::schedule;
 use wirecatch_shell::api;
 
-use super::{Group, MainWindow, View};
+use super::{Group, MainWindow, Screen, View};
+use crate::backend::act;
 use crate::text;
 use crate::ui::{Role, Typed as _, tokens};
 
@@ -75,6 +76,37 @@ impl MainWindow {
                     .gap_4()
                     .child(v_flex().gap_px().children(downloads))
                     .child(queues),
+            )
+            .child(self.screen_switch(cx))
+    }
+
+    /// The foot of the navigation: Settings, or the way back to the downloads from there.
+    pub(super) fn screen_switch(&self, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
+        let (icon, label) = match self.screen {
+            Screen::Downloads => (Icon::new(IconName::Settings), "Settings"),
+            Screen::Settings => (Icon::new(Lucide::Download), "Downloads"),
+        };
+        let theme = cx.theme();
+        div()
+            .p_2()
+            .border_t_1()
+            .border_color(theme.sidebar_border)
+            .child(
+                h_flex()
+                    .id("screen-switch")
+                    .h(px(30.))
+                    .px_2()
+                    .gap_2()
+                    .rounded(theme.radius)
+                    .cursor_pointer()
+                    .text_color(theme.muted_foreground)
+                    .hover(|item| {
+                        item.bg(theme.sidebar_accent.opacity(0.6))
+                            .text_color(theme.sidebar_accent_foreground)
+                    })
+                    .child(icon.with_size(tokens::ICON))
+                    .child(label)
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_settings(cx))),
             )
     }
 
@@ -377,7 +409,9 @@ fn queue_menu(queue: &Queue, index: usize, total: usize, order: Vec<Queue>) -> i
                 PopupMenuItem::new("Start now (ignore schedule)")
                     .icon(IconName::Play)
                     .on_click(move |_, window, cx| {
-                        run(window, cx, move |manager| api::start_queue_now(manager, id));
+                        act(window.window_handle(), cx, move |manager| {
+                            api::start_queue_now(manager, id)
+                        });
                     }),
             )
         })
@@ -393,7 +427,7 @@ fn queue_menu(queue: &Queue, index: usize, total: usize, order: Vec<Queue>) -> i
                 IconName::Pause
             })
             .on_click(move |_, window, cx| {
-                run(window, cx, move |manager| {
+                act(window.window_handle(), cx, move |manager| {
                     api::set_queue_paused(manager, id, !paused)
                 });
             }),
@@ -403,56 +437,32 @@ fn queue_menu(queue: &Queue, index: usize, total: usize, order: Vec<Queue>) -> i
             gpui_kit::component::menu::PopupMenu::separator,
         )
         .when(index > 1, |menu| {
-            let order = up(index - 1);
-            menu.item(
-                PopupMenuItem::new("Move up")
-                    .icon(Lucide::ArrowUp)
-                    .on_click(move |_, window, cx| {
-                        let order = order.clone();
-                        run(window, cx, move |manager| {
-                            api::set_queue_order(manager, &order)
-                        });
-                    }),
-            )
+            menu.item(reorder(
+                "Move up",
+                Icon::new(Lucide::ArrowUp),
+                up(index - 1),
+            ))
         })
         .when(index > 0 && index < last, |menu| {
-            let order = moved(index + 1);
-            menu.item(
-                PopupMenuItem::new("Move down")
-                    .icon(IconName::ArrowDown)
-                    .on_click(move |_, window, cx| {
-                        let order = order.clone();
-                        run(window, cx, move |manager| {
-                            api::set_queue_order(manager, &order)
-                        });
-                    }),
-            )
+            menu.item(reorder(
+                "Move down",
+                Icon::new(IconName::ArrowDown),
+                moved(index + 1),
+            ))
         })
     })
 }
 
-/// Runs a queue command; a refusal shows as a notification.
-fn run(
-    window: &mut gpui_kit::Window,
-    cx: &mut App,
-    work: impl FnOnce(&wirecatch_core::Manager) -> Result<(), wirecatch_protocol::wire::ProtocolError>
-    + Send
-    + 'static,
-) {
-    let done = crate::backend::Backend::run(cx, move |manager| async move { work(&manager) });
-    window
-        .spawn(cx, async move |cx| {
-            let refused = match done.await {
-                Ok(Ok(Ok(()))) | Err(_) => return,
-                Ok(Ok(Err(error))) => error.message,
-                Ok(Err(unopened)) => unopened.reason.message,
-            };
-            _ = cx.update(|window, cx| {
-                use gpui_kit::component::WindowExt as _;
-                window.push_notification(refused, cx);
+/// A menu item that puts the queues in `order`.
+fn reorder(label: &'static str, icon: Icon, order: Vec<QueueId>) -> PopupMenuItem {
+    PopupMenuItem::new(label)
+        .icon(icon)
+        .on_click(move |_, window, cx| {
+            let order = order.clone();
+            act(window.window_handle(), cx, move |manager| {
+                api::set_queue_order(manager, &order)
             });
         })
-        .detach();
 }
 
 fn group_icon(group: Group) -> Icon {

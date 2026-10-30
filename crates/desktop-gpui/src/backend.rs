@@ -4,8 +4,10 @@
 use std::future::Future;
 use std::sync::Arc;
 
-use gpui_kit::{App, Global};
+use gpui_kit::component::WindowExt as _;
+use gpui_kit::{AnyWindowHandle, App, Global};
 use wirecatch_core::{Manager, ManagerConfig};
+use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::host::{self, Core, Unopened};
 
 /// The manager this process hosts and the runtime its work runs on.
@@ -49,6 +51,37 @@ impl Backend {
             Ok(work(manager).await)
         })
     }
+}
+
+/// Runs a command on the manager; a refusal shows as a notification in `window`.
+pub fn command<F, Fut>(window: AnyWindowHandle, cx: &mut App, work: F)
+where
+    F: FnOnce(Manager) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<(), ProtocolError>> + Send + 'static,
+{
+    let done = Backend::run(cx, work);
+    cx.spawn(async move |cx| {
+        let refused = match done.await {
+            Ok(Ok(Ok(()))) => return,
+            Ok(Ok(Err(error))) => error.message,
+            Ok(Err(unopened)) => unopened.reason.message,
+            Err(e) => {
+                tracing::error!("a command stopped unexpectedly: {e}");
+                return;
+            }
+        };
+        _ = window.update(cx, |_, window, cx| window.push_notification(refused, cx));
+    })
+    .detach();
+}
+
+/// [`command`] for work that does not wait.
+pub fn act(
+    window: AnyWindowHandle,
+    cx: &mut App,
+    work: impl FnOnce(&Manager) -> Result<(), ProtocolError> + Send + 'static,
+) {
+    command(window, cx, move |manager| async move { work(&manager) });
 }
 
 /// Where the manager keeps its data and which folders it saves to.

@@ -116,7 +116,7 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
 
 /// The accent in this scheme and the text that goes on it, each pair at 4.5:1 contrast or more.
 /// The system accent is not read yet, so it shows Wirecatch's own.
-fn accent_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
+pub fn accent_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
     let (light_tone, dark_tone) = match accent {
         Accent::Cyan | Accent::System => (0x000a_6b70, 0x004f_d1c7),
         Accent::Blue => (0x0000_65b8, 0x0061_cdff),
