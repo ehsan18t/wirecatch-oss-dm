@@ -1,7 +1,7 @@
 // The sites whose pages show videos (D51), in one list for both apps: the extension offers to send such a page to the app, and the app reads a link to one for its video when it is added. The person can add sites of their own (`ExtensionSettings::video_sites`), which both apps take with this list.
 
 import { normalizeSite } from './extension-settings';
-import SITES from './video-sites.json';
+import SITES from './video-sites.json' with { type: 'json' };
 
 /**
  * Well-known video and audio sites whose pages need an extractor (the app's media add-on) to find
