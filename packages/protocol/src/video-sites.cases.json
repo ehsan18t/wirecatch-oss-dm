@@ -1,0 +1,365 @@
+{
+  "pages": [
+    {
+      "url": "https://www.youtube.com/watch?v=abc",
+      "name": "YouTube"
+    },
+    {
+      "url": "https://m.youtube.com/shorts/abc",
+      "name": "YouTube"
+    },
+    {
+      "url": "https://youtu.be/abc",
+      "name": "YouTube"
+    },
+    {
+      "url": "https://vimeo.com/123456",
+      "name": "Vimeo"
+    },
+    {
+      "url": "https://www.dailymotion.com/video/x8abc",
+      "name": "Dailymotion"
+    },
+    {
+      "url": "https://www.twitch.tv/videos/123",
+      "name": "Twitch"
+    },
+    {
+      "url": "https://clips.twitch.tv/SomeClip",
+      "name": "Twitch"
+    },
+    {
+      "url": "https://x.com/someone/status/123",
+      "name": "X"
+    },
+    {
+      "url": "https://twitter.com/someone/status/123",
+      "name": "X"
+    },
+    {
+      "url": "https://www.facebook.com/watch/?v=1",
+      "name": "Facebook"
+    },
+    {
+      "url": "https://www.instagram.com/reel/abc/",
+      "name": "Instagram"
+    },
+    {
+      "url": "https://www.tiktok.com/@someone/video/123",
+      "name": "TikTok"
+    },
+    {
+      "url": "https://www.reddit.com/r/videos/comments/abc/title/",
+      "name": "Reddit"
+    },
+    {
+      "url": "https://soundcloud.com/artist/track",
+      "name": "SoundCloud"
+    },
+    {
+      "url": "https://kick.com/someone/clips/clip_01ABC",
+      "name": "Kick"
+    },
+    {
+      "url": "https://www.bilibili.tv/en/video/2019955076",
+      "name": "Bilibili"
+    },
+    {
+      "url": "https://www.nicovideo.jp/watch/sm9",
+      "name": "Niconico"
+    },
+    {
+      "url": "https://vk.com/video-12345_67890",
+      "name": "VK"
+    },
+    {
+      "url": "https://vk.com/clip12345_67890",
+      "name": "VK"
+    },
+    {
+      "url": "https://vkvideo.ru/video-12345_67890",
+      "name": "VK"
+    },
+    {
+      "url": "https://ok.ru/video/12345678",
+      "name": "OK"
+    },
+    {
+      "url": "https://rutube.ru/video/0123456789abcdef0123456789abcdef/",
+      "name": "Rutube"
+    },
+    {
+      "url": "https://v.youku.com/v_show/id_XMTc1ODE5Njcy.html",
+      "name": "Youku"
+    },
+    {
+      "url": "https://www.douyin.com/video/6961737553342991651",
+      "name": "Douyin"
+    },
+    {
+      "url": "https://weibo.com/tv/show/1034:4797699866951785",
+      "name": "Weibo"
+    },
+    {
+      "url": "https://www.youtube.com/clip/UgkxAbc",
+      "name": "YouTube"
+    },
+    {
+      "url": "https://www.bilibili.com/bangumi/play/ep12345",
+      "name": "Bilibili"
+    },
+    {
+      "url": "https://www.bilibili.com/audio/au1003142",
+      "name": "Bilibili"
+    },
+    {
+      "url": "https://www.acfun.cn/v/ac35457073",
+      "name": "AcFun"
+    },
+    {
+      "url": "https://www.ixigua.com/6996881461559165471",
+      "name": "Xigua"
+    },
+    {
+      "url": "https://v.qq.com/x/cover/abcdefghijklmno/a0012abcdef.html",
+      "name": "Tencent Video"
+    },
+    {
+      "url": "https://www.iqiyi.com/v_19rr7qhfg0.html",
+      "name": "iQIYI"
+    },
+    {
+      "url": "https://www.iq.com/play/some-title-1e4tq5dd5o0",
+      "name": "iQIYI"
+    },
+    {
+      "url": "https://www.mgtv.com/b/301817/3826653.html",
+      "name": "Mango TV"
+    },
+    {
+      "url": "https://www.huya.com/video/play/1002412640.html",
+      "name": "Huya"
+    },
+    {
+      "url": "https://v.douyu.com/show/a4Jj7llO9M2vk5Lw",
+      "name": "Douyu"
+    },
+    {
+      "url": "https://www.zhihu.com/zvideo/1342930761977176064",
+      "name": "Zhihu"
+    },
+    {
+      "url": "https://tv.naver.com/v/12345678",
+      "name": "Naver TV"
+    },
+    {
+      "url": "https://chzzk.naver.com/video/12345",
+      "name": "Chzzk"
+    },
+    {
+      "url": "https://tver.jp/episodes/ep83nf3w4p",
+      "name": "TVer"
+    },
+    {
+      "url": "https://www3.nhk.or.jp/nhkworld/en/ondemand/video/2049126/",
+      "name": "NHK World"
+    },
+    {
+      "url": "https://www.vidio.com/watch/7550-some-title",
+      "name": "Vidio"
+    },
+    {
+      "url": "https://www.ted.com/talks/some_speaker_some_title",
+      "name": "TED"
+    },
+    {
+      "url": "https://www.loom.com/share/0123456789abcdef0123456789abcdef",
+      "name": "Loom"
+    },
+    {
+      "url": "https://www.bitchute.com/video/UGlrF9o9b-Q/",
+      "name": "BitChute"
+    },
+    {
+      "url": "https://9gag.com/gag/ae5Ag7B",
+      "name": "9GAG"
+    },
+    {
+      "url": "https://medal.tv/games/valorant/clips/abc123",
+      "name": "Medal"
+    },
+    {
+      "url": "https://www.imdb.com/video/vi1234567/",
+      "name": "IMDb"
+    },
+    {
+      "url": "https://www.snapchat.com/spotlight/W7_EDlXWTBiXAEEniNoMPwAAYYWtidGhudGZp",
+      "name": "Snapchat"
+    },
+    {
+      "url": "https://truthsocial.com/@someone/posts/108779000807761862",
+      "name": "Truth Social"
+    },
+    {
+      "url": "https://coub.com/view/5u5n1",
+      "name": "Coub"
+    },
+    {
+      "url": "https://www.newgrounds.com/portal/view/1",
+      "name": "Newgrounds"
+    },
+    {
+      "url": "https://www.newgrounds.com/audio/listen/549479",
+      "name": "Newgrounds"
+    },
+    {
+      "url": "https://audiomack.com/song/roosh-williams/extraordinary",
+      "name": "Audiomack"
+    },
+    {
+      "url": "https://audius.co/voltra/radar-103692",
+      "name": "Audius"
+    },
+    {
+      "url": "https://twitcasting.tv/ivetesangalo/movie/2357609",
+      "name": "TwitCasting"
+    },
+    {
+      "url": "https://tv.kakao.com/channel/2671005/cliplink/301965083",
+      "name": "Kakao TV"
+    },
+    {
+      "url": "https://vod.sooplive.com/player/192805325",
+      "name": "SOOP"
+    },
+    {
+      "url": "https://www.ximalaya.com/sound/47740352/",
+      "name": "Ximalaya"
+    },
+    {
+      "url": "https://tv.sohu.com/v/MjAyMzA2MTQvbjYwMTMxNTE5Mi5zaHRtbA==.html",
+      "name": "Sohu"
+    },
+    {
+      "url": "https://www.viu.com/en/media/1130599965",
+      "name": "Viu"
+    },
+    {
+      "url": "https://www.mxplayer.in/show/watch-miya-biwi-aur-murder/season-1/episode-1-online-ca17972f052449de6633129ddd7db90b",
+      "name": "MX Player"
+    },
+    {
+      "url": "https://zingmp3.vn/video-clip/Suong-Hoa-Dua-Loi-K-ICM-RYO/ZO8ZF7C7.html",
+      "name": "Zing MP3"
+    },
+    {
+      "url": "https://www.aparat.com/v/wP8On",
+      "name": "Aparat"
+    },
+    {
+      "url": "https://www.cda.pl/video/5749950c",
+      "name": "CDA"
+    },
+    {
+      "url": "https://www.ardmediathek.de/video/some-show/some-title/mdr/Y3JpZDovL21kci5kZS9",
+      "name": "ARD Mediathek"
+    },
+    {
+      "url": "https://www.arte.tv/fr/videos/109067-000-A/la-loi-de-teheran/",
+      "name": "Arte"
+    },
+    {
+      "url": "https://www.raiplay.it/video/2021/11/Blanca-S1E1-Senza-occhi-b1255a4a-8e72-4a2f-b9f3-fc1308e00736.html",
+      "name": "RaiPlay"
+    },
+    {
+      "url": "https://tv.nrk.no/program/MDDP12000117",
+      "name": "NRK TV"
+    },
+    {
+      "url": "https://www.pornhub.com/view_video.php?viewkey=abc",
+      "name": "Pornhub"
+    },
+    {
+      "url": "https://www.pornhub.com/embed/abc",
+      "name": "Pornhub"
+    },
+    {
+      "url": "https://www.xvideos.com/video12345678/some_title",
+      "name": "XVideos"
+    },
+    {
+      "url": "https://www.xvideos.com/video.ohmbbdh1234/some_title",
+      "name": "XVideos"
+    },
+    {
+      "url": "https://www.xnxx.com/video-abc12de/some_title",
+      "name": "XNXX"
+    },
+    {
+      "url": "https://xhamster.com/videos/some-title-1234567",
+      "name": "xHamster"
+    },
+    {
+      "url": "https://www.redtube.com/12345678",
+      "name": "RedTube"
+    },
+    {
+      "url": "https://www.youporn.com/watch/12345678/some-title/",
+      "name": "YouPorn"
+    },
+    {
+      "url": "https://spankbang.com/3vvn9/video/some+title",
+      "name": "SpankBang"
+    },
+    {
+      "url": "https://www.eporner.com/hd-porn/95008/some-title/",
+      "name": "Eporner"
+    },
+    {
+      "url": "https://www.redgifs.com/watch/squeakyhelplesswisent",
+      "name": "RedGifs"
+    },
+    {
+      "url": "https://beeg.com/-0983946056129650",
+      "name": "Beeg"
+    },
+    {
+      "url": "https://txxx.com/videos/16574965/some-title/",
+      "name": "Txxx"
+    },
+    {
+      "url": "https://www.tnaflix.com/some-category/Some-title/video553878",
+      "name": "TNAFlix"
+    },
+    {
+      "url": "https://www.drtuber.com/video/1740434/some-title",
+      "name": "DrTuber"
+    },
+    {
+      "url": "https://www.youjizz.com/videos/some-title-2189178.html",
+      "name": "YouJizz"
+    },
+    {
+      "url": "https://www.iwara.tv/video/k2ayoueezfkx6gvq",
+      "name": "Iwara"
+    }
+  ],
+  "not_pages": [
+    "https://www.youtube.com/",
+    "https://www.youtube.com/results?search_query=x",
+    "https://vimeo.com/",
+    "https://x.com/home",
+    "https://www.pornhub.com/video/search?search=x",
+    "https://vk.com/feed",
+    "https://www.zhihu.com/question/123",
+    "https://www.mgtv.com/tv/",
+    "https://www.ted.com/talks",
+    "https://www.xvideos.com/tags/x",
+    "https://www.redtube.com/top",
+    "https://notyoutube.com/watch?v=abc",
+    "https://example.com/watch?v=abc",
+    "file:///C:/video.mp4",
+    "not a url"
+  ]
+}
