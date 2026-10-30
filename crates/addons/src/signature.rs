@@ -167,7 +167,7 @@ mod tests {
     use pgp::composed::{ArmorOptions, KeyType, SecretKeyParamsBuilder, SignedSecretKey};
     use pgp::crypto::hash::HashAlgorithm;
     use pgp::ser::Serialize;
-    use pgp::types::Password;
+    use pgp::types::{Password, Timestamp};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
@@ -181,7 +181,10 @@ mod tests {
             .key_type(KeyType::Ed25519Legacy)
             .can_certify(true)
             .can_sign(true)
-            .primary_user_id("Test signer <test@example.invalid>".into());
+            .primary_user_id("Test signer <test@example.invalid>".into())
+            // The fingerprint covers the creation time, which defaults to now: two calls a
+            // second apart would make different keys from one seed.
+            .created_at(Timestamp::from_secs(1_700_000_000));
         let secret = params
             .build()
             .unwrap()
