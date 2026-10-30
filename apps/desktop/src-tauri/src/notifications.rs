@@ -63,9 +63,15 @@ const SHOW_IN_FOLDER: &str = "Show in folder";
 const TRY_AGAIN: &str = "Try again";
 const SHOW_IN_APP: &str = "Show in Wirecatch";
 
+/// Shows `rows` in the app: in `queue`, else in the queue they share, so a click lands where they
+/// are.
 fn show(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Act {
+    let shared = rows
+        .first()
+        .map(|first| first.queue)
+        .filter(|queue| rows.iter().all(|r| r.queue == *queue));
     Act::Show(Reveal {
-        queue,
+        queue: queue.or(shared),
         ids: rows.iter().map(|r| r.id).collect(),
         browser_settings: false,
         proxy_settings: false,
@@ -339,7 +345,7 @@ pub(crate) mod tests {
         assert_eq!(notification.title, "Download added");
         assert_eq!(notification.body, "file-1.zip");
         assert_eq!(notification.buttons, []);
-        assert_eq!(notification.click, reveal(None, &[1]));
+        assert_eq!(notification.click, reveal(Some(QueueId(1)), &[1]));
         assert_eq!(notification.lasts, Lasts::Brief(BRIEFLY));
         assert!(
             !notification.important,
@@ -355,6 +361,17 @@ pub(crate) mod tests {
         assert_eq!(video.lasts, Lasts::Brief(BRIEFLY));
     }
 
+    /// A click shows the downloads in the queue they share, so the list opens where they are.
+    #[test]
+    fn a_click_shows_the_queue_its_downloads_share() {
+        let mut other = done(2);
+        other.queue = QueueId(5);
+        let notification = finished(&[&other]).unwrap();
+        assert_eq!(notification.click, reveal(Some(QueueId(5)), &[2]));
+        let both = finished(&[&done(1), &other]).unwrap();
+        assert_eq!(both.click, reveal(None, &[1, 2]));
+    }
+
     #[test]
     fn one_finished_download_offers_to_open_it_and_a_click_shows_it() {
         let notification = finished(&[&done(1)]).unwrap();
@@ -362,7 +379,7 @@ pub(crate) mod tests {
         assert_eq!(notification.body, "file-1.zip");
         assert_eq!(labels(&notification), [OPEN, SHOW_IN_FOLDER]);
         assert_eq!(notification.buttons[0].act, Act::Open(DownloadId(1)));
-        assert_eq!(notification.click, reveal(None, &[1]));
+        assert_eq!(notification.click, reveal(Some(QueueId(1)), &[1]));
         assert_eq!(finished(&[]), None);
     }
 
@@ -384,7 +401,7 @@ pub(crate) mod tests {
             [SHOW_IN_FOLDER],
             "they share a folder"
         );
-        assert_eq!(notification.click, reveal(None, &[1, 2, 3, 4]));
+        assert_eq!(notification.click, reveal(Some(QueueId(1)), &[1, 2, 3, 4]));
     }
 
     #[test]
@@ -403,7 +420,7 @@ pub(crate) mod tests {
         assert_eq!(labels(&failed(&[&broken(1, None)]).unwrap()), [TRY_AGAIN]);
         let expired = failed(&[&broken(1, Some(FixAction::RefreshLink))]).unwrap();
         assert!(expired.buttons.is_empty(), "a fresh link needs the window");
-        assert_eq!(expired.click, reveal(None, &[1]));
+        assert_eq!(expired.click, reveal(Some(QueueId(1)), &[1]));
         let two = failed(&[&broken(1, None), &broken(2, None)]).unwrap();
         assert_eq!(two.title, "2 downloads failed");
         assert_eq!(labels(&two), [SHOW_IN_APP]);

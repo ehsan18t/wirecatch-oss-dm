@@ -880,6 +880,14 @@ Decided with the maintainer on 2026-10-30. It amends D65: each tab kept its own 
 3. A moved notice is not told to the app as shown again: the app was told the first time.
 4. A notice about a download that has since been removed or tried again is taken back by the app (ROADMAP's release item 1).
 
+### D98. A notice opens the app at its download
+
+Decided with the maintainer on 2026-10-30. It adds to D52.5 and D65.
+
+1. Clicking a notice's text, in the browser or the system's notification, brings the main window up showing the queue its downloads are in, with them selected and the first in view. Downloads from different queues show in All downloads. The buttons keep doing what they say.
+2. A browser notice's text is one button: a press with no button (`NoticePressed::button` none) does what a click on the system notification does.
+3. The main window's part is rebuilt with the GPUI interface (D95); the core and shell side, and the browser notice, land now.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

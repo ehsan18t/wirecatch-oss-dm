@@ -1122,7 +1122,9 @@ export function isNoticeKind(value: unknown): value is NoticeKind {
 /** Whether `value` has the shape of a {@link NoticePressed}; fields it does not name are not checked. */
 export function isNoticePressed(value: unknown): value is NoticePressed {
   return ((value1: unknown): boolean =>
-    isRecord(value1) && isNoticeId(value1['id']) && typeof value1['button'] === 'number')(value);
+    isRecord(value1) &&
+    isNoticeId(value1['id']) &&
+    (typeof value1['button'] === 'number' || value1['button'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link NoticeShown}; fields it does not name are not checked. */

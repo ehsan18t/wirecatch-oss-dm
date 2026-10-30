@@ -2,7 +2,7 @@
 import type { NoticeId } from './NoticeId';
 
 /**
- * The person pressed one of a notice's buttons.
+ * The person pressed one of a notice's buttons, or the notice itself.
  */
 export type NoticePressed = {
   /**
@@ -10,7 +10,8 @@ export type NoticePressed = {
    */
   id: NoticeId;
   /**
-   * The button's place among [`BrowserNotice::buttons`].
+   * The button's place among [`BrowserNotice::buttons`]; none for the notice itself, which
+   * shows its download in the app.
    */
-  button: number;
+  button: number | null;
 };
