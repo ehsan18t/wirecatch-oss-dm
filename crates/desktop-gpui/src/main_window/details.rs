@@ -11,8 +11,8 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, InteractiveElement as _,
-    IntoElement, ParentElement as _, PathPromptOptions, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, px,
+    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Subscription, Window, div, px,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MILLE_DONE};
@@ -518,20 +518,11 @@ fn run_fix(id: DownloadId, fix: FixAction, window: &mut Window, cx: &mut Context
 
 /// Asks for a new folder for download `id` and saves it there, then tries it again when `retry`.
 fn choose_folder(id: DownloadId, retry: bool, window: &mut Window, cx: &mut Context<'_, Details>) {
-    let picked = cx.prompt_for_paths(PathPromptOptions {
-        files: false,
-        directories: true,
-        multiple: false,
-        prompt: Some("Save here".into()),
-    });
+    let picked = files::choose_folder(cx);
     cx.spawn_in(window, async move |_, cx| {
-        let Ok(Ok(Some(paths))) = picked.await else {
+        let Some(folder) = picked.await else {
             return;
         };
-        let Some(folder) = paths.into_iter().next() else {
-            return;
-        };
-        let folder = folder.to_string_lossy().into_owned();
         _ = cx.update(|window, cx| {
             command(window.window_handle(), cx, move |manager| async move {
                 api::set_download_folder(&manager, id, &folder).await?;

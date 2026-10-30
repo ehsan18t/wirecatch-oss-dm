@@ -16,9 +16,10 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [ ] Navigation toggle; collapsed rail and narrow-window drawer (D91).
 - [x] Navigation: All downloads, the six status views with counts, the queues with count or speed.
 - [x] Queues: the first three, "N more queues" / "Fewer queues"; the Rules badge, status text, dimmed when Rules are off.
-- [ ] Queues: the proxy icon while a saved profile is in use (D73.13); "+ New queue" (with the Queue dialog).
+- [x] Queues: "+ New queue".
+- [ ] Queues: the proxy icon while a saved profile is in use (D73.13).
 - [x] Queue "…" menu: Start now (outside its schedule), Pause or Resume the queue, Move up, Move down.
-- [ ] Queue menu: Edit queue (with the Queue dialog).
+- [x] Queue menu: Edit queue.
 - [ ] Drag queues to reorder them, the default queue first (D72.9).
 - [x] Settings (Ctrl+,), at the foot of the navigation, where the settings screen offers Downloads.
 - [ ] Find any action (Ctrl+Shift+P) and Keyboard shortcuts (F1), reachable from the main window.
@@ -53,7 +54,8 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [ ] Add: the Automatic hint naming the queue each link goes to (`try_link`), focus on Download when opened with links, links from a second launch joining an open dialog.
 - [x] Remove, with "Also delete the files".
 - [x] Cancel.
-- [ ] Queue: name, description, own folder (D94), limits, rules with Test a link, proxy, schedule, notifications, Delete queue.
+- [x] Queue: name, description, own folder (D94), limits, schedule, notifications, Delete queue.
+- [ ] Queue: rules with Test a link, proxy.
 - [ ] Get a new link.
 - [ ] Export and import settings, with the preview.
 - [ ] Keyboard shortcuts.

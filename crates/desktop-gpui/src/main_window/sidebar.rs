@@ -9,7 +9,8 @@ use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, ElementId, FontWeight, InteractiveElement as _, IntoElement,
-    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, div, px,
+    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, WeakEntity,
+    div, px,
 };
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, Queue, Setting};
@@ -137,11 +138,21 @@ impl MainWindow {
         v_flex()
             .gap_px()
             .child(
-                div()
-                    .px_2()
+                h_flex()
+                    .pl_2()
                     .pb_1()
-                    .text_role(Role::Label, cx)
-                    .child("Queues"),
+                    .justify_between()
+                    .child(div().text_role(Role::Label, cx).child("Queues"))
+                    .child(
+                        Button::new("new-queue")
+                            .xsmall()
+                            .ghost()
+                            .icon(IconName::Plus)
+                            .tooltip("New queue")
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.edit_queue(None, window, cx);
+                            })),
+                    ),
             )
             .children(shown)
             .children(toggle)
@@ -221,7 +232,13 @@ impl MainWindow {
             AddDownloads::Auto(rules) => Some(rules.enabled),
             AddDownloads::Manual => None,
         };
-        let menu = queue_menu(queue, index, total, self.library.read(cx).queues.clone());
+        let menu = queue_menu(
+            queue,
+            index,
+            total,
+            self.library.read(cx).queues.clone(),
+            cx.entity().downgrade(),
+        );
         let theme = cx.theme();
         h_flex()
             .id(ElementId::NamedInteger("queue".into(), id.0.unsigned_abs()))
@@ -378,7 +395,13 @@ fn outside_schedule(queue: &Queue) -> Option<wirecatch_protocol::app::TimeOfDay>
 
 /// A queue's own menu: start now outside its hours, pause or resume, and moving it, the default
 /// queue staying first (D72.9).
-fn queue_menu(queue: &Queue, index: usize, total: usize, order: Vec<Queue>) -> impl IntoElement {
+fn queue_menu(
+    queue: &Queue,
+    index: usize,
+    total: usize,
+    order: Vec<Queue>,
+    main: WeakEntity<MainWindow>,
+) -> impl IntoElement {
     let id = queue.id;
     let paused = queue.status.paused;
     let outside = outside_schedule(queue).is_some() && !paused;
@@ -401,7 +424,16 @@ fn queue_menu(queue: &Queue, index: usize, total: usize, order: Vec<Queue>) -> i
             order
         };
         let up = moved.clone();
-        menu.when(outside, |menu| {
+        let main = main.clone();
+        menu.item(
+            PopupMenuItem::new("Edit queue")
+                .icon(Icon::new(Lucide::Pencil))
+                .on_click(move |_, window, cx| {
+                    _ = main.update(cx, |main, cx| main.edit_queue(Some(id), window, cx));
+                }),
+        )
+        .separator()
+        .when(outside, |menu| {
             menu.item(
                 PopupMenuItem::new("Start now (ignore schedule)")
                     .icon(IconName::Play)
