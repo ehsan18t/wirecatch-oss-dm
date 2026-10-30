@@ -4,6 +4,7 @@
 mod browser;
 mod files;
 mod general;
+mod media;
 mod network;
 mod notifications;
 mod speed;
@@ -66,6 +67,7 @@ fn screen(library: &Entity<Library>, main: &WeakEntity<MainWindow>, cx: &App) ->
                 files::page(library),
                 notifications::page(library, cx),
                 browser::page(library, cx),
+                media::page(library, cx),
                 speed::page(library, main, cx),
                 network::page(library, cx),
             ]
