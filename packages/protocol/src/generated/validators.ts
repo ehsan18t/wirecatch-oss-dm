@@ -93,6 +93,7 @@ import type { NotifyOnFinish } from './NotifyOnFinish';
 import type { NotifyOnStart } from './NotifyOnStart';
 import type { OpenFileArgs } from './OpenFileArgs';
 import type { OpenFolderArgs } from './OpenFolderArgs';
+import type { OpenLinks } from './OpenLinks';
 import type { Outcome } from './Outcome';
 import type { OutputDefaults } from './OutputDefaults';
 import type { OutputDefaultsPatch } from './OutputDefaultsPatch';
@@ -470,7 +471,9 @@ export function isCall(value: unknown): value is Call {
     ((value1: unknown): boolean =>
       isRecord(value1) &&
       value1['method'] === 'notice_pressed' &&
-      isNoticePressed(value1['params']))(value)
+      isNoticePressed(value1['params']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['method'] === 'open_links' && isOpenLinks(value1['params']))(value)
   );
 }
 
@@ -536,7 +539,7 @@ export function isChooseMediaArgs(value: unknown): value is ChooseMediaArgs {
 
 /** Whether `value` has the shape of a {@link ClientKind}; fields it does not name are not checked. */
 export function isClientKind(value: unknown): value is ClientKind {
-  return value === 'extension' || value === 'bridge' || value === 'cli';
+  return value === 'extension' || value === 'bridge' || value === 'cli' || value === 'app';
 }
 
 /** Whether `value` has the shape of a {@link ConfirmCaptureArgs}; fields it does not name are not checked. */
@@ -1153,6 +1156,13 @@ export function isOpenFileArgs(value: unknown): value is OpenFileArgs {
 /** Whether `value` has the shape of a {@link OpenFolderArgs}; fields it does not name are not checked. */
 export function isOpenFolderArgs(value: unknown): value is OpenFolderArgs {
   return ((value1: unknown): boolean => isRecord(value1) && isDownloadId(value1['id']))(value);
+}
+
+/** Whether `value` has the shape of a {@link OpenLinks}; fields it does not name are not checked. */
+export function isOpenLinks(value: unknown): value is OpenLinks {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isArrayOf(value1['links'], (value2: unknown) => typeof value2 === 'string'))(value);
 }
 
 /** Whether `value` has the shape of a {@link Outcome}; fields it does not name are not checked. */
@@ -1892,6 +1902,10 @@ export function isUiEvent(value: unknown): value is UiEvent {
     ((value1: unknown): boolean => isRecord(value1) && value1['type'] === 'window_requested')(
       value,
     ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['type'] === 'links_requested' &&
+      isArrayOf(value1['data'], (value2: unknown) => typeof value2 === 'string'))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'browser_settings_requested')(value) ||
     ((value1: unknown): boolean =>

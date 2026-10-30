@@ -52,6 +52,11 @@ export const BRIDGE_START_BUDGET_MS = 5000;
 export const NOTICE_ANSWER_WAIT_MS = 1000;
 
 /**
+ * The most links one [`Call::OpenLinks`] hands over; the app keeps the first ones.
+ */
+export const MAX_OPEN_LINKS = 20;
+
+/**
  * Largest message body in bytes. Browsers refuse messages from a native host larger
  * than 1 MiB; the same cap applies to every local connection so no side can be made to
  * allocate more.
@@ -512,6 +517,7 @@ export const CALL_SINCE: Readonly<Record<Call['method'], number>> = {
   list_queues: 1,
   notice_pressed: 2,
   notice_shown: 2,
+  open_links: 2,
   pause_all: 1,
   resume_all: 1,
   show_browser_settings: 2,

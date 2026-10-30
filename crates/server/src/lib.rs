@@ -210,6 +210,10 @@ async fn handle(manager: &Manager, version: u32, call: Call) -> Outcome {
             manager.notice_pressed(pressed);
             Ok(Reply::Done)
         }
+        Call::OpenLinks(open) => {
+            manager.request_links(open.links);
+            Ok(Reply::Done)
+        }
     };
     match result {
         Ok(reply) => Outcome::Ok(reply),
@@ -298,6 +302,7 @@ fn version_refusal(id: u64, hello: &Hello, refused: VersionError) -> Message {
         ClientKind::Extension => "browser extension",
         ClientKind::Bridge => "browser connector",
         ClientKind::Cli => "command-line tool",
+        ClientKind::App => "copy of Wirecatch being opened",
     };
     let (code, message) = match refused {
         VersionError::Empty { oldest, newest } => (
