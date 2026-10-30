@@ -2,6 +2,7 @@
 import type { BrowserControls } from './BrowserControls';
 import type { BrowserNotice } from './BrowserNotice';
 import type { ExtensionSettings } from './ExtensionSettings';
+import type { NoticeId } from './NoticeId';
 import type { QueueSummary } from './QueueSummary';
 
 /**
@@ -11,4 +12,5 @@ export type Event =
   | { type: 'extension_settings_changed'; data: ExtensionSettings }
   | { type: 'queues_changed'; data: Array<QueueSummary> }
   | { type: 'browser_controls_changed'; data: BrowserControls }
-  | { type: 'notice_requested'; data: BrowserNotice };
+  | { type: 'notice_requested'; data: BrowserNotice }
+  | { type: 'notice_withdrawn'; data: NoticeId };

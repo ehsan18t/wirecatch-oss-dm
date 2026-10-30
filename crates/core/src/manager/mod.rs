@@ -443,6 +443,11 @@ impl Manager {
         listening
     }
 
+    /// Takes back notice `id` wherever a browser shows it ([`Event::NoticeWithdrawn`]).
+    pub fn withdraw_notice(&self, id: NoticeId) {
+        self.emit_wire(Event::NoticeWithdrawn(id));
+    }
+
     /// A browser showed the notice `id` ([`UiEvent::NoticeShown`]).
     pub fn notice_shown(&self, id: NoticeId) {
         self.emit(UiEvent::NoticeShown(id));

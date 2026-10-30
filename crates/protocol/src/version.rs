@@ -179,6 +179,7 @@ impl EventKind {
         EventKind::QueuesChanged,
         EventKind::BrowserControlsChanged,
         EventKind::NoticeRequested,
+        EventKind::NoticeWithdrawn,
     ];
 
     /// The protocol version that added the event. The app sends it only on connections that
@@ -187,7 +188,9 @@ impl EventKind {
     pub fn since(self) -> u32 {
         match self {
             EventKind::ExtensionSettingsChanged | EventKind::QueuesChanged => 1,
-            EventKind::BrowserControlsChanged | EventKind::NoticeRequested => 2,
+            EventKind::BrowserControlsChanged
+            | EventKind::NoticeRequested
+            | EventKind::NoticeWithdrawn => 2,
         }
     }
 }

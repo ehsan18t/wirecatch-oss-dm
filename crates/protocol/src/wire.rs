@@ -12,7 +12,7 @@ use ts_rs::TS;
 use crate::QueueId;
 use crate::extension::{
     AddedDownload, BrowserControls, BrowserControlsPatch, BrowserNotice, ExtensionSettings,
-    ExtensionSettingsPatch, NewDownload, NoticePressed, NoticeShown, WithdrawOutcome,
+    ExtensionSettingsPatch, NewDownload, NoticeId, NoticePressed, NoticeShown, WithdrawOutcome,
     WithdrawRequest,
 };
 use crate::version::{VersionError, VersionRange};
@@ -329,6 +329,9 @@ pub enum Event {
     /// (D65): the browser in front shows it in the tab the person is looking at and answers with
     /// [`Call::NoticeShown`]; the others leave it.
     NoticeRequested(BrowserNotice),
+    /// Sent to every connected client when a notice from [`Event::NoticeRequested`] no longer
+    /// applies, its downloads removed or tried again (D97.4): it leaves the page wherever it shows.
+    NoticeWithdrawn(NoticeId),
 }
 
 impl Event {
@@ -340,6 +343,7 @@ impl Event {
             Event::QueuesChanged(_) => EventKind::QueuesChanged,
             Event::BrowserControlsChanged(_) => EventKind::BrowserControlsChanged,
             Event::NoticeRequested(_) => EventKind::NoticeRequested,
+            Event::NoticeWithdrawn(_) => EventKind::NoticeWithdrawn,
         }
     }
 }
@@ -357,6 +361,8 @@ pub enum EventKind {
     BrowserControlsChanged,
     /// [`Event::NoticeRequested`].
     NoticeRequested,
+    /// [`Event::NoticeWithdrawn`].
+    NoticeWithdrawn,
 }
 
 /// The first call on a connection.
@@ -618,6 +624,7 @@ mod tests {
                 buttons: vec!["Open".into()],
                 stays_ms: Some(8000),
             }),
+            EventKind::NoticeWithdrawn => Event::NoticeWithdrawn(NoticeId(1)),
         }
     }
 

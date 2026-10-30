@@ -528,6 +528,7 @@ export const EVENT_SINCE: Readonly<Record<Event['type'], number>> = {
   browser_controls_changed: 2,
   extension_settings_changed: 1,
   notice_requested: 2,
+  notice_withdrawn: 2,
   queues_changed: 1,
 };
 

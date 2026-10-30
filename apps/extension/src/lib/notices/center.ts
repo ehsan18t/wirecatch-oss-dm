@@ -7,7 +7,12 @@
  * nothing. The notices still open are one list that follows the person: turning to another tab takes
  * the frame away and shows them there, so a notice closed anywhere never shows again.
  */
-import { NOTICE_ANSWER_WAIT_MS, type BrowserNotice, type NoticeId } from '@wirecatch/protocol';
+import {
+  NOTICE_ANSWER_WAIT_MS,
+  type BrowserNotice,
+  type Event,
+  type NoticeId,
+} from '@wirecatch/protocol';
 import { fallback, log } from '../diag/log';
 import {
   isFromNoticesPage,
@@ -21,6 +26,9 @@ import {
  * or did not let it load. The app has told its notices another way by then.
  */
 export const CONNECT_WAIT_MS = 3000;
+
+/** What the app asks of the notices: one to show, or one to take back. */
+export type NoticeEvent = Extract<Event, { type: 'notice_requested' | 'notice_withdrawn' }>;
 
 /** What the notice center needs from the browser and the app. */
 export interface NoticeCenterDeps {
@@ -70,6 +78,13 @@ export class NoticeCenter {
 
   constructor(deps: NoticeCenterDeps) {
     this.#deps = deps;
+  }
+
+  /** Does what the app asks of the notices. */
+  follow(event: NoticeEvent): Promise<void> {
+    if (event.type === 'notice_requested') return this.show(event.data);
+    this.withdraw(event.data);
+    return Promise.resolve();
   }
 
   /** Gives `notice` to the tab the person is looking at, when this browser can; says nothing otherwise. */
@@ -135,6 +150,16 @@ export class NoticeCenter {
       this.#placing.set(tabId, placing);
     }
     return placing;
+  }
+
+  /** The app took notice `id` back: it leaves every page that shows it, and is not moved again. */
+  withdraw(id: NoticeId): void {
+    this.#open.delete(id);
+    for (const frame of this.#frames.values()) {
+      if (!frame.sent.has(id)) continue;
+      frame.waiting = frame.waiting.filter(({ notice }) => notice.id !== id);
+      frame.port?.postMessage({ type: 'withdraw', id });
+    }
   }
 
   /** A port opened to the background: a notices page's when its first message carries a frame's token. */
