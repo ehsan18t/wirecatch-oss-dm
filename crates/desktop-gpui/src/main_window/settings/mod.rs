@@ -1,6 +1,7 @@
 //! The settings screen (D85): gpui-kit's settings pages, each setting read from the library and
 //! changed through the manager, so every window shows the change once the manager makes it.
 
+mod browser;
 mod files;
 mod general;
 mod network;
@@ -64,6 +65,7 @@ fn screen(library: &Entity<Library>, main: &WeakEntity<MainWindow>, cx: &App) ->
                 general::page(library),
                 files::page(library),
                 notifications::page(library, cx),
+                browser::page(library, cx),
                 speed::page(library, main, cx),
                 network::page(library, cx),
             ]
