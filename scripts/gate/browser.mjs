@@ -4,7 +4,7 @@
 // - e2e-extension: the extension's popup on sample data with every word pseudo-translated longer, laid out by apps/extension/e2e/layout.spec.ts (`pnpm e2e`). It catches a label or a name that sticks out of the popup, scrolls a page sideways, or squeezes text into a sliver.
 //
 // They need a Chromium-family browser Playwright can drive: Edge by default (installed with Windows), or the one PW_CHANNEL names (on Linux, `PW_CHANNEL=chromium` after `pnpm --filter @wirecatch/desktop exec playwright install chromium`). Only a browser that is not installed skips them, and they say so; any other failure to start it fails. CI's Browser jobs set WIRECATCH_REQUIRE_BROWSER=1, since GitHub's Windows and Ubuntu runners both have Edge, so there a skip fails too (docs/ENGINEERING.md section 7: no silent skips).
-import { capture, GateError, pnpm } from './process.mjs';
+import { capture, desktopOnly, GateError, pnpm } from './process.mjs';
 
 const PROBE = 'apps/desktop/scripts/browser-available.mjs';
 /** The probe's exit status for "the browser is not installed here". */
@@ -31,12 +31,12 @@ function inBrowser(what, pkg, script) {
 }
 
 export const BROWSER_CHECKS = {
-  'e2e-gallery': () => {
+  'e2e-gallery': desktopOnly(() => {
     inBrowser("the gallery's browser checks", '@wirecatch/desktop', 'e2e:gallery');
-  },
-  'e2e-desktop': () => {
+  }),
+  'e2e-desktop': desktopOnly(() => {
     inBrowser("the main window's accessibility and layout checks", '@wirecatch/desktop', 'e2e');
-  },
+  }),
   'e2e-extension': () => {
     inBrowser("the extension's layout checks", '@wirecatch/extension', 'e2e');
   },

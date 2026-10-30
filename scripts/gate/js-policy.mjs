@@ -57,16 +57,29 @@ function workspacePackages() {
 }
 
 /**
- * The root `lint` and `format` scripts. `lint` runs ESLint in every workspace package, then on the root's own sources, no warnings allowed, then Prettier once over all of them; `format` writes what that Prettier run checks. Anything added to `lint` (a `--rule`, an `|| true`) could weaken it, and a folder left out of either would go unchecked or unformatted, so both are compared exactly.
+ * What the root lints and formats: ESLint runs in every workspace package, then on `root`, no warnings allowed, then Prettier once over `formatted`. `skipped` leaves out package folders (the Tauri app's with `--no-desktop`, D100).
  *
  * ESLint runs once per package, in that package's folder, never once over the whole repository: in one process, linting a file of one package first takes the type information of `.svelte` files in another (D42).
  */
+export function lintTargets(skipped = []) {
+  const parents = workspaceParents();
+  const formatted =
+    skipped.length === 0
+      ? parents
+      : workspacePackages().filter((folder) => !skipped.includes(folder));
+  return { root: ROOT_LINTED, formatted: [...formatted, ...ROOT_LINTED] };
+}
+
+/**
+ * The root scripts. The JavaScript checks run through the gate, which builds `lint` from `lintTargets`; `format` writes what that Prettier run checks. Anything added to them (a `--rule`, an `|| true`) could weaken them, and a folder left out of `format` would go unformatted, so they are compared exactly.
+ */
 function rootScripts() {
-  const formatted = [...workspaceParents(), ...ROOT_LINTED].join(' ');
-  const root = ROOT_LINTED.join(' ');
   return {
-    lint: `pnpm -r exec eslint . --max-warnings 0 && eslint ${root} --max-warnings 0 && prettier --check ${formatted}`,
-    format: `prettier --write ${formatted}`,
+    check: 'node scripts/gate.mjs js-check',
+    lint: 'node scripts/gate.mjs js-lint',
+    test: 'node scripts/gate.mjs js-test',
+    build: 'node scripts/gate.mjs js-build',
+    format: `prettier --write ${lintTargets().formatted.join(' ')}`,
   };
 }
 
