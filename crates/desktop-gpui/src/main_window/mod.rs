@@ -22,8 +22,8 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
 
-use crate::components::layout;
 use crate::library::{Library, SettingsChanged};
+use crate::ui::{Role, Typed as _, layout};
 use crate::{add_dialog, links, theme};
 
 actions!(main_window, [NewDownload, PasteLinks, Dismiss, FocusSearch]);
@@ -262,12 +262,11 @@ impl Render for MainWindow {
             }))
             .size_full()
             .bg(theme.background)
-            .text_color(theme.foreground)
-            .text_sm()
+            .text_role(Role::Body, cx)
             .child(self.title_bar(cx))
             .child(layout::body(
                 self.sidebar(cx).into_any_element(),
-                self.header(cx).into_any_element(),
+                self.header(window, cx).into_any_element(),
                 self.list(window, cx),
             ))
     }

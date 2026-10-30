@@ -4,7 +4,7 @@
 use std::rc::Rc;
 
 use gpui_kit::component::{Theme, ThemeMode, ThemeRegistry};
-use gpui_kit::{App, Hsla, WindowAppearance, rgb};
+use gpui_kit::{App, Hsla, SharedString, WindowAppearance, rgb};
 use wirecatch_protocol::app::{Accent, Theme as ThemeSetting};
 
 const THEMES: &str = include_str!("../assets/theme.json");
@@ -20,6 +20,18 @@ const ON_ACCENT_DARK: u32 = 0x000b_0d12;
 /// danger colour, made to read as text, would fill it in pastel.
 const DANGER_FILL_LIGHT: u32 = 0x00b3_261e;
 const DANGER_FILL_DARK: u32 = 0x00c9_372c;
+
+/// The web app's text face (`packages/ui/tokens.css`): Windows 11 has it, older systems keep the
+/// system font.
+const PREFERRED_FONT: &str = "Segoe UI Variable Text";
+
+fn preferred_font(cx: &App) -> Option<SharedString> {
+    cx.text_system()
+        .all_font_names()
+        .iter()
+        .any(|name| name == PREFERRED_FONT)
+        .then(|| PREFERRED_FONT.into())
+}
 
 /// Registers the two schemes. Call once, after `gpui_kit::init`. Should `assets/theme.json` not
 /// parse (its test catches that first), the windows keep gpui-kit's own colours.
@@ -67,7 +79,11 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
         DANGER_FILL_LIGHT
     })
     .into();
+    let font = preferred_font(cx);
     Theme::update(cx, |theme| {
+        if let Some(font) = font {
+            theme.font_family = font;
+        }
         theme.primary = tone;
         theme.primary_hover = tone.opacity(0.9);
         theme.primary_active = tone.opacity(0.8);

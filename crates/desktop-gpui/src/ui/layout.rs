@@ -3,9 +3,11 @@
 
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
+
+use super::{Role, Typed as _};
 use gpui_kit::{
-    AnyElement, App, Div, FontWeight, IntoElement, ParentElement as _, RenderOnce, SharedString,
-    Styled as _, Window, div, px,
+    AnyElement, App, Div, IntoElement, ParentElement as _, RenderOnce, SharedString, Styled as _,
+    Window, div, px,
 };
 
 /// Where a block draws its dividing line.
@@ -92,25 +94,14 @@ impl PageHeader {
 
 impl RenderOnce for PageHeader {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
-        let theme = cx.theme();
         ruled(h_flex().px_5().py_3().gap_4(), Rule::Below, cx)
             .child(
                 v_flex()
                     .flex_1()
                     .min_w_0()
-                    .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(self.title),
-                    )
+                    .child(div().text_role(Role::PageTitle, cx).child(self.title))
                     .when(!self.summary.is_empty(), |text| {
-                        text.child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.muted_foreground)
-                                .child(self.summary),
-                        )
+                        text.child(div().text_role(Role::Meta, cx).child(self.summary))
                     }),
             )
             .children(self.actions)

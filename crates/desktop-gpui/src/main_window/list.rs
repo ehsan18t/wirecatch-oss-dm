@@ -8,7 +8,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement,
+    AnyElement, App, Context, ElementId, Hsla, InteractiveElement as _, IntoElement,
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
     px, uniform_list,
 };
@@ -20,11 +20,13 @@ use wirecatch_shell::api;
 
 use super::{Group, MainWindow, View, details};
 use crate::backend::Backend;
-use crate::components::layout::PageHeader;
+use crate::ui::layout::PageHeader;
+use crate::ui::{FileTile, Role, Typed as _, search_field, tokens};
 use crate::{files, text};
 
 /// Every line is this tall, headings included, so the list can lay out only what shows.
-const LINE_HEIGHT: f32 = 44.;
+const LINE_HEIGHT: f32 = 52.;
+const SEARCH_WIDTH: f32 = 280.;
 const PROGRESS_WIDTH: f32 = 168.;
 const SIZE_WIDTH: f32 = 136.;
 const SPEED_WIDTH: f32 = 96.;
@@ -32,9 +34,11 @@ const LEFT_WIDTH: f32 = 84.;
 const ACTIONS_WIDTH: f32 = 96.;
 
 /// Space a column takes beside its neighbours.
-const GAP: f32 = 16.;
+const GAP: f32 = 12.;
 /// The row's padding on both sides.
 const ROW_PADDING: f32 = 40.;
+/// The file tile at the start of a row.
+const TILE_WIDTH: f32 = 32.;
 /// The least the name keeps before a figure column folds under it.
 const NAME_MIN_WIDTH: f32 = 220.;
 
@@ -56,7 +60,8 @@ impl Columns {
 
     /// The columns a list `width` wide has room for.
     fn fitting(width: f32) -> Self {
-        let mut needed = ROW_PADDING + NAME_MIN_WIDTH + PROGRESS_WIDTH + ACTIONS_WIDTH + 3. * GAP;
+        let mut needed =
+            ROW_PADDING + TILE_WIDTH + NAME_MIN_WIDTH + PROGRESS_WIDTH + ACTIONS_WIDTH + 4. * GAP;
         let mut fits = |column: f32| {
             needed += column + GAP;
             needed <= width
@@ -76,7 +81,7 @@ enum Line {
 }
 
 impl MainWindow {
-    pub(super) fn header(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    pub(super) fn header(&self, window: &Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let summary = self.summary(cx);
         let library = self.library.read(cx);
         let any_paused = library
@@ -93,6 +98,12 @@ impl MainWindow {
                 View::Group(Group::Finished | Group::Attention | Group::Cancelled)
             );
         PageHeader::new(self.title(cx), summary)
+            .action(div().w(px(SEARCH_WIDTH)).child(search_field(
+                &self.search,
+                &super::FocusSearch,
+                super::KEY_CONTEXT,
+                window,
+            )))
             .action(
                 Button::new("new-download")
                     .small()
@@ -241,16 +252,14 @@ impl MainWindow {
             .pb_1p5()
             .gap_2()
             .cursor_pointer()
-            .text_xs()
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(theme.muted_foreground)
+            .text_role(Role::Label, cx)
             .child(
                 Icon::new(if folded {
                     IconName::ChevronRight
                 } else {
                     IconName::ChevronDown
                 })
-                .xsmall(),
+                .with_size(tokens::ICON_SMALL),
             )
             .child(group.label())
             .child(
@@ -281,7 +290,7 @@ impl MainWindow {
             .w_full()
             .h(px(LINE_HEIGHT))
             .px_5()
-            .gap_4()
+            .gap_3()
             .border_l_2()
             .border_color(theme.transparent)
             .when(selected, |line| {
@@ -291,6 +300,7 @@ impl MainWindow {
             .when(!selected, |line| {
                 line.hover(|line| line.bg(theme.list_hover))
             })
+            .child(FileTile::new(row.category).tone(tone))
             .child(name_cell(&row, self.columns, cx))
             .child(progress_cell(&row, tone, cx))
             .when(self.columns.size, |line| {
@@ -352,15 +362,19 @@ fn name_cell(row: &DownloadSummary, columns: Columns, cx: &App) -> impl IntoElem
     v_flex()
         .flex_1()
         .min_w_0()
-        .child(div().truncate().child(row.file_name.clone()))
+        .gap_0p5()
         .child(
             div()
                 .truncate()
-                .text_xs()
-                .text_color(if row.status == DownloadStatus::Failed {
-                    theme.danger
-                } else {
-                    theme.muted_foreground
+                .text_role(Role::Strong, cx)
+                .child(row.file_name.clone()),
+        )
+        .child(
+            div()
+                .truncate()
+                .text_role(Role::Meta, cx)
+                .when(row.status == DownloadStatus::Failed, |line| {
+                    line.text_color(theme.danger)
                 })
                 .child(under.join(" · ")),
         )
@@ -395,7 +409,6 @@ fn under_name(row: &DownloadSummary) -> String {
 
 /// The bar and what it means: the percentage while it runs, or the state it is in.
 fn progress_cell(row: &DownloadSummary, tone: Hsla, cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
     let per_mille = text::per_mille(row);
     let caption = match row.status {
         DownloadStatus::Downloading | DownloadStatus::Connecting => {
@@ -407,23 +420,23 @@ fn progress_cell(row: &DownloadSummary, tone: Hsla, cx: &App) -> impl IntoElemen
         .w(px(PROGRESS_WIDTH))
         .flex_shrink_0()
         .gap_1()
-        .when(row.status != DownloadStatus::Cancelled, |cell| {
-            cell.child(
-                Progress::new(row_id("progress", row.id))
-                    .color(tone)
-                    .loading(per_mille.is_none())
-                    .value(per_mille.map_or(0., |done| {
-                        f32::from(done) * 100. / f32::from(PER_MILLE_DONE)
-                    })),
-            )
-        })
-        .child(
-            div()
-                .text_xs()
-                .text_color(theme.muted_foreground)
-                .truncate()
-                .child(caption),
+        .when(
+            !matches!(
+                row.status,
+                DownloadStatus::Cancelled | DownloadStatus::Completed
+            ),
+            |cell| {
+                cell.child(
+                    Progress::new(row_id("progress", row.id))
+                        .color(tone)
+                        .loading(per_mille.is_none())
+                        .value(per_mille.map_or(0., |done| {
+                            f32::from(done) * 100. / f32::from(PER_MILLE_DONE)
+                        })),
+                )
+            },
         )
+        .child(div().text_role(Role::Meta, cx).truncate().child(caption))
 }
 
 fn figure(width: f32, value: String, cx: &App) -> impl IntoElement {
@@ -431,8 +444,7 @@ fn figure(width: f32, value: String, cx: &App) -> impl IntoElement {
         .w(px(width))
         .flex_shrink_0()
         .text_right()
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
+        .text_role(Role::Meta, cx)
         .truncate()
         .child(value)
 }
@@ -490,7 +502,7 @@ fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl 
                 .map(|(action, label, icon)| {
                     let (action, label) = (*action, *label);
                     Button::new(ElementId::NamedInteger(label.into(), id.0.unsigned_abs()))
-                        .xsmall()
+                        .small()
                         .ghost()
                         .icon(icon.clone())
                         .tooltip(label)

@@ -2,6 +2,7 @@
 //! each with its count or its speed while it downloads, what it is doing, and its own menu.
 
 use chrono::Local;
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
@@ -17,9 +18,8 @@ use wirecatch_queues::schedule;
 use wirecatch_shell::api;
 
 use super::{Group, MainWindow, View};
-use crate::components::heading;
-use crate::icons::AppIcon;
 use crate::text;
+use crate::ui::{Role, Typed as _, tokens};
 
 pub(super) const WIDTH: f32 = 232.;
 /// Queues shown before the rest fold away under "more queues".
@@ -39,7 +39,7 @@ impl MainWindow {
         let counts = Group::ALL.map(|group| (group, count(View::Group(group))));
         let mut downloads = vec![self.nav_item(
             "view-all",
-            Icon::new(AppIcon::Layers),
+            Icon::new(Lucide::Layers),
             "All downloads",
             all,
             View::All,
@@ -107,7 +107,13 @@ impl MainWindow {
         });
         v_flex()
             .gap_px()
-            .child(heading::section("Queues", cx).px_2().pb_1())
+            .child(
+                div()
+                    .px_2()
+                    .pb_1()
+                    .text_role(Role::Label, cx)
+                    .child("Queues"),
+            )
             .children(shown)
             .children(toggle)
     }
@@ -141,14 +147,14 @@ impl MainWindow {
                     .hover(|item| item.bg(theme.sidebar_accent.opacity(0.6)))
             })
             .child(
-                icon.small()
+                icon.with_size(tokens::ICON)
                     .when(current, |icon| icon.text_color(theme.primary)),
             )
             .child(div().flex_1().truncate().child(label.into()))
             .when(count > 0, |item| {
                 item.child(
                     div()
-                        .text_xs()
+                        .text_role(Role::Meta, cx)
                         .text_color(if alarming {
                             theme.danger
                         } else {
@@ -202,8 +208,8 @@ impl MainWindow {
                 item.hover(|item| item.bg(theme.sidebar_accent.opacity(0.6)))
             })
             .child(
-                Icon::new(AppIcon::LayoutList)
-                    .small()
+                Icon::new(Lucide::ListOrdered)
+                    .with_size(tokens::ICON)
                     .mt_0p5()
                     .text_color(if current {
                         theme.primary
@@ -298,10 +304,20 @@ fn name_line(name: &str, current: bool, speed: u64, count: usize, cx: &App) -> i
             div()
                 .flex_1()
                 .truncate()
+                .text_color(if current {
+                    theme.foreground
+                } else {
+                    theme.muted_foreground
+                })
                 .when(current, |name| name.font_weight(FontWeight::MEDIUM))
                 .child(name.to_owned()),
         )
-        .child(div().text_xs().text_color(color).child(figure))
+        .child(
+            div()
+                .text_role(Role::Meta, cx)
+                .text_color(color)
+                .child(figure),
+        )
 }
 
 /// A queue's second line: its rules mark and what it is doing.
@@ -309,8 +325,7 @@ fn doing(rules: Option<bool>, status: String, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
     h_flex()
         .gap_1()
-        .text_xs()
-        .text_color(theme.muted_foreground)
+        .text_role(Role::Meta, cx)
         .when_some(rules, |line, enabled| {
             line.child(
                 div()
@@ -391,7 +406,7 @@ fn queue_menu(queue: &Queue, index: usize, total: usize, order: Vec<Queue>) -> i
             let order = up(index - 1);
             menu.item(
                 PopupMenuItem::new("Move up")
-                    .icon(AppIcon::ArrowUp)
+                    .icon(Lucide::ArrowUp)
                     .on_click(move |_, window, cx| {
                         let order = order.clone();
                         run(window, cx, move |manager| {
@@ -443,10 +458,10 @@ fn run(
 fn group_icon(group: Group) -> Icon {
     match group {
         Group::Attention => Icon::new(IconName::CircleAlert),
-        Group::Downloading => Icon::new(AppIcon::Download),
-        Group::UpNext => Icon::new(AppIcon::Clock),
-        Group::Paused => Icon::new(AppIcon::CirclePause),
+        Group::Downloading => Icon::new(Lucide::Download),
+        Group::UpNext => Icon::new(Lucide::Clock),
+        Group::Paused => Icon::new(Lucide::CirclePause),
         Group::Finished => Icon::new(IconName::CircleCheck),
-        Group::Cancelled => Icon::new(AppIcon::Ban),
+        Group::Cancelled => Icon::new(Lucide::Ban),
     }
 }

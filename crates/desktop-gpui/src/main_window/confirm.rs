@@ -5,14 +5,15 @@ use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, FontWeight, IntoElement, ParentElement as _, Render,
-    Styled as _, Window, div, px,
+    App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
+    Window, div, px,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_shell::api;
 
 use crate::library::Library;
+use crate::ui::{Role, Typed as _};
 
 const WIDTH: f32 = 440.;
 
@@ -64,7 +65,7 @@ struct RemoveForm {
 
 impl Render for RemoveForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let _theme = cx.theme();
         let asked = &self.asked;
         let unfinished = asked.count() - asked.finished;
         let consequence = if unfinished == 0 {
@@ -84,10 +85,10 @@ impl Render for RemoveForm {
             .gap_4()
             .text_sm()
             .when_some(asked.one.clone(), |form, name| {
-                form.child(div().font_weight(FontWeight::MEDIUM).child(name))
+                form.child(div().text_role(Role::Strong, cx).child(name))
             })
             .when_some(consequence, |form, said| {
-                form.child(div().text_color(theme.muted_foreground).child(said))
+                form.child(div().text_role(Role::Secondary, cx).child(said))
             })
             .when(asked.finished > 0, |form| {
                 form.child(
@@ -127,7 +128,7 @@ pub(super) fn remove(
         asked,
         delete_files: false,
     });
-    crate::components::dialog::open(window, cx, move |dialog, _, cx| {
+    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let deletes = {
             let form = form.read(cx);
             form.delete_files && form.asked.finished > 0
@@ -211,9 +212,9 @@ pub(super) fn cancel(
     };
     let name = asked.one.clone();
     let ids = asked.ids;
-    crate::components::dialog::open(window, cx, move |dialog, _, cx| {
+    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let ids = ids.clone();
-        let theme = cx.theme();
+        let _theme = cx.theme();
         dialog
             .title(title.clone())
             .w(px(WIDTH))
@@ -222,9 +223,9 @@ pub(super) fn cancel(
                     .gap_4()
                     .text_sm()
                     .when_some(name.clone(), |body, name| {
-                        body.child(div().font_weight(FontWeight::MEDIUM).child(name))
+                        body.child(div().text_role(Role::Strong, cx).child(name))
                     })
-                    .child(div().text_color(theme.muted_foreground).child(said)),
+                    .child(div().text_role(Role::Secondary, cx).child(said)),
             )
             .footer(
                 h_flex()

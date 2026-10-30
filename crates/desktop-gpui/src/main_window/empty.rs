@@ -3,14 +3,13 @@
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
-use gpui_kit::{
-    AnyElement, Context, FontWeight, IntoElement, ParentElement as _, Styled as _, div, px,
-};
+use gpui_kit::{AnyElement, Context, IntoElement, ParentElement as _, Styled as _, div, px};
 use wirecatch_protocol::QueueId;
 
 use super::{Group, MainWindow, View};
 use crate::add_dialog;
 use crate::library::{Library, Loaded};
+use crate::ui::{Role, Typed as _};
 
 /// The widest the note under an empty list grows.
 const NOTE_WIDTH: f32 = 440.;
@@ -49,17 +48,12 @@ impl MainWindow {
                     .large()
                     .text_color(theme.muted_foreground),
             )
-            .child(
-                div()
-                    .text_base()
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(empty.title),
-            )
+            .child(div().text_role(Role::Title, cx).child(empty.title))
             .child(
                 div()
                     .max_w(px(NOTE_WIDTH))
                     .text_center()
-                    .text_color(theme.muted_foreground)
+                    .text_role(Role::Secondary, cx)
                     .child(empty.note),
             )
             .child(h_flex().pt_2().gap_2().children(empty.actions))

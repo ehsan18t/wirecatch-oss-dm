@@ -21,9 +21,9 @@ use wirecatch_shell::api;
 use wirecatch_sites::video_sites::video_site_for;
 
 use crate::backend::Backend;
-use crate::components::{Callout, Field};
 use crate::library::Library;
 use crate::links;
+use crate::ui::{Callout, Field};
 
 /// Said when the box holds no link to send.
 /// Where links go with no folder picked and no queue folder.
@@ -74,7 +74,7 @@ pub fn open(
     cx: &mut App,
 ) {
     let form = cx.new(|cx| AddForm::new(library, urls, queue, window, cx));
-    crate::components::dialog::open(window, cx, move |dialog, _, cx| {
+    crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let count = form.read(cx).link_count(cx);
         let send = form.clone();
         let paused = form.clone();

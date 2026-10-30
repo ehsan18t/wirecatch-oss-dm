@@ -33,7 +33,7 @@ pub fn open(id: DownloadId, window: &mut Window, cx: &mut App) {
 }
 
 fn ask_to_open(path: PathBuf, warning: ProgramWarning, window: &mut Window, cx: &mut App) {
-    crate::components::dialog::open_alert(window, cx, move |alert, _, _| {
+    crate::ui::dialog::open_alert(window, cx, move |alert, _, _| {
         let path = path.clone();
         alert
             .title(warning.title.clone())

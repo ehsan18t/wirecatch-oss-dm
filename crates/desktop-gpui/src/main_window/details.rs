@@ -10,9 +10,9 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, PathPromptOptions, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, px,
+    AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, InteractiveElement as _,
+    IntoElement, ParentElement as _, PathPromptOptions, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, px,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MILLE_DONE};
@@ -20,9 +20,9 @@ use wirecatch_shell::api;
 
 use super::list::{act, status_tone};
 use super::{Group, confirm};
-use crate::components::layout::{self, Rule};
-use crate::components::{Callout, heading};
 use crate::library::Library;
+use crate::ui::layout::{self, Rule};
+use crate::ui::{Callout, Role, Typed as _, tokens};
 use crate::{files, text};
 
 const WIDTH: f32 = 600.;
@@ -69,7 +69,7 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
             _subscriptions: vec![follow],
         }
     });
-    crate::components::dialog::open(window, cx, move |dialog, _, _| {
+    crate::ui::dialog::open(window, cx, move |dialog, _, _| {
         dialog.w(px(WIDTH)).p_0().child(details.clone())
     });
 }
@@ -111,7 +111,7 @@ impl Render for Details {
 
 /// The name, its status and where it comes from.
 fn header(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElement {
-    let theme = cx.theme();
+    let _theme = cx.theme();
     let tone = status_tone(row, cx);
     layout::bar(Rule::Below, cx).items_start().child(
         v_flex()
@@ -120,13 +120,13 @@ fn header(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElem
             .gap_1()
             .child(
                 div()
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_role(Role::Title, cx)
                     .child(row.file_name.clone()),
             )
             .child(
                 h_flex()
                     .gap_2()
-                    .text_xs()
+                    .text_role(Role::Meta, cx)
                     .child(
                         h_flex()
                             .gap_1()
@@ -134,11 +134,7 @@ fn header(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElem
                             .child(div().size(px(6.)).rounded_full().bg(tone))
                             .child(text::status_label(row.status)),
                     )
-                    .child(
-                        div()
-                            .text_color(theme.muted_foreground)
-                            .child(text::host(&row.url).to_owned()),
-                    ),
+                    .child(div().child(text::host(&row.url).to_owned())),
             ),
     )
 }
@@ -166,7 +162,7 @@ fn now_section(
                 .p_3()
                 .rounded(theme.radius)
                 .bg(theme.muted)
-                .text_sm()
+                .text_role(Role::Body, cx)
                 .child(detail),
         );
     }
@@ -183,25 +179,18 @@ fn now_section(
                 .when(live && row.speed > 0, |line| {
                     line.child(
                         div()
-                            .text_xl()
-                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_role(Role::Figure, cx)
                             .child(text::speed(row.speed)),
                     )
                 })
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(theme.muted_foreground)
-                        .child(size),
-                )
+                .child(div().text_role(Role::Secondary, cx).child(size))
                 .when_some(
                     row.eta_secs.filter(|_| live && row.speed > 0),
                     |line, left| {
                         line.child(
                             div()
                                 .ml_auto()
-                                .text_sm()
-                                .text_color(theme.muted_foreground)
+                                .text_role(Role::Secondary, cx)
                                 .child(format!("{} left", text::eta(left))),
                         )
                     },
@@ -222,8 +211,7 @@ fn now_section(
     if let Some(media) = &row.media {
         section = section.child(
             div()
-                .text_sm()
-                .text_color(theme.muted_foreground)
+                .text_role(Role::Secondary, cx)
                 .child(text::media_line(media)),
         );
     }
@@ -273,13 +261,8 @@ fn facts(row: &DownloadSummary, queue: &str, cx: &App) -> impl IntoElement {
                         .when(index > 0, |fact| {
                             fact.border_l_1().border_color(theme.border)
                         })
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.muted_foreground)
-                                .child(label),
-                        )
-                        .child(div().font_weight(FontWeight::MEDIUM).child(value))
+                        .child(div().text_role(Role::Meta, cx).child(label))
+                        .child(div().text_role(Role::Strong, cx).child(value))
                 }),
         )
 }
@@ -383,10 +366,10 @@ fn place(
         PLACE_LABEL_WIDTH,
         h_flex()
             .gap_1p5()
-            .child(Icon::new(icon).xsmall())
+            .child(Icon::new(icon).with_size(tokens::ICON_SMALL))
             .child(label),
         div()
-            .font_weight(FontWeight::MEDIUM)
+            .text_role(Role::Strong, cx)
             .truncate()
             .child(SharedString::from(value)),
         cx,
@@ -400,7 +383,7 @@ fn activity(row: &DownloadSummary, cx: &App) -> impl IntoElement {
     let line = |when: String, what: String| layout::label_row(ACTIVITY_LABEL_WIDTH, when, what, cx);
     layout::section(Rule::Above, cx)
         .gap_2()
-        .child(heading::section("Activity", cx))
+        .child(div().text_role(Role::Label, cx).child("Activity"))
         .child(line(
             text::date(row.added_at),
             format!("Added from {}", text::host(&row.url)),

@@ -2,9 +2,11 @@
 
 use gpui_kit::component::{ActiveTheme as _, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
+
+use super::{Role, Typed as _};
 use gpui_kit::{
-    AnyElement, App, FontWeight, IntoElement, ParentElement as _, RenderOnce, SharedString,
-    Styled as _, Window, div,
+    AnyElement, App, IntoElement, ParentElement as _, RenderOnce, SharedString, Styled as _,
+    Window, div,
 };
 
 #[derive(IntoElement)]
@@ -47,15 +49,15 @@ impl RenderOnce for Field {
         };
         v_flex()
             .gap_1p5()
-            .child(
-                div()
-                    .text_sm()
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(self.label),
-            )
+            .child(div().text_role(Role::Strong, cx).child(self.label))
             .child(self.control)
             .when_some(self.note, |field, note| {
-                field.child(div().text_xs().text_color(note_color).child(note))
+                field.child(
+                    div()
+                        .text_role(Role::Meta, cx)
+                        .text_color(note_color)
+                        .child(note),
+                )
             })
     }
 }

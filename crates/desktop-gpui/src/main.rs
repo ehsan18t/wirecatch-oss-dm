@@ -5,14 +5,13 @@
 
 mod add_dialog;
 mod backend;
-mod components;
 mod files;
-mod icons;
 mod library;
 mod links;
 mod main_window;
 mod text;
 mod theme;
+mod ui;
 
 use wirecatch_shell::{elevation, host};
 
@@ -38,7 +37,7 @@ fn main() {
         }
     };
     gpui_kit::application()
-        .with_assets(icons::Assets)
+        .with_assets(ui::icon::Assets)
         .run(move |cx| {
             gpui_kit::init(cx);
             main_window::bind_keys(cx);

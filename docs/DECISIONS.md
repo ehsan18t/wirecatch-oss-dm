@@ -898,6 +898,7 @@ Decided with the maintainer on 2026-10-30. It carries out D95.
 3. The shell's code that does not touch Tauri moves, unchanged where it can, into a crate both apps use, rather than being written twice; what Tauri does for the shell (windows, tray, dialogs, single instance) is replaced in the GPUI app itself.
 4. The look is the project's own, laid out the way Zed is: dense, quiet surfaces, one accent, text before chrome. The Theme and Accent settings stay as they are (Cyan by default), so the settings file and the protocol do not change.
 5. Its tests are Rust: GPUI's own test context drives the real views. A visible change is checked on screenshots of the real windows with sample downloads, in both themes.
+6. The app draws through its own UI library on top of gpui-kit, `crates/desktop-gpui/src/ui`, as the web app does through `packages/ui`: the scale (text roles and icon sizes), the pieces screens are made of (callout, field, file tile, search field, dialog) and the layouts they are arranged in. It builds on gpui-kit's components rather than replacing them. Screens name a role or a piece, never a size or a colour of their own, so one change to the library reaches every screen. Icons come from gpui-kit's Lucide catalogue, embedding only the ones the app names.
 
 ## Assumptions (not yet confirmed)
 

@@ -1,19 +1,17 @@
-//! The title bar: the app's mark and name, the search, the total speed, and the window's buttons
-//! (D23, D36).
+//! The title bar: the app's mark and name, the total speed, and the window's buttons (D23, D36).
 
-use gpui_kit::component::input::Input;
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, TitleBar, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
+    Context, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, div, px,
 };
 use wirecatch_protocol::app::{DownloadStatus, ProcessingStep};
 
 use super::{Group, MainWindow};
 use crate::text;
+use crate::ui::{Role, Typed as _, tokens};
 
-const SEARCH_WIDTH: f32 = 360.;
 /// The readout keeps this width whatever it says, so the bar never shifts.
 const READOUT_WIDTH: f32 = 140.;
 
@@ -32,18 +30,9 @@ impl MainWindow {
                         .child(div().size(px(8.)).rounded_full().bg(theme.primary))
                         .child(
                             div()
-                                .text_xs()
-                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_role(Role::Strong, cx)
                                 .child(wirecatch_shell::host::CHANNEL.name()),
                         ),
-                )
-                .child(
-                    div().w(px(SEARCH_WIDTH)).child(
-                        Input::new(&self.search)
-                            .small()
-                            .cleanable(true)
-                            .prefix(Icon::new(IconName::Search).xsmall()),
-                    ),
                 )
                 .child(h_flex().flex_1().justify_end().child(self.readout(cx))),
         )
@@ -101,7 +90,7 @@ impl MainWindow {
             .w(px(READOUT_WIDTH))
             .justify_end()
             .gap_1p5()
-            .text_xs()
+            .text_role(Role::Meta, cx)
             .when(said.is_empty(), gpui_kit::Styled::invisible)
             .text_color(if speed > 0 {
                 theme.foreground
@@ -110,7 +99,7 @@ impl MainWindow {
             })
             .child(
                 Icon::new(IconName::ArrowDown)
-                    .xsmall()
+                    .with_size(tokens::ICON_SMALL)
                     .when(speed > 0, |icon| icon.text_color(theme.primary)),
             )
             .child(said)

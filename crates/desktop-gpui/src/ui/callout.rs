@@ -2,9 +2,11 @@
 
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
+
+use super::{Role, Typed as _};
 use gpui_kit::{
-    AnyElement, App, FontWeight, IntoElement, ParentElement as _, RenderOnce, SharedString,
-    Styled as _, Window, div,
+    AnyElement, App, IntoElement, ParentElement as _, RenderOnce, SharedString, Styled as _,
+    Window, div,
 };
 
 #[derive(IntoElement)]
@@ -43,11 +45,11 @@ impl RenderOnce for Callout {
             .gap_1()
             .rounded(theme.radius)
             .bg(theme.danger.opacity(0.12))
-            .text_sm()
+            .text_role(Role::Body, cx)
             .when_some(self.title, |callout, title| {
                 callout.child(
                     div()
-                        .font_weight(FontWeight::MEDIUM)
+                        .text_role(Role::Strong, cx)
                         .text_color(theme.danger)
                         .child(title),
                 )
