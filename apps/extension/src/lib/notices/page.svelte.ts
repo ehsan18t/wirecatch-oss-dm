@@ -1,8 +1,9 @@
 /**
  * The notices page's state (D65): the notices the background sends, as the design system's toasts,
  * each said to be on screen once the page script around has made the frame big enough to show it,
- * each button sent back to the background, and the frame's size for that page script. When the
- * last notice is gone the background takes the frame away.
+ * each button sent back to the background, each notice that leaves told to it so it never shows
+ * again, and the frame's size for that page script. When the last notice is gone the background
+ * takes the frame away.
  */
 import type { BrowserNotice, NoticeId, NoticeKind } from '@wirecatch/protocol';
 import { Toaster, type ToastTone } from '@wirecatch/ui';
@@ -21,6 +22,8 @@ export class NoticesPage {
   #last: NoticeId | null = null;
   /** Notices given but not yet in a frame big enough to show them. */
   readonly #unseen: NoticeId[] = [];
+  /** Each toast's notice, until the toast leaves. */
+  #notices: { toast: string; id: NoticeId }[] = [];
   /** Where sizes go, once the page script around handed it over. */
   #sizes: MessagePort | null = null;
   #size: FrameSize | null = null;
@@ -33,7 +36,7 @@ export class NoticesPage {
   show(notice: BrowserNotice): void {
     this.#last = notice.id;
     this.#unseen.push(notice.id);
-    this.toaster.show(TONE[notice.kind], notice.body, {
+    const toast = this.toaster.show(TONE[notice.kind], notice.body, {
       title: notice.title,
       duration: notice.stays_ms ?? 0,
       actions: notice.buttons.map((label, button) => ({
@@ -41,11 +44,16 @@ export class NoticesPage {
         run: () => this.#send({ type: 'pressed', id: notice.id, button }),
       })),
     });
+    this.#notices.push({ toast, id: notice.id });
   }
 
   /** The list changed: once every notice is gone, the frame may go. It reads the list first, so an effect calling it follows every change. */
   changed(): void {
-    const empty = this.toaster.list.length === 0;
+    const { list } = this.toaster;
+    const left = this.#notices.filter(({ toast }) => list.every((shown) => shown.id !== toast));
+    this.#notices = this.#notices.filter((notice) => !left.includes(notice));
+    for (const { id } of left) this.#send({ type: 'gone', id });
+    const empty = list.length === 0;
     if (empty && this.#last !== null) this.#send({ type: 'empty', last: this.#last });
   }
 
@@ -70,8 +78,9 @@ export class NoticesPage {
     for (const id of this.#unseen.splice(0)) this.#send({ type: 'shown', id });
   }
 
-  /** The background let this frame go: its notices go with it. */
+  /** The background let this frame go: its notices go with it, still open for the tab the person turned to. */
   lost(): void {
+    this.#notices = [];
     this.toaster.clear();
   }
 

@@ -213,6 +213,67 @@ describe('the notice center', () => {
     expect(page.received.map((m) => m.notice.id)).toEqual([noticeId(2)]);
   });
 
+  it('moves the notices still open to the tab the person turns to, and a closed one never comes back', async () => {
+    const tab = { now: 7 };
+    const clock = { now: 0 };
+    const { notices, told } = center(
+      {
+        focusedTab: () => Promise.resolve(tab.now),
+        mount: (tabId) => Promise.resolve(`token-${String(tabId)}`),
+      },
+      clock,
+    );
+    await notices.show(notice(1, { kind: 'failed', stays_ms: null }));
+    await notices.show(notice(2));
+    const first = provedPage(notices, 'token-7');
+    first.send({ type: 'gone', id: noticeId(2) });
+
+    clock.now = 3000;
+    tab.now = 9;
+    await notices.focusChanged();
+    expect(told.unmounted).toEqual([7]);
+    const second = provedPage(notices, 'token-9');
+    expect(second.received.map((m) => m.notice)).toEqual([
+      notice(1, { kind: 'failed', stays_ms: null }),
+    ]);
+
+    second.send({ type: 'gone', id: noticeId(1) });
+    second.send({ type: 'empty', last: noticeId(1) });
+    tab.now = 7;
+    await notices.focusChanged();
+    expect(provedPage(notices, 'token-7').received).toEqual([]);
+  });
+
+  it('moves a notice with the time it has left, and not one whose time is up', async () => {
+    const tab = { now: 7 };
+    const clock = { now: 0 };
+    const { notices } = center(
+      {
+        focusedTab: () => Promise.resolve(tab.now),
+        mount: (tabId) => Promise.resolve(`token-${String(tabId)}`),
+      },
+      clock,
+    );
+    await notices.show(notice(1, { stays_ms: 8000 }));
+    await notices.show(notice(2, { stays_ms: 2000 }));
+    provedPage(notices, 'token-7');
+    clock.now = 3000;
+    tab.now = 9;
+    await notices.focusChanged();
+    const moved = provedPage(notices, 'token-9').received.map((m) => m.notice);
+    expect(moved).toEqual([notice(1, { stays_ms: 5000 })]);
+  });
+
+  it('keeps the frame while the browser is not in front', async () => {
+    const tab = { now: 7 as number | null };
+    const { notices, told } = center({ focusedTab: () => Promise.resolve(tab.now) });
+    await notices.show(notice(1));
+    provedPage(notices);
+    tab.now = null;
+    await notices.focusChanged();
+    expect(told.unmounted).toEqual([]);
+  });
+
   it('ignores ports of other names', () => {
     const { notices } = center();
     const other = fakePort('wirecatch-popup');
@@ -349,17 +410,20 @@ describe('the notices page', () => {
     expect(sent).toEqual([
       { type: 'shown', id: noticeId(1) },
       { type: 'pressed', id: noticeId(1), button: 0 },
+      { type: 'gone', id: noticeId(1) },
       { type: 'empty', last: noticeId(1) },
     ]);
     channel.port1.close();
     notices.dispose();
   });
 
-  it('lets its notices go when the background lets the frame go', () => {
-    const { notices } = page();
+  it('lets its notices go when the background lets the frame go, still open for the next tab', () => {
+    const { notices, sent } = page();
     notices.show(notice(1, { stays_ms: null }));
     notices.lost();
+    flushSync();
     expect(notices.toaster.list).toEqual([]);
+    expect(sent.filter((m) => m.type === 'gone')).toEqual([]);
     notices.dispose();
   });
 
@@ -373,6 +437,10 @@ describe('the notices page', () => {
     expect(screen.getAllByRole('button', { name: 'Dismiss' })).toHaveLength(2);
     await userEvent.click(screen.getByRole('button', { name: 'Clear all' }));
     expect(notices.toaster.list).toEqual([]);
+    expect(sent.filter((m) => m.type === 'gone')).toEqual([
+      { type: 'gone', id: noticeId(1) },
+      { type: 'gone', id: noticeId(2) },
+    ]);
     expect(sent.at(-1)).toEqual({ type: 'empty', last: noticeId(2) });
     notices.dispose();
   });

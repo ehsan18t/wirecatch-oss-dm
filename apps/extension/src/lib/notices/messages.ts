@@ -54,6 +54,8 @@ export type FromNoticesPage =
   | { type: 'shown'; id: NoticeId }
   /** The person pressed one of a notice's buttons. */
   | { type: 'pressed'; id: NoticeId; button: number }
+  /** The notice left the page: closed, pressed, cleared or its time was up. */
+  | { type: 'gone'; id: NoticeId }
   /** Every notice is gone, the last it was given `last`: the frame may go too, unless a newer notice is on its way. */
   | { type: 'empty'; last: NoticeId };
 
@@ -65,6 +67,7 @@ export const isFromNoticesPage = variants<FromNoticesPage>({
     button: refine(isNumber, (n) => Number.isSafeInteger(n) && n >= 0),
   }),
   shown: fields({ type: literal('shown'), id: isNoticeId }),
+  gone: fields({ type: literal('gone'), id: isNoticeId }),
   empty: fields({ type: literal('empty'), last: isNoticeId }),
 });
 
