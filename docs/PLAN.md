@@ -4,7 +4,7 @@ How the rest of v1 gets built: what each part is, who builds it, the contracts b
 
 ## Where the work stands
 
-Waves 0 to 3 are built and merged. Since then the work follows the code quality audit and the interface revamp, not new work packages: [AUDIT](AUDIT.md) has the status of every workstream and [ROADMAP](ROADMAP.md) the order for the next session, which starts with the flaky tests under W6 and goes on to phase 2 of the revamp ([REVAMP](REVAMP.md)). The rules below still hold for any work package: its own folders only, the gates, an independent review, and a fix round before the merge.
+Waves 0 to 3 are built and merged. Since then the work follows the code quality audit and the interface revamp, not new work packages: [AUDIT](AUDIT.md) has the status of every workstream and [ROADMAP](ROADMAP.md) the order of the work, starting with what the first release waits for. The rules below still hold for any work package: its own folders only, the gates, an independent review, and a fix round before the merge.
 
 ## How the work runs
 
