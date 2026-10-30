@@ -5,11 +5,14 @@ use std::hash::{BuildHasher, Hasher};
 use std::time::Duration;
 
 use reqwest::StatusCode;
+use url::Url;
 
 use crate::error::Error;
 use crate::ftp::reply;
 use crate::http;
 use crate::numeric::saturating_cast;
+use crate::options::DownloadOptions;
+use crate::proxy::Proxies;
 
 /// Consecutive refused attempts, while other connections of the same download
 /// are receiving data, after which a connection gives up its part to them.
@@ -19,19 +22,83 @@ use crate::numeric::saturating_cast;
 /// so the segment is not held hostage while the others could finish it.
 const REFUSALS_BEFORE_STEPPING_BACK: u32 = 2;
 
-/// The longest normal backoff; see [`backoff`].
-const MAX_BACKOFF: Duration = Duration::from_secs(10);
-
-/// The pause after the first failure; it doubles with each failure after it.
-const FIRST_BACKOFF: Duration = Duration::from_millis(500);
-
-/// The most random delay added to a backoff, so connections that failed
+/// The most random delay added to a pause, so connections that failed
 /// together spread their next attempts out.
 const MAX_JITTER: Duration = Duration::from_millis(250);
 
-/// Most times the backoff doubles, which keeps the shift small; [`MAX_BACKOFF`]
-/// caps it sooner anyway.
-const MAX_DOUBLINGS: u32 = 5;
+/// The pauses between failed attempts
+/// ([`DownloadOptions::retry_backoff`](crate::DownloadOptions::retry_backoff)):
+/// [`first`](Self::first) after the first failure, doubling with each failure
+/// in a row up to [`max`](Self::max), plus a random fraction of a second so
+/// connections that failed together do not come back together. A server's
+/// `Retry-After` replaces the pause, whatever these are.
+///
+/// ```
+/// # use std::time::Duration;
+/// # use wirecatch_engine::{Backoff, DownloadOptions};
+/// let mut options = DownloadOptions::default();
+/// options.retry_backoff = Backoff::new(Duration::from_secs(1), Duration::from_secs(30));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Backoff {
+    /// The pause after the first failure (default 500 ms). Must not be zero.
+    pub first: Duration,
+    /// The longest pause (default 10 s). Must not be shorter than
+    /// [`first`](Self::first).
+    pub max: Duration,
+}
+
+impl Backoff {
+    /// Pauses from `first`, doubling up to `max`.
+    #[must_use]
+    pub const fn new(first: Duration, max: Duration) -> Self {
+        Self { first, max }
+    }
+
+    /// Whether these pauses can work: [`first`](Self::first) is not zero and
+    /// [`max`](Self::max) is not shorter.
+    pub(crate) fn is_valid(self) -> bool {
+        !self.first.is_zero() && self.first <= self.max
+    }
+
+    /// How long to wait before the next attempt: what the server asked for in
+    /// `Retry-After` if it said, otherwise [`pause`](Self::pause). Jitter is
+    /// only ever added, so a server's delay is never cut short.
+    pub(crate) fn delay(self, failures: u32, retry_after: Option<Duration>) -> Duration {
+        match retry_after {
+            Some(delay) => delay + self.jitter(),
+            None => self.pause(failures),
+        }
+    }
+
+    /// [`first`](Self::first), doubled for each failure after the first,
+    /// capped at [`max`](Self::max), plus [`jitter`](Self::jitter).
+    pub(crate) fn pause(self, failures: u32) -> Duration {
+        let doublings = failures.saturating_sub(1);
+        self.first
+            .saturating_mul(2u32.saturating_pow(doublings))
+            .min(self.max)
+            + self.jitter()
+    }
+
+    /// A random delay below [`MAX_JITTER`] and half of [`first`](Self::first),
+    /// different on every call: connections that fail at the same moment must
+    /// not come back at the same moment.
+    fn jitter(self) -> Duration {
+        // Every `RandomState` is keyed apart from the last one, so a hash made with a
+        // new one is a fresh random number, without a dependency just for this.
+        let random = RandomState::new().build_hasher().finish();
+        let span: u64 = saturating_cast(MAX_JITTER.min(self.first / 2).as_nanos());
+        Duration::from_nanos(random.checked_rem(span).unwrap_or(0))
+    }
+}
+
+impl Default for Backoff {
+    fn default() -> Self {
+        Self::new(Duration::from_millis(500), Duration::from_secs(10))
+    }
+}
 
 /// What a connection does after a failed attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,14 +126,35 @@ pub(crate) enum Refusals {
     StepBack,
 }
 
+/// What the retry policy allows the requests for one link.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Retries {
+    /// The most attempts in a row that receive nothing
+    /// ([`DownloadOptions::max_retries`]).
+    pub max: u32,
+    pub backoff: Backoff,
+    /// Whether the link's connections go to a proxy, so a connection the
+    /// system reports refused is the proxy's.
+    pub through_proxy: bool,
+}
+
+impl Retries {
+    /// The rules `opts` set for `url`, going the way `proxies` send it.
+    pub fn for_link(opts: &DownloadOptions, proxies: &Proxies, url: &Url) -> Self {
+        Self {
+            max: opts.max_retries,
+            backoff: opts.retry_backoff,
+            through_proxy: proxies.goes_through(url),
+        }
+    }
+}
+
 /// The one retry policy: a connection's or a request's failed attempts in a
 /// row, and what follows the next one.
 #[derive(Debug)]
 pub(crate) struct Attempts {
     refusal_policy: Refusals,
-    /// The most attempts in a row that receive nothing
-    /// ([`DownloadOptions::max_retries`](crate::DownloadOptions::max_retries)).
-    max_retries: u32,
+    retries: Retries,
     /// Attempts in a row that received nothing.
     failures: u32,
     /// Of those, attempts the server turned away.
@@ -74,12 +162,11 @@ pub(crate) struct Attempts {
 }
 
 impl Attempts {
-    /// No failed attempt yet; at most `max_retries` in a row that receive
-    /// nothing.
-    pub fn new(refusal_policy: Refusals, max_retries: u32) -> Self {
+    /// No failed attempt yet.
+    pub fn new(refusal_policy: Refusals, retries: Retries) -> Self {
         Self {
             refusal_policy,
-            max_retries,
+            retries,
             failures: 0,
             refusals: 0,
         }
@@ -97,6 +184,13 @@ impl Attempts {
         retry_after: Option<Duration>,
         progressed: bool,
     ) -> Next {
+        // A proxy that refuses connections is not running, and waiting does not
+        // start it (D102).
+        if self.retries.through_proxy
+            && matches!(error, Error::Network(e) if e.is_refused_by_system())
+        {
+            return Next::GiveUp;
+        }
         let refused = self.refusal_policy == Refusals::StepBack && is_refusal(error);
         if !(error.is_retryable() || refused) {
             return Next::GiveUp;
@@ -105,7 +199,7 @@ impl Attempts {
         // (`DownloadOptions::max_retries`).
         if progressed {
             self.failures = 0;
-        } else if self.failures >= self.max_retries {
+        } else if self.failures >= self.retries.max {
             return Next::GiveUp;
         } else {
             self.failures += 1;
@@ -115,8 +209,9 @@ impl Attempts {
         } else {
             0
         };
-        let delay = retry_delay(self.failures, retry_after);
-        let long_wait = retry_after.is_some() || delay > MAX_BACKOFF;
+        let backoff = self.retries.backoff;
+        let delay = backoff.delay(self.failures, retry_after);
+        let long_wait = retry_after.is_some() || delay > backoff.max;
         if self.refusals > 0 && (self.refusals >= REFUSALS_BEFORE_STEPPING_BACK || long_wait) {
             Next::StepBackOrRetry(delay)
         } else {
@@ -145,44 +240,37 @@ pub(crate) fn is_refusal(error: &Error) -> bool {
     }
 }
 
-/// How long to wait before the next attempt: what the server asked for in
-/// `Retry-After` if it said, otherwise [`backoff`]. Jitter is only ever added,
-/// so a server's delay is never cut short.
-pub(crate) fn retry_delay(failures: u32, retry_after: Option<Duration>) -> Duration {
-    match retry_after {
-        Some(delay) => delay + jitter(),
-        None => backoff(failures),
-    }
-}
-
-/// 0.5 s, 1 s, 2 s ... capped at 10 s, plus [`jitter`].
-pub(crate) fn backoff(failures: u32) -> Duration {
-    let doublings = failures.saturating_sub(1).min(MAX_DOUBLINGS);
-    FIRST_BACKOFF
-        .saturating_mul(1 << doublings)
-        .min(MAX_BACKOFF)
-        + jitter()
-}
-
-/// A random delay below [`MAX_JITTER`], different on every call: connections
-/// that fail at the same moment must not come back at the same moment.
-fn jitter() -> Duration {
-    // Every `RandomState` is keyed apart from the last one, so a hash made with a
-    // new one is a fresh random number, without a dependency just for this.
-    let random = RandomState::new().build_hasher().finish();
-    let span: u64 = saturating_cast(MAX_JITTER.as_nanos());
-    Duration::from_nanos(random % span)
-}
-
 #[cfg(test)]
 mod tests {
+    use std::io;
+
     use super::*;
 
     #[test]
     fn backoff_grows_and_caps() {
-        assert!(backoff(1) < FIRST_BACKOFF + MAX_JITTER);
-        assert!(backoff(3) >= Duration::from_secs(2));
-        assert!(backoff(30) < MAX_BACKOFF + MAX_JITTER);
+        let backoff = Backoff::default();
+        assert!(backoff.pause(1) < backoff.first + MAX_JITTER);
+        assert!(backoff.pause(3) >= Duration::from_secs(2));
+        assert!(backoff.pause(30) < backoff.max + MAX_JITTER);
+        assert!(backoff.pause(u32::MAX) < backoff.max + MAX_JITTER);
+    }
+
+    #[test]
+    fn short_pauses_get_short_jitter() {
+        let backoff = Backoff::new(Duration::from_millis(10), Duration::from_millis(40));
+        assert!(backoff.pause(1) < Duration::from_millis(15));
+        assert!(backoff.pause(10) < Duration::from_millis(45));
+        let tiny = Backoff::new(Duration::from_nanos(1), Duration::from_nanos(1));
+        assert_eq!(tiny.pause(1), Duration::from_nanos(1));
+    }
+
+    /// At most `max` attempts in a row with the default pauses, directly.
+    fn retries(max: u32) -> Retries {
+        Retries {
+            max,
+            backoff: Backoff::default(),
+            through_proxy: false,
+        }
     }
 
     fn ftp(code: u16) -> Error {
@@ -195,7 +283,7 @@ mod tests {
 
     /// What two failed attempts in a row, receiving nothing, lead to.
     fn refused_twice(error: &Error) -> (Next, Next) {
-        let mut attempts = Attempts::new(Refusals::StepBack, 6);
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(6));
         let first = attempts.after_failure(error, None, false);
         let second = attempts.after_failure(error, None, false);
         (first, second)
@@ -220,15 +308,15 @@ mod tests {
         let (_, second) = refused_twice(&ftp(450));
         assert!(matches!(second, Next::Retry(_)), "{second:?}");
         // A permanent failure ends at once.
-        let mut attempts = Attempts::new(Refusals::StepBack, 6);
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(6));
         assert_eq!(attempts.after_failure(&ftp(550), None, false), Next::GiveUp);
     }
 
     #[test]
     fn the_retry_budget_and_progress() {
-        let mut attempts = Attempts::new(Refusals::StepBack, 0);
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(0));
         assert_eq!(attempts.after_failure(&ftp(421), None, false), Next::GiveUp);
-        let mut attempts = Attempts::new(Refusals::StepBack, 1);
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(1));
         assert!(matches!(
             attempts.after_failure(&ftp(450), None, false),
             Next::Retry(_)
@@ -236,7 +324,7 @@ mod tests {
         assert_eq!(attempts.after_failure(&ftp(450), None, false), Next::GiveUp);
         // An attempt that received something does not count, and starts the
         // count again.
-        let mut attempts = Attempts::new(Refusals::StepBack, 1);
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(1));
         attempts.after_failure(&ftp(450), None, false);
         assert!(matches!(
             attempts.after_failure(&ftp(450), None, true),
@@ -247,7 +335,7 @@ mod tests {
             Next::Retry(_)
         ));
         // A refusal that asks for a long wait steps back at once.
-        let mut attempts = Attempts::new(Refusals::StepBack, 6);
+        let mut attempts = Attempts::new(Refusals::StepBack, retries(6));
         let busy = Error::HttpStatus {
             status: 503,
             url: "https://h/f".into(),
@@ -262,7 +350,9 @@ mod tests {
     /// millisecond; they must still not all retry at the same moment.
     #[test]
     fn connections_failing_together_get_different_delays() {
-        let delays: std::collections::HashSet<Duration> = (0..16).map(|_| backoff(1)).collect();
+        let backoff = Backoff::default();
+        let delays: std::collections::HashSet<Duration> =
+            (0..16).map(|_| backoff.pause(1)).collect();
         assert!(
             delays.len() >= 8,
             "16 delays asked for at once, only {} different",
@@ -271,13 +361,13 @@ mod tests {
         assert!(
             delays
                 .iter()
-                .all(|d| *d >= FIRST_BACKOFF && *d < FIRST_BACKOFF + MAX_JITTER)
+                .all(|d| *d >= backoff.first && *d < backoff.first + MAX_JITTER)
         );
     }
 
     #[test]
     fn a_lone_request_treats_refusals_as_failures() {
-        let mut attempts = Attempts::new(Refusals::AsFailures, 6);
+        let mut attempts = Attempts::new(Refusals::AsFailures, retries(6));
         assert_eq!(attempts.after_failure(&ftp(530), None, false), Next::GiveUp);
         let busy = Error::HttpStatus {
             status: 503,
@@ -292,10 +382,46 @@ mod tests {
     }
 
     #[test]
+    fn a_proxy_that_refuses_the_connection_is_given_up_on() {
+        // ECONNREFUSED as each system numbers it.
+        let code = if cfg!(windows) { 10061 } else { 111 };
+        let refused = || Error::socket("connecting", io::Error::from_raw_os_error(code), true);
+        let mut through = Retries {
+            through_proxy: true,
+            ..retries(6)
+        };
+        let mut attempts = Attempts::new(Refusals::StepBack, through);
+        assert_eq!(
+            attempts.after_failure(&refused(), None, false),
+            Next::GiveUp
+        );
+        // Straight to the server, the refusal is retried as before.
+        through.through_proxy = false;
+        let mut attempts = Attempts::new(Refusals::AsFailures, through);
+        assert!(matches!(
+            attempts.after_failure(&refused(), None, false),
+            Next::Retry(_)
+        ));
+        // The server's refusal relayed by a SOCKS proxy is not the proxy's.
+        let relayed = Error::socket(
+            "connecting through the proxy",
+            io::Error::new(io::ErrorKind::ConnectionRefused, "refused by the server"),
+            true,
+        );
+        let mut attempts = Attempts::new(Refusals::AsFailures, retries(6));
+        attempts.retries.through_proxy = true;
+        assert!(matches!(
+            attempts.after_failure(&relayed, None, false),
+            Next::Retry(_)
+        ));
+    }
+
+    #[test]
     fn retry_after_is_never_shortened() {
         let asked = Duration::from_secs(3);
-        let delay = retry_delay(1, Some(asked));
+        let backoff = Backoff::default();
+        let delay = backoff.delay(1, Some(asked));
         assert!(delay >= asked && delay < asked + MAX_JITTER);
-        assert!(retry_delay(1, None) < Duration::from_millis(800));
+        assert!(backoff.delay(1, None) < Duration::from_millis(800));
     }
 }

@@ -9,6 +9,7 @@ use crate::error::{Error, Result};
 use crate::limiter::RateLimiter;
 use crate::net_guard::PrivateNetwork;
 use crate::proxy::ProxyChoice;
+use crate::retry::Backoff;
 use crate::units::{MIB, MIB_USIZE};
 
 /// Most connections one download may open ([`DownloadOptions::connections`]). More only adds load on the server and on this machine.
@@ -41,8 +42,11 @@ pub struct DownloadOptions {
     /// Bytes collected per connection before each disk write (default 1 MiB).
     pub buffer_size: usize,
     /// Consecutive failed attempts without progress before a connection gives
-    /// up (default 6).
+    /// up (default 6). A proxy that refuses the connection is not retried.
     pub max_retries: u32,
+    /// The pauses between those attempts (default 500 ms, doubling up to
+    /// 10 s). A server's `Retry-After` takes their place.
+    pub retry_backoff: Backoff,
     /// How long to wait for the server, either for the answer to a request or
     /// for more data while receiving, before the attempt counts as failed and
     /// is retried (default 30 s).
@@ -150,6 +154,7 @@ impl Default for DownloadOptions {
             min_split: MIB,
             buffer_size: MIB_USIZE,
             max_retries: 6,
+            retry_backoff: Backoff::default(),
             stall_timeout: Duration::from_secs(30),
             connect_timeout: Duration::from_secs(15),
             user_agent: concat!("wirecatch-engine/", env!("CARGO_PKG_VERSION")).to_string(),
@@ -166,7 +171,7 @@ impl Default for DownloadOptions {
 }
 
 impl DownloadOptions {
-    /// Checks that every option can work. [`download`](fn@crate::download) and [`Fetcher`](crate::Fetcher) call this before sending anything, so a zero connection count, split size, buffer size, timeout or checkpoint interval is an error instead of a hang or a panic, and so is a manual proxy the HTTP client cannot read, which it would otherwise go around, and so are more than [`MAX_CONNECTIONS`] connections or a buffer over [`MAX_BUFFER_SIZE`], which would exhaust memory.
+    /// Checks that every option can work. [`download`](fn@crate::download) and [`Fetcher`](crate::Fetcher) call this before sending anything, so a zero connection count, split size, buffer size, retry pause, timeout or checkpoint interval is an error instead of a hang or a panic, and so is a manual proxy the HTTP client cannot read, which it would otherwise go around, and so are more than [`MAX_CONNECTIONS`] connections or a buffer over [`MAX_BUFFER_SIZE`], which would exhaust memory.
     ///
     /// # Errors
     ///
@@ -182,6 +187,7 @@ impl DownloadOptions {
                 "buffer_size",
                 (1..=MAX_BUFFER_SIZE).contains(&self.buffer_size),
             ),
+            ("retry_backoff", self.retry_backoff.is_valid()),
             ("stall_timeout", !self.stall_timeout.is_zero()),
             ("connect_timeout", !self.connect_timeout.is_zero()),
             ("checkpoint_interval", !self.checkpoint_interval.is_zero()),

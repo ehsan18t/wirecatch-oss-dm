@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use wirecatch_engine::{ProxyChoice, RateLimiter};
+use wirecatch_engine::{Backoff, ProxyChoice, RateLimiter};
 use wirecatch_protocol::QueueId;
 
 use super::Manager;
@@ -11,6 +11,7 @@ pub(super) struct RunPolicy {
     /// The app's, then the queue's.
     pub limiters: Vec<Arc<RateLimiter>>,
     pub proxy: ProxyChoice,
+    pub retry_backoff: Backoff,
 }
 
 impl Manager {
@@ -36,6 +37,7 @@ impl Manager {
                 .max(1),
             limiters: vec![self.inner.global_limiter.clone(), slot.limiter.clone()],
             proxy: state.queue_proxy(Some(&slot.queue)),
+            retry_backoff: self.inner.retry_backoff,
         }
     }
 
@@ -44,6 +46,7 @@ impl Manager {
             connections: usize::from(state.settings.connections_per_download).max(1),
             limiters: vec![self.inner.global_limiter.clone()],
             proxy: state.app_proxy(),
+            retry_backoff: self.inner.retry_backoff,
         }
     }
 }

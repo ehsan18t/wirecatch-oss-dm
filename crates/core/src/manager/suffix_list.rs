@@ -363,7 +363,7 @@ mod tests {
 
         async fn open(dir: &Path, server: &FileServer, clock: &Arc<ManualClock>) -> Manager {
             let folders = KnownFolders::under_home(dir.join("home"));
-            let config = ManagerConfig::new(dir.join("data"), folders)
+            let config = ManagerConfig::for_tests(dir.join("data"), folders)
                 .with_clock(clock.clone())
                 .with_suffix_list_source(server.url(LIST));
             Manager::open(config).await.unwrap()

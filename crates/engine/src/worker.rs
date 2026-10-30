@@ -114,7 +114,7 @@ async fn run_assignment(
     index: usize,
     mut response: Option<Body>,
 ) -> Result<Ended> {
-    let mut attempts = Attempts::new(Refusals::StepBack, shared.opts.max_retries);
+    let mut attempts = Attempts::new(Refusals::StepBack, shared.retries);
     loop {
         if shared.request.cancel.is_cancelled() {
             return Ok(Ended::Cancelled);
@@ -145,7 +145,7 @@ async fn run_assignment(
             Ok(Ended::SwitchedProtocol) => {}
             // Progress: failures before it no longer count.
             Ok(Ended::RequestDone) => {
-                attempts = Attempts::new(Refusals::StepBack, shared.opts.max_retries);
+                attempts = Attempts::new(Refusals::StepBack, shared.retries);
             }
             Ok(ended) => return Ok(ended),
             // Waiting for an answer was cut short by a pause.

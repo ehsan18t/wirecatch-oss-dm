@@ -18,6 +18,7 @@ use crate::numeric::saturating_cast;
 use crate::options::DownloadOptions;
 use crate::progress::Progress;
 use crate::request::RequestContext;
+use crate::retry::Retries;
 use crate::segment::{self, SharedTable};
 use crate::storage::Finish;
 use crate::target::{self, Described, Destination, Prepared, Target};
@@ -227,6 +228,7 @@ pub(crate) struct Shared {
     pub part_path: PathBuf,
     pub progress: Arc<Progress>,
     pub opts: DownloadOptions,
+    pub retries: Retries,
     /// Connections currently streaming a response body.
     pub receiving: worker::Receivers,
     pub file_work: FileWork,
@@ -357,6 +359,7 @@ pub(crate) async fn download_guarded(
     .await?;
     progress.start(&target.file, &target.name(), total, resumed_from);
 
+    let retries = Retries::for_link(&opts, clients.proxies(), &final_url);
     let shared = Arc::new(Shared {
         request: RequestContext {
             url: final_url,
@@ -371,6 +374,7 @@ pub(crate) async fn download_guarded(
         part_path: target.part.clone(),
         progress,
         opts,
+        retries,
         receiving: worker::Receivers::default(),
         file_work: request.file_work.clone(),
     });

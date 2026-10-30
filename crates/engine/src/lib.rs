@@ -142,7 +142,8 @@
 //! # Busy servers
 //!
 //! Network errors, timeouts and `408`, `425`, `429`, `500`, `502`, `503` and
-//! `504` answers are retried with growing pauses (see [`Error::is_retryable`]).
+//! `504` answers are retried with growing pauses (see [`Error::is_retryable`] and
+//! [`DownloadOptions::retry_backoff`]).
 //! A server that accepts a connection but never answers counts as a timeout
 //! after [`DownloadOptions::stall_timeout`], and cancelling never waits for it.
 //! A `429` or `503` with `Retry-After` is retried no sooner than the server asked,
@@ -227,8 +228,10 @@
 //! A proxy may be `http://`, `https://`, `socks4://`, `socks5://` or
 //! `socks5h://` (the proxy resolves names), with a login in its URL
 //! (`http://user:password@proxy.example:8080`). A proxy that refuses the
-//! login ends the download with [`Error::ProxyLoginRefused`]. HTTP/3 is not
-//! used through a proxy, since QUIC would go around it.
+//! login ends the download with [`Error::ProxyLoginRefused`]. One that refuses
+//! the connection itself (nothing listens at its address) ends it at once with
+//! that [`Error::Network`], without retrying. HTTP/3 is not used through a
+//! proxy, since QUIC would go around it.
 //!
 //! # HTTP/3 (experimental)
 //!
@@ -284,6 +287,7 @@ pub use net_guard::{AddressKind, PrivateNetwork};
 pub use options::{DownloadOptions, MAX_BUFFER_SIZE, MAX_CONNECTIONS};
 pub use progress::Progress;
 pub use proxy::{ManualProxies, ProxyChoice, ProxyRoute, ProxySetting};
+pub use retry::Backoff;
 pub use state::resume_file_url;
 pub use storage::{PART_EXT, STATE_EXT};
 pub use tokio_util::sync::CancellationToken;

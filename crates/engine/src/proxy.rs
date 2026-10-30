@@ -496,6 +496,11 @@ impl Proxies {
         }
     }
 
+    /// Whether requests for `url` connect to a proxy rather than to its server.
+    pub(crate) fn goes_through(&self, url: &Url) -> bool {
+        matches!(self.route(url), ProxyRoute::Through(_))
+    }
+
     fn route(&self, url: &Url) -> ProxyRoute {
         let (Some(scheme), Some(host)) = (Scheme::of(url), url.host_str()) else {
             return ProxyRoute::Direct;
