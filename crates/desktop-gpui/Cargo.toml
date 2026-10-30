@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 gpui-kit = "0.8.1"
 wirecatch-core.workspace = true
+wirecatch-engine.workspace = true
 wirecatch-queues.workspace = true
 wirecatch-shell.workspace = true
 wirecatch-sites.workspace = true

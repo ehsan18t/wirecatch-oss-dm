@@ -11847,6 +11847,7 @@ dependencies = [
  "tracing",
  "url",
  "wirecatch-core",
+ "wirecatch-engine",
  "wirecatch-ipc",
  "wirecatch-logging",
  "wirecatch-product",

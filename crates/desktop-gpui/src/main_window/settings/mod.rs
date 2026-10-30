@@ -5,6 +5,7 @@ mod files;
 mod general;
 mod network;
 mod notifications;
+mod speed;
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -15,8 +16,8 @@ use gpui_kit::component::setting::{SettingField, Settings};
 use gpui_kit::component::{ActiveTheme as _, Sizable as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Div, Entity, Focusable as _, IntoElement as _,
-    ParentElement as _, SharedString, StyleRefinement, Styled as _, Subscription, Task, Window,
-    div, px,
+    ParentElement as _, SharedString, StyleRefinement, Styled as _, Subscription, Task, WeakEntity,
+    Window, div, px,
 };
 use wirecatch_protocol::app::{AppSettings, AppSettingsPatch};
 use wirecatch_shell::api;
@@ -30,7 +31,7 @@ impl MainWindow {
     /// The settings pages with their own navigation, which ends in the way back to the downloads
     /// where the main navigation has Settings.
     pub(super) fn settings(&self, cx: &mut Context<'_, Self>) -> Div {
-        let pages = screen(&self.library, cx);
+        let pages = screen(&self.library, &cx.entity().downgrade(), cx);
         let switch = self.screen_switch(cx);
         div().relative().flex_1().min_h_0().child(pages).child(
             div()
@@ -48,7 +49,7 @@ impl MainWindow {
 const SAVE_AFTER: Duration = Duration::from_millis(800);
 
 /// Every page, in the order D85 gives, headed like the downloads' page.
-fn screen(library: &Entity<Library>, cx: &App) -> Settings {
+fn screen(library: &Entity<Library>, main: &WeakEntity<MainWindow>, cx: &App) -> Settings {
     let header = StyleRefinement::default()
         .px_5()
         .py_3()
@@ -63,6 +64,7 @@ fn screen(library: &Entity<Library>, cx: &App) -> Settings {
                 general::page(library),
                 files::page(library),
                 notifications::page(library, cx),
+                speed::page(library, main, cx),
                 network::page(library, cx),
             ]
             .map(|page| page.header_style(&header)),

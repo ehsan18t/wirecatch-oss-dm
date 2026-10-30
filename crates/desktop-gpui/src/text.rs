@@ -3,7 +3,7 @@
 use chrono::{Local, TimeZone as _};
 use wirecatch_protocol::app::{
     Category, DownloadStatus, DownloadSummary, FixAction, MediaSummary, PER_MILLE_DONE,
-    ProcessingStep, TimeOfDay, WaitReason,
+    ProcessingStep, Schedule, TimeOfDay, WaitReason, Weekday,
 };
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::rules::{LinkProtocol, Rule};
@@ -382,6 +382,49 @@ pub fn host(url: &str) -> &str {
 /// The first sentence of an error, for a row; the whole message shows in the details.
 pub fn first_sentence(message: &str) -> &str {
     message.split_once(". ").map_or(message, |(first, _)| first)
+}
+
+/// When a queue runs: `01:00 to 07:00, weekdays`, `From 01:00 until empty`, or `No schedule`.
+pub fn schedule(schedule: Option<&Schedule>) -> String {
+    let Some(schedule) = schedule else {
+        return "No schedule".to_owned();
+    };
+    let hours = match schedule.stop {
+        Some(stop) => format!("{} to {}", time(schedule.start), time(stop)),
+        None => format!("From {} until empty", time(schedule.start)),
+    };
+    let days = &schedule.days;
+    let has = |day: &Weekday| days.contains(day);
+    let weekdays = [
+        Weekday::Mon,
+        Weekday::Tue,
+        Weekday::Wed,
+        Weekday::Thu,
+        Weekday::Fri,
+    ];
+    let weekend = [Weekday::Sat, Weekday::Sun];
+    if days.is_empty() {
+        hours
+    } else if days.len() == 5 && weekdays.iter().all(has) {
+        format!("{hours}, weekdays")
+    } else if days.len() == 2 && weekend.iter().all(has) {
+        format!("{hours}, weekends")
+    } else {
+        let names: Vec<&str> = days.iter().map(|day| day_short(*day)).collect();
+        format!("{hours}, {}", names.join(", "))
+    }
+}
+
+fn day_short(day: Weekday) -> &'static str {
+    match day {
+        Weekday::Mon => "Mon",
+        Weekday::Tue => "Tue",
+        Weekday::Wed => "Wed",
+        Weekday::Thu => "Thu",
+        Weekday::Fri => "Fri",
+        Weekday::Sat => "Sat",
+        Weekday::Sun => "Sun",
+    }
 }
 
 fn time(at: TimeOfDay) -> String {

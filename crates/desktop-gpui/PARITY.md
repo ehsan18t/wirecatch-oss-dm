@@ -72,7 +72,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Saving files: folder, if the file exists, folders by file type.
 - [ ] Browser.
 - [ ] Media, with the add-on card.
-- [ ] Speed and queues, with Test a link.
+- [x] Speed and queues, with Test a link.
 - [x] Network: the global proxy, proxy servers, hosts that skip the proxy, FTP past proxies, local network sites.
 - [x] Settings search.
 - [ ] Jump to a setting from the palette.
