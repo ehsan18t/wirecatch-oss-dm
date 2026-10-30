@@ -12,6 +12,7 @@ use gpui_kit::{
 use wirecatch_protocol::app::{ACCENTS, Accent, AppSettingsPatch, Theme};
 use wirecatch_shell::host;
 
+use super::super::backup_dialog::{self, Direction};
 use super::{change, choice, current, switch};
 use crate::library::Library;
 use crate::theme;
@@ -30,6 +31,7 @@ pub(super) fn page(library: &Entity<Library>) -> SettingPage {
         appearance(library),
         startup(library),
         updates(library),
+        backup(library),
         troubleshooting(),
     ])
 }
@@ -128,6 +130,34 @@ fn updates(library: &Entity<Library>) -> SettingGroup {
                 "Weekly, while nothing downloads. The list tells which sites share an owner; publicsuffix.org sees only your IP address and the app\u{2019}s version.",
             )
             .keywords(["psl", "domains", "privacy"]),
+        )
+}
+
+fn backup(library: &Entity<Library>) -> SettingGroup {
+    let button = |label: &'static str, direction: Direction| {
+        let library = library.clone();
+        SettingField::render(move |_, _, _| {
+            let library = library.clone();
+            Button::new(label)
+                .small()
+                .outline()
+                .label(label)
+                .on_click(move |_, window, cx| backup_dialog::open(&library, direction, window, cx))
+        })
+    };
+    SettingGroup::new()
+        .title("Backup")
+        .item(
+            SettingItem::new("Export settings", button("Export", Direction::Export))
+                .description(
+                    "Saves your settings, queues, schedules and folder rules to a single file.",
+                )
+                .keywords(["backup", "export", "save", "move", "profile"]),
+        )
+        .item(
+            SettingItem::new("Import settings", button("Import", Direction::Import))
+                .description("Shows what will change before replacing your settings and queues.")
+                .keywords(["backup", "import", "restore", "load", "profile"]),
         )
 }
 

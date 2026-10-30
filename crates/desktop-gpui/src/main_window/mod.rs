@@ -1,6 +1,7 @@
 //! The main window: the title bar, the navigation of views and queues, the download list and the
 //! status bar (D36, D91).
 
+mod backup_dialog;
 mod command_bar;
 mod confirm;
 mod details;
