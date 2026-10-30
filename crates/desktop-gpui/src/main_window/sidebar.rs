@@ -100,10 +100,7 @@ impl MainWindow {
                     .rounded(theme.radius)
                     .cursor_pointer()
                     .text_color(theme.muted_foreground)
-                    .hover(|item| {
-                        item.bg(theme.sidebar_accent.opacity(0.6))
-                            .text_color(theme.sidebar_accent_foreground)
-                    })
+                    .hover(|item| item.bg(theme.list_hover).text_color(theme.foreground))
                     .child(icon.with_size(tokens::ICON))
                     .child(label)
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_settings(cx))),
@@ -176,7 +173,7 @@ impl MainWindow {
             })
             .when(!current, |item| {
                 item.text_color(theme.muted_foreground)
-                    .hover(|item| item.bg(theme.sidebar_accent.opacity(0.6)))
+                    .hover(|item| item.bg(theme.list_hover))
             })
             .child(
                 icon.with_size(tokens::ICON)
@@ -237,7 +234,7 @@ impl MainWindow {
             .when(rules == Some(false), |item| item.opacity(0.6))
             .when(current, |item| item.bg(theme.sidebar_accent))
             .when(!current, |item| {
-                item.hover(|item| item.bg(theme.sidebar_accent.opacity(0.6)))
+                item.hover(|item| item.bg(theme.list_hover))
             })
             .child(
                 Icon::new(Lucide::ListOrdered)

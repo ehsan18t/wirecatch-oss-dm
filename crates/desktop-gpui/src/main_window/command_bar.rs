@@ -48,7 +48,7 @@ impl MainWindow {
             )
             .child(
                 Button::new("new-download")
-                    .outline()
+                    .primary()
                     .icon(IconName::Plus)
                     .tooltip("New download")
                     .on_click(

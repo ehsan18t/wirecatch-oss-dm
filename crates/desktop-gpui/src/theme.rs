@@ -14,7 +14,7 @@ const DARK: &str = "Wirecatch Dark";
 /// Text on a filled accent: white on the light scheme's deep tones, near black on the dark
 /// scheme's bright ones.
 const ON_ACCENT_LIGHT: u32 = 0x00ff_ffff;
-const ON_ACCENT_DARK: u32 = 0x000b_0d12;
+const ON_ACCENT_DARK: u32 = 0x0014_110e;
 
 /// A destructive button: a deep red with white text in both schemes, where the dark scheme's pale
 /// danger colour, made to read as text, would fill it in pastel.
@@ -109,6 +109,8 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
         theme.list_active_border = tone.opacity(0.6);
         theme.table_active = tone.opacity(0.14);
         theme.table_active_border = tone.opacity(0.6);
+        theme.sidebar_accent = tone.opacity(0.12);
+        theme.sidebar_accent_foreground = tone;
         theme.sidebar_primary = tone;
         theme.sidebar_primary_foreground = on_tone;
     });
