@@ -5,8 +5,8 @@
 use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
 use gpui_kit::{App, Axis, Entity, SharedString};
 use wirecatch_protocol::app::{
-    AppSettingsPatch, MediaDefaultsPatch, OutputDefaultsPatch, OutputFormat, QualityFallback,
-    UnembeddedSubtitles, Update, VideoQuality,
+    AddonId, AppSettingsPatch, MediaDefaultsPatch, OutputDefaultsPatch, OutputFormat,
+    QualityFallback, UnembeddedSubtitles, Update, VideoQuality,
 };
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
 
@@ -54,6 +54,9 @@ const USUAL: &str = "usual";
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
     SettingPage::new("Media").resettable(false).groups([
+        SettingGroup::new()
+            .title("Add-on")
+            .item(super::addon::item(library, AddonId::Media, cx)),
         video(library, cx),
         video_subtitles(library, cx),
         audio(library, cx),

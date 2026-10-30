@@ -1,6 +1,7 @@
 //! The settings screen (D85): gpui-kit's settings pages, each setting read from the library and
 //! changed through the manager, so every window shows the change once the manager makes it.
 
+mod addon;
 mod browser;
 mod files;
 mod general;
