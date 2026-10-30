@@ -1,0 +1,41 @@
+[package]
+name = "wirecatch-shell"
+description = "What the Wirecatch desktop app does besides drawing windows: hosting the download manager, the browser bridge, start at sign-in, and the interface's commands as plain functions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+wirecatch-core.workspace = true
+wirecatch-server.workspace = true
+# Its checked conversions between whole numbers and floating point (`numeric`).
+wirecatch-engine.workspace = true
+wirecatch-ipc.workspace = true
+wirecatch-product.workspace = true
+wirecatch-protocol = { workspace = true, features = ["tokio"] }
+tokio = { workspace = true, features = ["sync", "time", "macros"] }
+tracing = { workspace = true }
+url.workspace = true
+wirecatch-logging = { workspace = true, features = ["setup"] }
+
+[target.'cfg(windows)'.dependencies]
+# The version tauri-plugin-autostart uses, to read the start-at-sign-in entry's state.
+winreg = "0.10.1"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "macros", "rt-multi-thread", "io-util", "process"] }
+wirecatch-test-support = { path = "../test-support", features = ["bridge", "servers"] }
+
+[lints]
+workspace = true

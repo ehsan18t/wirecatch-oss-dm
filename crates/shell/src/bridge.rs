@@ -156,8 +156,8 @@ pub fn bundled_bridge(app_exe: &Path) -> Result<PathBuf, String> {
 }
 
 /// The bridge to register for the app installed at `app_exe`: the one next to it, never one in
-/// a temporary location. An AppImage registers a private copy instead; see
-/// [`crate::appimage::install_private_bridge`].
+/// a temporary location. An AppImage registers a private copy instead (`appimage::install_private_bridge`,
+/// on Unix only).
 ///
 /// # Errors
 ///

@@ -43,21 +43,14 @@
 //! minute after start and daily, downloads a verified update in the background and installs it
 //! when the person quits. See `apps/desktop/PACKAGING.md`.
 
-pub mod activity;
-pub mod api;
 pub mod appearance;
-pub mod appimage;
-pub mod autostart;
 pub mod background;
-pub mod bridge;
 pub mod browser_notices;
 mod commands;
 pub mod download_windows;
-pub mod elevation;
 mod files;
 pub mod finished_window;
 pub mod frame;
-pub mod host;
 pub mod lifecycle;
 #[cfg(windows)]
 mod maximize_overlay;
@@ -66,9 +59,12 @@ pub mod questions;
 pub mod sleep;
 pub mod system_notifications;
 pub mod tray;
-pub mod tray_proxy;
 pub mod updates;
 pub mod window;
+
+pub use wirecatch_shell::{
+    activity, api, appimage, autostart, bridge, elevation, host, tray_proxy,
+};
 
 use tauri::Manager as _;
 use tauri_plugin_dialog::{DialogExt as _, MessageDialogKind};

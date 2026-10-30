@@ -28,6 +28,7 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 | `crates/files` | File helpers: writing a file whole, discarding one, keeping one private to its owner, and the Mark of the Web. |
 | `crates/sites` | Site rules: the Public Suffix List with its built-in snapshot, and which links may reach the person's own network (D39, D44). |
 | `crates/server` | The local protocol server (D14): one client connection over any byte stream, answered by the manager. |
+| `crates/shell` | What the desktop app does besides drawing windows: opening the manager, serving the bridge, start at sign-in, and each interface command as a plain function (D99). |
 | `crates/queues` | Queue rules as pure functions: which downloads start under each queue's limits, and when a scheduled queue runs (D74). |
 | `crates/ipc` | Local app endpoint (named pipe on Windows, Unix socket on Linux). |
 | `crates/bridge` | Native messaging host between the extension and the app. |

@@ -7333,7 +7333,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
- "url",
  "webview2-com",
  "windows",
  "windows-core",
@@ -7345,7 +7344,7 @@ dependencies = [
  "wirecatch-logging",
  "wirecatch-product",
  "wirecatch-protocol",
- "wirecatch-server",
+ "wirecatch-shell",
  "wirecatch-test-support",
 ]
 
@@ -7531,6 +7530,29 @@ dependencies = [
  "wirecatch-queues",
  "wirecatch-records",
  "wirecatch-sites",
+]
+
+[[package]]
+name = "wirecatch-shell"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+ "windows-sys 0.61.2",
+ "winreg 0.10.1",
+ "wirecatch-core",
+ "wirecatch-engine",
+ "wirecatch-ipc",
+ "wirecatch-logging",
+ "wirecatch-product",
+ "wirecatch-protocol",
+ "wirecatch-server",
+ "wirecatch-test-support",
 ]
 
 [[package]]

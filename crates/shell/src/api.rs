@@ -1,8 +1,6 @@
-//! What each Tauri command does, as plain functions on the [`Manager`].
-//!
-//! The `#[tauri::command]` wrappers in `commands.rs` only find the manager and call these, so
-//! tests drive exactly the code the interface runs, without a webview. Every error is a
-//! [`ProtocolError`]: a code the interface acts on and plain-language text, ready to show as is.
+//! What each interface command does, as plain functions on the [`Manager`], so tests drive the
+//! code the interface runs without a window. Every error is a [`ProtocolError`]: a code the
+//! interface acts on and plain-language text, ready to show as is.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

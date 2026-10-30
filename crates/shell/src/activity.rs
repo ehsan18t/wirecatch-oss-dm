@@ -297,7 +297,7 @@ mod tests {
 
     /// The sizes `formatBytes` in `@wirecatch/units` is held to, so both read alike.
     const SHARED_SIZE_CASES: &str =
-        include_str!("../../../../packages/units/src/format-bytes.cases.json");
+        include_str!("../../../packages/units/src/format-bytes.cases.json");
 
     #[derive(serde::Deserialize)]
     struct SizeCase {

@@ -28,6 +28,7 @@ wirecatch-sites = { path = "crates/sites", version = "0.1.0" }
 wirecatch-ipc = { path = "crates/ipc", version = "0.1.0" }
 wirecatch-streams = { path = "crates/streams", version = "0.1.0" }
 wirecatch-product = { path = "crates/product", version = "0.1.0" }
+wirecatch-shell = { path = "crates/shell", version = "0.1.0" }
 wirecatch-logging = { path = "crates/logging", version = "0.1.0", default-features = false }
 ts-rs = { version = "12", features = ["serde-compat"] }
 anyhow = "1"
