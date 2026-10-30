@@ -909,6 +909,25 @@ Decided with the maintainer on 2026-10-30. Pull requests into `gpui` built GPUI 
 3. The Rust caches are saved on `main` and on `gpui`, and CI runs on pushes to both, so pull requests into `gpui` start from a warm cache.
 4. CI builds with line tables only for debug info, which keeps line numbers in backtraces at a fraction of the link time.
 
+### D101. The pauses between retries are an engine option
+
+Decided on 2026-10-30. The engine's pauses between failed attempts (500 ms, doubling up to 10 s) were fixed, so a test of a download that must fail waited them out for real; one proxy test spent about 25 s of its 40 s there. Numbered D101 because D100 is taken on the `gpui` branch.
+
+1. `DownloadOptions::retry_backoff` holds a `Backoff` (`#[non_exhaustive]`, built with `Backoff::new(first, max)`): the first pause, doubled for each failure in a row up to the longest. The defaults are the old pauses, so nothing changes for a caller that leaves it alone. `validate` refuses a zero first pause or a longest pause shorter than the first.
+2. The random delay added to each pause stays below 250 ms and below half the first pause, so short pauses stay short. A server's `Retry-After` still replaces the pause.
+3. `ManagerConfig::retry_backoff` (`with_retry_backoff`) sets it for every download the manager runs, add-on downloads included. The app keeps the default; the core's tests use 10 ms doubling to 100 ms. The number of attempts (`max_retries`) is unchanged, so a test still goes through every retry.
+4. Release notes for the next release of `wirecatch-engine` (additive, D30.3). Added: `Backoff` and `DownloadOptions::retry_backoff`.
+
+### D102. A proxy that refuses the connection is not retried
+
+Decided with the maintainer on 2026-10-30. A download through a proxy that nothing listens on retried six times with growing pauses before saying "Could not reach the proxy": about 26 s of pauses, and on Windows about 2 s more for each refused connection, some 40 s in all.
+
+1. When the system reports a connection refused and the link goes through a proxy, that connection was the proxy's, and the request gives up at once with that `Error::Network` (`is_connect`), for the first request, every later connection and a `Fetcher` alike. A proxy that refuses is not running, and waiting does not start it.
+2. Everything else keeps its retries: a proxy that does not answer in time, a server reached directly that refuses, and a server's refusal a proxy relays (a SOCKS reply, an HTTP proxy's `502`).
+3. A proxy that is restarting fails the download instead of waiting it out; Try again resumes it once the proxy is back.
+4. hyper-util's SOCKS error hides its cause from `source`, so its debug text is read for the system's refusal, as the engine already does to recognise a refused proxy login; the engine's proxy tests catch a rewording.
+5. Release notes for the next release of `wirecatch-engine`. Changed: a download or `Fetcher` request through a proxy that refuses the connection ends at once instead of retrying.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

@@ -297,6 +297,9 @@ impl Error {
     }
 }
 
+/// How hyper-util says it could not connect to a SOCKS proxy.
+const SOCKS_CONNECT_FAILED: &str = "SOCKS error: failed to create underlying connection";
+
 /// Whether a proxy refused `error`'s request for want of a login. The
 /// `hyper-util` errors that say so are not public types, so their text is
 /// matched: a tunnel's `407` and a SOCKS5 proxy's refusals. The engine's tests
@@ -457,6 +460,33 @@ impl NetworkError {
             #[cfg(feature = "http3")]
             Inner::Other { connecting, .. } => *connecting,
         }
+    }
+
+    /// Whether the system reported the connection refused: nothing listens at
+    /// the address. A proxy relaying its server's refusal is not this.
+    pub(crate) fn is_refused_by_system(&self) -> bool {
+        let mut cause: Option<&(dyn std::error::Error + 'static)> = match &self.0 {
+            Inner::Http(e) => Some(e),
+            Inner::Io { error, .. } => Some(error),
+            #[cfg(feature = "http3")]
+            Inner::Other { error, .. } => Some(&**error),
+        };
+        while let Some(c) = cause {
+            if let Some(io) = c.downcast_ref::<io::Error>() {
+                // Only an error the system raised has an OS code; one built for a
+                // relayed refusal (FTP through SOCKS) has none.
+                if io.kind() == io::ErrorKind::ConnectionRefused && io.raw_os_error().is_some() {
+                    return true;
+                }
+            }
+            // hyper-util's SOCKS error hides its cause from `source`; its debug text
+            // holds the system's error. The SOCKS proxy tests catch a rewording.
+            if c.to_string() == SOCKS_CONNECT_FAILED {
+                return format!("{c:?}").contains("kind: ConnectionRefused");
+            }
+            cause = c.source();
+        }
+        false
     }
 
     /// The first error in the chain below the one this error displays itself.

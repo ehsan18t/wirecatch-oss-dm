@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use wirecatch_core::ComputerProxy;
 use wirecatch_engine::units::KIB;
 use wirecatch_protocol::app::{AppSettingsPatch, DownloadStatus, QueueSettings, Setting, Update};
 use wirecatch_protocol::proxy::{
@@ -200,8 +201,29 @@ async fn a_download_keeps_the_proxy_it_went_through_and_names_one_it_could_not_r
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_profile_skips_the_hosts_on_the_computers_bypass_list() -> TestResult {
+    let server = fast_server(16 * KIB).await?;
+    let socks = SocksServer::start(SocksConfig::default()).await;
+    let mut computer = wirecatch_engine::ManualProxies::default();
+    computer.exceptions = "127.0.0.1".into();
+    let tweak = Arc::new(move |config: wirecatch_core::ManagerConfig| {
+        config.with_computer_proxy(ComputerProxy::Given(Some(computer.clone())))
+    });
+    let h = Harness::configured(tweak).await?;
+    let id = h
+        .manager
+        .create_proxy_server(draft(socks_profile("Office", &socks, ""), None))?;
+    use_for_the_app(&h, profile(id))?;
+    let row = h.add(server.url("file.bin")).await?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(done.proxy.as_deref(), Some("No proxy (an exception)"));
+    assert_eq!(socks.destinations(), Vec::<String>::new());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_running_download_keeps_its_proxy_when_the_profile_changes() -> TestResult {
-    let slow = throttled_server(256 * KIB, 32 * KIB).await?;
+    let slow = throttled_server(128 * KIB, 32 * KIB).await?;
     let first = SocksServer::start(SocksConfig::default()).await;
     let h = Harness::new().await?;
     let id = h
@@ -216,7 +238,7 @@ async fn a_running_download_keeps_its_proxy_when_the_profile_changes() -> TestRe
         .update_proxy_server(id, draft(socks_profile("Office", &second, ""), None))?;
     assert!(is_running(&h.row(row.id)));
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
-    assert_eq!(done.done, 256 * KIB);
+    assert_eq!(done.done, 128 * KIB);
     assert_eq!(second.destinations(), Vec::<String>::new());
     Ok(())
 }

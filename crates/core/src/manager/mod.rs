@@ -42,14 +42,15 @@ use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinHandle;
 use tracing::warn;
 use wirecatch_addons::manifest::MediaAddonSources;
-use wirecatch_engine::{CancellationToken, ManualProxies, RateLimiter, Url};
+use wirecatch_engine::{Backoff, CancellationToken, RateLimiter, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{StartupNotice, UiEvent};
 use wirecatch_protocol::extension::{BrowserNotice, NoticeId, NoticePressed};
 use wirecatch_protocol::wire::Event;
 use wirecatch_settings::folders::KnownFolders;
+use wirecatch_settings::proxy::ComputerProxy;
 use wirecatch_sites::public_suffix::SuffixList;
-use wirecatch_store::{Recovery, Store};
+use wirecatch_store::{FailureHandler, Recovery, Store};
 
 use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
@@ -95,6 +96,8 @@ pub struct ManagerConfig {
     /// fresh addresses, after the server refused one or said it expired. One
     /// entry per automatic try; once they are used up, the download fails.
     pub media_refresh_delays: Vec<Duration>,
+    /// The pauses between a download's failed attempts (the engine's default).
+    pub retry_backoff: Backoff,
     /// Where a newer Public Suffix List is fetched from (D44), or `None` to keep the list
     /// built in, as [`new`](Self::new) does so no test reaches the internet. The app
     /// fetches it from publicsuffix.org ([`with_official_suffix_list`](Self::with_official_suffix_list)).
@@ -104,6 +107,10 @@ pub struct ManagerConfig {
     /// reach. The app sends it to [`PROXY_TEST_URL`](crate::PROXY_TEST_URL)
     /// ([`with_official_proxy_test`](Self::with_official_proxy_test)).
     pub proxy_test_url: Option<Url>,
+    /// Where the computer's proxy and bypass list (D73.6) come from: read from the environment
+    /// and the system's setting, as [`new`](Self::new) does, or given, so a test does not
+    /// depend on the machine it runs on.
+    pub computer_proxy: ComputerProxy,
 }
 
 /// The default [`ManagerConfig::capture_timeout`].
@@ -146,9 +153,24 @@ impl ManagerConfig {
             addon_sources: MediaAddonSources::official(),
             media_timeout: DEFAULT_MEDIA_TIMEOUT,
             media_refresh_delays: DEFAULT_MEDIA_REFRESH_DELAYS.to_vec(),
+            retry_backoff: Backoff::default(),
             suffix_list_source: None,
             proxy_test_url: None,
+            computer_proxy: ComputerProxy::Read,
         }
+    }
+
+    /// A configuration for this crate's tests: the machine's proxy never reaches them.
+    #[cfg(test)]
+    pub(crate) fn for_tests(data_dir: impl Into<PathBuf>, folders: KnownFolders) -> Self {
+        Self::new(data_dir, folders).with_computer_proxy(ComputerProxy::Given(None))
+    }
+
+    /// Takes the computer's proxy from `computer`; see [`computer_proxy`](Self::computer_proxy).
+    #[must_use]
+    pub fn with_computer_proxy(mut self, computer: ComputerProxy) -> Self {
+        self.computer_proxy = computer;
+        self
     }
 
     /// Tests a proxy setting with a request to `url`; see
@@ -204,6 +226,13 @@ impl ManagerConfig {
     #[must_use]
     pub fn with_media_refresh_delays(mut self, delays: Vec<Duration>) -> Self {
         self.media_refresh_delays = delays;
+        self
+    }
+
+    /// Uses `backoff` as the [`retry_backoff`](Self::retry_backoff).
+    #[must_use]
+    pub fn with_retry_backoff(mut self, backoff: Backoff) -> Self {
+        self.retry_backoff = backoff;
         self
     }
 
@@ -266,6 +295,7 @@ struct Inner {
     suffix_checking: tokio::sync::Mutex<()>,
     media_timeout: Duration,
     media_refresh_delays: Arc<[Duration]>,
+    retry_backoff: Backoff,
     /// Shared by every download for the global speed limit.
     global_limiter: Arc<RateLimiter>,
     ui_events: broadcast::Sender<UiEvent>,
@@ -294,11 +324,22 @@ impl Drop for Inner {
     }
 }
 
+/// Tells the interface when the database could not save a change.
+fn storage_failures(ui_events: broadcast::Sender<UiEvent>) -> FailureHandler {
+    Box::new(move |reason: String| {
+        publish(
+            &ui_events,
+            UiEvent::StorageFailed(wirecatch_messages::storage_failed(&reason)),
+        );
+    })
+}
+
 /// What the state holds besides the download list, read from the disk and the system at start.
-fn load_beside_the_list(state: &mut State, dir: &Path, addon_dir: &Path) {
+fn load_beside_the_list(state: &mut State, dir: &Path, addon_dir: &Path, computer: ComputerProxy) {
     state.addon = addons::AddonSlot::load(addon_dir);
     state.suffix_check = suffix_list::SuffixCheck::load(dir);
-    state.system_proxy = ManualProxies::from_system();
+    state.system_proxy = computer.proxies();
+    state.computer_proxy = computer;
 }
 
 impl Manager {
@@ -316,13 +357,7 @@ impl Manager {
     pub async fn open(config: ManagerConfig) -> Result<Self> {
         let runtime = Handle::current();
         let ui_events = broadcast::Sender::new(UI_EVENT_BUFFER);
-        let failures = ui_events.clone();
-        let on_failure = Box::new(move |reason: String| {
-            publish(
-                &failures,
-                UiEvent::StorageFailed(wirecatch_messages::storage_failed(&reason)),
-            );
-        });
+        let on_failure = storage_failures(ui_events.clone());
         let dir = config.data_dir.clone();
         let addon_dir = wirecatch_addons::media_dir(&config.data_dir);
         let temp_dir = config.data_dir.join("tmp");
@@ -330,6 +365,7 @@ impl Manager {
         let (addons_at, temp_at) = (addon_dir.clone(), temp_dir.clone());
         // Restoring checks the disk for finished files, so it runs off async threads too.
         let notices_dir = dir.clone();
+        let computer = config.computer_proxy.clone();
         let (store, restored, recoveries, not_private) = blocking(&runtime, move || {
             let (store, mut snapshot) = Store::open(&dir, on_failure)?;
             let recoveries = std::mem::take(&mut snapshot.recoveries);
@@ -341,7 +377,7 @@ impl Manager {
                 suffixes: SuffixList::load(&dir, now_millis),
             };
             let mut restored = restore::restore(snapshot, &around);
-            load_beside_the_list(&mut restored.state, &dir, &addons_at);
+            load_beside_the_list(&mut restored.state, &dir, &addons_at, computer);
             // Cookies files left by a crash: nothing may keep them.
             wirecatch_files::discard::dir(&temp_at);
             Ok((store, restored, recoveries, not_private))
@@ -373,6 +409,7 @@ impl Manager {
             suffix_checking: tokio::sync::Mutex::new(()),
             media_timeout: config.media_timeout,
             media_refresh_delays: config.media_refresh_delays.into(),
+            retry_backoff: config.retry_backoff,
             global_limiter,
             ui_events,
             wire_events: broadcast::Sender::new(WIRE_EVENT_BUFFER),
@@ -515,9 +552,11 @@ impl Manager {
             weak.clone(),
             self.inner.stopped.clone(),
         ));
+        let computer = self.lock().computer_proxy.clone();
         self.spawn(proxy::run_system_proxy_reads(
             weak,
             self.inner.stopped.clone(),
+            computer,
         ));
     }
 

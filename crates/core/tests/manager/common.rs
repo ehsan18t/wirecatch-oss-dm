@@ -9,9 +9,10 @@ use std::time::{Duration, Instant};
 use chrono::{NaiveDate, NaiveDateTime};
 use tempfile::TempDir;
 use wirecatch_core::{
-    DEFAULT_CAPTURE_TIMEOUT, DEFAULT_STOP_TIMEOUT, KnownFolders, Manager, ManagerConfig,
-    ManualClock,
+    ComputerProxy, DEFAULT_CAPTURE_TIMEOUT, DEFAULT_STOP_TIMEOUT, KnownFolders, Manager,
+    ManagerConfig, ManualClock,
 };
+use wirecatch_engine::Backoff;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, AppSettings, DownloadStatus, DownloadSummary};
 pub use wirecatch_test_support::http::{Config, Seen, TestServer};
@@ -53,6 +54,10 @@ pub fn monday(hour: u32, minute: u32) -> TestResult<NaiveDateTime> {
         .and_then(|d| d.and_hms_opt(hour, minute, 0))
         .ok_or_else(|| format!("{hour}:{minute} is not a time of day").into())
 }
+
+/// Pauses between failed attempts short enough that a download that must fail
+/// fails within a second, and still growing as the engine's own do.
+const QUICK_RETRIES: Backoff = Backoff::new(Duration::from_millis(10), Duration::from_millis(100));
 
 /// Changes the manager's configuration, for example to install the media
 /// add-on from a local server.
@@ -224,7 +229,10 @@ async fn open(
     let mut config = ManagerConfig::new(root.path().join("data"), folders.clone())
         .with_clock(clock.clone())
         .with_stop_timeout(stop_timeout)
-        .with_capture_timeout(capture_timeout);
+        .with_capture_timeout(capture_timeout)
+        .with_retry_backoff(QUICK_RETRIES)
+        // The machine's proxy variables and system setting never reach a test.
+        .with_computer_proxy(ComputerProxy::Given(None));
     // Tests never reach the internet: no update check unless a test asks.
     config.addon_sources.ytdlp_releases = None;
     if let Some(tweak) = tweak {

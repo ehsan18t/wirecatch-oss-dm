@@ -1,12 +1,12 @@
 //! Proxy servers (D73): saving, testing and deleting them, and Copy from system.
 
-use wirecatch_engine::{CancellationToken, ManualProxies};
+use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::app::{Setting, UiEvent};
 use wirecatch_protocol::proxy::{
     ProxyServer, ProxyServerDraft, ProxyServerSettings, ProxyTestResult, ProxyTestRun, ProxyUse,
 };
 use wirecatch_protocol::{ProxyServerId, Secret};
-use wirecatch_settings::proxy::{SavedProxyServer, UpdaterProxy};
+use wirecatch_settings::proxy::{ComputerProxy, SavedProxyServer, UpdaterProxy};
 
 use super::Manager;
 use super::state::State;
@@ -197,8 +197,9 @@ impl Manager {
     ///
     /// The errors of [`create_proxy_server`](Self::create_proxy_server).
     pub async fn copy_system_proxy(&self) -> Result<Vec<ProxyServerId>> {
+        let computer = self.lock_open()?.computer_proxy.clone();
         let found = self
-            .blocking(|| Ok(wirecatch_settings::proxy::from_system()))
+            .blocking(move || Ok(wirecatch_settings::proxy::from_system(&computer)))
             .await?;
         let mut state = self.lock_open()?;
         let copies = wirecatch_settings::proxy::copies(found.clone(), &state.proxy_servers)?;
@@ -325,13 +326,15 @@ const READ_SYSTEM_PROXY_EVERY: std::time::Duration = std::time::Duration::from_s
 pub(super) async fn run_system_proxy_reads(
     weak: std::sync::Weak<super::Inner>,
     stopped: CancellationToken,
+    computer: ComputerProxy,
 ) {
     loop {
         tokio::select! {
             () = tokio::time::sleep(READ_SYSTEM_PROXY_EVERY) => {}
             () = stopped.cancelled() => return,
         }
-        let Ok(read) = tokio::task::spawn_blocking(ManualProxies::from_system).await else {
+        let computer = computer.clone();
+        let Ok(read) = tokio::task::spawn_blocking(move || computer.proxies()).await else {
             return;
         };
         let Some(manager) = Manager::from_weak(&weak) else {
