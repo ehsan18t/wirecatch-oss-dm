@@ -18,7 +18,7 @@ use wirecatch_protocol::app::{DownloadStatus, UserError};
 use super::added_pages::AnsweredPage;
 use super::policy::RunPolicy;
 use super::settle::path_resolver;
-use super::state::{Entry, Gauge, OnExisting, Run, State, Stop};
+use super::state::{Entry, Found, Gauge, OnExisting, Run, State, Stop};
 use super::{Inner, Manager};
 use crate::headers;
 use crate::headers::Origin;
@@ -44,6 +44,9 @@ pub(super) enum MediaDone {
     Completed { path: PathBuf, bytes: u64 },
     /// Stopped; starting it again continues.
     Paused,
+    /// Its name is taken in the folder and the person is asked (D96); the answer starts it
+    /// again, which puts the finished file in place.
+    FileExists(Found),
 }
 
 /// A run's end, in the terms that decide the download's new state.
@@ -67,7 +70,8 @@ impl Ended {
             RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })) => {
                 Ended::Completed { bytes, path: None }
             }
-            RunEnd::Engine(Ok(_)) | RunEnd::Media(Ok(MediaDone::Paused)) => Ended::Stopped,
+            RunEnd::Engine(Ok(_))
+            | RunEnd::Media(Ok(MediaDone::Paused | MediaDone::FileExists(_))) => Ended::Stopped,
             RunEnd::Engine(Err(error)) => {
                 warn!(id = id.0, %error, "download failed");
                 Ended::Failed(wirecatch_messages::describe_run(
@@ -259,7 +263,10 @@ impl Manager {
             self.take_next_free_name(id);
             return;
         }
-        let found = run.found.take();
+        let found = run.found.take().or_else(|| match &end {
+            RunEnd::Media(Ok(MediaDone::FileExists(found))) => Some(found.clone()),
+            _ => None,
+        });
 
         let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
         let ended = Ended::of(end, id, &folder, worked_before, entry);

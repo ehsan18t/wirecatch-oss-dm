@@ -43,6 +43,7 @@ export class NoticesPage {
         label,
         run: () => this.#send({ type: 'pressed', id: notice.id, button }),
       })),
+      open: () => this.#send({ type: 'pressed', id: notice.id, button: null }),
     });
     this.#notices.push({ toast, id: notice.id });
   }

@@ -774,6 +774,7 @@ export function isFileExistsQuestion(value: unknown): value is FileExistsQuestio
     typeof value1['file_name'] === 'string' &&
     typeof value1['folder'] === 'string' &&
     typeof value1['size'] === 'number' &&
+    typeof value1['same_file'] === 'boolean' &&
     (typeof value1['saved_at'] === 'number' || value1['saved_at'] === null))(value);
 }
 
@@ -1122,7 +1123,9 @@ export function isNoticeKind(value: unknown): value is NoticeKind {
 /** Whether `value` has the shape of a {@link NoticePressed}; fields it does not name are not checked. */
 export function isNoticePressed(value: unknown): value is NoticePressed {
   return ((value1: unknown): boolean =>
-    isRecord(value1) && isNoticeId(value1['id']) && typeof value1['button'] === 'number')(value);
+    isRecord(value1) &&
+    isNoticeId(value1['id']) &&
+    (typeof value1['button'] === 'number' || value1['button'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link NoticeShown}; fields it does not name are not checked. */

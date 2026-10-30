@@ -111,6 +111,20 @@ describe('ToastRegion', () => {
     toaster.dispose();
   });
 
+  it('opens what a toast is about from its text, and dismisses it', async () => {
+    const toaster = new Toaster();
+    const open = vi.fn();
+    render(ToastRegion, { toaster });
+    toaster.success('report.pdf', { title: 'Download finished', open });
+    toaster.info('Plain');
+    flushSync();
+    expect(screen.queryByRole('button', { name: 'Plain' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Download finished report.pdf' }));
+    expect(open).toHaveBeenCalledOnce();
+    expect(toaster.list.map((t) => t.message)).toEqual(['Plain']);
+    toaster.dispose();
+  });
+
   it('offers each of a toast’s actions, and clears several toasts at once', async () => {
     const toaster = new Toaster();
     const open = vi.fn();

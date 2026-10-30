@@ -10,7 +10,7 @@ import {
   type BrowserNotice,
   type NoticeId,
 } from '@wirecatch/protocol';
-import { fields, isNumber, isString, literal, refine, variants } from '../validate';
+import { fields, isNumber, isString, literal, nullable, refine, variants } from '../validate';
 
 /** Asks a tab's page script to place the notices frame; it answers with a {@link MountAnswer}. */
 export const NOTICE_MOUNT = 'wirecatch-notice-mount';
@@ -52,8 +52,8 @@ export type FromNoticesPage =
   | { type: 'hello'; token: string }
   /** The notice is on screen. */
   | { type: 'shown'; id: NoticeId }
-  /** The person pressed one of a notice's buttons. */
-  | { type: 'pressed'; id: NoticeId; button: number }
+  /** The person pressed one of a notice's buttons, or its text (`button` null), which shows its download in the app. */
+  | { type: 'pressed'; id: NoticeId; button: number | null }
   /** The notice left the page: closed, pressed, cleared or its time was up. */
   | { type: 'gone'; id: NoticeId }
   /** Every notice is gone, the last it was given `last`: the frame may go too, unless a newer notice is on its way. */
@@ -64,7 +64,7 @@ export const isFromNoticesPage = variants<FromNoticesPage>({
   pressed: fields({
     type: literal('pressed'),
     id: isNoticeId,
-    button: refine(isNumber, (n) => Number.isSafeInteger(n) && n >= 0),
+    button: nullable(refine(isNumber, (n) => Number.isSafeInteger(n) && n >= 0)),
   }),
   shown: fields({ type: literal('shown'), id: isNoticeId }),
   gone: fields({ type: literal('gone'), id: isNoticeId }),

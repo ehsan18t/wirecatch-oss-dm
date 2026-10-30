@@ -1,7 +1,7 @@
-//! A download whose file is already in its folder (D88). When the server answers, a finished file
-//! at the download's path is compared with what the server offers; one that only shares the name
-//! leaves the download to the next free name, and a duplicate is replaced, kept as the download,
-//! or asked about, as `when_file_exists` says.
+//! A download whose file name is already taken in its folder (D88, D96). When the server answers,
+//! or when a stream or media download puts its file in place, a finished file at its path is
+//! replaced, kept as the download, kept beside under the next free name, or asked about, as
+//! `when_file_exists` says; the question says whether it looks like the same file.
 
 use std::path::Path;
 use std::time::UNIX_EPOCH;
@@ -90,10 +90,9 @@ impl Manager {
         Ok(download)
     }
 
-    /// The file at `path`, where download `id` would save, when it seems to be
-    /// the file the server offers and the setting or the person has not already chosen to keep
-    /// both. Touches the file system, so the lock is held only around it.
-    pub(super) fn found_duplicate(
+    /// The finished file at `path`, where download `id` would save, unless the setting or the person
+    /// already chose to keep both. Touches the file system, so the lock is held only around it.
+    pub(super) fn found_existing(
         &self,
         id: DownloadId,
         remote: &ServerAnswer,
@@ -127,14 +126,12 @@ impl Manager {
         let size = naming::finished_size(path)?;
         let same_size = |total: Option<u64>| total.is_none_or(|total| total == size);
         let same_history = history.is_none_or(|(same_link, total)| same_link && same_size(total));
-        if !(same_size(remote.total) && same_history) {
-            return None;
-        }
         Some(Found {
             path: path.to_path_buf(),
             size,
             saved_at: saved_at(path),
             then,
+            same: same_size(remote.total) && same_history,
         })
     }
 
@@ -174,6 +171,7 @@ impl Manager {
                 .unwrap_or_default(),
             size: found.size,
             saved_at: found.saved_at,
+            same_file: found.same,
         };
         state.file_exists.insert(
             question.id,
@@ -275,7 +273,7 @@ fn settle_at(entry: &mut super::state::Entry, path: &Path) {
 }
 
 /// When the file at `path` was last changed, in Unix milliseconds.
-fn saved_at(path: &Path) -> Option<i64> {
+pub(super) fn saved_at(path: &Path) -> Option<i64> {
     let modified = std::fs::metadata(path).ok()?.modified().ok()?;
     i64::try_from(modified.duration_since(UNIX_EPOCH).ok()?.as_millis()).ok()
 }

@@ -210,14 +210,15 @@ pub(super) enum OnExisting {
     KeepBoth,
 }
 
-/// A file found where a download would save, that seems to be the same file (D88), and what the
-/// download does about it.
+/// A file found where a download would save (D88, D96), and what the download does about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Found {
     pub path: PathBuf,
     pub size: u64,
     pub saved_at: Option<i64>,
     pub then: WhenFileExists,
+    /// It looks like the file the download would save, not a different file of the same name.
+    pub same: bool,
 }
 
 /// What the browser saw of a captured download, so the app can tell when its own

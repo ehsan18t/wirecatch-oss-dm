@@ -870,7 +870,7 @@ Decided by the maintainer on 2026-10-30, after their own research. It replaces t
 
 ### D96. A file of the same name is enough for "If the file is already in the folder"
 
-Decided with the maintainer on 2026-10-30. It amends D88.1: the setting decides whenever a file of that name is already in the folder, whatever the file is. A file that differs in size or link no longer takes the next free name by itself. It holds for every kind of download, streams and media downloads included (D88.5 is replaced by this and ROADMAP's release item 4). The person always knows which case it is: the question says either that the file in the folder looks like the same file (same size and, where known, the same link, as D88.1 compares) or that a different file has the same name, and the choices are the same in both. The setting chosen beforehand on Saving files applies to both.
+Decided with the maintainer on 2026-10-30. It amends D88.1: the setting decides whenever a file of that name is already in the folder, whatever the file is. A file that differs in size or link no longer takes the next free name by itself. It holds for every kind of download, streams and media downloads included (D88.5 is replaced by this and ROADMAP's release item 4). The person always knows which case it is: the question says either that the file in the folder looks like the same file (same size and, where known, the same link, as D88.1 compares) or that a different file has the same name, and the choices are the same in both. The setting chosen beforehand on Saving files applies to both. A stream or a video or audio download keeps its plain name when it is added, unless another download holds it, and the setting applies when its finished file is put in place; asked, it waits with the file kept in its work folder, and the answer puts it in place without downloading it again. Its file counts as the same when the sizes match.
 
 ### D97. Notices in the browser follow the person, and a closed one never comes back
 
@@ -880,6 +880,14 @@ Decided with the maintainer on 2026-10-30. It amends D65: each tab kept its own 
 2. A notice that leaves the page (closed, pressed, cleared with Clear all, or its time up) is told to the background and never shows again, in any tab.
 3. A moved notice is not told to the app as shown again: the app was told the first time.
 4. A notice about a download that has since been removed or tried again is taken back by the app (ROADMAP's release item 1).
+
+### D98. A notice opens the app at its download
+
+Decided with the maintainer on 2026-10-30. It adds to D52.5 and D65.
+
+1. Clicking a notice's text, in the browser or the system's notification, brings the main window up showing the queue its downloads are in, with them selected and the first in view. Downloads from different queues show in All downloads. The buttons keep doing what they say.
+2. A browser notice's text is one button: a press with no button (`NoticePressed::button` none) does what a click on the system notification does.
+3. The main window's part is rebuilt with the GPUI interface (D95); the core and shell side, and the browser notice, land now.
 
 ## Assumptions (not yet confirmed)
 

@@ -598,7 +598,7 @@ mod tests {
             }),
             CallMethod::NoticePressed => Call::NoticePressed(NoticePressed {
                 id: crate::extension::NoticeId(1),
-                button: 0,
+                button: Some(0),
             }),
             CallMethod::Unknown => return None,
         })

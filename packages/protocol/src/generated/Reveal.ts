@@ -10,8 +10,8 @@ import type { QueueId } from './QueueId';
  */
 export type Reveal = {
   /**
-   * The queue they finished in, for a queue's summary: the list shows that queue. `None`
-   * shows every download.
+   * The queue they are in, or finished in for a queue's summary: the list shows that queue.
+   * `None` shows every download.
    */
   queue: QueueId | null;
   /**

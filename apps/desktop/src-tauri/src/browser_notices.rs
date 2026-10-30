@@ -221,8 +221,8 @@ pub fn shown<R: Runtime>(app: &AppHandle<R>, id: NoticeId) {
     }
 }
 
-/// The person pressed one of a notice's buttons: does what it stands for, as the same button on
-/// the system notification would.
+/// The person pressed one of a notice's buttons, or the notice itself: does what the same press
+/// on the system notification would.
 pub fn pressed<R: Runtime>(app: &AppHandle<R>, pressed: &NoticePressed) {
     let Some(notification) = app
         .try_state::<BrowserNotices>()
@@ -230,8 +230,14 @@ pub fn pressed<R: Runtime>(app: &AppHandle<R>, pressed: &NoticePressed) {
     else {
         return;
     };
-    let button = usize::try_from(pressed.button).ok();
-    if let Some(act) = button.and_then(|at| system_notifications::chosen(&notification, Some(at))) {
+    let button = match pressed.button {
+        None => None,
+        Some(at) => match usize::try_from(at) {
+            Ok(at) => Some(at),
+            Err(_) => return,
+        },
+    };
+    if let Some(act) = system_notifications::chosen(&notification, button) {
         system_notifications::act(app, act);
     }
 }

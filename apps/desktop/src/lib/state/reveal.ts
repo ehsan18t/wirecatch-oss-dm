@@ -1,6 +1,6 @@
 // What the main window does when it comes to the front for someone: for a notification about
-// downloads the person clicked (D52), it shows them selected, the first in view, in their queue
-// for a queue's summary; for the extension's settings button (D61), the browser settings; for a
+// downloads the person clicked (D52, D98), it shows them selected, the first in view, in the queue
+// they share; for the extension's settings button (D61), the browser settings; for a
 // progress window's fix of a proxy error (D71), the proxy settings, or a download's details for
 // its Change queue (D73.4).
 

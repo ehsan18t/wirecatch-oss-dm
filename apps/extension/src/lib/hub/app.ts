@@ -157,8 +157,8 @@ export class AppCalls {
     );
   }
 
-  /** Tells the app the person pressed one of a note's buttons (D65). */
-  async noticePressed(id: NoticeId, button: number): Promise<void> {
+  /** Tells the app the person pressed one of a notice's buttons, or its text (D65). */
+  async noticePressed(id: NoticeId, button: number | null): Promise<void> {
     await this.#client.request(
       { method: 'notice_pressed', params: { id, button } },
       this.#timing.requestTimeoutMs,
