@@ -69,7 +69,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] General: theme, accent, start at sign-in, close to tray, updates, suffix list, log folder.
 - [ ] General: backup (with the Export and import dialog).
 - [x] Notifications.
-- [ ] Saving files: folder, if the file exists, folders by file type.
+- [x] Saving files: folder, if the file exists, folders by file type.
 - [ ] Browser.
 - [ ] Media, with the add-on card.
 - [ ] Speed and queues, with Test a link.

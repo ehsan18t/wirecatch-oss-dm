@@ -301,6 +301,14 @@ pub fn category_label(category: Category) -> &'static str {
     }
 }
 
+/// A saved folder as Settings shows it: `{Downloads}/Video` reads `Downloads/Video`.
+pub fn folder(path: &str) -> String {
+    match path.strip_prefix('{').and_then(|rest| rest.split_once('}')) {
+        Some((name, rest)) if name.chars().all(char::is_alphanumeric) => format!("{name}{rest}"),
+        _ => path.to_owned(),
+    }
+}
+
 /// A moment for the details: `Today, 14:05`, `Yesterday, 09:12` or `3 Oct 2026, 09:12`.
 pub fn date(ms: i64) -> String {
     let Some(at) = Local.timestamp_millis_opt(ms).single() else {
@@ -402,6 +410,13 @@ fn ordinal(n: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_folder_reads_without_its_braces() {
+        assert_eq!(folder("{Downloads}/Video"), "Downloads/Video");
+        assert_eq!(folder("D:/Media"), "D:/Media");
+        assert_eq!(folder("{not a name}/x"), "{not a name}/x");
+    }
 
     #[test]
     fn a_finished_moment_reads_as_how_long_ago() {
