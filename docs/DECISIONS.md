@@ -857,6 +857,20 @@ Decided with the maintainer on 2026-10-30. It adds a setting to D72.1.
 4. A download window shows the folder of the queue picked in it, until the person picks a folder there. The Add dialog's Save to says what decides the folder while none is picked: the picked queue's folder, or, on Automatic, each link's queue.
 5. A profile's queue folders are written relative to the standard folders on export and checked on import like the other folder settings, falling back to the default folder.
 
+### D95. The desktop interface is rebuilt in GPUI before the first release
+
+Decided by the maintainer on 2026-10-30, after their own research. It replaces the Tauri parts of D19 and D36 for the desktop app.
+
+1. The desktop app's interface moves from Tauri 2 with a Svelte webview to GPUI with gpui-component, in Rust, calling the core directly. Tauri and the webview are dropped; a webview costs about 100 to 150 MB of memory while the app works, and a first release should not.
+2. The look follows Zed's. GPUI cannot reproduce everything HTML and CSS can, so the interface is not copied screen for screen, but every screen, state and behaviour the decisions describe is kept.
+3. It comes before the first release, which is delayed for it if need be: after the release items whose work is mostly in the core, and before the About page and the updater, which are built for it.
+4. The browser extension keeps its web interface and `packages/ui`, so the extension and the desktop app no longer share one design system (D36).
+5. The shell's jobs that Tauri plugins do today (tray, notifications, single instance, the updater, installers) move to other crates; which ones is decided while building it.
+
+### D96. A file of the same name is enough for "If the file is already in the folder"
+
+Decided with the maintainer on 2026-10-30. It amends D88.1: the setting decides whenever a file of that name is already in the folder, whatever the file is. A file that differs in size or link no longer takes the next free name by itself. It holds for every kind of download, streams and media downloads included (D88.5 is replaced by this and ROADMAP's release item 4). The person always knows which case it is: the question says either that the file in the folder looks like the same file (same size and, where known, the same link, as D88.1 compares) or that a different file has the same name, and the choices are the same in both. The setting chosen beforehand on Saving files applies to both.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
