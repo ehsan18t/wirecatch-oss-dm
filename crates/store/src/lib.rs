@@ -414,10 +414,7 @@ impl Store {
                     #[cfg(test)]
                     backing_off,
                 };
-                run(conn, &mut inbox, &on_failure);
-                // Held until the connection has closed, so the next manager finds the
-                // list complete.
-                drop(lock);
+                run(conn, lock, &mut inbox, &on_failure);
             })
             .map_err(|source| StoreError::File(FileError::new(&path, source)))?;
         Ok((Store { ops }, snapshot))
@@ -512,12 +509,14 @@ impl Store {
 /// told why. Writes that still fail are kept, in order, and tried again before
 /// the next writes (or after a while if none come), never dropped: a lost delete
 /// would bring back a removed download.
-fn run(conn: Connection, inbox: &mut Inbox<'_>, on_failure: &FailureHandler) {
+fn run(conn: Connection, lock: File, inbox: &mut Inbox<'_>, on_failure: &FailureHandler) {
     let (conn, closed) = write_until_closed(conn, inbox, on_failure);
     // Closing the connection checkpoints the journal and releases the files.
     if let Err((_, e)) = conn.close() {
         warn!(error = %e, "the database did not close cleanly");
     }
+    // Released only once the connection has closed, so the next manager finds the list complete, and before the close is answered, so the folder can then be moved at once.
+    drop(lock);
     if let Some(closed) = closed {
         wake(closed);
     }
@@ -1555,6 +1554,13 @@ mod tests {
             .expect("the store closed");
     }
 
+    /// Closes `store` and waits, at most [`PATIENCE`], until its list can be opened again.
+    fn close(store: &Store) {
+        let (done, closed) = oneshot::channel();
+        store.send(Op::Close(done));
+        wait_closed(closed);
+    }
+
     fn ignore_failures() -> FailureHandler {
         Box::new(|_| {})
     }
@@ -1764,8 +1770,7 @@ mod tests {
         row.summary.media = Some(media.summary.clone());
         row.media = Some(media);
         store.save_downloads(vec![row.clone()]);
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.downloads, vec![row]);
     }
@@ -1790,8 +1795,7 @@ mod tests {
                 total: None,
             },
         ]);
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         let mut expected = row;
         expected.summary.done = 500;
@@ -1806,7 +1810,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.not_private, None);
-        drop(store);
+        close(&store);
         wirecatch_files::owner_only::refuse_on_this_thread();
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert!(snapshot.not_private.is_some(), "{snapshot:?}");
@@ -1831,8 +1835,7 @@ mod tests {
             job: None,
         });
         store.save_downloads(vec![row]);
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.execute("UPDATE downloads SET media = '{\"broken'", [])
             .unwrap();
@@ -1871,8 +1874,7 @@ mod tests {
             }),
         });
         store.save_downloads(vec![row]);
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         let changed = conn
             .execute(
@@ -1947,8 +1949,7 @@ mod tests {
         store.save_proxy_logins(logins.clone());
         store.save_downloads(vec![download(1), download(2)]);
         store.delete_downloads(vec![DownloadId(2)]);
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
 
         let (_store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.settings, Some(settings));
@@ -2004,10 +2005,22 @@ mod tests {
             matches!(second, Err(StoreError::AlreadyOpen { .. })),
             "a second store opened the same list"
         );
-        drop(store);
+        close(&store);
         let (_, reopened) = Store::open(dir.path(), ignore_failures())
             .expect("the list opens again once the first store has closed");
         assert_eq!(reopened.downloads.len(), 1);
+    }
+
+    #[test]
+    fn a_closed_store_has_let_go_of_its_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        close(&store);
+        let lock = File::open(lock_path(&dir.path().join(DATABASE_FILE))).unwrap();
+        assert!(
+            lock.try_lock().is_ok(),
+            "the lock was still held after the close"
+        );
     }
 
     /// Set in a copy of this test binary that holds a list open for the test below.
@@ -2072,7 +2085,7 @@ mod tests {
 
         assert_set_aside(dir.path(), &snapshot, &garbage);
         store.save_downloads(vec![download(1)]);
-        drop(store);
+        close(&store);
         let (_, reopened) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(reopened.recoveries, vec![], "the new list opens normally");
     }
@@ -2299,8 +2312,7 @@ mod tests {
         finished.summary.status = DownloadStatus::Completed;
         finished.summary.done = 100;
         store.save_downloads(vec![download(1), download(2), finished.clone()]);
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.execute(
             "UPDATE downloads SET total = -1, done = -5 WHERE id = 2",
@@ -2335,8 +2347,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
         store.save_downloads(vec![download(1), download(2)]);
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.execute("UPDATE downloads SET done = -5 WHERE id = 1", [])
             .unwrap();
@@ -2375,8 +2386,7 @@ mod tests {
             },
         ];
         store.save_downloads(vec![download(1), signed_in]);
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.execute(
             "UPDATE downloads SET status = 'from_a_newer_version' WHERE id = 2",
@@ -2408,8 +2418,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
         store.save_downloads(vec![download(1), download(2)]);
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.execute(
             "UPDATE downloads SET origin = 'Cookie: session=secret' WHERE id = 2",
@@ -2472,8 +2481,7 @@ mod tests {
         let profiles: Vec<SavedProxyServer> =
             serde_json::from_str(include_str!("../samples/proxy_servers/example.json")).unwrap();
         store.save_proxy_servers(profiles.clone());
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.execute(
             r"UPDATE settings SET value = json_set(value, '$[1].last_test.result.outcome', 'from_a_later_build')
@@ -2683,8 +2691,7 @@ mod tests {
         let mut chosen = settings;
         chosen.extension.ask_before_download = false;
         store.save_settings(chosen);
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert!(!snapshot.settings.unwrap().extension.ask_before_download);
     }
@@ -2755,8 +2762,7 @@ mod tests {
         settings.theme = Theme::Dark;
         settings.accent = Accent::System;
         store.save_settings(settings.clone());
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.settings, Some(settings));
     }
@@ -2830,8 +2836,7 @@ mod tests {
             },
         }];
         store.save_batches(batches.clone());
-        store.flush().await;
-        drop(store);
+        store.close(PATIENCE).await;
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.queues, vec![queue]);
         assert_eq!(snapshot.batches, batches);
