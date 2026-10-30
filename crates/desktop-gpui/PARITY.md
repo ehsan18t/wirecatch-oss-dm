@@ -36,7 +36,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Row: Open (a program asks first, D43.1) and Show in folder, on hover and on the selected row.
 - [ ] Row: category icon, the "…" menu, the fix button in the progress cell (`row-actions.ts`).
 - [x] Hover Pause, Resume, Try again, Start over.
-- [ ] Selection: Ctrl+click, Shift+click ranges; selection bar with Pause, Resume, Try again, Move to queue, Remove, Clear.
+- [x] Selection: Ctrl+click, Shift+click ranges; selection bar with Pause, Resume, Try again, Move to queue, Remove, Clear; the list keys that move and extend it, Ctrl+A, Space, Enter, Alt+Enter, Delete.
 - [x] Empty states with their buttons: first run, no search match, empty queue, an empty view.
 - [ ] First run: "See everything {app} can do" (opens the palette).
 - [x] Details dialog (D47), opened by clicking a row: status, the problem with its fix and Try again, speed and progress, facts, Saved to with Change, the link with Copy, activity, Open, Pause, Resume, Start over, Show in folder, More (Copy link, Cancel download), Remove; it follows the download and closes once it is removed.

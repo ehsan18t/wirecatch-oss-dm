@@ -1,6 +1,7 @@
 //! The main window: the title bar, the navigation of views and queues, the download list and the
 //! status bar (D36, D91).
 
+mod applies;
 mod backup_dialog;
 mod command_bar;
 mod confirm;
@@ -12,6 +13,7 @@ mod proxy_dialog;
 mod queue_dialog;
 mod queue_proxy;
 mod queue_rules;
+mod selection;
 mod settings;
 mod sidebar;
 mod title_bar;
@@ -21,6 +23,7 @@ use std::collections::HashSet;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, TitleBar, v_flex};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Context, Entity, FocusHandle, Global,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, ScrollStrategy,
@@ -32,6 +35,7 @@ use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
 use wirecatch_protocol::desktop::Reveal;
 
+use self::selection::Step;
 use crate::library::{Asked, Library, SettingsChanged};
 use crate::ui::{Role, Typed as _, layout};
 use crate::{add_dialog, lifecycle, links, theme};
@@ -43,7 +47,20 @@ actions!(
         PasteLinks,
         Dismiss,
         FocusSearch,
-        ToggleSettings
+        ToggleSettings,
+        CursorUp,
+        CursorDown,
+        ExtendUp,
+        ExtendDown,
+        CursorPageUp,
+        CursorPageDown,
+        CursorFirst,
+        CursorLast,
+        SelectAll,
+        PauseOrResume,
+        OpenSelected,
+        ShowDetails,
+        RemoveSelected
     ]
 );
 
@@ -64,6 +81,19 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("escape", Dismiss, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-k", FocusSearch, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-,", ToggleSettings, Some(KEY_CONTEXT)),
+        KeyBinding::new("up", CursorUp, Some(KEY_CONTEXT)),
+        KeyBinding::new("down", CursorDown, Some(KEY_CONTEXT)),
+        KeyBinding::new("shift-up", ExtendUp, Some(KEY_CONTEXT)),
+        KeyBinding::new("shift-down", ExtendDown, Some(KEY_CONTEXT)),
+        KeyBinding::new("pageup", CursorPageUp, Some(KEY_CONTEXT)),
+        KeyBinding::new("pagedown", CursorPageDown, Some(KEY_CONTEXT)),
+        KeyBinding::new("home", CursorFirst, Some(KEY_CONTEXT)),
+        KeyBinding::new("end", CursorLast, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-a", SelectAll, Some(KEY_CONTEXT)),
+        KeyBinding::new("space", PauseOrResume, Some(KEY_CONTEXT)),
+        KeyBinding::new("enter", OpenSelected, Some(KEY_CONTEXT)),
+        KeyBinding::new("alt-enter", ShowDetails, Some(KEY_CONTEXT)),
+        KeyBinding::new("delete", RemoveSelected, Some(KEY_CONTEXT)),
     ]);
 }
 
@@ -223,6 +253,12 @@ pub struct MainWindow {
     screen: Screen,
     view: View,
     selected: HashSet<DownloadId>,
+    /// Where a Shift range starts.
+    anchor: Option<DownloadId>,
+    /// The row the arrow keys move from.
+    cursor: Option<DownloadId>,
+    /// The selection was built on purpose (Ctrl, Shift, Ctrl+A), so it shows its bar.
+    picked: bool,
     folded: HashSet<Group>,
     /// The title bar's search, which narrows the list to names and links holding it.
     search: Entity<InputState>,
@@ -309,6 +345,9 @@ impl MainWindow {
             self.folded.remove(&group);
         }
         self.selected = reveal.ids.iter().copied().collect();
+        self.anchor = reveal.ids.first().copied();
+        self.cursor = self.anchor;
+        self.picked = reveal.ids.len() > 1;
         if let Some(line) = reveal
             .ids
             .first()
@@ -358,6 +397,9 @@ impl MainWindow {
             screen: Screen::Downloads,
             view: View::All,
             selected: HashSet::new(),
+            anchor: None,
+            cursor: None,
+            picked: false,
             folded: Group::ALL
                 .into_iter()
                 .filter(|g| g.starts_folded())
@@ -375,7 +417,7 @@ impl MainWindow {
 
     fn show(&mut self, view: View, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.view = view;
-        self.selected.clear();
+        self.clear_selection();
         let placeholder = match view {
             View::All => ALL_PLACEHOLDER.to_owned(),
             View::Group(_) | View::Queue(_) => {
@@ -398,7 +440,7 @@ impl MainWindow {
 
     /// Escape outside a field clears the selection; a dialog closes on its own Escape first.
     fn dismiss(&mut self, cx: &mut Context<'_, Self>) {
-        self.selected.clear();
+        self.clear_selection();
         cx.notify();
     }
 
@@ -471,6 +513,46 @@ impl Render for MainWindow {
                     .update(cx, |search, cx| search.focus(window, cx));
             }))
             .on_action(cx.listener(|this, _: &ToggleSettings, _, cx| this.toggle_settings(cx)))
+            .when(self.screen == Screen::Downloads, |window| {
+                window
+                    .on_action(
+                        cx.listener(|this, _: &CursorUp, _, cx| this.step(Step::Up, false, cx)),
+                    )
+                    .on_action(
+                        cx.listener(|this, _: &CursorDown, _, cx| this.step(Step::Down, false, cx)),
+                    )
+                    .on_action(
+                        cx.listener(|this, _: &ExtendUp, _, cx| this.step(Step::Up, true, cx)),
+                    )
+                    .on_action(
+                        cx.listener(|this, _: &ExtendDown, _, cx| this.step(Step::Down, true, cx)),
+                    )
+                    .on_action(cx.listener(|this, _: &CursorPageUp, _, cx| {
+                        this.step(Step::PageUp, false, cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &CursorPageDown, _, cx| {
+                        this.step(Step::PageDown, false, cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &CursorFirst, _, cx| {
+                        this.step(Step::First, false, cx);
+                    }))
+                    .on_action(
+                        cx.listener(|this, _: &CursorLast, _, cx| this.step(Step::Last, false, cx)),
+                    )
+                    .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
+                    .on_action(cx.listener(|this, _: &PauseOrResume, window, cx| {
+                        this.pause_or_resume(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &OpenSelected, window, cx| {
+                        this.open_selected(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &ShowDetails, window, cx| {
+                        this.details_of_cursor(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &RemoveSelected, window, cx| {
+                        this.remove_selected(window, cx);
+                    }))
+            })
             .size_full()
             .bg(theme.background)
             .text_role(Role::Body, cx)
@@ -479,7 +561,11 @@ impl Render for MainWindow {
                 Screen::Downloads => layout::body(
                     self.sidebar(cx).into_any_element(),
                     self.command_bar(cx).into_any_element(),
-                    self.list(cx),
+                    v_flex()
+                        .flex_1()
+                        .min_h_0()
+                        .children(self.selection_bar(cx))
+                        .child(self.list(cx)),
                 ),
                 Screen::Settings => self.settings(cx),
             })
