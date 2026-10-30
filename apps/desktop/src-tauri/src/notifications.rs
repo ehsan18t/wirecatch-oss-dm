@@ -271,11 +271,11 @@ pub fn queue_done(report: &QueueReport) -> Option<Notification> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use wirecatch_protocol::app::{Category, DownloadStatus, FixAction, UserError};
 
-    fn row(id: i64, folder: &str, status: DownloadStatus) -> DownloadSummary {
+    pub(crate) fn row(id: i64, folder: &str, status: DownloadStatus) -> DownloadSummary {
         DownloadSummary {
             id: DownloadId(id),
             url: String::new(),

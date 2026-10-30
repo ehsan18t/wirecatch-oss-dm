@@ -254,8 +254,7 @@ export class Hub {
     if (!(await this.#siteAccess(target.url))) return { ok: false, message: MEDIA_NO_SITE_ACCESS };
     await this.#ready;
     if (!this.#app.connected || this.#settings.live === null) {
-      // Connect (and learn the default queue) first, so "could not be reached" is certain:
-      // nothing has been sent yet when this fails.
+      // Connect (and learn the default queue) first, so "could not be reached" is certain: nothing has been sent yet when this fails.
       try {
         await this.#app.fetchSettings();
       } catch (error) {
@@ -278,9 +277,7 @@ export class Hub {
       suggested_name: null,
       mime: target.mime,
       size_hint: target.size,
-      // Media from another site goes with the cookies its own request carried, when it was
-      // seen: no cookie read can tell whether the browser sends its unpartitioned cookies to
-      // another site (D59). Otherwise they are read now, so they are the freshest.
+      // Media from another site goes with the cookies its own request carried, when it was seen: no cookie read can tell whether the browser sends its unpartitioned cookies to another site (D59). Otherwise they are read now, so they are the freshest.
       cookies:
         target.sentCookies !== undefined && isCrossSite(target.url, context)
           ? target.sentCookies
@@ -421,8 +418,8 @@ export class Hub {
         this.#settings.adoptControls(event.data);
         return;
       case 'notice_requested':
-        void this.#deps.notices?.show(event.data);
-        return;
+      case 'notice_withdrawn':
+        void this.#deps.notices?.follow(event);
     }
   }
 

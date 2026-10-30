@@ -72,14 +72,15 @@ export const isFromNoticesPage = variants<FromNoticesPage>({
 });
 
 /** What the background sends the notices page: a notice to show. */
-export interface ToNoticesPage {
-  type: 'notice';
-  notice: BrowserNotice;
-}
+export type ToNoticesPage =
+  /** A notice to show. */
+  | { type: 'notice'; notice: BrowserNotice }
+  /** The app took the notice back: it leaves the page. */
+  | { type: 'withdraw'; id: NoticeId };
 
-export const isToNoticesPage = fields<ToNoticesPage>({
-  type: literal('notice'),
-  notice: isBrowserNotice,
+export const isToNoticesPage = variants<ToNoticesPage>({
+  notice: fields({ type: literal('notice'), notice: isBrowserNotice }),
+  withdraw: fields({ type: literal('withdraw'), id: isNoticeId }),
 });
 
 /** What the notices page tells the page script around it, over the channel that script gave it: how big its frame must be, in CSS pixels. */
