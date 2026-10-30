@@ -8,6 +8,7 @@ mod empty;
 mod list;
 mod proxy_dialog;
 mod queue_dialog;
+mod queue_proxy;
 mod queue_rules;
 mod settings;
 mod sidebar;

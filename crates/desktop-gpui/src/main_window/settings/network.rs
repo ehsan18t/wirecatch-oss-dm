@@ -173,7 +173,7 @@ fn servers(library: &Entity<Library>, cx: &mut App) -> AnyElement {
                         .label("New proxy")
                         .disabled(full)
                         .on_click(move |_, window, cx| {
-                            proxy_dialog::open(&adding, None, window, cx);
+                            proxy_dialog::open(&adding, None, None, window, cx);
                         }),
                 )
                 .child(
@@ -336,7 +336,7 @@ fn server_actions(library: &Entity<Library>, proxy: &ProxyServer) -> gpui_kit::D
             .icon(Icon::new(Lucide::Pencil))
             .tooltip(format!("Edit {name}"))
             .on_click(move |_, window, cx| {
-                proxy_dialog::open(&editing, Some(id), window, cx);
+                proxy_dialog::open(&editing, Some(id), None, window, cx);
             }),
         )
         .child(
