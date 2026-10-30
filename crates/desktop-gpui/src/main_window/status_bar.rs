@@ -29,15 +29,16 @@ impl MainWindow {
                 match (running.len(), waiting) {
                     (0, 0) => "Nothing downloading".to_owned(),
                     (0, waiting) => format!("Nothing downloading · {waiting} waiting"),
-                    (running, waiting) => format!(
-                        "{running} downloading · {} total{}",
-                        text::speed(speed),
-                        if waiting > 0 {
-                            format!(" · {waiting} waiting")
-                        } else {
-                            String::new()
+                    (running, waiting) => {
+                        let mut said = vec![format!("{running} downloading")];
+                        if speed > 0 {
+                            said.push(format!("{} total", text::speed(speed)));
                         }
-                    ),
+                        if waiting > 0 {
+                            said.push(format!("{waiting} waiting"));
+                        }
+                        said.join(" · ")
+                    }
                 }
             }
         };

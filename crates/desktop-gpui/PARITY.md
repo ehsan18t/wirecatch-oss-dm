@@ -27,7 +27,8 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 - [ ] A queue view lists its line ungrouped in run order, Finished and Cancelled grouped below; the # column.
 - [ ] Column sorting (name, progress, size, speed, left; queue order), resizing with saved widths, narrow-window folding.
 - [x] Row: name, the line under it, progress with its caption, size, speed, time left.
-- [ ] Row: category icon, hover Open and Show in folder, the "…" menu, the fix button in the progress cell (`row-actions.ts`).
+- [x] Row: Open (a program asks first, D43.1) and Show in folder, on hover and on the selected row.
+- [ ] Row: category icon, the "…" menu, the fix button in the progress cell (`row-actions.ts`).
 - [x] Hover Pause, Resume, Try again, Start over.
 - [ ] Selection: Ctrl+click, Shift+click ranges; selection bar with Pause, Resume, Try again, Move to queue, Remove, Clear.
 - [ ] Empty states with their buttons (`ListEmpty.svelte`): first run, no search match, empty queue, nothing needs attention.

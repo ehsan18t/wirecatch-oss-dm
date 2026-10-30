@@ -112,6 +112,8 @@ pub struct MainWindow {
     view: View,
     selected: HashSet<DownloadId>,
     folded: HashSet<Group>,
+    /// The row under the pointer, which shows its buttons.
+    hovered: Option<DownloadId>,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -157,6 +159,7 @@ impl MainWindow {
                 .into_iter()
                 .filter(|g| g.starts_folded())
                 .collect(),
+            hovered: None,
             focus,
             _subscriptions: vec![restyle, follow_system, redraw],
         }

@@ -20,7 +20,7 @@ use wirecatch_shell::api;
 
 use super::{Group, MainWindow, View};
 use crate::backend::Backend;
-use crate::text;
+use crate::{files, text};
 
 /// Every line is this tall, headings included, so the list can lay out only what shows.
 const LINE_HEIGHT: f32 = 44.;
@@ -225,10 +225,9 @@ impl MainWindow {
         let selected = self.selected.contains(&row.id);
         let tone = status_tone(&row, cx);
         let id = row.id;
-        let under_name = under_name(&row);
+        let shows_actions = selected || self.hovered == Some(id);
         h_flex()
             .id(row_id("row", row.id))
-            .group("row")
             .w_full()
             .h(px(LINE_HEIGHT))
             .px_5()
@@ -242,43 +241,23 @@ impl MainWindow {
             .when(!selected, |line| {
                 line.hover(|line| line.bg(theme.list_hover))
             })
-            .child(
-                v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .child(div().truncate().child(row.file_name.clone()))
-                    .child(
-                        div()
-                            .truncate()
-                            .text_xs()
-                            .text_color(if row.status == DownloadStatus::Failed {
-                                theme.danger
-                            } else {
-                                theme.muted_foreground
-                            })
-                            .child(under_name),
-                    ),
-            )
+            .child(name_cell(&row, cx))
             .child(progress_cell(&row, tone, cx))
             .child(figure(SIZE_WIDTH, text::size(&row), cx))
-            .child(figure(
-                SPEED_WIDTH,
-                match row.status {
-                    DownloadStatus::Connecting => "Connecting".to_owned(),
-                    DownloadStatus::Downloading if row.speed > 0 => text::speed(row.speed),
-                    _ => String::new(),
-                },
-                cx,
-            ))
-            .child(figure(
-                LEFT_WIDTH,
-                match (row.status, row.eta_secs) {
-                    (DownloadStatus::Downloading, Some(left)) => text::eta(left),
-                    _ => String::new(),
-                },
-                cx,
-            ))
-            .child(row_actions(&row, cx))
+            .child(figure(SPEED_WIDTH, speed_said(&row), cx))
+            .child(figure(LEFT_WIDTH, left_said(&row), cx))
+            .when(shows_actions, |line| line.child(row_actions(&row, cx)))
+            .when(!shows_actions, |line| {
+                line.child(div().w(px(ACTIONS_WIDTH)).flex_shrink_0())
+            })
+            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                if *hovered {
+                    this.hovered = Some(id);
+                } else if this.hovered == Some(id) {
+                    this.hovered = None;
+                }
+                cx.notify();
+            }))
             .on_click(
                 cx.listener(move |this, event: &gpui_kit::ClickEvent, _, cx| {
                     if event.modifiers().secondary(cx) {
@@ -323,6 +302,41 @@ impl MainWindow {
                     .child(title),
             )
             .child(div().text_color(theme.muted_foreground).child(note))
+    }
+}
+
+/// The name, with the line under it.
+fn name_cell(row: &DownloadSummary, cx: &App) -> impl IntoElement {
+    let theme = cx.theme();
+    v_flex()
+        .flex_1()
+        .min_w_0()
+        .child(div().truncate().child(row.file_name.clone()))
+        .child(
+            div()
+                .truncate()
+                .text_xs()
+                .text_color(if row.status == DownloadStatus::Failed {
+                    theme.danger
+                } else {
+                    theme.muted_foreground
+                })
+                .child(under_name(row)),
+        )
+}
+
+fn speed_said(row: &DownloadSummary) -> String {
+    match row.status {
+        DownloadStatus::Connecting => "Connecting".to_owned(),
+        DownloadStatus::Downloading if row.speed > 0 => text::speed(row.speed),
+        _ => String::new(),
+    }
+}
+
+fn left_said(row: &DownloadSummary) -> String {
+    match (row.status, row.eta_secs) {
+        (DownloadStatus::Downloading, Some(left)) => text::eta(left),
+        _ => String::new(),
     }
 }
 
@@ -382,46 +396,66 @@ fn figure(width: f32, value: String, cx: &App) -> impl IntoElement {
         .child(value)
 }
 
-/// The buttons a row offers on hover: pause or resume, or try again.
+/// What a row's hover buttons do.
+#[derive(Clone, Copy)]
+enum RowAction {
+    Pause,
+    Resume,
+    Retry,
+    Open,
+    ShowInFolder,
+}
+
+impl RowAction {
+    /// The buttons a download in `status` offers on hover.
+    fn offered(status: DownloadStatus) -> &'static [(Self, &'static str, IconName)] {
+        match status {
+            DownloadStatus::Queued
+            | DownloadStatus::Connecting
+            | DownloadStatus::Downloading
+            | DownloadStatus::Processing => &[(Self::Pause, "Pause", IconName::Pause)],
+            DownloadStatus::Paused => &[(Self::Resume, "Resume", IconName::Play)],
+            DownloadStatus::Failed => &[(Self::Retry, "Try again", IconName::RotateCw)],
+            DownloadStatus::Cancelled => &[(Self::Retry, "Start over", IconName::RotateCw)],
+            DownloadStatus::Completed => &[
+                (Self::Open, "Open", IconName::ExternalLink),
+                (Self::ShowInFolder, "Show in folder", IconName::FolderOpen),
+            ],
+        }
+    }
+
+    fn run(self, id: DownloadId, window: &mut Window, cx: &mut Context<'_, MainWindow>) {
+        match self {
+            Self::Pause => act(window, cx, move |manager| api::pause(manager, id)),
+            Self::Resume => act(window, cx, move |manager| api::resume(manager, id)),
+            Self::Retry => act(window, cx, move |manager| api::retry(manager, id)),
+            Self::Open => files::open(id, window, cx),
+            Self::ShowInFolder => files::show_in_folder(id, window, cx),
+        }
+    }
+}
+
+/// The buttons a row offers on hover.
 fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl IntoElement {
     let id = row.id;
-    let action = match row.status {
-        DownloadStatus::Queued
-        | DownloadStatus::Connecting
-        | DownloadStatus::Downloading
-        | DownloadStatus::Processing => Some(("Pause", pause as fn(&Manager, DownloadId) -> _)),
-        DownloadStatus::Paused => Some(("Resume", resume as fn(&Manager, DownloadId) -> _)),
-        DownloadStatus::Failed => Some(("Try again", retry as fn(&Manager, DownloadId) -> _)),
-        DownloadStatus::Cancelled => Some(("Start over", retry as fn(&Manager, DownloadId) -> _)),
-        DownloadStatus::Completed => None,
-    };
     h_flex()
         .w(px(ACTIONS_WIDTH))
         .flex_shrink_0()
+        .gap_1()
         .justify_end()
-        .invisible()
-        .group_hover("row", gpui_kit::Styled::visible)
-        .children(action.map(|(label, run)| {
-            Button::new(row_id("act", id))
-                .xsmall()
-                .ghost()
-                .label(label)
-                .on_click(cx.listener(move |_, _, window, cx| {
-                    act(window, cx, move |manager| run(manager, id));
-                }))
-        }))
-}
-
-fn pause(manager: &Manager, id: DownloadId) -> Result<(), ProtocolError> {
-    api::pause(manager, id)
-}
-
-fn resume(manager: &Manager, id: DownloadId) -> Result<(), ProtocolError> {
-    api::resume(manager, id)
-}
-
-fn retry(manager: &Manager, id: DownloadId) -> Result<(), ProtocolError> {
-    api::retry(manager, id)
+        .children(
+            RowAction::offered(row.status)
+                .iter()
+                .map(|(action, label, icon)| {
+                    let (action, label) = (*action, *label);
+                    Button::new(ElementId::NamedInteger(label.into(), id.0.unsigned_abs()))
+                        .xsmall()
+                        .ghost()
+                        .icon(icon.clone())
+                        .tooltip(label)
+                        .on_click(cx.listener(move |_, _, window, cx| action.run(id, window, cx)))
+                }),
+        )
 }
 
 /// The colour a status is drawn in: the accent for data that moves, the warning colour for a
@@ -434,8 +468,9 @@ fn status_tone(row: &DownloadSummary, cx: &App) -> Hsla {
         }
         DownloadStatus::Paused => theme.warning,
         DownloadStatus::Failed => theme.danger,
-        DownloadStatus::Completed => theme.success,
-        DownloadStatus::Queued | DownloadStatus::Cancelled => theme.muted_foreground,
+        DownloadStatus::Completed | DownloadStatus::Queued | DownloadStatus::Cancelled => {
+            theme.muted_foreground
+        }
     }
 }
 
