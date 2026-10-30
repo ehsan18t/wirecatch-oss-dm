@@ -5,13 +5,11 @@
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::component::select::{Select, SelectItem, SelectState};
-use gpui_kit::component::{
-    ActiveTheme as _, Disableable as _, IndexPath, Sizable as _, WindowExt as _, h_flex, v_flex,
-};
+use gpui_kit::component::{Disableable as _, IndexPath, WindowExt as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, SharedString,
-    Styled as _, Subscription, Window, div, px,
+    Styled as _, Subscription, Window, px,
 };
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AddRequest, Setting};
@@ -20,7 +18,7 @@ use wirecatch_sites::video_sites::video_site_for;
 
 use crate::backend::Backend;
 use crate::library::Library;
-use crate::ui::{Callout, Field};
+use crate::ui::{Callout, Field, FolderRow};
 use crate::{files, links};
 
 /// Said when the box holds no link to send.
@@ -369,7 +367,7 @@ impl Render for AddForm {
 impl AddForm {
     /// Where the links are saved: the folder picked, or the one the app picks, the queue's own
     /// folder or the folder by file type (D94).
-    fn folder_row(&self, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
+    fn folder_row(&self, cx: &mut Context<'_, Self>) -> FolderRow {
         let fallback = match self
             .picked_queue(cx)
             .and_then(|id| self.library.read(cx).queue(id))
@@ -378,39 +376,14 @@ impl AddForm {
             Some(Setting::Own(folder)) => folder.0.clone(),
             Some(Setting::Global) | None => FOLDER_BY_TYPE.to_owned(),
         };
-        let theme = cx.theme();
-        h_flex()
-            .gap_2()
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_color(if self.folder.is_some() {
-                        theme.foreground
-                    } else {
-                        theme.muted_foreground
-                    })
-                    .child(self.folder.clone().unwrap_or(fallback)),
-            )
-            .when(self.folder.is_some(), |row| {
-                row.child(
-                    Button::new("use-default")
-                        .small()
-                        .ghost()
-                        .label("Use default")
-                        .on_click(cx.listener(|form, _, _, cx| {
-                            form.folder = None;
-                            cx.notify();
-                        })),
-                )
-            })
-            .child(
-                Button::new("change-folder")
-                    .small()
-                    .outline()
-                    .label("Change")
-                    .on_click(cx.listener(|_, _, _, cx| Self::choose_folder(cx))),
-            )
+        FolderRow::new(
+            self.folder.clone(),
+            fallback,
+            cx.listener(|_, _, _, cx| Self::choose_folder(cx)),
+            cx.listener(|form, _, _, cx| {
+                form.folder = None;
+                cx.notify();
+            }),
+        )
     }
 }

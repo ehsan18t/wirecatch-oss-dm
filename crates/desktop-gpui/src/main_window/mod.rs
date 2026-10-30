@@ -6,6 +6,7 @@ mod confirm;
 mod details;
 mod empty;
 mod list;
+mod queue_dialog;
 mod settings;
 mod sidebar;
 mod title_bar;
@@ -250,6 +251,22 @@ impl MainWindow {
             View::All | View::Group(_) => None,
         };
         add_dialog::open(self.library.clone(), urls, queue, window, cx);
+    }
+
+    /// Opens the queue editor on `queue`, or on a new queue.
+    fn edit_queue(
+        &mut self,
+        queue: Option<QueueId>,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        queue_dialog::open(
+            self.library.clone(),
+            queue,
+            cx.entity().downgrade(),
+            window,
+            cx,
+        );
     }
 
     /// Ctrl+V outside a text field: the links in what was copied go to the Add dialog.
