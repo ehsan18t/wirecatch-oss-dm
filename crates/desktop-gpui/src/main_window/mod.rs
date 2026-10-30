@@ -3,18 +3,20 @@
 
 mod confirm;
 mod details;
+mod empty;
 mod list;
 mod sidebar;
-mod status_bar;
+mod title_bar;
 
 use std::collections::HashSet;
 
 use gpui_kit::component::WindowExt as _;
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::{ActiveTheme as _, TitleBar, h_flex, v_flex};
 use gpui_kit::{
     App, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
     KeyBinding, ParentElement as _, Render, SharedString, Styled as _, Subscription, Window,
-    WindowBounds, WindowOptions, actions, div, px, size,
+    WindowBounds, WindowOptions, actions, px, size,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::QueueId;
@@ -23,7 +25,7 @@ use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
 use crate::library::{Library, SettingsChanged};
 use crate::{add_dialog, links, theme};
 
-actions!(main_window, [NewDownload, PasteLinks, Dismiss]);
+actions!(main_window, [NewDownload, PasteLinks, Dismiss, FocusSearch]);
 
 /// The key context the main window's shortcuts work in; a text field's own keys come first.
 const KEY_CONTEXT: &str = "MainWindow";
@@ -38,6 +40,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-n", NewDownload, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-v", PasteLinks, Some(KEY_CONTEXT)),
         KeyBinding::new("escape", Dismiss, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-k", FocusSearch, Some(KEY_CONTEXT)),
     ]);
 }
 
@@ -115,6 +118,8 @@ pub struct MainWindow {
     view: View,
     selected: HashSet<DownloadId>,
     folded: HashSet<Group>,
+    /// The title bar's search, which narrows the list to names and links holding it.
+    search: Entity<InputState>,
     /// The figure columns the list has room for; the rest fold under the name.
     columns: list::Columns,
     /// The row under the pointer, which shows its buttons.
@@ -154,6 +159,12 @@ impl MainWindow {
             }
         });
         let redraw = cx.observe(&library, |_, _, cx| cx.notify());
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search downloads"));
+        let searched = cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                cx.notify();
+            }
+        });
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         Self {
@@ -167,13 +178,21 @@ impl MainWindow {
             hovered: None,
             columns: list::Columns::ALL,
             focus,
-            _subscriptions: vec![restyle, follow_system, redraw],
+            search,
+            _subscriptions: vec![restyle, follow_system, redraw, searched],
         }
     }
 
-    fn show(&mut self, view: View, cx: &mut Context<'_, Self>) {
+    fn show(&mut self, view: View, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.view = view;
         self.selected.clear();
+        let placeholder = match view {
+            View::All => "Search downloads".to_owned(),
+            View::Group(_) | View::Queue(_) => format!("Search {}", self.title(cx)),
+        };
+        self.search.update(cx, |search, cx| {
+            search.set_placeholder(placeholder, window, cx);
+        });
         cx.notify();
     }
 
@@ -230,11 +249,15 @@ impl Render for MainWindow {
             }))
             .on_action(cx.listener(|this, _: &PasteLinks, window, cx| this.paste_links(window, cx)))
             .on_action(cx.listener(|this, _: &Dismiss, _, cx| this.dismiss(cx)))
+            .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
+                this.search
+                    .update(cx, |search, cx| search.focus(window, cx));
+            }))
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)
             .text_sm()
-            .child(title_bar(cx))
+            .child(self.title_bar(cx))
             .child(
                 h_flex().flex_1().min_h_0().child(self.sidebar(cx)).child(
                     v_flex()
@@ -245,22 +268,5 @@ impl Render for MainWindow {
                         .child(self.list(window, cx)),
                 ),
             )
-            .child(self.status_bar(cx))
     }
-}
-
-/// The title bar: the app's mark and name, with the window's buttons.
-fn title_bar(cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
-    TitleBar::new().child(
-        h_flex()
-            .gap_2()
-            .child(div().size(px(8.)).rounded_full().bg(theme.primary))
-            .child(
-                div()
-                    .text_xs()
-                    .font_weight(gpui_kit::FontWeight::SEMIBOLD)
-                    .child(wirecatch_shell::host::CHANNEL.name()),
-            ),
-    )
 }

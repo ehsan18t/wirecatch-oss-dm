@@ -121,7 +121,7 @@ impl MainWindow {
                     .text_color(theme.muted_foreground)
                     .child(figure.into()),
             )
-            .on_click(cx.listener(move |this, _, _, cx| this.show(view, cx)))
+            .on_click(cx.listener(move |this, _, window, cx| this.show(view, window, cx)))
             .into_any_element()
     }
 }

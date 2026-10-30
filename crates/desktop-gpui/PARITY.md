@@ -8,9 +8,10 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 - [x] Follows the manager's events; reloads after missing some.
 - [x] Light and dark colours with the Theme and Accent settings, following the system's scheme.
 - [ ] The system accent colour on Windows (`appearance.rs`).
-- [ ] The manager could not open: "{app} cannot reach its download engine", with Try again (`ui/DownloadsView.svelte`).
+- [x] The manager could not open: "{app} cannot reach its download engine", with Try again (`ui/DownloadsView.svelte`).
 - [ ] Another copy already runs: say so and close (`lib.rs` `say_already_running`).
-- [ ] Title bar search (Ctrl+K): filters the list, Escape clears, Down moves into the list; "Search settings" on the settings screen.
+- [x] Title bar search (Ctrl+K): names and links, a search unfolds groups, "N downloads matching …", the view in the placeholder.
+- [ ] Search: Escape clears, Down moves into the list; "Search settings" on the settings screen.
 - [ ] Title bar: the waiting-questions bell with its count (`show_question_windows`).
 - [ ] Navigation toggle; collapsed rail and narrow-window drawer (D91).
 - [x] Navigation: All downloads, the six status views with counts, the queues with count or speed.
@@ -31,7 +32,8 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 - [ ] Row: category icon, the "…" menu, the fix button in the progress cell (`row-actions.ts`).
 - [x] Hover Pause, Resume, Try again, Start over.
 - [ ] Selection: Ctrl+click, Shift+click ranges; selection bar with Pause, Resume, Try again, Move to queue, Remove, Clear.
-- [ ] Empty states with their buttons (`ListEmpty.svelte`): first run, no search match, empty queue, nothing needs attention.
+- [x] Empty states with their buttons (`ListEmpty.svelte`): first run, no search match, empty queue, an empty view.
+- [ ] First run: "See everything {app} can do" (opens the palette).
 - [x] Details dialog (`DetailsDialog.svelte`, D47), opened by clicking a row: status, the problem with its fix and Try again, speed and progress, facts, Saved to with Change, the link with Copy, activity, Open, Pause, Resume, Start over, Show in folder, More (Copy link, Cancel download), Remove; it follows the download and closes once it is removed.
 - [ ] Details: the speed graph, the queue as a select, "Stuck? The link may have expired." with Get a new link, Open in a separate window, and the fixes that open other screens (Get a new link, Proxy settings, Change queue).
 - [ ] Context menu on rows; Menu key and Shift+F10.
@@ -39,7 +41,7 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 - [ ] Drag a link in to add it; drag rows to reorder in a queue and onto a queue to move them.
 - [x] Paste a link anywhere (Ctrl+V) to open the Add dialog.
 - [ ] Command palette with every command of `lib/commands`.
-- [ ] The status bar's speed readout says "Starting" and "Finishing videos" as the title bar's did (D23).
+- [x] The title bar's speed readout, with "Starting" and "Finishing videos", and its tooltip (D23).
 
 ## Dialogs
 

@@ -158,6 +158,21 @@ impl MainWindow {
             .iter()
             .filter(|row| row.status == DownloadStatus::Queued)
             .count();
+        let needle = self.needle(cx);
+        if !needle.is_empty() {
+            let found = shown
+                .iter()
+                .filter(|row| {
+                    row.file_name.to_lowercase().contains(&needle)
+                        || row.url.to_lowercase().contains(&needle)
+                })
+                .count();
+            return format!(
+                "{} matching “{}”",
+                plural(found, "download"),
+                self.search.read(cx).value().trim()
+            );
+        }
         match (running, waiting) {
             (0, 0) => plural(shown.len(), "download"),
             (0, waiting) => format!("Nothing downloading · {waiting} up next"),
@@ -191,29 +206,47 @@ impl MainWindow {
         .into_any_element()
     }
 
+    /// The list's lines: the view's downloads that hold the search in their name or link, by
+    /// group. One group alone has no heading; a search shows everything it finds, folded or not.
     fn lines(&self, cx: &App) -> Vec<Line> {
         let downloads = &self.library.read(cx).downloads;
-        let grouped = !matches!(self.view, View::Group(_));
+        let needle = self.needle(cx);
+        let groups: Vec<(Group, Vec<usize>)> = Group::ALL
+            .into_iter()
+            .map(|group| {
+                let members = downloads
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, row)| {
+                        self.view.shows(row)
+                            && Group::of(row.status) == group
+                            && (needle.is_empty()
+                                || row.file_name.to_lowercase().contains(&needle)
+                                || row.url.to_lowercase().contains(&needle))
+                    })
+                    .map(|(index, _)| index)
+                    .collect::<Vec<_>>();
+                (group, members)
+            })
+            .filter(|(_, members)| !members.is_empty())
+            .collect();
+        let headed = groups.len() > 1;
         let mut lines = Vec::new();
-        for group in Group::ALL {
-            let members: Vec<usize> = downloads
-                .iter()
-                .enumerate()
-                .filter(|(_, row)| self.view.shows(row) && Group::of(row.status) == group)
-                .map(|(index, _)| index)
-                .collect();
-            if members.is_empty() {
-                continue;
-            }
-            if grouped {
+        for (group, members) in groups {
+            if headed {
                 lines.push(Line::Heading(group, members.len()));
-                if self.folded.contains(&group) {
+                if needle.is_empty() && self.folded.contains(&group) {
                     continue;
                 }
             }
             lines.extend(members.into_iter().map(Line::Row));
         }
         lines
+    }
+
+    /// The search, as the list compares it.
+    pub(super) fn needle(&self, cx: &App) -> String {
+        self.search.read(cx).value().trim().to_lowercase()
     }
 
     fn heading(&self, group: Group, shown: usize, cx: &mut Context<'_, Self>) -> AnyElement {
@@ -318,36 +351,6 @@ impl MainWindow {
                 }),
             )
             .into_any_element()
-    }
-
-    fn empty(&self, cx: &App) -> impl IntoElement {
-        let theme = cx.theme();
-        let (title, note) = match self.view {
-            View::All => (
-                "No downloads yet".to_owned(),
-                "Copy a link, then press Ctrl+V here.".to_owned(),
-            ),
-            View::Group(Group::Attention) => {
-                ("Nothing needs your attention".to_owned(), String::new())
-            }
-            View::Group(group) => (
-                format!("Nothing {}", group.label().to_lowercase()),
-                String::new(),
-            ),
-            View::Queue(_) => (format!("{} is empty", self.title(cx)), String::new()),
-        };
-        v_flex()
-            .flex_1()
-            .items_center()
-            .justify_center()
-            .gap_1()
-            .child(
-                div()
-                    .text_base()
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(title),
-            )
-            .child(div().text_color(theme.muted_foreground).child(note))
     }
 }
 
