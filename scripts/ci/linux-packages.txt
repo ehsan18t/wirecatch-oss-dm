@@ -1,4 +1,4 @@
-# The Ubuntu packages the Linux Rust job installs (scripts/ci/linux-packages.sh), one per line. The desktop crate (Tauri 2) links against WebKitGTK and friends; Windows runners already have WebView2.
+# The Ubuntu packages the Linux Rust job installs (scripts/ci/linux-packages.sh), one per line. The Tauri desktop crate links against WebKitGTK and friends (Windows runners already have WebView2); the GPUI one against fontconfig, FreeType, xkbcommon and Wayland, from libfontconfig-dev on.
 build-essential
 file
 libwebkit2gtk-4.1-dev
@@ -6,3 +6,9 @@ libxdo-dev
 libssl-dev
 libayatana-appindicator3-dev
 librsvg2-dev
+libfontconfig-dev
+libfreetype-dev
+libxkbcommon-dev
+libxkbcommon-x11-dev
+libwayland-dev
+libx11-xcb-dev
