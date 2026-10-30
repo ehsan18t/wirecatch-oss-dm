@@ -2,13 +2,30 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { jsPolicy } from './js-policy.mjs';
-import { capture, GateError, pnpm, ROOT } from './process.mjs';
+import { capture, GateError, options, pnpm, ROOT, run } from './process.mjs';
 
 const GENERATED_TYPES = 'packages/protocol/src';
 /** The generated types of each released protocol version, copied once when it was released (D32.8). */
 const RELEASED_SNAPSHOTS = 'crates/protocol/released';
 /** The branch whose snapshots are released: one it has can never change. */
 const RELEASED_BASE = 'origin/main';
+/** The Tauri app's package, left out with `--no-desktop`. */
+const DESKTOP_PACKAGE = '@wirecatch/desktop';
+/** What Prettier checks; the Tauri app's folder goes with `--no-desktop`. */
+const PRETTIER_PATHS = ['packages', 'scripts', 'eslint.config.js'];
+
+/** `pnpm -r` over every package, or every one but the Tauri app's with `--no-desktop`. */
+function eachPackage(...args) {
+  const filter = options.desktop ? [] : ['--filter', `!${DESKTOP_PACKAGE}`];
+  pnpm('-r', ...filter, ...args);
+}
+
+function lint() {
+  eachPackage('exec', 'eslint', '.', '--max-warnings', '0');
+  pnpm('exec', 'eslint', 'scripts', 'eslint.config.js', '--max-warnings', '0');
+  const apps = options.desktop ? ['apps'] : ['apps/extension'];
+  pnpm('exec', 'prettier', '--check', ...apps, ...PRETTIER_PATHS);
+}
 
 /** Every file under `dir`, with its contents, keyed by its path from the repository root. */
 function folderContents(dir) {
@@ -71,10 +88,13 @@ export const JS_CHECKS = {
     releasedSnapshotsKept();
   },
   'js-policy': jsPolicy,
-  'js-check': () => pnpm('check'),
-  'js-lint': () => pnpm('lint'),
-  'js-test': () => pnpm('test'),
-  'js-build': () => pnpm('build'),
+  'js-check': () => eachPackage('--if-present', 'check'),
+  'js-lint': lint,
+  'js-test': () => {
+    eachPackage('--if-present', 'test');
+    run('node', ['--test', 'scripts/**/*.test.mjs']);
+  },
+  'js-build': () => eachPackage('--if-present', 'build'),
   // Ignored advisories, each with its reason, live in `auditConfig` in pnpm-workspace.yaml.
   'npm-audit': () => pnpm('audit'),
 };

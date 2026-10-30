@@ -1,7 +1,7 @@
 // Tauri's Rust crates and their JavaScript packages stay on the same major.minor (Tauri warns at build time when they differ).
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cargoMetadata, GateError, ROOT } from './process.mjs';
+import { cargoMetadata, desktopOnly, GateError, ROOT } from './process.mjs';
 
 /** Rust and JS packages that must stay on the same major.minor. */
 const TAURI_PAIRS = [
@@ -45,4 +45,4 @@ function tauriPairs() {
   if (problems.length > 0) throw new GateError(problems.join('\n'));
 }
 
-export const TAURI_CHECKS = { 'tauri-pairs': tauriPairs };
+export const TAURI_CHECKS = { 'tauri-pairs': desktopOnly(tauriPairs) };
