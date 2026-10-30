@@ -173,6 +173,12 @@ export default defineBackground(() => {
     hub.addPopup(port);
   });
   browser.tabs.onRemoved.addListener((tabId) => notices.tabRemoved(tabId));
+  browser.tabs.onActivated.addListener(() => void notices.focusChanged());
+  browser.windows.onFocusChanged.addListener(() => void notices.focusChanged());
+  // A page that loaded took the old page's frame with it; the open notices show on the new one.
+  browser.tabs.onUpdated.addListener((_tabId, change) => {
+    if (change.status === 'complete') void notices.focusChanged();
+  });
 
   browser.runtime.onInstalled.addListener(retireLocalSettings);
   void hub.start();

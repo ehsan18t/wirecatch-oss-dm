@@ -871,6 +871,15 @@ Decided by the maintainer on 2026-10-30, after their own research. It replaces t
 
 Decided with the maintainer on 2026-10-30. It amends D88.1: the setting decides whenever a file of that name is already in the folder, whatever the file is. A file that differs in size or link no longer takes the next free name by itself. It holds for every kind of download, streams and media downloads included (D88.5 is replaced by this and ROADMAP's release item 4). The person always knows which case it is: the question says either that the file in the folder looks like the same file (same size and, where known, the same link, as D88.1 compares) or that a different file has the same name, and the choices are the same in both. The setting chosen beforehand on Saving files applies to both.
 
+### D97. Notices in the browser follow the person, and a closed one never comes back
+
+Decided with the maintainer on 2026-10-30. It amends D65: each tab kept its own notices frame until it was empty, so a notice left open in one tab, a failure most of all, showed again when the person came back to that tab, after they had closed others elsewhere, sometimes for a download long since tried again or removed.
+
+1. The notices still open are one list in the extension's background. Turning to another tab, or a page loading in the tab in front, takes away every other tab's frame and shows the open notices in the tab in front, each with the time it has left; one whose time is up is not moved. A browser that is no longer in front keeps its frame.
+2. A notice that leaves the page (closed, pressed, cleared with Clear all, or its time up) is told to the background and never shows again, in any tab.
+3. A moved notice is not told to the app as shown again: the app was told the first time.
+4. A notice about a download that has since been removed or tried again is taken back by the app (ROADMAP's release item 1).
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.
