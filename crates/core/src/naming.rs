@@ -137,6 +137,19 @@ pub(crate) fn unique_path(dir: &Path, name: &str, claimed: impl Fn(&Path) -> boo
     }
 }
 
+/// The first of `name`, `name (1)`... in `dir` that no other download `claimed`. A file already
+/// there is left for the download to decide about when it puts its file in place (D96).
+pub(crate) fn unclaimed_path(dir: &Path, name: &str, claimed: impl Fn(&Path) -> bool) -> PathBuf {
+    let mut n = 0;
+    loop {
+        let candidate = candidate(dir, name, n);
+        if !claimed(&candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
 /// The `n`th name tried for `name` in `dir`: `name` itself, then `name (1)`...
 pub(crate) fn candidate(dir: &Path, name: &str, n: u64) -> PathBuf {
     if n == 0 {

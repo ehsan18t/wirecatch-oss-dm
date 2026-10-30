@@ -774,6 +774,7 @@ export function isFileExistsQuestion(value: unknown): value is FileExistsQuestio
     typeof value1['file_name'] === 'string' &&
     typeof value1['folder'] === 'string' &&
     typeof value1['size'] === 'number' &&
+    typeof value1['same_file'] === 'boolean' &&
     (typeof value1['saved_at'] === 'number' || value1['saved_at'] === null))(value);
 }
 

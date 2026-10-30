@@ -210,7 +210,7 @@ impl Manager {
         path: &Path,
         provisional: &Path,
     ) -> Result<(), String> {
-        let Some(found) = self.found_duplicate(id, remote, path, provisional) else {
+        let Some(found) = self.found_existing(id, remote, path, provisional) else {
             return Ok(());
         };
         let mut state = self.lock();

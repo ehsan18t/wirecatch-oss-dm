@@ -368,8 +368,8 @@ export class MockBackend extends MockShell implements Backend {
   }
 
   /** Sample data only: a download finds its file already in its folder. */
-  simulateFileExists(): void {
-    fileExists.simulateFileExists(this.#state);
+  simulateFileExists(sameFile = true): void {
+    fileExists.simulateFileExists(this.#state, sameFile);
   }
 
   answerFileExists(id: QuestionId, answer: FileExistsAnswer) {

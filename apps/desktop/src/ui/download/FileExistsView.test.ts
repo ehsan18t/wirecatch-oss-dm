@@ -9,9 +9,9 @@ import type { MockBackend } from '$lib/backend/mock';
 import { mockBackend, settle, windowState } from '$lib/testing/setup';
 import DownloadWindow from './DownloadWindow.svelte';
 
-async function ask() {
+async function ask(sameFile = true) {
   const b = mockBackend({ empty: true });
-  b.simulateFileExists();
+  b.simulateFileExists(sameFile);
   const [asked] = await b.pendingFileExists();
   const { win, host } = windowState(b, { question: asked?.id ?? questionId(0) });
   await win.init();
@@ -38,6 +38,15 @@ describe('a download whose file is already in its folder', () => {
     expect(screen.getByText(asked?.file_name ?? '')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Keep both' })).toHaveFocus();
     expect(screen.getByRole('checkbox', { name: 'Remember my choice' })).not.toBeChecked();
+  });
+
+  it('says when the file in the folder is a different file with the same name (D96)', async () => {
+    await ask(false);
+    expect(
+      screen.getByRole('heading', { name: 'A file with this name already exists' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/different file with the same name/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Keep both' })).toHaveFocus();
   });
 
   it('keeps both under a new name and shows the progress', async () => {
