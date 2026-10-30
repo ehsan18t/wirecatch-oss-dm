@@ -250,6 +250,7 @@ fn autostart_folder() -> Option<PathBuf> {
 
 /// Reads the state of the entry named `name`.
 #[cfg(not(windows))]
+#[must_use]
 pub fn read_state(name: &str) -> EntryState {
     autostart_folder().map_or(EntryState::Missing, |folder| state_in(&folder, name))
 }
