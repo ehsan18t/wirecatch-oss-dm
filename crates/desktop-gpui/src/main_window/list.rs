@@ -3,7 +3,9 @@
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::progress::Progress;
-use gpui_kit::component::{ActiveTheme as _, Sizable as _, WindowExt as _, h_flex, v_flex};
+use gpui_kit::component::{
+    ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _, h_flex, v_flex,
+};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement,
@@ -37,26 +39,8 @@ enum Line {
 
 impl MainWindow {
     pub(super) fn header(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let summary = self.summary(cx);
         let library = self.library.read(cx);
-        let shown: Vec<_> = library
-            .downloads
-            .iter()
-            .filter(|row| self.view.shows(row))
-            .collect();
-        let running = shown
-            .iter()
-            .filter(|row| Group::of(row.status) == Group::Downloading)
-            .count();
-        let waiting = shown
-            .iter()
-            .filter(|row| row.status == DownloadStatus::Queued)
-            .count();
-        let summary = match (running, waiting) {
-            (0, 0) => plural(shown.len(), "download"),
-            (0, waiting) => format!("Nothing downloading · {waiting} up next"),
-            (running, 0) => format!("{running} downloading"),
-            (running, waiting) => format!("{running} downloading · {waiting} up next"),
-        };
         let any_paused = library
             .downloads
             .iter()
@@ -94,6 +78,15 @@ impl MainWindow {
                             .child(summary),
                     ),
             )
+            .child(
+                Button::new("new-download")
+                    .small()
+                    .primary()
+                    .label("New download")
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.new_download(&[], window, cx)),
+                    ),
+            )
             .when(offers_all, |header| {
                 header.child(if any_paused {
                     Button::new("resume-all")
@@ -109,6 +102,31 @@ impl MainWindow {
                         .on_click(cx.listener(|_, _, window, cx| act(window, cx, api::pause_all)))
                 })
             })
+    }
+
+    /// What the view holds: how many download and wait, or how many there are.
+    fn summary(&self, cx: &App) -> String {
+        let shown: Vec<_> = self
+            .library
+            .read(cx)
+            .downloads
+            .iter()
+            .filter(|row| self.view.shows(row))
+            .collect();
+        let running = shown
+            .iter()
+            .filter(|row| Group::of(row.status) == Group::Downloading)
+            .count();
+        let waiting = shown
+            .iter()
+            .filter(|row| row.status == DownloadStatus::Queued)
+            .count();
+        match (running, waiting) {
+            (0, 0) => plural(shown.len(), "download"),
+            (0, waiting) => format!("Nothing downloading · {waiting} up next"),
+            (running, 0) => format!("{running} downloading"),
+            (running, waiting) => format!("{running} downloading · {waiting} up next"),
+        }
     }
 
     pub(super) fn list(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> AnyElement {
@@ -166,6 +184,7 @@ impl MainWindow {
             .id(ElementId::Name(SharedString::new(format!(
                 "heading-{group:?}"
             ))))
+            .w_full()
             .h(px(LINE_HEIGHT))
             .px_5()
             .items_end()
@@ -175,7 +194,14 @@ impl MainWindow {
             .text_xs()
             .font_weight(FontWeight::MEDIUM)
             .text_color(theme.muted_foreground)
-            .child(if folded { "›" } else { "⌄" })
+            .child(
+                Icon::new(if folded {
+                    IconName::ChevronRight
+                } else {
+                    IconName::ChevronDown
+                })
+                .xsmall(),
+            )
             .child(group.label())
             .child(
                 div()
@@ -203,6 +229,7 @@ impl MainWindow {
         h_flex()
             .id(row_id("row", row.id))
             .group("row")
+            .w_full()
             .h(px(LINE_HEIGHT))
             .px_5()
             .gap_4()

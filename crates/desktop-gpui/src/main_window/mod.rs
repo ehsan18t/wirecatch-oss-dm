@@ -7,18 +7,36 @@ mod status_bar;
 
 use std::collections::HashSet;
 
+use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::{ActiveTheme as _, TitleBar, h_flex, v_flex};
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, WindowBounds,
-    WindowOptions, div, px, size,
+    App, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
+    KeyBinding, ParentElement as _, Render, SharedString, Styled as _, Subscription, Window,
+    WindowBounds, WindowOptions, actions, div, px, size,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
 
 use crate::library::{Library, SettingsChanged};
-use crate::theme;
+use crate::{add_dialog, links, theme};
+
+actions!(main_window, [NewDownload, PasteLinks]);
+
+/// The key context the main window's shortcuts work in; a text field's own keys come first.
+const KEY_CONTEXT: &str = "MainWindow";
+
+/// Said when Ctrl+V finds no link to add.
+const NO_LINK_PASTED: &str =
+    "There is no link in what you pasted. Copy the full address, starting with https://.";
+
+/// The main window's shortcuts. Call once at start.
+pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("ctrl-n", NewDownload, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-v", PasteLinks, Some(KEY_CONTEXT)),
+    ]);
+}
 
 /// Where a download's row sits in the list, in the order the groups show.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -94,6 +112,7 @@ pub struct MainWindow {
     view: View,
     selected: HashSet<DownloadId>,
     folded: HashSet<Group>,
+    focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -128,6 +147,8 @@ impl MainWindow {
             }
         });
         let redraw = cx.observe(&library, |_, _, cx| cx.notify());
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
         Self {
             library,
             view: View::All,
@@ -136,6 +157,7 @@ impl MainWindow {
                 .into_iter()
                 .filter(|g| g.starts_folded())
                 .collect(),
+            focus,
             _subscriptions: vec![restyle, follow_system, redraw],
         }
     }
@@ -144,6 +166,29 @@ impl MainWindow {
         self.view = view;
         self.selected.clear();
         cx.notify();
+    }
+
+    /// Opens the Add dialog, on the queue shown when a queue is.
+    fn new_download(&mut self, urls: &[String], window: &mut Window, cx: &mut Context<'_, Self>) {
+        let queue = match self.view {
+            View::Queue(queue) => Some(queue),
+            View::All | View::Group(_) => None,
+        };
+        add_dialog::open(self.library.clone(), urls, queue, window, cx);
+    }
+
+    /// Ctrl+V outside a text field: the links in what was copied go to the Add dialog.
+    fn paste_links(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        let copied = cx
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .unwrap_or_default();
+        let urls = links::extract(&copied);
+        if urls.is_empty() {
+            window.push_notification(NO_LINK_PASTED, cx);
+        } else {
+            self.new_download(&urls, window, cx);
+        }
     }
 
     fn title(&self, cx: &App) -> SharedString {
@@ -163,6 +208,12 @@ impl Render for MainWindow {
         let theme = cx.theme();
         v_flex()
             .id("main-window")
+            .key_context(KEY_CONTEXT)
+            .track_focus(&self.focus)
+            .on_action(cx.listener(|this, _: &NewDownload, window, cx| {
+                this.new_download(&[], window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PasteLinks, window, cx| this.paste_links(window, cx)))
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)

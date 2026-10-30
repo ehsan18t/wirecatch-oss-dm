@@ -20,7 +20,8 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 - [ ] Navigation footer: Settings (Ctrl+,), Find any action (Ctrl+Shift+P), Keyboard shortcuts (F1).
 - [x] List header: the view's title and summary; Pause all or Resume all.
 - [ ] List header in a queue view: description, schedule and limits, Start now, Pause or Resume queue, Edit queue; "about X left"; "matching '…'".
-- [ ] New download button (Ctrl+N), hidden on first run.
+- [x] New download button (Ctrl+N).
+- [ ] The New download button hidden on first run, where the empty state offers it.
 - [ ] Storage failure banner with Try again and Dismiss; startup notices; toasts.
 - [x] Groups in order, Finished and Cancelled folded at first, headings fold; no headings in a status view.
 - [ ] A queue view lists its line ungrouped in run order, Finished and Cancelled grouped below; the # column.
@@ -34,13 +35,14 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 - [ ] Context menu on rows; Menu key and Shift+F10.
 - [ ] Keyboard: every shortcut of `lib/keymap.ts`, F6 regions, list keys.
 - [ ] Drag a link in to add it; drag rows to reorder in a queue and onto a queue to move them.
-- [ ] Paste a link anywhere (Ctrl+V) to open the Add dialog.
+- [x] Paste a link anywhere (Ctrl+V) to open the Add dialog.
 - [ ] Command palette with every command of `lib/commands`.
 - [ ] The status bar's speed readout says "Starting" and "Finishing videos" as the title bar's did (D23).
 
 ## Dialogs
 
-- [ ] Add: links, file name, Save to, queue with the Automatic hint, Add paused, Download (D51 video pages).
+- [x] Add: links, file name, Save to, queue, Add paused, Download (Ctrl+Enter), video pages read for their qualities (D51), failed links kept with why.
+- [ ] Add: the Automatic hint naming the queue each link goes to (`try_link`), focus on Download when opened with links, links from a second launch joining an open dialog.
 - [ ] Remove, with "Also delete the files".
 - [ ] Cancel.
 - [ ] Queue: name, description, own folder (D94), limits, rules with Test a link, proxy, schedule, notifications, Delete queue.

@@ -61,6 +61,10 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
         theme.primary_hover = tone.opacity(0.9);
         theme.primary_active = tone.opacity(0.8);
         theme.primary_foreground = on_tone;
+        theme.button_primary = tone;
+        theme.button_primary_hover = tone.opacity(0.9);
+        theme.button_primary_active = tone.opacity(0.8);
+        theme.button_primary_foreground = on_tone;
         theme.ring = tone;
         theme.caret = tone;
         theme.link = tone;

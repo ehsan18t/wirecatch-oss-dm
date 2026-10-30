@@ -3,8 +3,10 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod add_dialog;
 mod backend;
 mod library;
+mod links;
 mod main_window;
 mod text;
 mod theme;
@@ -36,6 +38,7 @@ fn main() {
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
             gpui_kit::init(cx);
+            main_window::bind_keys(cx);
             theme::init(cx);
             cx.set_global(backend);
             let library = library::Library::new(cx);
