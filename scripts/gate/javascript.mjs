@@ -1,7 +1,7 @@
 // The JavaScript checks: the generated protocol types are current, every package is linted the one way (js-policy.mjs), and the packages check, lint, test, build and audit.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { jsPolicy } from './js-policy.mjs';
+import { jsPolicy, lintTargets } from './js-policy.mjs';
 import { capture, GateError, options, pnpm, ROOT, run } from './process.mjs';
 
 const GENERATED_TYPES = 'packages/protocol/src';
@@ -9,10 +9,9 @@ const GENERATED_TYPES = 'packages/protocol/src';
 const RELEASED_SNAPSHOTS = 'crates/protocol/released';
 /** The branch whose snapshots are released: one it has can never change. */
 const RELEASED_BASE = 'origin/main';
-/** The Tauri app's package, left out with `--no-desktop`. */
+/** The Tauri app's package and its folder, left out with `--no-desktop` (D100). */
 const DESKTOP_PACKAGE = '@wirecatch/desktop';
-/** What Prettier checks; the Tauri app's folder goes with `--no-desktop`. */
-const PRETTIER_PATHS = ['packages', 'scripts', 'eslint.config.js'];
+const DESKTOP_FOLDER = 'apps/desktop';
 
 /** `pnpm -r` over every package, or every one but the Tauri app's with `--no-desktop`. */
 function eachPackage(...args) {
@@ -21,10 +20,10 @@ function eachPackage(...args) {
 }
 
 function lint() {
+  const { root, formatted } = lintTargets(options.desktop ? [] : [DESKTOP_FOLDER]);
   eachPackage('exec', 'eslint', '.', '--max-warnings', '0');
-  pnpm('exec', 'eslint', 'scripts', 'eslint.config.js', '--max-warnings', '0');
-  const apps = options.desktop ? ['apps'] : ['apps/extension'];
-  pnpm('exec', 'prettier', '--check', ...apps, ...PRETTIER_PATHS);
+  pnpm('exec', 'eslint', ...root, '--max-warnings', '0');
+  pnpm('exec', 'prettier', '--check', ...formatted);
 }
 
 /** Every file under `dir`, with its contents, keyed by its path from the repository root. */
