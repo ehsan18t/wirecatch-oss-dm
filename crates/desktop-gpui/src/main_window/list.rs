@@ -1,5 +1,6 @@
-//! The list header and the download list: one line per download, grouped by status in the order
-//! [`Group::ALL`] gives, each group under a heading that folds it.
+//! The download list: one line per download, grouped by status in the order [`Group::ALL`] gives,
+//! each group under a heading that folds it. A row says what matters in its state and nothing
+//! else: a running download its bar, speed and time left; a finished one its size and when.
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::progress::Progress;
@@ -14,60 +15,15 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, PER_MILLE_DONE};
 use wirecatch_shell::api;
 
-use super::{Group, MainWindow, View, details};
+use super::{Group, MainWindow, details};
 use crate::backend::act;
-use crate::ui::layout::PageHeader;
-use crate::ui::{FileTile, Role, Typed as _, search_field, tokens};
+use crate::ui::{FileTile, Role, Typed as _, tokens};
 use crate::{files, text};
 
 /// Every line is this tall, headings included, so the list can lay out only what shows.
-const LINE_HEIGHT: f32 = 52.;
-const SEARCH_WIDTH: f32 = 280.;
-const PROGRESS_WIDTH: f32 = 168.;
-const SIZE_WIDTH: f32 = 136.;
-const SPEED_WIDTH: f32 = 96.;
-const LEFT_WIDTH: f32 = 84.;
-const ACTIONS_WIDTH: f32 = 96.;
-
-/// Space a column takes beside its neighbours.
-const GAP: f32 = 12.;
-/// The row's padding on both sides.
-const ROW_PADDING: f32 = 40.;
-/// The file tile at the start of a row.
-const TILE_WIDTH: f32 = 32.;
-/// The least the name keeps before a figure column folds under it.
-const NAME_MIN_WIDTH: f32 = 220.;
-
-/// Which figure columns show; in a narrow list they fold under the name, Left first, then Speed,
-/// then Size.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct Columns {
-    size: bool,
-    speed: bool,
-    left: bool,
-}
-
-impl Columns {
-    pub(super) const ALL: Self = Self {
-        size: true,
-        speed: true,
-        left: true,
-    };
-
-    /// The columns a list `width` wide has room for.
-    fn fitting(width: f32) -> Self {
-        let mut needed =
-            ROW_PADDING + TILE_WIDTH + NAME_MIN_WIDTH + PROGRESS_WIDTH + ACTIONS_WIDTH + 4. * GAP;
-        let mut fits = |column: f32| {
-            needed += column + GAP;
-            needed <= width
-        };
-        let size = fits(SIZE_WIDTH);
-        let speed = size && fits(SPEED_WIDTH);
-        let left = speed && fits(LEFT_WIDTH);
-        Self { size, speed, left }
-    }
-}
+const LINE_HEIGHT: f32 = 56.;
+/// The figures at a row's end, and the buttons that take their place on hover.
+const END_WIDTH: f32 = 160.;
 
 /// One line of the list.
 #[derive(Clone, Copy)]
@@ -76,98 +32,15 @@ enum Line {
     Row(usize),
 }
 
+/// What a heading's button does to every download.
+#[derive(Clone, Copy)]
+enum GroupCommand {
+    PauseAll,
+    ResumeAll,
+}
+
 impl MainWindow {
-    pub(super) fn header(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let summary = self.summary(cx);
-        let library = self.library.read(cx);
-        let any_paused = library
-            .downloads
-            .iter()
-            .any(|row| row.status == DownloadStatus::Paused);
-        let any_pausable = library
-            .downloads
-            .iter()
-            .any(|row| matches!(Group::of(row.status), Group::Downloading | Group::UpNext));
-        let offers_all = (any_paused || any_pausable)
-            && !matches!(
-                self.view,
-                View::Group(Group::Finished | Group::Attention | Group::Cancelled)
-            );
-        PageHeader::new(self.title(cx), summary)
-            .action(div().w(px(SEARCH_WIDTH)).child(search_field(&self.search)))
-            .action(
-                Button::new("new-download")
-                    .small()
-                    .primary()
-                    .label("New download")
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.new_download(&[], window, cx)),
-                    ),
-            )
-            .when(offers_all, |header| {
-                header.action(if any_paused {
-                    Button::new("resume-all")
-                        .small()
-                        .outline()
-                        .label("Resume all")
-                        .on_click(cx.listener(|_, _, window, cx| {
-                            act(window.window_handle(), cx, api::resume_all);
-                        }))
-                } else {
-                    Button::new("pause-all")
-                        .small()
-                        .outline()
-                        .label("Pause all")
-                        .on_click(cx.listener(|_, _, window, cx| {
-                            act(window.window_handle(), cx, api::pause_all);
-                        }))
-                })
-            })
-    }
-
-    /// What the view holds: how many download and wait, or how many there are.
-    fn summary(&self, cx: &App) -> String {
-        let shown: Vec<_> = self
-            .library
-            .read(cx)
-            .downloads
-            .iter()
-            .filter(|row| self.view.shows(row))
-            .collect();
-        let running = shown
-            .iter()
-            .filter(|row| Group::of(row.status) == Group::Downloading)
-            .count();
-        let waiting = shown
-            .iter()
-            .filter(|row| row.status == DownloadStatus::Queued)
-            .count();
-        let needle = self.needle(cx);
-        if !needle.is_empty() {
-            let found = shown
-                .iter()
-                .filter(|row| {
-                    row.file_name.to_lowercase().contains(&needle)
-                        || row.url.to_lowercase().contains(&needle)
-                })
-                .count();
-            return format!(
-                "{} matching “{}”",
-                plural(found, "download"),
-                self.search.read(cx).value().trim()
-            );
-        }
-        match (running, waiting) {
-            (0, 0) => plural(shown.len(), "download"),
-            (0, waiting) => format!("Nothing downloading · {waiting} up next"),
-            (running, 0) => format!("{running} downloading"),
-            (running, waiting) => format!("{running} downloading · {waiting} up next"),
-        }
-    }
-
-    pub(super) fn list(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> AnyElement {
-        self.columns =
-            Columns::fitting(f32::from(window.viewport_size().width) - super::sidebar::WIDTH);
+    pub(super) fn list(&mut self, cx: &mut Context<'_, Self>) -> AnyElement {
         let lines = self.lines(cx);
         if lines.is_empty() {
             return self.empty(cx).into_any_element();
@@ -187,41 +60,35 @@ impl MainWindow {
             }),
         )
         .flex_1()
+        .pb_4()
         .into_any_element()
     }
 
     /// The list's lines: the view's downloads that hold the search in their name or link, by
-    /// group. One group alone has no heading; a search shows everything it finds, folded or not.
+    /// group, each under its heading. A search shows everything it finds, folded or not.
     fn lines(&self, cx: &App) -> Vec<Line> {
         let downloads = &self.library.read(cx).downloads;
         let needle = self.needle(cx);
-        let groups: Vec<(Group, Vec<usize>)> = Group::ALL
-            .into_iter()
-            .map(|group| {
-                let members = downloads
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, row)| {
-                        self.view.shows(row)
-                            && Group::of(row.status) == group
-                            && (needle.is_empty()
-                                || row.file_name.to_lowercase().contains(&needle)
-                                || row.url.to_lowercase().contains(&needle))
-                    })
-                    .map(|(index, _)| index)
-                    .collect::<Vec<_>>();
-                (group, members)
-            })
-            .filter(|(_, members)| !members.is_empty())
-            .collect();
-        let headed = groups.len() > 1;
         let mut lines = Vec::new();
-        for (group, members) in groups {
-            if headed {
-                lines.push(Line::Heading(group, members.len()));
-                if needle.is_empty() && self.folded.contains(&group) {
-                    continue;
-                }
+        for group in Group::ALL {
+            let members: Vec<usize> = downloads
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| {
+                    self.view.shows(row)
+                        && Group::of(row.status) == group
+                        && (needle.is_empty()
+                            || row.file_name.to_lowercase().contains(&needle)
+                            || row.url.to_lowercase().contains(&needle))
+                })
+                .map(|(index, _)| index)
+                .collect();
+            if members.is_empty() {
+                continue;
+            }
+            lines.push(Line::Heading(group, members.len()));
+            if needle.is_empty() && self.folded.contains(&group) {
+                continue;
             }
             lines.extend(members.into_iter().map(Line::Row));
         }
@@ -233,41 +100,80 @@ impl MainWindow {
         self.search.read(cx).value().trim().to_lowercase()
     }
 
+    /// The button a heading offers for every download: Pause all over what runs, or over what
+    /// waits when nothing runs, and Resume all over what is paused.
+    fn group_command(&self, group: Group, cx: &App) -> Option<(&'static str, GroupCommand)> {
+        let running = self
+            .library
+            .read(cx)
+            .downloads
+            .iter()
+            .any(|row| Group::of(row.status) == Group::Downloading);
+        match group {
+            Group::Downloading => Some(("Pause all", GroupCommand::PauseAll)),
+            Group::UpNext if !running => Some(("Pause all", GroupCommand::PauseAll)),
+            Group::Paused => Some(("Resume all", GroupCommand::ResumeAll)),
+            _ => None,
+        }
+    }
+
     fn heading(&self, group: Group, shown: usize, cx: &mut Context<'_, Self>) -> AnyElement {
         let theme = cx.theme();
         let folded = self.folded.contains(&group);
+        let command = self.group_command(group, cx);
         h_flex()
-            .id(ElementId::Name(SharedString::new(format!(
-                "heading-{group:?}"
-            ))))
             .w_full()
             .h(px(LINE_HEIGHT))
             .px_5()
             .items_end()
             .pb_1p5()
             .gap_2()
-            .cursor_pointer()
             .text_role(Role::Label, cx)
             .child(
-                Icon::new(if folded {
-                    IconName::ChevronRight
-                } else {
-                    IconName::ChevronDown
-                })
-                .with_size(tokens::ICON_SMALL),
+                h_flex()
+                    .id(ElementId::Name(SharedString::new(format!(
+                        "fold-{group:?}"
+                    ))))
+                    .flex_1()
+                    .gap_2()
+                    .cursor_pointer()
+                    .hover(|label| label.text_color(theme.foreground))
+                    .child(
+                        Icon::new(if folded {
+                            IconName::ChevronRight
+                        } else {
+                            IconName::ChevronDown
+                        })
+                        .with_size(tokens::ICON_SMALL),
+                    )
+                    .child(group.label())
+                    .child(
+                        div()
+                            .text_color(theme.muted_foreground.opacity(0.7))
+                            .child(shown.to_string()),
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if !this.folded.remove(&group) {
+                            this.folded.insert(group);
+                        }
+                        cx.notify();
+                    })),
             )
-            .child(group.label())
-            .child(
-                div()
-                    .text_color(theme.muted_foreground.opacity(0.7))
-                    .child(shown.to_string()),
-            )
-            .on_click(cx.listener(move |this, _, _, cx| {
-                if !this.folded.remove(&group) {
-                    this.folded.insert(group);
-                }
-                cx.notify();
-            }))
+            .when_some(command, |line, (label, command)| {
+                line.child(
+                    Button::new(ElementId::Name(SharedString::new(format!("all-{group:?}"))))
+                        .xsmall()
+                        .ghost()
+                        .label(label)
+                        .on_click(cx.listener(move |_, _, window, cx| {
+                            let work = match command {
+                                GroupCommand::PauseAll => api::pause_all,
+                                GroupCommand::ResumeAll => api::resume_all,
+                            };
+                            act(window.window_handle(), cx, work);
+                        })),
+                )
+            })
             .into_any_element()
     }
 
@@ -296,20 +202,23 @@ impl MainWindow {
                 line.hover(|line| line.bg(theme.list_hover))
             })
             .child(FileTile::new(row.category).tone(tone))
-            .child(name_cell(&row, self.columns, cx))
-            .child(progress_cell(&row, tone, cx))
-            .when(self.columns.size, |line| {
-                line.child(figure(SIZE_WIDTH, text::size(&row), cx))
-            })
-            .when(self.columns.speed, |line| {
-                line.child(figure(SPEED_WIDTH, speed_said(&row), cx))
-            })
-            .when(self.columns.left, |line| {
-                line.child(figure(LEFT_WIDTH, left_said(&row), cx))
-            })
-            .when(shows_actions, |line| line.child(row_actions(&row, cx)))
-            .when(!shows_actions, |line| {
-                line.child(div().w(px(ACTIONS_WIDTH)).flex_shrink_0())
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .gap_1()
+                    .child(
+                        div()
+                            .truncate()
+                            .text_role(Role::Strong, cx)
+                            .child(row.file_name.clone()),
+                    )
+                    .child(under_name(&row, tone, cx)),
+            )
+            .child(if shows_actions {
+                row_actions(&row, cx).into_any_element()
+            } else {
+                figures(&row, tone, cx).into_any_element()
             })
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if *hovered {
@@ -337,111 +246,92 @@ impl MainWindow {
     }
 }
 
-/// The name, with the line under it.
-fn name_cell(row: &DownloadSummary, columns: Columns, cx: &App) -> impl IntoElement {
-    let mut under = vec![under_name(row)];
-    if !columns.size {
-        under.push(text::size(row));
-    }
-    if !columns.speed {
-        under.push(speed_said(row));
-    }
-    if !columns.left {
-        let left = left_said(row);
-        if !left.is_empty() {
-            under.push(format!("{left} left"));
-        }
-    }
-    under.retain(|said| !said.is_empty());
-    let theme = cx.theme();
-    v_flex()
-        .flex_1()
-        .min_w_0()
-        .gap_0p5()
-        .child(
-            div()
-                .truncate()
-                .text_role(Role::Strong, cx)
-                .child(row.file_name.clone()),
-        )
-        .child(
-            div()
-                .truncate()
-                .text_role(Role::Meta, cx)
-                .when(row.status == DownloadStatus::Failed, |line| {
-                    line.text_color(theme.danger)
-                })
-                .child(under.join(" · ")),
-        )
-}
-
-fn speed_said(row: &DownloadSummary) -> String {
-    match row.status {
-        DownloadStatus::Connecting => "Connecting".to_owned(),
-        DownloadStatus::Downloading if row.speed > 0 => text::speed(row.speed),
-        _ => String::new(),
-    }
-}
-
-fn left_said(row: &DownloadSummary) -> String {
-    match (row.status, row.eta_secs) {
-        (DownloadStatus::Downloading, Some(left)) => text::eta(left),
-        _ => String::new(),
-    }
-}
-
-/// The line under a download's name: why it failed, where it comes from, or why it waits.
-fn under_name(row: &DownloadSummary) -> String {
-    if let Some(error) = &row.error {
-        return text::first_sentence(&error.message).to_owned();
-    }
-    match row.status {
-        DownloadStatus::Queued | DownloadStatus::Processing => text::status_short(row),
-        _ if text::shown_wait(row).is_some() => text::status_short(row),
-        _ => text::host(&row.url).to_owned(),
-    }
-}
-
-/// The bar and what it means: the percentage while it runs, or the state it is in.
-fn progress_cell(row: &DownloadSummary, tone: Hsla, cx: &App) -> impl IntoElement {
-    let per_mille = text::per_mille(row);
-    let caption = match row.status {
-        DownloadStatus::Downloading | DownloadStatus::Connecting => {
-            text::percent(row).unwrap_or_default()
-        }
-        _ => text::status_short(row),
-    };
-    v_flex()
-        .w(px(PROGRESS_WIDTH))
-        .flex_shrink_0()
-        .gap_1()
-        .when(
-            !matches!(
-                row.status,
-                DownloadStatus::Cancelled | DownloadStatus::Completed
-            ),
-            |cell| {
-                cell.child(
+/// Under the name: the bar while work is under way or paused, else why it failed, why it waits,
+/// or where it came from.
+fn under_name(row: &DownloadSummary, tone: Hsla, cx: &App) -> AnyElement {
+    if matches!(
+        row.status,
+        DownloadStatus::Connecting
+            | DownloadStatus::Downloading
+            | DownloadStatus::Processing
+            | DownloadStatus::Paused
+    ) {
+        let per_mille = text::per_mille(row);
+        return h_flex()
+            .child(
+                div().flex_1().child(
                     Progress::new(row_id("progress", row.id))
                         .color(tone)
                         .loading(per_mille.is_none())
                         .value(per_mille.map_or(0., |done| {
                             f32::from(done) * 100. / f32::from(PER_MILLE_DONE)
                         })),
-                )
-            },
-        )
-        .child(div().text_role(Role::Meta, cx).truncate().child(caption))
+                ),
+            )
+            .into_any_element();
+    }
+    let said = if let Some(error) = &row.error {
+        text::first_sentence(&error.message).to_owned()
+    } else if row.status == DownloadStatus::Queued || text::shown_wait(row).is_some() {
+        text::status_short(row)
+    } else {
+        text::host(&row.url).to_owned()
+    };
+    div()
+        .truncate()
+        .text_role(Role::Meta, cx)
+        .when(row.status == DownloadStatus::Failed, |line| {
+            line.text_color(cx.theme().danger)
+        })
+        .child(said)
+        .into_any_element()
 }
 
-fn figure(width: f32, value: String, cx: &App) -> impl IntoElement {
-    div()
-        .w(px(width))
+/// The row's end: what matters most in its state, over what comes next in the state's colour.
+fn figures(row: &DownloadSummary, tone: Hsla, cx: &App) -> impl IntoElement {
+    let with_percent = |said: String| match text::percent(row) {
+        Some(percent) if said.is_empty() => percent,
+        Some(percent) => format!("{percent} · {said}"),
+        None => said,
+    };
+    let next = match row.status {
+        DownloadStatus::Downloading if row.speed > 0 => with_percent(
+            row.eta_secs
+                .map(|left| format!("{} left", text::eta(left)))
+                .unwrap_or_default(),
+        ),
+        DownloadStatus::Downloading | DownloadStatus::Connecting => "Starting".to_owned(),
+        DownloadStatus::Processing => with_percent("Finishing".to_owned()),
+        DownloadStatus::Queued => "Up next".to_owned(),
+        DownloadStatus::Paused => with_percent("Paused".to_owned()),
+        DownloadStatus::Failed => "Failed".to_owned(),
+        DownloadStatus::Cancelled => "Cancelled".to_owned(),
+        DownloadStatus::Completed => row.completed_at.map(text::ago).unwrap_or_default(),
+    };
+    let first = if row.status == DownloadStatus::Downloading && row.speed > 0 {
+        text::speed(row.speed)
+    } else {
+        text::size(row)
+    };
+    let quiet = matches!(
+        row.status,
+        DownloadStatus::Completed | DownloadStatus::Queued | DownloadStatus::Cancelled
+    );
+    v_flex()
+        .w(px(END_WIDTH))
         .flex_shrink_0()
-        .text_right()
-        .text_role(Role::Meta, cx)
-        .truncate()
-        .child(value)
+        .items_end()
+        .gap_0p5()
+        .when(!first.is_empty(), |end| {
+            end.child(div().truncate().text_role(Role::Body, cx).child(first))
+        })
+        .child(
+            div()
+                .truncate()
+                .text_role(Role::Meta, cx)
+                .when(!quiet, |line| line.text_color(tone))
+                .child(next),
+        )
 }
 
 /// What a row's hover buttons do.
@@ -493,7 +383,7 @@ impl RowAction {
 fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl IntoElement {
     let id = row.id;
     h_flex()
-        .w(px(ACTIONS_WIDTH))
+        .w(px(END_WIDTH))
         .flex_shrink_0()
         .gap_1()
         .justify_end()
@@ -531,29 +421,4 @@ pub(super) fn status_tone(row: &DownloadSummary, cx: &App) -> Hsla {
 /// A row's element id; download ids are positive.
 fn row_id(part: &'static str, id: DownloadId) -> ElementId {
     ElementId::NamedInteger(part.into(), id.0.unsigned_abs())
-}
-
-fn plural(count: usize, noun: &str) -> String {
-    if count == 1 {
-        format!("1 {noun}")
-    } else {
-        format!("{count} {noun}s")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn figure_columns_fold_left_first_then_speed_then_size() {
-        assert!(Columns::fitting(2000.) == Columns::ALL);
-        let shown = |width| {
-            let c = Columns::fitting(width);
-            (c.size, c.speed, c.left)
-        };
-        assert_eq!(shown(900.), (true, true, false));
-        assert_eq!(shown(800.), (true, false, false));
-        assert_eq!(shown(700.), (false, false, false));
-    }
 }

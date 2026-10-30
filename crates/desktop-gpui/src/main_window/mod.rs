@@ -1,6 +1,7 @@
 //! The main window: the title bar, the navigation of views and queues, the download list and the
 //! status bar (D36, D91).
 
+mod command_bar;
 mod confirm;
 mod details;
 mod empty;
@@ -40,6 +41,8 @@ actions!(
 
 /// The key context the main window's shortcuts work in; a text field's own keys come first.
 const KEY_CONTEXT: &str = "MainWindow";
+
+const ALL_PLACEHOLDER: &str = "Search downloads or paste links";
 
 /// Said when Ctrl+V finds no link to add.
 const NO_LINK_PASTED: &str =
@@ -140,8 +143,6 @@ pub struct MainWindow {
     folded: HashSet<Group>,
     /// The title bar's search, which narrows the list to names and links holding it.
     search: Entity<InputState>,
-    /// The figure columns the list has room for; the rest fold under the name.
-    columns: list::Columns,
     /// The queue under the pointer, which shows its menu.
     hovered_queue: Option<QueueId>,
     /// Every queue shows in the navigation, not only the first few.
@@ -183,12 +184,16 @@ impl MainWindow {
             }
         });
         let redraw = cx.observe(&library, |_, _, cx| cx.notify());
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search downloads"));
-        let searched = cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                cx.notify();
-            }
-        });
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder(ALL_PLACEHOLDER));
+        let searched = cx.subscribe_in(
+            &search,
+            window,
+            |this: &mut Self, _, event: &InputEvent, window, cx| match event {
+                InputEvent::Change => cx.notify(),
+                InputEvent::PressEnter { .. } => this.download_typed(window, cx),
+                _ => {}
+            },
+        );
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         Self {
@@ -203,7 +208,6 @@ impl MainWindow {
             hovered: None,
             hovered_queue: None,
             all_queues: false,
-            columns: list::Columns::ALL,
             focus,
             search,
             _subscriptions: vec![restyle, follow_system, redraw, searched],
@@ -214,8 +218,10 @@ impl MainWindow {
         self.view = view;
         self.selected.clear();
         let placeholder = match view {
-            View::All => "Search downloads".to_owned(),
-            View::Group(_) | View::Queue(_) => format!("Search {}", self.title(cx)),
+            View::All => ALL_PLACEHOLDER.to_owned(),
+            View::Group(_) | View::Queue(_) => {
+                format!("Search {} or paste links", self.title(cx))
+            }
         };
         self.search.update(cx, |search, cx| {
             search.set_placeholder(placeholder, window, cx);
@@ -273,7 +279,7 @@ impl MainWindow {
 }
 
 impl Render for MainWindow {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let theme = cx.theme();
         v_flex()
             .id("main-window")
@@ -297,8 +303,8 @@ impl Render for MainWindow {
             .child(match self.screen {
                 Screen::Downloads => layout::body(
                     self.sidebar(cx).into_any_element(),
-                    self.header(cx).into_any_element(),
-                    self.list(window, cx),
+                    self.command_bar(cx).into_any_element(),
+                    self.list(cx),
                 ),
                 Screen::Settings => self.settings(cx),
             })

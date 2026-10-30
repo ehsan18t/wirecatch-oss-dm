@@ -79,6 +79,7 @@ pub fn open(
         let send = form.clone();
         let paused = form.clone();
         let busy = form.read(cx).busy;
+        let confirmed = form.clone();
         dialog
             .title(if count > 1 {
                 format!("{count} new downloads")
@@ -87,6 +88,10 @@ pub fn open(
             })
             .w(px(560.))
             .child(form.clone())
+            .on_ok(move |_, window, cx| {
+                confirmed.update(cx, |form, cx| form.submit(true, window, cx));
+                false
+            })
             .footer(
                 h_flex()
                     .w_full()

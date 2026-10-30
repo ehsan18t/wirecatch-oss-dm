@@ -7,11 +7,9 @@ pub mod field;
 pub mod file_tile;
 pub mod icon;
 pub mod layout;
-pub mod search_field;
 pub mod tokens;
 
 pub use callout::Callout;
 pub use field::Field;
 pub use file_tile::FileTile;
-pub use search_field::search_field;
 pub use tokens::{Role, Typed};

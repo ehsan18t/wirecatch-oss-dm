@@ -290,6 +290,34 @@ pub fn date(ms: i64) -> String {
     }
 }
 
+/// How long ago a moment was, for a row: `Just now`, `5 min ago`, `3 h ago`, `Yesterday` or
+/// `3 Oct`.
+pub fn ago(ms: i64) -> String {
+    ago_from(ms, Local::now())
+}
+
+fn ago_from(ms: i64, now: chrono::DateTime<Local>) -> String {
+    let Some(at) = Local.timestamp_millis_opt(ms).single() else {
+        return String::new();
+    };
+    let minutes = (now - at).num_minutes();
+    let day = at.date_naive();
+    let today = now.date_naive();
+    if minutes < 1 {
+        "Just now".to_owned()
+    } else if minutes < 60 {
+        format!("{minutes} min ago")
+    } else if day == today {
+        format!("{} h ago", minutes / 60)
+    } else if today.pred_opt() == Some(day) {
+        "Yesterday".to_owned()
+    } else if at.format("%Y").to_string() == now.format("%Y").to_string() {
+        at.format("%-d %b").to_string()
+    } else {
+        at.format("%-d %b %Y").to_string()
+    }
+}
+
 /// A link as it may be shown or copied: a password in it becomes `***`, and a user name without
 /// one too, since some sites put a token there.
 pub fn link_for_display(url: &str) -> String {
@@ -346,6 +374,23 @@ fn ordinal(n: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_finished_moment_reads_as_how_long_ago() {
+        let now = Local.with_ymd_and_hms(2026, 10, 30, 15, 0, 0).unwrap();
+        let at = |y, mo, d, h, mi| {
+            Local
+                .with_ymd_and_hms(y, mo, d, h, mi, 0)
+                .unwrap()
+                .timestamp_millis()
+        };
+        assert_eq!(ago_from(at(2026, 10, 30, 14, 59), now), "1 min ago");
+        assert_eq!(ago_from(now.timestamp_millis(), now), "Just now");
+        assert_eq!(ago_from(at(2026, 10, 30, 11, 30), now), "3 h ago");
+        assert_eq!(ago_from(at(2026, 10, 29, 22, 0), now), "Yesterday");
+        assert_eq!(ago_from(at(2026, 10, 3, 9, 0), now), "3 Oct");
+        assert_eq!(ago_from(at(2025, 12, 31, 9, 0), now), "31 Dec 2025");
+    }
 
     #[test]
     fn time_left_reads_like_a_person_says_it() {

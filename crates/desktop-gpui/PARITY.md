@@ -22,7 +22,8 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [ ] Drag queues to reorder them, the default queue first (D72.9).
 - [x] Settings (Ctrl+,), at the foot of the navigation, where the settings screen offers Downloads.
 - [ ] Find any action (Ctrl+Shift+P) and Keyboard shortcuts (F1), reachable from the main window.
-- [x] List header: the view's title and summary; Pause all or Resume all.
+- [x] Each group heading with its count; Pause all on what runs (or waits), Resume all on what is paused.
+- [x] A link pasted into the search field offers to download it (Enter), and finds it if it already is a download.
 - [ ] List header in a queue view: description, schedule and limits, Start now, Pause or Resume queue, Edit queue; "about X left"; "matching '…'".
 - [x] New download button (Ctrl+N).
 - [ ] The New download button hidden on first run, where the empty state offers it.
