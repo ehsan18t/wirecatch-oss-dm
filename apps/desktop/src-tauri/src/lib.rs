@@ -54,7 +54,6 @@ pub mod frame;
 pub mod lifecycle;
 #[cfg(windows)]
 mod maximize_overlay;
-pub mod notifications;
 pub mod questions;
 pub mod sleep;
 pub mod system_notifications;
@@ -63,7 +62,7 @@ pub mod updates;
 pub mod window;
 
 pub use wirecatch_shell::{
-    activity, api, appimage, autostart, bridge, elevation, host, tray_proxy,
+    activity, api, appimage, autostart, bridge, elevation, host, notifications, tray_proxy,
 };
 
 use tauri::Manager as _;

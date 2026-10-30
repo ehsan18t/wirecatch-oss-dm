@@ -10,6 +10,7 @@ mod library;
 mod lifecycle;
 mod links;
 mod main_window;
+mod notices;
 mod text;
 mod theme;
 mod tray;
@@ -72,6 +73,7 @@ fn main() {
             cx.set_global(backend);
             let library = library::Library::new(cx);
             tray::start(&library, cx);
+            notices::start(cx);
             main_window::run(library, cx);
             if launch.shows_window() {
                 let asked = if launch.links.is_empty() {

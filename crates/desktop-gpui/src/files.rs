@@ -48,7 +48,8 @@ pub fn open(id: DownloadId, window: &mut Window, cx: &mut App) {
         .detach();
 }
 
-fn ask_to_open(path: PathBuf, warning: ProgramWarning, window: &mut Window, cx: &mut App) {
+/// Asks in `window` before a program at `path` opens.
+pub fn ask_to_open(path: PathBuf, warning: ProgramWarning, window: &mut Window, cx: &mut App) {
     crate::ui::dialog::open_alert(window, cx, move |alert, _, _| {
         let path = path.clone();
         alert

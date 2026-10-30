@@ -28,7 +28,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [ ] List header in a queue view: description, schedule and limits, Start now, Pause or Resume queue, Edit queue; "about X left"; "matching '…'".
 - [x] New download button (Ctrl+N).
 - [ ] The New download button hidden on first run, where the empty state offers it.
-- [ ] Storage failure banner with Try again and Dismiss; startup notices; toasts.
+- [ ] Storage failure banner with Try again and Dismiss, and a notification when no main window shows it; startup notices; toasts.
 - [x] Groups in order, Finished and Cancelled folded at first, headings fold; no headings in a status view.
 - [ ] A queue view lists its line ungrouped in run order, Finished and Cancelled grouped below; the # column.
 - [ ] Column sorting (name, progress, size, speed, left; queue order), resizing with saved widths, narrow-window folding.
@@ -84,7 +84,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [ ] One window per question or download, at most five at once, cascaded, on top until they lose focus, height fitted to the content.
 - [ ] File question (D72.8, D94.6), reading a video, add-on needed, media quality (D50), file already exists (D96), progress, finished.
 - [ ] Reopened at start for open questions; `capture_repeated` brings one back (D89).
-- [ ] Finished window ("Open a summary window", D52).
+- [ ] Finished window ("Open a summary window", D52); until it exists, that setting shows a notification.
 
 ## Shell
 
@@ -94,7 +94,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Single instance: a second launch focuses the running app and passes its links (D103).
 - [x] `--background`; links on the command line.
 - [x] Browser bridge: serve it, register it on start (not in debug builds), the AppImage copy.
-- [ ] System notifications with buttons (D52), browser notices with the system fallback (D65), a notice opening its download (D98).
+- [x] System notifications with buttons (D52), browser notices with the system fallback (D65), a notice opening its download (D98).
 - [ ] Open a file, with the warning for programs; show in folder; folder and file pickers.
 - [ ] Start at sign-in.
 - [ ] Startup failure dialogs.

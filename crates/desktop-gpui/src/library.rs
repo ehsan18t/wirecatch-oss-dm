@@ -6,6 +6,7 @@ use gpui_kit::{AppContext as _, Context, Entity, EventEmitter};
 use tokio::sync::broadcast::error::RecvError;
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AddonInfo, AppSettings, DownloadSummary, Queue, UiEvent};
+use wirecatch_protocol::desktop::Reveal;
 use wirecatch_protocol::proxy::ProxyServer;
 use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::api;
@@ -45,11 +46,13 @@ pub struct SettingsChanged;
 
 impl EventEmitter<SettingsChanged> for Library {}
 
-/// Something outside the window asked to see the app: the browser, or a second launch (D103).
+/// Something outside the window asked to see the app: the browser, a second launch (D103), or a
+/// notification (D98).
 pub enum Asked {
     Window,
     Links(Vec<String>),
     BrowserSettings,
+    Reveal(Reveal),
 }
 
 impl EventEmitter<Asked> for Library {}
