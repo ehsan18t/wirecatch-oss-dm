@@ -856,6 +856,7 @@ Decided with the maintainer on 2026-10-30. It adds a setting to D72.1.
 3. The folder is settled with the file name, when the server first answers, by the queue the download is in then. After that, moving a download to another queue or changing a queue's folder moves no file; Change folder moves one download.
 4. A download window shows the folder of the queue picked in it, until the person picks a folder there. The Add dialog's Save to says what decides the folder while none is picked: the picked queue's folder, or, on Automatic, each link's queue.
 5. A profile's queue folders are written relative to the standard folders on export and checked on import like the other folder settings, falling back to the default folder.
+6. Settled with the maintainer later the same day: under Save to, a download window says who chose the folder: the queue ("Overnight queue folder"), the file type ("Default folder for this file type"), or the person ("Custom folder", with Use default). Picking the folder the app already chose leaves it the app's choice, so a later change of queue still moves it.
 
 ### D95. The desktop interface is rebuilt in GPUI before the first release
 

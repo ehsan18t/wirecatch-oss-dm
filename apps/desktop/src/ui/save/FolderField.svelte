@@ -15,6 +15,8 @@
     onchoose: () => void;
     /** Goes back to the default; offered while a folder is chosen. */
     onreset?: (() => void) | undefined;
+    /** Who chose the folder shown, under the field. */
+    note?: string | undefined;
   }
 
   let {
@@ -24,6 +26,7 @@
     labelHidden = false,
     onchoose,
     onreset,
+    note,
   }: Props = $props();
 
   const id = $props.id();
@@ -57,4 +60,7 @@
       {/if}
     </div>
   </div>
+  {#if note}
+    <p class="text-small text-ink-muted">{note}</p>
+  {/if}
 </div>
