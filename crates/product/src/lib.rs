@@ -7,6 +7,9 @@
 /// The product name people see.
 pub const PRODUCT_NAME: &str = "Wirecatch";
 
+/// The lowercase product name used in file names.
+pub const PRODUCT_SLUG: &str = "wirecatch";
+
 /// The release version of the app and the extension.
 pub const PRODUCT_VERSION: &str = "0.1.0";
 
