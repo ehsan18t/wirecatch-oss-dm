@@ -16,6 +16,11 @@ const DARK: &str = "Wirecatch Dark";
 const ON_ACCENT_LIGHT: u32 = 0x00ff_ffff;
 const ON_ACCENT_DARK: u32 = 0x000b_0d12;
 
+/// A destructive button: a deep red with white text in both schemes, where the dark scheme's pale
+/// danger colour, made to read as text, would fill it in pastel.
+const DANGER_FILL_LIGHT: u32 = 0x00b3_261e;
+const DANGER_FILL_DARK: u32 = 0x00c9_372c;
+
 /// Registers the two schemes. Call once, after `gpui_kit::init`. Should `assets/theme.json` not
 /// parse (its test catches that first), the windows keep gpui-kit's own colours.
 pub fn init(cx: &mut App) {
@@ -56,6 +61,12 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
         cx,
     );
     let (tone, on_tone) = accent_colors(accent, dark);
+    let danger_fill: Hsla = rgb(if dark {
+        DANGER_FILL_DARK
+    } else {
+        DANGER_FILL_LIGHT
+    })
+    .into();
     Theme::update(cx, |theme| {
         theme.primary = tone;
         theme.primary_hover = tone.opacity(0.9);
@@ -65,6 +76,10 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
         theme.button_primary_hover = tone.opacity(0.9);
         theme.button_primary_active = tone.opacity(0.8);
         theme.button_primary_foreground = on_tone;
+        theme.button_danger = danger_fill;
+        theme.button_danger_hover = danger_fill.opacity(0.9);
+        theme.button_danger_active = danger_fill.opacity(0.8);
+        theme.button_danger_foreground = rgb(ON_ACCENT_LIGHT).into();
         theme.ring = tone;
         theme.caret = tone;
         theme.link = tone;

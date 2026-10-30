@@ -18,7 +18,7 @@ use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, PER_MILLE_DONE};
 use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::api;
 
-use super::{Group, MainWindow, View};
+use super::{Group, MainWindow, View, details};
 use crate::backend::Backend;
 use crate::{files, text};
 
@@ -29,6 +29,43 @@ const SIZE_WIDTH: f32 = 136.;
 const SPEED_WIDTH: f32 = 96.;
 const LEFT_WIDTH: f32 = 84.;
 const ACTIONS_WIDTH: f32 = 96.;
+
+/// Space a column takes beside its neighbours.
+const GAP: f32 = 16.;
+/// The row's padding on both sides.
+const ROW_PADDING: f32 = 40.;
+/// The least the name keeps before a figure column folds under it.
+const NAME_MIN_WIDTH: f32 = 220.;
+
+/// Which figure columns show; in a narrow list they fold under the name, Left first, then Speed,
+/// then Size.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) struct Columns {
+    size: bool,
+    speed: bool,
+    left: bool,
+}
+
+impl Columns {
+    pub(super) const ALL: Self = Self {
+        size: true,
+        speed: true,
+        left: true,
+    };
+
+    /// The columns a list `width` wide has room for.
+    fn fitting(width: f32) -> Self {
+        let mut needed = ROW_PADDING + NAME_MIN_WIDTH + PROGRESS_WIDTH + ACTIONS_WIDTH + 3. * GAP;
+        let mut fits = |column: f32| {
+            needed += column + GAP;
+            needed <= width
+        };
+        let size = fits(SIZE_WIDTH);
+        let speed = size && fits(SPEED_WIDTH);
+        let left = speed && fits(LEFT_WIDTH);
+        Self { size, speed, left }
+    }
+}
 
 /// One line of the list.
 #[derive(Clone, Copy)]
@@ -129,7 +166,9 @@ impl MainWindow {
         }
     }
 
-    pub(super) fn list(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> AnyElement {
+    pub(super) fn list(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> AnyElement {
+        self.columns =
+            Columns::fitting(f32::from(window.viewport_size().width) - super::sidebar::WIDTH);
         let lines = self.lines(cx);
         if lines.is_empty() {
             return self.empty(cx).into_any_element();
@@ -241,11 +280,17 @@ impl MainWindow {
             .when(!selected, |line| {
                 line.hover(|line| line.bg(theme.list_hover))
             })
-            .child(name_cell(&row, cx))
+            .child(name_cell(&row, self.columns, cx))
             .child(progress_cell(&row, tone, cx))
-            .child(figure(SIZE_WIDTH, text::size(&row), cx))
-            .child(figure(SPEED_WIDTH, speed_said(&row), cx))
-            .child(figure(LEFT_WIDTH, left_said(&row), cx))
+            .when(self.columns.size, |line| {
+                line.child(figure(SIZE_WIDTH, text::size(&row), cx))
+            })
+            .when(self.columns.speed, |line| {
+                line.child(figure(SPEED_WIDTH, speed_said(&row), cx))
+            })
+            .when(self.columns.left, |line| {
+                line.child(figure(LEFT_WIDTH, left_said(&row), cx))
+            })
             .when(shows_actions, |line| line.child(row_actions(&row, cx)))
             .when(!shows_actions, |line| {
                 line.child(div().w(px(ACTIONS_WIDTH)).flex_shrink_0())
@@ -259,7 +304,7 @@ impl MainWindow {
                 cx.notify();
             }))
             .on_click(
-                cx.listener(move |this, event: &gpui_kit::ClickEvent, _, cx| {
+                cx.listener(move |this, event: &gpui_kit::ClickEvent, window, cx| {
                     if event.modifiers().secondary(cx) {
                         if !this.selected.remove(&id) {
                             this.selected.insert(id);
@@ -267,6 +312,7 @@ impl MainWindow {
                     } else {
                         this.selected.clear();
                         this.selected.insert(id);
+                        details::open(this.library.clone(), id, window, cx);
                     }
                     cx.notify();
                 }),
@@ -306,7 +352,21 @@ impl MainWindow {
 }
 
 /// The name, with the line under it.
-fn name_cell(row: &DownloadSummary, cx: &App) -> impl IntoElement {
+fn name_cell(row: &DownloadSummary, columns: Columns, cx: &App) -> impl IntoElement {
+    let mut under = vec![under_name(row)];
+    if !columns.size {
+        under.push(text::size(row));
+    }
+    if !columns.speed {
+        under.push(speed_said(row));
+    }
+    if !columns.left {
+        let left = left_said(row);
+        if !left.is_empty() {
+            under.push(format!("{left} left"));
+        }
+    }
+    under.retain(|said| !said.is_empty());
     let theme = cx.theme();
     v_flex()
         .flex_1()
@@ -321,7 +381,7 @@ fn name_cell(row: &DownloadSummary, cx: &App) -> impl IntoElement {
                 } else {
                     theme.muted_foreground
                 })
-                .child(under_name(row)),
+                .child(under.join(" · ")),
         )
 }
 
@@ -460,7 +520,7 @@ fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl 
 
 /// The colour a status is drawn in: the accent for data that moves, the warning colour for a
 /// pause, danger for a failure, quiet for the rest.
-fn status_tone(row: &DownloadSummary, cx: &App) -> Hsla {
+pub(super) fn status_tone(row: &DownloadSummary, cx: &App) -> Hsla {
     let theme = cx.theme();
     match row.status {
         DownloadStatus::Connecting | DownloadStatus::Downloading | DownloadStatus::Processing => {
@@ -475,9 +535,9 @@ fn status_tone(row: &DownloadSummary, cx: &App) -> Hsla {
 }
 
 /// Runs a command on the manager; a refusal shows as a notification in `window`.
-fn act(
+pub(super) fn act<T: 'static>(
     window: &mut Window,
-    cx: &mut Context<'_, MainWindow>,
+    cx: &mut Context<'_, T>,
     work: impl FnOnce(&Manager) -> Result<(), ProtocolError> + Send + 'static,
 ) {
     let done = Backend::run(cx, move |manager| async move { work(&manager) });
@@ -503,5 +563,22 @@ fn plural(count: usize, noun: &str) -> String {
         format!("1 {noun}")
     } else {
         format!("{count} {noun}s")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn figure_columns_fold_left_first_then_speed_then_size() {
+        assert!(Columns::fitting(2000.) == Columns::ALL);
+        let shown = |width| {
+            let c = Columns::fitting(width);
+            (c.size, c.speed, c.left)
+        };
+        assert_eq!(shown(900.), (true, true, false));
+        assert_eq!(shown(800.), (true, false, false));
+        assert_eq!(shown(700.), (false, false, false));
     }
 }

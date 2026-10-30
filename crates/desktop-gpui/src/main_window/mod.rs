@@ -1,6 +1,8 @@
 //! The main window: the title bar, the navigation of views and queues, the download list and the
 //! status bar (D36, D91).
 
+mod confirm;
+mod details;
 mod list;
 mod sidebar;
 mod status_bar;
@@ -21,7 +23,7 @@ use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
 use crate::library::{Library, SettingsChanged};
 use crate::{add_dialog, links, theme};
 
-actions!(main_window, [NewDownload, PasteLinks]);
+actions!(main_window, [NewDownload, PasteLinks, Dismiss]);
 
 /// The key context the main window's shortcuts work in; a text field's own keys come first.
 const KEY_CONTEXT: &str = "MainWindow";
@@ -35,6 +37,7 @@ pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("ctrl-n", NewDownload, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-v", PasteLinks, Some(KEY_CONTEXT)),
+        KeyBinding::new("escape", Dismiss, Some(KEY_CONTEXT)),
     ]);
 }
 
@@ -112,6 +115,8 @@ pub struct MainWindow {
     view: View,
     selected: HashSet<DownloadId>,
     folded: HashSet<Group>,
+    /// The figure columns the list has room for; the rest fold under the name.
+    columns: list::Columns,
     /// The row under the pointer, which shows its buttons.
     hovered: Option<DownloadId>,
     focus: FocusHandle,
@@ -160,6 +165,7 @@ impl MainWindow {
                 .filter(|g| g.starts_folded())
                 .collect(),
             hovered: None,
+            columns: list::Columns::ALL,
             focus,
             _subscriptions: vec![restyle, follow_system, redraw],
         }
@@ -167,6 +173,12 @@ impl MainWindow {
 
     fn show(&mut self, view: View, cx: &mut Context<'_, Self>) {
         self.view = view;
+        self.selected.clear();
+        cx.notify();
+    }
+
+    /// Escape outside a field clears the selection; a dialog closes on its own Escape first.
+    fn dismiss(&mut self, cx: &mut Context<'_, Self>) {
         self.selected.clear();
         cx.notify();
     }
@@ -217,6 +229,7 @@ impl Render for MainWindow {
                 this.new_download(&[], window, cx);
             }))
             .on_action(cx.listener(|this, _: &PasteLinks, window, cx| this.paste_links(window, cx)))
+            .on_action(cx.listener(|this, _: &Dismiss, _, cx| this.dismiss(cx)))
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)

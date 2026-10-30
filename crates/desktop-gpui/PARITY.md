@@ -32,7 +32,8 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 - [x] Hover Pause, Resume, Try again, Start over.
 - [ ] Selection: Ctrl+click, Shift+click ranges; selection bar with Pause, Resume, Try again, Move to queue, Remove, Clear.
 - [ ] Empty states with their buttons (`ListEmpty.svelte`): first run, no search match, empty queue, nothing needs attention.
-- [ ] Details panel (`DetailsDialog.svelte`, D47): status, speed graph, facts, queue select, Saved to with Change, link with Copy, activity, footer actions.
+- [x] Details dialog (`DetailsDialog.svelte`, D47), opened by clicking a row: status, the problem with its fix and Try again, speed and progress, facts, Saved to with Change, the link with Copy, activity, Open, Pause, Resume, Start over, Show in folder, More (Copy link, Cancel download), Remove; it follows the download and closes once it is removed.
+- [ ] Details: the speed graph, the queue as a select, "Stuck? The link may have expired." with Get a new link, Open in a separate window, and the fixes that open other screens (Get a new link, Proxy settings, Change queue).
 - [ ] Context menu on rows; Menu key and Shift+F10.
 - [ ] Keyboard: every shortcut of `lib/keymap.ts`, F6 regions, list keys.
 - [ ] Drag a link in to add it; drag rows to reorder in a queue and onto a queue to move them.
@@ -44,8 +45,8 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 
 - [x] Add: links, file name, Save to, queue, Add paused, Download (Ctrl+Enter), video pages read for their qualities (D51), failed links kept with why.
 - [ ] Add: the Automatic hint naming the queue each link goes to (`try_link`), focus on Download when opened with links, links from a second launch joining an open dialog.
-- [ ] Remove, with "Also delete the files".
-- [ ] Cancel.
+- [x] Remove, with "Also delete the files".
+- [x] Cancel.
 - [ ] Queue: name, description, own folder (D94), limits, rules with Test a link, proxy, schedule, notifications, Delete queue.
 - [ ] Get a new link.
 - [ ] Export and import settings, with the preview.

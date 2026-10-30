@@ -11,7 +11,7 @@ use gpui_kit::{
 use super::{Group, MainWindow, View};
 use crate::text;
 
-const WIDTH: f32 = 232.;
+pub(super) const WIDTH: f32 = 232.;
 
 impl MainWindow {
     pub(super) fn sidebar(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
