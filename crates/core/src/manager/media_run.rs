@@ -201,7 +201,7 @@ async fn run(
     cancel: &CancellationToken,
 ) -> Result<MediaDone, UserError> {
     let work = wirecatch_media::work_dir(&job.output);
-    if let Some((file, sidecars)) = waiting_to_place(&work).await {
+    if let Some((file, sidecars)) = waiting_to_place(&work, &job.url).await {
         return finish(&file, &job, &work, &sidecars).await;
     }
     let result = match what {
@@ -1053,7 +1053,7 @@ async fn finish(
                 Placed::Kept { path, size } => (path, size),
                 // The work folder stays, with the file in it, for the answer.
                 Placed::Asks(found) => {
-                    remember_placing(&work, &file, &sidecars)?;
+                    remember_placing(&work, &url, &file, &sidecars)?;
                     return Ok(MediaDone::FileExists(found));
                 }
             };
@@ -1080,16 +1080,18 @@ async fn finish(
 }
 
 /// Names a file kept in the work folder for an answer about its taken name, so the next run puts
-/// it in place without downloading it again: the file first, then each subtitle and its language.
+/// it in place without downloading it again: the link it came from, the file, then each subtitle
+/// and its language. A later download at the same path from another link ignores it.
 const PLACING: &str = "placing.done";
 
 fn remember_placing(
     work: &Path,
+    url: &str,
     file: &Path,
     sidecars: &[(PathBuf, String)],
 ) -> std::io::Result<()> {
     let name = |path: &Path| crate::naming::file_name_of(path);
-    let mut lines = vec![name(file)];
+    let mut lines = vec![url.to_string(), name(file)];
     lines.extend(
         sidecars
             .iter()
@@ -1098,18 +1100,22 @@ fn remember_placing(
     std::fs::write(work.join(PLACING), lines.join("\n"))
 }
 
-/// The file, and its subtitles, an earlier run left in `work` to be put in place.
-async fn waiting_to_place(work: &Path) -> Option<(PathBuf, Vec<(PathBuf, String)>)> {
+/// The file, and its subtitles, an earlier run of the download of `url` left in `work` to be put
+/// in place. Only plain names inside `work` are taken.
+async fn waiting_to_place(work: &Path, url: &Url) -> Option<(PathBuf, Vec<(PathBuf, String)>)> {
     let listed = tokio::fs::read_to_string(work.join(PLACING)).await.ok()?;
     let mut lines = listed.lines();
-    let file = work.join(lines.next()?.trim());
-    if !tokio::fs::metadata(&file).await.is_ok_and(|m| m.is_file()) {
+    if lines.next()? != url.as_str() {
         return None;
     }
+    let inside = |name: &str| {
+        let path = work.join(name);
+        (path.parent() == Some(work) && path.is_file()).then_some(path)
+    };
+    let file = inside(lines.next()?.trim())?;
     let sidecars = lines
         .filter_map(|line| line.split_once('\t'))
-        .map(|(name, language)| (work.join(name), language.to_string()))
-        .filter(|(path, _)| path.is_file())
+        .filter_map(|(name, language)| Some((inside(name)?, language.to_string())))
         .collect();
     Some((file, sidecars))
 }
@@ -1710,6 +1716,33 @@ mod tests {
             "{mark}"
         );
         assert!(!mark.contains("secret"));
+    }
+
+    /// A file left waiting is taken only by the download it came from, and only from its own work
+    /// folder.
+    #[tokio::test]
+    async fn a_waiting_file_belongs_to_its_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().join("work");
+        std::fs::create_dir(&work).unwrap();
+        let file = work.join("clip.ts");
+        std::fs::write(&file, b"clip").unwrap();
+        let mine = Url::parse("https://example.com/a.m3u8").unwrap();
+        remember_placing(&work, mine.as_str(), &file, &[]).unwrap();
+        assert_eq!(waiting_to_place(&work, &mine).await, Some((file, vec![])));
+        let other = Url::parse("https://example.com/b.m3u8").unwrap();
+        assert_eq!(waiting_to_place(&work, &other).await, None);
+
+        std::fs::write(dir.path().join("outside.ts"), b"x").unwrap();
+        std::fs::write(
+            work.join(PLACING),
+            format!(
+                "{mine}
+../outside.ts"
+            ),
+        )
+        .unwrap();
+        assert_eq!(waiting_to_place(&work, &mine).await, None);
     }
 
     #[test]
