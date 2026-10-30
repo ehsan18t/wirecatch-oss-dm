@@ -531,11 +531,13 @@ fn languages(
             let state = ComboboxState::new(SearchableVec::new(choices), picked, window, cx)
                 .multiple(true)
                 .searchable(true);
-            cx.subscribe_self(move |_, event: &ComboboxEvent<SearchableVec<LanguageChoice>>, cx| {
-                if let ComboboxEvent::Change(codes) = event {
-                    change(patch(codes.clone()), cx);
-                }
-            })
+            cx.subscribe_self(
+                move |_, event: &ComboboxEvent<SearchableVec<LanguageChoice>>, cx| {
+                    if let ComboboxEvent::Change(codes) = event {
+                        change(patch(codes.clone()), cx);
+                    }
+                },
+            )
             .detach();
             state
         });
