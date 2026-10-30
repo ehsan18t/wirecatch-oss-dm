@@ -5,6 +5,7 @@ mod confirm;
 mod details;
 mod empty;
 mod list;
+mod settings;
 mod sidebar;
 mod title_bar;
 
@@ -26,7 +27,16 @@ use crate::library::{Library, SettingsChanged};
 use crate::ui::{Role, Typed as _, layout};
 use crate::{add_dialog, links, theme};
 
-actions!(main_window, [NewDownload, PasteLinks, Dismiss, FocusSearch]);
+actions!(
+    main_window,
+    [
+        NewDownload,
+        PasteLinks,
+        Dismiss,
+        FocusSearch,
+        ToggleSettings
+    ]
+);
 
 /// The key context the main window's shortcuts work in; a text field's own keys come first.
 const KEY_CONTEXT: &str = "MainWindow";
@@ -42,6 +52,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-v", PasteLinks, Some(KEY_CONTEXT)),
         KeyBinding::new("escape", Dismiss, Some(KEY_CONTEXT)),
         KeyBinding::new("ctrl-k", FocusSearch, Some(KEY_CONTEXT)),
+        KeyBinding::new("ctrl-,", ToggleSettings, Some(KEY_CONTEXT)),
     ]);
 }
 
@@ -96,6 +107,13 @@ impl Group {
     }
 }
 
+/// What fills the window beside the navigation.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Screen {
+    Downloads,
+    Settings,
+}
+
 /// What the list shows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum View {
@@ -116,6 +134,7 @@ impl View {
 
 pub struct MainWindow {
     library: Entity<Library>,
+    screen: Screen,
     view: View,
     selected: HashSet<DownloadId>,
     folded: HashSet<Group>,
@@ -174,6 +193,7 @@ impl MainWindow {
         focus.focus(window, cx);
         Self {
             library,
+            screen: Screen::Downloads,
             view: View::All,
             selected: HashSet::new(),
             folded: Group::ALL
@@ -200,6 +220,14 @@ impl MainWindow {
         self.search.update(cx, |search, cx| {
             search.set_placeholder(placeholder, window, cx);
         });
+        cx.notify();
+    }
+
+    pub(super) fn toggle_settings(&mut self, cx: &mut Context<'_, Self>) {
+        self.screen = match self.screen {
+            Screen::Downloads => Screen::Settings,
+            Screen::Settings => Screen::Downloads,
+        };
         cx.notify();
     }
 
@@ -257,17 +285,22 @@ impl Render for MainWindow {
             .on_action(cx.listener(|this, _: &PasteLinks, window, cx| this.paste_links(window, cx)))
             .on_action(cx.listener(|this, _: &Dismiss, _, cx| this.dismiss(cx)))
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
+                this.screen = Screen::Downloads;
                 this.search
                     .update(cx, |search, cx| search.focus(window, cx));
             }))
+            .on_action(cx.listener(|this, _: &ToggleSettings, _, cx| this.toggle_settings(cx)))
             .size_full()
             .bg(theme.background)
             .text_role(Role::Body, cx)
             .child(self.title_bar(cx))
-            .child(layout::body(
-                self.sidebar(cx).into_any_element(),
-                self.header(cx).into_any_element(),
-                self.list(window, cx),
-            ))
+            .child(match self.screen {
+                Screen::Downloads => layout::body(
+                    self.sidebar(cx).into_any_element(),
+                    self.header(cx).into_any_element(),
+                    self.list(window, cx),
+                ),
+                Screen::Settings => self.settings(cx),
+            })
     }
 }

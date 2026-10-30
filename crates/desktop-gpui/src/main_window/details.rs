@@ -18,8 +18,9 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MILLE_DONE};
 use wirecatch_shell::api;
 
-use super::list::{act, status_tone};
+use super::list::status_tone;
 use super::{Group, confirm};
+use crate::backend::{act, command};
 use crate::library::Library;
 use crate::ui::layout::{self, Rule};
 use crate::ui::{Callout, Role, Typed as _, tokens};
@@ -295,7 +296,9 @@ fn failure(
                 .outline()
                 .label("Try again")
                 .on_click(cx.listener(move |_, _, window, cx| {
-                    act(window, cx, move |manager| api::retry(manager, id));
+                    act(window.window_handle(), cx, move |manager| {
+                        api::retry(manager, id)
+                    });
                 })),
         )
 }
@@ -426,12 +429,18 @@ fn footer(
                 button.on_click(cx.listener(move |_, _, window, cx| match status {
                     DownloadStatus::Completed => files::open(id, window, cx),
                     DownloadStatus::Paused => {
-                        act(window, cx, move |manager| api::resume(manager, id));
+                        act(window.window_handle(), cx, move |manager| {
+                            api::resume(manager, id)
+                        });
                     }
                     DownloadStatus::Cancelled => {
-                        act(window, cx, move |manager| api::retry(manager, id));
+                        act(window.window_handle(), cx, move |manager| {
+                            api::retry(manager, id)
+                        });
                     }
-                    _ => act(window, cx, move |manager| api::pause(manager, id)),
+                    _ => act(window.window_handle(), cx, move |manager| {
+                        api::pause(manager, id)
+                    }),
                 })),
             )
         })
@@ -493,10 +502,14 @@ fn more(
 /// A failure's fix, where the panel can do it itself; the rest come with their own screens.
 fn run_fix(id: DownloadId, fix: FixAction, window: &mut Window, cx: &mut Context<'_, Details>) {
     match fix {
-        FixAction::Retry => act(window, cx, move |manager| api::retry(manager, id)),
+        FixAction::Retry => act(window.window_handle(), cx, move |manager| {
+            api::retry(manager, id)
+        }),
         FixAction::ChooseFolder => choose_folder(id, true, window, cx),
         FixAction::FreeDiskSpace => files::show_in_folder(id, window, cx),
-        FixAction::KeepOriginal => act(window, cx, move |manager| api::keep_original(manager, id)),
+        FixAction::KeepOriginal => act(window.window_handle(), cx, move |manager| {
+            api::keep_original(manager, id)
+        }),
         FixAction::RefreshLink | FixAction::ProxySettings | FixAction::ChangeQueue => {
             window.push_notification("This comes with a later version of this window.", cx);
         }
@@ -520,7 +533,7 @@ fn choose_folder(id: DownloadId, retry: bool, window: &mut Window, cx: &mut Cont
         };
         let folder = folder.to_string_lossy().into_owned();
         _ = cx.update(|window, cx| {
-            let set = crate::backend::Backend::run(cx, move |manager| async move {
+            command(window.window_handle(), cx, move |manager| async move {
                 api::set_download_folder(&manager, id, &folder).await?;
                 if retry {
                     api::retry(&manager, id)
@@ -528,16 +541,6 @@ fn choose_folder(id: DownloadId, retry: bool, window: &mut Window, cx: &mut Cont
                     Ok(())
                 }
             });
-            window
-                .spawn(cx, async move |cx| {
-                    let refused = match set.await {
-                        Ok(Ok(Ok(()))) | Err(_) => return,
-                        Ok(Ok(Err(error))) => error.message,
-                        Ok(Err(unopened)) => unopened.reason.message,
-                    };
-                    _ = cx.update(|window, cx| window.push_notification(refused, cx));
-                })
-                .detach();
         });
     })
     .detach();

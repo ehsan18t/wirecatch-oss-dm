@@ -3,23 +3,19 @@
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::progress::Progress;
-use gpui_kit::component::{
-    ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _, h_flex, v_flex,
-};
+use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, ElementId, Hsla, InteractiveElement as _, IntoElement,
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
     px, uniform_list,
 };
-use wirecatch_core::Manager;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, PER_MILLE_DONE};
-use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::api;
 
 use super::{Group, MainWindow, View, details};
-use crate::backend::Backend;
+use crate::backend::act;
 use crate::ui::layout::PageHeader;
 use crate::ui::{FileTile, Role, Typed as _, search_field, tokens};
 use crate::{files, text};
@@ -114,13 +110,17 @@ impl MainWindow {
                         .small()
                         .outline()
                         .label("Resume all")
-                        .on_click(cx.listener(|_, _, window, cx| act(window, cx, api::resume_all)))
+                        .on_click(cx.listener(|_, _, window, cx| {
+                            act(window.window_handle(), cx, api::resume_all);
+                        }))
                 } else {
                     Button::new("pause-all")
                         .small()
                         .outline()
                         .label("Pause all")
-                        .on_click(cx.listener(|_, _, window, cx| act(window, cx, api::pause_all)))
+                        .on_click(cx.listener(|_, _, window, cx| {
+                            act(window.window_handle(), cx, api::pause_all);
+                        }))
                 })
             })
     }
@@ -474,9 +474,15 @@ impl RowAction {
 
     fn run(self, id: DownloadId, window: &mut Window, cx: &mut Context<'_, MainWindow>) {
         match self {
-            Self::Pause => act(window, cx, move |manager| api::pause(manager, id)),
-            Self::Resume => act(window, cx, move |manager| api::resume(manager, id)),
-            Self::Retry => act(window, cx, move |manager| api::retry(manager, id)),
+            Self::Pause => act(window.window_handle(), cx, move |manager| {
+                api::pause(manager, id)
+            }),
+            Self::Resume => act(window.window_handle(), cx, move |manager| {
+                api::resume(manager, id)
+            }),
+            Self::Retry => act(window.window_handle(), cx, move |manager| {
+                api::retry(manager, id)
+            }),
             Self::Open => files::open(id, window, cx),
             Self::ShowInFolder => files::show_in_folder(id, window, cx),
         }
@@ -520,25 +526,6 @@ pub(super) fn status_tone(row: &DownloadSummary, cx: &App) -> Hsla {
             theme.muted_foreground
         }
     }
-}
-
-/// Runs a command on the manager; a refusal shows as a notification in `window`.
-pub(super) fn act<T: 'static>(
-    window: &mut Window,
-    cx: &mut Context<'_, T>,
-    work: impl FnOnce(&Manager) -> Result<(), ProtocolError> + Send + 'static,
-) {
-    let done = Backend::run(cx, move |manager| async move { work(&manager) });
-    cx.spawn_in(window, async move |_, cx| {
-        let refused = match done.await {
-            Ok(Ok(Ok(()))) => return,
-            Ok(Ok(Err(error))) => error.message,
-            Ok(Err(unopened)) => unopened.reason.message,
-            Err(_) => "That did not work.".to_owned(),
-        };
-        _ = cx.update(|window, cx| window.push_notification(refused, cx));
-    })
-    .detach();
 }
 
 /// A row's element id; download ids are positive.

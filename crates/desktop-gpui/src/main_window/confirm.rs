@@ -12,6 +12,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_shell::api;
 
+use crate::backend::command;
 use crate::library::Library;
 use crate::ui::{Role, Typed as _};
 
@@ -165,7 +166,7 @@ pub(super) fn remove(
                                     )
                                 };
                                 window.close_dialog(cx);
-                                run(window, cx, move |manager| async move {
+                                command(window.window_handle(), cx, move |manager| async move {
                                     api::remove(&manager, &ids, delete).await
                                 });
                             }),
@@ -244,32 +245,11 @@ pub(super) fn cancel(
                             .on_click(move |_, window, cx| {
                                 window.close_dialog(cx);
                                 let ids = ids.clone();
-                                run(window, cx, move |manager| async move {
+                                command(window.window_handle(), cx, move |manager| async move {
                                     ids.iter().try_for_each(|id| api::cancel(&manager, *id))
                                 });
                             }),
                     ),
             )
     });
-}
-
-/// Runs `work` on the manager; a refusal shows as a notification.
-fn run<F, Fut>(window: &mut Window, cx: &mut App, work: F)
-where
-    F: FnOnce(wirecatch_core::Manager) -> Fut + Send + 'static,
-    Fut: std::future::Future<Output = Result<(), wirecatch_protocol::wire::ProtocolError>>
-        + Send
-        + 'static,
-{
-    let done = crate::backend::Backend::run(cx, work);
-    window
-        .spawn(cx, async move |cx| {
-            let refused = match done.await {
-                Ok(Ok(Ok(()))) | Err(_) => return,
-                Ok(Ok(Err(error))) => error.message,
-                Ok(Err(unopened)) => unopened.reason.message,
-            };
-            _ = cx.update(|window, cx| window.push_notification(refused, cx));
-        })
-        .detach();
 }
