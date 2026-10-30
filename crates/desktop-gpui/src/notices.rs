@@ -39,7 +39,8 @@ struct Kept(Arc<Tellers>);
 
 impl Global for Kept {}
 
-/// Starts telling, once the manager opens. Clicks come back to the app's own thread.
+/// Starts telling, once the manager opens, or tells why it could not. Clicks come back to the
+/// app's own thread.
 pub fn start(cx: &mut App) {
     let (clicked, mut clicks) = mpsc::unbounded_channel::<Act>();
     let folder = dirs::cache_dir()
@@ -64,10 +65,20 @@ pub fn start(cx: &mut App) {
         browser: BrowserNotices::default(),
     });
     cx.set_global(Kept(Arc::clone(&tellers)));
-    // Runs until the manager stops.
-    drop(Backend::run(cx, move |manager| {
-        watch(manager, tellers, clicked)
-    }));
+    let unopened = Arc::clone(&tellers);
+    // Runs until the manager stops, or ends at once when it could not open.
+    let watching = Backend::run(cx, move |manager| watch(manager, tellers, clicked));
+    cx.spawn(async move |_| {
+        if let Ok(Err(why)) = watching.await
+            && !why.another_copy
+        {
+            let title = format!("{} could not open its download list", host::CHANNEL.name());
+            unopened
+                .system
+                .show(notifications::plain(title, why.reason.message), true);
+        }
+    })
+    .detach();
     cx.spawn(async move |cx| {
         while let Some(act) = clicks.recv().await {
             cx.update(|cx| carry_out(act, cx));
@@ -82,6 +93,14 @@ async fn watch(manager: Manager, tellers: Arc<Tellers>, clicked: mpsc::Unbounded
     let mut activity = Activity::default();
     let mut teller = Teller::default();
     let mut settings = reload(&manager, &mut activity, &mut teller);
+    for notice in manager.startup_notices() {
+        tracing::warn!("{}: {}", notice.title, notice.message);
+        show(
+            &tellers,
+            &settings,
+            notifications::plain(notice.title.clone(), notice.message.clone()),
+        );
+    }
     loop {
         tokio::select! {
             event = events.recv() => match event {
