@@ -1,6 +1,6 @@
 //! Making a queue or changing one (D72): its name and description, its own folder (D94), its own
 //! limits, its hours and when it tells of finished downloads. A limit follows the app's until it
-//! is switched on (D72.1). Its rules and proxy are kept as they are.
+//! is switched on (D72.1). Its rules have their own editor; its proxy is kept as it is.
 
 use chrono::{NaiveTime, Timelike as _};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -19,6 +19,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_shell::api;
 
+use super::queue_rules::RulesForm;
 use super::{MainWindow, View};
 use crate::backend::Backend;
 use crate::library::Library;
@@ -171,7 +172,7 @@ fn footer(form: &Entity<QueueForm>, cx: &App) -> Div {
             .into_any_element(),
         None => div().into_any_element(),
     };
-    row.child(div().flex_1().min_w_0().child(left))
+    row.child(h_flex().flex_1().min_w_0().child(left))
         .child(
             Button::new("cancel")
                 .label("Cancel")
@@ -214,6 +215,7 @@ pub struct QueueForm {
     /// Why the form cannot be saved, or why saving failed.
     problem: Option<String>,
     stage: Stage,
+    rules: Entity<RulesForm>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -275,17 +277,16 @@ impl QueueForm {
             window,
             cx,
         );
-        let edited = [&name, &description, &concurrent, &limit, &connections].map(|field| {
-            cx.subscribe(field, |form: &mut Self, _, event: &InputEvent, cx| {
-                if matches!(event, InputEvent::Change) {
-                    form.problem = None;
-                    cx.notify();
-                }
-            })
-        });
+        let edited =
+            forget_problem_on_edit([&name, &description, &concurrent, &limit, &connections], cx);
+        let rules = {
+            let (library, name) = (library.clone(), name.clone());
+            cx.new(|cx| RulesForm::new(library, queue, name, &opened.add_downloads, window, cx))
+        };
         Self {
             library,
             main,
+            rules,
             name,
             description,
             folder: opened.folder.own_ref().map(|folder| folder.0.clone()),
@@ -356,6 +357,7 @@ impl QueueForm {
             None
         };
         settings.notify = self.notify;
+        settings.add_downloads = self.rules.read(cx).add_downloads(cx);
         Ok(settings)
     }
 
@@ -546,6 +548,11 @@ impl Render for QueueForm {
                 }),
             )
             .child(group("Limits", self.limits(cx), cx))
+            .child(group(
+                "Rules",
+                vec![self.rules.clone().into_any_element()],
+                cx,
+            ))
             .child(group("Schedule", vec![self.schedule_row(cx)], cx))
             .child(group("Notifications", vec![self.notify_row(cx)], cx))
     }
@@ -709,6 +716,21 @@ impl QueueForm {
             ))
             .into_any_element()
     }
+}
+
+/// A field edited takes away the problem the form showed.
+fn forget_problem_on_edit(
+    fields: [&Entity<InputState>; 5],
+    cx: &mut Context<'_, QueueForm>,
+) -> [Subscription; 5] {
+    fields.map(|field| {
+        cx.subscribe(field, |form: &mut QueueForm, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                form.problem = None;
+                cx.notify();
+            }
+        })
+    })
 }
 
 fn narrow(field: impl IntoElement) -> Div {

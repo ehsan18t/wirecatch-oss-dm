@@ -55,7 +55,8 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Remove, with "Also delete the files".
 - [x] Cancel.
 - [x] Queue: name, description, own folder (D94), limits, schedule, notifications, Delete queue.
-- [ ] Queue: rules with Test a link, proxy.
+- [x] Queue: rules with Test a link.
+- [ ] Queue: proxy.
 - [ ] Get a new link.
 - [ ] Export and import settings, with the preview.
 - [ ] Keyboard shortcuts.

@@ -7,6 +7,7 @@ mod details;
 mod empty;
 mod list;
 mod queue_dialog;
+mod queue_rules;
 mod settings;
 mod sidebar;
 mod title_bar;
