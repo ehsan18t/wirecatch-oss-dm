@@ -1,6 +1,6 @@
 # What the GPUI app still needs
 
-Every screen, state and behaviour of the Tauri app that the GPUI app must have before Tauri is removed (D95, D99). Ticked items are done. The Svelte sources named are the behaviour to match; the words come from them unless a decision changes them. This file goes when the last item is ticked.
+What the Tauri app can do that the GPUI app must also do before Tauri is removed (D95, D99). Ticked items are done. Each item is a capability, not a design: how a screen looks and is laid out is decided anew for the GPUI app (D99, point 4). This file goes when the last item is ticked.
 
 ## Main window
 
@@ -8,11 +8,11 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 - [x] Follows the manager's events; reloads after missing some.
 - [x] Light and dark colours with the Theme and Accent settings, following the system's scheme.
 - [ ] The system accent colour on Windows (`appearance.rs`).
-- [x] The manager could not open: "{app} cannot reach its download engine", with Try again (`ui/DownloadsView.svelte`).
+- [x] The manager could not open: "{app} cannot reach its download engine", with Try again.
 - [ ] Another copy already runs: say so and close (`lib.rs` `say_already_running`).
-- [x] Title bar search (Ctrl+K): names and links, a search unfolds groups, "N downloads matching …", the view in the placeholder.
+- [x] Search, focused with Ctrl+K: names and links, a search unfolds groups, "N downloads matching …", the view in the placeholder.
 - [ ] Search: Escape clears, Down moves into the list; "Search settings" on the settings screen.
-- [ ] Title bar: the waiting-questions bell with its count (`show_question_windows`).
+- [ ] The waiting questions, with their count (`show_question_windows`).
 - [ ] Navigation toggle; collapsed rail and narrow-window drawer (D91).
 - [x] Navigation: All downloads, the six status views with counts, the queues with count or speed.
 - [x] Queues: the first three, "N more queues" / "Fewer queues"; the Rules badge, status text, dimmed when Rules are off.
@@ -20,7 +20,7 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 - [x] Queue "…" menu: Start now (outside its schedule), Pause or Resume the queue, Move up, Move down.
 - [ ] Queue menu: Edit queue (with the Queue dialog).
 - [ ] Drag queues to reorder them, the default queue first (D72.9).
-- [ ] Navigation footer: Settings (Ctrl+,), Find any action (Ctrl+Shift+P), Keyboard shortcuts (F1).
+- [ ] Settings (Ctrl+,), Find any action (Ctrl+Shift+P) and Keyboard shortcuts (F1), reachable from the main window.
 - [x] List header: the view's title and summary; Pause all or Resume all.
 - [ ] List header in a queue view: description, schedule and limits, Start now, Pause or Resume queue, Edit queue; "about X left"; "matching '…'".
 - [x] New download button (Ctrl+N).
@@ -34,16 +34,16 @@ Every screen, state and behaviour of the Tauri app that the GPUI app must have b
 - [ ] Row: category icon, the "…" menu, the fix button in the progress cell (`row-actions.ts`).
 - [x] Hover Pause, Resume, Try again, Start over.
 - [ ] Selection: Ctrl+click, Shift+click ranges; selection bar with Pause, Resume, Try again, Move to queue, Remove, Clear.
-- [x] Empty states with their buttons (`ListEmpty.svelte`): first run, no search match, empty queue, an empty view.
+- [x] Empty states with their buttons: first run, no search match, empty queue, an empty view.
 - [ ] First run: "See everything {app} can do" (opens the palette).
-- [x] Details dialog (`DetailsDialog.svelte`, D47), opened by clicking a row: status, the problem with its fix and Try again, speed and progress, facts, Saved to with Change, the link with Copy, activity, Open, Pause, Resume, Start over, Show in folder, More (Copy link, Cancel download), Remove; it follows the download and closes once it is removed.
+- [x] Details dialog (D47), opened by clicking a row: status, the problem with its fix and Try again, speed and progress, facts, Saved to with Change, the link with Copy, activity, Open, Pause, Resume, Start over, Show in folder, More (Copy link, Cancel download), Remove; it follows the download and closes once it is removed.
 - [ ] Details: the speed graph, the queue as a select, "Stuck? The link may have expired." with Get a new link, Open in a separate window, and the fixes that open other screens (Get a new link, Proxy settings, Change queue).
 - [ ] Context menu on rows; Menu key and Shift+F10.
 - [ ] Keyboard: every shortcut of `lib/keymap.ts`, F6 regions, list keys.
 - [ ] Drag a link in to add it; drag rows to reorder in a queue and onto a queue to move them.
 - [x] Paste a link anywhere (Ctrl+V) to open the Add dialog.
 - [ ] Command palette with every command of `lib/commands`.
-- [x] The title bar's speed readout, with "Starting" and "Finishing videos", and its tooltip (D23).
+- [x] The total speed readout, with "Starting" and "Finishing videos", and its tooltip (D23).
 
 ## Dialogs
 

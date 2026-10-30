@@ -266,7 +266,7 @@ impl Render for MainWindow {
             .child(self.title_bar(cx))
             .child(layout::body(
                 self.sidebar(cx).into_any_element(),
-                self.header(window, cx).into_any_element(),
+                self.header(cx).into_any_element(),
                 self.list(window, cx),
             ))
     }

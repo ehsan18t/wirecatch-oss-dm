@@ -81,7 +81,7 @@ enum Line {
 }
 
 impl MainWindow {
-    pub(super) fn header(&self, window: &Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    pub(super) fn header(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let summary = self.summary(cx);
         let library = self.library.read(cx);
         let any_paused = library
@@ -98,12 +98,7 @@ impl MainWindow {
                 View::Group(Group::Finished | Group::Attention | Group::Cancelled)
             );
         PageHeader::new(self.title(cx), summary)
-            .action(div().w(px(SEARCH_WIDTH)).child(search_field(
-                &self.search,
-                &super::FocusSearch,
-                super::KEY_CONTEXT,
-                window,
-            )))
+            .action(div().w(px(SEARCH_WIDTH)).child(search_field(&self.search)))
             .action(
                 Button::new("new-download")
                     .small()

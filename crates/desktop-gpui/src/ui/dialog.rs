@@ -4,7 +4,7 @@ use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::dialog::{AlertDialog, Dialog, DialogEntrance};
 use gpui_kit::{App, Window};
 
-/// The default slides down from the window top for 250 ms; this settles in place, as the web dialog does.
+/// The default slides down from the window top for 250 ms; this settles in place.
 const ENTRANCE: DialogEntrance = DialogEntrance::FadeSlide;
 
 pub fn open(

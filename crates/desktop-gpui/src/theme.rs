@@ -21,8 +21,7 @@ const ON_ACCENT_DARK: u32 = 0x000b_0d12;
 const DANGER_FILL_LIGHT: u32 = 0x00b3_261e;
 const DANGER_FILL_DARK: u32 = 0x00c9_372c;
 
-/// The web app's text face (`packages/ui/tokens.css`): Windows 11 has it, older systems keep the
-/// system font.
+/// Sharper than Segoe UI at small sizes; Windows 11 has it, older systems keep the system font.
 const PREFERRED_FONT: &str = "Segoe UI Variable Text";
 
 fn preferred_font(cx: &App) -> Option<SharedString> {
@@ -115,9 +114,8 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
     });
 }
 
-/// The accent in this scheme and the text that goes on it. Each pair is the one the web
-/// interface's tokens hold to 4.5:1 (`packages/ui/src/tokens.css`). The system accent is not
-/// read yet, so it shows Wirecatch's own.
+/// The accent in this scheme and the text that goes on it, each pair at 4.5:1 contrast or more.
+/// The system accent is not read yet, so it shows Wirecatch's own.
 fn accent_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
     let (light_tone, dark_tone) = match accent {
         Accent::Cyan | Accent::System => (0x000a_6b70, 0x004f_d1c7),
