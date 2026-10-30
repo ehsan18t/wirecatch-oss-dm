@@ -856,6 +856,7 @@ impl Manager {
         let mut options = crate::headers::download_options(ADDON_NETWORK, policy.proxy);
         options.connections = policy.connections;
         options.rate_limiters = policy.limiters;
+        options.retry_backoff = policy.retry_backoff;
         options
     }
 
@@ -1341,7 +1342,7 @@ mod tests {
     async fn add_on_downloads_name_the_app() {
         let dir = tempfile::tempdir().unwrap();
         let folders = crate::KnownFolders::under_home(dir.path().join("home"));
-        let config = crate::ManagerConfig::new(dir.path().join("data"), folders);
+        let config = crate::ManagerConfig::for_tests(dir.path().join("data"), folders);
         let manager = Manager::open(config).await.unwrap();
         let agent = manager.addon_download_options().user_agent;
         assert_eq!(
@@ -1361,7 +1362,7 @@ mod tests {
     async fn an_install_that_loses_a_part_says_so_even_quiet_or_stopped() {
         let dir = tempfile::tempdir().unwrap();
         let folders = crate::KnownFolders::under_home(dir.path().join("home"));
-        let config = crate::ManagerConfig::new(dir.path().join("data"), folders);
+        let config = crate::ManagerConfig::for_tests(dir.path().join("data"), folders);
         let manager = Manager::open(config).await.unwrap();
         let end_with = |part_lost: bool, cancelled: bool| {
             manager.lock().addon.op = Some(AddonOp {

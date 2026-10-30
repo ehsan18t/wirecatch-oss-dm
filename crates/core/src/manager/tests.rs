@@ -52,7 +52,7 @@ async fn manager_with(
 ) -> (Manager, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let folders = KnownFolders::under_home(dir.path().join("home"));
-    let config = ManagerConfig::new(dir.path().join("data"), folders)
+    let config = ManagerConfig::for_tests(dir.path().join("data"), folders)
         .with_stop_timeout(stop_timeout)
         .with_capture_timeout(capture_timeout);
     let manager = Manager::open(config).await.unwrap();
@@ -498,7 +498,7 @@ async fn a_move_that_cannot_be_undone_stops_the_download() {
     manager.shutdown().await;
     drop(manager);
     let folders = KnownFolders::under_home(dir.path().join("home"));
-    let reopened = Manager::open(ManagerConfig::new(dir.path().join("data"), folders))
+    let reopened = Manager::open(ManagerConfig::for_tests(dir.path().join("data"), folders))
         .await
         .unwrap();
     reopened.use_fake_engine(Arc::new(obedient));

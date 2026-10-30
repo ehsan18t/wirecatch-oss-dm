@@ -899,6 +899,15 @@ Decided with the maintainer on 2026-10-30. It carries out D95.
 4. The look is the project's own, laid out the way Zed is: dense, quiet surfaces, one accent, text before chrome. The Theme and Accent settings stay as they are (Cyan by default), so the settings file and the protocol do not change.
 5. Its tests are Rust: GPUI's own test context drives the real views. A visible change is checked on screenshots of the real windows with sample downloads, in both themes.
 
+### D101. The pauses between retries are an engine option
+
+Decided on 2026-10-30. The engine's pauses between failed attempts (500 ms, doubling up to 10 s) were fixed, so a test of a download that must fail waited them out for real; one proxy test spent about 25 s of its 40 s there. Numbered D101 because D100 is taken on the `gpui` branch.
+
+1. `DownloadOptions::retry_backoff` holds a `Backoff` (`#[non_exhaustive]`, built with `Backoff::new(first, max)`): the first pause, doubled for each failure in a row up to the longest. The defaults are the old pauses, so nothing changes for a caller that leaves it alone. `validate` refuses a zero first pause or a longest pause shorter than the first.
+2. The random delay added to each pause stays below 250 ms and below half the first pause, so short pauses stay short. A server's `Retry-After` still replaces the pause.
+3. `ManagerConfig::retry_backoff` (`with_retry_backoff`) sets it for every download the manager runs, add-on downloads included. The app keeps the default; the core's tests use 10 ms doubling to 100 ms. The number of attempts (`max_retries`) is unchanged, so a test still goes through every retry.
+4. Release notes for the next release of `wirecatch-engine` (additive, D30.3). Added: `Backoff` and `DownloadOptions::retry_backoff`.
+
 ## Assumptions (not yet confirmed)
 
 - A1. No cloud sync of settings in v1; export/import covers moving PCs.

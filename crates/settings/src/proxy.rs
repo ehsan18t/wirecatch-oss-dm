@@ -254,7 +254,9 @@ pub enum ComputerProxy {
     /// The environment's proxy variables, else the system's setting, read when asked.
     #[default]
     Read,
-    /// This setting, `None` for none, and nothing read from the computer.
+    /// This setting, and nothing read from the computer: `None` for no proxy and no bypass list,
+    /// or proxies whose `exceptions` are the bypass list (all proxies `None` for a list alone).
+    /// Handed to the engine as given proxies, so its messages name the download's proxy option.
     Given(Option<ManualProxies>),
 }
 

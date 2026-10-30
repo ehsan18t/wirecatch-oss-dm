@@ -245,7 +245,7 @@ fn a_profile_reaches_the_engine_as_a_url_with_its_login_and_exceptions() {
         true,
         &profiles,
         &logins,
-        &ComputerProxy::Read,
+        &ComputerProxy::Given(None),
     ));
     assert_eq!(
         manual.all.as_deref(),
@@ -294,13 +294,13 @@ fn the_computers_proxy_is_left_to_the_engine_unless_something_is_added() {
         ProxyChoice::Direct
     );
     let added = only(&["a.example"]);
+    let nothing = ComputerProxy::Given(None);
     assert_ne!(
-        engine_choice(ProxyUse::System, &added, false, &[], &none, &read),
+        engine_choice(ProxyUse::System, &added, false, &[], &none, &nothing),
         ProxyChoice::System
     );
 }
 
-/// A given computer's proxy stands in for the environment and the system's setting.
 #[test]
 fn a_given_computers_proxy_is_used_in_place_of_reading_it() {
     let mut office = ManualProxies::default();
