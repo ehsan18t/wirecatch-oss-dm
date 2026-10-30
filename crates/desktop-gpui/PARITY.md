@@ -96,6 +96,6 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Browser bridge: serve it, register it on start (not in debug builds), the AppImage copy.
 - [x] System notifications with buttons (D52), browser notices with the system fallback (D65), a notice opening its download (D98).
 - [ ] Open a file, with the warning for programs; show in folder; folder and file pickers.
-- [ ] Start at sign-in.
+- [x] Start at sign-in.
 - [ ] Startup failure dialogs.
 - [ ] Installers for Windows and Linux; the updater comes with release item 7.
