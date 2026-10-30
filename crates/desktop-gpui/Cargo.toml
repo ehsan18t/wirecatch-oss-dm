@@ -26,6 +26,9 @@ tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
 tracing = { workspace = true }
 regex.workspace = true
 url.workspace = true
+png = "0.18.1"
+# D-Bus (StatusNotifierItem) on Linux, not GTK: the app runs no GTK loop (D104).
+tray-icon = { version = "0.25.1", default-features = false, features = ["ksni"] }
 
 [lints]
 workspace = true

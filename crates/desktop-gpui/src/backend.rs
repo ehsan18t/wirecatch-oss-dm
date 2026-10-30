@@ -11,7 +11,7 @@ use wirecatch_core::{Manager, ManagerConfig};
 use wirecatch_ipc::Listener;
 use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::host::{self, Core, Unopened};
-use wirecatch_shell::{bridge, launch};
+use wirecatch_shell::{bridge, launch, quit};
 
 /// The manager this process hosts and the runtime its work runs on.
 pub struct Backend {
@@ -42,6 +42,25 @@ impl Backend {
         let core = Arc::new(Core::new(config));
         runtime.spawn(serve(Arc::clone(&core), listener));
         Self { runtime, core }
+    }
+
+    /// The manager if it has opened, and the runtime its work runs on, for work that cannot
+    /// wait for it.
+    pub fn now(cx: &App) -> (Option<Manager>, tokio::runtime::Handle) {
+        let backend = cx.global::<Self>();
+        (
+            backend.core.get().cloned(),
+            backend.runtime.handle().clone(),
+        )
+    }
+
+    /// Stops the manager so every download continues next time, waiting for one still opening.
+    pub fn stop(cx: &App) -> tokio::task::JoinHandle<()> {
+        let backend = cx.global::<Self>();
+        let core = Arc::clone(&backend.core);
+        backend
+            .runtime
+            .spawn(async move { quit::quit_core(Some(&core), || ()).await })
     }
 
     /// Runs `work` with the manager on the runtime, once it has opened; its result comes back
