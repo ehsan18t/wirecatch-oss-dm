@@ -61,8 +61,8 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [ ] Export and import settings, with the preview.
 - [ ] Keyboard shortcuts.
 - [ ] Remove the add-on.
-- [ ] Proxy server, with Test connection.
-- [ ] Delete a proxy server, with what to switch to.
+- [x] Proxy server, with Test connection.
+- [x] Delete a proxy server, with what to switch to.
 
 ## Settings
 
@@ -73,7 +73,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [ ] Browser.
 - [ ] Media, with the add-on card.
 - [ ] Speed and queues, with Test a link.
-- [ ] Network: proxies.
+- [x] Network: the global proxy, proxy servers, hosts that skip the proxy, FTP past proxies, local network sites.
 - [x] Settings search.
 - [ ] Jump to a setting from the palette.
 
