@@ -328,6 +328,7 @@ mod tests {
             mime: None,
             size_hint: None,
             cookies: None,
+            cookie_jar: None,
             user_agent: None,
             extra_headers: vec![],
             source: CaptureSource::BrowserDownload,

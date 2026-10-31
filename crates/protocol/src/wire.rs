@@ -591,6 +591,7 @@ mod tests {
                 mime: None,
                 size_hint: None,
                 cookies: None,
+                cookie_jar: None,
                 user_agent: None,
                 extra_headers: Vec::new(),
                 source: crate::extension::CaptureSource::BrowserDownload,

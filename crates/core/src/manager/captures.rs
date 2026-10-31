@@ -19,6 +19,7 @@ use wirecatch_protocol::extension::{
     AddAction, AddedDownload, MediaKind, NewDownload, WithdrawOutcome,
 };
 use wirecatch_protocol::{DownloadId, QuestionId, Secret};
+use wirecatch_sites::cookie_scope;
 use wirecatch_sites::local_network::{self, ChosenBy};
 
 use super::Manager;
@@ -73,7 +74,13 @@ impl Manager {
             ask,
             placed,
             chosen_by,
+            cookies,
         } = self.arrival(&capture, &url)?;
+        let capture = NewDownload {
+            cookies,
+            cookie_jar: None,
+            ..capture
+        };
         if known {
             return self.known_handover(&capture.handover_id).await;
         }
@@ -444,6 +451,11 @@ impl Manager {
             ask: state.settings.extension.ask_before_download,
             placed,
             chosen_by: ChosenBy::of_capture(capture, &state.settings.local_sites, &state.suffixes),
+            // The jar wins: the app keeps its suffix list current, the extension only per release (D112).
+            cookies: match &capture.cookie_jar {
+                Some(jar) => cookie_scope::cookie_header(jar, &capture.url, &state.suffixes),
+                None => capture.cookies.clone(),
+            },
         })
     }
 
@@ -691,6 +703,8 @@ struct Arrival {
     ask: bool,
     placed: Placed,
     chosen_by: ChosenBy,
+    /// The `Cookie` header the download goes with.
+    cookies: Option<Secret>,
 }
 
 /// What makes a captured download work outside the browser: the browser's
