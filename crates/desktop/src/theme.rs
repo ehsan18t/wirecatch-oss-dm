@@ -71,6 +71,7 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
         None,
         cx,
     );
+    wirecatch_shell::appearance::set_menu_scheme(dark);
     let (tone, on_tone) = accent_colors(accent, dark);
     let danger_fill: Hsla = rgb(if dark {
         DANGER_FILL_DARK
