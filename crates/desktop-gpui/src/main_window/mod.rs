@@ -272,6 +272,8 @@ pub struct MainWindow {
     picked: bool,
     sort: sort::Sort,
     frozen: std::cell::RefCell<sort::Frozen>,
+    /// The Add dialog's form, while it is open.
+    add_form: Option<WeakEntity<add_dialog::AddForm>>,
     /// The row menu the keyboard opened, while it shows.
     keyboard_menu: Option<(Entity<PopupMenu>, Subscription)>,
     /// Where the cursor's row was last drawn, for the keyboard's menu.
@@ -422,6 +424,7 @@ impl MainWindow {
             cursor: None,
             picked: false,
             keyboard_menu: None,
+            add_form: None,
             sort: sort::Sort::default(),
             frozen: std::cell::RefCell::default(),
             cursor_bounds: Rc::default(),
@@ -484,13 +487,25 @@ impl MainWindow {
         cx.notify();
     }
 
-    /// Opens the Add dialog, on the queue shown when a queue is.
+    /// Opens the Add dialog, on the queue shown when a queue is; links while it is open join it.
     fn new_download(&mut self, urls: &[String], window: &mut Window, cx: &mut Context<'_, Self>) {
+        if let Some(open) = self.add_form.as_ref().and_then(WeakEntity::upgrade) {
+            if !urls.is_empty() {
+                open.update(cx, |form, cx| form.add_links(urls, window, cx));
+            }
+            return;
+        }
         let queue = match self.view {
             View::Queue(queue) => Some(queue),
             View::All | View::Group(_) => None,
         };
-        add_dialog::open(self.library.clone(), urls, queue, window, cx);
+        self.add_form = Some(add_dialog::open(
+            self.library.clone(),
+            urls,
+            queue,
+            window,
+            cx,
+        ));
     }
 
     /// Opens the queue editor on `queue`, or on a new queue.

@@ -51,7 +51,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 ## Dialogs
 
 - [x] Add: links, file name, Save to, queue, Add paused, Download (Ctrl+Enter), video pages read for their qualities (D51), failed links kept with why.
-- [ ] Add: the Automatic hint naming the queue each link goes to (`try_link`), focus on Download when opened with links, links from a second launch joining an open dialog.
+- [x] Add: the Automatic hint naming the queue each link goes to (`try_link`), focus on Download when opened with links, links from a second launch joining an open dialog.
 - [x] Remove, with "Also delete the files".
 - [x] Cancel.
 - [x] Queue: name, description, own folder (D94), limits, schedule, notifications, Delete queue.
