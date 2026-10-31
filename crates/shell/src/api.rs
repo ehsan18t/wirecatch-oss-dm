@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
-use wirecatch_core::{LinkFrom, Manager};
+use wirecatch_core::{LinkFrom, Manager, RemoveFiles};
 use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
@@ -116,14 +116,14 @@ pub fn cancel(m: &Manager, id: DownloadId) -> CommandResult<()> {
     plain(m.cancel(id))
 }
 
-/// Removes downloads from the list, and their files when `delete_file` is set.
+/// Removes downloads from the list, and with [`RemoveFiles::Delete`] their files.
 ///
 /// # Errors
 ///
 /// The manager has shut down ([`Manager::remove`]). Files that cannot be deleted are logged,
 /// not reported.
-pub async fn remove(m: &Manager, ids: &[DownloadId], delete_file: bool) -> CommandResult<()> {
-    plain(m.remove(ids, delete_file).await)
+pub async fn remove(m: &Manager, ids: &[DownloadId], files: RemoveFiles) -> CommandResult<()> {
+    plain(m.remove(ids, files).await)
 }
 
 /// Starts a failed or cancelled download again.

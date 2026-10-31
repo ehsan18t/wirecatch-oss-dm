@@ -8,6 +8,7 @@ use gpui_kit::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
     Window, div, px,
 };
+use wirecatch_core::RemoveFiles;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_shell::api;
@@ -158,16 +159,20 @@ pub(super) fn remove(
                                 "Remove from list"
                             })
                             .on_click(move |_, window, cx| {
-                                let (ids, delete) = {
+                                let (ids, files) = {
                                     let form = removing.read(cx);
                                     (
                                         form.asked.ids.clone(),
-                                        form.delete_files && form.asked.finished > 0,
+                                        if form.delete_files && form.asked.finished > 0 {
+                                            RemoveFiles::Delete
+                                        } else {
+                                            RemoveFiles::Keep
+                                        },
                                     )
                                 };
                                 window.close_dialog(cx);
                                 command(window.window_handle(), cx, move |manager| async move {
-                                    api::remove(&manager, &ids, delete).await
+                                    api::remove(&manager, &ids, files).await
                                 });
                             }),
                     ),

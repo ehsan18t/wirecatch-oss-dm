@@ -19,7 +19,7 @@ use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, QueueRequest};
 use super::run::{delete_files, mark_cancelled};
-use super::state::{Entry, Hold, State, Stop};
+use super::state::{AfterCancel, Entry, Hold, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::headers;
 use crate::naming;
@@ -63,6 +63,13 @@ pub enum LinkFrom {
     /// script could have written the link: it keeps the rule of whoever chose the download's
     /// link, so a website's download stays under a website's rule.
     SharedPage,
+}
+
+/// What [`Manager::remove`] does with a completed download's file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoveFiles {
+    Keep,
+    Delete,
 }
 
 impl Manager {
@@ -208,7 +215,7 @@ impl Manager {
 
     /// Removes downloads from the list, stopping them first. The partial files of an
     /// unfinished download are always deleted; the file of a completed download only
-    /// when `delete_file` is set. Ids that no longer exist are ignored.
+    /// with [`RemoveFiles::Delete`]. Ids that no longer exist are ignored.
     ///
     /// # Errors
     ///
@@ -216,7 +223,7 @@ impl Manager {
     /// deleted are logged, not reported.
     ///
     /// Runs to the end even when the caller stops waiting.
-    pub async fn remove(&self, ids: &[DownloadId], delete_file: bool) -> Result<()> {
+    pub async fn remove(&self, ids: &[DownloadId], completed: RemoveFiles) -> Result<()> {
         // From here on nothing can resume, move or start them, so once their runs
         // have stopped they stay stopped.
         {
@@ -228,12 +235,12 @@ impl Manager {
             }
         }
         let (manager, ids) = (self.clone(), ids.to_vec());
-        self.to_the_end(async move { manager.finish_removing(&ids, delete_file).await })
+        self.to_the_end(async move { manager.finish_removing(&ids, completed).await })
             .await
     }
 
     /// Removes downloads already marked as being removed, once their runs and moves have ended.
-    async fn finish_removing(&self, ids: &[DownloadId], delete_file: bool) -> Result<()> {
+    async fn finish_removing(&self, ids: &[DownloadId], completed: RemoveFiles) -> Result<()> {
         // The engine must close its files before they can be deleted, and a move to
         // another folder must finish so the right files are deleted. Each wait for a
         // run is bounded by the stop timeout; a move takes as long as the disk.
@@ -278,7 +285,7 @@ impl Manager {
                     continue;
                 };
                 if entry.row.status == DownloadStatus::Completed {
-                    if delete_file {
+                    if completed == RemoveFiles::Delete {
                         files.push(entry.path().to_path_buf());
                     }
                 } else {
@@ -317,7 +324,7 @@ impl Manager {
         }
         let manager = self.clone();
         self.spawn(async move {
-            if let Err(e) = manager.remove(&ids, false).await {
+            if let Err(e) = manager.remove(&ids, RemoveFiles::Keep).await {
                 warn!(error = %e, "could not finish removing a download");
             }
         });
@@ -471,7 +478,7 @@ impl Manager {
         {
             if entry.is_running() {
                 // Still stopping after a pause: it goes back in line once stopped.
-                entry.requeue_when_stopped(false);
+                entry.requeue_when_stopped(AfterCancel::Stay);
             } else if entry.row.status == DownloadStatus::Paused {
                 entry.row.status = DownloadStatus::Queued;
                 paused.push(entry.row.id);
@@ -495,7 +502,7 @@ impl Manager {
         state.release_stranded(id);
         let entry = state.entry_mut(id)?;
         if entry.is_running() {
-            entry.requeue_when_stopped(true);
+            entry.requeue_when_stopped(AfterCancel::Restart);
             return Ok(());
         }
         match entry.row.status {

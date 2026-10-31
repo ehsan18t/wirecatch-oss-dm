@@ -12,6 +12,7 @@ use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error as EngineError, ExistingFile, FileWork, Outcome,
     PathResolver, Progress, Url,
 };
+use wirecatch_messages::Worked;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
 
@@ -64,8 +65,8 @@ enum Ended {
 impl Ended {
     /// How run `end` of download `id`, saving into `folder`, ended. A failure
     /// is described for the person, in words that depend on whether anything
-    /// had arrived before it (`worked_before`), on who chose the link and on the proxy it went through.
-    fn of(end: RunEnd, id: DownloadId, folder: &Path, worked_before: bool, entry: &Entry) -> Self {
+    /// had arrived before it, on who chose the link and on the proxy it went through.
+    fn of(end: RunEnd, id: DownloadId, folder: &Path, worked: Worked, entry: &Entry) -> Self {
         match end {
             RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })) => {
                 Ended::Completed { bytes, path: None }
@@ -77,7 +78,7 @@ impl Ended {
                 Ended::Failed(wirecatch_messages::describe_run(
                     &error,
                     folder,
-                    worked_before,
+                    worked,
                     entry.chosen_by,
                     entry.through_proxy.as_deref(),
                 ))
@@ -248,7 +249,7 @@ impl Manager {
         state.running.remove(&id);
         let reading = run.gauge.read();
         let started = reading.answered;
-        let worked_before = started || entry.row.done > 0;
+        let worked = worked_before(started, entry.row.done);
         if started {
             entry.row.done = reading.done;
             entry.row.total = reading.total;
@@ -269,7 +270,7 @@ impl Manager {
         });
 
         let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
-        let ended = Ended::of(end, id, &folder, worked_before, entry);
+        let ended = Ended::of(end, id, &folder, worked, entry);
         let mut answered_page = None;
         match (ended, run.stop) {
             (Ended::Completed { bytes, path }, _) => {
@@ -371,6 +372,15 @@ pub(super) fn mark_cancelled(entry: &mut Entry) {
 }
 
 /// Deletes files and folders, ignoring ones already gone. Blocks on the disk.
+/// A run that got an answer, or a download that had data from an earlier run, had a link that worked.
+fn worked_before(answered: bool, done: u64) -> Worked {
+    if answered || done > 0 {
+        Worked::Before
+    } else {
+        Worked::Never
+    }
+}
+
 pub(super) fn delete_files(paths: &[PathBuf]) {
     for path in paths {
         if path.is_dir() {

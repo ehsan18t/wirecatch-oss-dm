@@ -1002,7 +1002,8 @@ async fn fetch_part(
                 if let EngineError::PrivateNetwork { .. } = e {
                     return Err(wirecatch_messages::private_network(job.chosen_by).into());
                 }
-                let error = wirecatch_messages::describe(&e, folder, true);
+                let error =
+                    wirecatch_messages::describe(&e, folder, wirecatch_messages::Worked::Before);
                 if error.fix == Some(FixAction::RefreshLink) {
                     let status = match e {
                         EngineError::HttpStatus { status, .. } => Some(status),

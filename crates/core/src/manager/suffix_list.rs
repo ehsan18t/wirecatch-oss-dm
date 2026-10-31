@@ -554,7 +554,10 @@ mod tests {
         assert!(!h.manager.update_suffix_list_if_due().await);
         assert_eq!(h.server.requests(LIST), 0);
 
-        h.manager.remove(&[id], true).await.unwrap();
+        h.manager
+            .remove(&[id], crate::RemoveFiles::Delete)
+            .await
+            .unwrap();
         assert!(h.manager.update_suffix_list_if_due().await);
         assert_eq!(h.server.requests(LIST), 1);
     }

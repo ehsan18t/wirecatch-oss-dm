@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, LinkFrom};
+use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, LinkFrom, RemoveFiles};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, FixAction, QueueSettings, UiEvent};
 use wirecatch_protocol::wire::ErrorCode;
@@ -182,7 +182,7 @@ async fn a_server_that_never_answers_cannot_hang_the_app() -> TestResult {
 
     h.manager.pause(paused.id).unwrap();
     h.wait_status(paused.id, DownloadStatus::Paused).await;
-    tokio::time::timeout(patience, h.manager.remove(&[removed.id], false))
+    tokio::time::timeout(patience, h.manager.remove(&[removed.id], RemoveFiles::Keep))
         .await
         .expect("remove waited forever")
         .unwrap();
@@ -226,7 +226,7 @@ async fn commands_return_what_the_ui_expects() -> TestResult {
         m.retry(id).unwrap(),
     ];
     assert_eq!(nothing.len(), 11);
-    let (): () = m.remove(&[id], false).await.unwrap();
+    let (): () = m.remove(&[id], RemoveFiles::Keep).await.unwrap();
     let (): () = m.delete_queue(queue.id).unwrap();
 
     let error = m.resume(id).unwrap_err().to_string();
@@ -278,7 +278,10 @@ async fn removing_an_unfinished_download_never_deletes_someone_elses_file() -> T
     let [part, _] = partial_files(&row.path);
     std::fs::write(&part, b"ours").unwrap();
 
-    h.manager.remove(&[row.id], true).await.unwrap();
+    h.manager
+        .remove(&[row.id], RemoveFiles::Delete)
+        .await
+        .unwrap();
     assert!(exists(path), "an unrelated file was deleted");
     assert!(!exists(&part));
     Ok(())
@@ -293,7 +296,10 @@ async fn removing_a_finished_download_without_its_file_keeps_the_file() -> TestR
     let row = h.add(&server.url("keep.bin")).await?;
     let row = h.wait_status(row.id, DownloadStatus::Completed).await;
 
-    h.manager.remove(&[row.id], false).await.unwrap();
+    h.manager
+        .remove(&[row.id], RemoveFiles::Keep)
+        .await
+        .unwrap();
     assert!(exists(&row.path), "the finished file was deleted");
     assert_eq!(
         h.manager.list_downloads(),
@@ -310,7 +316,10 @@ async fn a_waiting_download_can_be_cancelled_and_removed() -> TestResult {
         .await?;
     h.manager.cancel(row.id).unwrap();
     assert_eq!(h.row(row.id).status, DownloadStatus::Cancelled);
-    h.manager.remove(&[row.id], false).await.unwrap();
+    h.manager
+        .remove(&[row.id], RemoveFiles::Keep)
+        .await
+        .unwrap();
     assert_eq!(
         h.manager.list_downloads(),
         [] as [wirecatch_protocol::app::DownloadSummary; 0]
@@ -331,11 +340,14 @@ async fn remove_stops_and_cleans_up() -> TestResult {
     h.wait_for(running.id, "progress", |r| r.done > 0).await;
 
     h.manager
-        .remove(&[running.id, DownloadId(999)], false)
+        .remove(&[running.id, DownloadId(999)], RemoveFiles::Keep)
         .await
         .unwrap();
     assert!(partial_files(&running.path).iter().all(|p| !exists(p)));
-    h.manager.remove(&[finished.id], true).await.unwrap();
+    h.manager
+        .remove(&[finished.id], RemoveFiles::Delete)
+        .await
+        .unwrap();
     assert!(!exists(&finished.path));
     assert_eq!(
         h.manager.list_downloads(),

@@ -192,8 +192,15 @@ pub(super) struct AddonOp {
     pub ended: CancellationToken,
     pub done: u64,
     pub total: u64,
+    pub kind: OpKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum OpKind {
+    /// Started by the person: a failure is shown.
+    Visible,
     /// A background update: a failure is logged, not shown.
-    pub quiet: bool,
+    Quiet,
 }
 
 impl AddonSlot {
@@ -243,7 +250,7 @@ impl Manager {
         if state.addon.op.is_some() || plan.is_empty() {
             return Ok(());
         }
-        self.start_addon_op(&mut state.addon, plan, false);
+        self.start_addon_op(&mut state.addon, plan, OpKind::Visible);
         Ok(())
     }
 
@@ -458,7 +465,7 @@ impl Manager {
         let plan = self.addon_plan(&state.addon);
         if state.settings.auto_update_addons && !plan.is_empty() && state.addon.op.is_none() {
             info!(parts = plan.len(), "updating the media add-on quietly");
-            self.start_addon_op(&mut state.addon, plan, true);
+            self.start_addon_op(&mut state.addon, plan, OpKind::Quiet);
         } else {
             self.emit_addons(&state.addon);
         }
@@ -598,7 +605,7 @@ impl Manager {
             .collect()
     }
 
-    fn start_addon_op(&self, slot: &mut AddonSlot, plan: Vec<Part>, quiet: bool) {
+    fn start_addon_op(&self, slot: &mut AddonSlot, plan: Vec<Part>, kind: OpKind) {
         let cancel = self.inner.stopped.child_token();
         let ended = CancellationToken::new();
         slot.op = Some(AddonOp {
@@ -606,9 +613,9 @@ impl Manager {
             ended: ended.clone(),
             done: 0,
             total: plan.iter().map(|p| p.component.release().size()).sum(),
-            quiet,
+            kind,
         });
-        if !quiet {
+        if kind == OpKind::Visible {
             slot.failure = None;
         }
         self.emit_addons(slot);
@@ -627,7 +634,11 @@ impl Manager {
         cancelled: bool,
     ) {
         let mut state = self.lock();
-        let quiet = state.addon.op.take().is_some_and(|op| op.quiet);
+        let quiet = state
+            .addon
+            .op
+            .take()
+            .is_some_and(|op| op.kind == OpKind::Quiet);
         // Some parts may have been swapped in before a failure.
         let rescan = result.is_err() && !cancelled;
         match result {
@@ -815,7 +826,8 @@ impl Manager {
                 Err(e) => {
                     return Err(format!(
                         "{id} could not be downloaded: {}",
-                        wirecatch_messages::describe(&e, work, false).message
+                        wirecatch_messages::describe(&e, work, wirecatch_messages::Worked::Never)
+                            .message
                     )
                     .into());
                 }
@@ -1370,7 +1382,7 @@ mod tests {
                 ended: CancellationToken::new(),
                 done: 0,
                 total: 0,
-                quiet: true,
+                kind: OpKind::Quiet,
             });
             let failure = InstallFailure {
                 reason: "ffmpeg could not be put in place.".into(),

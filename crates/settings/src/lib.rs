@@ -309,8 +309,8 @@ pub fn validate(
         },
         &VIDEO_SITES,
     )?;
-    check_media_defaults(&mut settings.media.video, false)?;
-    check_media_defaults(&mut settings.media.audio, true)?;
+    check_media_defaults(&mut settings.media.video, Saves::Video)?;
+    check_media_defaults(&mut settings.media.audio, Saves::Audio)?;
     if settings.media.quality == VideoQuality::Height(0) {
         return Err(SettingsError::Invalid(
             "The resolution must be a height in pixels, such as 1080.".into(),
@@ -365,17 +365,22 @@ fn not_a_local_site(entry: &str, why: NotALocalSite) -> SettingsError {
 pub const MAX_SUBTITLE_LANGUAGES: usize = 20;
 const MAX_LANGUAGE_CHARS: usize = 35;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Saves {
+    Video,
+    Audio,
+}
+
 /// Checks the starting choices for media downloads (D24): a format of the
 /// right kind, an audio quality in a sensible range and plain language codes
 /// (lower case, without duplicates).
-fn check_media_defaults(defaults: &mut OutputDefaults, audio: bool) -> Result<()> {
-    let fits = if audio {
-        defaults.format.saves_audio()
-    } else {
-        defaults.format.saves_video()
+fn check_media_defaults(defaults: &mut OutputDefaults, saves: Saves) -> Result<()> {
+    let fits = match saves {
+        Saves::Audio => defaults.format.saves_audio(),
+        Saves::Video => defaults.format.saves_video(),
     };
     if !fits {
-        return Err(SettingsError::Invalid(if audio {
+        return Err(SettingsError::Invalid(if saves == Saves::Audio {
             "Audio downloads can be saved as Original, MP3, M4A, Opus, FLAC or WAV.".into()
         } else {
             "Videos can be saved as Original, MP4, MKV or WebM.".into()
