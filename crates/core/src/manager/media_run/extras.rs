@@ -2,14 +2,10 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
-use std::time::Duration;
 
 use tracing::warn;
 use wirecatch_engine::units::MIB;
-use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error as EngineError, Outcome, Progress, Url,
-};
+use wirecatch_engine::{CancellationToken, Error as EngineError, Fetcher, Url};
 use wirecatch_media::output::{self, ImageFormat, OutputJob, SubtitleFormat};
 use wirecatch_media::ytdlp::{self};
 use wirecatch_protocol::Secret;
@@ -166,8 +162,8 @@ pub(super) enum Fetch {
 }
 
 /// Downloads a small file (subtitles, a picture) to `path` under the same rule
-/// for the local network as the video, with only its own headers, and stops it
-/// once it is larger than `limit` bytes.
+/// for the local network as the video, with only its own headers. One larger than `limit` bytes
+/// is refused before any of it is written.
 pub(super) async fn fetch_small(
     job: &Job,
     url: &Url,
@@ -190,32 +186,18 @@ pub(super) async fn fetch_small(
         .collect();
     options.headers = headers::to_map(&list);
     options.connections = 1;
-    options.private_network = rule;
-    let mut request = DownloadRequest::new(url.clone(), path.parent().unwrap_or(Path::new(".")));
-    request.exact_path = Some(path.to_path_buf());
-    request.options = options;
-    request.file_work = job.file_work.clone();
-    let progress = Arc::new(Progress::default());
-    let stop = cancel.child_token();
-    let download = wirecatch_engine::download(request, progress.clone(), stop.clone());
-    tokio::pin!(download);
-    // A small file needs no progress events: its size is checked a few times a
-    // second until it is done.
-    let mut check = tokio::time::interval(Duration::from_millis(200));
-    let result = loop {
-        tokio::select! {
-            result = &mut download => break result,
-            _ = check.tick() => {
-                if progress.done() > limit || progress.total().is_some_and(|t| t > limit) {
-                    stop.cancel();
-                }
-            }
-        }
-    };
-    match result {
-        Ok(Outcome::Completed { .. }) => Fetch::Done,
-        _ if cancel.is_cancelled() => Fetch::Stopped,
-        Ok(_) | Err(EngineError::Cancelled) => {
+    let fetched =
+        match Fetcher::with_private_network(url, &options, cancel.child_token(), rule).await {
+            Ok(fetcher) => fetcher.get(url, None, limit).await,
+            Err(e) => Err(e),
+        };
+    match fetched {
+        Ok(fetched) => match tokio::fs::write(path, &fetched.body).await {
+            Ok(()) => Fetch::Done,
+            Err(e) => Fetch::Failed(e.to_string()),
+        },
+        Err(_) if cancel.is_cancelled() => Fetch::Stopped,
+        Err(EngineError::TooLarge { .. }) => {
             Fetch::Failed(format!("it is larger than {} MB", limit / MIB))
         }
         Err(e) => Fetch::Failed(e.to_string()),
