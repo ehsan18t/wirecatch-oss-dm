@@ -1,13 +1,13 @@
 //! An add-on's state and what can be done with it (D2, D20): one main button that installs,
 //! updates, tries again or stops, and once installed, checking for updates and removal.
 
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::setting::{SettingField, SettingItem};
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Entity, IntoElement as _, ParentElement as _, Styled as _, div, px,
+    AnyElement, App, Entity, IntoElement as _, ParentElement as _, Styled as _, Window, div, px,
 };
 use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState};
 use wirecatch_shell::activity::format_bytes;
@@ -98,10 +98,9 @@ fn card(library: &Entity<Library>, id: AddonId, cx: &App) -> AnyElement {
                             .ghost()
                             .text_color(theme.danger)
                             .label("Remove")
-                            .on_click(move |_, window, cx| {
-                                command(window.window_handle(), cx, move |manager| async move {
-                                    api::remove_addon(&manager, id).await
-                                });
+                            .on_click({
+                                let name = addon.name.to_lowercase();
+                                move |_, window, cx| ask_to_remove(id, &name, window, cx)
                             }),
                     )
                 })
@@ -202,6 +201,28 @@ fn status(addon: &AddonInfo) -> String {
         ),
         AddonState::Failed { message } => message.clone(),
     }
+}
+
+/// Asks before removing the add-on: what stops working until it is installed again.
+fn ask_to_remove(id: AddonId, name: &str, window: &mut Window, cx: &mut App) {
+    let title = format!("Remove the {name}?");
+    crate::ui::dialog::open_alert(window, cx, move |alert, _, _| {
+        alert
+            .title(title.clone())
+            .description(
+                "Downloads from video sites, and videos whose video and audio must be merged, won’t work until you install it again. Your downloaded files are kept.",
+            )
+            .confirm()
+            .ok_text("Remove")
+            .ok_variant(ButtonVariant::Danger)
+            .cancel_text("Keep")
+            .on_ok(move |_, window, cx| {
+                command(window.window_handle(), cx, move |manager| async move {
+                    api::remove_addon(&manager, id).await
+                });
+                true
+            })
+    });
 }
 
 #[cfg(test)]
