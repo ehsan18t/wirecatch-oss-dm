@@ -1,5 +1,6 @@
-//! The tray icon (D104): its menu (Open, Pause all, Resume all, Proxy, Quit), a left click that
-//! opens the window, and a tooltip with the live speed or why the download list could not open.
+//! The tray icon (D104): its menu (Open, New download, the downloads folder, Pause all, Resume
+//! all, Queues, Speed limit, Proxy, Quit), a left click that opens the window, and a tooltip with
+//! the live speed or why the download list could not open.
 
 use gpui_kit::{App, Entity, Global};
 use tray_icon::menu::{
@@ -9,10 +10,12 @@ use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, 
 use wirecatch_shell::activity::Activity;
 use wirecatch_shell::tray::{Shell, TrayAction, perform, problem_tooltip};
 use wirecatch_shell::tray_proxy::{self, ProxyItem};
+use wirecatch_shell::tray_queues::{self, QueueItem};
+use wirecatch_shell::tray_speed::{self, SpeedItem};
 
 use crate::backend::Backend;
 use crate::library::{Asked, Library, Loaded};
-use crate::{lifecycle, main_window};
+use crate::{lifecycle, links, main_window};
 
 const ICON_PNG: &[u8] = include_bytes!("../assets/icons/32x32.png");
 
@@ -20,6 +23,14 @@ const ICON_PNG: &[u8] = include_bytes!("../assets/icons/32x32.png");
 struct Tray {
     icon: TrayIcon,
     tooltip: String,
+    choices: Choices,
+}
+
+/// The menu's submenus, empty until the manager has opened.
+#[derive(Default, PartialEq, Eq)]
+struct Choices {
+    queues: Vec<QueueItem>,
+    speeds: Vec<SpeedItem>,
     proxies: Vec<ProxyItem>,
 }
 
@@ -58,7 +69,7 @@ pub fn start(library: &Entity<Library>, cx: &mut App) {
     cx.set_global(Tray {
         icon,
         tooltip: String::new(),
-        proxies: Vec::new(),
+        choices: Choices::default(),
     });
     cx.spawn(async move |cx| {
         while let Some(click) = clicked.recv().await {
@@ -84,7 +95,7 @@ pub fn remove(cx: &mut App) {
 }
 
 fn build() -> Result<TrayIcon, String> {
-    let menu = menu(&[]).map_err(|e| e.to_string())?;
+    let menu = menu(&Choices::default()).map_err(|e| e.to_string())?;
     TrayIconBuilder::new()
         .with_icon(icon()?)
         .with_tooltip(wirecatch_shell::activity::tooltip(0, 0))
@@ -110,28 +121,57 @@ fn icon() -> Result<Icon, String> {
     Icon::from_rgba(rgba, frame.width, frame.height).map_err(|e| e.to_string())
 }
 
-/// The tray's menu, with `proxies` in its Proxy submenu (none until the manager has opened).
-fn menu(proxies: &[ProxyItem]) -> tray_icon::menu::Result<Menu> {
+/// The tray's menu, with `choices` in its submenus.
+fn menu(choices: &Choices) -> tray_icon::menu::Result<Menu> {
     let item = |a: TrayAction| MenuItem::with_id(a.id(), a.label(), true, None);
-    let choices: Vec<CheckMenuItem> = proxies
-        .iter()
-        .map(|p| CheckMenuItem::with_id(&p.id, &p.label, true, p.checked, None))
-        .collect();
-    let choices: Vec<&dyn IsMenuItem> = choices.iter().map(|c| c as &dyn IsMenuItem).collect();
-    let proxy = Submenu::with_items("Proxy", !proxies.is_empty(), &choices)?;
+    let checks = |items: Vec<(&str, &str, bool)>| -> Vec<CheckMenuItem> {
+        items
+            .into_iter()
+            .map(|(id, label, checked)| CheckMenuItem::with_id(id, label, true, checked, None))
+            .collect()
+    };
+    let submenu = |title: &str, items: &[CheckMenuItem]| {
+        let items: Vec<&dyn IsMenuItem> = items.iter().map(|c| c as &dyn IsMenuItem).collect();
+        Submenu::with_items(title, !items.is_empty(), &items)
+    };
+    let queues = checks(
+        choices
+            .queues
+            .iter()
+            .map(|q| (q.id.as_str(), q.label.as_str(), q.checked))
+            .collect(),
+    );
+    let speeds = checks(
+        choices
+            .speeds
+            .iter()
+            .map(|s| (s.id.as_str(), s.label.as_str(), s.checked))
+            .collect(),
+    );
+    let proxies = checks(
+        choices
+            .proxies
+            .iter()
+            .map(|p| (p.id.as_str(), p.label.as_str(), p.checked))
+            .collect(),
+    );
     Menu::with_items(&[
         &item(TrayAction::Open),
+        &item(TrayAction::NewDownload),
+        &item(TrayAction::OpenFolder),
         &PredefinedMenuItem::separator(),
         &item(TrayAction::PauseAll),
         &item(TrayAction::ResumeAll),
+        &submenu("Queues", &queues)?,
         &PredefinedMenuItem::separator(),
-        &proxy,
+        &submenu("Speed limit", &speeds)?,
+        &submenu("Proxy", &proxies)?,
         &PredefinedMenuItem::separator(),
         &item(TrayAction::Quit),
     ])
 }
 
-/// Shows the library's speed, or why it could not open, and its proxies.
+/// Shows the library's speed, or why it could not open, and its queues, speed limit and proxies.
 fn follow(library: &Entity<Library>, cx: &mut App) {
     let library = library.read(cx);
     let tooltip = match &library.loaded {
@@ -142,30 +182,34 @@ fn follow(library: &Entity<Library>, cx: &mut App) {
             activity.tooltip()
         }
     };
-    let proxies = library
+    let choices = library
         .settings
         .as_ref()
-        .map(|settings| tray_proxy::items(&settings.proxy, &library.proxies))
+        .map(|settings| Choices {
+            queues: tray_queues::items(&library.queues),
+            speeds: tray_speed::items(settings.global_speed_limit),
+            proxies: tray_proxy::items(&settings.proxy, &library.proxies),
+        })
         .unwrap_or_default();
     let Some(tray) = cx.try_global::<Tray>() else {
         return;
     };
-    let (new_tooltip, new_proxies) = (tray.tooltip != tooltip, tray.proxies != proxies);
-    if !new_tooltip && !new_proxies {
+    let (new_tooltip, new_choices) = (tray.tooltip != tooltip, tray.choices != choices);
+    if !new_tooltip && !new_choices {
         return;
     }
     let tray = cx.global_mut::<Tray>();
     if new_tooltip && let Err(e) = tray.icon.set_tooltip(Some(&tooltip)) {
         tracing::debug!("could not change the tray tooltip: {e}");
     }
-    if new_proxies {
-        match menu(&proxies) {
+    if new_choices {
+        match menu(&choices) {
             Ok(menu) => tray.icon.set_menu(Some(Box::new(menu))),
             Err(e) => tracing::debug!("could not change the tray menu: {e}"),
         }
     }
     tray.tooltip = tooltip;
-    tray.proxies = proxies;
+    tray.choices = choices;
 }
 
 struct AppShell<'a>(&'a mut App);
@@ -177,6 +221,33 @@ impl Shell for AppShell<'_> {
 
     fn quit(&mut self) {
         lifecycle::quit(self.0);
+    }
+
+    fn new_download(&mut self) {
+        let copied = self
+            .0
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .unwrap_or_default();
+        main_window::bring_up(&Asked::Links(links::extract(&copied)), self.0);
+    }
+
+    fn open_folder(&mut self, folder: &std::path::Path) {
+        // Opening a file "with the system" runs it: only a folder is opened. Checked off the
+        // main thread, as a folder on an unreachable share holds the check for seconds.
+        let folder = folder.to_path_buf();
+        let checked = self
+            .0
+            .background_executor()
+            .spawn(async move { folder.is_dir().then_some(folder) });
+        self.0
+            .spawn(async move |cx| match checked.await {
+                Some(folder) => cx.update(|cx| cx.open_with_system(&folder)),
+                None => {
+                    tracing::warn!("the default download folder is not a folder on this computer");
+                }
+            })
+            .detach();
     }
 }
 
@@ -193,6 +264,22 @@ fn on_click(click: Clicked, cx: &mut App) {
             && let Err(e) = tray_proxy::switch(manager, proxy)
         {
             tracing::warn!("the tray could not switch the proxy: {e}");
+        }
+        return;
+    }
+    if let Some(limit) = tray_speed::limit_of(&id) {
+        if let Some(manager) = &manager
+            && let Err(e) = tray_speed::switch(manager, limit)
+        {
+            tracing::warn!("the tray could not change the speed limit: {e}");
+        }
+        return;
+    }
+    if let Some(queue) = tray_queues::queue_of(&id) {
+        if let Some(manager) = &manager
+            && let Err(e) = tray_queues::toggle(manager, queue)
+        {
+            tracing::warn!("the tray could not pause or resume a queue: {e}");
         }
         return;
     }

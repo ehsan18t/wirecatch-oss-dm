@@ -11,6 +11,10 @@ use crate::api::{self, CommandResult};
 pub enum TrayAction {
     /// Show the window, creating it if it was closed to the tray.
     Open,
+    /// Open the Add dialog, with the links on the clipboard.
+    NewDownload,
+    /// Open the default download folder.
+    OpenFolder,
     /// Pause every download.
     PauseAll,
     /// Resume every paused download.
@@ -21,13 +25,22 @@ pub enum TrayAction {
 
 impl TrayAction {
     /// Every action, in menu order.
-    pub const ALL: [TrayAction; 4] = [Self::Open, Self::PauseAll, Self::ResumeAll, Self::Quit];
+    pub const ALL: [TrayAction; 6] = [
+        Self::Open,
+        Self::NewDownload,
+        Self::OpenFolder,
+        Self::PauseAll,
+        Self::ResumeAll,
+        Self::Quit,
+    ];
 
     /// The menu item id.
     #[must_use]
     pub fn id(self) -> &'static str {
         match self {
             Self::Open => "open",
+            Self::NewDownload => "new_download",
+            Self::OpenFolder => "open_folder",
             Self::PauseAll => "pause_all",
             Self::ResumeAll => "resume_all",
             Self::Quit => "quit",
@@ -39,6 +52,8 @@ impl TrayAction {
     pub fn label(self) -> String {
         match self {
             Self::Open => format!("Open {}", crate::host::CHANNEL.name()),
+            Self::NewDownload => "New download...".to_owned(),
+            Self::OpenFolder => "Open downloads folder".to_owned(),
             Self::PauseAll => "Pause all".to_owned(),
             Self::ResumeAll => "Resume all".to_owned(),
             Self::Quit => "Quit".to_owned(),
@@ -56,6 +71,10 @@ impl TrayAction {
 pub trait Shell {
     /// Shows the main window.
     fn open_window(&mut self);
+    /// Shows the main window with the Add dialog open.
+    fn new_download(&mut self);
+    /// Opens `folder` in the file manager, once it is found to be a folder.
+    fn open_folder(&mut self, folder: &std::path::Path);
     /// Starts quitting: the manager shuts down, then the process exits.
     fn quit(&mut self);
 }
@@ -65,7 +84,8 @@ pub trait Shell {
 ///
 /// # Errors
 ///
-/// Pause all or Resume all while the manager is still opening, or once it has shut down.
+/// Pause all, Resume all or Open downloads folder while the manager is still opening, or once it
+/// has shut down; the default folder names no folder on this machine.
 pub fn perform(
     action: TrayAction,
     manager: Option<&Manager>,
@@ -79,6 +99,11 @@ pub fn perform(
     };
     match action {
         TrayAction::Open => shell.open_window(),
+        TrayAction::NewDownload => shell.new_download(),
+        TrayAction::OpenFolder => {
+            let folder = ready()?.default_folder().map_err(|e| e.to_protocol())?;
+            shell.open_folder(&folder);
+        }
         TrayAction::PauseAll => api::pause_all(ready()?)?,
         TrayAction::ResumeAll => api::resume_all(ready()?)?,
         TrayAction::Quit => shell.quit(),
@@ -117,6 +142,12 @@ mod tests {
         fn quit(&mut self) {
             self.calls.push("quit");
         }
+        fn new_download(&mut self) {
+            self.calls.push("new download");
+        }
+        fn open_folder(&mut self, _: &std::path::Path) {
+            self.calls.push("folder");
+        }
     }
 
     #[test]
@@ -130,7 +161,14 @@ mod tests {
         let open = format!("Open {}", crate::host::CHANNEL.name());
         assert_eq!(
             TrayAction::ALL.map(TrayAction::label),
-            [open.as_str(), "Pause all", "Resume all", "Quit"]
+            [
+                open.as_str(),
+                "New download...",
+                "Open downloads folder",
+                "Pause all",
+                "Resume all",
+                "Quit"
+            ]
         );
     }
 
@@ -152,8 +190,9 @@ mod tests {
     fn open_and_quit_go_to_the_shell() {
         let mut shell = FakeShell::default();
         perform(TrayAction::Open, None, &mut shell).unwrap();
+        perform(TrayAction::NewDownload, None, &mut shell).unwrap();
         perform(TrayAction::Quit, None, &mut shell).unwrap();
-        assert_eq!(shell.calls, ["open", "quit"]);
+        assert_eq!(shell.calls, ["open", "new download", "quit"]);
     }
 
     #[test]
