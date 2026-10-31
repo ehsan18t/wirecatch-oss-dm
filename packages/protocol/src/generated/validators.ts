@@ -121,6 +121,7 @@ import type { Theme } from './Theme';
 import type { TimeOfDay } from './TimeOfDay';
 import type { UiEvent } from './UiEvent';
 import type { UnembeddedSubtitles } from './UnembeddedSubtitles';
+import type { UnixMillis } from './UnixMillis';
 import type { UserError } from './UserError';
 import type { VideoQuality } from './VideoQuality';
 import type { WaitReason } from './WaitReason';
@@ -509,8 +510,8 @@ export function isDownloadSummary(value: unknown): value is DownloadSummary {
     (isUserError(value1['error']) || value1['error'] === null) &&
     (isWaitReason(value1['waiting']) || value1['waiting'] === null) &&
     (isMediaSummary(value1['media']) || value1['media'] === null) &&
-    typeof value1['added_at'] === 'number' &&
-    (typeof value1['completed_at'] === 'number' || value1['completed_at'] === null) &&
+    isUnixMillis(value1['added_at']) &&
+    (isUnixMillis(value1['completed_at']) || value1['completed_at'] === null) &&
     (isProcessingProgress(value1['processing']) || value1['processing'] === null) &&
     (typeof value1['proxy'] === 'string' || value1['proxy'] === null))(value);
 }
@@ -649,7 +650,7 @@ export function isFileExistsQuestion(value: unknown): value is FileExistsQuestio
     typeof value1['folder'] === 'string' &&
     typeof value1['size'] === 'number' &&
     typeof value1['same_file'] === 'boolean' &&
-    (typeof value1['saved_at'] === 'number' || value1['saved_at'] === null))(value);
+    (isUnixMillis(value1['saved_at']) || value1['saved_at'] === null))(value);
 }
 
 /** Whether `value` has the shape of a {@link FinishNoticeTime}; fields it does not name are not checked. */
@@ -1176,9 +1177,7 @@ export function isProxyTestResult(value: unknown): value is ProxyTestResult {
 /** Whether `value` has the shape of a {@link ProxyTestRun}; fields it does not name are not checked. */
 export function isProxyTestRun(value: unknown): value is ProxyTestRun {
   return ((value1: unknown): boolean =>
-    isRecord(value1) && typeof value1['at'] === 'number' && isProxyTestResult(value1['result']))(
-    value,
-  );
+    isRecord(value1) && isUnixMillis(value1['at']) && isProxyTestResult(value1['result']))(value);
 }
 
 /** Whether `value` has the shape of a {@link ProxyUse}; fields it does not name are not checked. */
@@ -1459,7 +1458,7 @@ export function isSettingsFile(value: unknown): value is SettingsFile {
     isRecord(value1) &&
     typeof value1['format_version'] === 'number' &&
     typeof value1['app_version'] === 'string' &&
-    typeof value1['exported_at'] === 'number' &&
+    isUnixMillis(value1['exported_at']) &&
     isAppSettings(value1['settings']) &&
     isArrayOf(value1['queues'], isSettingsFileQueue) &&
     isArrayOf(value1['proxy_servers'], isSettingsFileProxy) &&
@@ -1511,8 +1510,8 @@ export function isStreamAction(value: unknown): value is StreamAction {
 export function isSuffixListInfo(value: unknown): value is SuffixListInfo {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
-    typeof value1['published'] === 'number' &&
-    (typeof value1['checked'] === 'number' || value1['checked'] === null) &&
+    isUnixMillis(value1['published']) &&
+    (isUnixMillis(value1['checked']) || value1['checked'] === null) &&
     typeof value1['check_failed'] === 'boolean')(value);
 }
 
@@ -1643,6 +1642,11 @@ export function isUnembeddedSubtitles(value: unknown): value is UnembeddedSubtit
   return value === 'files' || value === 'skip';
 }
 
+/** Whether `value` has the shape of a {@link UnixMillis}; fields it does not name are not checked. */
+export function isUnixMillis(value: unknown): value is UnixMillis {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
 /** Whether `value` has the shape of a {@link UserError}; fields it does not name are not checked. */
 export function isUserError(value: unknown): value is UserError {
   return ((value1: unknown): boolean =>
@@ -1694,7 +1698,7 @@ export function isWaitReason(value: unknown): value is WaitReason {
     ((value1: unknown): boolean =>
       isRecord(value1) &&
       value1['type'] === 'server_refused' &&
-      ((value2: unknown): boolean => isRecord(value2) && typeof value2['retry_at'] === 'number')(
+      ((value2: unknown): boolean => isRecord(value2) && isUnixMillis(value2['retry_at']))(
         value1['data'],
       ))(value)
   );

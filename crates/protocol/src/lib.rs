@@ -63,3 +63,27 @@ pub struct ProxyServerId(#[ts(type = "number & { readonly __brand: \"ProxyServer
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct QuestionId(#[ts(type = "number & { readonly __brand: \"QuestionId\" }")] pub u64);
+
+/// A moment, as milliseconds since the Unix epoch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UnixMillis(#[ts(type = "number & { readonly __brand: \"UnixMillis\" }")] pub i64);
+
+impl UnixMillis {
+    /// `by` later, or the last moment there is.
+    #[must_use]
+    pub fn saturating_add(self, by: std::time::Duration) -> Self {
+        Self(
+            self.0
+                .saturating_add(i64::try_from(by.as_millis()).unwrap_or(i64::MAX)),
+        )
+    }
+
+    /// How long after `earlier` this is; zero when it is not later.
+    #[must_use]
+    pub fn since(self, earlier: Self) -> std::time::Duration {
+        std::time::Duration::from_millis(
+            u64::try_from(self.0.saturating_sub(earlier.0)).unwrap_or(0),
+        )
+    }
+}

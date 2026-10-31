@@ -14,6 +14,7 @@ use wirecatch_engine::{
 };
 use wirecatch_messages::Worked;
 use wirecatch_protocol::DownloadId;
+use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
 
 use super::added_pages::AnsweredPage;
@@ -337,7 +338,13 @@ impl Manager {
 }
 
 /// Records a run that finished its file, `bytes` long, at `path` when that is not the planned one.
-fn complete(claimed: &mut Claimed, entry: &mut Entry, bytes: u64, path: Option<PathBuf>, now: i64) {
+fn complete(
+    claimed: &mut Claimed,
+    entry: &mut Entry,
+    bytes: u64,
+    path: Option<PathBuf>,
+    now: UnixMillis,
+) {
     // The finished file now holds the name on disk.
     claimed.remove(entry.path());
     if let Some(path) = path {
@@ -352,7 +359,7 @@ fn complete(claimed: &mut Claimed, entry: &mut Entry, bytes: u64, path: Option<P
 }
 
 /// Puts a download in the completed state, its file `bytes` long.
-pub(super) fn mark_completed(entry: &mut Entry, bytes: u64, now: i64) {
+pub(super) fn mark_completed(entry: &mut Entry, bytes: u64, now: UnixMillis) {
     entry.row.status = DownloadStatus::Completed;
     // The scheduler no longer visits it, so nothing would clear a reason left behind.
     entry.row.waiting = None;

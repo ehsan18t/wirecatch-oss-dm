@@ -11,7 +11,7 @@ use wirecatch_protocol::app::{
     SETTINGS_FILE_FORMAT_VERSION, Setting, SettingsFile, SettingsFileProxy, SettingsFileQueue,
 };
 use wirecatch_protocol::proxy::ProxyUse;
-use wirecatch_protocol::{ProxyServerId, QueueId};
+use wirecatch_protocol::{ProxyServerId, QueueId, UnixMillis};
 
 use crate::DEFAULT_QUEUE_ID;
 use crate::error::{Result, SettingsFileError};
@@ -33,7 +33,7 @@ pub fn export(
     queues: &[Queue],
     proxies: &[SavedProxyServer],
     folders: &KnownFolders,
-    exported_at: i64,
+    exported_at: UnixMillis,
 ) -> SettingsFile {
     let mut settings = settings.clone();
     settings.default_folder = folders.to_portable(&settings.default_folder);
@@ -442,7 +442,7 @@ mod tests {
         let f = folders();
         let mut s = default_settings();
         s.default_folder = PortablePath(f.downloads.join("Stuff").to_string_lossy().into_owned());
-        let profile = export(&s, &[default_queue()], &[], &f, 42);
+        let profile = export(&s, &[default_queue()], &[], &f, UnixMillis(42));
         assert_eq!(
             profile.settings.default_folder,
             PortablePath("{Downloads}/Stuff".into())
@@ -459,7 +459,7 @@ mod tests {
         s.media.video.subtitle_languages = vec!["en".into()];
         s.media.audio.format = wirecatch_protocol::app::OutputFormat::Mp3;
         s.media.audio.audio_kbps = Some(256);
-        let profile = export(&s, &[default_queue()], &[], &f, 42);
+        let profile = export(&s, &[default_queue()], &[], &f, UnixMillis(42));
         let bytes = serde_json::to_vec(&profile).unwrap();
         assert_eq!(parse(&bytes).unwrap().settings.media, s.media);
 
@@ -477,7 +477,7 @@ mod tests {
             &[default_queue()],
             &[],
             &folders(),
-            42,
+            UnixMillis(42),
         ))
         .unwrap();
         old["format_version"] = (SETTINGS_FILE_FORMAT_VERSION - 1).into();
@@ -495,9 +495,14 @@ mod tests {
     fn a_profile_carries_queue_settings_without_their_status() {
         let mut paused = default_queue();
         paused.status.paused = true;
-        let profile =
-            serde_json::to_value(export(&default_settings(), &[paused], &[], &folders(), 42))
-                .unwrap();
+        let profile = serde_json::to_value(export(
+            &default_settings(),
+            &[paused],
+            &[],
+            &folders(),
+            UnixMillis(42),
+        ))
+        .unwrap();
         let queue = profile["queues"][0].as_object().unwrap();
         let mut keys: Vec<_> = queue.keys().map(String::as_str).collect();
         keys.sort_unstable();
@@ -517,7 +522,7 @@ mod tests {
         let profile = SettingsFile {
             format_version: SETTINGS_FILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
-            exported_at: 0,
+            exported_at: UnixMillis(0),
             settings,
             queues: [incoming_default, night, queue(12, "Videos")]
                 .into_iter()
@@ -575,7 +580,7 @@ mod tests {
         let profile = SettingsFile {
             format_version: SETTINGS_FILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
-            exported_at: 0,
+            exported_at: UnixMillis(0),
             settings,
             queues: [default_queue(), videos, night]
                 .into_iter()
@@ -656,7 +661,7 @@ mod tests {
         let profile = SettingsFile {
             format_version: SETTINGS_FILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
-            exported_at: 0,
+            exported_at: UnixMillis(0),
             settings: default_settings(),
             queues: (0..=i64::try_from(crate::MAX_QUEUES).unwrap())
                 .map(|i| in_profile(queue(i + 10, &format!("Q{i}"))))
@@ -679,7 +684,7 @@ mod tests {
         let profile = SettingsFile {
             format_version: SETTINGS_FILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
-            exported_at: 0,
+            exported_at: UnixMillis(0),
             settings,
             queues: vec![],
             proxy_servers: Vec::new(),
@@ -708,7 +713,7 @@ mod tests {
         let profile = SettingsFile {
             format_version: SETTINGS_FILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
-            exported_at: 0,
+            exported_at: UnixMillis(0),
             settings,
             queues: vec![],
             proxy_servers: Vec::new(),
@@ -745,7 +750,7 @@ mod tests {
         let profile = SettingsFile {
             format_version: SETTINGS_FILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
-            exported_at: 0,
+            exported_at: UnixMillis(0),
             settings,
             queues: vec![],
             proxy_servers: Vec::new(),
@@ -782,7 +787,13 @@ mod tests {
         let mut night = queue(4, "Night");
         let home = folders().downloads.join("Night");
         night.settings.folder = Setting::Own(PortablePath(home.to_string_lossy().into_owned()));
-        let exported = export(&default_settings(), &[night.clone()], &[], &folders(), 0);
+        let exported = export(
+            &default_settings(),
+            &[night.clone()],
+            &[],
+            &folders(),
+            UnixMillis(0),
+        );
         assert_eq!(
             exported.queues[0].settings.folder,
             Setting::Own(PortablePath("{Downloads}/Night".into()))
@@ -825,7 +836,7 @@ mod tests {
         let profile = SettingsFile {
             format_version: SETTINGS_FILE_FORMAT_VERSION,
             app_version: "0.1.0".into(),
-            exported_at: 0,
+            exported_at: UnixMillis(0),
             settings,
             queues: vec![],
             proxy_servers: Vec::new(),

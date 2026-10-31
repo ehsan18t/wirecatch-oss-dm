@@ -11,6 +11,7 @@ use wirecatch_engine::{
     CancellationToken, ManualProxies, Progress, ProxyChoice, ProxyRoute, RateLimiter, Url,
 };
 use wirecatch_media::{MediaJob, MediaProgress, Reading, StoredMedia};
+use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
     AppSettings, Category, DownloadStatus, DownloadSummary, FileExistsQuestion, PendingCapture,
     Queue, Setting, WhenFileExists,
@@ -217,7 +218,7 @@ pub(super) enum OnExisting {
 pub(super) struct Found {
     pub path: PathBuf,
     pub size: u64,
-    pub saved_at: Option<i64>,
+    pub saved_at: Option<UnixMillis>,
     pub then: WhenFileExists,
     /// It looks like the file the download would save, not a different file of the same name.
     pub same: bool,

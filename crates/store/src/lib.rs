@@ -19,7 +19,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::Header;
 use wirecatch_protocol::extension::MediaKind;
-use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_protocol::{DownloadId, QueueId, UnixMillis};
 
 use wirecatch_files::{FileError, owner_only, with_suffix};
 use wirecatch_records::batch::StoredBatch;
@@ -1273,8 +1273,8 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         d.total.map(saturating_cast::<i64, u64>),
         saturating_cast::<i64, _>(d.done),
         d.error.as_ref().map(to_json),
-        d.added_at,
-        d.completed_at,
+        d.added_at.0,
+        d.completed_at.map(|t| t.0),
         to_json(&row.origin),
         row.naming.settled,
         row.naming.name,
@@ -1377,8 +1377,8 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
                 connections: 0,
                 eta_secs: None,
                 error,
-                added_at: row.get(10)?,
-                completed_at: row.get(11)?,
+                added_at: UnixMillis(row.get(10)?),
+                completed_at: row.get::<_, Option<i64>>(11)?.map(UnixMillis),
                 waiting: None,
                 media: media.as_ref().map(|m| m.summary.clone()),
                 processing: None,
@@ -1508,7 +1508,7 @@ mod tests {
                     message: "expired".into(),
                     fix: Some(FixAction::RefreshLink),
                 }),
-                added_at: 1,
+                added_at: UnixMillis(1),
                 proxy: Some("Office (10.0.0.5:1080)".into()),
                 ..wirecatch_test_support::downloads::download(id)
             },

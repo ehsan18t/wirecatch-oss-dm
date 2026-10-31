@@ -6,6 +6,7 @@ import type { MediaSummary } from './MediaSummary';
 import type { ProcessingProgress } from './ProcessingProgress';
 import type { QueueId } from './QueueId';
 import type { QueueReason } from './QueueReason';
+import type { UnixMillis } from './UnixMillis';
 import type { UserError } from './UserError';
 import type { WaitReason } from './WaitReason';
 
@@ -80,11 +81,11 @@ export type DownloadSummary = {
   /**
    * When it was added, in Unix time in milliseconds.
    */
-  added_at: number;
+  added_at: UnixMillis;
   /**
    * When it completed, in Unix time in milliseconds; `None` until then.
    */
-  completed_at: number | null;
+  completed_at: UnixMillis | null;
   /**
    * What ffmpeg is doing while the status is `Processing`, and how far it is (D24);
    * `None` at any other time.

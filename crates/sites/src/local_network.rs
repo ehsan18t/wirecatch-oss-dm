@@ -397,7 +397,7 @@ mod tests {
         let newer = SuffixList::accept(
             newer.as_bytes(),
             &built_in,
-            crate::public_suffix::testing::NEWER_MILLIS,
+            crate::public_suffix::testing::NEWER_AT,
         )
         .unwrap();
         assert_eq!(

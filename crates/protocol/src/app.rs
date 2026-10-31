@@ -7,7 +7,7 @@ use crate::extension::{ExtensionSettings, ExtensionSettingsPatch};
 use crate::proxy::{ProxyServer, ProxyServerSettings, ProxySettings, ProxyUse, QueueExceptions};
 use crate::rules::{AddDownloads, QueueReason};
 use crate::secret::Link;
-use crate::{DownloadId, ProxyServerId, QuestionId, QueueId};
+use crate::{DownloadId, ProxyServerId, QuestionId, QueueId, UnixMillis};
 
 /// One row of the download list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
@@ -50,11 +50,9 @@ pub struct DownloadSummary {
     /// Set for video and audio downloaded from a stream or a media page.
     pub media: Option<MediaSummary>,
     /// When it was added, in Unix time in milliseconds.
-    #[ts(type = "number")]
-    pub added_at: i64,
+    pub added_at: UnixMillis,
     /// When it completed, in Unix time in milliseconds; `None` until then.
-    #[ts(type = "number | null")]
-    pub completed_at: Option<i64>,
+    pub completed_at: Option<UnixMillis>,
     /// What ffmpeg is doing while the status is `Processing`, and how far it is (D24);
     /// `None` at any other time.
     #[serde(default)]
@@ -782,12 +780,10 @@ impl<'de> Deserialize<'de> for AddonId {
 #[ts(export)]
 pub struct SuffixListInfo {
     /// When publicsuffix.org published the list in use, in milliseconds since the Unix epoch.
-    #[ts(type = "number")]
-    pub published: i64,
+    pub published: UnixMillis,
     /// When the app last looked for a newer list, in milliseconds since the Unix epoch;
     /// `None` until it first does.
-    #[ts(type = "number | null")]
-    pub checked: Option<i64>,
+    pub checked: Option<UnixMillis>,
     /// Whether that last look failed (no answer, a list refused or not saved), so a newer
     /// list may exist; it is tried again a day later.
     pub check_failed: bool,
@@ -882,8 +878,7 @@ pub enum WaitReason {
     /// on a download that is connecting, never on a queued one.
     ServerRefused {
         /// When the next try starts, in Unix time in milliseconds.
-        #[ts(type = "number")]
-        retry_at: i64,
+        retry_at: UnixMillis,
     },
 }
 
@@ -1632,8 +1627,7 @@ pub struct SettingsFile {
     /// Version of the app that wrote it.
     pub app_version: String,
     /// When it was written, in Unix time in milliseconds.
-    #[ts(type = "number")]
-    pub exported_at: i64,
+    pub exported_at: UnixMillis,
     /// Every setting.
     pub settings: AppSettings,
     /// Every queue, with its limits and schedule, in sidebar order.
@@ -1878,8 +1872,7 @@ pub struct FileExistsQuestion {
     #[serde(default)]
     pub same_file: bool,
     /// When the file in the folder was last changed, in Unix time in milliseconds.
-    #[ts(type = "number | null")]
-    pub saved_at: Option<i64>,
+    pub saved_at: Option<UnixMillis>,
 }
 
 /// The person's answer to a [`FileExistsQuestion`].

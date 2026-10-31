@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::app::{Update, known_or_default};
-use crate::{ProxyServerId, Secret};
+use crate::{ProxyServerId, Secret, UnixMillis};
 
 crate::exported::exported_consts! {
     /// Most characters in a proxy's host name.
@@ -92,8 +92,7 @@ pub struct ProxyServer {
 #[ts(export)]
 pub struct ProxyTestRun {
     /// When it ran, in Unix time in milliseconds.
-    #[ts(type = "number")]
-    pub at: i64,
+    pub at: UnixMillis,
     pub result: ProxyTestResult,
 }
 

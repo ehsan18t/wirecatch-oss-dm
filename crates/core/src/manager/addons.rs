@@ -19,6 +19,7 @@ use wirecatch_engine::{
     header::{ACCEPT, HeaderValue},
 };
 use wirecatch_files::FileError;
+use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
 
 use super::Manager;
@@ -33,7 +34,7 @@ use wirecatch_streams::process::{self, RunError, RunOptions};
 /// How often the progress of an install is reported.
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 /// The update check runs at most this often.
-const CHECK_EVERY_MILLIS: i64 = 24 * 60 * 60 * 1000;
+const CHECK_EVERY: Duration = Duration::from_hours(24);
 /// How often the background task looks whether a check is due.
 const LOOK_EVERY: Duration = Duration::from_hours(1);
 /// Why a part did not finish when the install was stopped.
@@ -46,9 +47,9 @@ const MAX_UPDATE_SIZE: u64 = 200 * MIB;
 /// A new yt-dlp release is installed (quietly, with the Update button, by a
 /// repair or a reinstall) only once it is this old, so a broken or tampered
 /// release has time to be noticed and withdrawn (D21.1).
-const MATURE_AGE_MILLIS: i64 = 48 * 60 * 60 * 1000;
+const MATURE_AGE: Duration = Duration::from_hours(48);
 /// A day, for saying when a release that is not old enough came out.
-const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
+const DAY: Duration = Duration::from_hours(24);
 /// How many of the newest yt-dlp releases are looked at for one old enough.
 const RELEASES_LOOKED_AT: usize = 10;
 /// Largest GitHub release description or checksum list read.
@@ -174,14 +175,13 @@ pub(super) struct AddonSlot {
 #[derive(Debug, Clone)]
 pub(super) struct NewRelease {
     pub component: AddonComponent,
-    /// When it was published, in Unix milliseconds.
-    pub published: i64,
+    pub published: UnixMillis,
 }
 
 impl NewRelease {
     /// Whether it is old enough to install at `now`.
-    fn mature(&self, now: i64) -> bool {
-        now.saturating_sub(self.published) >= MATURE_AGE_MILLIS
+    fn mature(&self, now: UnixMillis) -> bool {
+        now.since(self.published) >= MATURE_AGE
     }
 }
 
@@ -451,7 +451,7 @@ impl Manager {
         };
         let now = self.inner.clock.unix_millis();
         let mut saved = record;
-        saved.last_update_check = Some(now);
+        saved.last_update_check = Some(now.0);
         let dir = self.inner.addon_dir.clone();
         let to_save = saved.clone();
         if let Err(e) = self.blocking(move || Ok(to_save.save(&dir))).await? {
@@ -575,7 +575,7 @@ impl Manager {
         if newest.mature(now) {
             return None;
         }
-        let when = if now.saturating_sub(newest.published) < DAY_MILLIS {
+        let when = if now.since(newest.published) < DAY {
             "today"
         } else {
             "yesterday"
@@ -947,7 +947,7 @@ impl Manager {
         let releases: Vec<addons::Release> = serde_json::from_slice(&body)
             .map_err(|e| Lookup::Refused(format!("unreadable list of releases ({e})")))?;
         let now = self.inner.clock.unix_millis();
-        let mut candidates: Vec<(addons::Release, i64)> = releases
+        let mut candidates: Vec<(addons::Release, UnixMillis)> = releases
             .into_iter()
             .take(RELEASES_LOOKED_AT)
             .filter(|r| !r.draft && !r.prerelease)
@@ -959,7 +959,7 @@ impl Manager {
                     .as_deref()
                     .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())?
                     .timestamp_millis();
-                Some((r, published))
+                Some((r, UnixMillis(published)))
             })
             .collect();
         // Newest version first, whatever order the list came in.
@@ -974,7 +974,7 @@ impl Manager {
         });
         let mut found = Vec::new();
         for (release, published) in candidates {
-            let mature = now.saturating_sub(published) >= MATURE_AGE_MILLIS;
+            let mature = now.since(published) >= MATURE_AGE;
             // Past the newest, only a release old enough to install is of use.
             if !found.is_empty() && !mature {
                 continue;
@@ -1092,11 +1092,11 @@ impl Manager {
             };
             let due = {
                 let state = manager.lock();
-                let last = state.addon.record.last_update_check.unwrap_or(i64::MIN);
+                let last = UnixMillis(state.addon.record.last_update_check.unwrap_or(i64::MIN));
                 state.settings.auto_update_addons
                     && state.addon.tools.is_some()
                     && manager.inner.addon_sources.ytdlp_releases.is_some()
-                    && manager.inner.clock.unix_millis().saturating_sub(last) >= CHECK_EVERY_MILLIS
+                    && manager.inner.clock.unix_millis().since(last) >= CHECK_EVERY
             };
             if due && let Err(e) = manager.check_addon_updates().await {
                 warn!(error = %e, "the add-on update check failed");

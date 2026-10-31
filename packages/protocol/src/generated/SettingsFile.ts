@@ -3,6 +3,7 @@ import type { AddonId } from './AddonId';
 import type { AppSettings } from './AppSettings';
 import type { SettingsFileProxy } from './SettingsFileProxy';
 import type { SettingsFileQueue } from './SettingsFileQueue';
+import type { UnixMillis } from './UnixMillis';
 
 /**
  * The file written by settings export and read by import (D6).
@@ -19,7 +20,7 @@ export type SettingsFile = {
   /**
    * When it was written, in Unix time in milliseconds.
    */
-  exported_at: number;
+  exported_at: UnixMillis;
   /**
    * Every setting.
    */

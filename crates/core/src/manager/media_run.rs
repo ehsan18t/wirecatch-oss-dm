@@ -16,7 +16,6 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 use wirecatch_addons::Check;
-use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_engine::units::MIB;
 use wirecatch_engine::{
     CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, FileWork, Outcome,
@@ -335,8 +334,7 @@ async fn run_page(
             retry_in = ?delay,
             "the server refused a video address; reading the page again for fresh ones"
         );
-        let wait_ms: i64 = saturating_cast(delay.as_millis());
-        progress.set_retry_at(Some(job.clock.unix_millis().saturating_add(wait_ms)));
+        progress.set_retry_at(Some(job.clock.unix_millis().saturating_add(*delay)));
         tokio::select! {
             () = cancel.cancelled() => return Ok(MediaDone::Paused),
             () = tokio::time::sleep(*delay) => {}
