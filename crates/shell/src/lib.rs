@@ -4,6 +4,7 @@
 
 pub mod activity;
 pub mod api;
+pub mod appearance;
 pub mod appimage;
 pub mod autostart;
 pub mod bridge;
