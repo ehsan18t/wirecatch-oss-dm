@@ -18,6 +18,7 @@ use crate::ui::tokens;
 impl MainWindow {
     pub(super) fn command_bar(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let typed = self.typed_links(cx).len();
+        let first_run = self.is_first_run(cx);
         h_flex()
             .key_context(super::SEARCH_CONTEXT)
             .px_5()
@@ -52,15 +53,17 @@ impl MainWindow {
                     }),
             )
             .child(self.sort_menu(cx))
-            .child(
-                Button::new("new-download")
-                    .primary()
-                    .icon(IconName::Plus)
-                    .tooltip("New download")
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.new_download(&[], window, cx)),
-                    ),
-            )
+            .when(!first_run, |bar| {
+                bar.child(
+                    Button::new("new-download")
+                        .primary()
+                        .icon(IconName::Plus)
+                        .tooltip("New download")
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.new_download(&[], window, cx)),
+                        ),
+                )
+            })
     }
 
     /// How the list is sorted: choosing the sort it has turns its direction around.
@@ -94,6 +97,12 @@ impl MainWindow {
                     )
                 })
             })
+    }
+
+    /// Nothing was ever downloaded: the list is loaded and empty.
+    pub(super) fn is_first_run(&self, cx: &App) -> bool {
+        let library = self.library.read(cx);
+        matches!(library.loaded, crate::library::Loaded::Ready) && library.downloads.is_empty()
     }
 
     /// The links typed or pasted into the field.
