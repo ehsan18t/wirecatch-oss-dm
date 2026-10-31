@@ -303,23 +303,12 @@ pub fn hex_colour(red: u8, green: u8, blue: u8) -> String {
     format!("#{red:02x}{green:02x}{blue:02x}")
 }
 
-/// The accent colour chosen in Windows, or `None` when the system does not say.
-#[cfg(windows)]
+/// The accent colour chosen in Windows as `#rrggbb`, or `None` when the system does not say;
+/// Linux desktops have none Wirecatch can read, so "system" shows cyan there.
 #[must_use]
 pub fn read_system_accent() -> Option<String> {
-    use windows::UI::ViewManagement::{UIColorType, UISettings};
-    let colour = UISettings::new()
-        .and_then(|settings| settings.GetColorValue(UIColorType::Accent))
-        .inspect_err(|e| tracing::debug!("could not read the system accent colour: {e}"))
-        .ok()?;
-    Some(hex_colour(colour.R, colour.G, colour.B))
-}
-
-/// Linux desktops have no accent colour Wirecatch can read; "system" shows cyan there.
-#[cfg(not(windows))]
-#[must_use]
-pub fn read_system_accent() -> Option<String> {
-    None
+    wirecatch_shell::appearance::system_accent()
+        .map(|[red, green, blue]| hex_colour(red, green, blue))
 }
 
 #[cfg(test)]

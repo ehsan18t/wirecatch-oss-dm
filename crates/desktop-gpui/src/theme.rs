@@ -117,8 +117,35 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
 }
 
 /// The accent in this scheme and the text that goes on it, each pair at 4.5:1 contrast or more.
-/// The system accent is not read yet, so it shows Wirecatch's own.
+/// The system accent takes the hue and saturation of the colour chosen in Windows at Wirecatch's
+/// own lightness, so its text keeps that contrast; without one it is Wirecatch's cyan.
 pub fn accent_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
+    let (tone, on_tone) = fixed_colors(accent, dark);
+    if accent != Accent::System {
+        return (tone, on_tone);
+    }
+    let Some([red, green, blue]) = wirecatch_shell::appearance::system_accent() else {
+        return (tone, on_tone);
+    };
+    let system: Hsla = gpui_kit::Rgba {
+        r: f32::from(red) / 255.,
+        g: f32::from(green) / 255.,
+        b: f32::from(blue) / 255.,
+        a: 1.,
+    }
+    .into();
+    (
+        Hsla {
+            h: system.h,
+            s: system.s,
+            ..tone
+        },
+        on_tone,
+    )
+}
+
+/// The accents Wirecatch has, the system's shown as cyan.
+fn fixed_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
     let (light_tone, dark_tone) = match accent {
         Accent::Cyan | Accent::System => (0x0007_7c86, 0x0044_d4e2),
         Accent::Blue => (0x0035_71ba, 0x0092_c1fd),

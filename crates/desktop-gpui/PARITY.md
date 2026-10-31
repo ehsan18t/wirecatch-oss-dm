@@ -7,7 +7,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Opens the manager in the background; the window never waits on the database.
 - [x] Follows the manager's events; reloads after missing some.
 - [x] Light and dark colours with the Theme and Accent settings, following the system's scheme.
-- [ ] The system accent colour on Windows (`appearance.rs`).
+- [x] The system accent colour on Windows (`appearance.rs`).
 - [x] The manager could not open: "{app} cannot reach its download engine", with Try again.
 - [x] Another copy already runs: say so and close (`lib.rs` `say_already_running`).
 - [x] Search, focused with Ctrl+K: names and links, a search unfolds groups, "N downloads matching …", the view in the placeholder.
