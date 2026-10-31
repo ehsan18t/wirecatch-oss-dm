@@ -31,6 +31,7 @@ export type { CaptureSource } from './generated/CaptureSource';
 export type { Category } from './generated/Category';
 export type { CategoryRule } from './generated/CategoryRule';
 export type { ClientKind } from './generated/ClientKind';
+export type { ClockFormat } from './generated/ClockFormat';
 export type { CookieJar } from './generated/CookieJar';
 export type { CookieRequest } from './generated/CookieRequest';
 export type { DownloadId } from './generated/DownloadId';

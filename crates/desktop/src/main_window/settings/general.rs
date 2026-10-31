@@ -10,7 +10,7 @@ use gpui_kit::{
     AnyElement, App, ElementId, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, div, px,
 };
-use wirecatch_protocol::app::{ACCENTS, Accent, AppSettingsPatch, Theme};
+use wirecatch_protocol::app::{ACCENTS, Accent, AppSettingsPatch, ClockFormat, Theme};
 use wirecatch_shell::host;
 
 use super::super::backup_dialog::{self, Direction};
@@ -19,6 +19,11 @@ use crate::app_update::Stage;
 use crate::library::Library;
 use crate::theme;
 use crate::ui::{Role, Typed as _, tokens};
+
+const CLOCKS: &[(ClockFormat, &str)] = &[
+    (ClockFormat::TwelveHour, "12-hour"),
+    (ClockFormat::TwentyFourHour, "24-hour"),
+];
 
 const THEMES: &[(Theme, &str)] = &[
     (Theme::System, "Match the system"),
@@ -67,6 +72,22 @@ fn appearance(library: &Entity<Library>) -> SettingGroup {
             SettingItem::new("Accent colour", swatches)
                 .description("Marks what is selected and what is downloading.")
                 .keywords(["color", "highlight", "tint"]),
+        )
+        .item(
+            SettingItem::new(
+                "Time format",
+                choice(
+                    library,
+                    CLOCKS,
+                    |s| s.clock,
+                    |value| AppSettingsPatch {
+                        clock: Some(value),
+                        ..AppSettingsPatch::default()
+                    },
+                ),
+            )
+            .description("How times show, such as 3:42:07 PM or 15:42:07.")
+            .keywords(["clock", "12-hour", "24-hour", "am", "pm", "time"]),
         )
 }
 
