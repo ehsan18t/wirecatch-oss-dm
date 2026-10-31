@@ -18,6 +18,7 @@ import {
   isCheckAnswer,
   isDownloadAnswer,
   type ContentRequest,
+  MEDIA_UNREACHABLE,
 } from '@/lib/media/messages';
 
 export default defineContentScript({
@@ -44,12 +45,7 @@ export default defineContentScript({
           ...request,
           location: frameLocation(location.href),
         });
-        return isDownloadAnswer(answer)
-          ? answer
-          : {
-              ok: false,
-              message: 'Wirecatch could not be reached. Open Wirecatch, then try again.',
-            };
+        return isDownloadAnswer(answer) ? answer : { ok: false, message: MEDIA_UNREACHABLE };
       },
     });
     // A reloaded or updated extension starts a fresh copy of this script: remove the old button.

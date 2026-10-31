@@ -1,13 +1,11 @@
 /** The sentences the hub shows the person, in the popup and next to the media button. */
 import type { HandoverResult, SubmitResult } from '../capture/handover';
+import { messageOf } from '../errors';
 import type { MediaSendResult } from '../media/center';
 import { RequestError, UNREADABLE_ANSWER } from '../native/client';
 
 export const NO_SITE_ACCESS =
   'Wirecatch needs access to websites to capture downloads with their cookies. Open the Wirecatch popup and click Allow access.';
-
-/** For media there is no browser download to fall back on, so the person has to act. */
-export const MEDIA_UNREACHABLE = 'Wirecatch could not be reached. Open Wirecatch, then try again.';
 
 export const MEDIA_NO_SITE_ACCESS =
   'Wirecatch needs access to websites to send media with their cookies. Open the Wirecatch popup and click Allow access.';
@@ -27,7 +25,7 @@ export function describeError(error: unknown): string {
     if (error.kind === 'timeout') return 'Wirecatch did not answer in time.';
     return error.message;
   }
-  return error instanceof Error ? error.message : String(error);
+  return messageOf(error);
 }
 
 export function copyLeftInBrowser(name: string): string {

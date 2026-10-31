@@ -33,11 +33,11 @@ import {
   type MenuTab,
 } from './deps';
 import { planMenuClick } from './menu';
+import { MEDIA_UNREACHABLE } from '../media/messages';
 import { AlertBoard } from './alert-board';
 import {
   BROWSER_DOWNLOAD_FAILED,
   MEDIA_NO_SITE_ACCESS,
-  MEDIA_UNREACHABLE,
   MENU_PRIVATE_WINDOW,
   NO_SITE_ACCESS,
   mediaAnswer,

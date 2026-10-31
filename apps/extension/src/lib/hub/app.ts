@@ -7,7 +7,7 @@ import type {
   Reply,
   WithdrawOutcome,
 } from '@wirecatch/protocol';
-import { submit, type SubmitResult } from '../capture/handover';
+import { newDownload, submit, type DownloadFields, type SubmitResult } from '../capture/handover';
 import { log } from '../diag/log';
 import type { PopupCommand } from '../messages';
 import { RequestError, type NativeClient } from '../native/client';
@@ -38,12 +38,6 @@ export const isLocalCommand = (command: PopupCommand): command is LocalCommand =
 
 /** The popup's two kinds of settings change. */
 type SettingsUpdate = Extract<AppCommand, { type: 'update_settings' | 'update_controls' }>;
-
-/** The fields of a `NewDownload` that differ between the context menu and media; `submit` fills in the rest. */
-export type DownloadFields = Omit<
-  NewDownload,
-  'handover_id' | 'user_agent' | 'extra_headers' | 'queue'
->;
 
 /** The calls the background makes to the app, each with its wait, keeping `KnownSettings` up to date with the answers. */
 export class AppCalls {
@@ -98,13 +92,7 @@ export class AppCalls {
   /** Offers a download from this side (not a browser download) to the app, into its default queue. */
   submit(handoverId: string, fields: DownloadFields): Promise<SubmitResult> {
     return submit(
-      {
-        ...fields,
-        handover_id: handoverId,
-        user_agent: this.#userAgent,
-        extra_headers: [],
-        queue: this.#settings.live?.default_queue ?? null,
-      },
+      newDownload(handoverId, this.#userAgent, this.#settings.live?.default_queue ?? null, fields),
       {
         addDownload: (download) => this.addDownload(download),
         withdraw: (id) => this.withdraw(id),
