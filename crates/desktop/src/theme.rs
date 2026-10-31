@@ -4,8 +4,12 @@
 use std::rc::Rc;
 
 use gpui_kit::component::{Theme, ThemeMode, ThemeRegistry};
-use gpui_kit::{App, Hsla, SharedString, WindowAppearance, rgb};
+use gpui_kit::{
+    App, Context, Entity, Global, Hsla, SharedString, Subscription, Window, WindowAppearance, rgb,
+};
 use wirecatch_protocol::app::{Accent, Theme as ThemeSetting};
+
+use crate::library::{Library, SettingsChanged};
 
 const THEMES: &str = include_str!("../assets/theme.json");
 const LIGHT: &str = "Wirecatch Light";
@@ -51,9 +55,39 @@ pub fn init(cx: &mut App) {
     });
 }
 
+/// The scheme and accent last applied, applied again when the system's scheme changes.
+#[derive(Clone, Copy)]
+struct Chosen {
+    setting: ThemeSetting,
+    accent: Accent,
+}
+
+impl Global for Chosen {}
+
+/// Applies the person's scheme whenever the settings arrive or change, whichever windows are open.
+pub fn follow(library: &Entity<Library>, cx: &mut App) {
+    cx.subscribe(library, |library, _: &SettingsChanged, cx| {
+        if let Some(settings) = &library.read(cx).settings {
+            apply(settings.theme, settings.accent, cx);
+        }
+    })
+    .detach();
+}
+
+/// Applies the scheme again when `window` sees the system's scheme change, for the setting that
+/// follows it.
+pub fn follow_system<V: 'static>(window: &mut Window, cx: &mut Context<'_, V>) -> Subscription {
+    cx.observe_window_appearance(window, |_, _, cx| {
+        if let Some(&Chosen { setting, accent }) = cx.try_global::<Chosen>() {
+            apply(setting, accent, cx);
+        }
+    })
+}
+
 /// Shows every window in the scheme `setting` names (the system's for
 /// [`ThemeSetting::System`]) with `accent`.
 pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
+    cx.set_global(Chosen { setting, accent });
     let dark = match setting {
         ThemeSetting::Light => false,
         ThemeSetting::Dark => true,
