@@ -59,12 +59,17 @@ pub(crate) fn is_allowed(name: &str) -> bool {
     !name.is_empty() && !FORBIDDEN.contains(&name.as_str()) && !name.starts_with("proxy-")
 }
 
-/// The `Referer` among `headers`, if any.
-pub(crate) fn referrer(headers: &[Header]) -> Option<&str> {
+/// The value of the header named `name` (any case) among `headers`, if any.
+pub(crate) fn find<'a>(headers: &'a [Header], name: &str) -> Option<&'a str> {
     headers
         .iter()
-        .find(|h| h.name.trim().eq_ignore_ascii_case("referer"))
+        .find(|h| h.name.trim().eq_ignore_ascii_case(name))
         .map(|h| h.value.expose())
+}
+
+/// The `Referer` among `headers`, if any.
+pub(crate) fn referrer(headers: &[Header]) -> Option<&str> {
+    find(headers, "referer")
 }
 
 /// The headers a download keeps when its link moves to another site (another
@@ -160,8 +165,7 @@ mod tests {
         }
     }
 
-    // The values left the protocol's `Secret` here, and the engine's options print their
-    // header map, so a cookie printed again one layer down (W4I review L2).
+    // The values leave the protocol's `Secret` here, and the engine's options print their header map.
     #[test]
     fn the_engine_never_prints_a_header_value() {
         let map = to_map(&[
