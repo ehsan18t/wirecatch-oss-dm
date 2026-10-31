@@ -38,6 +38,21 @@ pub fn refused(message: impl Into<String>) -> ProtocolError {
     }
 }
 
+/// `path` as the text the protocol carries. A name that is not valid text is refused rather
+/// than changed, which would point at another file.
+///
+/// # Errors
+///
+/// The path is not valid Unicode.
+pub fn path_text(path: &Path) -> CommandResult<String> {
+    path.to_str().map(str::to_owned).ok_or_else(|| {
+        refused(format!(
+            "The name of {} is not valid text, so Wirecatch cannot use it. Rename it, or choose another.",
+            path.display()
+        ))
+    })
+}
+
 /// Something the shell itself could not do, worded for a person.
 pub fn failed(message: impl Into<String>) -> ProtocolError {
     ProtocolError {
@@ -819,6 +834,23 @@ pub async fn remove_addon(m: &Manager, id: AddonId) -> CommandResult<()> {
 mod tests {
     use super::*;
     use wirecatch_core::CoreError;
+
+    #[test]
+    fn a_path_that_is_not_text_is_refused_not_changed() {
+        #[cfg(unix)]
+        let odd = {
+            use std::os::unix::ffi::OsStrExt as _;
+            PathBuf::from(std::ffi::OsStr::from_bytes(b"/downloads/caf\xe9"))
+        };
+        #[cfg(windows)]
+        let odd = {
+            use std::os::windows::ffi::OsStringExt as _;
+            PathBuf::from(std::ffi::OsString::from_wide(&[0x43, 0x3a, 0x5c, 0xd800]))
+        };
+        let refused = path_text(&odd).unwrap_err();
+        assert_eq!(refused.code, ErrorCode::InvalidRequest);
+        assert_eq!(path_text(Path::new("downloads")).unwrap(), "downloads");
+    }
 
     #[test]
     fn one_warning_shows_per_download_until_it_is_answered() {

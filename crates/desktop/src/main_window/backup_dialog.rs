@@ -2,7 +2,6 @@
 //! import what it would change before anything is applied, then what was done.
 
 use std::future::Future;
-use std::path::PathBuf;
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{
@@ -145,7 +144,7 @@ impl BackupForm {
             let Ok(Ok(Some(path))) = picked.await else {
                 return Ok(None);
             };
-            let path = shown(&path);
+            let path = api::path_text(&path)?;
             api::export_settings(&manager, &path).await?;
             Ok(Some(Step::Done { path }))
         });
@@ -162,9 +161,10 @@ impl BackupForm {
             let Ok(Ok(Some(paths))) = picked.await else {
                 return Ok(None);
             };
-            let Some(path) = paths.first().map(|path| shown(path)) else {
+            let Some(path) = paths.first() else {
                 return Ok(None);
             };
+            let path = api::path_text(path)?;
             let preview = api::preview_import(&manager, &path).await?;
             Ok(Some(Step::Preview { path, preview }))
         });
@@ -408,8 +408,4 @@ fn done(direction: Direction, path: &str, cx: &App) -> AnyElement {
                 )),
         )
         .into_any_element()
-}
-
-fn shown(path: &std::path::Path) -> String {
-    PathBuf::from(path).to_string_lossy().into_owned()
 }
