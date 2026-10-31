@@ -109,8 +109,9 @@ jobs:
           echo "WIRECATCH_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
 
       # Every test binary runs even after one fails, so one failure cannot hide what the others would show.
+      # Windows leaves out `clippy-linux`, a partial Linux lint for machines without Linux: the Ubuntu job lints Linux in full.
       - name: Gate (Rust ${{ matrix.part }})
-        run: node scripts/gate.mjs rust-${{ matrix.part }} --no-fail-fast
+        run: node scripts/gate.mjs rust-${{ matrix.part }} --no-fail-fast ${{ runner.os == 'Windows' && matrix.part == 'lint' && '--skip=clippy-linux' || '' }}
 
       # The published engine: its package and its minimum Rust version. Once per run is enough; its http3 feature is checked in the Rust group, on every system.
       - name: Gate (engine release checks)
@@ -171,11 +172,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        node: [oldest]
+        # Linux on the oldest Node runs every JavaScript check. The others run only what can answer differently there: the tests and the build on Windows (paths, line endings), the tests on the newest Node (D68).
         include:
           - os: ubuntu-latest
+            node: oldest
+            checks: js
+          - os: ubuntu-latest
             node: newest
+            checks: js-test
+          - os: windows-latest
+            node: oldest
+            checks: js-test js-build
     runs-on: ${{ matrix.os }}
     steps:
       # The whole history, so the commit check can compare against main.
@@ -208,7 +215,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Gate (JavaScript)
-        run: node scripts/gate.mjs js ${{ runner.os != 'Linux' && '--skip=protocol' || '' }}
+        run: node scripts/gate.mjs ${{ matrix.checks }}
 
       # The commits the commit check covers: a pull request's own, or the ones a push brought. A new branch or a manual run has no earlier commit to compare with, so it checks against main. After a force push the earlier commit is in no branch, so it is fetched by its hash; when GitHub no longer has it, only the newest commit is checked.
       - name: Choose the commits to check
@@ -238,15 +245,11 @@ jobs:
         if: runner.os == 'Linux' && matrix.node == 'oldest'
         run: node scripts/gate.mjs repo
 
-  # The checks in a real browser, alongside the JavaScript job: they take minutes and need no Rust. They run on both systems because each lays text out in its own fonts.
+  # The checks in a real browser, alongside the JavaScript job: they need no Rust. Windows only: there the system font is the one the design asks for, and every check also runs in the DejaVu Sans the page brings, which is what Linux would lay text out in.
   browser:
-    name: Browser (${{ matrix.os }})
+    name: Browser
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -261,7 +264,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The checks skip only where their browser is not installed. Both runners have Edge, so a skip here would hide a broken check: it fails instead.
+      # The checks skip only where their browser is not installed. The runner has Edge, so a skip here would hide a broken check: it fails instead.
       - name: Gate (browser)
         env:
           WIRECATCH_REQUIRE_BROWSER: '1'
@@ -272,7 +275,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-results-${{ matrix.os }}
+          name: browser-results
           path: apps/extension/test-results
           retention-days: 14
           if-no-files-found: ignore

@@ -14,7 +14,7 @@
 // Options, before or after the names:
 //   --no-desktop    leave out the desktop app's crate: for machines without the system libraries GPUI links against (it says so when it does)
 //   --no-fail-fast  run every Rust test binary even after one fails
-//   --skip=CHECK    leave out one check the named groups hold (repeatable), as CI's Windows JavaScript job leaves out `protocol`, which Linux runs
+//   --skip=CHECK    leave out one check the named groups hold (repeatable), as CI's Windows Rust lint leaves out `clippy-linux`, which the Ubuntu job covers in full
 //
 // The commit range for `commits` is GATE_COMMIT_RANGE when set, otherwise `origin/main..HEAD`. Written for Node 18 and later, so it also runs where only an older Node is installed (scripts/linux-test.sh).
 

@@ -74,7 +74,7 @@ Where each stands (2026-10-29):
 - XC-13: one `real_ffmpeg` in test-support, which honours `WIRECATCH_REQUIRE_FFMPEG` everywhere, and the bridge's test variables in one place. The bridge's own `src/app.rs` keeps its names, since product code cannot use test-support.
 - IPB-16: the variable names are shared; a test-only bridge binary that never overwrites `wirecatch-bridge` is still to build.
 - XC-18 and DUI-18: a11y and layout run in CI's browser job, which keeps a failed run's results. `e2e:perf` still runs nowhere: it asserts frame times, which a shared runner cannot promise, so it belongs in a scheduled run that reports them rather than in every pull request's gate.
-- XC-21: done; Windows runs the JavaScript checks with `--skip=protocol` and installs no Rust.
+- XC-21: done; Windows runs only the JavaScript tests and build, and installs no Rust.
 - IPB-20: every test endpoint is named through `private_dir`; still untested are `accept` recovering after a failed `new_instance`, the `ERROR_MORE_DATA` branch and the `OpenProcess` fallback.
 - XC-20: `release.yml` builds the installers and the extension's store packages on a version tag or by hand, and drafts the release after `gate.mjs publish`; unsigned until the certificate and updater key exist, and not run yet.
 - DUI-27: done; the review-round file is split into tests by area, and `features.test.ts` stays as the acceptance suite.
