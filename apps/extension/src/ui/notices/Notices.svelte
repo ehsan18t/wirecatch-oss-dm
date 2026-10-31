@@ -10,17 +10,24 @@
   // It reads the list, so it runs again whenever a notice comes or goes.
   $effect(() => page.changed());
 
+  function measure(element: HTMLElement) {
+    page.resized({
+      wirecatchNoticesWidth: element.offsetWidth,
+      wirecatchNoticesHeight: element.offsetHeight,
+    });
+  }
+
   $effect(() => {
     const element = stack;
     if (!element) return;
-    const observer = new ResizeObserver(() => {
-      page.resized({
-        wirecatchNoticesWidth: element.offsetWidth,
-        wirecatchNoticesHeight: element.offsetHeight,
-      });
-    });
+    const observer = new ResizeObserver(() => measure(element));
     observer.observe(element);
     return () => observer.disconnect();
+  });
+
+  // A notice that comes as another leaves keeps the size, which the observer never reports, so it would never be said to show.
+  $effect(() => {
+    if (stack && page.toaster.list.length > 0) measure(stack);
   });
 </script>
 
