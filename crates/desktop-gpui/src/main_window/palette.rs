@@ -228,6 +228,12 @@ fn about_one(only: &wirecatch_protocol::app::DownloadSummary, named: &str) -> Ve
             move |_, w, cx| super::fixes::run(id, FixAction::RefreshLink, w, cx),
         ));
     }
+    let id = only.id;
+    entries.push(entry(
+        format!("Open {named} in a separate window"),
+        "window progress speed",
+        move |_, _, cx| crate::download_windows::show_download(id, cx),
+    ));
     entries.push(entry(
         format!("Show {named} in its folder"),
         "folder explorer",

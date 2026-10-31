@@ -13,10 +13,7 @@
 //! question from there as a [`Question`](wirecatch_protocol::app::Question).
 
 use wirecatch_protocol::QuestionId;
-use wirecatch_protocol::app::{
-    AddonRequestItem, DownloadSummary, FileExistsQuestion, MediaChoice, MediaReading,
-    PendingCapture, Repeated, Theme, UiEvent,
-};
+use wirecatch_protocol::app::{DownloadSummary, Repeated, Theme, UiEvent};
 use wirecatch_protocol::extension::{NoticeId, NoticePressed};
 
 /// What a core event needs from the desktop besides reaching the open windows.
@@ -90,28 +87,6 @@ pub fn attention(event: &UiEvent) -> Attention {
     }
 }
 
-/// Every open question's id, oldest first (ids only grow), each once.
-#[must_use]
-pub fn open_question_ids(
-    captures: &[PendingCapture],
-    choices: &[MediaChoice],
-    addon_pages: &[AddonRequestItem],
-    reading: &[MediaReading],
-    files: &[FileExistsQuestion],
-) -> Vec<QuestionId> {
-    let mut ids: Vec<QuestionId> = captures
-        .iter()
-        .map(|c| c.id)
-        .chain(choices.iter().map(|c| c.id))
-        .chain(addon_pages.iter().map(|a| a.id))
-        .chain(reading.iter().map(|r| r.id))
-        .chain(files.iter().map(|f| f.id))
-        .collect();
-    ids.sort_unstable();
-    ids.dedup();
-    ids
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,7 +94,11 @@ mod tests {
         AddonId, AddonInfo, AddonState, Category, DownloadStatus, MediaSelection, OutputFormat,
         UserError,
     };
+    use wirecatch_protocol::app::{
+        AddonRequestItem, FileExistsQuestion, MediaChoice, MediaReading, PendingCapture,
+    };
     use wirecatch_protocol::{DownloadId, QueueId};
+    use wirecatch_shell::download_windows::open_question_ids;
 
     fn choice(id: u64) -> MediaChoice {
         MediaChoice {

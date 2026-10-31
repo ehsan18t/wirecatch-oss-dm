@@ -13,6 +13,7 @@ gpui_kit::assets::icon_assets!(
         ArrowUpDown,
         ArrowUp,
         Ban,
+        CircleQuestionMark,
         CirclePause,
         Clock,
         Download,
