@@ -88,7 +88,7 @@ fn button(
                 .on_click(move |_, window, cx| {
                     cx.stop_propagation();
                     if closes {
-                        window.remove_window();
+                        crate::closing::close(window, cx);
                     } else {
                         window.minimize_window();
                     }
