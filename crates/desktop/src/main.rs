@@ -104,6 +104,7 @@ fn main() {
             theme::init(cx);
             cx.set_global(backend);
             let library = library::Library::new(cx);
+            theme::follow(&library, cx);
             tray::start(&library, cx);
             notices::start(cx);
             download_windows::init(&library, cx);

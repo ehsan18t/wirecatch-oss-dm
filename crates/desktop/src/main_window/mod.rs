@@ -51,7 +51,7 @@ use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
 use wirecatch_protocol::desktop::Reveal;
 
 use self::selection::Step;
-use crate::library::{Asked, Library, SettingsChanged};
+use crate::library::{Asked, Library};
 use crate::ui::{Role, Typed as _, layout};
 use crate::{add_dialog, lifecycle, links, theme};
 
@@ -391,16 +391,7 @@ impl MainWindow {
     }
 
     fn new(library: Entity<Library>, window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
-        let restyle = cx.subscribe(&library, |_, library, _: &SettingsChanged, cx| {
-            if let Some(settings) = &library.read(cx).settings {
-                theme::apply(settings.theme, settings.accent, cx);
-            }
-        });
-        let follow_system = cx.observe_window_appearance(window, |this, _, cx| {
-            if let Some(settings) = &this.library.read(cx).settings {
-                theme::apply(settings.theme, settings.accent, cx);
-            }
-        });
+        let follow_system = theme::follow_system(window, cx);
         let redraw = cx.observe_in(&library, window, |this, library, window, cx| {
             if !library.read(cx).startup_notices.is_empty() {
                 this.tell_startup_notices(window, cx);
@@ -465,7 +456,7 @@ impl MainWindow {
             all_queues: false,
             focus,
             search,
-            _subscriptions: vec![restyle, follow_system, redraw, searched, updates],
+            _subscriptions: vec![follow_system, redraw, searched, updates],
         }
     }
 

@@ -52,6 +52,7 @@ pub struct DownloadWindow {
     /// The content's height when last drawn, for fitting the window to it.
     content: Rc<Cell<Option<Pixels>>>,
     _follow: Subscription,
+    _follow_system: Subscription,
 }
 
 impl DownloadWindow {
@@ -76,6 +77,7 @@ impl DownloadWindow {
             problem: None,
             content: Rc::default(),
             _follow: follow,
+            _follow_system: crate::theme::follow_system(window, cx),
         };
         view.reload(cx);
         view
