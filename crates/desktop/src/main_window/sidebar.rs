@@ -436,7 +436,7 @@ fn drops(
     })
     .on_drop(
         cx.listener(move |this, dragged: &DraggedQueue, window, cx| {
-            this.drop_queue_before(id, dragged, window, cx);
+            this.drop_queue_on(id, dragged, window, cx);
         }),
     )
 }

@@ -297,7 +297,7 @@ impl MainWindow {
             )
             .drag_over::<DraggedRows>(|style, _, _, cx| drag::drop_target(style, cx))
             .on_drop(cx.listener(move |this, dragged: &DraggedRows, window, cx| {
-                this.drop_rows_before(id, dragged, window, cx);
+                this.drop_rows_on(id, dragged, window, cx);
             }))
             .on_mouse_down(
                 MouseButton::Right,
