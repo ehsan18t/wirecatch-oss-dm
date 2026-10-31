@@ -42,3 +42,24 @@ describe('the manifest key', () => {
     }
   });
 });
+
+describe('what the extension asks for', () => {
+  it.each(['chrome', 'firefox'])('is the same in %s, and changes only here', async (browser) => {
+    const built = await manifest({ browser, mode: 'production', command: 'build' });
+    // A new permission shows a warning at install and disables existing installs until people approve it.
+    expect(built.permissions).toEqual([
+      'downloads',
+      'nativeMessaging',
+      'cookies',
+      'contextMenus',
+      'storage',
+      'webRequest',
+    ]);
+    expect(built.host_permissions).toEqual(['http://*/*', 'https://*/*']);
+    expect(built.web_accessible_resources).toEqual([
+      { resources: ['notices.html'], matches: ['http://*/*', 'https://*/*'] },
+    ]);
+    expect(Object.keys(built.commands ?? {})).toEqual(['download-media']);
+    expect(built).not.toHaveProperty('optional_permissions');
+  });
+});
