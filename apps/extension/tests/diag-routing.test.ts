@@ -1,6 +1,6 @@
 /** Errors the extension handles with a fallback still reach the diagnostics, redacted. */
 import { afterEach, describe, expect, it } from 'vitest';
-import { cookieHeaderFor } from '../src/lib/browser/adapters';
+import { cookiesFor } from '../src/lib/browser/adapters';
 import { diagnostics, type DiagEntry } from '../src/lib/diag/log';
 import { Hub } from '../src/lib/hub/hub';
 import { AlertBoard } from '../src/lib/hub/alert-board';
@@ -18,6 +18,12 @@ import {
   flush,
   stubGetAll,
 } from './fakes';
+import { NO_COOKIES } from '../src/lib/cookies';
+
+/** The header picked for an app before protocol version 2. */
+async function header(...args: Parameters<typeof cookiesFor>): Promise<string | null> {
+  return (await cookiesFor(...args)).cookies;
+}
 
 /** The entries made while `run` runs. */
 async function logged(run: () => Promise<void>): Promise<DiagEntry[]> {
@@ -47,7 +53,7 @@ describe('routed errors', () => {
       cache: { load: failing('cache gone'), save: () => Promise.resolve() },
       inFlight: { load: failing('session gone'), save: () => Promise.resolve() },
       downloads: new FakeDownloads(),
-      cookieHeader: () => Promise.resolve(null),
+      cookies: () => Promise.resolve(NO_COOKIES),
       hasSiteAccess: () => Promise.resolve(true),
       userAgent: null,
     });
@@ -112,7 +118,7 @@ describe('routed errors', () => {
   });
 });
 
-describe('cookieHeaderFor', () => {
+describe('the cookie header', () => {
   const NAVIGATION = { initiator: null, navigation: true };
 
   const SID = { name: 'sid', value: '1', domain: 'a.example', path: '/' };
@@ -123,7 +129,7 @@ describe('cookieHeaderFor', () => {
       return [];
     });
     const entries = await logged(async () => {
-      expect(await cookieHeaderFor('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBeNull();
+      expect(await header('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBeNull();
     });
     expect(entries).toEqual([]);
   });
@@ -135,7 +141,7 @@ describe('cookieHeaderFor', () => {
       return [SID];
     });
     const entries = await logged(async () => {
-      expect(await cookieHeaderFor('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBe('sid=1');
+      expect(await header('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBe('sid=1');
     });
     expect(entries).toEqual([]);
   });
@@ -146,7 +152,7 @@ describe('cookieHeaderFor', () => {
       return [{ ...SID, partitionKey: { topLevelSite: 'https://a.example' } }];
     });
     const entries = await logged(async () => {
-      expect(await cookieHeaderFor('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBe('sid=1');
+      expect(await header('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBe('sid=1');
     });
     expect(entries).toEqual([
       expect.objectContaining({ level: 'warn', scope: 'capture', detail: 'Error: store gone' }),
@@ -158,7 +164,7 @@ describe('cookieHeaderFor', () => {
       throw new Error('no cookies here');
     });
     const entries = await logged(async () => {
-      expect(await cookieHeaderFor('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBeNull();
+      expect(await header('https://a.example/f', NORMAL_STORE, NAVIGATION)).toBeNull();
     });
     expect(entries).toEqual([
       expect.objectContaining({

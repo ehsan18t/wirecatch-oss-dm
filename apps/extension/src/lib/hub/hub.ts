@@ -155,7 +155,7 @@ export class Hub {
           liveSettings: () => this.#app.judgingSettings(),
           addDownload: (download) => this.#app.addDownload(download),
           withdraw: (handoverId) => this.#app.withdraw(handoverId),
-          cookieHeader: (url, store, context) => this.#deps.cookieHeader(url, store, context),
+          cookies: (url, store, request) => this.#deps.cookies(url, store, request),
           userAgent: this.#deps.userAgent,
         },
       );
@@ -213,10 +213,10 @@ export class Hub {
       mime: null,
       size_hint: null,
       // Like following the link: a top-level navigation started by the frame it is in.
-      cookies: await this.#deps.cookieHeader(url, cookieStoreOf(tab ?? {}), {
+      ...(await this.#deps.cookies(url, cookieStoreOf(tab ?? {}), {
         initiator: page,
         navigation: true,
-      }),
+      })),
       source: 'context_menu',
     });
     if (result.taken) return 'handed_over';

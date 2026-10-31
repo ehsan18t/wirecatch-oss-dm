@@ -15,6 +15,7 @@ import { diagnostics } from '../src/lib/diag/log';
 import { Hub } from '../src/lib/hub/hub';
 import { NativeClient } from '../src/lib/native/client';
 import { FakeApp, FakeDownloads, MemoryCache, downloadItem, flush } from './fakes';
+import { NO_COOKIES } from '../src/lib/cookies';
 
 type Determining = (item: DownloadItemLike, suggest: () => void) => boolean | undefined;
 
@@ -98,7 +99,7 @@ async function realHub(
     client,
     cache: new MemoryCache(),
     downloads,
-    cookieHeader: () => Promise.resolve(null),
+    cookies: () => Promise.resolve(NO_COOKIES),
     hasSiteAccess: () => Promise.resolve(true),
     userAgent: null,
   });

@@ -9,6 +9,7 @@ import type { BackgroundMessage, PopupRequest } from '../src/lib/popup-port';
 import { NativeClient } from '../src/lib/native/client';
 import { PopupModel } from '../src/lib/popup/model.svelte';
 import { FakeApp, FakeDownloads, MemoryCache, channelPair, flush } from './fakes';
+import { NO_COOKIES } from '../src/lib/cookies';
 
 export interface Wired {
   app: FakeApp;
@@ -35,7 +36,7 @@ export async function wirePage(
     client,
     cache,
     downloads: new FakeDownloads(),
-    cookieHeader: () => Promise.resolve(null),
+    cookies: () => Promise.resolve(NO_COOKIES),
     hasSiteAccess: () => Promise.resolve(true),
     userAgent: null,
   });

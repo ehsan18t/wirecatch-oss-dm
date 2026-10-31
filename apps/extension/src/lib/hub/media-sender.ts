@@ -1,4 +1,5 @@
-import { isCrossSite, type CookieContext } from '../cookies';
+import type { CookieRequest } from '@wirecatch/protocol';
+import { isCrossSite } from '../cookies';
 import { log } from '../diag/log';
 import type { MediaRequest, MediaSendResult } from '../media/center';
 import { MEDIA_UNREACHABLE } from '../media/messages';
@@ -7,7 +8,7 @@ import { MEDIA_NO_SITE_ACCESS, mediaAnswer } from './alerts';
 import type { AppSide } from './app';
 import type { HubDeps } from './deps';
 
-export type MediaSenderDeps = Pick<HubDeps, 'cookieHeader' | 'hasSiteAccess' | 'newHandoverId'>;
+export type MediaSenderDeps = Pick<HubDeps, 'cookies' | 'hasSiteAccess' | 'newHandoverId'>;
 
 /** True when the extension may read cookies for `url`; a failed check counts as not granted. */
 export async function hasAccess(
@@ -53,9 +54,9 @@ export class MediaSender {
       }
     }
     // Media is loaded by the page itself (a top-level navigation only for the page address).
-    const context: CookieContext = {
+    const context: CookieRequest = {
       initiator: request.referrer,
-      topLevel: request.pageUrl,
+      top_level: request.pageUrl,
       navigation: target.kind === 'page',
     };
     const result = await app.submit(newHandoverId(this.#deps), {
@@ -68,10 +69,9 @@ export class MediaSender {
       mime: target.mime,
       size_hint: target.size,
       // Media from another site goes with the cookies its own request carried, when it was seen: no cookie read can tell whether the browser sends its unpartitioned cookies to another site (D59). Otherwise they are read now, so they are the freshest.
-      cookies:
-        target.sentCookies !== undefined && isCrossSite(target.url, context)
-          ? target.sentCookies
-          : await this.#deps.cookieHeader(target.url, request.cookieStore, context),
+      ...(target.sentCookies !== undefined && isCrossSite(target.url, context)
+        ? { cookies: target.sentCookies }
+        : await this.#deps.cookies(target.url, request.cookieStore, context)),
       source: 'media_button',
       media: { kind: target.kind, title: request.title },
     });
