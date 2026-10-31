@@ -1,12 +1,14 @@
 //! The browser side: serving the bridge on the per-user endpoint (D14), and registering the
 //! bridge with the browsers on every start (D19).
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+use tokio::task::JoinSet;
 use wirecatch_core::Manager;
-use wirecatch_ipc::{IpcError, Listener};
+use wirecatch_ipc::{Connection, IpcError, Listener};
 use wirecatch_server::serve_connection;
 
 /// File name of the bridge, installed next to the app. The bridge starts the app from its own
@@ -15,6 +17,9 @@ pub use wirecatch_product::BRIDGE_FILE_NAME;
 
 /// Pause after a failed accept, so a persistent error cannot spin.
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
+
+/// Most connections served at once; the next client waits until one ends.
+const MAX_CONNECTIONS: usize = 64;
 
 /// Logs a failed accept and pauses before the next one, unless the failure concerned only
 /// that client.
@@ -52,37 +57,45 @@ pub fn bind() -> Result<Listener, IpcError> {
 }
 
 /// Serves every client that connects (the bridge, later the CLI) until the task is stopped.
-pub async fn serve(mut listener: Listener, manager: Manager) {
+pub async fn serve(listener: Listener, manager: Manager) {
     tracing::info!("serving browser connections at {}", listener.endpoint());
-    loop {
-        match listener.accept().await {
-            Ok(connection) => {
-                let manager = manager.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = serve_connection(manager, connection).await {
-                        tracing::debug!("a browser connection ended: {e}");
-                    }
-                });
-            }
-            Err(e) => after_failed_accept(&e).await,
-        }
-    }
+    accept_loop(listener, move |connection| {
+        serve_connection(manager.clone(), connection)
+    })
+    .await;
 }
 
 /// Serves clients while the download manager could not open: every request is answered with
 /// `reason`, so the extension tells the person what is wrong instead of waiting in silence.
-pub async fn serve_unavailable(mut listener: Listener, reason: String) {
+pub async fn serve_unavailable(listener: Listener, reason: String) {
+    accept_loop(listener, move |connection| {
+        let reason = reason.clone();
+        async move { answer_unavailable(connection, &reason).await }
+    })
+    .await;
+}
+
+/// Accepts clients and runs `handle` on each, at most [`MAX_CONNECTIONS`] at once. The
+/// connections belong to this loop: stopping it ends every one still open.
+async fn accept_loop<F, Fut>(mut listener: Listener, handle: F)
+where
+    F: Fn(Connection) -> Fut,
+    Fut: Future<Output = std::io::Result<()>> + Send + 'static,
+{
+    let mut connections = JoinSet::new();
     loop {
-        match listener.accept().await {
-            Ok(connection) => {
-                let reason = reason.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = answer_unavailable(connection, &reason).await {
-                        tracing::debug!("a browser connection ended: {e}");
-                    }
-                });
-            }
-            Err(e) => after_failed_accept(&e).await,
+        tokio::select! {
+            accepted = listener.accept(), if connections.len() < MAX_CONNECTIONS => match accepted {
+                Ok(connection) => {
+                    connections.spawn(handle(connection));
+                }
+                Err(e) => after_failed_accept(&e).await,
+            },
+            Some(ended) = connections.join_next() => match ended {
+                Ok(Err(e)) => tracing::debug!("a browser connection ended: {e}"),
+                Err(e) if e.is_panic() => tracing::error!("a browser connection failed: {e}"),
+                Ok(Ok(())) | Err(_) => {}
+            },
         }
     }
 }
@@ -283,8 +296,6 @@ pub fn run_bridge(bridge: &Path, subcommand: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    // The pause was meant for errors that repeat; a refused client made the next one wait
-    // too (W4I review N3).
     #[test]
     fn a_refused_client_does_not_pause_the_next_accept() {
         let refused = IpcError::PeerRefused {
@@ -416,6 +427,33 @@ mod tests {
         }
         drop(client);
         serving.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn stopping_the_server_ends_its_open_connections() {
+        use tokio::io::AsyncReadExt;
+        use wirecatch_ipc::Endpoint;
+        use wirecatch_protocol::frame;
+        use wirecatch_protocol::wire::{Call, Message};
+        use wirecatch_test_support::{PATIENCE, private_dir};
+
+        let dir = private_dir("bridge-stop").unwrap();
+        let endpoint = Endpoint::from_raw(dir.endpoint_name());
+        let listener = Listener::bind(&endpoint).unwrap();
+        let serving = tokio::spawn(serve_unavailable(listener, "The disk is full.".into()));
+        let mut client = wirecatch_ipc::connect(&endpoint).await.unwrap();
+        let ask = Message::Request {
+            id: 1,
+            call: Call::ListQueues,
+        };
+        frame::write_async(&mut client, &ask).await.unwrap();
+        let _answer: Option<Message> = frame::read_async(&mut client).await.unwrap();
+
+        serving.abort();
+        _ = serving.await;
+        let mut rest = Vec::new();
+        let read = tokio::time::timeout(PATIENCE, client.read_to_end(&mut rest)).await;
+        assert!(read.is_ok(), "the connection outlived its server");
     }
 
     #[test]
