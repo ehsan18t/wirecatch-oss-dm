@@ -650,6 +650,36 @@ pub async fn check_addon_updates(m: &Manager) -> CommandResult<Vec<AddonInfo>> {
     Ok(m.list_addons())
 }
 
+/// The newest version of the app newer than this one, with the installer this computer can
+/// install itself when there is one (D111); `None` when this is the newest.
+///
+/// # Errors
+///
+/// The releases cannot be reached, or a newer one is not signed with this build's key.
+pub async fn check_app_update(m: &Manager) -> CommandResult<Option<wirecatch_core::AppUpdate>> {
+    plain(
+        m.check_app_update(
+            wirecatch_product::PRODUCT_VERSION,
+            crate::updates::install_kind(),
+        )
+        .await,
+    )
+}
+
+/// Downloads `download` and checks it against its signed manifest, reporting to `progress`.
+///
+/// # Errors
+///
+/// It could not be downloaded, or does not match.
+pub async fn fetch_app_update(
+    m: &Manager,
+    download: &wirecatch_core::UpdateDownload,
+    progress: std::sync::Arc<wirecatch_engine::Progress>,
+    cancel: wirecatch_engine::CancellationToken,
+) -> CommandResult<std::path::PathBuf> {
+    plain(m.fetch_app_update(download, progress, cancel).await)
+}
+
 /// The Public Suffix List in use and when a newer one was last looked for (D44). The weekly
 /// check runs in the core while `update_suffix_list` is on.
 #[must_use]

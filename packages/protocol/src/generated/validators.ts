@@ -271,6 +271,7 @@ export function isAppSettings(value: unknown): value is AppSettings {
     isMediaDefaults(value1['media']) &&
     isArrayOf(value1['local_sites'], (value2: unknown) => typeof value2 === 'string') &&
     typeof value1['update_suffix_list'] === 'boolean' &&
+    typeof value1['prerelease_updates'] === 'boolean' &&
     isProxySettings(value1['proxy']))(value);
 }
 
@@ -310,6 +311,8 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
       isArrayOf(value1['local_sites'], (value2: unknown) => typeof value2 === 'string')) &&
     (value1['update_suffix_list'] === undefined ||
       typeof value1['update_suffix_list'] === 'boolean') &&
+    (value1['prerelease_updates'] === undefined ||
+      typeof value1['prerelease_updates'] === 'boolean') &&
     (value1['proxy'] === undefined || isProxySettings(value1['proxy'])))(value);
 }
 

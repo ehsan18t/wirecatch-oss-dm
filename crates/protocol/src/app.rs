@@ -1210,6 +1210,8 @@ pub struct AppSettingsPatch {
     pub local_sites: Option<Vec<String>>,
     /// The new [`AppSettings::update_suffix_list`].
     pub update_suffix_list: Option<bool>,
+    /// The new [`AppSettings::prerelease_updates`].
+    pub prerelease_updates: Option<bool>,
     /// The new [`AppSettings::proxy`], replacing it whole.
     pub proxy: Option<ProxySettings>,
 }
@@ -1463,6 +1465,9 @@ pub struct AppSettings {
     /// downloads are idle (D44). Off: the list in use stays until the person checks.
     #[serde(default = "default_true")]
     pub update_suffix_list: bool,
+    /// Offer the app's pre-release versions as updates too, not only full releases (D111).
+    #[serde(default)]
+    pub prerelease_updates: bool,
     /// The proxy and exceptions of every queue that follows the app's (D73).
     #[serde(default)]
     pub proxy: ProxySettings,
@@ -1497,6 +1502,7 @@ impl AppSettings {
             media,
             local_sites,
             update_suffix_list,
+            prerelease_updates,
             proxy,
         } = self;
         let AppSettingsPatch {
@@ -1521,6 +1527,7 @@ impl AppSettings {
             media: media_patch,
             local_sites: new_local_sites,
             update_suffix_list: new_update_suffix_list,
+            prerelease_updates: new_prerelease_updates,
             proxy: new_proxy,
         } = patch;
         set(default_folder, new_default_folder);
@@ -1551,6 +1558,7 @@ impl AppSettings {
         }
         set(local_sites, new_local_sites);
         set(update_suffix_list, new_update_suffix_list);
+        set(prerelease_updates, new_prerelease_updates);
         set(proxy, new_proxy);
     }
 }

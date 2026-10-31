@@ -72,6 +72,7 @@ test('the values still to decide are found as placeholders', () => {
     'links.website',
     'contacts.support_email',
     'contacts.security_email',
+    'updates.public_key',
   ]);
   const decided = changed(
     'legal_name = "TODO-PRODUCT-PUBLISHER-LEGAL-NAME"',

@@ -1,12 +1,13 @@
 //! General (D85.2): the look, how the app starts and closes, what updates itself, and its logs.
 
-use gpui_kit::component::button::Button;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::progress::Progress;
 use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, ElementId, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
+    AnyElement, App, ElementId, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, div, px,
 };
 use wirecatch_protocol::app::{ACCENTS, Accent, AppSettingsPatch, Theme};
@@ -14,9 +15,10 @@ use wirecatch_shell::host;
 
 use super::super::backup_dialog::{self, Direction};
 use super::{change, choice, current, switch};
+use crate::app_update::Stage;
 use crate::library::Library;
 use crate::theme;
-use crate::ui::tokens;
+use crate::ui::{Role, Typed as _, tokens};
 
 const THEMES: &[(Theme, &str)] = &[
     (Theme::System, "Match the system"),
@@ -111,6 +113,25 @@ fn updates(library: &Entity<Library>) -> SettingGroup {
         .title("Updates")
         .item(
             SettingItem::new(
+                app_name(),
+                SettingField::render(|_, _, cx| app_update_field(cx)),
+            )
+            .description("Looks for a newer version once a day and asks before installing it.")
+            .keywords(["update", "upgrade", "version", "new version"]),
+        )
+        .item(
+            SettingItem::new(
+                "Get pre-release versions",
+                switch(library, |s| s.prerelease_updates, |on| AppSettingsPatch {
+                    prerelease_updates: Some(on),
+                    ..AppSettingsPatch::default()
+                }),
+            )
+            .description("Also offers versions still being tested, which come sooner and may have problems.")
+            .keywords(["beta", "preview", "pre-release", "test"]),
+        )
+        .item(
+            SettingItem::new(
                 "Keep add-ons up to date",
                 switch(library, |s| s.auto_update_addons, |on| AppSettingsPatch {
                     auto_update_addons: Some(on),
@@ -181,6 +202,90 @@ fn troubleshooting() -> SettingGroup {
         .description("For a support request. Logs leave out passwords and other secrets.")
         .keywords(["logs", "diagnostics", "troubleshooting", "support", "debug"]),
     )
+}
+
+/// Where the app's own update stands, with what can be done about it (D111).
+fn app_update_field(cx: &App) -> AnyElement {
+    let stage = crate::app_update::entity(cx)
+        .map(|updates| updates.read(cx).stage.clone())
+        .unwrap_or_default();
+    let check = |label: &'static str| {
+        Button::new("check-app-update")
+            .small()
+            .outline()
+            .label(label)
+            .on_click(|_, _, cx| crate::app_update::check(false, cx))
+    };
+    let status = |text: String, cx: &App| div().text_role(Role::Meta, cx).child(text);
+    let row = h_flex().gap_2().items_center();
+    match stage {
+        Stage::Unchecked => row.child(check("Check for updates")),
+        Stage::Checking => row
+            .child(status("Checking.".into(), cx))
+            .child(check("Check for updates").loading(true)),
+        Stage::Current => row
+            .child(status("You have the newest version.".into(), cx))
+            .child(check("Check again")),
+        Stage::Available(update) => {
+            let page = update.page.clone();
+            let installs = update.download.is_some();
+            row.child(status(
+                format!("Version {} is available.", update.version),
+                cx,
+            ))
+            .child(
+                Button::new("app-update-notes")
+                    .small()
+                    .ghost()
+                    .label("What's new")
+                    .on_click(move |_, _, cx| cx.open_url(&page)),
+            )
+            .child(
+                Button::new("install-app-update")
+                    .small()
+                    .primary()
+                    .label(if installs {
+                        "Install and restart"
+                    } else {
+                        "Download"
+                    })
+                    .on_click(move |_, _, cx| crate::app_update::install(&update, cx)),
+            )
+        }
+        Stage::Downloading { update, progress } => {
+            // In tenths of a percent, as whole numbers.
+            let done = progress
+                .total()
+                .filter(|total| *total > 0)
+                .and_then(|total| u16::try_from(progress.done().min(total) * 1000 / total).ok())
+                .map(|tenths| f32::from(tenths) / 10.);
+            row.child(status(
+                done.map_or_else(
+                    || format!("Downloading version {}.", update.version),
+                    |done| format!("Downloading version {}, {done:.0}%.", update.version),
+                ),
+                cx,
+            ))
+            .child(
+                div().w(px(160.)).child(
+                    Progress::new("app-update-progress")
+                        .loading(done.is_none())
+                        .value(done.unwrap_or_default()),
+                ),
+            )
+        }
+        Stage::Installing => row.child(status("Installing.".into(), cx)),
+        Stage::Failed(message) => row
+            .child(
+                div()
+                    .max_w(px(360.))
+                    .text_role(Role::Meta, cx)
+                    .text_color(cx.theme().danger)
+                    .child(message),
+            )
+            .child(check("Try again")),
+    }
+    .into_any_element()
 }
 
 fn app_name() -> &'static str {

@@ -26,3 +26,20 @@ The app's executable, `wirecatch-app`, is installed next to `wirecatch-bridge`: 
 - **AppImage**: the same files in one executable, with the keyboard libraries a desktop without GTK or Qt may lack (D110). Under an AppImage the app copies the bridge to `~/.local/share/wirecatch/bin` and registers that copy (D19). To remove it, run `~/.local/share/wirecatch/bin/wirecatch-bridge uninstall`, then delete that folder.
 
 The `.desktop` entry is named after the app's identifier, which every window also carries as its app id, so Linux desktops show the right icon and group the windows under it.
+
+## Releases and updates
+
+A version tag (`v1.2.3`, or `v1.2.3-beta.1` for a pre-release) starts `.github/workflows/release.yml`. It builds every installer on Windows and Linux, x64 and ARM64, checks each Linux package on a fresh system, and drafts the GitHub release with all of them, the browser extension's store packages, and the update manifest (D111):
+
+- `update.json` lists each installer with its system, architecture, kind, size and SHA-256 (`scripts/release/manifest.mjs`; `crates/updates/samples/update.json` shows the shape).
+- `update.json.sig` is its Ed25519 signature, made with the repository secret `UPDATER_PRIVATE_KEY`.
+
+The app looks at the repository's releases a minute after it starts and once a day, and offers the newest release newer than itself, pre-releases only with "Get pre-release versions" on. It trusts a release only through a manifest whose signature matches the public key in `config/product.toml`, and installs a file only when its size and SHA-256 match the manifest. On Windows it runs the setup silently and quits; the setup starts the new version. An AppImage takes the place of the one running. A `.deb` or `.rpm` install opens the release page, since the system's package manager installs those.
+
+To make the key pair once:
+
+```bash
+node scripts/release/updater-key.mjs
+```
+
+Put the public half in `config/product.toml` (`[updates] public_key`, then `pnpm product:generate`) and the private half in the repository secret `UPDATER_PRIVATE_KEY`. Until then the placeholder key turns the app's updates off, and the release check refuses to draft a release.

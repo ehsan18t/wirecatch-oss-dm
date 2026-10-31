@@ -37,6 +37,13 @@ pub const SUPPORT_EMAIL: &str = "TODO-PRODUCT-SUPPORT-EMAIL@placeholder.invalid"
 /// The repository whose releases hold the media add-on's pinned files (D80).
 pub const ADDON_FILES_URL: &str = "https://github.com/ehsan18t/wirecatch-addons";
 
+/// GitHub's list of the repository's releases, where the app looks for a newer version (D111).
+pub const RELEASES_API_URL: &str =
+    "https://api.github.com/repos/ehsan18t/wirecatch-oss-dm/releases";
+
+/// The Ed25519 key update manifests are signed with, unpadded base64url (D111).
+pub const UPDATER_PUBLIC_KEY: &str = "TODO-PRODUCT-UPDATER-PUBLIC-KEY-00000000000";
+
 /// The desktop app executable, without `.exe`.
 pub const APP_EXECUTABLE: &str = "wirecatch-app";
 

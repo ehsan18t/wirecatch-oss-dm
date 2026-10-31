@@ -24,6 +24,7 @@ wirecatch-settings.workspace = true
 wirecatch-sites.workspace = true
 wirecatch-store.workspace = true
 wirecatch-streams.workspace = true
+wirecatch-updates.workspace = true
 chrono = { workspace = true, features = ["clock"] }
 futures-util.workspace = true
 serde.workspace = true
@@ -58,6 +59,8 @@ wirecatch-files = { workspace = true, features = ["testing"] }
 wirecatch-server.workspace = true
 wirecatch-sites = { workspace = true, features = ["testing"] }
 wirecatch-test-support = { path = "../test-support", features = ["downloads", "resume", "servers"] }
+base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+ed25519-dalek = { version = "2.2.0", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true

@@ -8,12 +8,21 @@
 # A mirror sometimes slows to a crawl for one runner, once for 49 minutes, so no download may take long: every mirror gets a probe of PROBE_SECONDS, and the mirrors are tried fastest first, each with STEP_SECONDS for its package lists and again for the packages. A mirror that runs out of time, or leaves a file with no data for HANG_SECONDS, gives way to the next; what it already downloaded is kept. apt reads only the source list written here, so no other repository on the runner can hold it up either. Every mirror serves the same files signed by Ubuntu's archive key, which apt checks.
 set -euo pipefail
 
-MIRRORS=(
-  http://azure.archive.ubuntu.com/ubuntu
-  http://archive.ubuntu.com/ubuntu
-  http://us.archive.ubuntu.com/ubuntu
-  http://mirrors.edge.kernel.org/ubuntu
-)
+arch=$(dpkg --print-architecture)
+if [ "$arch" = amd64 ]; then
+  MIRRORS=(
+    http://azure.archive.ubuntu.com/ubuntu
+    http://archive.ubuntu.com/ubuntu
+    http://us.archive.ubuntu.com/ubuntu
+    http://mirrors.edge.kernel.org/ubuntu
+  )
+else
+  # Every other architecture is served from Ubuntu's ports archive.
+  MIRRORS=(
+    http://azure.ports.ubuntu.com/ubuntu-ports
+    http://ports.ubuntu.com/ubuntu-ports
+  )
+fi
 # The first PROBE_BYTES of a large file every mirror has; a mirror that cannot send them within PROBE_SECONDS is slow.
 PROBE_BYTES=$((10 * 1024 * 1024))
 PROBE_SECONDS=10
@@ -44,7 +53,7 @@ trap 'rm -rf "$work"' EXIT
 echo "Probing ${#MIRRORS[@]} mirrors for ${PROBE_SECONDS} seconds."
 for i in "${!MIRRORS[@]}"; do
   curl --silent --output /dev/null --range "0-$((PROBE_BYTES - 1))" --max-time "$PROBE_SECONDS" \
-    --write-out '%{speed_download}' "${MIRRORS[$i]}/dists/$codename/Contents-amd64.gz" >"$work/probe-$i" 2>/dev/null &
+    --write-out '%{speed_download}' "${MIRRORS[$i]}/dists/$codename/Contents-$arch.gz" >"$work/probe-$i" 2>/dev/null &
 done
 wait
 ranked=()

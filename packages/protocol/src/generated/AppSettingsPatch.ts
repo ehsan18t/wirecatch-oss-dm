@@ -101,6 +101,10 @@ export type AppSettingsPatch = {
    */
   update_suffix_list?: boolean;
   /**
+   * The new [`AppSettings::prerelease_updates`].
+   */
+  prerelease_updates?: boolean;
+  /**
    * The new [`AppSettings::proxy`], replacing it whole.
    */
   proxy?: ProxySettings;

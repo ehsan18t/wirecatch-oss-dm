@@ -63,6 +63,7 @@ const SCHEMA = {
   contacts: { support_email: EMAIL, security_email: EMAIL },
   executables: { app: SLUG, bridge: SLUG, cli: SLUG },
   files: { database: FILE_NAME },
+  updates: { public_key: /^[\w-]{43}$/ },
   native_host: { name: HOST_NAME, description: TEXT },
   extension: {
     chromium_id: CHROMIUM_ID,

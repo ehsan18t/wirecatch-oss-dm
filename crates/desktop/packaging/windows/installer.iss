@@ -55,6 +55,8 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}.exe"; Tasks: deskto
 [Run]
 ; Started as the person who ran the installer, never elevated (D25.4).
 Filename: "{app}\{#AppExe}.exe"; Description: "Start {#AppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+; An update the app started runs silently, and the new version starts by itself (D111).
+Filename: "{app}\{#AppExe}.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [Code]
 const

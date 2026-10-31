@@ -109,6 +109,10 @@ export type AppSettings = {
    */
   update_suffix_list: boolean;
   /**
+   * Offer the app's pre-release versions as updates too, not only full releases (D111).
+   */
+  prerelease_updates: boolean;
+  /**
    * The proxy and exceptions of every queue that follows the app's (D73).
    */
   proxy: ProxySettings;

@@ -47,6 +47,10 @@ cli = "wirecatch"
 # The download list, in the data folder.
 database = "wirecatch.db"
 
+[updates]
+# The Ed25519 public key the app checks its update manifests against (D111), as 43 characters of unpadded base64url. `node scripts/release/updater-key.mjs` makes a key pair: this half goes here, the private half into the repository secret `UPDATER_PRIVATE_KEY`, and nowhere else.
+public_key = "TODO-PRODUCT-UPDATER-PUBLIC-KEY-00000000000"
+
 [native_host]
 # The native messaging host name the bridge registers and the extension connects to: lowercase letters, digits, `_` and `.`.
 name = "app.wirecatch.bridge"

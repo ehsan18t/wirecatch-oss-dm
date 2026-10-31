@@ -21,3 +21,4 @@ pub mod system_notifications;
 pub mod teller;
 pub mod tray;
 pub mod tray_proxy;
+pub mod updates;

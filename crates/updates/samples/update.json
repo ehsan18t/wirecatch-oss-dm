@@ -1,0 +1,37 @@
+{
+  "version": "1.2.0",
+  "files": [
+    {
+      "name": "App-1.2.0-linux-arm64.AppImage",
+      "system": "linux",
+      "arch": "arm64",
+      "kind": "appimage",
+      "size": 8,
+      "sha256": "8b408ed68dfd56d503752ff2ee2ecb3c0ffa55a26f6fa107bd4444c3943ee6e1"
+    },
+    {
+      "name": "App-1.2.0-linux-x64.deb",
+      "system": "linux",
+      "arch": "x64",
+      "kind": "deb",
+      "size": 3,
+      "sha256": "9cfa1468c93fc18652e34a000f0c6614b0fa18f6f4887477ad9b0d36ca6a7eaa"
+    },
+    {
+      "name": "App-1.2.0-linux-x64.rpm",
+      "system": "linux",
+      "arch": "x64",
+      "kind": "rpm",
+      "size": 3,
+      "sha256": "9e7ab438597fee20e16e8e441bed0ce966bd59e0fb993fa7c94be31fb1384d88"
+    },
+    {
+      "name": "App-1.2.0-windows-x64-setup.exe",
+      "system": "windows",
+      "arch": "x64",
+      "kind": "setup",
+      "size": 5,
+      "sha256": "8fb6d5f37e8055ce720bd0b1d56587f88c0071f285966ba17e72b2b12672aa73"
+    }
+  ]
+}

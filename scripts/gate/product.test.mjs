@@ -98,14 +98,18 @@ test('a change to product.toml makes every file that carries the value stale', a
 
 test('the release check finds every placeholder until the values are decided', async () => {
   const before = await remainingPlaceholders(root);
-  assert.equal(before.values.length, 4);
+  assert.equal(before.values.length, 5);
   assert.ok(before.lines.some((line) => line.startsWith('SECURITY.md:')));
   edit('config/product.toml', (text) =>
     text
       .replace('"TODO-PRODUCT-PUBLISHER-LEGAL-NAME"', '"Example Ltd"')
       .replace('"https://TODO-PRODUCT-WEBSITE.invalid/"', '"https://example.com/"')
       .replace('"TODO-PRODUCT-SUPPORT-EMAIL@placeholder.invalid"', '"help@example.com"')
-      .replace('"TODO-PRODUCT-SECURITY-EMAIL@placeholder.invalid"', '"security@example.com"'),
+      .replace('"TODO-PRODUCT-SECURITY-EMAIL@placeholder.invalid"', '"security@example.com"')
+      .replace(
+        '"TODO-PRODUCT-UPDATER-PUBLIC-KEY-00000000000"',
+        '"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"',
+      ),
   );
   await generate(root);
   assert.deepEqual(await remainingPlaceholders(root), { values: [], lines: [] });
