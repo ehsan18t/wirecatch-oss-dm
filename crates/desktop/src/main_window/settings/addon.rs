@@ -4,7 +4,7 @@
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::setting::{SettingField, SettingItem};
-use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Entity, IntoElement as _, ParentElement as _, Styled as _, Window, div, px,
@@ -13,6 +13,7 @@ use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState};
 use wirecatch_shell::activity::format_bytes;
 use wirecatch_shell::api;
 
+use super::field_row;
 use crate::backend::command;
 use crate::library::Library;
 use crate::ui::{Role, Typed as _};
@@ -72,10 +73,10 @@ fn card(library: &Entity<Library>, id: AddonId, cx: &App) -> AnyElement {
         .items_end()
         .gap_2()
         .child(
-            h_flex()
-                .gap_2()
+            field_row()
                 .child(
                     div()
+                        .text_right()
                         .text_role(Role::Meta, cx)
                         .when(failed, |text| text.text_color(theme.danger))
                         .child(status(&addon)),
@@ -84,7 +85,7 @@ fn card(library: &Entity<Library>, id: AddonId, cx: &App) -> AnyElement {
                     row.child(
                         Button::new("check-addon-updates")
                             .small()
-                            .ghost()
+                            .outline()
                             .label("Check for updates")
                             .on_click(|_, window, cx| {
                                 command(window.window_handle(), cx, |manager| async move {
@@ -95,7 +96,7 @@ fn card(library: &Entity<Library>, id: AddonId, cx: &App) -> AnyElement {
                     .child(
                         Button::new("remove-addon")
                             .small()
-                            .ghost()
+                            .outline()
                             .text_color(theme.danger)
                             .label("Remove")
                             .on_click({

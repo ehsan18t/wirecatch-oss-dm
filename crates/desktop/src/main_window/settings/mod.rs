@@ -17,7 +17,7 @@ use std::time::Duration;
 use gpui_kit::component::group_box::GroupBoxVariant;
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::setting::{SelectIndex, SettingField, SettingPage, Settings};
-use gpui_kit::component::{ActiveTheme as _, Sizable as _};
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Div, Entity, Focusable as _, IntoElement as _,
     ParentElement as _, SharedString, StyleRefinement, Styled as _, Subscription, Task, WeakEntity,
@@ -56,6 +56,9 @@ impl MainWindow {
 
 /// How long a list field waits after the last keystroke before saving.
 const SAVE_AFTER: Duration = Duration::from_millis(800);
+/// The widest a custom field's status and buttons run before wrapping. The setting's own
+/// column takes up to 60% of the row and never yields, so a wider field runs past the card.
+const FIELD_WIDTH: f32 = 320.;
 
 /// A settings page.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -160,6 +163,16 @@ fn change(patch: AppSettingsPatch, cx: &mut App) {
     } else {
         tracing::warn!("a setting changed with no window open");
     }
+}
+
+/// A custom field's status and buttons, right-aligned and wrapping within [`FIELD_WIDTH`].
+fn field_row() -> Div {
+    h_flex()
+        .max_w(px(FIELD_WIDTH))
+        .flex_wrap()
+        .justify_end()
+        .items_center()
+        .gap_2()
 }
 
 /// A setting's current value; `fallback` until the settings have loaded.
