@@ -7,7 +7,9 @@
  * translation may.
  */
 import { expect, type Frame, type Page } from '@playwright/test';
+import { noticeId } from '@wirecatch/protocol';
 import { test } from '@wirecatch/ui/testing/playwright';
+import type { PreviewWindow } from '../preview/notices-frame';
 
 const SCHEMES = ['light', 'dark'] as const;
 const SITES = ['light', 'dark'] as const;
@@ -102,6 +104,30 @@ test('Clear all stays at the bottom, below every notice, however many there are'
   if (!clear) throw new Error('no Clear all');
   expect(notices).toHaveLength(3);
   for (const bottom of notices) expect(bottom).toBeLessThanOrEqual(clear.y);
+});
+
+test('a notice that takes the place of one leaving is said to be shown', async ({ page }) => {
+  // No slide out, so the frame keeps its size, as when a notice ran out while the window was minimized.
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const frame = await noticesFrame(page, 'notices=finished');
+  const id = noticeId(99);
+  await frame.evaluate((id) => {
+    const { page: notices } = (window as unknown as PreviewWindow).notices;
+    const toast = notices.toaster.list[0];
+    if (!toast) throw new Error('no notice');
+    notices.toaster.dismiss(toast.id);
+    notices.show({
+      id,
+      kind: 'finished',
+      title: toast.title ?? '',
+      body: toast.message,
+      buttons: toast.actions.map((action) => action.label),
+      stays_ms: null,
+    });
+  }, id);
+  await expect
+    .poll(() => frame.evaluate(() => (window as unknown as PreviewWindow).notices.sent))
+    .toContainEqual({ type: 'shown', id });
 });
 
 test('every notice stays inside its frame with every word lengthened', async ({ page }) => {

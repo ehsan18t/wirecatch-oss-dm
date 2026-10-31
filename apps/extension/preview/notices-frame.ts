@@ -2,7 +2,7 @@
 // place of the background's, inside the frame `notices-host.ts` placed.
 import './notices-frame.css';
 import { mount, tick } from 'svelte';
-import { isSizeChannel } from '../src/lib/notices/messages';
+import { isSizeChannel, type FromNoticesPage } from '../src/lib/notices/messages';
 import { NoticesPage } from '../src/lib/notices/page.svelte';
 import Notices from '../src/ui/notices/Notices.svelte';
 import { pseudoTranslate } from './pseudo';
@@ -12,7 +12,13 @@ const params = new URLSearchParams(location.search);
 // Like the extension's notices page, it sets no scheme or accent of its own: the browser's scheme,
 // since a frame whose scheme differs from the page around it gets an opaque backdrop.
 const which = params.get('notices');
-const page = new NoticesPage(() => undefined);
+/** What the preview hands the checks: the notices page, and what it sent the background. */
+export interface PreviewWindow {
+  notices: { page: NoticesPage; sent: FromNoticesPage[] };
+}
+const sent: FromNoticesPage[] = [];
+const page = new NoticesPage((message) => sent.push(message));
+Object.assign(window, { notices: { page, sent } } satisfies PreviewWindow);
 window.addEventListener('message', (event) => {
   const [sizes] = event.ports;
   const token = location.hash.slice(1);
