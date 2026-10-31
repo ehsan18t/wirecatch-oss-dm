@@ -23,11 +23,14 @@ gpui_kit::assets::icon_assets!(
         Film,
         Image,
         Layers,
+        LayoutList,
         ListOrdered,
         Music,
         Package,
         Pencil,
         Trash,
+        Zap,
+        ZapOff,
     ]
 );
 
@@ -59,5 +62,65 @@ pub fn category(category: Category) -> IconName {
         Category::Program => IconName::Package,
         Category::Image => IconName::Image,
         Category::Other => IconName::File,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `IconName::ArrowUpDown` is drawn from `icons/arrow-up-down.svg`.
+    fn file_of(name: &str) -> String {
+        let mut file = String::from("icons/");
+        let chars: Vec<char> = name.chars().collect();
+        for (at, c) in chars.iter().enumerate() {
+            let starts_word = at > 0
+                && (c.is_ascii_uppercase()
+                    || (c.is_ascii_digit() && !chars[at - 1].is_ascii_digit()));
+            if starts_word {
+                file.push('-');
+            }
+            file.push(c.to_ascii_lowercase());
+        }
+        file + ".svg"
+    }
+
+    fn sources(folder: &std::path::Path, found: &mut Vec<(std::path::PathBuf, String)>) {
+        for entry in std::fs::read_dir(folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                sources(&path, found);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                let text = std::fs::read_to_string(&path).unwrap();
+                found.push((path, text));
+            }
+        }
+    }
+
+    // An icon missing from the assets draws nothing, with no error.
+    #[test]
+    fn every_icon_the_app_names_is_bundled() {
+        let mut files = Vec::new();
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut files,
+        );
+        let mut missing = Vec::new();
+        for (path, text) in &files {
+            for prefix in ["IconName::", "Lucide::"] {
+                for (at, _) in text.match_indices(prefix) {
+                    let name: String = text[at + prefix.len()..]
+                        .chars()
+                        .take_while(char::is_ascii_alphanumeric)
+                        .collect();
+                    if name.starts_with(|c: char| c.is_ascii_uppercase())
+                        && Assets.load(&file_of(&name)).unwrap().is_none()
+                    {
+                        missing.push(format!("{name} in {}", path.display()));
+                    }
+                }
+            }
+        }
+        assert!(missing.is_empty(), "icons not bundled: {missing:?}");
     }
 }
