@@ -97,7 +97,7 @@ const AUDIO_EXTENSIONS = new Set([
  * scripts (`xmlhttprequest`, which includes `fetch`) is almost always a slice fed to
  * a player through Media Source Extensions, so it is not listed as a file.
  */
-const FILE_REQUEST_TYPES = new Set(['media', 'main_frame', 'sub_frame', 'object']);
+const FILE_REQUEST_TYPES = new Set(['media', 'main_frame', 'object']);
 
 /**
  * Direct video and audio files whose known size is below this (100 KB) are not listed.
