@@ -40,7 +40,8 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Empty states with their buttons: first run, no search match, empty queue, an empty view.
 - [x] First run: "See everything {app} can do" (opens the palette).
 - [x] Details dialog (D47), opened by clicking a row: status, the problem with its fix and Try again, speed and progress, facts, Saved to with Change, the link with Copy, activity, Open, Pause, Resume, Start over, Show in folder, More (Copy link, Cancel download), Remove; it follows the download and closes once it is removed.
-- [ ] Details: the speed graph, the queue as a select, "Stuck? The link may have expired." with Get a new link, Open in a separate window, and the fixes that open other screens (Get a new link, Proxy settings, Change queue).
+- [x] Details: the speed graph, the queue as a menu, "Stuck? The link may have expired." with Get a new link, and the fixes that open other screens (Get a new link, Proxy settings, Change queue).
+- [ ] Details: Open in a separate window (comes with the download windows).
 - [x] Context menu on rows; Menu key and Shift+F10.
 - [x] Keyboard: every shortcut of `lib/keymap.ts`, list keys; F6 moves between the search and the list (the navigation takes no keyboard focus yet).
 - [ ] Drag a link in to add it; drag rows to reorder in a queue and onto a queue to move them.
@@ -57,7 +58,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Queue: name, description, own folder (D94), limits, schedule, notifications, Delete queue.
 - [x] Queue: rules with Test a link.
 - [x] Queue: proxy, with New proxy, and the hosts that skip it.
-- [ ] Get a new link.
+- [x] Get a new link.
 - [x] Export and import settings, with the preview.
 - [x] Keyboard shortcuts.
 - [x] Remove the add-on.

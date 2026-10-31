@@ -213,7 +213,7 @@ fn about_one(menu: PopupMenu, target: &Target) -> PopupMenu {
     let Some(row) = target.only.clone() else {
         return menu;
     };
-    let (id, link) = (row.id, row.url);
+    let (id, link) = (row.id, row.url.clone());
     menu.item(
         PopupMenuItem::new("Show in folder")
             .icon(IconName::FolderOpen)
@@ -225,6 +225,19 @@ fn about_one(menu: PopupMenu, target: &Target) -> PopupMenu {
             .on_click(move |_, _, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(link.clone()));
             }),
+    )
+    .when(
+        applies::offers_new_link(&row)
+            && row.error.as_ref().and_then(|e| e.fix) != Some(FixAction::RefreshLink),
+        |menu| {
+            menu.item(
+                PopupMenuItem::new(text::fix_label(FixAction::RefreshLink))
+                    .icon(IconName::Globe)
+                    .on_click(move |_, window, cx| {
+                        fixes::run(id, FixAction::RefreshLink, window, cx);
+                    }),
+            )
+        },
     )
     .when(row.status != DownloadStatus::Completed, |menu| {
         menu.item(

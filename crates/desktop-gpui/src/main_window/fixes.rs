@@ -33,8 +33,15 @@ pub fn run(id: DownloadId, fix: FixAction, window: &mut Window, cx: &mut App) {
             window.close_all_dialogs(cx);
             bring_up(&Asked::Reveal(Reveal::proxy_settings()), cx);
         }
-        FixAction::RefreshLink | FixAction::ChangeQueue => {
-            window.push_notification("This comes with a later version of this window.", cx);
+        FixAction::RefreshLink => {
+            if let Some(library) = super::library(cx) {
+                super::refresh_dialog::open(library, id, window, cx);
+            }
+        }
+        FixAction::ChangeQueue => {
+            if let Some(library) = super::library(cx) {
+                super::details::open(library, id, window, cx);
+            }
         }
     }
 }

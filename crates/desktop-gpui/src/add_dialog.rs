@@ -86,6 +86,8 @@ pub fn open(
 ) -> WeakEntity<AddForm> {
     let form = cx.new(|cx| AddForm::new(library, urls, queue, window, cx));
     let opened = form.downgrade();
+    let links = form.read(cx).links.clone();
+    let empty = urls.is_empty();
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let count = form.read(cx).link_count(cx);
         let send = form.clone();
@@ -132,6 +134,10 @@ pub fn open(
                     ),
             )
     });
+    // With links in it, the dialog keeps the keyboard so Enter downloads them.
+    if empty {
+        crate::ui::dialog::focus_after_opening(&links, window, cx);
+    }
     opened
 }
 
@@ -148,13 +154,7 @@ impl AddForm {
                 .auto_grow(3, 8)
                 .placeholder("https://example.com/file.zip")
         });
-        links.update(cx, |state, cx| {
-            state.set_value(urls.join("\n"), window, cx);
-            // With links in it, Enter downloads them; without, the box takes the typing.
-            if urls.is_empty() {
-                state.focus(window, cx);
-            }
-        });
+        links.update(cx, |state, cx| state.set_value(urls.join("\n"), window, cx));
         let file_name = cx.new(|cx| InputState::new(window, cx));
         let mut choices = vec![QueueChoice {
             title: "Automatic".into(),

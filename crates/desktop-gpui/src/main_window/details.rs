@@ -2,6 +2,8 @@
 //! now, the short facts, where it is saved and where it came from, and what happened to it, with
 //! its actions at the foot.
 
+use std::collections::VecDeque;
+
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::progress::Progress;
@@ -11,15 +13,15 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, InteractiveElement as _,
-    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Window, div, px,
+    IntoElement, ParentElement as _, PathBuilder, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Window, canvas, div, point, px,
 };
-use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MILLE_DONE};
+use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
 
 use super::list::status_tone;
-use super::{Group, confirm, fixes};
+use super::{Group, applies, confirm, fixes, refresh_dialog};
 use crate::backend::act;
 use crate::library::Library;
 use crate::ui::layout::{self, Rule};
@@ -41,8 +43,14 @@ const MAX_HEIGHT: f32 = 640.;
 pub struct Details {
     library: Entity<Library>,
     id: DownloadId,
+    /// The speeds seen while the dialog is open, oldest first, for the graph.
+    speeds: VecDeque<u64>,
     _subscriptions: Vec<Subscription>,
 }
+
+/// Speeds the graph keeps: about a minute at one a second.
+const KEPT_SPEEDS: usize = 60;
+const GRAPH_HEIGHT: f32 = 40.;
 
 /// Opens the details of download `id` in a dialog over `window`. It closes by itself once the
 /// download is removed.
@@ -52,27 +60,42 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
             &library,
             window,
             |details: &mut Details, library, window, cx| {
-                if library
+                let row = library
                     .read(cx)
                     .downloads
                     .iter()
-                    .any(|row| row.id == details.id)
-                {
-                    cx.notify();
-                } else {
-                    window.close_dialog(cx);
+                    .find(|row| row.id == details.id)
+                    .map(|row| (row.status, row.speed));
+                match row {
+                    Some((status, speed)) => {
+                        if Group::of(status) == Group::Downloading {
+                            details.keep_speed(speed);
+                        }
+                        cx.notify();
+                    }
+                    None => window.close_dialog(cx),
                 }
             },
         );
         Details {
             library,
             id,
+            speeds: VecDeque::with_capacity(KEPT_SPEEDS),
             _subscriptions: vec![follow],
         }
     });
     crate::ui::dialog::open(window, cx, move |dialog, _, _| {
         dialog.w(px(WIDTH)).p_0().child(details.clone())
     });
+}
+
+impl Details {
+    fn keep_speed(&mut self, speed: u64) {
+        if self.speeds.len() == KEPT_SPEEDS {
+            self.speeds.pop_front();
+        }
+        self.speeds.push_back(speed);
+    }
 }
 
 impl Render for Details {
@@ -89,6 +112,13 @@ impl Render for Details {
         let queue = library
             .queue(row.queue)
             .map_or_else(|| "Its queue".to_owned(), |q| q.settings.name.clone());
+        let others: Vec<(QueueId, String)> = library
+            .queues
+            .iter()
+            .filter(|q| q.id != row.queue)
+            .map(|q| (q.id, q.settings.name.clone()))
+            .collect();
+        let speeds: Vec<u64> = self.speeds.iter().copied().collect();
         v_flex()
             .id("details")
             .max_h(px(MAX_HEIGHT))
@@ -100,9 +130,9 @@ impl Render for Details {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .child(now_section(&row, &queue, cx))
-                    .child(facts(&row, &queue, cx))
-                    .child(places(&row, cx))
+                    .child(now_section(&row, &queue, &speeds, cx))
+                    .child(facts(&row, &queue, &others, cx))
+                    .child(places(&row, self.library.clone(), cx))
                     .child(activity(&row, cx)),
             )
             .child(footer(&row, self.library.clone(), cx))
@@ -144,6 +174,7 @@ fn header(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElem
 fn now_section(
     row: &DownloadSummary,
     queue: &str,
+    speeds: &[u64],
     cx: &mut Context<'_, Details>,
 ) -> impl IntoElement {
     let failed = match (row.status, &row.error) {
@@ -166,6 +197,9 @@ fn now_section(
                 .text_role(Role::Body, cx)
                 .child(detail),
         );
+    }
+    if live && speeds.len() > 1 {
+        section = section.child(speed_graph(speeds.to_vec(), cx));
     }
     if row.done > 0 || live || row.status == DownloadStatus::Completed {
         let size = match (row.status, text::percent(row)) {
@@ -219,8 +253,54 @@ fn now_section(
     section
 }
 
-/// The short facts in one strip, each one the rest of the dialog does not already say.
-fn facts(row: &DownloadSummary, queue: &str, cx: &App) -> impl IntoElement {
+/// The speeds seen while the dialog is open, as a line from oldest to newest.
+fn speed_graph(speeds: Vec<u64>, cx: &App) -> impl IntoElement {
+    let color = cx.theme().primary;
+    canvas(
+        |_, _, _| (),
+        move |bounds, (), window, _| {
+            // A quarter above the fastest, so a steady speed does not run along the top edge.
+            let top = (speeds.iter().copied().max().unwrap_or_default() / 4 * 5).max(1);
+            let last = speeds.len().saturating_sub(1).max(1);
+            let at = |index: usize, speed: u64| {
+                let across = thousandths(index as u128, last as u128);
+                let up = thousandths(u128::from(speed), u128::from(top));
+                point(
+                    bounds.origin.x + bounds.size.width * across,
+                    bounds.origin.y + bounds.size.height * (1. - up),
+                )
+            };
+            let mut line = PathBuilder::stroke(px(1.5));
+            for (index, speed) in speeds.iter().enumerate() {
+                if index == 0 {
+                    line.move_to(at(index, *speed));
+                } else {
+                    line.line_to(at(index, *speed));
+                }
+            }
+            if let Ok(path) = line.build() {
+                window.paint_path(path, color);
+            }
+        },
+    )
+    .w_full()
+    .h(px(GRAPH_HEIGHT))
+}
+
+/// `part` of `whole` to a thousandth, as a fraction.
+fn thousandths(part: u128, whole: u128) -> f32 {
+    let scaled = u16::try_from((part * 1000) / whole.max(1)).unwrap_or(1000);
+    f32::from(scaled.min(1000)) / 1000.
+}
+
+/// The short facts in one strip, each one the rest of the dialog does not already say. With other
+/// queues, the queue is a menu that moves the download.
+fn facts(
+    row: &DownloadSummary,
+    queue: &str,
+    others: &[(QueueId, String)],
+    cx: &App,
+) -> impl IntoElement {
     let theme = cx.theme();
     let not_started = row.done == 0
         && row.status != DownloadStatus::Completed
@@ -263,9 +343,36 @@ fn facts(row: &DownloadSummary, queue: &str, cx: &App) -> impl IntoElement {
                             fact.border_l_1().border_color(theme.border)
                         })
                         .child(div().text_role(Role::Meta, cx).child(label))
-                        .child(div().text_role(Role::Strong, cx).child(value))
+                        .child(if label == "Queue" && !others.is_empty() {
+                            queue_picker(row.id, value, others.to_vec()).into_any_element()
+                        } else {
+                            div()
+                                .text_role(Role::Strong, cx)
+                                .child(value)
+                                .into_any_element()
+                        })
                 }),
         )
+}
+
+/// The download's queue as a menu of the others, which moves it.
+fn queue_picker(id: DownloadId, queue: String, others: Vec<(QueueId, String)>) -> impl IntoElement {
+    Button::new("details-queue")
+        .xsmall()
+        .ghost()
+        .label(queue)
+        .dropdown_menu(move |menu, _, _| {
+            others.iter().fold(menu, |menu, (other, name)| {
+                let other = *other;
+                menu.item(PopupMenuItem::new(format!("Move to {name}")).on_click(
+                    move |_, window, cx| {
+                        act(window.window_handle(), cx, move |manager| {
+                            api::move_to_queue(manager, &[id], other)
+                        });
+                    },
+                ))
+            })
+        })
 }
 
 /// Why it failed, with its fix and Try again.
@@ -304,16 +411,15 @@ fn failure(
 }
 
 /// Where it is saved, with Change until it finishes, and where it came from, with Copy.
-fn places(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElement {
+fn places(
+    row: &DownloadSummary,
+    library: Entity<Library>,
+    cx: &mut Context<'_, Details>,
+) -> impl IntoElement {
     let theme = cx.theme();
     let id = row.id;
     let link = text::link_for_display(&row.url);
     let copied = link.clone();
-    let expired = matches!(row.status, DownloadStatus::Paused)
-        || matches!(
-            row.waiting,
-            Some(wirecatch_protocol::app::WaitReason::ServerRefused { .. })
-        );
     layout::section(Rule::None, cx)
         .text_sm()
         .child(place(
@@ -349,11 +455,25 @@ fn places(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElem
             ),
             cx,
         ))
-        .when(expired && row.status != DownloadStatus::Failed, |list| {
+        .when(applies::link_may_have_expired(row), |list| {
             list.child(
-                div()
-                    .text_color(theme.muted_foreground)
-                    .child("Stuck? The link may have expired."),
+                h_flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_color(theme.muted_foreground)
+                            .child("Stuck? The link may have expired."),
+                    )
+                    .child(
+                        Button::new("details-new-link")
+                            .xsmall()
+                            .ghost()
+                            .label("Get a new link")
+                            .on_click(move |_, window, cx| {
+                                refresh_dialog::open(library.clone(), id, window, cx);
+                            }),
+                    ),
             )
         })
 }

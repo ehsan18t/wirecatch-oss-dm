@@ -17,6 +17,18 @@ pub fn open(
     });
 }
 
+/// Gives the keyboard to `field` once the dialog just opened has taken it for itself.
+pub fn focus_after_opening<F: gpui_kit::Focusable + 'static>(
+    field: &gpui_kit::Entity<F>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let field = field.clone();
+    window.defer(cx, move |window, cx| {
+        field.read(cx).focus_handle(cx).focus(window, cx);
+    });
+}
+
 pub fn open_alert(
     window: &mut Window,
     cx: &mut App,
