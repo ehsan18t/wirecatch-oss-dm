@@ -477,23 +477,15 @@ impl DownloadWindow {
             return closed_note(cx);
         };
         let per_mille = text::per_mille(&row);
-        let line = if row.status == DownloadStatus::Downloading && row.speed > 0 {
-            [
-                Some(text::speed(row.speed)),
-                text::percent(&row),
-                row.eta_secs.map(|left| format!("{} left", text::eta(left))),
-            ]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join(" · ")
-        } else {
-            text::status_short(&row)
-        };
+        let over = matches!(
+            row.status,
+            DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled
+        );
+        let failed = row.status == DownloadStatus::Failed;
         v_flex()
             .gap_3()
             .child(heading(&row.file_name, &row.url, row.total, cx))
-            .when(row.status != DownloadStatus::Completed, |body| {
+            .when(!over, |body| {
                 body.child(
                     Progress::new("progress-bar")
                         .loading(per_mille.is_none())
@@ -502,10 +494,35 @@ impl DownloadWindow {
                         })),
                 )
             })
-            .child(div().text_role(Role::Meta, cx).child(line))
+            .child(
+                div()
+                    .text_role(Role::Meta, cx)
+                    .when(failed, |line| line.text_color(cx.theme().danger))
+                    .child(progress_line(&row)),
+            )
             .child(actions(progress_buttons(id, row.status)))
             .into_any_element()
     }
+}
+
+/// The line under a download's bar: how fast and how far while it moves, why it failed, else
+/// its state in a few words.
+fn progress_line(row: &DownloadSummary) -> String {
+    if let (DownloadStatus::Failed, Some(error)) = (row.status, &row.error) {
+        return error.message.clone();
+    }
+    if row.status == DownloadStatus::Downloading && row.speed > 0 {
+        return [
+            Some(text::speed(row.speed)),
+            text::percent(row),
+            row.eta_secs.map(|left| format!("{} left", text::eta(left))),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" · ");
+    }
+    text::status_short(row)
 }
 
 /// What a download's progress window offers in its state.
@@ -654,4 +671,25 @@ fn button(id: &'static str, label: &'static str, variant: ButtonVariant, busy: b
         .label(label)
         .with_variant(variant)
         .disabled(busy)
+}
+
+#[cfg(test)]
+mod tests {
+    use wirecatch_protocol::app::UserError;
+
+    use super::*;
+
+    #[test]
+    fn a_failed_download_says_why() {
+        let mut row = wirecatch_test_support::downloads::download(1);
+        row.status = DownloadStatus::Failed;
+        row.error = Some(UserError {
+            message: "The disk is full. Free some space and try again.".to_owned(),
+            fix: None,
+        });
+        assert_eq!(
+            progress_line(&row),
+            "The disk is full. Free some space and try again."
+        );
+    }
 }
