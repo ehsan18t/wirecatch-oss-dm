@@ -34,10 +34,12 @@ tracing.workspace = true
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_System_Console",
-    "Win32_System_Registry",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
 ] }
+# The browsers' registry keys, without unsafe code of our own.
+windows-registry = "0.6.1"
+windows-result = "0.4.1"
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

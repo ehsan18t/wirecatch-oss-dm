@@ -707,186 +707,70 @@ mod registry {
 
 #[cfg(windows)]
 mod registry {
-    //! The registry (`HKEY_CURRENT_USER` or `HKEY_LOCAL_MACHINE`) through the Win32 API.
+    //! The registry (`HKEY_CURRENT_USER` or `HKEY_LOCAL_MACHINE`), through `windows-registry`.
 
     use std::io;
-    use std::ptr;
+
+    use windows_registry::{CURRENT_USER, Key, LOCAL_MACHINE};
+    use windows_result::HRESULT;
+    use windows_sys::Win32::Foundation::ERROR_FILE_NOT_FOUND;
 
     use super::Hive;
 
-    use windows_sys::Win32::Foundation::{
-        ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_SUCCESS, WIN32_ERROR,
-    };
-    use windows_sys::Win32::System::Registry::{
-        HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_SET_VALUE,
-        REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_SZ, RegCloseKey, RegCreateKeyExW,
-        RegDeleteKeyW, RegGetValueW, RegOpenKeyExW, RegQueryInfoKeyW, RegSetValueExW,
-    };
-
-    fn root(hive: Hive) -> HKEY {
+    fn root(hive: Hive) -> &'static Key {
         match hive {
-            Hive::CurrentUser => HKEY_CURRENT_USER,
-            Hive::LocalMachine => HKEY_LOCAL_MACHINE,
+            Hive::CurrentUser => CURRENT_USER,
+            Hive::LocalMachine => LOCAL_MACHINE,
         }
     }
 
-    fn wide(text: &str) -> Vec<u16> {
-        text.encode_utf16().chain(std::iter::once(0)).collect()
-    }
-
-    fn check(status: WIN32_ERROR) -> io::Result<()> {
-        if status == ERROR_SUCCESS {
-            Ok(())
-        } else {
-            Err(os_error(status))
-        }
-    }
-
-    /// The Win32 error `code` as an `io::Error`. Win32 error codes are `u32`, and
-    /// `io::Error` keeps them as the same bits in an `i32`.
-    fn os_error(code: WIN32_ERROR) -> io::Error {
-        io::Error::from_raw_os_error(code.cast_signed())
-    }
-
-    /// Closes the key on drop.
-    struct Key(HKEY);
-
-    impl Drop for Key {
-        fn drop(&mut self) {
-            // SAFETY: the key was opened by us and is closed exactly once.
-            unsafe { RegCloseKey(self.0) };
+    /// `None` for a key or value that does not exist.
+    fn found<T>(result: windows_registry::Result<T>) -> io::Result<Option<T>> {
+        match result {
+            Ok(value) => Ok(Some(value)),
+            Err(e) if e.code() == HRESULT::from_win32(ERROR_FILE_NOT_FOUND) => Ok(None),
+            Err(e) => Err(e.into()),
         }
     }
 
     pub(crate) fn value(hive: Hive, key: &str) -> io::Result<Option<String>> {
-        let key = wide(key);
-        // In bytes; the buffer is sized from it, so the size passed below is
-        // exactly what the buffer holds.
-        let mut capacity: u32 = 520;
-        let mut buf: Vec<u16> = vec![0; capacity as usize / 2];
-        // The value can change size between calls; retry a few times.
-        for _ in 0..4 {
-            let mut size = capacity;
-            // SAFETY: `key` is NUL-terminated; `buf` is writable for `size` bytes.
-            let status = unsafe {
-                RegGetValueW(
-                    root(hive),
-                    key.as_ptr(),
-                    ptr::null(),
-                    RRF_RT_REG_SZ,
-                    ptr::null_mut(),
-                    buf.as_mut_ptr().cast(),
-                    &raw mut size,
-                )
-            };
-            match status {
-                ERROR_SUCCESS => {
-                    let units = (size as usize / 2).min(buf.len());
-                    let text = &buf[..units];
-                    let text = text.strip_suffix(&[0]).unwrap_or(text);
-                    return String::from_utf16(text)
-                        .map(Some)
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e));
-                }
-                ERROR_FILE_NOT_FOUND => return Ok(None),
-                ERROR_MORE_DATA => {
-                    // Room for what was asked for in whole UTF-16 units, and one more.
-                    capacity = size
-                        .checked_next_multiple_of(2)
-                        .and_then(|bytes| bytes.checked_add(2))
-                        .ok_or_else(|| io::Error::other("the registry value is too large"))?;
-                    buf.resize(capacity as usize / 2, 0);
-                }
-                other => return Err(os_error(other)),
-            }
+        match found(root(hive).open(key))? {
+            Some(key) => found(key.get_string("")),
+            None => Ok(None),
         }
-        Err(io::Error::other("the registry value kept changing size"))
     }
 
     pub(crate) fn set_value(hive: Hive, key: &str, value: &str) -> io::Result<()> {
-        let key = wide(key);
-        let mut handle: HKEY = ptr::null_mut();
-        // SAFETY: `key` is NUL-terminated; on success `handle` is a key we own.
-        check(unsafe {
-            RegCreateKeyExW(
-                root(hive),
-                key.as_ptr(),
-                0,
-                ptr::null(),
-                REG_OPTION_NON_VOLATILE,
-                KEY_SET_VALUE,
-                ptr::null(),
-                &raw mut handle,
-                ptr::null_mut(),
-            )
-        })?;
-        let handle = Key(handle);
-        let data = wide(value);
-        let bytes = u32::try_from(data.len() * 2)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "value too long"))?;
-        // SAFETY: `data` is a NUL-terminated UTF-16 string of `bytes` bytes.
-        check(unsafe {
-            RegSetValueExW(
-                handle.0,
-                ptr::null(),
-                0,
-                REG_SZ,
-                data.as_ptr().cast(),
-                bytes,
-            )
-        })
+        root(hive)
+            .create(key)
+            .and_then(|key| key.set_string("", value))
+            .map_err(io::Error::from)
     }
 
+    /// Refuses a key with subkeys: `remove_tree`, the crate's only way to delete a key, would
+    /// take them too.
     pub(crate) fn delete_key(hive: Hive, key: &str) -> io::Result<()> {
-        let key = wide(key);
-        // SAFETY: `key` is NUL-terminated.
-        match unsafe { RegDeleteKeyW(root(hive), key.as_ptr()) } {
-            ERROR_SUCCESS | ERROR_FILE_NOT_FOUND => Ok(()),
-            other => Err(os_error(other)),
+        let Some(opened) = found(root(hive).open(key))? else {
+            return Ok(());
+        };
+        if opened.keys()?.next().is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::DirectoryNotEmpty,
+                format!("{key} has subkeys"),
+            ));
         }
+        drop(opened);
+        found(root(hive).remove_tree(key)).map(drop)
     }
 
     pub(crate) fn delete_key_if_empty(hive: Hive, key: &str) -> io::Result<bool> {
-        let wide_key = wide(key);
-        let mut handle: HKEY = ptr::null_mut();
-        // SAFETY: `wide_key` is NUL-terminated; on success `handle` is ours.
-        match unsafe {
-            RegOpenKeyExW(
-                root(hive),
-                wide_key.as_ptr(),
-                0,
-                KEY_QUERY_VALUE,
-                &raw mut handle,
-            )
-        } {
-            ERROR_SUCCESS => {}
-            ERROR_FILE_NOT_FOUND => return Ok(false),
-            other => return Err(os_error(other)),
-        }
-        let handle = Key(handle);
-        let mut subkeys = 0u32;
-        let mut values = 0u32;
-        // SAFETY: `handle` is open; every out pointer is either null or valid.
-        check(unsafe {
-            RegQueryInfoKeyW(
-                handle.0,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null(),
-                &raw mut subkeys,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                &raw mut values,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-            )
-        })?;
-        drop(handle);
-        if subkeys != 0 || values != 0 {
+        let Some(opened) = found(root(hive).open(key))? else {
+            return Ok(false);
+        };
+        if opened.keys()?.next().is_some() || opened.values()?.next().is_some() {
             return Ok(false);
         }
+        drop(opened);
         delete_key(hive, key)?;
         Ok(true)
     }
@@ -1888,6 +1772,7 @@ mod tests {
         let read_back = host.registry_value(Hive::CurrentUser, &key);
         // A key with a subkey is not empty, so it stays.
         let kept = host.delete_registry_key_if_empty(Hive::CurrentUser, &root);
+        let refused = host.delete_registry_key(Hive::CurrentUser, &root);
         let deleted = host.delete_registry_key(Hive::CurrentUser, &key);
         let hosts_pruned = host.delete_registry_key_if_empty(
             Hive::CurrentUser,
@@ -1900,6 +1785,7 @@ mod tests {
             Some(r"C:\path\manifest.json")
         );
         assert!(!kept.unwrap());
+        assert!(refused.is_err(), "a key with subkeys is never deleted");
         deleted.unwrap();
         assert!(hosts_pruned.unwrap());
         assert!(root_pruned.unwrap());

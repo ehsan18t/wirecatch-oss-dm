@@ -10,10 +10,13 @@
 use std::ffi::{OsStr, OsString};
 use std::io;
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::io::{BorrowedHandle, RawHandle};
+use std::os::windows::io::{
+    AsHandle as _, AsRawHandle as _, BorrowedHandle, FromRawHandle as _, HandleOrNull, OwnedHandle,
+    RawHandle,
+};
 use std::path::Path;
 
-use windows_sys::Win32::Foundation::{CloseHandle, FALSE, HANDLE};
+use windows_sys::Win32::Foundation::{FALSE, HANDLE};
 use windows_sys::Win32::System::Threading::{
     CREATE_NEW_PROCESS_GROUP, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DETACHED_PROCESS,
     DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, InitializeProcThreadAttributeList,
@@ -76,8 +79,11 @@ pub(crate) fn spawn(program: &Path, args: &[OsString], dir: Option<&Path>) -> io
     if created == FALSE {
         return Err(io::Error::last_os_error());
     }
-    drop(Handle(info.hThread));
-    drop(Handle(info.hProcess));
+    // SAFETY: CreateProcessW succeeded, so both are open handles this process owns and closes
+    // nowhere else.
+    drop(unsafe { OwnedHandle::from_raw_handle(info.hThread as RawHandle) });
+    // SAFETY: as above.
+    drop(unsafe { OwnedHandle::from_raw_handle(info.hProcess as RawHandle) });
     Ok(info.dwProcessId)
 }
 
@@ -87,20 +93,18 @@ pub(crate) fn spawn(program: &Path, args: &[OsString], dir: Option<&Path>) -> io
 fn open_shell(
     mut find_shell: impl FnMut() -> Option<u32>,
     account_of: impl FnOnce(BorrowedHandle<'_>) -> Result<ProcessAccount, IpcError>,
-) -> io::Result<Handle> {
+) -> io::Result<OwnedHandle> {
     let shell = find_shell()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no desktop shell is running"))?;
-    // SAFETY: the handle is checked and closed by the guard.
-    let parent = Handle(unsafe {
-        OpenProcess(
+    // SAFETY: OpenProcess returns a handle this process owns, or null on failure.
+    let opened = unsafe {
+        HandleOrNull::from_raw_handle(OpenProcess(
             PROCESS_CREATE_PROCESS | PROCESS_QUERY_LIMITED_INFORMATION,
             FALSE,
             shell,
-        )
-    });
-    if parent.0.is_null() {
-        return Err(io::Error::last_os_error());
-    }
+        ) as RawHandle)
+    };
+    let parent = OwnedHandle::try_from(opened).map_err(|_| io::Error::last_os_error())?;
     // An open handle keeps its process's id from going to another process, so if the shell
     // still has this id, the handle is the shell, not a program that got the id after the
     // shell restarted.
@@ -111,7 +115,7 @@ fn open_shell(
     }
     check_parent(
         &ProcessAccount::current().map_err(io::Error::other)?,
-        &account_of(parent.borrow()).map_err(io::Error::other)?,
+        &account_of(parent.as_handle()).map_err(io::Error::other)?,
     )?;
     Ok(parent)
 }
@@ -143,36 +147,18 @@ fn win32_size_of<T>() -> u32 {
     u32::try_from(std::mem::size_of::<T>()).unwrap_or(u32::MAX)
 }
 
-/// A process or thread handle, closed when dropped.
-struct Handle(HANDLE);
-
-impl Handle {
-    fn borrow(&self) -> BorrowedHandle<'_> {
-        // SAFETY: the handle is open (callers check it is not null) until `self` drops,
-        // which the borrow cannot outlive.
-        unsafe { BorrowedHandle::borrow_raw(self.0 as RawHandle) }
-    }
-}
-
-impl Drop for Handle {
-    fn drop(&mut self) {
-        if !self.0.is_null() {
-            // SAFETY: a handle this module opened and nothing else closes.
-            unsafe { CloseHandle(self.0) };
-        }
-    }
-}
-
 /// A one-entry attribute list naming the parent process, freed when dropped.
 struct AttributeList<'a> {
     list: LPPROC_THREAD_ATTRIBUTE_LIST,
     _buffer: Vec<usize>,
+    /// The handle value the list points at, at an address that does not move.
+    value: Box<HANDLE>,
     /// The parent handle must stay open while the list refers to it.
-    _parent: &'a Handle,
+    _parent: &'a OwnedHandle,
 }
 
 impl<'a> AttributeList<'a> {
-    fn with_parent(parent: &'a Handle) -> io::Result<Self> {
+    fn with_parent(parent: &'a OwnedHandle) -> io::Result<Self> {
         let mut size = 0usize;
         // SAFETY: the first call only reports the size needed.
         unsafe { InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &raw mut size) };
@@ -189,15 +175,17 @@ impl<'a> AttributeList<'a> {
         let this = Self {
             list,
             _buffer: buffer,
+            value: Box::new(parent.as_raw_handle() as HANDLE),
             _parent: parent,
         };
-        // SAFETY: the value is a pointer to the handle, which outlives the list (`_parent`).
+        // SAFETY: the value points at `this.value`, which lives as long as the list, and names
+        // a handle that stays open as long (`_parent`).
         let updated = unsafe {
             UpdateProcThreadAttribute(
                 this.list,
                 0,
                 PROC_THREAD_ATTRIBUTE_PARENT_PROCESS as usize,
-                (&raw const parent.0).cast(),
+                (&raw const *this.value).cast(),
                 std::mem::size_of::<HANDLE>(),
                 std::ptr::null_mut(),
                 std::ptr::null(),
@@ -293,21 +281,30 @@ mod tests {
 
     /// The parent process id Windows recorded for `pid`.
     fn parent_of(pid: u32) -> Option<u32> {
+        use std::os::windows::io::HandleOrInvalid;
         use windows_sys::Win32::System::Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
             TH32CS_SNAPPROCESS,
         };
-        // SAFETY: a snapshot walked with a correctly sized entry, then closed.
+
+        // SAFETY: the snapshot is a handle this process owns, or invalid on failure.
+        let snapshot = OwnedHandle::try_from(unsafe {
+            HandleOrInvalid::from_raw_handle(
+                CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) as RawHandle
+            )
+        })
+        .ok()?;
+        let raw = snapshot.as_raw_handle() as HANDLE;
+        // SAFETY: the snapshot is open, and the entry is zeroed with its size set as required.
         unsafe {
-            let snapshot = Handle(CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0));
             let mut entry: PROCESSENTRY32W = std::mem::zeroed();
             entry.dwSize = win32_size_of::<PROCESSENTRY32W>();
-            let mut more = Process32FirstW(snapshot.0, &raw mut entry) != FALSE;
+            let mut more = Process32FirstW(raw, &raw mut entry) != FALSE;
             while more {
                 if entry.th32ProcessID == pid {
                     return Some(entry.th32ParentProcessID);
                 }
-                more = Process32NextW(snapshot.0, &raw mut entry) != FALSE;
+                more = Process32NextW(raw, &raw mut entry) != FALSE;
             }
             None
         }
@@ -320,14 +317,12 @@ mod tests {
     }
 
     // Between reading the shell's id and opening it, Explorer can restart and its id go to
-    // another program, which then became the app's parent (IPB-8). The shell is used only
-    // if it still has the id once the handle holds the process.
+    // another program, which would become the app's parent. The shell is used only if it
+    // still has the id once the handle holds the process.
     #[test]
     fn a_shell_that_moved_to_another_id_is_not_used() {
         let here = std::process::id();
-        let err = open_shell(finder(&[here, here + 4]), ProcessAccount::of)
-            .err()
-            .expect("refused");
+        let err = open_shell(finder(&[here, here + 4]), ProcessAccount::of).expect_err("refused");
         assert_eq!(err.kind(), io::ErrorKind::Other, "{err}");
         assert!(
             open_shell(finder(&[here]), ProcessAccount::of).is_err(),
