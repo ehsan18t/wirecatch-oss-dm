@@ -11,6 +11,7 @@ use wirecatch_protocol::app::{
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::rules::{AddDownloads, LinkProtocol, Rule};
 use wirecatch_shell::activity::format_bytes;
+use wirecatch_shell::host;
 
 const SECONDS_PER_MINUTE: u64 = 60;
 const MINUTES_PER_HOUR: u64 = 60;
@@ -195,17 +196,18 @@ pub fn status_short(row: &DownloadSummary) -> String {
 }
 
 /// What each processing step is, in a sentence.
-pub fn processing_detail(step: ProcessingStep) -> &'static str {
+pub fn processing_detail(step: ProcessingStep) -> String {
+    let app = host::CHANNEL.name();
     match step {
         ProcessingStep::Joining => {
-            "The video and audio are downloaded; Wirecatch is merging them into one file."
+            format!("The video and audio are downloaded; {app} is merging them into one file.")
         }
-        ProcessingStep::Finishing => {
-            "The download is done; Wirecatch is adding the extras you chose, such as subtitles or chapters. This takes a few seconds."
-        }
-        ProcessingStep::Converting => {
-            "The download is done; Wirecatch is converting it to the format you chose. Pausing stops the conversion; the downloaded file is kept, and conversion starts over when you resume."
-        }
+        ProcessingStep::Finishing => format!(
+            "The download is done; {app} is adding the extras you chose, such as subtitles or chapters. This takes a few seconds."
+        ),
+        ProcessingStep::Converting => format!(
+            "The download is done; {app} is converting it to the format you chose. Pausing stops the conversion; the downloaded file is kept, and conversion starts over when you resume."
+        ),
     }
 }
 
@@ -229,7 +231,8 @@ pub fn wait_long(wait: &WaitReason, queue: &str) -> String {
         ),
         WaitReason::InLine { position } => format!("{} in line in {queue}.", ordinal(*position)),
         WaitReason::ServerRefused { retry_at } => format!(
-            "The video's server refused it for now, which sites sometimes do for a few minutes. Wirecatch tries again automatically at {} and keeps what was already downloaded.",
+            "The video's server refused it for now, which sites sometimes do for a few minutes. {} tries again automatically at {} and keeps what was already downloaded.",
+            host::CHANNEL.name(),
             clock(*retry_at)
         ),
     }
@@ -246,7 +249,6 @@ pub fn status_detail(row: &DownloadSummary, queue: &str) -> Option<String> {
                 .as_ref()
                 .map_or(ProcessingStep::Joining, |p| p.step),
         )
-        .to_owned()
     })
 }
 

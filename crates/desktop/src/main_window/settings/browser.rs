@@ -9,6 +9,7 @@ use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
 use wirecatch_engine::units::MIB;
 use wirecatch_protocol::app::AppSettingsPatch;
 use wirecatch_protocol::extension::{ExtensionSettings, ExtensionSettingsPatch};
+use wirecatch_shell::host;
 
 use super::{Typing, change, current, list_field, switch};
 use crate::library::Library;
@@ -43,7 +44,7 @@ fn capture(library: &Entity<Library>) -> SettingGroup {
                     })
                 }),
             )
-            .description("Wirecatch takes over downloads you start in Chrome, Edge, Firefox and other browsers.")
+            .description(format!("{} takes over downloads you start in Chrome, Edge, Firefox and other browsers.", host::CHANNEL.name()))
             .keywords(["extension", "capture", "intercept", "chrome", "firefox", "edge"]),
         )
         .item(
@@ -56,7 +57,7 @@ fn capture(library: &Entity<Library>) -> SettingGroup {
                     })
                 }),
             )
-            .description("Also captures downloads and videos in private windows. The browser must also allow Wirecatch there, in its extension settings.")
+            .description(format!("Also captures downloads and videos in private windows. The browser must also allow {} there, in its extension settings.", host::CHANNEL.name()))
             .keywords(["incognito", "private", "inprivate"]),
         )
         .item(
