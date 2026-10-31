@@ -9,7 +9,7 @@ use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::progress::Progress;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, TitleBar, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, TITLE_BAR_HEIGHT, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, ElementId, Entity, InteractiveElement as _,
@@ -28,6 +28,7 @@ use wirecatch_shell::download_windows::{Shows, fitted_height};
 
 use crate::backend::{Backend, act, command};
 use crate::library::Library;
+use crate::ui::small_title_bar::small_title_bar;
 use crate::ui::{Callout, Field, Role, Typed as _};
 use crate::{files, text};
 
@@ -201,7 +202,8 @@ impl DownloadWindow {
         let Some(height) = self.content.get() else {
             return;
         };
-        let wanted = f64::from(f32::from(height)) + 40.;
+        // The title bar and its rule above the measured body.
+        let wanted = f64::from(f32::from(height + TITLE_BAR_HEIGHT)) + 1.;
         let screen = window
             .display(cx)
             .map(|d| f64::from(f32::from(d.visible_bounds().size.height)));
@@ -235,13 +237,13 @@ impl Render for DownloadWindow {
             .size_full()
             .bg(theme.background)
             .text_role(Role::Body, cx)
-            .child(
-                TitleBar::new().child(
-                    div()
-                        .text_role(Role::Strong, cx)
-                        .child(wirecatch_shell::host::CHANNEL.name()),
-                ),
-            )
+            .child(small_title_bar(
+                div()
+                    .text_role(Role::Strong, cx)
+                    .child(wirecatch_shell::host::CHANNEL.name()),
+                window,
+                cx,
+            ))
             .child(
                 v_flex()
                     .id("download-window-body")
