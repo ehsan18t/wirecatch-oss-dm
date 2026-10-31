@@ -28,10 +28,9 @@ pub fn choose_folder(cx: &mut App) -> impl Future<Output = Option<String>> + use
 
 /// Opens download `id`'s finished file; a program opens only once the person agrees in `window`.
 pub fn open(id: DownloadId, window: &mut Window, cx: &mut App) {
-    let found = Backend::run(
-        cx,
-        move |manager| async move { api::file_to_open(&manager, id) },
-    );
+    let found = Backend::run(cx, move |manager| async move {
+        api::file_to_open(&manager, id).await
+    });
     window
         .spawn(cx, async move |cx| {
             let opened = match found.await {
@@ -70,7 +69,7 @@ pub fn ask_to_open(path: PathBuf, warning: ProgramWarning, window: &mut Window, 
 /// there yet.
 pub fn show_in_folder(id: DownloadId, window: &mut Window, cx: &mut App) {
     let found = Backend::run(cx, move |manager| async move {
-        api::item_to_reveal(&manager, id)
+        api::item_to_reveal(&manager, id).await
     });
     window
         .spawn(cx, async move |cx| {

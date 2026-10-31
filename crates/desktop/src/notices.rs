@@ -256,10 +256,9 @@ fn carry_out(act: Act, cx: &mut App) {
     match act {
         Act::Show(reveal) => main_window::bring_up(&Asked::Reveal(reveal), cx),
         Act::Open(id) => {
-            let found = Backend::run(
-                cx,
-                move |manager| async move { api::file_to_open(&manager, id) },
-            );
+            let found = Backend::run(cx, move |manager| async move {
+                api::file_to_open(&manager, id).await
+            });
             cx.spawn(async move |cx| {
                 let found = answer(found.await);
                 cx.update(|cx| match found {
@@ -277,7 +276,7 @@ fn carry_out(act: Act, cx: &mut App) {
         }
         Act::ShowInFolder(id) => {
             let found = Backend::run(cx, move |manager| async move {
-                api::item_to_reveal(&manager, id)
+                api::item_to_reveal(&manager, id).await
             });
             cx.spawn(async move |cx| {
                 let found = answer(found.await);
