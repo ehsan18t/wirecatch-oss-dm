@@ -43,10 +43,12 @@ mod imp {
 mod imp {
     use std::io;
     use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::io::{AsRawHandle as _, FromRawHandle as _, OwnedHandle, RawHandle};
     use std::path::Path;
     use std::ptr::{null, null_mut};
 
-    use windows_sys::Win32::Foundation::{CloseHandle, ERROR_SUCCESS, HANDLE, LocalFree};
+    use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HANDLE, LocalFree};
+    use windows_sys::Win32::Globalization::lstrlenW;
     use windows_sys::Win32::Security::Authorization::{
         ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
         SDDL_REVISION_1, SE_FILE_OBJECT, SetNamedSecurityInfoW,
@@ -59,25 +61,16 @@ mod imp {
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
     use windows_sys::core::PWSTR;
 
-    /// Frees memory Windows allocated with `LocalAlloc` when dropped.
-    struct LocalMemory(*mut core::ffi::c_void);
+    /// Memory Windows allocated with `LocalAlloc`, freed when dropped.
+    pub struct LocalMemory(*mut core::ffi::c_void);
 
     impl Drop for LocalMemory {
         fn drop(&mut self) {
             if !self.0.is_null() {
-                // SAFETY: the pointer came from a Windows API that documents LocalFree.
+                // SAFETY: the pointer came from an API whose result is freed with LocalFree,
+                // and only this guard frees it.
                 unsafe { LocalFree(self.0) };
             }
-        }
-    }
-
-    /// Closes a handle when dropped.
-    struct OwnedHandle(HANDLE);
-
-    impl Drop for OwnedHandle {
-        fn drop(&mut self) {
-            // SAFETY: the handle was opened by us and is closed once.
-            unsafe { CloseHandle(self.0) };
         }
     }
 
@@ -86,39 +79,11 @@ mod imp {
         // D: the access list. P: protected, so nothing is inherited from the
         // parent. One entry: Allow, inherited by subfolders and files (OICI), full
         // access (FA), for the current user.
-        let sddl = wide(format!("D:P(A;OICI;FA;;;{sid})").encode_utf16());
-        let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
-        // SAFETY: `sddl` is NUL-terminated; the descriptor is freed by the guard.
-        let converted = unsafe {
-            ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                sddl.as_ptr(),
-                SDDL_REVISION_1,
-                &raw mut descriptor,
-                null_mut(),
-            )
-        };
-        if converted == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        let _descriptor = LocalMemory(descriptor);
-
-        let (mut present, mut defaulted) = (0, 0);
-        let mut dacl: *mut ACL = null_mut();
-        // SAFETY: `descriptor` is a valid descriptor; `dacl` points into it and is
-        // only used while the descriptor is alive.
-        if unsafe {
-            GetSecurityDescriptorDacl(
-                descriptor,
-                &raw mut present,
-                &raw mut dacl,
-                &raw mut defaulted,
-            )
-        } == 0
-        {
-            return Err(io::Error::last_os_error());
-        }
+        let descriptor = descriptor(&format!("D:P(A;OICI;FA;;;{sid})"))?;
+        let dacl = dacl(&descriptor)?;
         let name = wide(path.as_os_str().encode_wide());
-        // SAFETY: `name` is NUL-terminated and `dacl` is valid for this call.
+        // SAFETY: `name` is NUL-terminated, and `dacl` points into `descriptor`, which lives
+        // past the call.
         let status = unsafe {
             SetNamedSecurityInfoW(
                 name.as_ptr(),
@@ -136,21 +101,72 @@ mod imp {
         Ok(())
     }
 
+    /// The security descriptor that `sddl` describes.
+    pub fn descriptor(sddl: &str) -> io::Result<LocalMemory> {
+        let sddl = wide(sddl.encode_utf16());
+        let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
+        // SAFETY: `sddl` is NUL-terminated and `descriptor` a writable out-parameter; on
+        // success Windows allocates the descriptor, which the guard frees.
+        let converted = unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                sddl.as_ptr(),
+                SDDL_REVISION_1,
+                &raw mut descriptor,
+                null_mut(),
+            )
+        };
+        if converted == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(LocalMemory(descriptor))
+    }
+
+    /// The access list inside `descriptor`. Refused when it has none: a null list given to
+    /// `SetNamedSecurityInfoW` grants everyone full access.
+    pub fn dacl(descriptor: &LocalMemory) -> io::Result<*mut ACL> {
+        let (mut present, mut defaulted) = (0, 0);
+        let mut dacl: *mut ACL = null_mut();
+        // SAFETY: `descriptor` holds a valid descriptor; the three out-parameters are writable,
+        // and `dacl` then points into the descriptor.
+        if unsafe {
+            GetSecurityDescriptorDacl(
+                descriptor.0,
+                &raw mut present,
+                &raw mut dacl,
+                &raw mut defaulted,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        if present == 0 || dacl.is_null() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "the security descriptor has no access list",
+            ));
+        }
+        Ok(dacl)
+    }
+
     /// The current user's security id, as text (`S-1-5-21-...`).
     pub fn current_user_sid() -> io::Result<String> {
         let mut token: HANDLE = null_mut();
-        // SAFETY: plain out-parameter call; the handle is closed by the guard.
+        // SAFETY: the current process's pseudo handle needs no closing, and `token` is a
+        // writable out-parameter.
         if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut token) } == 0 {
             return Err(io::Error::last_os_error());
         }
-        let _token = OwnedHandle(token);
+        // SAFETY: the call succeeded, so `token` is an open handle nothing else closes.
+        let owned = unsafe { OwnedHandle::from_raw_handle(token as RawHandle) };
+        let token = owned.as_raw_handle() as HANDLE;
 
         let mut len = 0u32;
-        // SAFETY: asks only for the size; failing with "buffer too small" is expected.
+        // SAFETY: `token` is open; a null buffer of length 0 asks only for the size, so the
+        // "buffer too small" failure is expected.
         unsafe { GetTokenInformation(token, TokenUser, null_mut(), 0, &raw mut len) };
         // u64 elements keep the buffer aligned for TOKEN_USER.
         let mut buffer = vec![0u64; (len as usize).div_ceil(8).max(1)];
-        // SAFETY: the buffer holds at least `len` bytes.
+        // SAFETY: `token` is open and the buffer is writable for `len` bytes.
         let filled = unsafe {
             GetTokenInformation(
                 token,
@@ -167,7 +183,8 @@ mod imp {
         // points into the same buffer, which outlives this use.
         let sid = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
         let mut text: PWSTR = null_mut();
-        // SAFETY: `sid` is valid; the string is freed by the guard.
+        // SAFETY: `sid` points into `buffer`, still alive; the string Windows allocates is
+        // freed by the guard.
         if unsafe { ConvertSidToStringSidW(sid, &raw mut text) } == 0 {
             return Err(io::Error::last_os_error());
         }
@@ -185,12 +202,9 @@ mod imp {
     /// # Safety
     /// `text` must point to a NUL-terminated UTF-16 string.
     pub unsafe fn from_wide(text: PWSTR) -> String {
-        let mut len = 0;
-        // SAFETY: the caller promises a terminating NUL.
-        while unsafe { *text.add(len) } != 0 {
-            len += 1;
-        }
-        // SAFETY: `len` units were just read.
+        // SAFETY: the caller promises a NUL-terminated string.
+        let len = usize::try_from(unsafe { lstrlenW(text) }).unwrap_or(0);
+        // SAFETY: `lstrlenW` counted `len` units before the NUL, all readable.
         String::from_utf16_lossy(unsafe { std::slice::from_raw_parts(text, len) })
     }
 
@@ -208,22 +222,8 @@ mod imp {
         /// one, such as `LA` for the built-in Administrator that CI runners use,
         /// otherwise `sid` itself.
         pub fn sddl_account(sid: &str) -> io::Result<String> {
-            let owner = wide(format!("O:{sid}").encode_utf16());
-            let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
-            // SAFETY: `owner` is NUL-terminated; the descriptor is freed by the guard.
-            let converted = unsafe {
-                ConvertStringSecurityDescriptorToSecurityDescriptorW(
-                    owner.as_ptr(),
-                    SDDL_REVISION_1,
-                    &raw mut descriptor,
-                    null_mut(),
-                )
-            };
-            if converted == 0 {
-                return Err(io::Error::last_os_error());
-            }
-            let _descriptor = LocalMemory(descriptor);
-            let text = descriptor_text(descriptor, OWNER_SECURITY_INFORMATION)?;
+            let descriptor = descriptor(&format!("O:{sid}"))?;
+            let text = descriptor_text(descriptor.0, OWNER_SECURITY_INFORMATION)?;
             text.strip_prefix("O:")
                 .map(str::to_owned)
                 .ok_or_else(|| io::Error::other(format!("not an owner: {text}")))
@@ -233,7 +233,8 @@ mod imp {
         pub fn dacl_text(path: &Path) -> io::Result<String> {
             let name = wide(path.as_os_str().encode_wide());
             let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
-            // SAFETY: out-parameter call; the descriptor is freed by the guard.
+            // SAFETY: `name` is NUL-terminated and each out-parameter is null or writable; the
+            // descriptor Windows allocates is freed by the guard.
             let status = unsafe {
                 GetNamedSecurityInfoW(
                     name.as_ptr(),
@@ -305,6 +306,15 @@ mod tests {
         let created = imp::inspect::dacl_text(&file).unwrap();
         assert_eq!(created.matches("(A;").count(), 1, "{created}");
         assert!(created.ends_with(&allowed), "{created}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_descriptor_without_an_access_list_is_refused() {
+        let owner_only = imp::descriptor("O:SY").unwrap();
+        assert!(imp::dacl(&owner_only).is_err());
+        let protected = imp::descriptor("D:P(A;OICI;FA;;;SY)").unwrap();
+        assert!(!imp::dacl(&protected).unwrap().is_null());
     }
 
     #[cfg(windows)]
