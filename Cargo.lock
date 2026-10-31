@@ -9774,6 +9774,8 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "windows-registry 0.6.1",
+ "windows-result 0.4.1",
  "windows-sys 0.61.2",
  "wirecatch-ipc",
  "wirecatch-logging",
