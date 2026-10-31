@@ -303,6 +303,19 @@ fn answer<T>(
     }
 }
 
+/// The download list could not be saved: told in a notification while no main window shows it.
+pub fn storage_failed(reason: &str, cx: &mut App) {
+    if main_window::is_open(cx) {
+        return;
+    }
+    let title = format!("{} could not save its download list", host::CHANNEL.name());
+    if let Some(Kept(tellers)) = cx.try_global::<Kept>() {
+        tellers
+            .system
+            .show(notifications::plain(title, reason.to_owned()), true);
+    }
+}
+
 fn could_not(refused: ProtocolError, cx: &mut App) {
     let title = format!("{} could not do that", host::CHANNEL.name());
     let (manager, _) = Backend::now(cx);
