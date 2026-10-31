@@ -8,6 +8,7 @@ import {
   cookieStoreIdOf,
   inFlightStore,
   alertStore,
+  tabInfo,
   toolbarBadge,
 } from '../src/lib/browser/adapters';
 import { asCachedSettings, CACHE_KEY, memoryArea, storageCache } from '../src/lib/cache';
@@ -343,6 +344,26 @@ describe('cookieStoreIdOf', () => {
     expect(cookieStoreIdOf({ id: 1, incognito: false })).toBeNull();
     expect(cookieStoreIdOf({ cookieStoreId: 7 })).toBeNull();
     expect(cookieStoreIdOf(undefined)).toBeNull();
+  });
+});
+
+describe('tabInfo', () => {
+  it('reads what the media lists need of a tab, and null for one that is gone', async () => {
+    fakeBrowser.reset();
+    const opened = await fakeBrowser.windows.create({});
+    const tab = await fakeBrowser.tabs.create({
+      url: 'https://example.com/watch',
+      windowId: opened?.id,
+    });
+    if (tab.id === undefined) throw new Error('the fake tab has no id');
+    expect(await tabInfo(tab.id)).toEqual({
+      url: 'https://example.com/watch',
+      title: tab.title ?? null,
+      incognito: false,
+      cookieStoreId: null,
+    });
+    await fakeBrowser.tabs.remove(tab.id);
+    expect(await tabInfo(tab.id)).toBeNull();
   });
 });
 
