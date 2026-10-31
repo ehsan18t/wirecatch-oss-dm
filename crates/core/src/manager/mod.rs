@@ -3,6 +3,7 @@
 
 mod added_pages;
 mod addons;
+pub mod app_update;
 mod arrival;
 mod captures;
 mod downloads;
@@ -43,6 +44,8 @@ use tokio::task::JoinHandle;
 use tracing::warn;
 use wirecatch_addons::manifest::MediaAddonSources;
 use wirecatch_engine::{Backoff, CancellationToken, RateLimiter, Url};
+
+use self::app_update::AppReleases;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{StartupNotice, UiEvent};
 use wirecatch_protocol::extension::{BrowserNotice, NoticeId, NoticePressed};
@@ -102,6 +105,10 @@ pub struct ManagerConfig {
     /// built in, as [`new`](Self::new) does so no test reaches the internet. The app
     /// fetches it from publicsuffix.org ([`with_official_suffix_list`](Self::with_official_suffix_list)).
     pub suffix_list_source: Option<Url>,
+    /// Where the app looks for a newer version of itself (D111), or `None` to look nowhere, as
+    /// [`new`](Self::new) does so no test reaches the internet. The app looks at its GitHub
+    /// releases ([`with_official_app_releases`](Self::with_official_app_releases)).
+    pub app_releases: Option<AppReleases>,
     /// Where the proxy's Test connection sends its request (D71.5), or `None`, as
     /// [`new`](Self::new) does so no test reaches the internet: a test then finds nothing to
     /// reach. The app sends it to [`PROXY_TEST_URL`](crate::PROXY_TEST_URL)
@@ -155,6 +162,7 @@ impl ManagerConfig {
             media_refresh_delays: DEFAULT_MEDIA_REFRESH_DELAYS.to_vec(),
             retry_backoff: Backoff::default(),
             suffix_list_source: None,
+            app_releases: None,
             proxy_test_url: None,
             computer_proxy: ComputerProxy::Read,
         }
@@ -204,6 +212,28 @@ impl ManagerConfig {
     pub fn with_official_suffix_list(mut self) -> Self {
         // A constant a test reads, so it always parses.
         self.suffix_list_source = Url::parse(PUBLIC_SUFFIX_LIST_URL).ok();
+        self
+    }
+
+    /// Looks for the app's updates where `releases` says; see
+    /// [`app_releases`](Self::app_releases).
+    #[must_use]
+    pub fn with_app_releases(mut self, releases: AppReleases) -> Self {
+        self.app_releases = Some(releases);
+        self
+    }
+
+    /// Looks for the app's updates on its GitHub releases, signed with the key in
+    /// `config/product.toml`, as the app does (D111).
+    #[must_use]
+    pub fn with_official_app_releases(mut self) -> Self {
+        // A constant a test reads, so it always parses.
+        self.app_releases = Url::parse(wirecatch_product::RELEASES_API_URL)
+            .ok()
+            .map(|list| AppReleases {
+                list,
+                public_key: wirecatch_product::UPDATER_PUBLIC_KEY.to_owned(),
+            });
         self
     }
 
@@ -289,6 +319,7 @@ struct Inner {
     /// The data folder, where a newer Public Suffix List is kept.
     data_dir: PathBuf,
     suffix_list_source: Option<Url>,
+    app_releases: Option<AppReleases>,
     proxy_test_url: Option<Url>,
     /// Held by a check of the Public Suffix List, so two never overlap.
     suffix_checking: tokio::sync::Mutex<()>,
@@ -404,6 +435,7 @@ impl Manager {
             temp_dir,
             data_dir: config.data_dir,
             suffix_list_source: config.suffix_list_source,
+            app_releases: config.app_releases,
             proxy_test_url: config.proxy_test_url,
             suffix_checking: tokio::sync::Mutex::new(()),
             media_timeout: config.media_timeout,

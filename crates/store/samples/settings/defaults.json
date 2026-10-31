@@ -94,6 +94,7 @@
   },
   "local_sites": [],
   "update_suffix_list": true,
+  "prerelease_updates": false,
   "proxy": {
     "proxy": {
       "kind": "system"

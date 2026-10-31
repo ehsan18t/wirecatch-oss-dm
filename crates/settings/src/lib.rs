@@ -124,6 +124,7 @@ pub fn default_settings() -> AppSettings {
         media: MediaDefaults::default(),
         local_sites: Vec::new(),
         update_suffix_list: true,
+        prerelease_updates: false,
         proxy: ProxySettings::default(),
     }
 }

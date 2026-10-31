@@ -4,6 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod add_dialog;
+mod app_update;
 mod backend;
 mod closing;
 mod download_windows;
@@ -100,6 +101,7 @@ fn main() {
             notices::start(cx);
             download_windows::init(&library, cx);
             sign_in::start(cx);
+            app_update::start(cx);
             main_window::run(library, cx);
             if launch.shows_window() {
                 let asked = if launch.links.is_empty() {

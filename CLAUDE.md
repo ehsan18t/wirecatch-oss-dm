@@ -31,6 +31,7 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 | `crates/desktop`         | The desktop app, drawn with GPUI (D95, D99), and its installers (`packaging/`, D106).                                                                               |
 | `crates/shell`           | What the desktop app does besides drawing windows: opening the manager, serving the bridge, start at sign-in, and each interface command as a plain function (D99). |
 | `crates/queues`          | Queue rules as pure functions: which downloads start under each queue's limits, and when a scheduled queue runs (D74).                                              |
+| `crates/updates`         | The app's own updates: the signed manifest of a release's installers, and which release and installer to take (D111).                                               |
 | `crates/ipc`             | Local app endpoint (named pipe on Windows, Unix socket on Linux).                                                                                                   |
 | `crates/bridge`          | Native messaging host between the extension and the app.                                                                                                            |
 | `crates/cli`             | The `wirecatch` command-line downloader.                                                                                                                            |

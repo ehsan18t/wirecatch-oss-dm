@@ -473,8 +473,16 @@ impl MainWindow {
             all_queues: false,
             focus,
             search,
-            _subscriptions: vec![restyle, follow_system, redraw, searched],
+            _subscriptions: [restyle, follow_system, redraw, searched]
+                .into_iter()
+                .chain(Self::follow_updates(cx))
+                .collect(),
         }
+    }
+
+    /// Redraws when the app's own update moves on, for its banner and its settings row.
+    fn follow_updates(cx: &mut Context<'_, Self>) -> Option<Subscription> {
+        crate::app_update::entity(cx).map(|updates| cx.observe(&updates, |_, _, cx| cx.notify()))
     }
 
     fn show(&mut self, view: View, window: &mut Window, cx: &mut Context<'_, Self>) {
@@ -708,6 +716,7 @@ impl Render for MainWindow {
                         .flex_1()
                         .min_h_0()
                         .children(self.storage_banner(cx))
+                        .children(Self::update_banner(cx))
                         .children(self.queue_header(cx))
                         .children(self.selection_bar(cx))
                         .child(self.list(cx)),

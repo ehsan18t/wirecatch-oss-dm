@@ -13,6 +13,18 @@ const BOTH = { rust: true, ts: true };
 /** The product slug as the start of an environment variable's name: `wirecatch` gives `WIRECATCH`. */
 const environmentName = (slug) => slug.toUpperCase().replaceAll('-', '_');
 
+/** GitHub's API address for the releases of `repository`, which must be a repository on GitHub. */
+function releasesApi(repository) {
+  const url = new URL(repository);
+  const path = url.pathname.replace(/\/$/, '').slice(1);
+  if (url.host !== 'github.com' || path.split('/').length !== 2) {
+    throw new Error(
+      `links.repository must be a GitHub repository (https://github.com/owner/name), not ${repository}`,
+    );
+  }
+  return `https://api.github.com/repos/${path}/releases`;
+}
+
 /** The constants generated: their name, what they mean, their value, and which languages use them. */
 const CONSTANTS = [
   ['PRODUCT_NAME', 'The product name people see.', (p) => p.product.name, BOTH],
@@ -39,6 +51,18 @@ const CONSTANTS = [
     'ADDON_FILES_URL',
     "The repository whose releases hold the media add-on's pinned files (D80).",
     (p) => p.links.addon_files,
+    RUST,
+  ],
+  [
+    'RELEASES_API_URL',
+    "GitHub's list of the repository's releases, where the app looks for a newer version (D111).",
+    (p) => releasesApi(p.links.repository),
+    RUST,
+  ],
+  [
+    'UPDATER_PUBLIC_KEY',
+    'The Ed25519 key update manifests are signed with, unpadded base64url (D111).',
+    (p) => p.updates.public_key,
     RUST,
   ],
   ['APP_EXECUTABLE', 'The desktop app executable, without `.exe`.', (p) => p.executables.app, RUST],

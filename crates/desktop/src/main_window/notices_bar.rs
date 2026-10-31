@@ -16,6 +16,65 @@ use crate::backend::{Backend, act};
 use crate::ui::Callout;
 
 impl MainWindow {
+    /// A newer version of the app, until it is installed or put aside: Install, What's new and
+    /// Later (D111).
+    pub(super) fn update_banner(cx: &App) -> Option<AnyElement> {
+        let updates = crate::app_update::entity(cx)?;
+        let read = updates.read(cx);
+        let crate::app_update::Stage::Available(update) = read.stage.clone() else {
+            return None;
+        };
+        if read.dismissed.as_deref() == Some(update.version.as_str()) {
+            return None;
+        }
+        let app = host::CHANNEL.name();
+        let version = update.version.clone();
+        let page = update.page.clone();
+        let installs = update.download.is_some();
+        Some(
+            div()
+                .px_5()
+                .pb_2()
+                .child(
+                    Callout::info(if installs {
+                        format!("{app} restarts to finish installing it.")
+                    } else {
+                        "Install it with your package manager.".to_owned()
+                    })
+                    .title(format!("{app} {version} is available"))
+                    .action(
+                        Button::new("update-install")
+                            .small()
+                            .primary()
+                            .label(if installs { "Install" } else { "Download" })
+                            .on_click(move |_, _, cx| {
+                                crate::app_update::install(&update, cx);
+                            }),
+                    )
+                    .action(
+                        Button::new("update-notes")
+                            .small()
+                            .ghost()
+                            .label("What's new")
+                            .on_click(move |_, _, cx| cx.open_url(&page)),
+                    )
+                    .action(
+                        Button::new("update-later")
+                            .small()
+                            .ghost()
+                            .label("Later")
+                            .on_click(move |_, _, cx| {
+                                updates.update(cx, |updates, cx| {
+                                    updates.dismissed = Some(version.clone());
+                                    cx.notify();
+                                });
+                            }),
+                    ),
+                )
+                .into_any_element(),
+        )
+    }
+
     /// The banner while the list could not be saved: Try again saves again, Dismiss hides it.
     pub(super) fn storage_banner(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
         let problem = self.library.read(cx).storage_problem.clone()?;

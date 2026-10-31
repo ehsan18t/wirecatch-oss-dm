@@ -9800,7 +9800,9 @@ name = "wirecatch-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.23.1",
  "chrono",
+ "ed25519-dalek",
  "futures-util",
  "lzma-rust2",
  "pgp",
@@ -9830,6 +9832,7 @@ dependencies = [
  "wirecatch-store",
  "wirecatch-streams",
  "wirecatch-test-support",
+ "wirecatch-updates",
  "zip",
 ]
 
@@ -10069,6 +10072,7 @@ dependencies = [
  "wirecatch-protocol",
  "wirecatch-server",
  "wirecatch-test-support",
+ "wirecatch-updates",
 ]
 
 [[package]]
@@ -10157,6 +10161,19 @@ dependencies = [
  "url",
  "wirecatch-product",
  "wirecatch-protocol",
+]
+
+[[package]]
+name = "wirecatch-updates"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "ed25519-dalek",
+ "semver",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "wirecatch-product",
 ]
 
 [[package]]
