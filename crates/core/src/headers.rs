@@ -165,8 +165,7 @@ mod tests {
         }
     }
 
-    // The values left the protocol's `Secret` here, and the engine's options print their
-    // header map, so a cookie printed again one layer down (W4I review L2).
+    // The values leave the protocol's `Secret` here, and the engine's options print their header map.
     #[test]
     fn the_engine_never_prints_a_header_value() {
         let map = to_map(&[
