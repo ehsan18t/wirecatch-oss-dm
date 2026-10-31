@@ -527,12 +527,20 @@ fn progress_buttons(id: DownloadId, status: DownloadStatus) -> Vec<Button> {
             button("progress-open", "Open", ButtonVariant::Primary, false)
                 .on_click(move |_, window, cx| files::open(id, window, cx)),
         ],
-        DownloadStatus::Paused => vec![command(
-            "progress-resume",
-            "Resume",
-            ButtonVariant::Primary,
-            api::resume,
-        )],
+        DownloadStatus::Paused => vec![
+            command(
+                "progress-cancel",
+                "Cancel",
+                ButtonVariant::Ghost,
+                api::cancel,
+            ),
+            command(
+                "progress-resume",
+                "Resume",
+                ButtonVariant::Primary,
+                api::resume,
+            ),
+        ],
         DownloadStatus::Failed | DownloadStatus::Cancelled => {
             vec![command(
                 "progress-retry",
@@ -541,12 +549,20 @@ fn progress_buttons(id: DownloadId, status: DownloadStatus) -> Vec<Button> {
                 api::retry,
             )]
         }
-        _ => vec![command(
-            "progress-pause",
-            "Pause",
-            ButtonVariant::Secondary,
-            api::pause,
-        )],
+        _ => vec![
+            command(
+                "progress-cancel",
+                "Cancel",
+                ButtonVariant::Ghost,
+                api::cancel,
+            ),
+            command(
+                "progress-pause",
+                "Pause",
+                ButtonVariant::Secondary,
+                api::pause,
+            ),
+        ],
     }
 }
 
