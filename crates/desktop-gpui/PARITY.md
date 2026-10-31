@@ -25,12 +25,12 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [ ] Find any action (Ctrl+Shift+P) and Keyboard shortcuts (F1), reachable from the main window.
 - [x] Each group heading with its count; Pause all on what runs (or waits), Resume all on what is paused.
 - [x] A link pasted into the search field offers to download it (Enter), and finds it if it already is a download.
-- [ ] List header in a queue view: description, schedule and limits, Start now, Pause or Resume queue, Edit queue; "about X left"; "matching '…'".
+- [x] List header in a queue view: description, schedule and limits, Start now, Pause or Resume queue, Edit queue; "about X left"; "matching '…'".
 - [x] New download button (Ctrl+N).
 - [ ] The New download button hidden on first run, where the empty state offers it.
 - [ ] Storage failure banner with Try again and Dismiss, and a notification when no main window shows it; startup notices; toasts.
 - [x] Groups in order, Finished and Cancelled folded at first, headings fold; no headings in a status view.
-- [ ] A queue view lists its line ungrouped in run order, Finished and Cancelled grouped below; the # column.
+- [x] A queue view lists its line ungrouped in run order, Finished and Cancelled grouped below; the # column.
 - [ ] Column sorting (name, progress, size, speed, left; queue order), resizing with saved widths, narrow-window folding.
 - [x] Row: name, the line under it, progress with its caption, size, speed, time left.
 - [x] Row: Open (a program asks first, D43.1) and Show in folder, on hover and on the selected row.

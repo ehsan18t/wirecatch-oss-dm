@@ -386,7 +386,7 @@ fn doing(rules: Option<bool>, status: String, cx: &App) -> impl IntoElement {
 }
 
 /// When a queue outside its schedule starts next; `None` while it may run.
-fn outside_schedule(queue: &Queue) -> Option<wirecatch_protocol::app::TimeOfDay> {
+pub(super) fn outside_schedule(queue: &Queue) -> Option<wirecatch_protocol::app::TimeOfDay> {
     let schedule = queue.settings.schedule.as_ref()?;
     (!queue.status.running_outside_schedule
         && !schedule::allows(schedule, Local::now().naive_local()))
