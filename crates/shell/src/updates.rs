@@ -60,18 +60,13 @@ pub fn install(installer: &Path, kind: FileKind) -> Result<(), InstallError> {
 /// setup starts the new version when it is done.
 #[cfg(windows)]
 fn run_setup(installer: &Path) -> Result<(), InstallError> {
-    use std::os::windows::ffi::OsStrExt as _;
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    use wirecatch_ipc::wide;
 
-    let wide = |text: &std::ffi::OsStr| {
-        text.encode_wide()
-            .chain(std::iter::once(0))
-            .collect::<Vec<u16>>()
-    };
-    let file = wide(installer.as_os_str());
-    let arguments = wide("/SILENT /SUPPRESSMSGBOXES /NORESTART".as_ref());
-    let verb = wide("open".as_ref());
+    let file = wide(installer);
+    let arguments = wide("/SILENT /SUPPRESSMSGBOXES /NORESTART");
+    let verb = wide("open");
     // SAFETY: every buffer is NUL-terminated UTF-16 that outlives the call; a null window and
     // folder are allowed.
     let started = unsafe {

@@ -266,7 +266,7 @@ impl IpcError {
 pub use wirecatch_product::Channel;
 
 #[cfg(windows)]
-pub use windows::{ProcessAccount, Sid};
+pub use windows::{ProcessAccount, Sid, wide};
 
 /// Returns the endpoint of the release app for the current user: the one the
 /// browser bridge and the CLI connect to. Same as

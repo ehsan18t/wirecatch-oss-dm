@@ -16,12 +16,8 @@ pub fn show(tone: Tone, title: &str, text: &str) {
         use windows_sys::Win32::UI::WindowsAndMessaging::{
             MB_ICONINFORMATION, MB_ICONWARNING, MB_OK, MessageBoxW,
         };
+        use wirecatch_ipc::wide;
 
-        let wide = |s: &str| {
-            s.encode_utf16()
-                .chain(std::iter::once(0))
-                .collect::<Vec<u16>>()
-        };
         let (title, text) = (wide(title), wide(text));
         let icon = match tone {
             Tone::Information => MB_ICONINFORMATION,

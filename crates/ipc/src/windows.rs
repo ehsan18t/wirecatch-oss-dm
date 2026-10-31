@@ -201,7 +201,7 @@ impl Sid {
     pub fn parse(text: &str) -> io::Result<Self> {
         use windows_sys::Win32::Security::Authorization::ConvertStringSidToSidW;
 
-        let wide = to_wide(OsStr::new(text));
+        let wide = wide(OsStr::new(text));
         let mut psid: PSID = ptr::null_mut();
         // SAFETY: `wide` is NUL-terminated; on success `psid` receives a
         // LocalAlloc block that the guard frees.
@@ -564,8 +564,9 @@ impl Drop for LocalBox {
     }
 }
 
-fn to_wide(text: &OsStr) -> Vec<u16> {
-    text.encode_wide().chain(iter::once(0)).collect()
+/// `text` as NUL-terminated UTF-16, the form Windows calls take.
+pub fn wide(text: impl AsRef<OsStr>) -> Vec<u16> {
+    text.as_ref().encode_wide().chain(iter::once(0)).collect()
 }
 
 /// The SDDL of an object that is `sid`'s alone:
@@ -598,7 +599,7 @@ impl OwnerOnlyDescriptor {
     }
 
     fn from_sddl(sddl: &str) -> io::Result<Self> {
-        let wide = to_wide(OsStr::new(sddl));
+        let wide = wide(OsStr::new(sddl));
         let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
         // SAFETY: `wide` is NUL-terminated; on success `descriptor` receives a
         // LocalAlloc block that Drop frees.
@@ -863,7 +864,7 @@ pub(crate) fn create_private_file(path: &Path) -> io::Result<File> {
         lpSecurityDescriptor: descriptor.0,
         bInheritHandle: 0,
     };
-    let wide = to_wide(path.as_os_str());
+    let wide = wide(path.as_os_str());
     // SAFETY: `wide` is NUL-terminated; `attributes` is a valid SECURITY_ATTRIBUTES whose descriptor `descriptor` keeps alive for the whole call; there is no template file. On success the handle is new and ours.
     let handle = unsafe {
         CreateFileW(
@@ -1334,7 +1335,7 @@ mod tests {
     /// client end. Opens at the identification level, as the connector does, so the
     /// server can tell who it is.
     fn open_as_anonymous(endpoint: &Endpoint, access: u32) -> Result<OwnedHandle, u32> {
-        let name = to_wide(endpoint.as_os_str());
+        let name = wide(endpoint.as_os_str());
         std::thread::spawn(move || {
             // SAFETY: impersonation only affects this short-lived thread and is
             // reverted before it ends.
@@ -1393,7 +1394,7 @@ mod tests {
     /// integrity, like a sandboxed browser process, and returns the open client end.
     /// Opens at the identification level, as the connector does.
     fn open_at_low_integrity(endpoint: &Endpoint, access: u32) -> Result<OwnedHandle, u32> {
-        let name = to_wide(endpoint.as_os_str());
+        let name = wide(endpoint.as_os_str());
         std::thread::spawn(move || {
             let low = Sid::parse("S-1-16-4096").unwrap();
             let mut process_token: HANDLE = ptr::null_mut();
@@ -1549,7 +1550,7 @@ mod tests {
     fn open_with_restricted_token(endpoint: &Endpoint) -> Result<OwnedHandle, u32> {
         use windows_sys::Win32::Security::{CreateRestrictedToken, TOKEN_ALL_ACCESS};
 
-        let name = to_wide(endpoint.as_os_str());
+        let name = wide(endpoint.as_os_str());
         std::thread::spawn(move || {
             let everyone = Sid::parse("S-1-1-0").unwrap();
             let restricting = SID_AND_ATTRIBUTES {
@@ -1660,7 +1661,7 @@ mod tests {
         let endpoint = unique_endpoint();
         let mut listener = PipeListener::bind(&endpoint).unwrap();
         let peer = expect_refused(&endpoint, &mut listener, |endpoint| {
-            let name = to_wide(endpoint.as_os_str());
+            let name = wide(endpoint.as_os_str());
             // SAFETY: `name` is NUL-terminated; the handle is owned by the result.
             let handle = unsafe {
                 CreateFileW(
