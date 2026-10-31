@@ -9,6 +9,7 @@ pub mod appimage;
 pub mod autostart;
 pub mod bridge;
 pub mod browser_notices;
+pub mod download_windows;
 pub mod elevation;
 pub mod host;
 pub mod launch;
