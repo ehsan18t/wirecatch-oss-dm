@@ -144,11 +144,13 @@ describe('the keyboard shortcut', () => {
 });
 
 describe('registerMediaListeners', () => {
-  it('observes media and page loads everywhere, but script requests only for manifest addresses', () => {
+  it('observes media and page loads everywhere, frames never, and script requests only for manifest addresses', () => {
     const { responses } = setup();
     expect(responses.map((r) => r.filter)).toEqual([FILE_REQUESTS, MANIFEST_REQUESTS]);
     expect(responses.every((r) => r.extra.join() === 'responseHeaders')).toBe(true);
     expect(FILE_REQUESTS.types).not.toContain('xmlhttprequest');
+    // Every frame of every page would wake the background.
+    expect(FILE_REQUESTS.types).not.toContain('sub_frame');
     expect(FILE_REQUESTS.urls).toEqual(['http://*/*', 'https://*/*']);
     expect(MANIFEST_REQUESTS.types).toEqual(['xmlhttprequest', 'other']);
     expect(matches(MANIFEST_REQUESTS, 'https://cdn.example.com/v/master.m3u8')).toBe(true);

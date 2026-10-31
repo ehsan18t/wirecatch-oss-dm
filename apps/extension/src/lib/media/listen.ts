@@ -65,11 +65,13 @@ export interface MediaEventApi {
 
 /**
  * Responses that load whole media files or pages: every web address, but only the
- * request types a media element, a frame or the tab itself makes.
+ * request types a media element or the tab itself makes. Frames are left out: every frame
+ * load of every page (ads included) would wake the background, for the rare media file
+ * served as a frame, which is then not offered.
  */
 export const FILE_REQUESTS: RequestFilter = {
   urls: SITE_ORIGINS,
-  types: ['main_frame', 'sub_frame', 'media', 'object'],
+  types: ['main_frame', 'media', 'object'],
 };
 
 /**
@@ -91,7 +93,7 @@ export const MANIFEST_REQUESTS: RequestFilter = {
  * the manifest addresses of `MANIFEST_REQUESTS`. Page and frame loads are left out: the
  * cookies of a navigation are read exactly, and reading request headers (`extraHeaders`
  * in Chromium) for every page load of every site would cost the browser for nothing. A
- * media file opened as a page or frame therefore goes with the cookies read when sent.
+ * media file opened as a page therefore goes with the cookies read when sent.
  */
 export const MEDIA_ELEMENT_REQUESTS: RequestFilter = {
   urls: SITE_ORIGINS,
