@@ -11900,6 +11900,7 @@ dependencies = [
  "wirecatch-queues",
  "wirecatch-shell",
  "wirecatch-sites",
+ "wirecatch-test-support",
 ]
 
 [[package]]
@@ -12197,6 +12198,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "wirecatch-product",
+ "wirecatch-protocol",
 ]
 
 [[package]]

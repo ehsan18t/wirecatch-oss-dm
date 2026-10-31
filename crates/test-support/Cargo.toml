@@ -29,6 +29,9 @@ url = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
+# Sample downloads, only with the `downloads` feature.
+wirecatch-protocol = { workspace = true, optional = true }
+
 # The bridge's executable name, only with the `bridge` feature.
 wirecatch-product = { workspace = true, optional = true }
 
@@ -58,6 +61,8 @@ servers = [
     "dep:tokio-rustls",
     "dep:url",
 ]
+# A download as the manager lists it, for tests of what shows it.
+downloads = ["dep:wirecatch-protocol"]
 # The bridge built with its `test-overrides` feature, for tests that start it.
 bridge = ["dep:serde_json", "dep:wirecatch-product"]
 # Comparing what a resumed download asks for with what its resume file says is on disk.

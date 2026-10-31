@@ -1,15 +1,17 @@
 //! The bar over the list: one field that searches the downloads and takes pasted links, which it
 //! offers to download, and the button that opens an empty Add dialog.
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::Input;
+use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{Icon, IconName, Sizable as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _, Window,
 };
 
-use super::MainWindow;
+use super::{MainWindow, sort};
 use crate::links;
 use crate::ui::tokens;
 
@@ -49,6 +51,7 @@ impl MainWindow {
                         )
                     }),
             )
+            .child(self.sort_menu(cx))
             .child(
                 Button::new("new-download")
                     .primary()
@@ -58,6 +61,39 @@ impl MainWindow {
                         cx.listener(|this, _, window, cx| this.new_download(&[], window, cx)),
                     ),
             )
+    }
+
+    /// How the list is sorted: choosing the sort it has turns its direction around.
+    fn sort_menu(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let chosen = self.sort;
+        let main = cx.entity().downgrade();
+        Button::new("sort")
+            .ghost()
+            .icon(Icon::new(Lucide::ArrowUpDown))
+            .tooltip("Sort")
+            .dropdown_menu(move |menu, _, _| {
+                sort::Key::ALL.iter().fold(menu, |menu, key| {
+                    let (key, main) = (*key, main.clone());
+                    let label = if key == chosen.key && chosen.descending {
+                        format!("{} (descending)", key.label())
+                    } else {
+                        key.label().to_owned()
+                    };
+                    menu.item(
+                        PopupMenuItem::new(label)
+                            .checked(key == chosen.key)
+                            .on_click(move |_, _, cx| {
+                                _ = main.update(cx, |main, cx| {
+                                    main.sort = sort::Sort {
+                                        key,
+                                        descending: key == main.sort.key && !main.sort.descending,
+                                    };
+                                    cx.notify();
+                                });
+                            }),
+                    )
+                })
+            })
     }
 
     /// The links typed or pasted into the field.

@@ -31,7 +31,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [ ] Storage failure banner with Try again and Dismiss, and a notification when no main window shows it; startup notices; toasts.
 - [x] Groups in order, Finished and Cancelled folded at first, headings fold; no headings in a status view.
 - [x] A queue view lists its line ungrouped in run order, Finished and Cancelled grouped below; the # column.
-- [ ] Column sorting (name, progress, size, speed, left; queue order), resizing with saved widths, narrow-window folding.
+- [x] Sorting by queue order, name, progress, size, speed or time left, either way. The GPUI list has no columns to resize or fold: a row shows what fits its state (D99.4).
 - [x] Row: name, the line under it, progress with its caption, size, speed, time left.
 - [x] Row: Open (a program asks first, D43.1) and Show in folder, on hover and on the selected row.
 - [x] Row: category icon, the "…" menu, the fix button in the progress cell (`row-actions.ts`).

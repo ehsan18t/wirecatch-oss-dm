@@ -10,6 +10,7 @@ gpui_kit::assets::icon_assets!(
     Extra,
     [
         ArrowRightLeft,
+        ArrowUpDown,
         ArrowUp,
         Ban,
         CirclePause,

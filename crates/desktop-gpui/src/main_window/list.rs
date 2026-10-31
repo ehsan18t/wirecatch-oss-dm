@@ -128,7 +128,7 @@ impl MainWindow {
             if in_queue && !group.is_over() {
                 continue;
             }
-            let members: Vec<usize> = downloads
+            let mut members: Vec<usize> = downloads
                 .iter()
                 .enumerate()
                 .filter(|(_, row)| {
@@ -136,6 +136,12 @@ impl MainWindow {
                 })
                 .map(|(index, _)| index)
                 .collect();
+            self.sort.apply(
+                group,
+                &mut members,
+                downloads,
+                &mut self.frozen.borrow_mut(),
+            );
             if members.is_empty() {
                 continue;
             }
