@@ -7,7 +7,7 @@ use gpui_kit::component::WindowExt;
 use gpui_kit::component::command::{Command, CommandGroup, CommandItem, CommandState};
 use gpui_kit::{App, AppContext as _, Context, ParentElement as _, WeakEntity, Window, px};
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::DownloadStatus;
+use wirecatch_protocol::app::{DownloadStatus, FixAction};
 use wirecatch_shell::api;
 
 use super::applies::{self, Applicable};
@@ -218,6 +218,14 @@ fn about_one(only: &wirecatch_protocol::app::DownloadSummary, named: &str) -> Ve
             move |_, w, cx| {
                 files::open(id, w, cx);
             },
+        ));
+    }
+    if applies::offers_new_link(only) {
+        let id = only.id;
+        entries.push(entry(
+            format!("Get a new link for {named}"),
+            "refresh fresh link expired url",
+            move |_, w, cx| super::fixes::run(id, FixAction::RefreshLink, w, cx),
         ));
     }
     entries.push(entry(

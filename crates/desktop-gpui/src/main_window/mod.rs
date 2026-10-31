@@ -18,6 +18,7 @@ mod queue_dialog;
 mod queue_header;
 mod queue_proxy;
 mod queue_rules;
+mod refresh_dialog;
 mod row_menu;
 mod selection;
 mod settings;
@@ -233,6 +234,12 @@ pub fn bring_up(asked: &Asked, cx: &mut App) {
             lifecycle::quit(cx);
         }
     }
+}
+
+/// The library the main window shows, once the app runs.
+fn library(cx: &App) -> Option<Entity<Library>> {
+    cx.try_global::<Running>()
+        .map(|running| running.library.clone())
 }
 
 /// Brings the main window up and runs `work` in it.
