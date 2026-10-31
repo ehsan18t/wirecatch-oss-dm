@@ -51,7 +51,7 @@ pub fn follow(event: &UiEvent, cx: &mut App) {
         UiEvent::FileExistsRequested(question) => ask(question.id, cx),
         UiEvent::ConfirmationClosed { id } => closed(*id, cx),
         UiEvent::CaptureRepeated(Repeated::Question(id)) => {
-            let step = update(cx, |registry| registry.show_question(*id)).flatten();
+            let step = update(cx, |registry| registry.show_question(*id));
             run(step.into_iter().collect(), cx);
         }
         UiEvent::CaptureRepeated(Repeated::Download(id)) => show_download(*id, cx),
@@ -61,24 +61,24 @@ pub fn follow(event: &UiEvent, cx: &mut App) {
 
 /// Opens windows for the questions open in the core at start, oldest first.
 pub fn restore(open: &[QuestionId], cx: &mut App) {
-    let steps = update(cx, |registry| registry.restore(open)).unwrap_or_default();
+    let steps = update(cx, |registry| registry.restore(open));
     run(steps, cx);
 }
 
 /// Brings every open question's window up, opening the closed ones again.
 pub fn show_all(open: &[QuestionId], cx: &mut App) {
-    let steps = update(cx, |registry| registry.show_all(open)).unwrap_or_default();
+    let steps = update(cx, |registry| registry.show_all(open));
     run(steps, cx);
 }
 
 /// Opens, or brings up, download `id`'s progress window.
 pub fn show_download(id: DownloadId, cx: &mut App) {
     let step = update(cx, |registry| registry.show_download(id));
-    run(step.into_iter().collect(), cx);
+    run(vec![step], cx);
 }
 
 fn ask(id: QuestionId, cx: &mut App) {
-    let step = update(cx, |registry| registry.ask(id)).flatten();
+    let step = update(cx, |registry| registry.ask(id));
     match step {
         Some(step) => run(vec![step], cx),
         // Already open: it shows the question's next step.
@@ -93,36 +93,32 @@ fn closed(id: QuestionId, cx: &mut App) {
 
 /// Window `label` now shows download `id`, its question answered there.
 fn became_download(label: &str, id: DownloadId, cx: &mut App) {
-    let steps = update(cx, |registry| registry.became_download(label, id)).unwrap_or_default();
+    let steps = update(cx, |registry| registry.became_download(label, id));
     run(steps, cx);
 }
 
 /// Window `label` is gone; waiting questions may open.
 fn gone(label: &str, cx: &mut App) {
-    if cx.has_global::<Windows>() {
-        cx.global_mut::<Windows>().open.remove(label);
-    }
-    let steps = update(cx, |registry| registry.gone(label)).unwrap_or_default();
+    cx.global_mut::<Windows>().open.remove(label);
+    let steps = update(cx, |registry| registry.gone(label));
     run(steps, cx);
 }
 
 /// Whether a download window shows `shows` now.
 fn shows(shows: Shows, cx: &App) -> bool {
-    cx.try_global::<Windows>()
-        .is_some_and(|windows| windows.registry.window_showing(shows).is_some())
+    cx.global::<Windows>()
+        .registry
+        .window_showing(shows)
+        .is_some()
 }
 
-/// `change` applied to the registry; `None` before the windows are kept.
-fn update<T>(cx: &mut App, change: impl FnOnce(&mut Registry) -> T) -> Option<T> {
-    cx.has_global::<Windows>()
-        .then(|| change(&mut cx.global_mut::<Windows>().registry))
+fn update<T>(cx: &mut App, change: impl FnOnce(&mut Registry) -> T) -> T {
+    change(&mut cx.global_mut::<Windows>().registry)
 }
 
 /// Asks the window showing `shows`, if one is open, to read its question again.
 fn refresh(shows: Shows, cx: &mut App) {
-    let Some(windows) = cx.try_global::<Windows>() else {
-        return;
-    };
+    let windows = cx.global::<Windows>();
     let Some(window) = windows.registry.window_showing(shows) else {
         return;
     };
@@ -138,8 +134,10 @@ fn run(steps: Vec<Step>, cx: &mut App) {
             Step::Open(window) => open(&window, cx),
             Step::Focus(label) => {
                 let handle = cx
-                    .try_global::<Windows>()
-                    .and_then(|windows| windows.open.get(&label).map(|(handle, _)| *handle));
+                    .global::<Windows>()
+                    .open
+                    .get(&label)
+                    .map(|(handle, _)| *handle);
                 if let Some(handle) = handle {
                     _ = handle.update(cx, |_, window, _| window.activate_window());
                 }
@@ -150,9 +148,7 @@ fn run(steps: Vec<Step>, cx: &mut App) {
 
 /// Opens the GPUI window for `opened`, in its cascade slot on the main screen.
 fn open(opened: &OpenWindow, cx: &mut App) {
-    let Some(library) = cx.try_global::<Windows>().map(|w| w.library.clone()) else {
-        return;
-    };
+    let library = cx.global::<Windows>().library.clone();
     let area = cx.primary_display().map_or(
         Area {
             x: 0.,
@@ -195,15 +191,13 @@ fn open(opened: &OpenWindow, cx: &mut App) {
     });
     match built {
         Ok((handle, view)) => {
-            if cx.has_global::<Windows>() {
-                cx.global_mut::<Windows>()
-                    .open
-                    .insert(opened.label.clone(), (handle, view.downgrade()));
-            }
+            cx.global_mut::<Windows>()
+                .open
+                .insert(opened.label.clone(), (handle, view.downgrade()));
         }
         Err(e) => {
             tracing::error!("could not open a download window: {e}");
-            let steps = update(cx, |registry| registry.failed(&opened.label)).unwrap_or_default();
+            let steps = update(cx, |registry| registry.failed(&opened.label));
             run(steps, cx);
         }
     }

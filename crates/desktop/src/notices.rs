@@ -321,20 +321,18 @@ pub fn storage_failed(reason: &str, cx: &mut App) {
         return;
     }
     let title = format!("{} could not save its download list", host::CHANNEL.name());
-    if let Some(Kept(tellers)) = cx.try_global::<Kept>() {
-        tellers
-            .system
-            .show(notifications::plain(title, reason.to_owned()), true);
-    }
+    cx.global::<Kept>()
+        .0
+        .system
+        .show(notifications::plain(title, reason.to_owned()), true);
 }
 
 fn could_not(refused: ProtocolError, cx: &mut App) {
     let title = format!("{} could not do that", host::CHANNEL.name());
     let (manager, _) = Backend::now(cx);
     let through = manager.is_none_or(|m| m.get_settings().notify_during_do_not_disturb);
-    if let Some(Kept(tellers)) = cx.try_global::<Kept>() {
-        tellers
-            .system
-            .show(notifications::plain(title, refused.message), through);
-    }
+    cx.global::<Kept>()
+        .0
+        .system
+        .show(notifications::plain(title, refused.message), through);
 }

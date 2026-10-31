@@ -34,14 +34,10 @@ pub fn run(id: DownloadId, fix: FixAction, window: &mut Window, cx: &mut App) {
             bring_up(&Asked::Reveal(Reveal::proxy_settings()), cx);
         }
         FixAction::RefreshLink => {
-            if let Some(library) = super::library(cx) {
-                super::refresh_dialog::open(library, id, window, cx);
-            }
+            super::refresh_dialog::open(super::library(cx), id, window, cx);
         }
         FixAction::ChangeQueue => {
-            if let Some(library) = super::library(cx) {
-                super::details::open(library, id, window, cx);
-            }
+            super::details::open(super::library(cx), id, window, cx);
         }
     }
 }

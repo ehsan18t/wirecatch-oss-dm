@@ -19,7 +19,7 @@ impl MainWindow {
     /// A newer version of the app, until it is installed or put aside: Install, What's new and
     /// Later (D111).
     pub(super) fn update_banner(cx: &App) -> Option<AnyElement> {
-        let updates = crate::app_update::entity(cx)?;
+        let updates = crate::app_update::entity(cx);
         let read = updates.read(cx);
         let crate::app_update::Stage::Available(update) = read.stage.clone() else {
             return None;
