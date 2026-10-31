@@ -14,7 +14,7 @@ const DARK: &str = "Wirecatch Dark";
 /// Text on a filled accent: white on the light scheme's deep tones, near black on the dark
 /// scheme's bright ones.
 const ON_ACCENT_LIGHT: u32 = 0x00ff_ffff;
-const ON_ACCENT_DARK: u32 = 0x0012_1110;
+const ON_ACCENT_DARK: u32 = 0x000f_1216;
 
 /// A destructive button: a deep red with white text in both schemes, where the dark scheme's pale
 /// danger colour, made to read as text, would fill it in pastel.
@@ -147,7 +147,7 @@ pub fn accent_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
 /// The accents Wirecatch has, the system's shown as cyan.
 fn fixed_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
     let (light_tone, dark_tone) = match accent {
-        Accent::Cyan | Accent::System => (0x0007_7c86, 0x0044_d4e2),
+        Accent::Cyan | Accent::System => (0x000b_7a6c, 0x004e_c9b0),
         Accent::Blue => (0x0035_71ba, 0x0092_c1fd),
         Accent::Indigo => (0x0065_68bd, 0x00b1_b7fd),
         Accent::Purple => (0x0086_5eb1, 0x00d0_aafc),
