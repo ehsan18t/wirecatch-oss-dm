@@ -477,7 +477,7 @@ pub(super) fn outside_schedule(queue: &Queue) -> Option<wirecatch_protocol::app:
 }
 
 /// A queue's own menu, opened by right-clicking it: start now outside its hours, pause or
-/// resume, and moving it, the default queue staying first (D72.9).
+/// resume, moving it, the default queue staying first (D72.9), and deleting it.
 fn queue_menu(
     menu: PopupMenu,
     queue: &Queue,
@@ -497,6 +497,7 @@ fn queue_menu(
         order
     };
     let up = moved.clone();
+    let delete = main.clone();
     menu.item(
         PopupMenuItem::new("Edit queue")
             .icon(Icon::new(Lucide::Pencil))
@@ -547,6 +548,15 @@ fn queue_menu(
             Icon::new(IconName::ArrowDown),
             moved(index + 1),
         ))
+    })
+    .when(!queue.is_default, |menu| {
+        menu.separator().item(
+            PopupMenuItem::new("Delete queue")
+                .icon(Icon::new(Lucide::Trash))
+                .on_click(move |_, window, cx| {
+                    _ = delete.update(cx, |main, cx| main.delete_queue(id, window, cx));
+                }),
+        )
     })
 }
 

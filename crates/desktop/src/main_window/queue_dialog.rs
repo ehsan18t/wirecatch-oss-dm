@@ -88,7 +88,6 @@ impl Unit {
 enum Stage {
     Editing,
     Saving,
-    AskingToDelete,
 }
 
 /// Opens the queue editor on `queue`, or on a new queue when `None`.
@@ -118,42 +117,11 @@ pub(super) fn open(
     });
 }
 
-/// Save and Cancel, with Delete queue on the left; once Delete queue is pressed, the question.
+/// Save and Cancel, with Delete queue on the left, which closes the editor for its own question.
 fn footer(form: &Entity<QueueForm>, cx: &App) -> Div {
     let state = form.read(cx);
     let row = h_flex().w_full().gap_2().items_center();
-    let (save, delete, keep, confirm) = (form.clone(), form.clone(), form.clone(), form.clone());
-    if state.stage == Stage::AskingToDelete
-        && let Some(queue) = &state.original
-    {
-        return row
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .text_role(Role::Secondary, cx)
-                    .child(format!(
-                        "Delete {}? {}",
-                        queue.settings.name,
-                        state.moving_note(cx)
-                    )),
-            )
-            .child(
-                Button::new("keep-queue")
-                    .label("Keep queue")
-                    .on_click(move |_, _, cx| {
-                        keep.update(cx, |form, cx| form.ask_delete(false, cx));
-                    }),
-            )
-            .child(
-                Button::new("delete-queue")
-                    .danger()
-                    .label("Delete queue")
-                    .on_click(move |_, window, cx| {
-                        confirm.update(cx, |form, cx| form.delete(window, cx));
-                    }),
-            );
-    }
+    let (save, delete) = (form.clone(), form.clone());
     let deletable = state
         .original
         .as_ref()
@@ -169,7 +137,7 @@ fn footer(form: &Entity<QueueForm>, cx: &App) -> Div {
             .ghost()
             .text_color(cx.theme().danger)
             .label("Delete queue")
-            .on_click(move |_, _, cx| delete.update(cx, |form, cx| form.ask_delete(true, cx)))
+            .on_click(move |_, window, cx| delete.update(cx, |form, cx| form.delete(window, cx)))
             .into_any_element(),
         None => div().into_any_element(),
     };
@@ -431,51 +399,15 @@ impl QueueForm {
         .detach();
     }
 
-    fn ask_delete(&mut self, asking: bool, cx: &mut Context<'_, Self>) {
-        self.stage = if asking {
-            Stage::AskingToDelete
-        } else {
-            Stage::Editing
-        };
-        cx.notify();
-    }
-
+    /// Closes the editor for the question that deletes the queue.
     fn delete(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let Some(id) = self.original.as_ref().map(|queue| queue.id) else {
             return;
         };
         window.close_dialog(cx);
-        _ = self.main.update(cx, |main, cx| {
-            if main.view == View::Queue(id) {
-                main.show(View::All, window, cx);
-            }
-        });
-        crate::backend::act(window.window_handle(), cx, move |manager| {
-            api::delete_queue(manager, id)
-        });
-    }
-
-    /// What deleting the queue does with its downloads.
-    fn moving_note(&self, cx: &App) -> String {
-        let Some(queue) = &self.original else {
-            return String::new();
-        };
-        let library = self.library.read(cx);
-        let count = library
-            .downloads
-            .iter()
-            .filter(|row| row.queue == queue.id)
-            .count();
-        let to = library
-            .queues
-            .iter()
-            .find(|queue| queue.is_default)
-            .map_or("the default queue", |queue| queue.settings.name.as_str());
-        match count {
-            0 => "It holds no downloads.".to_owned(),
-            1 => format!("Its download moves to {to}."),
-            n => format!("Its {n} downloads move to {to}."),
-        }
+        _ = self
+            .main
+            .update(cx, |main, cx| main.delete_queue(id, window, cx));
     }
 
     fn choose_folder(cx: &mut Context<'_, Self>) {

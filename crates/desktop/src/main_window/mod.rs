@@ -16,6 +16,7 @@ mod notices_bar;
 mod order;
 mod palette;
 mod proxy_dialog;
+mod queue_delete;
 mod queue_dialog;
 mod queue_header;
 mod queue_proxy;
@@ -575,6 +576,11 @@ impl MainWindow {
             window,
             cx,
         );
+    }
+
+    /// Asks before deleting queue `id`, its name typed to confirm.
+    fn delete_queue(&mut self, id: QueueId, window: &mut Window, cx: &mut Context<'_, Self>) {
+        queue_delete::ask(&self.library, id, cx.entity().downgrade(), window, cx);
     }
 
     /// Ctrl+V outside a text field: the links in what was copied go to the Add dialog.
