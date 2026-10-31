@@ -1,7 +1,7 @@
 import { videoSiteFor, type MediaKind } from '@wirecatch/protocol';
 import { fileNameFromUrl } from '../file-types';
-import { parseUrl } from '../url';
 import type { MediaItem } from './registry';
+import { hostOf } from '../url';
 
 /** One thing that can be sent to the app: detected media, or the page itself. */
 export interface MediaTarget {
@@ -130,7 +130,7 @@ export function popupTargets(
 
 /** How the popup names one target: what it is, and where it comes from. */
 export function describeTarget(target: MediaTarget): { title: string; detail: string } {
-  const host = hostOf(target.url);
+  const host = hostOf(target.url) ?? target.url;
   const file = fileNameFromUrl(target.url);
   switch (target.kind) {
     case 'hls':
@@ -145,8 +145,4 @@ export function describeTarget(target: MediaTarget): { title: string; detail: st
         detail: 'Wirecatch gets the video with its media add-on.',
       };
   }
-}
-
-function hostOf(url: string): string {
-  return parseUrl(url)?.hostname ?? url;
 }

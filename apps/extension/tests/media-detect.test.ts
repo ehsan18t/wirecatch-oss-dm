@@ -3,7 +3,6 @@ import {
   classifyResponse,
   classifyUrl,
   isNavigation,
-  isWebUrl,
   MIN_DIRECT_MEDIA_BYTES,
   rejectionOf,
   type ObservedResponse,
@@ -17,6 +16,7 @@ import {
 } from '../src/lib/media/registry';
 import { MediaWatcher } from '../src/lib/media/watch';
 import { flush } from './fakes';
+import { isWebUrl } from '../src/lib/url';
 
 function response(
   overrides: Partial<ObservedResponse> & { contentType?: string; headers?: Record<string, string> },

@@ -1,4 +1,4 @@
-import { parseUrl } from './url';
+import { parseUrl, parseWebUrl } from './url';
 
 /**
  * The `Referer` a browser sends by default (the `strict-origin-when-cross-origin`
@@ -11,10 +11,9 @@ import { parseUrl } from './url';
  * Returns null when there is no page, or it is not a web page.
  */
 export function refererFor(target: string, page: string | null): string | null {
-  const from = page === null ? null : parseUrl(page);
+  const from = page === null ? null : parseWebUrl(page);
   const to = parseUrl(target);
   if (from === null || to === null) return null;
-  if (from.protocol !== 'http:' && from.protocol !== 'https:') return null;
   if (from.protocol === 'https:' && to.protocol !== 'https:') return null;
   if (from.origin !== to.origin) return `${from.origin}/`;
   from.hash = '';

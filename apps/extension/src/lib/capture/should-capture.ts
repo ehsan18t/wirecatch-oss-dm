@@ -1,6 +1,7 @@
 import { takesPrivateWindows, type ExtensionSettings } from '@wirecatch/protocol';
 import { fileNameFromUrl, matchesFileTypes } from '../file-types';
 import { matchingSite } from '../sites';
+import { isWebUrl } from '../url';
 
 /**
  * A browser download described in browser-neutral terms. Built from a Chromium or
@@ -73,8 +74,6 @@ function schemeOf(url: string): string | null {
 /** Addresses that only exist inside the browser. */
 const BROWSER_ONLY_SCHEMES = new Set<string | null>(['blob:', 'data:']);
 
-const WEB_SCHEMES = new Set<string | null>(['http:', 'https:']);
-
 /** Browser verdicts that let a download go ahead; anything else is a warning the browser shows itself. */
 const NOT_DANGEROUS = new Set(['safe', 'accepted']);
 
@@ -129,7 +128,7 @@ const KEEP_RULES: readonly KeepRule[] = [
   },
   { reason: 'blob_or_data_url', keeps: (item) => BROWSER_ONLY_SCHEMES.has(schemeOf(item.url)) },
   { reason: 'internal_page', keeps: (item) => isInternal(item.url) || isInternal(item.referrer) },
-  { reason: 'unsupported_url', keeps: (item) => !WEB_SCHEMES.has(schemeOf(item.url)) },
+  { reason: 'unsupported_url', keeps: (item) => !isWebUrl(item.url) },
   {
     reason: 'ignored_site',
     keeps: (item, settings) => onIgnoredSite(item, settings.ignored_sites),

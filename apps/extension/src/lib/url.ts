@@ -11,3 +11,21 @@ export function parseUrl(text: string): URL | null {
     return null;
   }
 }
+
+/** `text` read as an http or https address with a host, or null for anything else. */
+export function parseWebUrl(text: string): URL | null {
+  const url = parseUrl(text);
+  if (url === null || (url.protocol !== 'http:' && url.protocol !== 'https:')) return null;
+  return url.hostname === '' ? null : url;
+}
+
+/** True for http and https addresses; false for `blob:`, `data:`, `mediasource:` and anything else. */
+export function isWebUrl(text: string): boolean {
+  return parseWebUrl(text) !== null;
+}
+
+/** The host name of an address in lower case, or null if it has none. */
+export function hostOf(url: string): string | null {
+  const host = parseUrl(url)?.hostname.toLowerCase() ?? '';
+  return host === '' ? null : host;
+}

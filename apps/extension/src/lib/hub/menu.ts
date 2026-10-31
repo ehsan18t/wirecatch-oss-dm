@@ -3,6 +3,7 @@ import { fileNameFromUrl } from '../file-types';
 import { nonEmpty } from '../text';
 import type { MenuClick, MenuTab } from './deps';
 import { MENU_NOT_WEB } from './alerts';
+import { isWebUrl } from '../url';
 
 export type MenuPlan =
   /** Nothing to download: the click had no link or source. */
@@ -22,7 +23,7 @@ export function planMenuClick(
   const url = nonEmpty(click.linkUrl ?? click.srcUrl);
   if (url === null) return { kind: 'failed' };
   if (tab?.incognito === true && !privateWindows) return { kind: 'private_window' };
-  if (!/^https?:/i.test(url)) {
+  if (!isWebUrl(url)) {
     return { kind: 'browser', url, message: MENU_NOT_WEB };
   }
   return { kind: 'wirecatch', url, name: fileNameFromUrl(url) ?? 'this item' };

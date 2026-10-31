@@ -1,5 +1,5 @@
 import { getDomain } from 'tldts';
-import { parseUrl } from './url';
+import { parseWebUrl } from './url';
 
 /** The fields of a `cookies.Cookie` needed to build a `Cookie` header. */
 export interface CookieLike {
@@ -82,10 +82,8 @@ export function registrableDomain(host: string): string {
 
 /** The site of a web address, with its scheme (`https://example.com`), or null for anything else. */
 export function siteOf(url: string | null): string | null {
-  const u = url === null ? null : parseUrl(url);
-  if (u === null || (u.protocol !== 'http:' && u.protocol !== 'https:') || u.hostname === '') {
-    return null;
-  }
+  const u = url === null ? null : parseWebUrl(url);
+  if (u === null) return null;
   return `${u.protocol}//${registrableDomain(u.hostname)}`;
 }
 

@@ -13,7 +13,7 @@ import {
 import { cookieStoreOf, type CookieStore } from '../cookies';
 import { fallback } from '../diag/log';
 import { matchingSite } from '../sites';
-import { parseUrl } from '../url';
+import { isWebUrl, parseUrl, parseWebUrl } from '../url';
 import type { MediaRegistry, SavedMedia } from './registry';
 
 /** A tab that cannot be read is treated as gone. */
@@ -130,10 +130,9 @@ function cleanTitle(title: string | null | undefined): string | null {
 
 /** True when both are web addresses on the same origin (opaque origins never match). */
 function sameWebOrigin(a: string, b: string): boolean {
-  const first = parseUrl(a);
+  const first = parseWebUrl(a);
   const second = parseUrl(b);
-  if (first === null || second === null) return false;
-  return /^https?:$/.test(first.protocol) && first.origin === second.origin;
+  return first !== null && second !== null && first.origin === second.origin;
 }
 
 /**
@@ -288,7 +287,7 @@ export class MediaCenter {
   async view(tabId: number): Promise<MediaView> {
     await this.#ready;
     const tab = await this.#deps.getTab(tabId).catch(fallback('media', TAB_UNREADABLE, null));
-    if (!tab?.url || !/^https?:/i.test(tab.url)) {
+    if (!tab?.url || !isWebUrl(tab.url)) {
       return { tabId, page: 'other', entries: [] };
     }
     if (tab.incognito && (await this.#privateWindowsOff()))

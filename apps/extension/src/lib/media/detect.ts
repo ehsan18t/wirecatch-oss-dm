@@ -4,8 +4,8 @@
  */
 
 import { KB } from '@wirecatch/units';
-import { parseUrl } from '../url';
 import { MAX_MEDIA_URL_LENGTH } from './messages';
+import { isWebUrl, parseUrl } from '../url';
 
 /** How detected media is delivered (the page kind is never detected from traffic). */
 export type DetectedKind = 'hls' | 'dash' | 'direct';
@@ -119,11 +119,6 @@ function isSuccess(status: number): boolean {
 
 /** Longest media type kept; RFC 6838 allows 127 characters for each half. */
 const MAX_MIME_LENGTH = 255;
-
-/** True for http and https addresses; false for `blob:`, `data:`, `mediasource:` and anything else. */
-export function isWebUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url);
-}
 
 /** The lower-case extension of the last path segment, or null. */
 export function extensionOf(url: string): string | null {
