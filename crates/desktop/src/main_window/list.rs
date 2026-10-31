@@ -484,7 +484,11 @@ fn fix_button(id: DownloadId, fix: FixAction) -> impl IntoElement {
                 .small()
                 .outline()
                 .label(text::fix_label(fix))
-                .on_click(move |_, window, cx| fixes::run(id, fix, window, cx)),
+                .on_click(move |_, window, cx| {
+                    // The row under it would open the details too.
+                    cx.stop_propagation();
+                    fixes::run(id, fix, window, cx);
+                }),
         )
 }
 
@@ -506,7 +510,10 @@ fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl 
                         .ghost()
                         .icon(icon.clone())
                         .tooltip(label)
-                        .on_click(cx.listener(move |_, _, window, cx| action.run(id, window, cx)))
+                        .on_click(cx.listener(move |_, _, window, cx| {
+                            cx.stop_propagation();
+                            action.run(id, window, cx);
+                        }))
                 }),
         )
         .child(
@@ -516,6 +523,7 @@ fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl 
                 .icon(IconName::Info)
                 .tooltip("Details")
                 .on_click(cx.listener(move |this, _, window, cx| {
+                    cx.stop_propagation();
                     super::details::open(this.library.clone(), id, window, cx);
                 })),
         )
