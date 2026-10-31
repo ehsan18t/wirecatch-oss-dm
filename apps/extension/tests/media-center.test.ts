@@ -7,7 +7,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { CookieContext, CookieStore } from '../src/lib/cookies';
 import type { CachedSettings } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
-import { MEDIA_UNREACHABLE } from '../src/lib/hub/alerts';
+import {
+  MEDIA_UNREACHABLE,
+  MAX_MEDIA_URL_LENGTH,
+  MAX_TITLE_LENGTH,
+  MEDIA_BUTTON_QUERY,
+  MEDIA_BUTTON_SETTING,
+  MEDIA_CHECK,
+  MEDIA_DOWNLOAD,
+} from '../src/lib/media/messages';
 import {
   MediaCenter,
   PRIVATE_WINDOW,
@@ -17,14 +25,6 @@ import {
 } from '../src/lib/media/center';
 import { chooseTarget, describeTarget, type ButtonContext } from '../src/lib/media/choose';
 import type { Detection } from '../src/lib/media/detect';
-import {
-  MAX_MEDIA_URL_LENGTH,
-  MAX_TITLE_LENGTH,
-  MEDIA_BUTTON_QUERY,
-  MEDIA_BUTTON_SETTING,
-  MEDIA_CHECK,
-  MEDIA_DOWNLOAD,
-} from '../src/lib/media/messages';
 import {
   MediaRegistry,
   type MediaItem,

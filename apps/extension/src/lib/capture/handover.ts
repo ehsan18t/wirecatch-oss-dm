@@ -8,6 +8,7 @@ import type {
 import type { CookieContext, CookieStore } from '../cookies';
 import { RequestError, type RequestErrorKind } from '../native/client';
 import { fallback, log } from '../diag/log';
+import { messageOf } from '../errors';
 import { nonEmpty } from '../text';
 import { shouldCapture, type CaptureCandidate, type SkipReason } from './should-capture';
 
@@ -213,8 +214,7 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
   if (!judging.fromApp) return keep(null, 'app_unreachable', null);
 
   const { handoverId } = input;
-  const download: NewDownload = {
-    handover_id: handoverId,
+  const download = newDownload(handoverId, deps.userAgent, judging.settings.default_queue, {
     url: candidate.url,
     referrer: candidate.referrer,
     page_url: candidate.referrer,
@@ -227,11 +227,8 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
       originalUrl: candidate.originalUrl,
       navigation: true,
     }),
-    user_agent: deps.userAgent,
-    extra_headers: [],
     source: 'browser_download',
-    queue: judging.settings.default_queue,
-  };
+  });
   const result = await submit(download, deps);
   if (!result.taken) {
     return keep(handoverId, KEPT_REASONS[result.reason], result.detail, result.uncertain);
@@ -353,6 +350,18 @@ export async function resumeBrowserCopy(
   }
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/** The fields of a `NewDownload` that differ between captures; `newDownload` fills in the rest. */
+export type DownloadFields = Omit<
+  NewDownload,
+  'handover_id' | 'user_agent' | 'extra_headers' | 'queue'
+>;
+
+/** A download to offer the app: the extension adds no headers of its own. */
+export function newDownload(
+  handoverId: string,
+  userAgent: string | null,
+  queue: NewDownload['queue'],
+  fields: DownloadFields,
+): NewDownload {
+  return { ...fields, handover_id: handoverId, user_agent: userAgent, extra_headers: [], queue };
 }

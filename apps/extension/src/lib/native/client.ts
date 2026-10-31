@@ -12,6 +12,8 @@ import {
   type Reply,
 } from '@wirecatch/protocol';
 import { formatBytes } from '@wirecatch/units';
+import { messageOf } from '../errors';
+import { remember } from '../recent';
 import { isNumber, isUnknown, literal, object, oneOf } from '../validate';
 import {
   classifyDisconnect,
@@ -314,7 +316,7 @@ export class NativeClient {
     try {
       port = this.#options.transport.connect();
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = messageOf(error);
       this.#fail({ kind: classifyDisconnect(detail), detail });
       return false;
     }
@@ -396,7 +398,7 @@ export class NativeClient {
       } catch (error) {
         clearTimeout(timer);
         this.#pending.delete(id);
-        const detail = error instanceof Error ? error.message : String(error);
+        const detail = messageOf(error);
         reject(new RequestError('disconnected', `Could not send to Wirecatch: ${detail}`));
       }
     });
@@ -447,11 +449,7 @@ export class NativeClient {
   }
 
   #rememberLate(id: number, call: Call): void {
-    this.#late.set(id, call);
-    if (this.#late.size > LATE_MEMORY) {
-      const oldest = this.#late.keys().next().value;
-      if (oldest !== undefined) this.#late.delete(oldest);
-    }
+    remember(this.#late, id, call, LATE_MEMORY);
   }
 
   #fail(problem: Problem): void {

@@ -1,13 +1,7 @@
+import { remember } from '../recent';
+
 /** How many handover ids are remembered for spotting late answers. */
 const RECENT_LIMIT = 50;
-
-function remember<K, V>(map: Map<K, V>, key: K, value: V): void {
-  map.set(key, value);
-  if (map.size > RECENT_LIMIT) {
-    const oldest = map.keys().next();
-    if (oldest.done !== true) map.delete(oldest.value);
-  }
-}
 
 /** A browser copy of a handover the app may have. */
 interface KeptCopy {
@@ -43,7 +37,7 @@ export class DuplicateWatch {
       this.#matched(copy, late.certain);
       return true;
     }
-    remember(this.#uncertain, handoverId, copy);
+    remember(this.#uncertain, handoverId, copy, RECENT_LIMIT);
     return false;
   }
 
@@ -54,7 +48,7 @@ export class DuplicateWatch {
   confirmedLate(handoverId: string, name: string, certain: boolean): void {
     const kept = this.#uncertain.get(handoverId);
     if (kept === undefined) {
-      remember(this.#lateConfirmed, handoverId, { name, certain });
+      remember(this.#lateConfirmed, handoverId, { name, certain }, RECENT_LIMIT);
     } else {
       this.#uncertain.delete(handoverId);
       this.#matched(kept, certain);

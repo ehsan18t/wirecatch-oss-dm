@@ -108,6 +108,9 @@ export interface DownloadAnswer {
   message: string;
 }
 
+/** For media there is no browser download to fall back on, so the person has to act. */
+export const MEDIA_UNREACHABLE = 'Wirecatch could not be reached. Open Wirecatch, then try again.';
+
 /** An http(s) address no longer than `MAX_MEDIA_URL_LENGTH`: the only sources worth sending. */
 export function isWebSrc(src: string): boolean {
   return src.length <= MAX_MEDIA_URL_LENGTH && isWebUrl(src);
