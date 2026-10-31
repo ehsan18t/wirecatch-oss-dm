@@ -90,7 +90,7 @@ impl MainWindow {
     }
 
     /// Row `id` alone, as the place a range starts from.
-    fn pick(&mut self, id: DownloadId) {
+    pub(super) fn pick(&mut self, id: DownloadId) {
         self.selected.clear();
         self.selected.insert(id);
         self.anchor = Some(id);
@@ -270,7 +270,7 @@ impl MainWindow {
 }
 
 /// A command the bar offers when some of the selection takes it.
-type Command = fn(&wirecatch_core::Manager, DownloadId) -> Result<(), ProtocolError>;
+pub(super) type Command = fn(&wirecatch_core::Manager, DownloadId) -> Result<(), ProtocolError>;
 
 /// One of the bar's buttons, `shown` while some of the selection `takes` its command.
 struct Offer {
@@ -343,7 +343,7 @@ fn bar_button(id: &'static str, label: &'static str, icon: Icon) -> Button {
 }
 
 /// Runs `command` on each of `rows` that `takes` it; the first refusal shows in the window.
-fn each(
+pub(super) fn each(
     rows: &[&DownloadSummary],
     takes: fn(&DownloadSummary) -> bool,
     command: Command,

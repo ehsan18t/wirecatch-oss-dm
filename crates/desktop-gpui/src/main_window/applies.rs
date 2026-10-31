@@ -27,6 +27,14 @@ pub fn can_retry(row: &DownloadSummary) -> bool {
     )
 }
 
+/// Cancelling discards the partial file, so it is for a download that still has one.
+pub fn can_cancel(row: &DownloadSummary) -> bool {
+    !matches!(
+        row.status,
+        DownloadStatus::Completed | DownloadStatus::Cancelled
+    )
+}
+
 /// Moving to `queue` is offered while some of the downloads are in another queue.
 pub fn can_move_to(rows: &[&DownloadSummary], queue: QueueId) -> bool {
     rows.iter().any(|row| row.queue != queue)

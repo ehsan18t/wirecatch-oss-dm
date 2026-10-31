@@ -19,8 +19,8 @@ use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MI
 use wirecatch_shell::api;
 
 use super::list::status_tone;
-use super::{Group, confirm};
-use crate::backend::{act, command};
+use super::{Group, confirm, fixes};
+use crate::backend::act;
 use crate::library::Library;
 use crate::ui::layout::{self, Rule};
 use crate::ui::{Callout, Role, Typed as _, tokens};
@@ -285,7 +285,7 @@ fn failure(
                         .primary()
                         .label(text::fix_label(fix))
                         .on_click(cx.listener(move |_, _, window, cx| {
-                            run_fix(id, fix, window, cx);
+                            fixes::run(id, fix, window, cx);
                         })),
                 )
             },
@@ -325,9 +325,9 @@ fn places(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElem
                     .xsmall()
                     .ghost()
                     .label("Change")
-                    .on_click(
-                        cx.listener(move |_, _, window, cx| choose_folder(id, false, window, cx)),
-                    )
+                    .on_click(cx.listener(move |_, _, window, cx| {
+                        fixes::choose_folder(id, false, window, cx);
+                    }))
                     .into_any_element()
             }),
             cx,
@@ -497,42 +497,4 @@ fn more(
                 )
             })
         })
-}
-
-/// A failure's fix, where the panel can do it itself; the rest come with their own screens.
-fn run_fix(id: DownloadId, fix: FixAction, window: &mut Window, cx: &mut Context<'_, Details>) {
-    match fix {
-        FixAction::Retry => act(window.window_handle(), cx, move |manager| {
-            api::retry(manager, id)
-        }),
-        FixAction::ChooseFolder => choose_folder(id, true, window, cx),
-        FixAction::FreeDiskSpace => files::show_in_folder(id, window, cx),
-        FixAction::KeepOriginal => act(window.window_handle(), cx, move |manager| {
-            api::keep_original(manager, id)
-        }),
-        FixAction::RefreshLink | FixAction::ProxySettings | FixAction::ChangeQueue => {
-            window.push_notification("This comes with a later version of this window.", cx);
-        }
-    }
-}
-
-/// Asks for a new folder for download `id` and saves it there, then tries it again when `retry`.
-fn choose_folder(id: DownloadId, retry: bool, window: &mut Window, cx: &mut Context<'_, Details>) {
-    let picked = files::choose_folder(cx);
-    cx.spawn_in(window, async move |_, cx| {
-        let Some(folder) = picked.await else {
-            return;
-        };
-        _ = cx.update(|window, cx| {
-            command(window.window_handle(), cx, move |manager| async move {
-                api::set_download_folder(&manager, id, &folder).await?;
-                if retry {
-                    api::retry(&manager, id)
-                } else {
-                    Ok(())
-                }
-            });
-        });
-    })
-    .detach();
 }
