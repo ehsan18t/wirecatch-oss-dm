@@ -62,9 +62,11 @@ function packageFolders(root) {
       throw new ManifestError(`The workspace glob ${glob} is not of the form folder/*.`);
     }
     const parent = glob.slice(0, -2);
+    // An empty folder is no package: git cannot hold one, so it is only left behind on a disk.
     return readdirSync(join(root, parent), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      .map((entry) => `${parent}/${entry.name}`);
+      .map((entry) => `${parent}/${entry.name}`)
+      .filter((folder) => readdirSync(join(root, folder)).length > 0);
   });
 }
 
