@@ -90,7 +90,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 
 - [x] Tray: Open, Pause all or Resume all, Proxy submenu, Quit; tooltip; no tray means closing quits (D104).
 - [x] Close to tray; quit stops downloads within a time limit.
-- [ ] A launch while quitting starts the app again once it has exited.
+- [x] A launch while quitting starts the app again once it has exited (D105).
 - [x] Single instance: a second launch focuses the running app and passes its links (D103).
 - [x] `--background`; links on the command line.
 - [x] Browser bridge: serve it, register it on start (not in debug builds), the AppImage copy.

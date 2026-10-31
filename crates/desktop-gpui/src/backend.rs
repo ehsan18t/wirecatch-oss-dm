@@ -17,6 +17,8 @@ use wirecatch_shell::{bridge, launch, quit};
 pub struct Backend {
     runtime: tokio::runtime::Runtime,
     core: Arc<Core>,
+    /// Serves the browser, and holds the endpoint a second launch looks for.
+    serving: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Global for Backend {}
@@ -40,8 +42,25 @@ impl Backend {
         let config = config();
         bridge::register_on_start(&config.data_dir);
         let core = Arc::new(Core::new(config));
-        runtime.spawn(serve(Arc::clone(&core), listener));
-        Self { runtime, core }
+        let serving = runtime.spawn(serve(Arc::clone(&core), listener));
+        Self {
+            runtime,
+            core,
+            serving: Some(serving),
+        }
+    }
+
+    /// Stops serving the browser; the returned future ends once the endpoint is free for a new
+    /// copy of the app to claim.
+    pub fn free_endpoint(cx: &mut App) -> impl Future<Output = ()> + use<> {
+        let serving = cx.global_mut::<Self>().serving.take();
+        async move {
+            if let Some(serving) = serving {
+                serving.abort();
+                // Ends once the task, and the listener it holds, is dropped.
+                _ = serving.await;
+            }
+        }
     }
 
     /// The manager if it has opened, and the runtime its work runs on, for work that cannot
