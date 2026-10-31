@@ -11,6 +11,7 @@ mod lifecycle;
 mod links;
 mod main_window;
 mod notices;
+mod sign_in;
 mod text;
 mod theme;
 mod tray;
@@ -74,6 +75,7 @@ fn main() {
             let library = library::Library::new(cx);
             tray::start(&library, cx);
             notices::start(cx);
+            sign_in::start(cx);
             main_window::run(library, cx);
             if launch.shows_window() {
                 let asked = if launch.links.is_empty() {
