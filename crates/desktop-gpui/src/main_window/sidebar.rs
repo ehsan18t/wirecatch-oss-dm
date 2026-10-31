@@ -14,6 +14,7 @@ use gpui_kit::{
 };
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, Queue, Setting};
+use wirecatch_protocol::proxy::ProxyUse;
 use wirecatch_protocol::rules::AddDownloads;
 use wirecatch_queues::schedule;
 use wirecatch_shell::api;
@@ -232,6 +233,16 @@ impl MainWindow {
             AddDownloads::Auto(rules) => Some(rules.enabled),
             AddDownloads::Manual => None,
         };
+        let proxy = match queue.settings.proxy.own_ref() {
+            Some(ProxyUse::Server(id)) => self
+                .library
+                .read(cx)
+                .proxies
+                .iter()
+                .find(|server| server.id == *id)
+                .map(|server| server.settings.name.clone()),
+            _ => None,
+        };
         let menu = queue_menu(
             queue,
             index,
@@ -269,7 +280,7 @@ impl MainWindow {
                     .min_w_0()
                     .gap_0p5()
                     .child(name_line(&queue.settings.name, current, speed, count, cx))
-                    .child(doing(rules, status, cx)),
+                    .child(doing(queue.id, rules, proxy, status, cx)),
             )
             .when(current || self.hovered_queue == Some(id), |item| {
                 item.child(menu)
@@ -366,8 +377,14 @@ fn name_line(name: &str, current: bool, speed: u64, count: usize, cx: &App) -> i
         )
 }
 
-/// A queue's second line: its rules mark and what it is doing.
-fn doing(rules: Option<bool>, status: String, cx: &App) -> impl IntoElement {
+/// A queue's second line: its rules mark, the saved proxy it uses (D73.13), and what it is doing.
+fn doing(
+    queue: QueueId,
+    rules: Option<bool>,
+    proxy: Option<String>,
+    status: String,
+    cx: &App,
+) -> impl IntoElement {
     let theme = cx.theme();
     h_flex()
         .gap_1()
@@ -380,6 +397,20 @@ fn doing(rules: Option<bool>, status: String, cx: &App) -> impl IntoElement {
                     .border_1()
                     .border_color(theme.border)
                     .child(if enabled { "Rules" } else { "Rules off" }),
+            )
+        })
+        .when_some(proxy, |line, proxy| {
+            line.child(
+                div()
+                    .id(gpui_kit::ElementId::NamedInteger(
+                        "queue-proxy".into(),
+                        queue.0.unsigned_abs(),
+                    ))
+                    .child(Icon::new(IconName::Globe).with_size(tokens::ICON_SMALL))
+                    .tooltip(move |window, cx| {
+                        gpui_kit::component::tooltip::Tooltip::new(format!("Proxy: {proxy}"))
+                            .build(window, cx)
+                    }),
             )
         })
         .child(div().truncate().child(status))

@@ -17,7 +17,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Navigation: All downloads, the six status views with counts, the queues with count or speed.
 - [x] Queues: the first three, "N more queues" / "Fewer queues"; the Rules badge, status text, dimmed when Rules are off.
 - [x] Queues: "+ New queue".
-- [ ] Queues: the proxy icon while a saved profile is in use (D73.13).
+- [x] Queues: the proxy icon while a saved profile is in use (D73.13).
 - [x] Queue "…" menu: Start now (outside its schedule), Pause or Resume the queue, Move up, Move down.
 - [x] Queue menu: Edit queue.
 - [ ] Drag queues to reorder them, the default queue first (D72.9).
