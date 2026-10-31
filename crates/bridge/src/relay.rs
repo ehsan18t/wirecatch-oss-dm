@@ -43,6 +43,10 @@ type Pending = Arc<Mutex<BTreeSet<u64>>>;
 /// connection attempt ends, which keeps memory bounded.
 const MAX_HELD_WHILE_CONNECTING: usize = 32;
 
+/// How long the reader may pass on answers the app sent before the connection broke; requests
+/// still waiting after it are answered with an error.
+const DRAIN_GRACE: Duration = Duration::from_secs(1);
+
 /// How the relay ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Ended {
@@ -233,9 +237,9 @@ async fn finish_reading(from_app: JoinHandle<()>) {
     }
 }
 
-/// How the reader ended: by itself within a second, or stopped after it.
+/// How the reader ended: by itself within [`DRAIN_GRACE`], or stopped after it.
 async fn reader_end(mut from_app: JoinHandle<()>) -> Result<(), tokio::task::JoinError> {
-    match tokio::time::timeout(Duration::from_secs(1), &mut from_app).await {
+    match tokio::time::timeout(DRAIN_GRACE, &mut from_app).await {
         Ok(ended) => ended,
         Err(_still_reading) => {
             from_app.abort();
