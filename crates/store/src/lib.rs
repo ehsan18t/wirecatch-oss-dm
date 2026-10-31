@@ -585,14 +585,7 @@ fn write_until_closed(
         {
             error!(error = %e, "could not save changes to the database");
             let fresh = retried == 0;
-            kept = apply_one_by_one(&mut conn, writes);
-            if kept.len() > MAX_KEPT {
-                error!(
-                    dropped = kept.len() - MAX_KEPT,
-                    "too many changes could not be saved; dropping the oldest"
-                );
-                kept.drain(..kept.len() - MAX_KEPT);
-            }
+            kept = trim_kept(apply_one_by_one(&mut conn, writes));
             // Reported once per spell of failures: while writes are kept, new ones failing too is not news, and how a spell splits into batches depends on timing.
             if fresh {
                 on_failure(e.to_string());
@@ -649,6 +642,52 @@ fn apply_one_by_one(conn: &mut Connection, writes: Vec<Op>) -> Vec<Op> {
         }
     }
     failed
+}
+
+/// At most [`MAX_KEPT`] of the kept writes, each one split by [`split`]. Past the limit only each
+/// row's latest write stays, and then, if still too many, the newest.
+fn trim_kept(mut kept: Vec<Op>) -> Vec<Op> {
+    if kept.len() > MAX_KEPT {
+        kept = latest_per_target(kept);
+    }
+    if kept.len() > MAX_KEPT {
+        error!(
+            dropped = kept.len() - MAX_KEPT,
+            "too many changes could not be saved; dropping the oldest"
+        );
+        kept.drain(..kept.len() - MAX_KEPT);
+    }
+    kept
+}
+
+/// `kept` without the writes a later one replaces, in order. A download's progress replaces only
+/// its earlier progress: the row it updates may not be saved yet.
+fn latest_per_target(kept: Vec<Op>) -> Vec<Op> {
+    let mut whole: Vec<Target> = Vec::new();
+    let mut progressed: Vec<DownloadId> = Vec::new();
+    let mut latest: Vec<Op> = kept
+        .into_iter()
+        .rev()
+        .filter(|op| {
+            let target = target_of(op);
+            if whole.contains(&target) {
+                return false;
+            }
+            match op {
+                Op::SaveProgress(rows) => {
+                    let id = rows.first().map(|r| r.id);
+                    if id.is_some_and(|id| progressed.contains(&id)) {
+                        return false;
+                    }
+                    progressed.extend(id);
+                }
+                _ => whole.push(target),
+            }
+            true
+        })
+        .collect();
+    latest.reverse();
+    latest
 }
 
 /// How far a running download is, saved without the rest of its row ([`Store::save_progress`]).
@@ -1477,6 +1516,42 @@ mod tests {
         Accent, Category, DownloadStatus, FixAction, NotifyOnFinish, PortablePath, QueueNotify,
         QueueSettings, Schedule, Setting, Theme, TimeOfDay, UserError,
     };
+
+    /// Past the limit, a row's older writes go before any other row's only write.
+    #[test]
+    fn kept_writes_past_the_limit_keep_each_rows_latest() {
+        let ids = |download| LastIds {
+            download,
+            queue: 1,
+            proxy_server: 0,
+        };
+        let progress = |done| {
+            Op::SaveProgress(vec![Progress {
+                id: DownloadId(7),
+                done,
+                total: None,
+            }])
+        };
+        let mut kept = vec![
+            Op::SaveLastIds(ids(1)),
+            Op::DeleteDownloads(vec![DownloadId(3)]),
+        ];
+        kept.extend((0..=u64::try_from(MAX_KEPT).unwrap()).map(progress));
+        let kept = trim_kept(kept);
+        assert!(kept.len() <= MAX_KEPT);
+        assert!(
+            matches!(&kept[0], Op::SaveLastIds(i) if *i == ids(1)),
+            "{kept:?}"
+        );
+        assert!(matches!(&kept[1], Op::DeleteDownloads(d) if d == &[DownloadId(3)]));
+        let last = u64::try_from(MAX_KEPT).unwrap();
+        assert!(
+            matches!(&kept[2], Op::SaveProgress(p) if p[0].done == last),
+            "{:?}",
+            kept.get(2)
+        );
+        assert_eq!(kept.len(), 3);
+    }
 
     fn sample_settings() -> AppSettings {
         serde_json::from_str(include_str!("../samples/settings/defaults.json")).unwrap()
