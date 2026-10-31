@@ -15,7 +15,7 @@ import {
   type HelloIdentity,
 } from '../src/lib/native/client';
 import type { ConnectionStatus } from '../src/lib/native/status';
-import { patchOf } from '../src/lib/protocol';
+import { patchOf } from '../src/lib/settings-patch';
 import { FakeApp, flush } from './fakes';
 
 const HELLO: HelloIdentity = {

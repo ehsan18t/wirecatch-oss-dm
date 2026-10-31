@@ -8,9 +8,9 @@ import { FIRST_TOTAL_SPEED_LIMIT } from '@wirecatch/units';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';
+import type { BackgroundMessage, PopupRequest } from '../src/lib/popup-port';
 import { PopupModel } from '../src/lib/popup/model.svelte';
-import { patchOf } from '../src/lib/protocol';
+import { patchOf } from '../src/lib/settings-patch';
 import Popup from '../src/ui/popup/Popup.svelte';
 import { channelPair, downloadItem, flush, type FakeApp, type MemoryCache } from './fakes';
 import {

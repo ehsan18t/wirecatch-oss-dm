@@ -29,7 +29,7 @@ import { MediaCenter } from '@/lib/media/center';
 import { registerMediaListeners } from '@/lib/media/listen';
 import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
-import { acceptsPopupPort } from '@/lib/messages';
+import { acceptsPopupPort } from '@/lib/popup-port';
 import { NativeClient } from '@/lib/native/client';
 import { browserTransport } from '@/lib/native/port';
 import { NoticeCenter } from '@/lib/notices/center';

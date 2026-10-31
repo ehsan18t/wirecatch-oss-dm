@@ -13,14 +13,14 @@ import {
 import { asCachedSettings, CACHE_KEY, memoryArea, storageCache } from '../src/lib/cache';
 import { cookieHeader } from '../src/lib/cookies';
 import { baseName, fileNameFromUrl } from '../src/lib/file-types';
-import { asPopupRequest, isAlert, type Alert } from '../src/lib/messages';
+import { asPopupRequest, isAlert, type Alert } from '../src/lib/popup-port';
 import {
   classifyDisconnect,
   describeProblem,
   disconnectMessage,
   type ProblemKind,
 } from '../src/lib/native/status';
-import { patchOf } from '../src/lib/protocol';
+import { patchOf } from '../src/lib/settings-patch';
 import { BADGE_TOKEN, cssColor } from '../src/lib/theme';
 import { originPattern } from '../src/lib/site-access';
 import { hostMatchesSite, matchingSite, siteForPage } from '../src/lib/sites';

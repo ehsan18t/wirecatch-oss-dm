@@ -6,10 +6,11 @@ import { MAX_FRAME_LEN, type NewDownload } from '@wirecatch/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CookieContext, CookieStore } from '../src/lib/cookies';
 import type { DownloadState } from '../src/lib/capture/handover';
-import type { CachedSettings, InFlightEntry, SettingsCache } from '../src/lib/hub/deps';
+import type { CachedSettings, SettingsCache } from '../src/lib/cache';
+import type { InFlightEntry } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
 import { MENU_NOT_WEB } from '../src/lib/hub/alerts';
-import type { BackgroundMessage, Alert, PopupRequest } from '../src/lib/messages';
+import type { BackgroundMessage, Alert, PopupRequest } from '../src/lib/popup-port';
 import { NativeClient } from '../src/lib/native/client';
 import {
   DEFAULT_SETTINGS,

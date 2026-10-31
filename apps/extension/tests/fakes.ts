@@ -32,13 +32,12 @@ import type { CookieQuery, CookieStore, StoredCookie } from '../src/lib/cookies'
 import type { DownloadState } from '../src/lib/capture/handover';
 import type {
   BrowserDownloads,
-  CachedSettings,
   InFlightEntry,
   InFlightStore,
   AlertStore,
-  SettingsCache,
 } from '../src/lib/hub/deps';
-import type { Channel, Alert } from '../src/lib/messages';
+import type { CachedSettings, SettingsCache } from '../src/lib/cache';
+import type { Channel, Alert } from '../src/lib/popup-port';
 import type { NativePort, NativeTransport } from '../src/lib/native/client';
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {

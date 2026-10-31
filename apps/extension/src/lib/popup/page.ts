@@ -3,7 +3,7 @@
 import { browser } from 'wxt/browser';
 import { fallback, log } from '../diag/log';
 import { MEDIA_COMMAND } from '../media/messages';
-import { POPUP_PORT_NAME, type PopupRequest } from '../messages';
+import { POPUP_PORT_NAME, type PopupRequest } from '../popup-port';
 import { SITE_ORIGINS } from '../site-access';
 import { nonEmpty } from '../text';
 import { PopupModel } from './model.svelte';

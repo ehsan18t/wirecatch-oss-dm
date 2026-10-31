@@ -5,7 +5,7 @@
  */
 import axe from 'axe-core';
 import { Hub } from '../src/lib/hub/hub';
-import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';
+import type { BackgroundMessage, PopupRequest } from '../src/lib/popup-port';
 import { NativeClient } from '../src/lib/native/client';
 import { PopupModel } from '../src/lib/popup/model.svelte';
 import { FakeApp, FakeDownloads, MemoryCache, channelPair, flush } from './fakes';

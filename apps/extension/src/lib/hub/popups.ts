@@ -4,7 +4,7 @@ import {
   type Channel,
   type PopupCommand,
   type Snapshot,
-} from '../messages';
+} from '../popup-port';
 import type { MediaCommands } from './deps';
 import { log } from '../diag/log';
 import { describeError } from './alerts';

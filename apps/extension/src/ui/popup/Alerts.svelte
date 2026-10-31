@@ -1,7 +1,7 @@
 <script lang="ts">
   // What happened in the background that the person should know about, newest first, each with Dismiss.
   import { Button, Callout } from '@wirecatch/ui';
-  import type { Alert } from '../../lib/messages';
+  import type { Alert } from '../../lib/popup-port';
   import { buttonsIn, RemovalFocus } from '../removal-focus.svelte';
 
   interface Props {

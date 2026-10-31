@@ -16,7 +16,7 @@ import {
   type SubmitResult,
 } from '../capture/handover';
 import { log } from '../diag/log';
-import type { PopupCommand } from '../messages';
+import type { PopupCommand } from '../popup-port';
 import { RequestError, type NativeClient } from '../native/client';
 import { hubTiming, type HubDeps, type HubTiming } from './deps';
 import { KnownSettings } from './settings';

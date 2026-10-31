@@ -1,29 +1,12 @@
 /** What the hub is given: the connection, browser APIs and stores, and the shapes it hands back. */
-import type { ExtensionSettings } from '@wirecatch/protocol';
+import type { SettingsCache } from '../cache';
 import type { DownloadControl } from '../capture/handover';
 import type { CookieContext, CookieStore } from '../cookies';
 import type { MediaSendResult, MediaView } from '../media/center';
-import type { Alert } from '../messages';
+import type { Alert } from '../popup-port';
 import type { NoticeEvent } from '../notices/center';
 import type { NativeClient } from '../native/client';
 import { REQUEST_TIMEOUT_MS, START_WAIT_MS, WITHDRAW_TIMEOUT_MS } from '../native/timing';
-
-/**
- * The copy of the app's settings the extension keeps for the browser session (D61): read from
- * the app when it connects, kept in `storage.session` so a background the browser stopped still
- * knows it, and gone when the browser closes. The app is the only store of settings (D5).
- */
-export interface CachedSettings {
-  /** What a download is judged by while the app is still connecting. */
-  settings: ExtensionSettings;
-  /** The app was closed when last seen, so waking does not start a bridge only to find that out again. */
-  appClosed: boolean;
-}
-
-export interface SettingsCache {
-  load: () => Promise<CachedSettings | null>;
-  save: (value: CachedSettings) => Promise<void>;
-}
 
 /** A browser download paused for a handover, and the handover id it is (or will be) offered under. */
 export interface InFlightEntry {

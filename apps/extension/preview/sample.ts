@@ -16,7 +16,7 @@ import type {
   PopupCommand,
   PopupRequest,
   Snapshot,
-} from '../src/lib/messages';
+} from '../src/lib/popup-port';
 import type { ConnectionStatus } from '../src/lib/native/status';
 import { PopupModel } from '../src/lib/popup/model.svelte';
 

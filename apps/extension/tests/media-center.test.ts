@@ -6,7 +6,8 @@ import type { NewDownload } from '@wirecatch/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CookieContext, CookieStore } from '../src/lib/cookies';
 import { appSide } from '../src/lib/hub/app';
-import type { CachedSettings, HubDeps } from '../src/lib/hub/deps';
+import type { CachedSettings } from '../src/lib/cache';
+import type { HubDeps } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
 import { MediaSender } from '../src/lib/hub/media-sender';
 import {
@@ -34,7 +35,7 @@ import {
   type Sighting,
 } from '../src/lib/media/registry';
 import { MediaWatcher } from '../src/lib/media/watch';
-import { asPopupRequest } from '../src/lib/messages';
+import { asPopupRequest } from '../src/lib/popup-port';
 import { NativeClient } from '../src/lib/native/client';
 import { DEFAULT_SETTINGS, FakeApp, FakeDownloads, MemoryCache, flush } from './fakes';
 
