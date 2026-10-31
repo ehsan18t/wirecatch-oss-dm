@@ -14,12 +14,6 @@ export class GateError extends Error {}
 /** Command-line options. */
 export const options = { desktop: true, failFast: true };
 
-/** A check of the Tauri desktop app alone, which `--no-desktop` leaves out, saying so. */
-export const desktopOnly = (check) => () => {
-  if (options.desktop) check();
-  else console.log('Left out (--no-desktop): it checks only the Tauri desktop app.');
-};
-
 /**
  * How to start a command. pnpm is a `.cmd` script on Windows and only starts through a shell, so it is passed as one command line built from the gate's own constant arguments. cargo, git and rustup are real executables and start without a shell, so `%` and quotes in their arguments reach them unchanged.
  */

@@ -23,8 +23,8 @@ url.workspace = true
 wirecatch-logging = { workspace = true, features = ["setup"] }
 
 [target.'cfg(windows)'.dependencies]
-# The version tauri-plugin-autostart uses, to read the start-at-sign-in entry's state, to
-# register the app's notification identity, and to read the Windows build (D64).
+# Reads the start-at-sign-in entry's state, registers the app's notification identity, and
+# reads the Windows build (D64).
 winreg = "0.10.1"
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 # The system's own notifications, with buttons, under the app's identity (D52).

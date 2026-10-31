@@ -20,8 +20,6 @@ ignore = [
   { id = "RUSTSEC-2023-0071", reason = "Wirecatch never holds an RSA private key; only signature verification is used" },
   # crypto-bigint 0.5 timing side channels in operations meant to be constant-time on secret integers. pgp 0.21, the newest release, reaches it through elliptic-curve 0.13 for its ECDSA and X448 keys, and the fix is only in crypto-bigint 0.7. Verifying yt-dlp's release signature computes on the public key, the signature and the file's hash, none of them secret; only the signature tests make throwaway private keys. Revisit when pgp moves to the fixed line or if Wirecatch ever handles private keys.
   { id = "RUSTSEC-2026-0387", reason = "Only signature verification is used, which computes on public values" },
-  # glib 0.18 `VariantStrIter` is unsound. glib comes only with Tauri's Linux stack (gtk 0.18, webkit2gtk, tao, wry, muda, tray-icon), which stays on the gtk-rs 0.18 bindings, and the fix is in glib 0.20. The iterator is made only by `Variant::array_iter_str`, which none of those crates calls and Wirecatch does not use glib itself. Revisit when Tauri moves to newer gtk-rs bindings, or if anything starts calling `array_iter_str`.
-  { id = "RUSTSEC-2024-0429", reason = "Only Tauri's Linux stack uses glib, and nothing in the build calls array_iter_str" },
 ]
 
 [licenses]
@@ -46,7 +44,7 @@ allow = [
 confidence-threshold = 0.93
 
 [bans]
-# Tauri brings several windows-sys and windows versions; duplicates are listed, not failed, until upstream converges.
+# The dependencies bring several windows-sys and windows versions; duplicates are listed, not failed, until upstream converges.
 multiple-versions = "warn"
 wildcards = "deny"
 # Path dependencies inside this workspace are fine without a version.

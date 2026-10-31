@@ -261,8 +261,7 @@ impl ManagerConfig {
 /// The download manager. Cheap to clone; every clone is the same manager.
 ///
 /// Operations take effect at once and report what changed through [`subscribe`]
-/// (for the desktop UI) and [`subscribe_events`] (for socket clients). Method names
-/// match the desktop app's Tauri commands.
+/// (for the desktop UI) and [`subscribe_events`] (for socket clients).
 ///
 /// [`subscribe`]: Manager::subscribe
 /// [`subscribe_events`]: Manager::subscribe_events
@@ -273,8 +272,8 @@ pub struct Manager {
 
 struct Inner {
     /// The runtime the manager was opened on. Every task is spawned here, so
-    /// methods also work when called from a thread outside any runtime (Tauri runs
-    /// synchronous commands on its main thread).
+    /// methods also work when called from a thread outside any runtime, such as the
+    /// desktop app's window thread.
     runtime: Handle,
     state: Mutex<State>,
     store: Store,

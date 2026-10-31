@@ -22,7 +22,7 @@
    */
   :root,
   [data-scheme] {
-    /* Graphite on cool paper. The window background is the base, and the desktop shell paints every window in it before its page draws (D45, `window_background` in appearance.rs reads it from here). */
+    /* Graphite on cool paper. The window background is the base. */
     --wc-base: light-dark(#eceef2, #12151b);
     --wc-layer: light-dark(rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.035));
     --wc-raised: light-dark(rgb(255 255 255 / 0.85), rgb(255 255 255 / 0.06));

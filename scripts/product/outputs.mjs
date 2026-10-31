@@ -19,29 +19,6 @@ export const PRODUCT_FILE = 'config/product.toml';
 const TEMPLATES = 'config/templates';
 /** Where the workspace's package globs are listed. */
 const WORKSPACE_FILE = 'pnpm-workspace.yaml';
-const TAURI_CONFIG = 'apps/desktop/src-tauri/tauri.conf.json';
-/** Where Tauri finds the bridge it bundles, relative to the desktop crate; `prepare-bridge.mjs` reads the name from here. */
-const SIDECAR_FOLDER = 'binaries';
-
-function tauriConfig(json, product) {
-  const main = json.app?.windows?.find((window) => window.label === 'main');
-  if (!main) throw new ManifestError(`${TAURI_CONFIG} has no window labelled "main".`);
-  json.productName = product.product.name;
-  json.mainBinaryName = product.executables.app;
-  json.identifier = product.channels.release.identifier;
-  // Without a version Tauri takes the crate's, which is the workspace version written from product.toml, so the installer, the updater and the app cannot disagree.
-  delete json.version;
-  main.title = product.product.name;
-  Object.assign(json.bundle, {
-    publisher: product.publisher.legal_name,
-    copyright: `${product.product.authors}. Licensed under ${product.product.license}.`,
-    license: product.product.license,
-    shortDescription: product.product.summary,
-    longDescription: product.product.description,
-  });
-  json.bundle.windows.nsis.startMenuFolder = product.product.name;
-}
-
 function cargoWorkspace(text, product, path) {
   const table = '[workspace.package]';
   const fields = [
@@ -108,19 +85,11 @@ export function outputs(root) {
   return [
     { path: 'crates/product/src/lib.rs', source: rustSource, format: 'rust' },
     { path: 'packages/product/src/index.ts', source: typescriptSource, format: 'prettier' },
-    { path: 'apps/desktop/src-tauri/linux/prerm.sh', template: 'prerm.sh' },
-    { path: 'apps/desktop/src-tauri/windows/hooks.nsh', template: 'hooks.nsh' },
     { path: 'SECURITY.md', template: 'SECURITY.md' },
     { path: 'Cargo.toml', edit: cargoWorkspace },
     { path: 'crates/bridge/Cargo.toml', edit: binaryName((p) => p.executables.bridge) },
     { path: 'crates/cli/Cargo.toml', edit: binaryName((p) => p.executables.cli) },
-    { path: 'apps/desktop/src-tauri/Cargo.toml', edit: binaryName((p) => p.executables.app) },
-    { path: TAURI_CONFIG, json: tauriConfig },
-    {
-      path: 'apps/desktop/src-tauri/tauri.bundle.conf.json',
-      json: (json, product) =>
-        (json.bundle.externalBin = [`${SIDECAR_FOLDER}/${product.executables.bridge}`]),
-    },
+    { path: 'crates/desktop/Cargo.toml', edit: binaryName((p) => p.executables.app) },
     ...packageManifests(root),
   ];
 }
@@ -138,7 +107,7 @@ function rustfmt(text, root) {
   return result.stdout;
 }
 
-/** `text` formatted as Prettier formats the file at `path` (ignore files aside: src-tauri is not checked, but its JSON keeps the same form). */
+/** `text` formatted as Prettier formats the file at `path`. */
 async function prettierFormat(text, path) {
   const options = await prettier.resolveConfig(path);
   return prettier.format(text, { ...options, filepath: path });

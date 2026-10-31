@@ -194,7 +194,7 @@ async fn a_server_that_never_answers_cannot_hang_the_app() -> TestResult {
     Ok(())
 }
 
-/// The desktop UI calls these as Tauri commands and relies on exactly these return
+/// The desktop app relies on exactly these return
 /// types: the new id from `add_download`, the new queue from `create_queue`, and
 /// nothing from the rest. Errors reach it as their plain-language text.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -237,7 +237,7 @@ async fn commands_return_what_the_ui_expects() -> TestResult {
     Ok(())
 }
 
-/// Tauri runs synchronous commands on its main thread, outside any Tokio runtime.
+/// The desktop app calls synchronous methods from its window thread, outside any Tokio runtime.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sync_methods_work_from_a_thread_outside_the_runtime() -> TestResult {
     let server = fast_server(4 * KIB).await?;
