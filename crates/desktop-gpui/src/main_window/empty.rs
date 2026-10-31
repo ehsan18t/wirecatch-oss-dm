@@ -199,6 +199,11 @@ fn first_run(cx: &mut Context<'_, MainWindow>) -> Empty {
                 .label("New download")
                 .on_click(cx.listener(|this, _, window, cx| this.new_download(&[], window, cx)))
                 .into_any_element(),
+            Button::new("first-tour")
+                .ghost()
+                .label(format!("See everything {app} can do"))
+                .on_click(cx.listener(|this, _, window, cx| this.open_palette(window, cx)))
+                .into_any_element(),
         ],
     }
 }

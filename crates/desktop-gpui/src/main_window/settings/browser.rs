@@ -14,11 +14,13 @@ use super::{Typing, change, current, list_field, switch};
 use crate::library::Library;
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
-    SettingPage::new("Browser").resettable(false).groups([
-        capture(library),
-        what_is_caught(library, cx),
-        download_window(library),
-    ])
+    SettingPage::new(super::Page::Browser.title())
+        .resettable(false)
+        .groups([
+            capture(library),
+            what_is_caught(library, cx),
+            download_window(library),
+        ])
 }
 
 fn extension(patch: ExtensionSettingsPatch) -> AppSettingsPatch {

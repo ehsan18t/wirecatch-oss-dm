@@ -8,9 +8,11 @@ mod confirm;
 mod details;
 mod empty;
 mod fixes;
+mod keymap;
 mod link_trial;
 mod list;
 mod order;
+mod palette;
 mod proxy_dialog;
 mod queue_dialog;
 mod queue_header;
@@ -33,8 +35,8 @@ use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::component::{ActiveTheme as _, TitleBar, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, FocusHandle, Global,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels, Render,
+    AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable as _,
+    Global, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render,
     ScrollStrategy, SharedString, Styled as _, Subscription, UniformListScrollHandle, WeakEntity,
     Window, WindowBounds, WindowOptions, actions, px, size,
 };
@@ -72,7 +74,11 @@ actions!(
         SearchToList,
         OpenMenu,
         NudgeUp,
-        NudgeDown
+        NudgeDown,
+        OpenPalette,
+        ShowShortcuts,
+        NextRegion,
+        PreviousRegion
     ]
 );
 
@@ -90,32 +96,7 @@ const NO_LINK_PASTED: &str =
 
 /// The main window's shortcuts. Call once at start.
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("ctrl-n", NewDownload, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-v", PasteLinks, Some(KEY_CONTEXT)),
-        KeyBinding::new("escape", Dismiss, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-k", FocusSearch, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-,", ToggleSettings, Some(KEY_CONTEXT)),
-        KeyBinding::new("up", CursorUp, Some(KEY_CONTEXT)),
-        KeyBinding::new("down", CursorDown, Some(KEY_CONTEXT)),
-        KeyBinding::new("shift-up", ExtendUp, Some(KEY_CONTEXT)),
-        KeyBinding::new("shift-down", ExtendDown, Some(KEY_CONTEXT)),
-        KeyBinding::new("pageup", CursorPageUp, Some(KEY_CONTEXT)),
-        KeyBinding::new("pagedown", CursorPageDown, Some(KEY_CONTEXT)),
-        KeyBinding::new("home", CursorFirst, Some(KEY_CONTEXT)),
-        KeyBinding::new("end", CursorLast, Some(KEY_CONTEXT)),
-        KeyBinding::new("ctrl-a", SelectAll, Some(KEY_CONTEXT)),
-        KeyBinding::new("space", PauseOrResume, Some(KEY_CONTEXT)),
-        KeyBinding::new("enter", OpenSelected, Some(KEY_CONTEXT)),
-        KeyBinding::new("alt-enter", ShowDetails, Some(KEY_CONTEXT)),
-        KeyBinding::new("delete", RemoveSelected, Some(KEY_CONTEXT)),
-        KeyBinding::new("menu", OpenMenu, Some(KEY_CONTEXT)),
-        KeyBinding::new("shift-f10", OpenMenu, Some(KEY_CONTEXT)),
-        KeyBinding::new("alt-up", NudgeUp, Some(KEY_CONTEXT)),
-        KeyBinding::new("alt-down", NudgeDown, Some(KEY_CONTEXT)),
-        // Bound after the field's own Down, which it outranks in the field.
-        KeyBinding::new("down", SearchToList, Some("MainSearch > Input")),
-    ]);
+    keymap::bind(cx);
 }
 
 /// Where a download's row sits in the list, in the order the groups show.
@@ -482,6 +463,21 @@ impl MainWindow {
         cx.notify();
     }
 
+    /// F6 and Shift+F6: the keyboard moves between the search and the list.
+    fn next_region(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.screen = Screen::Downloads;
+        if self.search.read(cx).focus_handle(cx).is_focused(window) {
+            self.focus.focus(window, cx);
+            if self.cursor.is_none() {
+                self.step(Step::First, false, cx);
+            }
+        } else {
+            self.search
+                .update(cx, |search, cx| search.focus(window, cx));
+        }
+        cx.notify();
+    }
+
     /// Escape outside a field clears the selection; a dialog closes on its own Escape first.
     fn dismiss(&mut self, cx: &mut Context<'_, Self>) {
         self.clear_selection();
@@ -601,6 +597,14 @@ impl Render for MainWindow {
                     .update(cx, |search, cx| search.focus(window, cx));
             }))
             .on_action(cx.listener(|this, _: &ToggleSettings, _, cx| this.toggle_settings(cx)))
+            .on_action(
+                cx.listener(|this, _: &OpenPalette, window, cx| this.open_palette(window, cx)),
+            )
+            .on_action(cx.listener(|_, _: &ShowShortcuts, window, cx| keymap::open(window, cx)))
+            .on_action(cx.listener(|this, _: &NextRegion, window, cx| this.next_region(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &PreviousRegion, window, cx| this.next_region(window, cx)),
+            )
             .when(self.screen == Screen::Downloads, |window| {
                 Self::list_keys(window, cx)
             })

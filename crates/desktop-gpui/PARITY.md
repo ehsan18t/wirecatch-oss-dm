@@ -22,7 +22,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Queue menu: Edit queue.
 - [ ] Drag queues to reorder them, the default queue first (D72.9).
 - [x] Settings (Ctrl+,), at the foot of the navigation, where the settings screen offers Downloads.
-- [ ] Find any action (Ctrl+Shift+P) and Keyboard shortcuts (F1), reachable from the main window.
+- [x] Find any action (Ctrl+Shift+P) and Keyboard shortcuts (F1), reachable from the main window.
 - [x] Each group heading with its count; Pause all on what runs (or waits), Resume all on what is paused.
 - [x] A link pasted into the search field offers to download it (Enter), and finds it if it already is a download.
 - [x] List header in a queue view: description, schedule and limits, Start now, Pause or Resume queue, Edit queue; "about X left"; "matching '…'".
@@ -38,14 +38,14 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Hover Pause, Resume, Try again, Start over.
 - [x] Selection: Ctrl+click, Shift+click ranges; selection bar with Pause, Resume, Try again, Move to queue, Remove, Clear; the list keys that move and extend it, Ctrl+A, Space, Enter, Alt+Enter, Delete.
 - [x] Empty states with their buttons: first run, no search match, empty queue, an empty view.
-- [ ] First run: "See everything {app} can do" (opens the palette).
+- [x] First run: "See everything {app} can do" (opens the palette).
 - [x] Details dialog (D47), opened by clicking a row: status, the problem with its fix and Try again, speed and progress, facts, Saved to with Change, the link with Copy, activity, Open, Pause, Resume, Start over, Show in folder, More (Copy link, Cancel download), Remove; it follows the download and closes once it is removed.
 - [ ] Details: the speed graph, the queue as a select, "Stuck? The link may have expired." with Get a new link, Open in a separate window, and the fixes that open other screens (Get a new link, Proxy settings, Change queue).
 - [x] Context menu on rows; Menu key and Shift+F10.
-- [ ] Keyboard: every shortcut of `lib/keymap.ts`, F6 regions, list keys.
+- [x] Keyboard: every shortcut of `lib/keymap.ts`, list keys; F6 moves between the search and the list (the navigation takes no keyboard focus yet).
 - [ ] Drag a link in to add it; drag rows to reorder in a queue and onto a queue to move them.
 - [x] Paste a link anywhere (Ctrl+V) to open the Add dialog.
-- [ ] Command palette with every command of `lib/commands`.
+- [x] Command palette: the selection's commands, general commands, every view and queue, and the settings pages.
 - [x] The total speed readout, with "Starting" and "Finishing videos", and its tooltip (D23).
 
 ## Dialogs
@@ -59,7 +59,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Queue: proxy, with New proxy, and the hosts that skip it.
 - [ ] Get a new link.
 - [x] Export and import settings, with the preview.
-- [ ] Keyboard shortcuts.
+- [x] Keyboard shortcuts.
 - [x] Remove the add-on.
 - [x] Proxy server, with Test connection.
 - [x] Delete a proxy server, with what to switch to.
@@ -77,7 +77,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Speed and queues, with Test a link.
 - [x] Network: the global proxy, proxy servers, hosts that skip the proxy, FTP past proxies, local network sites.
 - [x] Settings search.
-- [ ] Jump to a setting from the palette.
+- [x] Jump to a settings page from the palette.
 
 ## Download windows (D23, D43)
 

@@ -39,11 +39,13 @@ const START_TIMES: &[(StartNoticeTime, &str)] = &[
 const ONLY_IN_BROWSER: &str = "Used only with Show a notice in the browser.";
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
-    SettingPage::new("Notifications").resettable(false).groups([
-        finished(library, cx),
-        started(library, cx),
-        do_not_disturb(library),
-    ])
+    SettingPage::new(super::Page::Notifications.title())
+        .resettable(false)
+        .groups([
+            finished(library, cx),
+            started(library, cx),
+            do_not_disturb(library),
+        ])
 }
 
 fn finished(library: &Entity<Library>, cx: &App) -> SettingGroup {

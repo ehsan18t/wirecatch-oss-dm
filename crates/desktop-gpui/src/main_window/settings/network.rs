@@ -32,7 +32,7 @@ const DIRECT: &str = "direct";
 const HOSTS_HELP: &str = "One per line. A host covers its subdomains; IP addresses, ranges (10.0.0.0/8) and <local> (names without a dot) work too.";
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
-    SettingPage::new("Network")
+    SettingPage::new(super::Page::Network.title())
         .resettable(false)
         .groups([proxy(library, cx), local_network(library)])
 }
