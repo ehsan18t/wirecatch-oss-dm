@@ -13,6 +13,27 @@ pub const PRODUCT_SLUG: &str = "wirecatch";
 /// The release version of the app and the extension.
 pub const PRODUCT_VERSION: &str = "0.1.0";
 
+/// One line on what the product is.
+pub const PRODUCT_SUMMARY: &str = "A fast download manager that just works";
+
+/// The licence, as an SPDX expression.
+pub const PRODUCT_LICENSE: &str = "GPL-3.0-only";
+
+/// Who publishes the product.
+pub const PUBLISHER_NAME: &str = "TODO-PRODUCT-PUBLISHER-LEGAL-NAME";
+
+/// The product website.
+pub const WEBSITE_URL: &str = "https://TODO-PRODUCT-WEBSITE.invalid/";
+
+/// The source code.
+pub const REPOSITORY_URL: &str = "https://github.com/ehsan18t/wirecatch-oss-dm";
+
+/// Where a person reports a problem: the repository's issues.
+pub const ISSUES_URL: &str = "https://github.com/ehsan18t/wirecatch-oss-dm/issues";
+
+/// Where a person writes for help.
+pub const SUPPORT_EMAIL: &str = "TODO-PRODUCT-SUPPORT-EMAIL@placeholder.invalid";
+
 /// The repository whose releases hold the media add-on's pinned files (D80).
 pub const ADDON_FILES_URL: &str = "https://github.com/ehsan18t/wirecatch-addons";
 

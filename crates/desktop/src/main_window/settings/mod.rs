@@ -1,6 +1,7 @@
 //! The settings screen (D85): gpui-kit's settings pages, each setting read from the library and
 //! changed through the manager, so every window shows the change once the manager makes it.
 
+mod about;
 mod addon;
 mod browser;
 mod files;
@@ -66,6 +67,7 @@ pub(super) enum Page {
     Media,
     Speed,
     Network,
+    About,
 }
 
 impl Page {
@@ -79,12 +81,13 @@ impl Page {
             Self::Media => "Media",
             Self::Speed => "Speed and queues",
             Self::Network => "Network",
+            Self::About => "About",
         }
     }
 }
 
 /// Every page, in the order D85 gives.
-pub(super) const PAGES: [Page; 7] = [
+pub(super) const PAGES: [Page; 8] = [
     Page::General,
     Page::Files,
     Page::Notifications,
@@ -92,6 +95,7 @@ pub(super) const PAGES: [Page; 7] = [
     Page::Media,
     Page::Speed,
     Page::Network,
+    Page::About,
 ];
 
 /// The page the settings screen opens on. A new `opening` starts the screen afresh on `page`,
@@ -116,6 +120,7 @@ fn page(
         Page::Media => media::page(library, cx),
         Page::Speed => speed::page(library, main, cx),
         Page::Network => network::page(library, cx),
+        Page::About => about::page(library),
     }
 }
 
