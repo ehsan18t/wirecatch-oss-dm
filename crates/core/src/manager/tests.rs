@@ -83,6 +83,7 @@ fn capture(url: &str) -> NewDownload {
         mime: None,
         size_hint: None,
         cookies: None,
+        cookie_jar: None,
         user_agent: None,
         extra_headers: vec![],
         source: CaptureSource::BrowserDownload,

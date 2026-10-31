@@ -22,6 +22,8 @@ import type { CaptureSource } from './CaptureSource';
 import type { Category } from './Category';
 import type { CategoryRule } from './CategoryRule';
 import type { ClientKind } from './ClientKind';
+import type { CookieJar } from './CookieJar';
+import type { CookieRequest } from './CookieRequest';
 import type { DownloadId } from './DownloadId';
 import type { DownloadStatus } from './DownloadStatus';
 import type { DownloadSummary } from './DownloadSummary';
@@ -44,6 +46,7 @@ import type { HelloReply } from './HelloReply';
 import type { ImportPreview } from './ImportPreview';
 import type { ImportSummary } from './ImportSummary';
 import type { ImportedFolder } from './ImportedFolder';
+import type { JarCookie } from './JarCookie';
 import type { Link } from './Link';
 import type { LinkMatch } from './LinkMatch';
 import type { LinkProtocol } from './LinkProtocol';
@@ -105,6 +108,7 @@ import type { Reply } from './Reply';
 import type { Reveal } from './Reveal';
 import type { Rule } from './Rule';
 import type { RuleMatch } from './RuleMatch';
+import type { SameSite } from './SameSite';
 import type { Schedule } from './Schedule';
 import type { SettingsFile } from './SettingsFile';
 import type { SettingsFileProxy } from './SettingsFileProxy';
@@ -444,6 +448,28 @@ export function isClientKind(value: unknown): value is ClientKind {
   return value === 'extension' || value === 'bridge' || value === 'cli' || value === 'app';
 }
 
+/** Whether `value` has the shape of a {@link CookieJar}; fields it does not name are not checked. */
+export function isCookieJar(value: unknown): value is CookieJar {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isArrayOf(value1['cookies'], isJarCookie) &&
+    isCookieRequest(value1['request']))(value);
+}
+
+/** Whether `value` has the shape of a {@link CookieRequest}; fields it does not name are not checked. */
+export function isCookieRequest(value: unknown): value is CookieRequest {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    (typeof value1['initiator'] === 'string' || value1['initiator'] === null) &&
+    (value1['original_url'] === undefined ||
+      typeof value1['original_url'] === 'string' ||
+      value1['original_url'] === null) &&
+    (value1['top_level'] === undefined ||
+      typeof value1['top_level'] === 'string' ||
+      value1['top_level'] === null) &&
+    typeof value1['navigation'] === 'boolean')(value);
+}
+
 /** Whether `value` has the shape of a {@link DownloadId}; fields it does not name are not checked. */
 export function isDownloadId(value: unknown): value is DownloadId {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -735,6 +761,15 @@ export function isImportedFolder(value: unknown): value is ImportedFolder {
     typeof value1['outside_user_folders'] === 'boolean')(value);
 }
 
+/** Whether `value` has the shape of a {@link JarCookie}; fields it does not name are not checked. */
+export function isJarCookie(value: unknown): value is JarCookie {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['name'] === 'string' &&
+    typeof value1['value'] === 'string' &&
+    isSameSite(value1['same_site']))(value);
+}
+
 /** Whether `value` has the shape of a {@link Link}; fields it does not name are not checked. */
 export function isLink(value: unknown): value is Link {
   return typeof value === 'string';
@@ -909,6 +944,7 @@ export function isNewDownload(value: unknown): value is NewDownload {
     (typeof value1['mime'] === 'string' || value1['mime'] === null) &&
     (typeof value1['size_hint'] === 'number' || value1['size_hint'] === null) &&
     (typeof value1['cookies'] === 'string' || value1['cookies'] === null) &&
+    (value1['cookie_jar'] === undefined || isCookieJar(value1['cookie_jar'])) &&
     (typeof value1['user_agent'] === 'string' || value1['user_agent'] === null) &&
     isArrayOf(value1['extra_headers'], isHeader) &&
     isCaptureSource(value1['source']) &&
@@ -1399,6 +1435,13 @@ export function isRuleMatch(value: unknown): value is RuleMatch {
     isRecord(value1) &&
     (isQueueId(value1['queue']) || value1['queue'] === null) &&
     isRule(value1['rule']))(value);
+}
+
+/** Whether `value` has the shape of a {@link SameSite}; fields it does not name are not checked. */
+export function isSameSite(value: unknown): value is SameSite {
+  return (
+    value === 'no_restriction' || value === 'lax' || value === 'strict' || value === 'unspecified'
+  );
 }
 
 /** Whether `value` has the shape of a {@link Schedule}; fields it does not name are not checked. */

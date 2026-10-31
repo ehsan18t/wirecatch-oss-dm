@@ -97,6 +97,7 @@ async fn an_ftp_capture_that_fails_leaves_the_download_to_the_browser() -> TestR
         mime: None,
         size_hint: None,
         cookies: None,
+        cookie_jar: None,
         user_agent: None,
         extra_headers: vec![],
         source: CaptureSource::ContextMenu,

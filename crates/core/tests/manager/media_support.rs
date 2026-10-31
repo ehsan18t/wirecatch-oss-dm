@@ -380,6 +380,7 @@ pub fn media_capture(url: impl AsRef<str>, kind: MediaKind, title: Option<&str>)
         mime: None,
         size_hint: None,
         cookies: Some("session=abc123; theme=dark".into()),
+        cookie_jar: None,
         user_agent: Some("TestBrowser/2".into()),
         extra_headers: vec![],
         source: CaptureSource::MediaButton,

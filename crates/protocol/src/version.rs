@@ -541,7 +541,9 @@ mod tests {
     /// for connections that predate it (D32.6): decide which, then update this list.
     #[test]
     fn the_values_of_enums_inside_messages_are_settled() {
-        use crate::extension::{AddAction, CaptureSource, MediaKind, NoticeKind, WithdrawOutcome};
+        use crate::extension::{
+            AddAction, CaptureSource, MediaKind, NoticeKind, SameSite, WithdrawOutcome,
+        };
         use crate::wire::ClientKind;
         use ts_rs::TS;
 
@@ -553,6 +555,7 @@ mod tests {
             ("AddAction", AddAction::inline(&cfg)),
             ("WithdrawOutcome", WithdrawOutcome::inline(&cfg)),
             ("NoticeKind", NoticeKind::inline(&cfg)),
+            ("SameSite", SameSite::inline(&cfg)),
         ];
         let settled = [
             ("ClientKind", r#""extension" | "bridge" | "cli" | "app""#),
@@ -570,6 +573,10 @@ mod tests {
                 r#""withdrawn" | "not_found" | "already_started""#,
             ),
             ("NoticeKind", r#""started" | "finished" | "failed""#),
+            (
+                "SameSite",
+                r#""no_restriction" | "lax" | "strict" | "unspecified""#,
+            ),
         ];
         for ((name, values), (settled_name, settled_values)) in enums.iter().zip(settled) {
             assert_eq!((name, values.as_str()), (&settled_name, settled_values));

@@ -16,8 +16,9 @@ use wirecatch_protocol::app::{
     CaptureConfirmation, DownloadStatus, MediaDefaultsPatch, QueueSettings, UiEvent, Update,
 };
 use wirecatch_protocol::extension::{
-    AddAction, BrowserControlsPatch, CaptureSource, ExtensionSettingsPatch, Header, NewDownload,
-    WithdrawOutcome, WithdrawRequest,
+    AddAction, BrowserControlsPatch, CaptureSource, CookieJar, CookieRequest,
+    ExtensionSettingsPatch, Header, JarCookie, NewDownload, SameSite, WithdrawOutcome,
+    WithdrawRequest,
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
 use wirecatch_protocol::wire::{
@@ -173,6 +174,7 @@ fn capture(url: String) -> NewDownload {
         mime: None,
         size_hint: Some(1024),
         cookies: Some("session=abc".into()),
+        cookie_jar: None,
         user_agent: Some("TestBrowser/1".into()),
         extra_headers: vec![],
         source: CaptureSource::BrowserDownload,
@@ -742,6 +744,50 @@ async fn a_version_1_client_never_sees_the_browser_controls() -> TestResult {
         client.next_event().await?,
         Event::ExtensionSettingsChanged(s) if !s.capture_enabled
     ));
+    Ok(())
+}
+
+/// With the browser's cookies and the request's context, the app picks the cookies with its own
+/// Public Suffix List, over the ones the extension picked (D112).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_app_picks_the_cookies_from_the_jar() -> TestResult {
+    let server = fast_server(1024).await?;
+    let h = Harness::new().await?;
+    let mut client = Client::connected(&h.manager).await?;
+    let cookie = |name: &str, same_site| JarCookie {
+        name: name.into(),
+        value: "1".into(),
+        same_site,
+    };
+    let capture = NewDownload {
+        cookie_jar: Some(Box::new(CookieJar {
+            cookies: vec![
+                cookie("strict", SameSite::Strict),
+                cookie("lax", SameSite::Lax),
+                cookie("none", SameSite::NoRestriction),
+            ],
+            // A link on another site's page: no Strict cookie goes.
+            request: CookieRequest {
+                initiator: Some("https://intranet.test/page".into()),
+                original_url: None,
+                top_level: None,
+                navigation: true,
+            },
+        })),
+        ..capture(server.url("get?id=8").to_string())
+    };
+
+    let reply = client.call(Call::AddDownload(capture)).await?.unwrap();
+    let Reply::DownloadAdded(added) = reply else {
+        panic!("unexpected reply {reply:?}");
+    };
+    h.wait_status(added.id.unwrap(), DownloadStatus::Completed)
+        .await;
+    let sent = server.stats.header_values("cookie");
+    assert!(
+        !sent.is_empty() && sent.iter().all(|c| c == "lax=1; none=1"),
+        "{sent:?}"
+    );
     Ok(())
 }
 

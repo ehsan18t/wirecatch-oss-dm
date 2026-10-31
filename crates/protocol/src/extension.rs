@@ -54,9 +54,18 @@ pub struct NewDownload {
     /// file, and it does not take the download over.
     #[ts(type = "number | null")]
     pub size_hint: Option<u64>,
-    /// Value for the `Cookie` header, so downloads behind a login keep working.
+    /// Value for the `Cookie` header, so downloads behind a login keep working. The cookies the
+    /// extension picked itself; an app that reads [`cookie_jar`](Self::cookie_jar) uses that
+    /// instead.
     #[ts(as = "Option<String>")]
     pub cookies: Option<Secret>,
+    /// Every cookie the browser holds for `url`, for the app to pick the ones the browser would
+    /// send with its own Public Suffix List (D112). Absent when the extension sends the header the
+    /// browser sent instead (D59). Added in protocol version 2; an app from before it uses
+    /// `cookies`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cookie_jar: Option<Box<CookieJar>>,
     /// The browser's `User-Agent`; the app sends it instead of its own.
     pub user_agent: Option<String>,
     /// Further request headers the download needs. The app drops those that belong to the
@@ -89,6 +98,7 @@ impl fmt::Debug for NewDownload {
             mime,
             size_hint,
             cookies,
+            cookie_jar,
             user_agent,
             extra_headers,
             source,
@@ -105,11 +115,84 @@ impl fmt::Debug for NewDownload {
             .field("mime", mime)
             .field("size_hint", size_hint)
             .field("cookies", cookies)
+            .field("cookie_jar", cookie_jar)
             .field("user_agent", user_agent)
             .field("extra_headers", extra_headers)
             .field("source", source)
             .field("queue", queue)
             .field("media", media)
+            .finish()
+    }
+}
+
+/// The cookies the browser holds for a captured address, and the request they would go with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CookieJar {
+    pub cookies: Vec<JarCookie>,
+    pub request: CookieRequest,
+}
+
+/// One cookie as the browser's `cookies` API gives it. Its `Debug` hides the value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct JarCookie {
+    /// Empty for a cookie set without a name, which goes as its value alone.
+    pub name: String,
+    #[ts(as = "String")]
+    pub value: Secret,
+    pub same_site: SameSite,
+}
+
+/// A cookie's `SameSite` attribute, named as the browser's `cookies` API names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum SameSite {
+    /// `SameSite=None`, and a cookie whose attribute the browser does not report.
+    NoRestriction,
+    Lax,
+    Strict,
+    /// No attribute; browsers treat it as `Lax`.
+    Unspecified,
+}
+
+/// Where a captured request comes from, which decides whether the browser counts it as
+/// cross-site.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CookieRequest {
+    /// The page or frame that started the request; absent when the browser does not say, which
+    /// counts as another site.
+    pub initiator: Option<String>,
+    /// The address before redirects, when it differs from the captured one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub original_url: Option<String>,
+    /// The tab's page, for a request a page makes itself (media); absent for a top-level
+    /// navigation, whose own address is the top-level site.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub top_level: Option<String>,
+    /// The browser would load the address as a top-level GET navigation (a link, the context
+    /// menu, a page address), rather than as media a page loads itself.
+    pub navigation: bool,
+}
+
+/// Leaves out any sign-in in the addresses.
+impl fmt::Debug for CookieRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self {
+            initiator,
+            original_url,
+            top_level,
+            navigation,
+        } = self;
+        f.debug_struct("CookieRequest")
+            .field("initiator", &OptionalAddress(initiator.as_deref()))
+            .field("original_url", &OptionalAddress(original_url.as_deref()))
+            .field("top_level", &OptionalAddress(top_level.as_deref()))
+            .field("navigation", navigation)
             .finish()
     }
 }
@@ -926,6 +1009,7 @@ mod tests {
             mime: None,
             size_hint: None,
             cookies: Some(COOKIE.into()),
+            cookie_jar: None,
             user_agent: None,
             extra_headers: vec![Header {
                 name: "Authorization".into(),
@@ -1018,6 +1102,7 @@ mod tests {
             mime: None,
             size_hint: None,
             cookies: Some("sid=SECRET2".into()),
+            cookie_jar: None,
             user_agent: None,
             extra_headers: vec![header("Authorization", "Bearer SECRET3")],
             source: CaptureSource::ContextMenu,

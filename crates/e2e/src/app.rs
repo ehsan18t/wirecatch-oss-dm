@@ -271,6 +271,7 @@ pub fn capture(url: &str, handover_id: &str) -> NewDownload {
         mime: Some("application/octet-stream".into()),
         size_hint: None,
         cookies: Some("session=e2e-cookie".into()),
+        cookie_jar: None,
         user_agent: Some("WirecatchE2E/1.0".into()),
         extra_headers: Vec::new(),
         source: wirecatch_protocol::extension::CaptureSource::BrowserDownload,

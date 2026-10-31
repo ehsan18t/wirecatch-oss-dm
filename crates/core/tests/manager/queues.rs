@@ -261,6 +261,7 @@ fn capture(url: &impl ToString, queue: QueueId) -> NewDownload {
         mime: None,
         size_hint: Some(1024),
         cookies: None,
+        cookie_jar: None,
         user_agent: None,
         extra_headers: vec![],
         source: CaptureSource::BrowserDownload,
