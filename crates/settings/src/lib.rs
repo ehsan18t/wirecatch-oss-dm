@@ -363,7 +363,8 @@ fn not_a_local_site(entry: &str, why: NotALocalSite) -> SettingsError {
 
 /// Most subtitle languages remembered for media downloads.
 pub const MAX_SUBTITLE_LANGUAGES: usize = 20;
-const MAX_LANGUAGE_CHARS: usize = 35;
+/// Longest subtitle language code kept.
+pub const MAX_LANGUAGE_CHARS: usize = 35;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Saves {

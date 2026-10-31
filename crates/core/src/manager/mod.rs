@@ -32,6 +32,7 @@ mod suffix_list;
 #[cfg(test)]
 mod tests;
 mod ticker;
+mod workdir;
 
 use std::future::Future;
 use std::path::{Path, PathBuf};

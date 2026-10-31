@@ -9,6 +9,7 @@ use tracing::info;
 use wirecatch_addons::archive;
 use wirecatch_addons::manifest::Sha256Digest;
 use wirecatch_engine::header::{ACCEPT, HeaderValue};
+use wirecatch_engine::units::MIB;
 use wirecatch_engine::{
     CancellationToken, DownloadRequest, Fetcher, Outcome, PrivateNetwork, Progress, RemoteFile, Url,
 };
@@ -23,7 +24,7 @@ use crate::error::{CoreError, Result};
 /// GitHub is never on the local network.
 const UPDATE_NETWORK: PrivateNetwork = PrivateNetwork::Block;
 /// The most read of the list of releases, a manifest or its signature.
-const MAX_METADATA: u64 = 4 * 1024 * 1024;
+const MAX_METADATA: u64 = 4 * MIB;
 /// The folder in the data folder installers are downloaded to.
 const UPDATES_FOLDER: &str = "updates";
 
