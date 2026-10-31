@@ -57,7 +57,7 @@ wirecatch-logging = { workspace = true, features = ["setup"] }
 wirecatch-files = { workspace = true, features = ["testing"] }
 wirecatch-server.workspace = true
 wirecatch-sites = { workspace = true, features = ["testing"] }
-wirecatch-test-support = { path = "../test-support", features = ["servers", "resume"] }
+wirecatch-test-support = { path = "../test-support", features = ["downloads", "resume", "servers"] }
 
 [lints]
 workspace = true

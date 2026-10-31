@@ -245,7 +245,7 @@ pub(super) fn first_start() -> State {
 mod tests {
     use super::*;
     use crate::headers::Origin;
-    use wirecatch_protocol::app::{Category, DownloadSummary, Setting};
+    use wirecatch_protocol::app::{DownloadSummary, Setting};
     use wirecatch_protocol::{DownloadId, QueueId};
     use wirecatch_sites::local_network::ChosenBy;
     use wirecatch_store::{LastIds, NameChoice};
@@ -327,26 +327,11 @@ mod tests {
     fn stored(id: i64, queue: i64, status: DownloadStatus) -> StoredDownload {
         StoredDownload {
             summary: DownloadSummary {
-                id: DownloadId(id),
-                url: "https://example.com/f".into(),
-                file_name: "f".into(),
-                path: "f".into(),
                 queue: QueueId(queue),
-                queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
-                category: Category::Other,
                 status,
                 total: Some(10),
                 done: 5,
-                speed: 0,
-                connections: 0,
-                eta_secs: None,
-                error: None,
-                added_at: 0,
-                completed_at: None,
-                waiting: None,
-                media: None,
-                processing: None,
-                proxy: None,
+                ..wirecatch_test_support::downloads::download(id)
             },
             position: id * 10,
             origin: Origin::default(),
