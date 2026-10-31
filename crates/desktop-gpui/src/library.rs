@@ -5,7 +5,9 @@
 use gpui_kit::{AppContext as _, Context, Entity, EventEmitter};
 use tokio::sync::broadcast::error::RecvError;
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{AddonInfo, AppSettings, DownloadSummary, Queue, UiEvent};
+use wirecatch_protocol::app::{
+    AddonInfo, AppSettings, DownloadSummary, Queue, StartupNotice, UiEvent,
+};
 use wirecatch_protocol::desktop::Reveal;
 use wirecatch_protocol::proxy::ProxyServer;
 use wirecatch_protocol::wire::ProtocolError;
@@ -29,6 +31,10 @@ pub struct Library {
     pub proxies: Vec<ProxyServer>,
     pub addons: Vec<AddonInfo>,
     pub settings: Option<AppSettings>,
+    /// Why the download list could not be saved, until it saves again or is dismissed.
+    pub storage_problem: Option<String>,
+    /// What the person must know about this start, such as a damaged list set aside.
+    pub startup_notices: Vec<StartupNotice>,
 }
 
 /// Everything read at once, with the events that follow it.
@@ -39,6 +45,7 @@ struct Snapshot {
     proxies: Vec<ProxyServer>,
     addons: Vec<AddonInfo>,
     settings: AppSettings,
+    startup_notices: Vec<StartupNotice>,
 }
 
 /// The settings changed: the theme may have.
@@ -69,6 +76,8 @@ impl Library {
                 proxies: Vec::new(),
                 addons: Vec::new(),
                 settings: None,
+                storage_problem: None,
+                startup_notices: Vec::new(),
             }
         })
     }
@@ -84,6 +93,7 @@ impl Library {
                 proxies: api::list_proxy_servers(&manager),
                 addons: api::list_addons(&manager),
                 settings: api::get_settings(&manager),
+                startup_notices: manager.startup_notices().to_vec(),
                 events,
             }
         });
@@ -102,6 +112,7 @@ impl Library {
                         proxies,
                         addons,
                         settings,
+                        startup_notices,
                     } = snapshot;
                     let updated = this.update(cx, |library, cx| {
                         library.downloads = downloads;
@@ -109,6 +120,7 @@ impl Library {
                         library.proxies = proxies;
                         library.addons = addons;
                         library.settings = Some(settings);
+                        library.startup_notices = startup_notices;
                         library.loaded = Loaded::Ready;
                         cx.emit(SettingsChanged);
                         cx.notify();
@@ -163,6 +175,10 @@ impl Library {
             UiEvent::WindowRequested => return cx.emit(Asked::Window),
             UiEvent::LinksRequested(links) => return cx.emit(Asked::Links(links)),
             UiEvent::BrowserSettingsRequested => return cx.emit(Asked::BrowserSettings),
+            UiEvent::StorageFailed(error) => {
+                crate::notices::storage_failed(&error.message, cx);
+                self.storage_problem = Some(error.message);
+            }
             _ => return,
         }
         cx.notify();

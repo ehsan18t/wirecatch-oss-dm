@@ -11,6 +11,7 @@ mod fixes;
 mod keymap;
 mod link_trial;
 mod list;
+mod notices_bar;
 mod order;
 mod palette;
 mod proxy_dialog;
@@ -236,6 +237,14 @@ pub fn bring_up(asked: &Asked, cx: &mut App) {
     }
 }
 
+/// Whether the main window is open, whether or not it is in front.
+pub fn is_open(cx: &mut App) -> bool {
+    let Some(shown) = cx.try_global::<Running>().and_then(|r| r.shown.clone()) else {
+        return false;
+    };
+    shown.window.update(cx, |_, _, _| ()).is_ok()
+}
+
 /// The library the main window shows, once the app runs.
 fn library(cx: &App) -> Option<Entity<Library>> {
     cx.try_global::<Running>()
@@ -394,7 +403,17 @@ impl MainWindow {
                 theme::apply(settings.theme, settings.accent, cx);
             }
         });
-        let redraw = cx.observe(&library, |_, _, cx| cx.notify());
+        let redraw = cx.observe_in(&library, window, |this, library, window, cx| {
+            if !library.read(cx).startup_notices.is_empty() {
+                this.tell_startup_notices(window, cx);
+            }
+            cx.notify();
+        });
+        if !library.read(cx).startup_notices.is_empty() {
+            cx.defer_in(window, |this, window, cx| {
+                this.tell_startup_notices(window, cx);
+            });
+        }
         let closing = library.downgrade();
         window.on_window_should_close(cx, move |_, cx| {
             let close_to_tray = closing
@@ -641,6 +660,7 @@ impl Render for MainWindow {
                     v_flex()
                         .flex_1()
                         .min_h_0()
+                        .children(self.storage_banner(cx))
                         .children(self.queue_header(cx))
                         .children(self.selection_bar(cx))
                         .child(self.list(cx)),
