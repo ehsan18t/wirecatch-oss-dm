@@ -25,7 +25,7 @@ use windows_sys::Win32::System::Threading::{
     UpdateProcThreadAttribute,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId};
-use wirecatch_ipc::{IpcError, ProcessAccount};
+use wirecatch_ipc::{IpcError, ProcessAccount, wide};
 
 /// The process id of the desktop shell (Explorer) of this session, if one runs.
 pub(crate) fn shell_process_id() -> Option<u32> {
@@ -49,7 +49,7 @@ pub(crate) fn spawn(program: &Path, args: &[OsString], dir: Option<&Path>) -> io
     let attributes = AttributeList::with_parent(&parent)?;
 
     let application = wide(program.as_os_str());
-    let mut command_line = wide(&command_line(program, args));
+    let mut command_line = wide(command_line(program, args));
     let dir = dir.map(|d| wide(d.as_os_str()));
     // SAFETY: zeroed is a valid empty value for these plain C structures.
     let mut startup: STARTUPINFOEXW = unsafe { std::mem::zeroed() };
@@ -203,10 +203,6 @@ impl Drop for AttributeList<'_> {
         // SAFETY: the list was initialized and is deleted once, before its buffer is freed.
         unsafe { DeleteProcThreadAttributeList(self.list) };
     }
-}
-
-fn wide(text: &OsStr) -> Vec<u16> {
-    text.encode_wide().chain(std::iter::once(0)).collect()
 }
 
 /// A command line that splits back into `program` and `args` the way programs built with the
