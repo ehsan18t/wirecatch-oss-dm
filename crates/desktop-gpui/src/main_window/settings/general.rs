@@ -194,13 +194,18 @@ fn log_folder() -> Option<std::path::PathBuf> {
 fn accent_swatches(library: &Entity<Library>, cx: &App) -> impl IntoElement + use<> {
     let chosen = current(library, cx, |s| s.accent, Accent::default());
     let dark = cx.theme().mode.is_dark();
+    let system = wirecatch_shell::appearance::system_accent().is_some();
     h_flex().gap_2().children(
         ACCENTS
             .iter()
             .copied()
-            .filter(|&accent| {
+            .filter(move |&accent| {
                 accent == chosen
-                    || !matches!(accent, Accent::Teal | Accent::Indigo | Accent::System)
+                    || match accent {
+                        Accent::Teal | Accent::Indigo => false,
+                        Accent::System => system,
+                        _ => true,
+                    }
             })
             .map(|accent| {
                 let (tone, on_tone) = theme::accent_colors(accent, dark);
