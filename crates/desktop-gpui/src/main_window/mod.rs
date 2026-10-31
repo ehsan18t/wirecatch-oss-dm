@@ -7,28 +7,33 @@ mod command_bar;
 mod confirm;
 mod details;
 mod empty;
+mod fixes;
 mod link_trial;
 mod list;
 mod proxy_dialog;
 mod queue_dialog;
 mod queue_proxy;
 mod queue_rules;
+mod row_menu;
 mod selection;
 mod settings;
 mod sidebar;
 mod title_bar;
 
+use std::cell::Cell;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::component::{ActiveTheme as _, TitleBar, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Context, Entity, FocusHandle, Global,
-    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Render, ScrollStrategy,
-    SharedString, Styled as _, Subscription, UniformListScrollHandle, WeakEntity, Window,
-    WindowBounds, WindowOptions, actions, px, size,
+    AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, FocusHandle, Global,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement as _, Pixels, Render,
+    ScrollStrategy, SharedString, Styled as _, Subscription, UniformListScrollHandle, WeakEntity,
+    Window, WindowBounds, WindowOptions, actions, px, size,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::QueueId;
@@ -61,7 +66,8 @@ actions!(
         OpenSelected,
         ShowDetails,
         RemoveSelected,
-        SearchToList
+        SearchToList,
+        OpenMenu
     ]
 );
 
@@ -98,6 +104,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("enter", OpenSelected, Some(KEY_CONTEXT)),
         KeyBinding::new("alt-enter", ShowDetails, Some(KEY_CONTEXT)),
         KeyBinding::new("delete", RemoveSelected, Some(KEY_CONTEXT)),
+        KeyBinding::new("menu", OpenMenu, Some(KEY_CONTEXT)),
+        KeyBinding::new("shift-f10", OpenMenu, Some(KEY_CONTEXT)),
         // Bound after the field's own Down, which it outranks in the field.
         KeyBinding::new("down", SearchToList, Some("MainSearch > Input")),
     ]);
@@ -269,6 +277,10 @@ pub struct MainWindow {
     cursor: Option<DownloadId>,
     /// The selection was built on purpose (Ctrl, Shift, Ctrl+A), so it shows its bar.
     picked: bool,
+    /// The row menu the keyboard opened, while it shows.
+    keyboard_menu: Option<(Entity<PopupMenu>, Subscription)>,
+    /// Where the cursor's row was last drawn, for the keyboard's menu.
+    cursor_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     folded: HashSet<Group>,
     /// The title bar's search, which narrows the list to names and links holding it.
     search: Entity<InputState>,
@@ -414,6 +426,8 @@ impl MainWindow {
             anchor: None,
             cursor: None,
             picked: false,
+            keyboard_menu: None,
+            cursor_bounds: Rc::default(),
             folded: Group::ALL
                 .into_iter()
                 .filter(|g| g.starts_folded())
@@ -497,6 +511,48 @@ impl MainWindow {
         }
     }
 
+    /// The list's keys, while the downloads show.
+    fn list_keys(
+        window: gpui_kit::Stateful<gpui_kit::Div>,
+        cx: &mut Context<'_, Self>,
+    ) -> gpui_kit::Stateful<gpui_kit::Div> {
+        window
+            .on_action(cx.listener(|this, _: &OpenMenu, window, cx| {
+                this.open_keyboard_menu(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SearchToList, window, cx| {
+                this.focus.focus(window, cx);
+                this.step(Step::Down, false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CursorUp, _, cx| this.step(Step::Up, false, cx)))
+            .on_action(cx.listener(|this, _: &CursorDown, _, cx| this.step(Step::Down, false, cx)))
+            .on_action(cx.listener(|this, _: &ExtendUp, _, cx| this.step(Step::Up, true, cx)))
+            .on_action(cx.listener(|this, _: &ExtendDown, _, cx| this.step(Step::Down, true, cx)))
+            .on_action(cx.listener(|this, _: &CursorPageUp, _, cx| {
+                this.step(Step::PageUp, false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CursorPageDown, _, cx| {
+                this.step(Step::PageDown, false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CursorFirst, _, cx| {
+                this.step(Step::First, false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &CursorLast, _, cx| this.step(Step::Last, false, cx)))
+            .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
+            .on_action(cx.listener(|this, _: &PauseOrResume, window, cx| {
+                this.pause_or_resume(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &OpenSelected, window, cx| {
+                this.open_selected(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowDetails, window, cx| {
+                this.details_of_cursor(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &RemoveSelected, window, cx| {
+                this.remove_selected(window, cx);
+            }))
+    }
+
     fn title(&self, cx: &App) -> SharedString {
         match self.view {
             View::All => "All downloads".into(),
@@ -511,7 +567,7 @@ impl MainWindow {
 
 impl Render for MainWindow {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let background = cx.theme().background;
         v_flex()
             .id("main-window")
             .key_context(KEY_CONTEXT)
@@ -528,51 +584,10 @@ impl Render for MainWindow {
             }))
             .on_action(cx.listener(|this, _: &ToggleSettings, _, cx| this.toggle_settings(cx)))
             .when(self.screen == Screen::Downloads, |window| {
-                window
-                    .on_action(cx.listener(|this, _: &SearchToList, window, cx| {
-                        this.focus.focus(window, cx);
-                        this.step(Step::Down, false, cx);
-                    }))
-                    .on_action(
-                        cx.listener(|this, _: &CursorUp, _, cx| this.step(Step::Up, false, cx)),
-                    )
-                    .on_action(
-                        cx.listener(|this, _: &CursorDown, _, cx| this.step(Step::Down, false, cx)),
-                    )
-                    .on_action(
-                        cx.listener(|this, _: &ExtendUp, _, cx| this.step(Step::Up, true, cx)),
-                    )
-                    .on_action(
-                        cx.listener(|this, _: &ExtendDown, _, cx| this.step(Step::Down, true, cx)),
-                    )
-                    .on_action(cx.listener(|this, _: &CursorPageUp, _, cx| {
-                        this.step(Step::PageUp, false, cx);
-                    }))
-                    .on_action(cx.listener(|this, _: &CursorPageDown, _, cx| {
-                        this.step(Step::PageDown, false, cx);
-                    }))
-                    .on_action(cx.listener(|this, _: &CursorFirst, _, cx| {
-                        this.step(Step::First, false, cx);
-                    }))
-                    .on_action(
-                        cx.listener(|this, _: &CursorLast, _, cx| this.step(Step::Last, false, cx)),
-                    )
-                    .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
-                    .on_action(cx.listener(|this, _: &PauseOrResume, window, cx| {
-                        this.pause_or_resume(window, cx);
-                    }))
-                    .on_action(cx.listener(|this, _: &OpenSelected, window, cx| {
-                        this.open_selected(window, cx);
-                    }))
-                    .on_action(cx.listener(|this, _: &ShowDetails, window, cx| {
-                        this.details_of_cursor(window, cx);
-                    }))
-                    .on_action(cx.listener(|this, _: &RemoveSelected, window, cx| {
-                        this.remove_selected(window, cx);
-                    }))
+                Self::list_keys(window, cx)
             })
             .size_full()
-            .bg(theme.background)
+            .bg(background)
             .text_role(Role::Body, cx)
             .child(self.title_bar(cx))
             .child(match self.screen {
@@ -586,6 +601,9 @@ impl Render for MainWindow {
                         .child(self.list(cx)),
                 ),
                 Screen::Settings => self.settings(cx),
+            })
+            .when_some(self.keyboard_menu.as_ref(), |window, (menu, _)| {
+                window.child(row_menu::keyboard_menu(menu, self.keyboard_menu_at()))
             })
     }
 }

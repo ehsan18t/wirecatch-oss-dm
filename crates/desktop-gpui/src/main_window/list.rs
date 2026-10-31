@@ -3,19 +3,20 @@
 //! else: a running download its bar, speed and time left; a finished one its size and when.
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, ElementId, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
-    px, uniform_list,
+    AnyElement, App, Context, ElementId, Hsla, InteractiveElement as _, IntoElement, MouseButton,
+    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, canvas,
+    div, px, uniform_list,
 };
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, PER_MILLE_DONE};
+use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MILLE_DONE};
 use wirecatch_shell::api;
 
-use super::{Group, MainWindow};
+use super::{Group, MainWindow, fixes, row_menu};
 use crate::backend::act;
 use crate::ui::{FileTile, Role, Typed as _, tokens};
 use crate::{files, text};
@@ -206,6 +207,11 @@ impl MainWindow {
         let tone = status_tone(&row, cx);
         let id = row.id;
         let shows_actions = selected || self.hovered == Some(id);
+        let fix = (row.status == DownloadStatus::Failed)
+            .then(|| fixes::offered(&row))
+            .flatten();
+        let main = cx.entity().downgrade();
+        let cursor_bounds = self.cursor_bounds.clone();
         h_flex()
             .id(row_id("row", row.id))
             .w_full()
@@ -237,9 +243,25 @@ impl MainWindow {
             )
             .child(if shows_actions {
                 row_actions(&row, cx).into_any_element()
+            } else if let Some(fix) = fix {
+                fix_button(id, fix).into_any_element()
             } else {
                 figures(&row, tone, cx).into_any_element()
             })
+            .when(self.cursor == Some(id), |line| {
+                line.child(
+                    canvas(
+                        move |bounds, _, _| cursor_bounds.set(Some(bounds)),
+                        |_, (), _, _| {},
+                    )
+                    .absolute()
+                    .size_full(),
+                )
+            })
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, _, _, cx| this.right_click_row(id, cx)),
+            )
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if *hovered {
                     this.hovered = Some(id);
@@ -253,6 +275,7 @@ impl MainWindow {
                     this.click_row(id, event.modifiers(), window, cx);
                 }),
             )
+            .context_menu(move |menu, _, cx| row_menu::build(menu, &main, id, cx))
             .into_any_element()
     }
 }
@@ -390,9 +413,25 @@ impl RowAction {
     }
 }
 
-/// The buttons a row offers on hover.
+/// A failed row's fix, shown where its figures would be.
+fn fix_button(id: DownloadId, fix: FixAction) -> impl IntoElement {
+    h_flex()
+        .w(px(END_WIDTH))
+        .flex_shrink_0()
+        .justify_end()
+        .child(
+            Button::new(row_id("fix", id))
+                .small()
+                .outline()
+                .label(text::fix_label(fix))
+                .on_click(move |_, window, cx| fixes::run(id, fix, window, cx)),
+        )
+}
+
+/// The buttons a row offers on hover, then its menu.
 fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl IntoElement {
     let id = row.id;
+    let main = cx.entity().downgrade();
     h_flex()
         .w(px(END_WIDTH))
         .flex_shrink_0()
@@ -410,6 +449,14 @@ fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl 
                         .tooltip(label)
                         .on_click(cx.listener(move |_, _, window, cx| action.run(id, window, cx)))
                 }),
+        )
+        .child(
+            Button::new(row_id("menu", id))
+                .small()
+                .ghost()
+                .icon(IconName::Ellipsis)
+                .tooltip("More")
+                .dropdown_menu(move |menu, _, cx| row_menu::build(menu, &main, id, cx)),
         )
 }
 
