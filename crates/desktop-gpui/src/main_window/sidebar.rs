@@ -59,6 +59,7 @@ impl MainWindow {
                 cx,
             ));
         }
+        let waiting = self.waiting_questions(cx);
         let queues = self.queues_section(cx);
         let theme = cx.theme();
         v_flex()
@@ -77,10 +78,38 @@ impl MainWindow {
                     .overflow_y_scroll()
                     .p_2()
                     .gap_4()
-                    .child(v_flex().gap_px().children(downloads))
+                    .child(v_flex().gap_px().children(downloads).children(waiting))
                     .child(queues),
             )
             .child(self.screen_switch(cx))
+    }
+
+    /// The questions waiting about browser downloads, which brings all their windows up.
+    fn waiting_questions(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
+        let open = self.library.read(cx).open_questions.clone();
+        if open.is_empty() {
+            return None;
+        }
+        let label = match open.len() {
+            1 => "1 question waiting".to_owned(),
+            n => format!("{n} questions waiting"),
+        };
+        let theme = cx.theme();
+        Some(
+            h_flex()
+                .id("waiting-questions")
+                .h(px(30.))
+                .px_2()
+                .gap_2()
+                .rounded(theme.radius)
+                .cursor_pointer()
+                .text_color(theme.warning)
+                .hover(|item| item.bg(theme.list_hover))
+                .child(Icon::new(Lucide::CircleQuestionMark).with_size(tokens::ICON))
+                .child(div().flex_1().truncate().child(label))
+                .on_click(move |_, _, cx| crate::download_windows::show_all(&open, cx))
+                .into_any_element(),
+        )
     }
 
     /// The foot of the navigation: Settings, or the way back to the downloads from there.

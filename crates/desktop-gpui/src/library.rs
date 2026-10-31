@@ -10,7 +10,7 @@ use wirecatch_protocol::app::{
 use wirecatch_protocol::desktop::Reveal;
 use wirecatch_protocol::proxy::ProxyServer;
 use wirecatch_protocol::wire::ProtocolError;
-use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use wirecatch_shell::api;
 
 use crate::backend::Backend;
@@ -35,6 +35,8 @@ pub struct Library {
     pub storage_problem: Option<String>,
     /// What the person must know about this start, such as a damaged list set aside.
     pub startup_notices: Vec<StartupNotice>,
+    /// The questions the core asks about browser downloads, oldest first.
+    pub open_questions: Vec<QuestionId>,
 }
 
 /// Everything read at once, with the events that follow it.
@@ -46,6 +48,7 @@ struct Snapshot {
     addons: Vec<AddonInfo>,
     settings: AppSettings,
     startup_notices: Vec<StartupNotice>,
+    open_questions: Vec<QuestionId>,
 }
 
 /// The settings changed: the theme may have.
@@ -78,6 +81,7 @@ impl Library {
                 settings: None,
                 storage_problem: None,
                 startup_notices: Vec::new(),
+                open_questions: Vec::new(),
             }
         })
     }
@@ -94,6 +98,7 @@ impl Library {
                 addons: api::list_addons(&manager),
                 settings: api::get_settings(&manager),
                 startup_notices: manager.startup_notices().to_vec(),
+                open_questions: wirecatch_shell::download_windows::open_questions(&manager),
                 events,
             }
         });
@@ -113,6 +118,7 @@ impl Library {
                         addons,
                         settings,
                         startup_notices,
+                        open_questions,
                     } = snapshot;
                     let updated = this.update(cx, |library, cx| {
                         library.downloads = downloads;
@@ -124,6 +130,8 @@ impl Library {
                         library.loaded = Loaded::Ready;
                         cx.emit(SettingsChanged);
                         cx.notify();
+                        crate::download_windows::restore(&open_questions, cx);
+                        library.open_questions = open_questions;
                     });
                     if updated.is_err() {
                         return;
@@ -155,7 +163,17 @@ impl Library {
     }
 
     fn apply(&mut self, event: UiEvent, cx: &mut Context<'_, Self>) {
+        crate::download_windows::follow(&event, cx);
+        if let Some(asked) = asked_question(&event)
+            && !self.open_questions.contains(&asked)
+        {
+            self.open_questions.push(asked);
+            cx.notify();
+        }
         match event {
+            UiEvent::ConfirmationClosed { id } => {
+                self.open_questions.retain(|open| *open != id);
+            }
             UiEvent::DownloadsChanged(rows) => {
                 for row in rows {
                     match self.downloads.iter_mut().find(|known| known.id == row.id) {
@@ -208,5 +226,16 @@ impl Library {
 
     pub fn queue(&self, id: QueueId) -> Option<&Queue> {
         self.queues.iter().find(|queue| queue.id == id)
+    }
+}
+
+/// The question `event` asks, or moves on, if it asks one.
+fn asked_question(event: &UiEvent) -> Option<QuestionId> {
+    match event {
+        UiEvent::ConfirmationRequested(capture) => Some(capture.id),
+        UiEvent::MediaAnalysing { id, .. } | UiEvent::AddonRequired { id, .. } => Some(*id),
+        UiEvent::MediaChoiceRequested(choice) => Some(choice.id),
+        UiEvent::FileExistsRequested(question) => Some(question.id),
+        _ => None,
     }
 }

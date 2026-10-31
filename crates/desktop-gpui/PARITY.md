@@ -12,7 +12,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Another copy already runs: say so and close (`lib.rs` `say_already_running`).
 - [x] Search, focused with Ctrl+K: names and links, a search unfolds groups, "N downloads matching …", the view in the placeholder.
 - [x] Search: Escape clears, Down moves into the list; the settings screen searches settings in its own navigation.
-- [ ] The waiting questions, with their count (`show_question_windows`).
+- [x] The waiting questions, with their count (`show_question_windows`).
 - [x] Navigation toggle; collapsed rail and narrow-window drawer (D91).
 - [x] Navigation: All downloads, the six status views with counts, the queues with count or speed.
 - [x] Queues: the first three, "N more queues" / "Fewer queues"; the Rules badge, status text, dimmed when Rules are off.
@@ -41,7 +41,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] First run: "See everything {app} can do" (opens the palette).
 - [x] Details dialog (D47), opened by clicking a row: status, the problem with its fix and Try again, speed and progress, facts, Saved to with Change, the link with Copy, activity, Open, Pause, Resume, Start over, Show in folder, More (Copy link, Cancel download), Remove; it follows the download and closes once it is removed.
 - [x] Details: the speed graph, the queue as a menu, "Stuck? The link may have expired." with Get a new link, and the fixes that open other screens (Get a new link, Proxy settings, Change queue).
-- [ ] Details: Open in a separate window (comes with the download windows).
+- [x] Open in a separate window, from the row menu and the palette.
 - [x] Context menu on rows; Menu key and Shift+F10.
 - [x] Keyboard: every shortcut of `lib/keymap.ts`, list keys; F6 moves between the search and the list (the navigation takes no keyboard focus yet).
 - [x] Drag rows to reorder in a queue and onto a queue to move them; drop an Internet shortcut file to add its link. GPUI takes only files from other programs, so a link dragged straight from a browser cannot be dropped.
@@ -82,9 +82,9 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 
 ## Download windows (D23, D43)
 
-- [ ] One window per question or download, at most five at once, cascaded, on top until they lose focus, height fitted to the content.
-- [ ] File question (D72.8, D94.6), reading a video, add-on needed, media quality (D50), file already exists (D96), progress, finished.
-- [ ] Reopened at start for open questions; `capture_repeated` brings one back (D89).
+- [x] One window per question or download, at most five at once, cascaded, height fitted to the content. GPUI has no always-on-top that can be turned off, so a window comes to the front when it opens and is a normal window after.
+- [x] File question (D72.8, D94.6), reading a video, add-on needed, media quality (D50), file already exists (D96), progress, finished.
+- [x] Reopened at start for open questions; `capture_repeated` brings one back (D89).
 - [ ] Finished window ("Open a summary window", D52); until it exists, that setting shows a notification.
 
 ## Shell

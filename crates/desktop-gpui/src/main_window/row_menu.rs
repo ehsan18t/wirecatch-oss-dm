@@ -220,6 +220,11 @@ fn about_one(menu: PopupMenu, target: &Target) -> PopupMenu {
             .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
     )
     .item(
+        PopupMenuItem::new("Open in a separate window")
+            .icon(IconName::ExternalLink)
+            .on_click(move |_, _, cx| crate::download_windows::show_download(id, cx)),
+    )
+    .item(
         PopupMenuItem::new("Copy link")
             .icon(IconName::Copy)
             .on_click(move |_, _, cx| {

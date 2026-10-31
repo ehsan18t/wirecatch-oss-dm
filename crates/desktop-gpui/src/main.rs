@@ -5,6 +5,7 @@
 
 mod add_dialog;
 mod backend;
+mod download_windows;
 mod files;
 mod library;
 mod lifecycle;
@@ -85,6 +86,7 @@ fn main() {
             let library = library::Library::new(cx);
             tray::start(&library, cx);
             notices::start(cx);
+            download_windows::init(&library, cx);
             sign_in::start(cx);
             main_window::run(library, cx);
             if launch.shows_window() {
