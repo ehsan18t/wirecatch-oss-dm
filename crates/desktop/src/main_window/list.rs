@@ -514,15 +514,32 @@ fn row_end(
     tone: Hsla,
     cx: &mut Context<'_, MainWindow>,
 ) -> AnyElement {
-    if shows_actions {
-        return row_actions(row, cx).into_any_element();
-    }
     let fix = (row.status == DownloadStatus::Failed)
         .then(|| fixes::offered(row))
         .flatten();
-    match fix {
-        Some(fix) => fix_button(row.id, fix).into_any_element(),
-        None => figure(row, tone, cx).into_any_element(),
+    match end_of(fix, shows_actions) {
+        End::Actions => row_actions(row, cx).into_any_element(),
+        End::Fix(fix, details) => fix_button(row.id, fix, details, cx).into_any_element(),
+        End::Figure => figure(row, tone, cx).into_any_element(),
+    }
+}
+
+/// What a row's end shows.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum End {
+    /// The hover buttons.
+    Actions,
+    /// A failed row's fix, with the Details button while hovered.
+    Fix(FixAction, bool),
+    Figure,
+}
+
+/// A fix stays put on hover: the pointer reaching it hovers the row.
+fn end_of(fix: Option<FixAction>, shows_actions: bool) -> End {
+    match (fix, shows_actions) {
+        (Some(fix), details) => End::Fix(fix, details),
+        (None, true) => End::Actions,
+        (None, false) => End::Figure,
     }
 }
 
@@ -687,15 +704,12 @@ fn status_line(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement
     };
     let said = match row.status {
         DownloadStatus::Completed | DownloadStatus::Cancelled => return None,
-        DownloadStatus::Failed => {
-            line()
-                .text_color(theme.danger)
-                .child(div().truncate().child(
-                    row.error.as_ref().map_or_else(String::new, |error| {
-                        text::first_sentence(&error.message).to_owned()
-                    }),
-                ))
-        }
+        DownloadStatus::Failed => line()
+            .text_color(theme.danger)
+            .child(div().truncate().child(row.error.as_ref().map_or_else(
+                || text::status_short(row),
+                |error| text::first_sentence(&error.message).to_owned(),
+            ))),
         DownloadStatus::Downloading if row.speed > 0 && text::shown_wait(row).is_none() => line()
             .child(
                 div()
@@ -909,11 +923,17 @@ fn marker(
         .size_full()
 }
 
-/// A failed row's fix, shown where its figure would be.
-fn fix_button(id: DownloadId, fix: FixAction) -> impl IntoElement {
+/// A failed row's fix, shown where its figure would be and wider when its label needs it.
+fn fix_button(
+    id: DownloadId,
+    fix: FixAction,
+    details: bool,
+    cx: &mut Context<'_, MainWindow>,
+) -> impl IntoElement {
     h_flex()
-        .w(px(END_WIDTH))
+        .min_w(px(END_WIDTH))
         .flex_shrink_0()
+        .gap_1()
         .justify_end()
         .child(
             Button::new(row_id("fix", id))
@@ -926,6 +946,7 @@ fn fix_button(id: DownloadId, fix: FixAction) -> impl IntoElement {
                     fixes::run(id, fix, window, cx);
                 }),
         )
+        .when(details, |end| end.child(details_button(id, cx)))
 }
 
 /// The buttons a row offers on hover, then its details; its menu opens on a right click.
@@ -952,17 +973,19 @@ fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl 
                         }))
                 }),
         )
-        .child(
-            Button::new(row_id("details", id))
-                .small()
-                .ghost()
-                .icon(IconName::Info)
-                .tooltip("Details")
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    cx.stop_propagation();
-                    super::details::open(this.library.clone(), id, window, cx);
-                })),
-        )
+        .child(details_button(id, cx))
+}
+
+fn details_button(id: DownloadId, cx: &mut Context<'_, MainWindow>) -> Button {
+    Button::new(row_id("details", id))
+        .small()
+        .ghost()
+        .icon(IconName::Info)
+        .tooltip("Details")
+        .on_click(cx.listener(move |this, _, window, cx| {
+            cx.stop_propagation();
+            super::details::open(this.library.clone(), id, window, cx);
+        }))
 }
 
 /// The colour a status is drawn in: the accent for data that moves, the warning colour for a
@@ -984,4 +1007,18 @@ pub(super) fn status_tone(row: &DownloadSummary, cx: &App) -> Hsla {
 /// A row's element id; download ids are positive.
 fn row_id(part: &'static str, id: DownloadId) -> ElementId {
     ElementId::NamedInteger(part.into(), id.0.unsigned_abs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_fix_stays_when_its_row_is_hovered() {
+        let fix = FixAction::ChooseFolder;
+        assert_eq!(end_of(Some(fix), true), End::Fix(fix, true));
+        assert_eq!(end_of(Some(fix), false), End::Fix(fix, false));
+        assert_eq!(end_of(None, true), End::Actions);
+        assert_eq!(end_of(None, false), End::Figure);
+    }
 }
