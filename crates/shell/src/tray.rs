@@ -2,8 +2,9 @@
 //! download list could not open.
 
 use wirecatch_core::Manager;
+use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
 
-use crate::api;
+use crate::api::{self, CommandResult};
 
 /// Something the tray menu can do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,13 +70,17 @@ pub fn perform(
     action: TrayAction,
     manager: Option<&Manager>,
     shell: &mut impl Shell,
-) -> Result<(), String> {
-    let ready =
-        || manager.ok_or_else(|| "Wirecatch is still starting. Try again in a moment.".to_owned());
+) -> CommandResult<()> {
+    let ready = || {
+        manager.ok_or_else(|| ProtocolError {
+            code: ErrorCode::AppUnavailable,
+            message: "Wirecatch is still starting. Try again in a moment.".to_owned(),
+        })
+    };
     match action {
         TrayAction::Open => shell.open_window(),
-        TrayAction::PauseAll => api::pause_all(ready()?).map_err(|e| e.message)?,
-        TrayAction::ResumeAll => api::resume_all(ready()?).map_err(|e| e.message)?,
+        TrayAction::PauseAll => api::pause_all(ready()?)?,
+        TrayAction::ResumeAll => api::resume_all(ready()?)?,
         TrayAction::Quit => shell.quit(),
     }
     Ok(())
@@ -155,7 +160,8 @@ mod tests {
     fn pausing_before_the_manager_opens_explains_why_it_cannot() {
         let mut shell = FakeShell::default();
         let err = perform(TrayAction::PauseAll, None, &mut shell).unwrap_err();
-        assert!(err.contains("still starting"));
+        assert_eq!(err.code, ErrorCode::AppUnavailable);
+        assert!(err.message.contains("still starting"));
         assert_eq!(shell.calls, [] as [&str; 0]);
     }
 }

@@ -4,12 +4,30 @@
 use std::time::Duration;
 
 use wirecatch_engine::units::KIB_USIZE;
-use wirecatch_protocol::frame;
+use wirecatch_ipc::IpcError;
+use wirecatch_protocol::frame::{self, FrameError};
 use wirecatch_protocol::version::VersionRange;
 use wirecatch_protocol::wire::{
     BRIDGE_START_BUDGET_MS, Call, CallMethod, ClientKind, Hello, MAX_OPEN_LINKS, Message,
-    OpenLinks, Outcome, Reply,
+    OpenLinks, Outcome, ProtocolError, Reply,
 };
+
+/// Why a launch could not be handed to the running copy.
+#[derive(Debug, thiserror::Error)]
+pub enum HandOverError {
+    #[error(transparent)]
+    Reach(#[from] IpcError),
+    #[error(transparent)]
+    Frame(#[from] FrameError),
+    #[error("the running copy did not answer in time")]
+    Timeout,
+    #[error("the running copy closed the connection")]
+    Closed,
+    #[error("the running copy answered the hello with {0}")]
+    Unexpected(String),
+    #[error("{}", .0.message)]
+    Refused(ProtocolError),
+}
 
 /// Shown by a copy of the app that finds another one already serving this user and cannot hand
 /// its launch over.
@@ -124,16 +142,14 @@ impl Launch {
 ///
 /// The running copy could not be reached, refused the hello, or did not answer in time; the
 /// message says which.
-pub async fn hand_over(launch: &Launch) -> Result<(), String> {
-    let endpoint = crate::host::endpoint().map_err(|e| e.to_string())?;
-    let mut stream = wirecatch_ipc::connect(&endpoint)
-        .await
-        .map_err(|e| e.to_string())?;
+pub async fn hand_over(launch: &Launch) -> Result<(), HandOverError> {
+    let endpoint = crate::host::endpoint()?;
+    let mut stream = wirecatch_ipc::connect(&endpoint).await?;
     hand_over_on(&mut stream, launch).await
 }
 
 /// [`hand_over`] on a connection already open.
-async fn hand_over_on<S>(stream: &mut S, launch: &Launch) -> Result<(), String>
+async fn hand_over_on<S>(stream: &mut S, launch: &Launch) -> Result<(), HandOverError>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -147,11 +163,7 @@ where
     });
     let version = match ask(stream, 1, hello).await? {
         Reply::Hello(reply) => reply.protocol_version,
-        other => {
-            return Err(format!(
-                "the running copy answered the hello with {other:?}"
-            ));
-        }
+        other => return Err(HandOverError::Unexpected(format!("{other:?}"))),
     };
     match launch.call(version) {
         Some(call) => ask(stream, 2, call).await.map(|_| ()),
@@ -160,19 +172,16 @@ where
 }
 
 /// Sends `call` as request `id` and waits for its answer.
-async fn ask<S>(stream: &mut S, id: u64, call: Call) -> Result<Reply, String>
+async fn ask<S>(stream: &mut S, id: u64, call: Call) -> Result<Reply, HandOverError>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    frame::write_async(stream, &Message::Request { id, call })
-        .await
-        .map_err(|e| e.to_string())?;
+    frame::write_async(stream, &Message::Request { id, call }).await?;
     loop {
         let message = tokio::time::timeout(ANSWER_WAIT, frame::read_async::<Message>(stream))
             .await
-            .map_err(|_| "the running copy did not answer in time".to_owned())?
-            .map_err(|e| e.to_string())?
-            .ok_or("the running copy closed the connection")?;
+            .map_err(|_| HandOverError::Timeout)??
+            .ok_or(HandOverError::Closed)?;
         match message {
             Message::Response {
                 id: answered,
@@ -180,7 +189,7 @@ where
             } if answered == id => {
                 return match outcome {
                     Outcome::Ok(reply) => Ok(reply),
-                    Outcome::Err(error) => Err(error.message),
+                    Outcome::Err(error) => Err(HandOverError::Refused(error)),
                 };
             }
             _ => {}

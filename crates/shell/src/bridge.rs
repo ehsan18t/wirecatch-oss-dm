@@ -15,6 +15,33 @@ use wirecatch_server::serve_connection;
 /// folder, so both must sit side by side (D19).
 pub use wirecatch_product::BRIDGE_FILE_NAME;
 
+/// Why the bridge could not be found, registered or run. Each message says what to do.
+#[derive(Debug, thiserror::Error)]
+pub enum BridgeError {
+    #[error("Could not find the browser bridge next to the app.")]
+    NoFolder,
+    #[error("The browser bridge is in a temporary folder ({}), so it is not registered. Install Wirecatch, or run it from a permanent folder.", .0.display())]
+    Temporary(PathBuf),
+    #[error("The browser bridge is missing ({}). Reinstall Wirecatch so browser downloads reach it.", .0.display())]
+    Missing(PathBuf),
+    #[error("Could not run {} ({source}).", .bridge.display())]
+    Start {
+        bridge: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("{} {subcommand} failed ({status}): {output}", .bridge.display())]
+    Failed {
+        bridge: PathBuf,
+        subcommand: String,
+        status: std::process::ExitStatus,
+        /// What the bridge wrote to its error output.
+        output: String,
+    },
+    #[cfg(unix)]
+    #[error(transparent)]
+    PrivateCopy(#[from] crate::appimage::AppImageError),
+}
+
 /// Pause after a failed accept, so a persistent error cannot spin.
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
 
@@ -163,9 +190,8 @@ pub fn bridge_path(app_exe: &Path) -> Option<PathBuf> {
 /// # Errors
 ///
 /// `app_exe` has no folder to look in.
-pub fn bundled_bridge(app_exe: &Path) -> Result<PathBuf, String> {
-    bridge_path(app_exe)
-        .ok_or_else(|| "Could not find the browser bridge next to the app.".to_owned())
+pub fn bundled_bridge(app_exe: &Path) -> Result<PathBuf, BridgeError> {
+    bridge_path(app_exe).ok_or(BridgeError::NoFolder)
 }
 
 /// The bridge to register for the app installed at `app_exe`: the one next to it, never one in
@@ -175,13 +201,10 @@ pub fn bundled_bridge(app_exe: &Path) -> Result<PathBuf, String> {
 /// # Errors
 ///
 /// No bridge can be found next to the app, or the bridge is in a temporary folder.
-pub fn bridge_to_register(app_exe: &Path) -> Result<PathBuf, String> {
+pub fn bridge_to_register(app_exe: &Path) -> Result<PathBuf, BridgeError> {
     let bundled = bundled_bridge(app_exe)?;
     if crate::appimage::is_temporary(&bundled) {
-        return Err(format!(
-            "The browser bridge is in a temporary folder ({}), so it is not registered. Install Wirecatch, or run it from a permanent folder.",
-            bundled.display()
-        ));
+        return Err(BridgeError::Temporary(bundled));
     }
     Ok(bundled)
 }
@@ -244,6 +267,7 @@ pub fn register_on_start(data_dir: &Path) {
                     Path::new(&appimage),
                     &private_dir,
                 )
+                .map_err(BridgeError::from)
             }),
             None => bridge_to_register(&app_exe),
         };
@@ -257,14 +281,10 @@ pub fn register_on_start(data_dir: &Path) {
 ///
 /// # Errors
 ///
-/// The bridge is missing, cannot be started, or exits with a failure; the text carries what
-/// it wrote to its error output.
-pub fn run_bridge(bridge: &Path, subcommand: &str) -> Result<(), String> {
+/// The bridge is missing, cannot be started, or exits with a failure.
+pub fn run_bridge(bridge: &Path, subcommand: &str) -> Result<(), BridgeError> {
     if !bridge.is_file() {
-        return Err(format!(
-            "The browser bridge is missing ({}). Reinstall Wirecatch so browser downloads reach it.",
-            bridge.display()
-        ));
+        return Err(BridgeError::Missing(bridge.to_owned()));
     }
     let mut command = Command::new(bridge);
     command
@@ -278,18 +298,19 @@ pub fn run_bridge(bridge: &Path, subcommand: &str) -> Result<(), String> {
         use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    let output = command
-        .output()
-        .map_err(|e| format!("Could not run {}: {e}", bridge.display()))?;
+    let output = command.output().map_err(|source| BridgeError::Start {
+        bridge: bridge.to_owned(),
+        source,
+    })?;
     if output.status.success() {
         return Ok(());
     }
-    Err(format!(
-        "{} {subcommand} failed ({}): {}",
-        bridge.display(),
-        output.status,
-        String::from_utf8_lossy(&output.stderr).trim()
-    ))
+    Err(BridgeError::Failed {
+        bridge: bridge.to_owned(),
+        subcommand: subcommand.to_owned(),
+        status: output.status,
+        output: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+    })
 }
 
 #[cfg(test)]
@@ -459,7 +480,8 @@ mod tests {
     #[test]
     fn a_missing_bridge_is_reported_plainly() {
         let err = run_bridge(Path::new("no-such-folder/wirecatch-bridge"), "install").unwrap_err();
-        assert!(err.contains("missing"));
-        assert!(!err.contains('\u{2014}'));
+        assert!(matches!(err, BridgeError::Missing(_)));
+        assert!(err.to_string().contains("missing"));
+        assert!(!err.to_string().contains('\u{2014}'));
     }
 }

@@ -233,20 +233,37 @@ mod platform {
     /// Registers `identifier` for the current user with the app's name and icon, which the
     /// system shows on its toasts. An installed app's Start menu shortcut carries the same
     /// identity; a debug build has no shortcut, so this is what makes its toasts appear.
-    fn register(identity: &super::Identity<'_>) -> Result<(), String> {
+    fn register(identity: &super::Identity<'_>) -> Result<(), RegisterError> {
         let folder = identity.icon_folder;
-        std::fs::create_dir_all(folder).map_err(|e| format!("{} ({e})", folder.display()))?;
+        std::fs::create_dir_all(folder).map_err(|source| RegisterError::Icon {
+            path: folder.to_owned(),
+            source,
+        })?;
         let icon = folder.join(ICON_FILE);
         if std::fs::read(&icon).ok().as_deref() != Some(identity.icon) {
-            std::fs::write(&icon, identity.icon)
-                .map_err(|e| format!("{} ({e})", icon.display()))?;
+            std::fs::write(&icon, identity.icon).map_err(|source| RegisterError::Icon {
+                path: icon.clone(),
+                source,
+            })?;
         }
         let (key, _) = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
             .create_subkey(format!(r"{IDENTITIES_KEY}\{}", identity.identifier))
-            .map_err(|e| format!("the registry refused ({e})"))?;
+            .map_err(RegisterError::Registry)?;
         key.set_value("DisplayName", &identity.name)
             .and_then(|()| key.set_value("IconUri", &icon.to_string_lossy().into_owned()))
-            .map_err(|e| format!("the registry refused ({e})"))
+            .map_err(RegisterError::Registry)
+    }
+
+    /// Why the app's notification identity could not be registered.
+    #[derive(Debug, thiserror::Error)]
+    enum RegisterError {
+        #[error("{} ({source})", .path.display())]
+        Icon {
+            path: std::path::PathBuf,
+            source: std::io::Error,
+        },
+        #[error("the registry refused ({0})")]
+        Registry(#[source] std::io::Error),
     }
 
     #[cfg(test)]

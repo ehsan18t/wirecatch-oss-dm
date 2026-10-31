@@ -8,9 +8,32 @@
 //! a two-line `wirecatch-app` script starts the AppImage itself, because the bridge starts
 //! `wirecatch-app --background` from its own folder. A temporary path is never registered.
 
-use std::path::Path;
-#[cfg(unix)]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Why the bridge cannot be registered from this AppImage. Each message says what to do.
+#[derive(Debug, thiserror::Error)]
+pub enum AppImageError {
+    #[error("The AppImage path {} is not valid text, so the browser bridge cannot start it. Rename the file or its folder.", .0.display())]
+    NotText(PathBuf),
+    #[error(
+        "The AppImage path {0} is not a plain absolute path, so the browser bridge cannot start it."
+    )]
+    NotPlain(String),
+    #[error(
+        "The AppImage is in a temporary folder ({0}). Move it somewhere permanent, for example ~/Applications, so your browser can start Wirecatch."
+    )]
+    Temporary(String),
+    #[error("{} is not a plain folder (it may be a link to somewhere else), so Wirecatch will not put the browser bridge there. Delete it and start Wirecatch again.", .0.display())]
+    NotPlainFolder(PathBuf),
+    #[error("{} belongs to another user account, so Wirecatch will not put the browser bridge there. Delete it and start Wirecatch again.", .0.display())]
+    OtherOwner(PathBuf),
+    #[error("Could not {what} in {} ({source}), so browsers cannot reach Wirecatch from this AppImage.", .folder.display())]
+    Io {
+        what: &'static str,
+        folder: PathBuf,
+        source: std::io::Error,
+    },
+}
 
 /// Set by the AppImage runtime to the path of the `.AppImage` file.
 pub const APPIMAGE_VAR: &str = "APPIMAGE";
@@ -48,24 +71,17 @@ fn shell_quote(text: &str) -> String {
 /// # Errors
 ///
 /// The path is not valid text, is not a plain absolute path, or is in a temporary folder that
-/// will be gone after a restart. Each message says what to do.
-pub fn launcher_script(appimage: &Path) -> Result<String, String> {
-    let text = appimage.to_str().ok_or_else(|| {
-        format!(
-            "The AppImage path {} is not valid text, so the browser bridge cannot start it. Rename the file or its folder.",
-            appimage.display()
-        )
-    })?;
+/// will be gone after a restart.
+pub fn launcher_script(appimage: &Path) -> Result<String, AppImageError> {
+    let text = appimage
+        .to_str()
+        .ok_or_else(|| AppImageError::NotText(appimage.to_owned()))?;
     // AppImages are Linux only, where an absolute path starts with a slash.
     if !text.starts_with('/') || text.chars().any(char::is_control) {
-        return Err(format!(
-            "The AppImage path {text} is not a plain absolute path, so the browser bridge cannot start it."
-        ));
+        return Err(AppImageError::NotPlain(text.to_owned()));
     }
     if is_temporary(appimage) {
-        return Err(format!(
-            "The AppImage is in a temporary folder ({text}). Move it somewhere permanent, for example ~/Applications, so your browser can start Wirecatch."
-        ));
+        return Err(AppImageError::Temporary(text.to_owned()));
     }
     Ok(format!(
         "#!/bin/sh\n# Starts Wirecatch from its AppImage for the browser bridge. Written by Wirecatch on each start.\nexec {} \"$@\"\n",
@@ -80,21 +96,20 @@ pub fn launcher_script(appimage: &Path) -> Result<String, String> {
 ///
 /// The AppImage's path cannot go in a launcher (see [`launcher_script`]); `bin_dir` is a link,
 /// not a plain folder, or belongs to another user; or a folder or file cannot be made, read or
-/// written. Each message says what to do.
+/// written.
 #[cfg(unix)]
 pub fn install_private_bridge(
     bundled_bridge: &Path,
     appimage: &Path,
     bin_dir: &Path,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, AppImageError> {
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 
     let script = launcher_script(appimage)?;
-    let fail = |what: &str, e: std::io::Error| {
-        format!(
-            "Could not {what} in {} ({e}), so browsers cannot reach Wirecatch from this AppImage.",
-            bin_dir.display()
-        )
+    let fail = |what: &'static str, source: std::io::Error| AppImageError::Io {
+        what,
+        folder: bin_dir.to_owned(),
+        source,
     };
     if let Some(parent) = bin_dir.parent() {
         std::fs::create_dir_all(parent).map_err(|e| fail("make the data folder", e))?;
@@ -107,18 +122,12 @@ pub fn install_private_bridge(
     let meta =
         std::fs::symlink_metadata(bin_dir).map_err(|e| fail("check the bridge folder", e))?;
     if meta.file_type().is_symlink() || !meta.is_dir() {
-        return Err(format!(
-            "{} is not a plain folder (it may be a link to somewhere else), so Wirecatch will not put the browser bridge there. Delete it and start Wirecatch again.",
-            bin_dir.display()
-        ));
+        return Err(AppImageError::NotPlainFolder(bin_dir.to_owned()));
     }
     // SAFETY: geteuid has no preconditions and cannot fail.
     let me = unsafe { libc::geteuid() };
     if meta.uid() != me {
-        return Err(format!(
-            "{} belongs to another user account, so Wirecatch will not put the browser bridge there. Delete it and start Wirecatch again.",
-            bin_dir.display()
-        ));
+        return Err(AppImageError::OtherOwner(bin_dir.to_owned()));
     }
     if meta.mode() & 0o077 != 0 {
         std::fs::set_permissions(bin_dir, std::fs::Permissions::from_mode(0o700))
@@ -219,7 +228,10 @@ mod tests {
         std::fs::create_dir(&elsewhere).unwrap();
         let linked = dir.path().join("linked");
         std::os::unix::fs::symlink(&elsewhere, &linked).unwrap();
-        assert!(install_private_bridge(&bundled, appimage, &linked).is_err());
+        assert!(matches!(
+            install_private_bridge(&bundled, appimage, &linked),
+            Err(AppImageError::NotPlainFolder(_))
+        ));
         assert!(std::fs::read_dir(&elsewhere).unwrap().next().is_none());
     }
 }

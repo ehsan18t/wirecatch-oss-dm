@@ -15,6 +15,17 @@ use wirecatch_protocol::app::AppSettingsPatch;
 
 use crate::launch::BACKGROUND_FLAG;
 
+/// Why the start-at-sign-in entry could not be brought in line with the setting.
+#[derive(Debug, thiserror::Error)]
+pub enum AutostartError {
+    #[error("could not write the start-at-sign-in entry ({0})")]
+    Write(#[source] io::Error),
+    #[error("could not remove the start-at-sign-in entry ({0})")]
+    Remove(#[source] io::Error),
+    #[error("could not turn the setting off ({0})")]
+    Setting(#[from] wirecatch_core::CoreError),
+}
+
 /// The state of the system's start-at-sign-in entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryState {
@@ -73,15 +84,14 @@ pub trait Launcher {
     ///
     /// # Errors
     ///
-    /// The system refused to write the entry (the registry or the autostart folder); the text
-    /// says why.
-    fn enable(&self) -> Result<(), String>;
+    /// The system refused to write the entry (the registry or the autostart folder).
+    fn enable(&self) -> io::Result<()>;
     /// Removes the entry.
     ///
     /// # Errors
     ///
-    /// The system refused to remove the entry; the text says why.
-    fn disable(&self) -> Result<(), String>;
+    /// The system refused to remove the entry.
+    fn disable(&self) -> io::Result<()>;
 }
 
 /// Carries out one start-at-sign-in step: decides from the entry's `state` and does it, through
@@ -97,21 +107,19 @@ pub fn apply(
     state: EntryState,
     wanted: bool,
     just_turned_on: bool,
-) -> Result<Action, String> {
+) -> Result<Action, AutostartError> {
     let action = decide(wanted, state, just_turned_on);
     match action {
-        Action::Write => launcher.enable()?,
-        Action::Remove => launcher.disable()?,
+        Action::Write => launcher.enable().map_err(AutostartError::Write)?,
+        Action::Remove => launcher.disable().map_err(AutostartError::Remove)?,
         Action::Nothing => {}
         Action::TurnSettingOff => {
             tracing::info!("starting with the system was turned off outside Wirecatch");
             // Only this one setting, so a change made meanwhile in a window is kept.
-            manager
-                .change_settings(AppSettingsPatch {
-                    start_with_system: Some(false),
-                    ..AppSettingsPatch::default()
-                })
-                .map_err(|e| e.to_string())?;
+            manager.change_settings(AppSettingsPatch {
+                start_with_system: Some(false),
+                ..AppSettingsPatch::default()
+            })?;
         }
     }
     Ok(action)
@@ -135,14 +143,12 @@ impl Entry<'_> {
 }
 
 impl Launcher for Entry<'_> {
-    fn enable(&self) -> Result<(), String> {
+    fn enable(&self) -> io::Result<()> {
         write_entry(self.name, self.program)
-            .map_err(|e| format!("could not write the start-at-sign-in entry ({e})"))
     }
 
-    fn disable(&self) -> Result<(), String> {
+    fn disable(&self) -> io::Result<()> {
         remove_entry(self.name)
-            .map_err(|e| format!("could not remove the start-at-sign-in entry ({e})"))
     }
 }
 

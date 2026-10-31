@@ -5,7 +5,7 @@ use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::AppSettingsPatch;
 use wirecatch_protocol::proxy::{ProxyServer, ProxySettings, ProxyUse};
 
-use crate::api;
+use crate::api::{self, CommandResult};
 
 const ID_PREFIX: &str = "proxy:";
 
@@ -62,7 +62,7 @@ pub fn proxy_of(id: &str) -> Option<ProxyUse> {
 /// # Errors
 ///
 /// The profile is gone, or the manager has shut down.
-pub fn switch(manager: &Manager, proxy: ProxyUse) -> Result<(), String> {
+pub fn switch(manager: &Manager, proxy: ProxyUse) -> CommandResult<()> {
     let mut settings = manager.get_settings().proxy;
     settings.proxy = proxy;
     api::change_settings(
@@ -72,7 +72,6 @@ pub fn switch(manager: &Manager, proxy: ProxyUse) -> Result<(), String> {
             ..AppSettingsPatch::default()
         },
     )
-    .map_err(|e| e.message)
 }
 
 #[cfg(test)]
