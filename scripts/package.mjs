@@ -92,6 +92,40 @@ const LINUX_DEPENDS = {
 
 const ICON_SIZES = [32, 64, 128, 256, 512];
 
+/**
+ * The libraries an AppImage carries: those the app links that a desktop without GTK or Qt may lack.
+ * The rest (the C library, X11, fontconfig, freetype, Wayland, Vulkan) come with every desktop
+ * and must be the system's own, as AppImage's exclude list says.
+ */
+const APPIMAGE_LIBRARIES = ['libxkbcommon.so.0', 'libxkbcommon-x11.so.0'];
+
+/** Copies the `APPIMAGE_LIBRARIES` the app at `binary` links, as this machine resolves them, into `folder`. */
+function bundleLibraries(binary, folder) {
+  mkdirSync(folder, { recursive: true });
+  // Lines read `name => /path/name (0x...)`.
+  const linked = new Map(
+    execFileSync('ldd', [binary], { encoding: 'utf8' })
+      .split('\n')
+      .map((line) => line.trim().split(/\s+/))
+      .filter((parts) => parts[1] === '=>')
+      .map(([name, , path]) => [name, path]),
+  );
+  for (const name of APPIMAGE_LIBRARIES) {
+    const path = linked.get(name);
+    if (!path?.startsWith('/')) fail(`The app does not link ${name}, or this machine lacks it.`);
+    copyFileSync(path, join(folder, name));
+  }
+}
+
+/** The AppImage's entry point: the app, finding the libraries the AppImage carries first. */
+function appRun(app) {
+  return `#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+export LD_LIBRARY_PATH="$HERE/usr/lib\${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$HERE/usr/bin/${app}" "$@"
+`;
+}
+
 function fail(message) {
   console.error(message);
   process.exit(1);
@@ -298,7 +332,8 @@ async function linux(product, built, arch) {
   );
   copyFileSync(join(ICONS, '128x128@2x.png'), join(appDir, `${id}.png`));
   symlinkSync(`${id}.png`, join(appDir, '.DirIcon'));
-  symlinkSync(`usr/bin/${product.executables.app}`, join(appDir, 'AppRun'));
+  bundleLibraries(join(appDir, 'usr', 'bin', product.executables.app), join(appDir, 'usr', 'lib'));
+  writeFileSync(join(appDir, 'AppRun'), appRun(product.executables.app), { mode: 0o755 });
   const appimagetool = await tool('appimagetool', arch);
   const runtime = await tool('runtime', arch);
   chmodSync(appimagetool, 0o755);
