@@ -26,6 +26,10 @@ pub enum AutostartError {
     Setting(#[from] wirecatch_core::CoreError),
 }
 
+/// The app's command-line flag that removes its start-at-sign-in entry and exits: the
+/// uninstaller runs it, so the entry's location is known only here.
+pub const REMOVE_ENTRY_FLAG: &str = "--remove-start-entry";
+
 /// The state of the system's start-at-sign-in entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryState {
@@ -150,6 +154,15 @@ impl Launcher for Entry<'_> {
     fn disable(&self) -> io::Result<()> {
         remove_entry(self.name)
     }
+}
+
+/// Removes the entry named `name`, for [`REMOVE_ENTRY_FLAG`].
+///
+/// # Errors
+///
+/// The system refused to remove the entry.
+pub fn remove(name: &str) -> io::Result<()> {
+    remove_entry(name)
 }
 
 /// The program the entry starts: the AppImage the app runs from, else the running program.
@@ -328,6 +341,13 @@ fn exec_word(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_uninstaller_asks_the_app_to_remove_its_entry() {
+        let installer = include_str!("../../desktop/packaging/windows/installer.iss");
+        assert!(installer.contains(&format!("'{}'", super::REMOVE_ENTRY_FLAG)));
+        assert!(!installer.contains("StartupApproved"));
+    }
+
     use super::*;
 
     #[test]
