@@ -125,6 +125,7 @@ impl Library {
                         library.queues = queues;
                         library.proxies = proxies;
                         library.addons = addons;
+                        crate::text::set_clock(settings.clock);
                         library.settings = Some(settings);
                         library.startup_notices = startup_notices;
                         library.loaded = Loaded::Ready;
@@ -188,6 +189,7 @@ impl Library {
             UiEvent::ProxyServersChanged(proxies) => self.proxies = proxies,
             UiEvent::AddonsChanged(addons) => self.addons = addons,
             UiEvent::SettingsChanged(settings) => {
+                crate::text::set_clock(settings.clock);
                 self.settings = Some(*settings);
                 cx.emit(SettingsChanged);
             }

@@ -958,6 +958,18 @@ pub enum Theme {
     Dark,
 }
 
+/// How clock times show.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ClockFormat {
+    /// `3:42:07 PM`, and the default.
+    #[default]
+    TwelveHour,
+    /// `15:42:07`.
+    TwentyFourHour,
+}
+
 /// The colour that marks what is selected, focused or running. The design system defines one
 /// palette for each, in light and dark (`data-accent` on the page's root element).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -1179,6 +1191,8 @@ pub struct AppSettingsPatch {
     pub theme: Option<Theme>,
     /// The new [`AppSettings::accent`].
     pub accent: Option<Accent>,
+    /// The new [`AppSettings::clock`].
+    pub clock: Option<ClockFormat>,
     /// The new [`AppSettings::start_with_system`].
     pub start_with_system: Option<bool>,
     /// The new [`AppSettings::close_to_tray`].
@@ -1410,6 +1424,10 @@ pub struct AppSettings {
     #[serde(default, with = "known_or_default")]
     #[ts(as = "Accent")]
     pub accent: Accent,
+    /// Clock times in 12 or 24 hours.
+    #[serde(default, with = "known_or_default")]
+    #[ts(as = "ClockFormat")]
+    pub clock: ClockFormat,
     /// Start Wirecatch when the person signs in to the computer.
     pub start_with_system: bool,
     /// Closing the window keeps downloads running in the tray.
@@ -1484,6 +1502,7 @@ impl AppSettings {
             extension,
             theme,
             accent,
+            clock,
             start_with_system,
             close_to_tray,
             notify_on_finish,
@@ -1509,13 +1528,14 @@ impl AppSettings {
             extension: extension_patch,
             theme: new_theme,
             accent: new_accent,
+            clock: new_clock,
             start_with_system: new_start_with_system,
             close_to_tray: new_close_to_tray,
             notify_on_finish: new_notify_on_finish,
             finish_notice_time: new_finish_notice_time,
             notify_on_start: new_notify_on_start,
             start_notice_time: new_start_notice_time,
-            notify_during_do_not_disturb: new_notify_during_do_not_disturb,
+            notify_during_do_not_disturb: new_dnd,
             auto_update_addons: new_auto_update_addons,
             show_progress_windows: new_show_progress_windows,
             when_file_exists: new_when_file_exists,
@@ -1535,16 +1555,14 @@ impl AppSettings {
         }
         set(theme, new_theme);
         set(accent, new_accent);
+        set(clock, new_clock);
         set(start_with_system, new_start_with_system);
         set(close_to_tray, new_close_to_tray);
         set(notify_on_finish, new_notify_on_finish);
         set(finish_notice_time, new_finish_notice_time);
         set(notify_on_start, new_notify_on_start);
         set(start_notice_time, new_start_notice_time);
-        set(
-            notify_during_do_not_disturb,
-            new_notify_during_do_not_disturb,
-        );
+        set(notify_during_do_not_disturb, new_dnd);
         set(auto_update_addons, new_auto_update_addons);
         set(show_progress_windows, new_show_progress_windows);
         set(when_file_exists, new_when_file_exists);

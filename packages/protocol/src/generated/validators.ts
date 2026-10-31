@@ -22,6 +22,7 @@ import type { CaptureSource } from './CaptureSource';
 import type { Category } from './Category';
 import type { CategoryRule } from './CategoryRule';
 import type { ClientKind } from './ClientKind';
+import type { ClockFormat } from './ClockFormat';
 import type { CookieJar } from './CookieJar';
 import type { CookieRequest } from './CookieRequest';
 import type { DownloadId } from './DownloadId';
@@ -263,6 +264,7 @@ export function isAppSettings(value: unknown): value is AppSettings {
     isExtensionSettings(value1['extension']) &&
     isTheme(value1['theme']) &&
     isAccent(value1['accent']) &&
+    isClockFormat(value1['clock']) &&
     typeof value1['start_with_system'] === 'boolean' &&
     typeof value1['close_to_tray'] === 'boolean' &&
     isNotifyOnFinish(value1['notify_on_finish']) &&
@@ -296,6 +298,7 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
     (value1['extension'] === undefined || isExtensionSettingsPatch(value1['extension'])) &&
     (value1['theme'] === undefined || isTheme(value1['theme'])) &&
     (value1['accent'] === undefined || isAccent(value1['accent'])) &&
+    (value1['clock'] === undefined || isClockFormat(value1['clock'])) &&
     (value1['start_with_system'] === undefined ||
       typeof value1['start_with_system'] === 'boolean') &&
     (value1['close_to_tray'] === undefined || typeof value1['close_to_tray'] === 'boolean') &&
@@ -447,6 +450,11 @@ export function isCategoryRule(value: unknown): value is CategoryRule {
 /** Whether `value` has the shape of a {@link ClientKind}; fields it does not name are not checked. */
 export function isClientKind(value: unknown): value is ClientKind {
   return value === 'extension' || value === 'bridge' || value === 'cli' || value === 'app';
+}
+
+/** Whether `value` has the shape of a {@link ClockFormat}; fields it does not name are not checked. */
+export function isClockFormat(value: unknown): value is ClockFormat {
+  return value === 'twelve_hour' || value === 'twenty_four_hour';
 }
 
 /** Whether `value` has the shape of a {@link CookieJar}; fields it does not name are not checked. */

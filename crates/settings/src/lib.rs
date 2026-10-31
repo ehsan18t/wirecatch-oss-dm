@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use wirecatch_protocol::app::{
-    Accent, AppSettings, Category, CategoryRule, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
+    Accent, AppSettings, Category, CategoryRule, ClockFormat, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
     DEFAULT_MAX_CONCURRENT_DOWNLOADS, FinishNoticeTime, MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD, MAX_QUEUE_DESCRIPTION_CHARS, MediaDefaults, NotifyOnFinish,
     NotifyOnStart, OutputDefaults, PortablePath, Queue, QueueSettings, QueueStatus, Setting,
@@ -110,6 +110,7 @@ pub fn default_settings() -> AppSettings {
         extension: ExtensionSettings::default(),
         theme: Theme::System,
         accent: Accent::Cyan,
+        clock: ClockFormat::TwelveHour,
         start_with_system: false,
         close_to_tray: true,
         notify_on_finish: NotifyOnFinish::Notification,

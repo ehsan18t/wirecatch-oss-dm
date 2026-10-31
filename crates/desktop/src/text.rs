@@ -1,10 +1,12 @@
 //! A download's numbers and states in short words, as its row says them.
 
-use chrono::{Local, TimeZone as _};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use chrono::{Local, NaiveTime, TimeZone as _};
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
-    Category, DownloadStatus, DownloadSummary, FixAction, MediaSummary, PER_MILLE_DONE,
-    ProcessingStep, Schedule, TimeOfDay, WaitReason, Weekday,
+    Category, ClockFormat, DownloadStatus, DownloadSummary, FixAction, MediaSummary,
+    PER_MILLE_DONE, ProcessingStep, Schedule, TimeOfDay, WaitReason, Weekday,
 };
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::rules::{LinkProtocol, Rule};
@@ -16,6 +18,33 @@ const HOURS_PER_DAY: u64 = 24;
 /// Up to two days, time left is said in hours and minutes; beyond that, in days.
 const ETA_IN_HOURS_BELOW: u64 = 2 * HOURS_PER_DAY;
 const PERCENT_MAX: u64 = 100;
+
+/// The clock format the settings last gave; 12-hour until they are read.
+static TWENTY_FOUR_HOUR: AtomicBool = AtomicBool::new(false);
+
+/// Every time the app shows follows `format` from now on.
+pub fn set_clock(format: ClockFormat) {
+    TWENTY_FOUR_HOUR.store(format == ClockFormat::TwentyFourHour, Ordering::Relaxed);
+}
+
+fn clock_format() -> ClockFormat {
+    if TWENTY_FOUR_HOUR.load(Ordering::Relaxed) {
+        ClockFormat::TwentyFourHour
+    } else {
+        ClockFormat::TwelveHour
+    }
+}
+
+/// `time` in `format`: `3:42 PM` or `15:42`, with the seconds when `seconds`.
+fn format_time(time: NaiveTime, seconds: bool, format: ClockFormat) -> String {
+    let pattern = match (format, seconds) {
+        (ClockFormat::TwelveHour, false) => "%-I:%M %p",
+        (ClockFormat::TwelveHour, true) => "%-I:%M:%S %p",
+        (ClockFormat::TwentyFourHour, false) => "%H:%M",
+        (ClockFormat::TwentyFourHour, true) => "%H:%M:%S",
+    };
+    time.format(pattern).to_string()
+}
 
 /// Seconds left as a compact duration: `45 s`, `3 min`, `1 h 20 min`, `2 days`.
 pub fn eta(seconds: u64) -> String {
@@ -310,14 +339,15 @@ pub fn folder(path: &str) -> String {
     }
 }
 
-/// A moment for the details: `Today, 14:05`, `Yesterday, 09:12` or `3 Oct 2026, 09:12`.
+/// A moment for the details: `Today, 2:05:31 PM`, `Yesterday, 9:12:44 AM` or
+/// `3 Oct 2026, 9:12:44 AM`, in the chosen clock format.
 pub fn date(at: UnixMillis) -> String {
     let Some(at) = Local.timestamp_millis_opt(at.0).single() else {
         return String::new();
     };
     let today = Local::now().date_naive();
     let day = at.date_naive();
-    let time = at.format("%H:%M");
+    let time = format_time(at.time(), true, clock_format());
     if day == today {
         format!("Today, {time}")
     } else if today.pred_opt() == Some(day) {
@@ -428,16 +458,20 @@ fn day_short(day: Weekday) -> &'static str {
     }
 }
 
-fn time(at: TimeOfDay) -> String {
-    format!("{:02}:{:02}", at.hour, at.minute)
+/// A time of day in the chosen clock format: `1:00 AM` or `01:00`.
+pub fn time(at: TimeOfDay) -> String {
+    NaiveTime::from_hms_opt(u32::from(at.hour), u32::from(at.minute), 0)
+        .map_or_else(String::new, |time| format_time(time, false, clock_format()))
 }
 
-/// The local clock time of a moment: `07:05`.
+/// The local clock time of a moment: `7:05 AM` or `07:05`.
 pub fn clock(at: UnixMillis) -> String {
     Local
         .timestamp_millis_opt(at.0)
         .single()
-        .map_or_else(String::new, |at| at.format("%H:%M").to_string())
+        .map_or_else(String::new, |at| {
+            format_time(at.time(), false, clock_format())
+        })
 }
 
 fn ordinal(n: u32) -> String {
@@ -454,6 +488,28 @@ fn ordinal(n: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_time_reads_in_the_chosen_clock() {
+        let time = NaiveTime::from_hms_opt(15, 42, 7).unwrap();
+        let morning = NaiveTime::from_hms_opt(7, 5, 0).unwrap();
+        assert_eq!(
+            format_time(time, true, ClockFormat::TwelveHour),
+            "3:42:07 PM"
+        );
+        assert_eq!(
+            format_time(time, true, ClockFormat::TwentyFourHour),
+            "15:42:07"
+        );
+        assert_eq!(
+            format_time(morning, false, ClockFormat::TwelveHour),
+            "7:05 AM"
+        );
+        assert_eq!(
+            format_time(morning, false, ClockFormat::TwentyFourHour),
+            "07:05"
+        );
+    }
 
     #[test]
     fn a_saved_folder_reads_without_its_braces() {

@@ -393,7 +393,7 @@ impl MainWindow {
             return "Paused".to_owned();
         }
         if let Some(schedule) = outside_schedule(queue) {
-            return format!("Starts at {:02}:{:02}", schedule.hour, schedule.minute);
+            return format!("Starts at {}", text::time(schedule));
         }
         if queue.status.running_outside_schedule {
             return "Started manually, ignoring schedule".to_owned();
@@ -613,7 +613,7 @@ fn summary(queue: &Queue, facts: &QueueFacts, proxy: Option<&str>) -> (Option<St
         return (None, format!("{of}{}", left.unwrap_or_default()));
     }
     if let Some(start) = outside_schedule(queue) {
-        let line = marked(format!("Starts {:02}:{:02}", start.hour, start.minute));
+        let line = marked(format!("Starts {}", text::time(start)));
         return (None, line);
     }
     if facts.waiting > 0 {
