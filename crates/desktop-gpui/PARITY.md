@@ -11,7 +11,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] The manager could not open: "{app} cannot reach its download engine", with Try again.
 - [x] Another copy already runs: say so and close (`lib.rs` `say_already_running`).
 - [x] Search, focused with Ctrl+K: names and links, a search unfolds groups, "N downloads matching …", the view in the placeholder.
-- [ ] Search: Escape clears, Down moves into the list; "Search settings" on the settings screen.
+- [x] Search: Escape clears, Down moves into the list; the settings screen searches settings in its own navigation.
 - [ ] The waiting questions, with their count (`show_question_windows`).
 - [ ] Navigation toggle; collapsed rail and narrow-window drawer (D91).
 - [x] Navigation: All downloads, the six status views with counts, the queues with count or speed.
@@ -36,7 +36,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Row: Open (a program asks first, D43.1) and Show in folder, on hover and on the selected row.
 - [ ] Row: category icon, the "…" menu, the fix button in the progress cell (`row-actions.ts`).
 - [x] Hover Pause, Resume, Try again, Start over.
-- [ ] Selection: Ctrl+click, Shift+click ranges; selection bar with Pause, Resume, Try again, Move to queue, Remove, Clear.
+- [x] Selection: Ctrl+click, Shift+click ranges; selection bar with Pause, Resume, Try again, Move to queue, Remove, Clear; the list keys that move and extend it, Ctrl+A, Space, Enter, Alt+Enter, Delete.
 - [x] Empty states with their buttons: first run, no search match, empty queue, an empty view.
 - [ ] First run: "See everything {app} can do" (opens the palette).
 - [x] Details dialog (D47), opened by clicking a row: status, the problem with its fix and Try again, speed and progress, facts, Saved to with Change, the link with Copy, activity, Open, Pause, Resume, Start over, Show in folder, More (Copy link, Cancel download), Remove; it follows the download and closes once it is removed.
@@ -95,7 +95,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] `--background`; links on the command line.
 - [x] Browser bridge: serve it, register it on start (not in debug builds), the AppImage copy.
 - [x] System notifications with buttons (D52), browser notices with the system fallback (D65), a notice opening its download (D98).
-- [ ] Open a file, with the warning for programs; show in folder; folder and file pickers.
+- [x] Open a file, with the warning for programs; show in folder; folder and file pickers.
 - [x] Start at sign-in.
 - [x] Startup failure dialogs.
 - [ ] Installers for Windows and Linux; the updater comes with release item 7.

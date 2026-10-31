@@ -15,7 +15,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, PER_MILLE_DONE};
 use wirecatch_shell::api;
 
-use super::{Group, MainWindow, details};
+use super::{Group, MainWindow};
 use crate::backend::act;
 use crate::ui::{FileTile, Role, Typed as _, tokens};
 use crate::{files, text};
@@ -63,6 +63,17 @@ impl MainWindow {
         .flex_1()
         .pb_4()
         .into_any_element()
+    }
+
+    /// The rows the list shows, by their index in the library, in its order.
+    pub(super) fn shown_rows(&self, cx: &App) -> Vec<usize> {
+        self.lines(cx)
+            .into_iter()
+            .filter_map(|line| match line {
+                Line::Row(index) => Some(index),
+                Line::Heading(..) => None,
+            })
+            .collect()
     }
 
     /// Where download `id` is among the list's lines, if it shows.
@@ -239,16 +250,7 @@ impl MainWindow {
             }))
             .on_click(
                 cx.listener(move |this, event: &gpui_kit::ClickEvent, window, cx| {
-                    if event.modifiers().secondary(cx) {
-                        if !this.selected.remove(&id) {
-                            this.selected.insert(id);
-                        }
-                    } else {
-                        this.selected.clear();
-                        this.selected.insert(id);
-                        details::open(this.library.clone(), id, window, cx);
-                    }
-                    cx.notify();
+                    this.click_row(id, event.modifiers(), window, cx);
                 }),
             )
             .into_any_element()

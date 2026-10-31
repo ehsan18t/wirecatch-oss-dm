@@ -5,7 +5,9 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::Input;
 use gpui_kit::component::{Icon, IconName, Sizable as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{App, Context, IntoElement, ParentElement as _, Styled as _, Window};
+use gpui_kit::{
+    App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _, Window,
+};
 
 use super::MainWindow;
 use crate::links;
@@ -15,6 +17,7 @@ impl MainWindow {
     pub(super) fn command_bar(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let typed = self.typed_links(cx).len();
         h_flex()
+            .key_context(super::SEARCH_CONTEXT)
             .px_5()
             .pt_4()
             .pb_2()
