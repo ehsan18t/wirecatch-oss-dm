@@ -24,7 +24,7 @@ use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
 use super::Manager;
 use crate::error::{CoreError, Result};
 use wirecatch_addons::manifest::{self, AddonComponent, ComponentId, ReleaseFile};
-use wirecatch_addons::{self as addons, Check, Record, archive, signature};
+use wirecatch_addons::{self as addons, Check, Record, WORK_FOLDER, archive, signature};
 use wirecatch_engine::units::{KIB, MIB};
 use wirecatch_media::MediaTools;
 use wirecatch_media::ytdlp;
@@ -185,6 +185,21 @@ impl NewRelease {
     }
 }
 
+/// A part's release file while it downloads, in the work folder.
+fn release_file(id: ComponentId, version: &str) -> String {
+    format!("{}-{}.download", id.as_str(), file_safe(version))
+}
+
+/// Where a part is unpacked before it is swapped in, in the work folder.
+fn stage_folder(id: ComponentId) -> String {
+    format!("stage-{}", id.as_str())
+}
+
+/// Where the part it replaces waits until the swap has worked, in the work folder.
+fn old_folder(id: ComponentId) -> String {
+    format!("old-{}", id.as_str())
+}
+
 /// An install or update in progress.
 pub(super) struct AddonOp {
     pub cancel: CancellationToken,
@@ -283,7 +298,11 @@ impl Manager {
         ended.cancelled().await;
         let dir = self.inner.addon_dir.clone();
         // A working add-on keeps its files; only the staging folder goes.
-        let target = if had_tools { dir.join(".work") } else { dir };
+        let target = if had_tools {
+            dir.join(WORK_FOLDER)
+        } else {
+            dir
+        };
         let discarded = self
             .blocking(move || match std::fs::remove_dir_all(&target) {
                 Ok(()) => Ok(()),
@@ -709,7 +728,7 @@ impl Manager {
         cancel: CancellationToken,
     ) -> std::result::Result<(Record, Option<MediaTools>), InstallFailure> {
         let dir = self.inner.addon_dir.clone();
-        let work = dir.join(".work");
+        let work = dir.join(WORK_FOLDER);
         let made = work.clone();
         self.blocking(move || {
             std::fs::create_dir_all(&made).map_err(|e| CoreError::File(FileError::new(&made, e)))
@@ -791,11 +810,7 @@ impl Manager {
     ) -> std::result::Result<(PathBuf, archive::Installed), PartError> {
         let component = &part.component;
         let id = component.id();
-        let release = work.join(format!(
-            "{}-{}.download",
-            id.as_str(),
-            file_safe(component.version())
-        ));
+        let release = work.join(release_file(id, component.version()));
         let cap = component.release().size().saturating_add(SIZE_MARGIN);
         let expected = component.release().sha256();
         let known = release.clone();
@@ -834,7 +849,7 @@ impl Manager {
             }
         }
         let owned = component.clone();
-        let stage = work.join(format!("stage-{}", id.as_str()));
+        let stage = work.join(stage_folder(id));
         let downloaded = release.clone();
         let staged = self
             .blocking(move || Ok(verify_and_unpack(&owned, &downloaded, &stage, cap)))
@@ -1282,7 +1297,7 @@ fn swap_in(
     for (component, (stage, files)) in staged {
         let id = component.id();
         let target = dir.join(id.as_str());
-        let old = work.join(format!("old-{}", id.as_str()));
+        let old = work.join(old_folder(id));
         wirecatch_files::discard::dir(&old);
         let had_old = target.exists();
         if had_old {
@@ -1426,7 +1441,7 @@ mod tests {
     #[test]
     fn a_part_that_cannot_be_put_back_is_no_longer_recorded() {
         let dir = tempfile::tempdir().unwrap();
-        let work = dir.path().join(".work");
+        let work = dir.path().join(WORK_FOLDER);
         std::fs::create_dir_all(&work).unwrap();
         let target = dir.path().join("ffmpeg");
         std::fs::create_dir_all(&target).unwrap();
@@ -1441,7 +1456,10 @@ mod tests {
         );
         record.save(dir.path()).unwrap();
         let component = part(ComponentId::Ffmpeg, Sha256Digest::from_bytes([0; 32]));
-        let staged = vec![(component, (work.join("stage-ffmpeg"), Vec::new()))];
+        let staged = vec![(
+            component,
+            (work.join(stage_folder(ComponentId::Ffmpeg)), Vec::new()),
+        )];
         let mut calls = 0;
         let failure = swap_in(dir.path(), &work, record, staged, |from, to| {
             calls += 1;
@@ -1491,10 +1509,10 @@ mod tests {
     fn a_part_cannot_be_put_outside_the_add_on_folder() {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("media");
-        let work = dir.join(".work");
+        let work = dir.join(WORK_FOLDER);
         let mut staged = Vec::new();
         for id in ComponentId::ALL {
-            let stage = work.join(format!("stage-{}", id.as_str()));
+            let stage = work.join(stage_folder(id));
             std::fs::create_dir_all(&stage).unwrap();
             std::fs::write(stage.join("tool"), b"tool").unwrap();
             let files = vec![addons::InstalledFile {

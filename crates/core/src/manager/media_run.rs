@@ -37,6 +37,7 @@ use super::media::{addon_missing, cookie_header, media_options};
 use super::policy::RunPolicy;
 use super::run::{MediaDone, RunEnd};
 use super::state::{Found, Gauge, OnExisting, State};
+use super::workdir;
 use crate::clock::Clock;
 use crate::headers;
 use crate::headers::Origin;
@@ -581,11 +582,11 @@ async fn fetch_extras(
     if output.wants_cover()
         && let Some(url) = info.thumbnail.as_deref().and_then(|u| Url::parse(u).ok())
     {
-        let path = work.join("cover.image");
+        let path = work.join(workdir::COVER);
         match fetch_small(job, &url, &HashMap::new(), &path, MAX_COVER_BYTES, cancel).await {
             Fetch::Done => {
                 if let Some(format) = ImageFormat::detect(&head(&path).await) {
-                    downloaded.cover = Some(("cover.image".into(), format));
+                    downloaded.cover = Some((workdir::COVER.into(), format));
                 } else {
                     warn!("the video's picture is not a JPEG, PNG or WebP picture");
                 }
@@ -613,8 +614,8 @@ async fn fetch_extras(
             chapters,
             output.duration_ms,
         );
-        match tokio::fs::write(work.join("metadata.txt"), text).await {
-            Ok(()) => downloaded.metadata = Some("metadata.txt".into()),
+        match tokio::fs::write(work.join(workdir::METADATA), text).await {
+            Ok(()) => downloaded.metadata = Some(workdir::METADATA.into()),
             Err(e) => warn!(error = %e, "could not write the metadata file"),
         }
     }
@@ -641,7 +642,7 @@ async fn fetch_subtitles(
             continue;
         };
         let ext = file.ext.as_deref().unwrap_or("vtt");
-        let path = work.join(format!("sub-{n}.{ext}"));
+        let path = work.join(workdir::subtitle(n, ext));
         match fetch_small(
             job,
             &url,
@@ -661,7 +662,7 @@ async fn fetch_subtitles(
         }
         match SubtitleFormat::detect(&head(&path).await, ext) {
             Some(format) => downloaded.subtitles.push(DownloadedSubtitle {
-                file: format!("sub-{n}.{ext}"),
+                file: workdir::subtitle(n, ext),
                 format,
                 pick: pick.clone(),
             }),
@@ -673,10 +674,13 @@ async fn fetch_subtitles(
     true
 }
 
+/// Enough of a file to recognise a subtitle or image format.
+const HEAD_BYTES: usize = 512;
+
 /// The first bytes of a file, to recognise its format.
 async fn head(path: &Path) -> Vec<u8> {
     use tokio::io::AsyncReadExt;
-    let mut buf = vec![0u8; 512];
+    let mut buf = vec![0u8; HEAD_BYTES];
     let Ok(mut file) = tokio::fs::File::open(path).await else {
         return Vec::new();
     };
@@ -791,7 +795,7 @@ async fn save(
         let inputs = inputs_for(output, downloaded, &files, work)
             .await?
             .map_err(|e| describe::conversion(&e, output, tools))?;
-        let target = work.join(format!("output.{}", output.container.ext()));
+        let target = work.join(workdir::output(output.container.ext()));
         let result = convert::convert(tools, output, &inputs, &target, progress, cancel).await;
         progress.set_step(None);
         match result {
@@ -834,7 +838,7 @@ async fn join_original(
         [single] => Ok(Some(single.clone())),
         [video, audio] => {
             let container = joined_container(ext, job);
-            let joined = work.join(format!("joined.{}", container.ext()));
+            let joined = work.join(workdir::joined(container.ext()));
             progress.set_step(Some(ProcessingStep::Joining));
             let result = merge::join(tools, (video, audio), &joined, container, cancel).await;
             progress.set_step(None);
@@ -917,7 +921,7 @@ async fn subtitle_files(
         return Ok(Some(made));
     }
     for (n, subtitle) in downloaded.subtitles.iter().enumerate() {
-        let target = work.join(format!("subtitle-{n}.srt"));
+        let target = work.join(workdir::converted_subtitle(n));
         match convert::to_srt(
             tools,
             subtitle.format,
@@ -951,7 +955,7 @@ async fn fetch_part(
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<Option<PathBuf>, PageError> {
-    let marker = work.join(format!("{role}.done"));
+    let marker = work.join(workdir::marker(role));
     if let Ok(name) = tokio::fs::read_to_string(&marker).await {
         let file = work.join(name.trim());
         if let Ok(meta) = tokio::fs::metadata(&file).await
@@ -1081,12 +1085,6 @@ async fn finish(
     moved.map_err(|e| disk(&e, output))
 }
 
-/// Names a file kept in the work folder for an answer about its taken name, so the next run puts
-/// it in place without downloading it again: a digest of the link it came from (a link can carry
-/// a token, which stays out of the folder), the file, then each subtitle and its language. A
-/// later download at the same path from another link ignores it.
-const PLACING: &str = "placing.done";
-
 fn link_digest(url: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hex = String::with_capacity(64);
@@ -1111,13 +1109,15 @@ fn remember_placing(
             .iter()
             .map(|(path, language)| format!("{}\t{language}", name(path))),
     );
-    std::fs::write(work.join(PLACING), lines.join("\n"))
+    std::fs::write(work.join(workdir::PLACING), lines.join("\n"))
 }
 
 /// The file, and its subtitles, an earlier run of the download of `url` left in `work` to be put
 /// in place. Only plain names inside `work` are taken.
 async fn waiting_to_place(work: &Path, url: &Url) -> Option<(PathBuf, Vec<(PathBuf, String)>)> {
-    let listed = tokio::fs::read_to_string(work.join(PLACING)).await.ok()?;
+    let listed = tokio::fs::read_to_string(work.join(workdir::PLACING))
+        .await
+        .ok()?;
     let mut lines = listed.lines();
     if lines.next()? != link_digest(url.as_str()) {
         return None;
@@ -1144,7 +1144,7 @@ fn sidecar_path(file: &Path, language: &str) -> PathBuf {
     let language: String = language
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
-        .take(35)
+        .take(wirecatch_settings::MAX_LANGUAGE_CHARS)
         .collect();
     let language = if language.is_empty() {
         "und".into()
@@ -1220,6 +1220,9 @@ fn final_path(file: &Path, planned: &Path) -> PathBuf {
 /// extension, see [`final_path`]). When a file in the folder has that name, `taken` says what
 /// happens; keeping both, or a name another download holds, goes on to `name (1).ext` and so on,
 /// and never replaces a file. Blocks on the disk.
+/// Free names tried for a finished file before placing it fails.
+const MAX_NAME_ATTEMPTS: u64 = 10_000;
+
 fn place(file: &Path, planned: &Path, reserve: &Reserve, taken: Taken) -> std::io::Result<Placed> {
     let wanted = final_path(file, planned);
     let dir = wanted.parent().unwrap_or(Path::new(""));
@@ -1253,7 +1256,7 @@ fn place(file: &Path, planned: &Path, reserve: &Reserve, taken: Taken) -> std::i
             }
         }
     }
-    for n in 0..10_000 {
+    for n in 0..MAX_NAME_ATTEMPTS {
         let candidate = crate::naming::candidate(dir, &name, n);
         if !crate::naming::is_free_on_disk(&candidate) {
             continue;
@@ -1749,7 +1752,7 @@ mod tests {
 
         std::fs::write(dir.path().join("outside.ts"), b"x").unwrap();
         std::fs::write(
-            work.join(PLACING),
+            work.join(workdir::PLACING),
             format!(
                 "{mine}
 ../outside.ts"

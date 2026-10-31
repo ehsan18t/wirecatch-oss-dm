@@ -18,13 +18,17 @@ use crate::headers;
 use crate::headers::Origin;
 
 /// How long an unfinished download keeps the browser's sign-in.
-pub(super) const FORGET_AFTER_MILLIS: i64 = 7 * 24 * 60 * 60 * 1000;
+const FORGET_AFTER_DAYS: i64 = 7;
+pub(super) const FORGET_AFTER_MILLIS: i64 = FORGET_AFTER_DAYS * 24 * 60 * 60 * 1000;
 /// How often downloads are looked at.
 const LOOK_EVERY: TimeDelta = TimeDelta::hours(1);
 
 /// What a download whose sign-in was forgotten says when it needs a fresh link.
-pub(super) const FORGOT_SIGN_IN: &str =
-    "Wirecatch forgot the sign-in for this download after 7 days; get a fresh link.";
+pub(super) fn forgot_sign_in() -> String {
+    format!(
+        "Wirecatch forgot the sign-in for this download after {FORGET_AFTER_DAYS} days; get a fresh link."
+    )
+}
 
 impl Manager {
     /// Deletes the cookies and credentials of every download that is waiting,
@@ -81,7 +85,7 @@ pub(super) fn forget_if_old(entry: &mut Entry, now: i64) -> bool {
 pub(super) fn explain(origin: &Origin, error: UserError) -> UserError {
     if origin.forgot_sign_in && error.fix == Some(FixAction::RefreshLink) {
         UserError {
-            message: FORGOT_SIGN_IN.into(),
+            message: forgot_sign_in(),
             fix: Some(FixAction::RefreshLink),
         }
     } else {

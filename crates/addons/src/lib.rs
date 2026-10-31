@@ -28,6 +28,9 @@ pub fn media_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("addons").join(manifest::MEDIA_ADDON_FOLDER)
 }
 
+/// Where an install stages its files, inside the add-on folder.
+pub const WORK_FOLDER: &str = ".work";
+
 /// The record of what is installed, in the add-on folder.
 pub const RECORD_FILE: &str = "installed.json";
 

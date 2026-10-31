@@ -79,7 +79,7 @@ async fn install_downloads_checks_and_unpacks_only_the_expected_files() -> TestR
         );
     }
     // The downloads and staging folders are cleaned up.
-    let work: Vec<_> = std::fs::read_dir(dir.join(".work"))
+    let work: Vec<_> = std::fs::read_dir(dir.join(wirecatch_addons::WORK_FOLDER))
         .map(|d| d.filter_map(Result::ok).map(|e| e.file_name()).collect())
         .unwrap_or_default();
     assert!(work.is_empty(), "left in .work: {work:?}");
@@ -129,7 +129,7 @@ async fn a_release_that_does_not_match_its_checksum_is_never_unpacked() -> TestR
     }
     assert!(!dir.join("installed.json").exists());
     // The bad download is deleted, so trying again downloads it again.
-    let leftovers: Vec<String> = std::fs::read_dir(dir.join(".work"))
+    let leftovers: Vec<String> = std::fs::read_dir(dir.join(wirecatch_addons::WORK_FOLDER))
         .unwrap()
         .filter_map(Result::ok)
         .map(|e| e.file_name().to_string_lossy().into_owned())
@@ -244,7 +244,7 @@ async fn stopping_an_update_keeps_the_installed_version_working() -> TestResult 
     assert!(info.installed_version.unwrap().contains("2026.08.19"));
     assert_eq!(installed_ytdlp(&h)?, before, "the old yt-dlp is untouched");
     assert!(
-        !path_exists(addon_dir(&h).join(".work")),
+        !path_exists(addon_dir(&h).join(wirecatch_addons::WORK_FOLDER)),
         "staging discarded"
     );
     // Still runnable: the installed Deno answers.
@@ -593,7 +593,7 @@ async fn a_refused_release_is_reported_and_not_tried_again() -> TestResult {
     assert!(
         !path_exists(
             addon_dir(&h)
-                .join(".work")
+                .join(wirecatch_addons::WORK_FOLDER)
                 .join("yt-dlp-2026.09.30.download")
         ),
         "the refused release is kept"
@@ -869,7 +869,7 @@ async fn an_update_is_capped_at_its_announced_size() -> TestResult {
     let info = check(&h).await?;
     assert_eq!(info.state, AddonState::UpdateAvailable);
     assert_ne!(installed_ytdlp(&h)?, new_ytdlp);
-    let work = addon_dir(&h).join(".work");
+    let work = addon_dir(&h).join(wirecatch_addons::WORK_FOLDER);
     let big: Vec<_> = std::fs::read_dir(&work)
         .map(|d| {
             d.filter_map(Result::ok)
