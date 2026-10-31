@@ -95,7 +95,7 @@ fn open(cx: &mut App) {
             size(px(WIDTH), px(HEIGHT)),
         ))),
         focus: false,
-        ..TitleBar::window_options()
+        ..crate::window_options()
     };
     let built = gpui_kit::open_window(options, cx, |window, cx| {
         window.on_window_should_close(cx, |_, cx| {

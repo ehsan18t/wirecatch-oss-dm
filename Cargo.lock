@@ -11884,6 +11884,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirs 7.0.0",
+ "embed-resource",
  "gpui-kit",
  "png 0.18.1",
  "regex",

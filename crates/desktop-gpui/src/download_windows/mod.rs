@@ -9,7 +9,6 @@ mod view;
 
 use std::collections::HashMap;
 
-use gpui_kit::component::TitleBar;
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, Entity, Global, WeakEntity, WindowBounds,
     WindowOptions, point, px, size,
@@ -182,7 +181,7 @@ fn open(opened: &OpenWindow, cx: &mut App) {
             px(logical(MIN_WINDOW_SIZE.0)),
             px(logical(MIN_WINDOW_SIZE.1)),
         )),
-        ..TitleBar::window_options()
+        ..crate::window_options()
     };
     let label = opened.label.clone();
     let shows = opened.shows;
