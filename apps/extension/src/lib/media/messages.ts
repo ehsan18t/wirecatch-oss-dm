@@ -13,6 +13,7 @@ import {
   optional,
   refine,
 } from '../validate';
+import { isWebUrl } from '../url';
 
 export const MEDIA_CHECK = 'wirecatch:media-check';
 
@@ -109,7 +110,7 @@ export interface DownloadAnswer {
 
 /** An http(s) address no longer than `MAX_MEDIA_URL_LENGTH`: the only sources worth sending. */
 export function isWebSrc(src: string): boolean {
-  return src.length <= MAX_MEDIA_URL_LENGTH && /^https?:\/\//i.test(src);
+  return src.length <= MAX_MEDIA_URL_LENGTH && isWebUrl(src);
 }
 
 /** The frame's address as the content script sends it: null unless it is a short web address. */
