@@ -8,12 +8,12 @@ use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, ElementId, FontWeight, InteractiveElement as _, IntoElement,
+    AnyElement, App, Context, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement,
     ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, WeakEntity,
-    div, px,
+    div, px, relative,
 };
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{DownloadStatus, Queue, Setting};
+use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, Queue, Setting};
 use wirecatch_protocol::proxy::ProxyUse;
 use wirecatch_protocol::rules::AddDownloads;
 use wirecatch_queues::schedule;
@@ -23,9 +23,10 @@ use super::drag::{self, DraggedQueue, DraggedRows};
 use super::{Group, MainWindow, Screen, View};
 use crate::backend::act;
 use crate::text;
-use crate::ui::{Role, Typed as _, tokens};
+use crate::ui::speed_graph::{SpeedHistory, speed_graph};
+use crate::ui::{QueueTile, Role, Typed as _, tokens};
 
-pub(super) const WIDTH: f32 = 232.;
+pub(super) const WIDTH: f32 = 256.;
 /// Queues shown before the rest fold away under "more queues".
 const QUEUES_SHOWN: usize = 3;
 
@@ -139,7 +140,8 @@ impl MainWindow {
             )
     }
 
-    /// The queues: the first few, the one on screen, and the rest behind "more queues".
+    /// The queues, in one panel: the first few, the one on screen, and the rest behind "more
+    /// queues".
     fn queues_section(&self, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
         let queues = self.library.read(cx).queues.clone();
         let folded = queues.len() > QUEUES_SHOWN && !self.all_queues;
@@ -149,9 +151,19 @@ impl MainWindow {
             .filter(|(index, queue)| {
                 !folded || *index < QUEUES_SHOWN || self.view == View::Queue(queue.id)
             })
-            .map(|(index, queue)| self.queue_item(queue, index, queues.len(), cx))
+            .enumerate()
+            .map(|(place, (index, queue))| {
+                self.queue_item(queue, index, place == 0, queues.len(), cx)
+            })
             .collect();
         let hidden = queues.len() - shown.len();
+        let speed: u64 = self
+            .library
+            .read(cx)
+            .downloads
+            .iter()
+            .map(|row| row.speed)
+            .sum();
         let toggle = (queues.len() > QUEUES_SHOWN).then(|| {
             Button::new("more-queues")
                 .xsmall()
@@ -166,14 +178,23 @@ impl MainWindow {
                     cx.notify();
                 }))
         });
+        let theme = cx.theme();
         v_flex()
-            .gap_px()
+            .gap_1()
             .child(
                 h_flex()
                     .pl_2()
-                    .pb_1()
-                    .justify_between()
+                    .gap_2()
                     .child(div().text_role(Role::Label, cx).child("Queues"))
+                    .when(speed > 0, |header| {
+                        header.child(
+                            div()
+                                .text_role(Role::Meta, cx)
+                                .text_color(theme.primary)
+                                .child(text::speed(speed)),
+                        )
+                    })
+                    .child(div().flex_1())
                     .child(
                         Button::new("new-queue")
                             .xsmall()
@@ -185,7 +206,15 @@ impl MainWindow {
                             })),
                     ),
             )
-            .children(shown)
+            .child(
+                v_flex()
+                    .rounded(theme.radius_lg)
+                    .overflow_hidden()
+                    .bg(theme.background)
+                    .border_1()
+                    .border_color(theme.border)
+                    .children(shown),
+            )
             .children(toggle)
     }
 
@@ -238,63 +267,75 @@ impl MainWindow {
             .into_any_element()
     }
 
-    /// One queue: its name with its count or speed, what it is doing, and its menu.
+    /// One queue: its state and rules on a tile, its name with its speed or count, one line on
+    /// what it is doing, and while it downloads its speed graph and progress.
     fn queue_item(
         &self,
         queue: &Queue,
         index: usize,
+        first: bool,
         total: usize,
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
         let id = queue.id;
         let view = View::Queue(id);
         let current = self.view == view;
-        let rows = || {
-            self.library
-                .read(cx)
-                .downloads
-                .iter()
-                .filter(move |row| row.queue == id)
-        };
-        let speed: u64 = rows().map(|row| row.speed).sum();
-        let count = rows().count();
-        let status = self.describe(queue, cx);
+        let library = self.library.read(cx);
+        let facts = QueueFacts::of(library.downloads.iter().filter(|row| row.queue == id));
+        let order: Vec<QueueId> = library.queues.iter().map(|q| q.id).collect();
         let (rules, proxy) = self.marks(queue, cx);
-        let order: Vec<QueueId> = self.library.read(cx).queues.iter().map(|q| q.id).collect();
+        let (alarm, line) = summary(queue, &facts, proxy.as_deref());
+        let graph = self
+            .queue_speeds
+            .get(&id)
+            .filter(|history| facts.running > 0 && history.drawable())
+            .map(SpeedHistory::speeds);
         let main = cx.entity().downgrade();
         let shown = queue.clone();
         let theme = cx.theme();
+        let panel = theme.background;
+        let hovered = panel.blend(theme.list_hover);
+        let behind = if current {
+            panel.blend(theme.sidebar_accent)
+        } else {
+            panel
+        };
+        let group = SharedString::new(format!("queue-{}", id.0));
+        let tile = queue_tile(queue, &facts, behind, cx)
+            .rules(rules)
+            .when(!current, |tile| tile.hover_behind(group.clone(), hovered));
         h_flex()
             .id(ElementId::NamedInteger("queue".into(), id.0.unsigned_abs()))
-            .px_2()
-            .py_1p5()
-            .gap_2()
-            .items_start()
-            .rounded(theme.radius)
+            .group(group)
+            .relative()
+            .pl(px(11.))
+            .pr_3()
+            .py(px(10.))
+            .gap(px(11.))
             .cursor_pointer()
-            .when(rules == Some(false), |item| item.opacity(0.6))
-            .when(current, |item| item.bg(theme.sidebar_accent))
-            .when(!current, |item| {
-                item.hover(|item| item.bg(theme.list_hover))
+            .bg(behind)
+            .when(!first, |item| item.border_t_1().border_color(theme.border))
+            .when(!current, |item| item.hover(move |item| item.bg(hovered)))
+            .when(current, |item| {
+                item.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top(px(9.))
+                        .bottom(px(9.))
+                        .w(px(3.))
+                        .rounded_r(px(3.))
+                        .bg(theme.primary),
+                )
             })
-            .child(
-                Icon::new(Lucide::ListOrdered)
-                    .with_size(tokens::ICON)
-                    .mt_0p5()
-                    .text_color(if current {
-                        theme.primary
-                    } else {
-                        theme.muted_foreground
-                    }),
-            )
-            .child(
-                v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .gap_0p5()
-                    .child(name_line(&queue.settings.name, current, speed, count, cx))
-                    .child(doing(queue.id, rules, proxy, status, cx)),
-            )
+            .child(tile)
+            .child(queue_body(
+                &queue.settings.name,
+                &facts,
+                (alarm, line),
+                graph,
+                cx,
+            ))
             .map(|item| drops(item, id, index, &queue.settings.name, cx))
             .on_click(cx.listener(move |this, _, window, cx| this.show(view, window, cx)))
             .context_menu(move |menu, _, _| {
@@ -370,38 +411,6 @@ impl MainWindow {
     }
 }
 
-/// A queue's first line: its name, with its speed while it downloads, else how many it holds.
-fn name_line(name: &str, current: bool, speed: u64, count: usize, cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
-    let (figure, color) = if speed > 0 {
-        (text::speed(speed), theme.primary)
-    } else if count > 0 {
-        (count.to_string(), theme.muted_foreground)
-    } else {
-        (String::new(), theme.muted_foreground)
-    };
-    h_flex()
-        .gap_2()
-        .child(
-            div()
-                .flex_1()
-                .truncate()
-                .text_color(if current {
-                    theme.foreground
-                } else {
-                    theme.muted_foreground
-                })
-                .when(current, |name| name.font_weight(FontWeight::MEDIUM))
-                .child(name.to_owned()),
-        )
-        .child(
-            div()
-                .text_role(Role::Meta, cx)
-                .text_color(color)
-                .child(figure),
-        )
-}
-
 /// A queue's drag and drops: it drags to a new place, the default queue staying first, and takes
 /// queues dropped before it and downloads dropped into it.
 fn drops(
@@ -429,43 +438,199 @@ fn drops(
     )
 }
 
-/// A queue's second line: its rules mark, the saved proxy it uses (D73.13), and what it is doing.
-fn doing(
-    queue: QueueId,
-    rules: Option<bool>,
-    proxy: Option<String>,
-    status: String,
+/// A queue's tile: paused, downloading, waiting for its hours, or holding.
+fn queue_tile(queue: &Queue, facts: &QueueFacts, behind: Hsla, cx: &App) -> QueueTile {
+    let theme = cx.theme();
+    if queue.status.paused {
+        QueueTile::new(IconName::Pause, behind)
+    } else if facts.running > 0 {
+        QueueTile::new(IconName::Play, behind).tone(theme.primary)
+    } else if outside_schedule(queue).is_some() {
+        QueueTile::new(Icon::new(Lucide::Moon), behind).tone(theme.warning)
+    } else {
+        QueueTile::new(Icon::new(Lucide::ListOrdered), behind)
+    }
+}
+
+/// A queue's text: its name with a failure dot and its speed or count, its line with the speed
+/// graph, and while it downloads its progress.
+fn queue_body(
+    name: &str,
+    facts: &QueueFacts,
+    (alarm, line): (Option<String>, String),
+    graph: Option<Vec<u64>>,
     cx: &App,
 ) -> impl IntoElement {
     let theme = cx.theme();
-    h_flex()
-        .gap_1()
-        .text_role(Role::Meta, cx)
-        .when_some(rules, |line, enabled| {
-            line.child(
-                div()
-                    .px_1()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(theme.border)
-                    .child(if enabled { "Rules" } else { "Rules off" }),
-            )
-        })
-        .when_some(proxy, |line, proxy| {
-            line.child(
-                div()
-                    .id(gpui_kit::ElementId::NamedInteger(
-                        "queue-proxy".into(),
-                        queue.0.unsigned_abs(),
-                    ))
-                    .child(Icon::new(IconName::Globe).with_size(tokens::ICON_SMALL))
-                    .tooltip(move |window, cx| {
-                        gpui_kit::component::tooltip::Tooltip::new(format!("Proxy: {proxy}"))
-                            .build(window, cx)
-                    }),
-            )
-        })
-        .child(div().truncate().child(status))
+    let figure = if facts.speed > 0 {
+        Some((text::speed(facts.speed), theme.primary))
+    } else {
+        (facts.count > 0).then(|| (facts.count.to_string(), theme.muted_foreground))
+    };
+    v_flex()
+        .flex_1()
+        .min_w_0()
+        .gap(px(3.))
+        .child(
+            h_flex()
+                .gap_1p5()
+                .child(
+                    div()
+                        .flex_1()
+                        .truncate()
+                        .text_role(Role::Strong, cx)
+                        .child(name.to_owned()),
+                )
+                .when(facts.failed > 0, |line| {
+                    line.child(div().size(px(6.)).rounded_full().bg(theme.danger))
+                })
+                .when_some(figure, |line, (figure, color)| {
+                    line.child(
+                        div()
+                            .text_role(Role::Meta, cx)
+                            .text_color(color)
+                            .child(figure),
+                    )
+                }),
+        )
+        .child(
+            h_flex()
+                .gap_1()
+                .text_role(Role::Meta, cx)
+                .when_some(alarm, |line, alarm| {
+                    line.child(div().text_color(theme.danger).child(alarm))
+                })
+                .child(div().flex_1().truncate().child(line))
+                .when_some(graph, |line, speeds| {
+                    line.child(
+                        speed_graph(speeds, theme.primary)
+                            .w(px(48.))
+                            .h(px(14.))
+                            .flex_shrink_0(),
+                    )
+                }),
+        )
+        .when_some(
+            facts.per_mille.filter(|_| facts.running > 0),
+            |body, done| {
+                body.child(
+                    div()
+                        .mt_1()
+                        .h(px(3.))
+                        .rounded_full()
+                        .bg(theme.secondary)
+                        .child(
+                            div()
+                                .h_full()
+                                .rounded_full()
+                                .bg(theme.primary)
+                                .w(relative(f32::from(done) / 1000.)),
+                        ),
+                )
+            },
+        )
+}
+
+/// What a queue's row tells, counted from its downloads.
+#[derive(Default)]
+struct QueueFacts {
+    count: usize,
+    running: usize,
+    waiting: usize,
+    completed: usize,
+    failed: usize,
+    speed: u64,
+    /// Bytes left of what runs and waits, when every size is known.
+    left: Option<u64>,
+    /// How much of what runs and waits is done.
+    per_mille: Option<u16>,
+}
+
+impl QueueFacts {
+    fn of<'a>(rows: impl Iterator<Item = &'a DownloadSummary>) -> Self {
+        let mut facts = Self::default();
+        let (mut done, mut size, mut sized) = (0_u64, 0_u64, true);
+        for row in rows {
+            facts.count += 1;
+            facts.speed += row.speed;
+            let group = Group::of(row.status);
+            match row.status {
+                DownloadStatus::Completed => facts.completed += 1,
+                DownloadStatus::Failed => facts.failed += 1,
+                DownloadStatus::Queued => facts.waiting += 1,
+                _ if group == Group::Downloading => facts.running += 1,
+                _ => {}
+            }
+            if group == Group::Downloading || row.status == DownloadStatus::Queued {
+                match row.total {
+                    Some(total) => {
+                        size += total;
+                        done += row.done.min(total);
+                    }
+                    None => sized = false,
+                }
+            }
+        }
+        if sized && size > 0 {
+            facts.left = Some(size - done);
+            facts.per_mille = u16::try_from(u128::from(done) * 1000 / u128::from(size)).ok();
+        }
+        facts
+    }
+}
+
+/// A queue's line: what failed, in red, then what it is doing, and when quiet what sets it apart.
+fn summary(queue: &Queue, facts: &QueueFacts, proxy: Option<&str>) -> (Option<String>, String) {
+    let mark = || {
+        if let Some(proxy) = proxy {
+            Some(format!("via {proxy}"))
+        } else if let Setting::Own(limit) = queue.settings.speed_limit {
+            Some(format!("{} cap", text::speed(limit)))
+        } else if let Setting::Own(limit) = queue.settings.max_concurrent {
+            Some(format!("{limit} at once"))
+        } else {
+            None
+        }
+    };
+    let marked = |state: String| match mark() {
+        Some(mark) => format!("{state} · {mark}"),
+        None => state,
+    };
+    if queue.status.paused {
+        let line = if facts.count == 0 {
+            "Paused".to_owned()
+        } else {
+            format!("Paused · {} of {} done", facts.completed, facts.count)
+        };
+        return (None, line);
+    }
+    if facts.running > 0 {
+        let of = format!("{} of {}", facts.running, facts.running + facts.waiting);
+        let left = facts
+            .left
+            .filter(|_| facts.speed > 0)
+            .map(|left| format!(" · {} left", text::eta(left / facts.speed)));
+        return (None, format!("{of}{}", left.unwrap_or_default()));
+    }
+    if let Some(start) = outside_schedule(queue) {
+        let line = marked(format!("Starts {:02}:{:02}", start.hour, start.minute));
+        return (None, line);
+    }
+    if facts.waiting > 0 {
+        return (None, format!("{} waiting", facts.waiting));
+    }
+    if facts.failed > 0 {
+        return (
+            Some(format!("{} failed", facts.failed)),
+            format!("· {} done", facts.completed),
+        );
+    }
+    let state = match facts.count {
+        0 => "Empty".to_owned(),
+        count if facts.completed == count => "All done".to_owned(),
+        count => format!("{} of {count} done", facts.completed),
+    };
+    (None, marked(state))
 }
 
 /// When a queue outside its schedule starts next; `None` while it may run.
@@ -580,5 +745,64 @@ pub(super) fn group_icon(group: Group) -> Icon {
         Group::Paused => Icon::new(Lucide::CirclePause),
         Group::Finished => Icon::new(IconName::CircleCheck),
         Group::Cancelled => Icon::new(Lucide::Ban),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wirecatch_protocol::app::{QueueSettings, QueueStatus};
+
+    use super::*;
+
+    fn queue(paused: bool) -> Queue {
+        Queue {
+            id: QueueId(2),
+            is_default: false,
+            settings: QueueSettings::new("Night"),
+            status: QueueStatus {
+                paused,
+                ..QueueStatus::default()
+            },
+        }
+    }
+
+    #[test]
+    fn a_running_queue_tells_what_runs_and_the_time_left() {
+        let facts = QueueFacts {
+            count: 5,
+            running: 2,
+            waiting: 3,
+            speed: 1000,
+            left: Some(240_000),
+            ..QueueFacts::default()
+        };
+        assert_eq!(
+            summary(&queue(false), &facts, None),
+            (None, "2 of 5 · 4 min left".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_quiet_queue_tells_failures_first_and_else_what_sets_it_apart() {
+        let failed = QueueFacts {
+            count: 4,
+            completed: 3,
+            failed: 1,
+            ..QueueFacts::default()
+        };
+        assert_eq!(
+            summary(&queue(false), &failed, None),
+            (Some("1 failed".to_owned()), "· 3 done".to_owned())
+        );
+        let done = QueueFacts {
+            count: 3,
+            completed: 3,
+            ..QueueFacts::default()
+        };
+        assert_eq!(
+            summary(&queue(false), &done, Some("Home")).1,
+            "All done · via Home"
+        );
+        assert_eq!(summary(&queue(true), &done, None).1, "Paused · 3 of 3 done");
     }
 }

@@ -31,8 +31,9 @@ mod sort;
 mod title_bar;
 
 use std::cell::Cell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::time::Instant;
 
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::input::{InputEvent, InputState};
@@ -53,6 +54,7 @@ use wirecatch_protocol::desktop::Reveal;
 
 use self::selection::Step;
 use crate::library::{Asked, Library};
+use crate::ui::speed_graph::SpeedHistory;
 use crate::ui::{Role, Typed as _, layout};
 use crate::{add_dialog, lifecycle, links, theme};
 
@@ -300,6 +302,8 @@ pub struct MainWindow {
     search: Entity<InputState>,
     /// Every queue shows in the navigation, not only the first few.
     all_queues: bool,
+    /// Each running queue's speeds, for its graph.
+    queue_speeds: HashMap<QueueId, SpeedHistory>,
     /// The row under the pointer, which shows its buttons.
     hovered: Option<DownloadId>,
     scroll: UniformListScrollHandle,
@@ -397,6 +401,7 @@ impl MainWindow {
             if !library.read(cx).startup_notices.is_empty() {
                 this.tell_startup_notices(window, cx);
             }
+            this.keep_queue_speeds(cx);
             cx.notify();
         });
         if !library.read(cx).startup_notices.is_empty() {
@@ -455,9 +460,28 @@ impl MainWindow {
             scroll: UniformListScrollHandle::new(),
             settings_on: settings::OpenOn::default(),
             all_queues: false,
+            queue_speeds: HashMap::new(),
             focus,
             search,
             _subscriptions: vec![follow_system, redraw, searched, updates],
+        }
+    }
+
+    /// Samples each running queue's speed, and forgets the speeds of a queue that stopped.
+    fn keep_queue_speeds(&mut self, cx: &App) {
+        let mut speeds: HashMap<QueueId, (u64, bool)> = HashMap::new();
+        for row in &self.library.read(cx).downloads {
+            let (speed, running) = speeds.entry(row.queue).or_default();
+            *speed += row.speed;
+            *running |= Group::of(row.status) == Group::Downloading;
+        }
+        let now = Instant::now();
+        self.queue_speeds
+            .retain(|queue, _| speeds.get(queue).is_some_and(|(_, running)| *running));
+        for (queue, (speed, running)) in speeds {
+            if running {
+                self.queue_speeds.entry(queue).or_default().keep(speed, now);
+            }
         }
     }
 
