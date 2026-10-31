@@ -299,7 +299,7 @@ impl MainWindow {
 
     /// What a queue is doing right now, and when idle how many it may run at once when it has
     /// its own limit.
-    fn describe(&self, queue: &Queue, cx: &App) -> String {
+    pub(super) fn describe(&self, queue: &Queue, cx: &App) -> String {
         let rows: Vec<_> = self
             .library
             .read(cx)
@@ -525,7 +525,7 @@ fn reorder(label: &'static str, icon: Icon, order: Vec<QueueId>) -> PopupMenuIte
         })
 }
 
-fn group_icon(group: Group) -> Icon {
+pub(super) fn group_icon(group: Group) -> Icon {
     match group {
         Group::Attention => Icon::new(IconName::CircleAlert),
         Group::Downloading => Icon::new(Lucide::Download),

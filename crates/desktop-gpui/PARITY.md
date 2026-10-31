@@ -13,7 +13,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Search, focused with Ctrl+K: names and links, a search unfolds groups, "N downloads matching …", the view in the placeholder.
 - [x] Search: Escape clears, Down moves into the list; the settings screen searches settings in its own navigation.
 - [ ] The waiting questions, with their count (`show_question_windows`).
-- [ ] Navigation toggle; collapsed rail and narrow-window drawer (D91).
+- [x] Navigation toggle; collapsed rail and narrow-window drawer (D91).
 - [x] Navigation: All downloads, the six status views with counts, the queues with count or speed.
 - [x] Queues: the first three, "N more queues" / "Fewer queues"; the Rules badge, status text, dimmed when Rules are off.
 - [x] Queues: "+ New queue".
