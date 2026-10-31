@@ -19,12 +19,12 @@ import {
 } from '@/lib/browser/adapters';
 import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
 import { installDiagnostics } from '@/lib/diag/install';
-import { fallback, log } from '@/lib/diag/log';
+import { fallback } from '@/lib/diag/log';
 import type { MenuTab } from '@/lib/hub/deps';
 import { Hub } from '@/lib/hub/hub';
+import { announcer } from '@/lib/media/announce';
 import { MediaCenter, type MediaSendResult } from '@/lib/media/center';
 import { registerMediaListeners } from '@/lib/media/listen';
-import { MEDIA_ANNOUNCE, type AnnounceMessage } from '@/lib/media/messages';
 import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
 import { acceptsPopupPort } from '@/lib/messages';
@@ -78,19 +78,10 @@ function registerMedia(hub: Hub, media: MediaCenter, watcher: MediaWatcher): voi
     {
       watcher,
       media,
-      announce: (tabId, result) => {
-        // The page's top frame shows it next to where the person is looking; pages without
-        // the content script (browser pages, other extensions) get it in the popup instead.
-        const message: AnnounceMessage = {
-          type: MEDIA_ANNOUNCE,
-          ok: result.ok,
-          message: result.message,
-        };
-        browser.tabs.sendMessage(tabId, message, { frameId: 0 }).catch((error: unknown) => {
-          log.debug('media', 'The page cannot show the answer; the popup shows it', error);
-          hub.notify(result.ok ? 'warning' : 'error', result.message);
-        });
-      },
+      announce: announcer({
+        sendMessage: (tabId, message, options) => browser.tabs.sendMessage(tabId, message, options),
+        notify: (tone, message) => hub.notify(tone, message),
+      }),
     },
   );
 }
