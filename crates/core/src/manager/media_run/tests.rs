@@ -526,3 +526,38 @@ fn a_file_keeps_its_extension_only_when_it_is_a_media_one() {
         );
     }
 }
+
+/// A small file past its limit is refused before any of it is written, however fast it arrives.
+#[tokio::test]
+async fn a_small_file_past_its_limit_is_never_written() {
+    use wirecatch_test_support::http::{Config, TestServer};
+    let server = TestServer::start(vec![b'x'; 64 * 1024], Config::default()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let job = Job {
+        output: dir.path().join("out.mp4"),
+        url: server.url("/watch"),
+        origin: Origin::default(),
+        chosen_by: ChosenBy::Person,
+        tools: None,
+        options: DownloadOptions::default(),
+        temp_dir: dir.path().to_path_buf(),
+        timeout: Duration::from_secs(1),
+        refresh_delays: Arc::new([]),
+        clock: Arc::new(crate::clock::SystemClock),
+        reserve: Arc::new(|_: &Path, _| true),
+        file_work: FileWork::new(),
+        taken: Taken::KeepBoth,
+    };
+    let path = dir.path().join("sub-0.vtt");
+    let fetched = super::extras::fetch_small(
+        &job,
+        &server.url("/sub.vtt"),
+        &std::collections::HashMap::new(),
+        &path,
+        1024,
+        &CancellationToken::new(),
+    )
+    .await;
+    assert!(matches!(fetched, super::extras::Fetch::Failed(_)));
+    assert!(!path.exists(), "the file past its limit was written");
+}
