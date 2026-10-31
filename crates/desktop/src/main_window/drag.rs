@@ -76,8 +76,8 @@ impl MainWindow {
         }
     }
 
-    /// Rows dropped on row `target` of a queue's line land just before it.
-    pub(super) fn drop_rows_before(
+    /// Rows dropped on row `target` of a queue's line land where they were dropped.
+    pub(super) fn drop_rows_on(
         &mut self,
         target: DownloadId,
         dragged: &DraggedRows,
@@ -114,8 +114,8 @@ impl MainWindow {
         });
     }
 
-    /// A queue dropped on queue `target` lands just before it; nothing goes before the default.
-    pub(super) fn drop_queue_before(
+    /// A queue dropped on queue `target` lands where it was dropped; nothing goes before the default.
+    pub(super) fn drop_queue_on(
         &mut self,
         target: QueueId,
         dragged: &DraggedQueue,

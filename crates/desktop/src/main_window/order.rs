@@ -65,15 +65,18 @@ pub fn nudged(line: &[DownloadId], chosen: &[DownloadId], up: bool) -> Option<Ve
     (next != line).then_some(next)
 }
 
-/// `line` with the `moving` items put just before `before`, or at the end when it is `None` or
-/// not in the line, keeping their own order; `None` when the order would not change.
-pub fn placed<T: Copy + PartialEq>(line: &[T], moving: &[T], before: Option<T>) -> Option<Vec<T>> {
+/// `line` with the `moving` items dropped on `target`, keeping their own order: before it when
+/// they came from below, after it when they came from above, so a drop always lands where the
+/// pointer let go. `None` (or a target not in the line) puts them at the end; `None` is also the
+/// answer when the order would not change.
+pub fn placed<T: Copy + PartialEq>(line: &[T], moving: &[T], target: Option<T>) -> Option<Vec<T>> {
     let moved: Vec<T> = line
         .iter()
         .copied()
         .filter(|id| moving.contains(id))
         .collect();
-    if moved.is_empty() {
+    let first = line.iter().position(|id| moving.contains(id))?;
+    if target.is_some_and(|target| moving.contains(&target)) {
         return None;
     }
     let mut next: Vec<T> = line
@@ -81,8 +84,12 @@ pub fn placed<T: Copy + PartialEq>(line: &[T], moving: &[T], before: Option<T>) 
         .copied()
         .filter(|id| !moving.contains(id))
         .collect();
-    let at = before
-        .and_then(|before| next.iter().position(|id| *id == before))
+    let at = target
+        .and_then(|target| {
+            let rest = next.iter().position(|id| *id == target)?;
+            let below = line.iter().position(|id| *id == target)? > first;
+            Some(if below { rest + 1 } else { rest })
+        })
         .unwrap_or(next.len());
     next.splice(at..at, moved);
     (next != line).then_some(next)
@@ -123,18 +130,25 @@ mod tests {
     }
 
     #[test]
-    fn dropped_items_land_before_their_target_in_their_own_order() {
+    fn dropped_items_land_where_they_were_dropped_in_their_own_order() {
         let line = ids(&[1, 2, 3, 4, 5]);
         assert_eq!(
             placed(&line, &ids(&[4, 2]), Some(DownloadId(1))),
-            Some(ids(&[2, 4, 1, 3, 5]))
+            Some(ids(&[2, 4, 1, 3, 5])),
+            "dragged up: before the row dropped on"
         );
-        assert_eq!(placed(&line, &ids(&[1]), None), Some(ids(&[2, 3, 4, 5, 1])));
         assert_eq!(
             placed(&line, &ids(&[2]), Some(DownloadId(3))),
-            None,
-            "no change"
+            Some(ids(&[1, 3, 2, 4, 5])),
+            "dragged down: after the row dropped on"
         );
+        assert_eq!(
+            placed(&line, &ids(&[1]), Some(DownloadId(5))),
+            Some(ids(&[2, 3, 4, 5, 1])),
+            "dragged down to the last row: to the end"
+        );
+        assert_eq!(placed(&line, &ids(&[1]), None), Some(ids(&[2, 3, 4, 5, 1])));
+        assert_eq!(placed(&line, &ids(&[3]), Some(DownloadId(3))), None);
         assert_eq!(placed(&line, &ids(&[9]), None), None);
     }
 }
