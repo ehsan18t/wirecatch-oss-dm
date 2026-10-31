@@ -1,4 +1,4 @@
-# Runs the quality gate (scripts/gate.mjs) on Windows and Ubuntu. Every check and every tool version lives in the gate script; this file installs what a runner lacks and decides where each group runs. Together the jobs run what `pnpm gate --no-desktop` runs: on this branch the Tauri app is left out (D100).
+# Runs the quality gate (scripts/gate.mjs) on Windows and Ubuntu. Every check and every tool version lives in the gate script; this file installs what a runner lacks and decides where each group runs. Together the jobs run what `pnpm gate` runs.
 # Actions are pinned to commit SHAs; the version each SHA belongs to is in the comment.
 name: CI
 
@@ -22,13 +22,13 @@ env:
   # Line numbers in backtraces without full debug info, which is most of what linking costs on Windows.
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   # The oldest Node that "engines" in package.json allows, which every job runs.
-  NODE_VERSION: "22"
+  NODE_VERSION: '22'
   # The Node developers run, which the JavaScript job also runs on one system: runtimes differ in what their URL parser accepts (D68).
-  NODE_NEWEST: "24"
+  NODE_NEWEST: '24'
   # The first part of every Rust cache key. Raise it when a build setting changes what the caches hold so much that restoring an older one costs more than it saves.
   CACHE_PREFIX: v1-rust
   # Free disk below which a Rust job warns: the dependency tree grows, and a link that runs out of disk fails with a bus error rather than a clear message.
-  DISK_WARNING_GIB: "4"
+  DISK_WARNING_GIB: '4'
 
 # Every job has a time limit well above its slowest healthy run, so a stall fails in minutes instead of holding a run for an hour (D57). Rust's leaves room for a build from an empty cache, which every new stable Rust release brings.
 jobs:
@@ -108,9 +108,9 @@ jobs:
           echo "WIRECATCH_TEST_FFMPEG=$ffmpeg" >> "$GITHUB_ENV"
           echo "WIRECATCH_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
 
-      # Every test binary runs even after one fails, so one failure cannot hide what the others would show. The Tauri app no longer changes on this branch, so it is left out (D100).
+      # Every test binary runs even after one fails, so one failure cannot hide what the others would show.
       - name: Gate (Rust ${{ matrix.part }})
-        run: node scripts/gate.mjs rust-${{ matrix.part }} --no-fail-fast --no-desktop
+        run: node scripts/gate.mjs rust-${{ matrix.part }} --no-fail-fast
 
       # The published engine: its package and its minimum Rust version. Once per run is enough; its http3 feature is checked in the Rust group, on every system.
       - name: Gate (engine release checks)
@@ -183,7 +183,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # `pnpm protocol:generate` runs the wirecatch-protocol tests to export the types, and the Tauri version check reads Cargo.lock through cargo. Both run on Linux only, where they answer the same as anywhere, so Windows needs no Rust here.
+      # `pnpm protocol:generate` runs the wirecatch-protocol tests to export the types. It runs on Linux only, where it answers the same as anywhere, so Windows needs no Rust here.
       - name: Install Rust
         if: runner.os == 'Linux'
         run: rustup toolchain install
@@ -208,7 +208,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Gate (JavaScript)
-        run: node scripts/gate.mjs js --no-desktop ${{ runner.os != 'Linux' && '--skip=protocol' || '' }}
+        run: node scripts/gate.mjs js ${{ runner.os != 'Linux' && '--skip=protocol' || '' }}
 
       # The commits the commit check covers: a pull request's own, or the ones a push brought. A new branch or a manual run has no earlier commit to compare with, so it checks against main. After a force push the earlier commit is in no branch, so it is fetched by its hash; when GitHub no longer has it, only the newest commit is checked.
       - name: Choose the commits to check
@@ -236,7 +236,7 @@ jobs:
       # The repository rules read files, manifests and commits, and answer the same on every system, so they run once.
       - name: Gate (repository rules)
         if: runner.os == 'Linux' && matrix.node == 'oldest'
-        run: node scripts/gate.mjs repo --no-desktop
+        run: node scripts/gate.mjs repo
 
   # The checks in a real browser, alongside the JavaScript job: they take minutes and need no Rust. They run on both systems because each lays text out in its own fonts.
   browser:
@@ -264,8 +264,8 @@ jobs:
       # The checks skip only where their browser is not installed. Both runners have Edge, so a skip here would hide a broken check: it fails instead.
       - name: Gate (browser)
         env:
-          WIRECATCH_REQUIRE_BROWSER: "1"
-        run: node scripts/gate.mjs browser --no-desktop
+          WIRECATCH_REQUIRE_BROWSER: '1'
+        run: node scripts/gate.mjs browser
 
       # What a failed browser test saw: Playwright's snapshot of the page and its error context, for a failure that does not happen locally.
       - name: Keep the failed browser tests' results

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 # New crates under crates/ join automatically. The desktop app's Rust side is listed explicitly.
-members = ["crates/*", "apps/desktop/src-tauri"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"

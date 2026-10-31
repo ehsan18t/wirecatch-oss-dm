@@ -7,7 +7,6 @@ import {
   typeaheadIndex,
   TYPEAHEAD_RESET_MS,
 } from './list-nav';
-import { fraction, wholePercent } from './percent';
 import { cn } from './cn';
 import { closestElement, findElement, findElements } from './dom';
 import { textIfCut } from '../attachments/tooltip.svelte';
@@ -93,15 +92,6 @@ describe('flyout placement', () => {
       left: 10,
       above: false,
     });
-  });
-});
-
-describe('percent', () => {
-  it('clamps and floors, so a bar never reads 100% early', () => {
-    expect(fraction(5, 10)).toBe(0.5);
-    expect(fraction(15, 10)).toBe(1);
-    expect(fraction(1, 0)).toBe(0);
-    expect(wholePercent(0.999)).toBe(99);
   });
 });
 

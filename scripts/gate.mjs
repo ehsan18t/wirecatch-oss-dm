@@ -12,7 +12,7 @@
 //   node scripts/gate.mjs --list             list checks and groups
 //
 // Options, before or after the names:
-//   --no-desktop    leave out the Tauri desktop app, its crate and its package: for machines without its system libraries, and on the gpui branch, where it no longer changes (it says so when it does)
+//   --no-desktop    leave out the desktop app's crate: for machines without the system libraries GPUI links against (it says so when it does)
 //   --no-fail-fast  run every Rust test binary even after one fails
 //   --skip=CHECK    leave out one check the named groups hold (repeatable), as CI's Windows JavaScript job leaves out `protocol`, which Linux runs
 //
@@ -26,7 +26,6 @@ import { clippyLinux } from './gate/linux.mjs';
 import { GateError, options } from './gate/process.mjs';
 import { DESKTOP_CRATE, installTools, RUST_CHECKS, toolSpecs } from './gate/rust.mjs';
 import { SUFFIX_LIST_CHECKS } from './gate/suffix-list.mjs';
-import { TAURI_CHECKS } from './gate/tauri.mjs';
 import { TEST_TIMING_CHECKS } from './gate/test-timing.mjs';
 import { TEXT_CHECKS } from './gate/text.mjs';
 
@@ -47,7 +46,6 @@ const CHECKS = {
   ...BROWSER_CHECKS,
   ...TEXT_CHECKS,
   ...COMMIT_CHECKS,
-  ...TAURI_CHECKS,
   ...SUFFIX_LIST_CHECKS,
   product: productCheck('product'),
   'product-placeholders': productCheck('product-placeholders'),
@@ -72,8 +70,8 @@ const GROUPS = {
   release: ['engine-package', 'msrv'],
   js: ['js-policy', 'protocol', 'js-check', 'js-lint', 'js-test', 'js-build'],
   // Apart from `js` so CI runs them alongside it: they take minutes and need no Rust. They skip themselves, saying so, only where their browser is not installed (WIRECATCH_REQUIRE_BROWSER=1 makes that fail too).
-  browser: ['e2e-gallery', 'e2e-desktop', 'e2e-extension'],
-  repo: ['text', 'exceptions', 'tauri-pairs', 'product', 'commits'],
+  browser: ['e2e-extension'],
+  repo: ['text', 'exceptions', 'product', 'commits'],
   'supply-chain': ['unused-deps', 'deny', 'npm-audit'],
   // Only when publishing a release, never in DEFAULT: the product identity still holds placeholders until the publisher's details are decided (D29). `product` first, so committed generated files are what is checked. Every step that publishes runs this group first.
   publish: ['product', 'product-placeholders'],
@@ -125,7 +123,7 @@ async function main(rawArgs) {
   }
   if (!options.desktop)
     console.log(
-      `Leaving out ${DESKTOP_CRATE} and its package (--no-desktop). This run does not cover the Tauri desktop app.`,
+      `Leaving out ${DESKTOP_CRATE} (--no-desktop). This run does not cover the desktop app.`,
     );
   const command = COMMANDS[names[0]];
   if (command) {

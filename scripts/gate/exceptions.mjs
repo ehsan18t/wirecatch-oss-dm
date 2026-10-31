@@ -7,11 +7,6 @@ import { rustLintAttributes } from './rust-attributes.mjs';
  * The only places a lint is switched off, each listed with its reason in docs/AUDIT.md W14. An entry is one attribute or comment, named by its file and exactly the lints it switches off, so it may move within its file; a new one, another lint, or a second one in the same file fails the `exceptions` check until it is reasoned about and listed here and in AUDIT.
  */
 const LINT_EXCEPTIONS = [
-  {
-    id: 'E1',
-    file: 'apps/desktop/src/lib/backend/mock/rng.ts',
-    lints: ['wirecatch/no-magic-numbers'],
-  },
   { id: 'E3', file: 'crates/engine/src/transport.rs', lints: ['clippy::large_enum_variant'] },
   { id: 'E4', file: 'crates/protocol/src/app.rs', lints: ['clippy::struct_excessive_bools'] },
   {
@@ -35,27 +30,7 @@ const LINT_EXCEPTIONS = [
     file: 'crates/engine/src/numeric.rs',
     lints: ['clippy::cast_possible_truncation', 'clippy::cast_sign_loss'],
   },
-  {
-    id: 'E9',
-    file: 'apps/desktop/src/ui/download/FileQuestion.svelte',
-    lints: ['a11y_no_noninteractive_element_interactions'],
-  },
-  {
-    id: 'E10',
-    file: 'apps/desktop/src/ui/download/MediaQuestion.svelte',
-    lints: ['a11y_no_noninteractive_element_interactions'],
-  },
-  {
-    id: 'E11',
-    file: 'apps/desktop/src/ui/download/ProgressView.svelte',
-    lints: ['a11y_no_static_element_interactions'],
-  },
   { id: 'E12', file: 'crates/addons/src/manifest.rs', lints: ['clippy::expect_used'] },
-  {
-    id: 'E13',
-    file: 'apps/desktop/src/ui/download/WindowFrame.svelte',
-    lints: ['a11y_no_noninteractive_tabindex'],
-  },
   {
     id: 'E14',
     file: 'apps/extension/src/lib/diag/secrets.ts',

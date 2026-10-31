@@ -11,7 +11,7 @@ export default wirecatch({
   svelteConfig,
   layers: [
     {
-      // Icons and form controls go through the design system's, as in the desktop app, so nothing draws the browser's own select, checkbox or time picker (D48).
+      // Icons and form controls go through the design system's, so nothing draws the browser's own select, checkbox or time picker (D48).
       files: ['src/**/*.svelte', 'entrypoints/**/*.svelte'],
       rules: {
         'wirecatch/use-ui-primitives': [

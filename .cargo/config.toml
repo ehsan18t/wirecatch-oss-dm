@@ -7,5 +7,5 @@ TS_RS_EXPORT_DIR = { value = "target/ts-rs", relative = true }
 incremental = false
 
 [alias]
-# The GPUI app with GPUI optimised; see `[profile.ui]` in Cargo.toml.
-ui = "run -p wirecatch-desktop-gpui --profile ui"
+# The desktop app with GPUI optimised; see `[profile.ui]` in Cargo.toml.
+ui = "run -p wirecatch-desktop --profile ui"

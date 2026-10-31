@@ -2,26 +2,16 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { jsPolicy, lintTargets } from './js-policy.mjs';
-import { capture, GateError, options, pnpm, ROOT, run } from './process.mjs';
+import { capture, GateError, pnpm, ROOT, run } from './process.mjs';
 
 const GENERATED_TYPES = 'packages/protocol/src';
 /** The generated types of each released protocol version, copied once when it was released (D32.8). */
 const RELEASED_SNAPSHOTS = 'crates/protocol/released';
 /** The branch whose snapshots are released: one it has can never change. */
 const RELEASED_BASE = 'origin/main';
-/** The Tauri app's package and its folder, left out with `--no-desktop` (D100). */
-const DESKTOP_PACKAGE = '@wirecatch/desktop';
-const DESKTOP_FOLDER = 'apps/desktop';
-
-/** `pnpm -r` over every package, or every one but the Tauri app's with `--no-desktop`. */
-function eachPackage(...args) {
-  const filter = options.desktop ? [] : ['--filter', `!${DESKTOP_PACKAGE}`];
-  pnpm('-r', ...filter, ...args);
-}
-
 function lint() {
-  const { root, formatted } = lintTargets(options.desktop ? [] : [DESKTOP_FOLDER]);
-  eachPackage('exec', 'eslint', '.', '--max-warnings', '0');
+  const { root, formatted } = lintTargets();
+  pnpm('-r', 'exec', 'eslint', '.', '--max-warnings', '0');
   pnpm('exec', 'eslint', ...root, '--max-warnings', '0');
   pnpm('exec', 'prettier', '--check', ...formatted);
 }
@@ -87,13 +77,13 @@ export const JS_CHECKS = {
     releasedSnapshotsKept();
   },
   'js-policy': jsPolicy,
-  'js-check': () => eachPackage('--if-present', 'check'),
+  'js-check': () => pnpm('-r', '--if-present', 'check'),
   'js-lint': lint,
   'js-test': () => {
-    eachPackage('--if-present', 'test');
+    pnpm('-r', '--if-present', 'test');
     run('node', ['--test', 'scripts/**/*.test.mjs']);
   },
-  'js-build': () => eachPackage('--if-present', 'build'),
+  'js-build': () => pnpm('-r', '--if-present', 'build'),
   // Ignored advisories, each with its reason, live in `auditConfig` in pnpm-workspace.yaml.
   'npm-audit': () => pnpm('audit'),
 };

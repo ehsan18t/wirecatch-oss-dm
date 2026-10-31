@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "GPL-3.0-only",
-  "description": "The design system the desktop app and the extension share: tokens, themes, accents, motion, primitives and the window shell.",
+  "description": "The extension's design system: tokens, themes, accents, motion and primitives.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

@@ -19,14 +19,12 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { bridgeCargoArgs } from '../apps/desktop/scripts/bridge-args.mjs';
 import { ROOT } from './gate/process.mjs';
 import { fillTemplate } from './product/manifests.mjs';
 import { readProduct } from './product/read.mjs';
 
-const PACKAGING = join(ROOT, 'crates', 'desktop-gpui', 'packaging');
-const ICONS = join(ROOT, 'apps', 'desktop', 'src-tauri', 'icons');
-const SIDEBAR = join(ROOT, 'apps', 'desktop', 'src-tauri', 'windows', 'installer-sidebar.bmp');
+const PACKAGING = join(ROOT, 'crates', 'desktop', 'packaging');
+const ICONS = join(ROOT, 'crates', 'desktop', 'assets', 'icons');
 const OUT = join(ROOT, 'target', 'packages');
 const TOOLS = join(ROOT, 'target', 'tools');
 
@@ -123,35 +121,24 @@ function build(triple) {
   } catch {
     fail('The product identity is out of date; see the message above.');
   }
-  const bridge = bridgeCargoArgs(true);
-  if (bridge.some((arg) => /^(?:--features|--all-features|-F)$/.test(arg))) {
-    fail(
-      'A packaged bridge must never be built with a cargo feature (test-overrides is for tests only).',
-    );
-  }
   const env = { ...process.env };
   // The Visual C++ runtime is linked in, so the app runs on a Windows without it installed (D33).
   if (triple.endsWith('-windows-msvc')) {
     env.RUSTFLAGS = `${env.RUSTFLAGS ?? ''} -C target-feature=+crt-static`.trim();
   }
-  run('cargo', [...bridge, '-p', 'wirecatch-desktop-gpui', '--locked', '--target', triple], {
-    env,
-  });
+  // No cargo feature: the bridge's one feature, test-overrides, is for tests only (D22).
+  const crates = ['-p', 'wirecatch-desktop', '-p', 'wirecatch-bridge'];
+  run('cargo', ['build', '--release', '--locked', ...crates, '--target', triple], { env });
   const dir = process.env.CARGO_TARGET_DIR ?? join(ROOT, 'target');
   return join(dir, triple, 'release');
 }
 
-/** The app and the bridge under the names the product gives them, which they find each other by (D19). */
+/** The app and the bridge side by side, where they find each other by name (D19). */
 function stageBinaries(product, built, into, exe) {
   mkdirSync(into, { recursive: true });
-  copyFileSync(
-    join(built, `wirecatch-desktop-gpui${exe}`),
-    join(into, `${product.executables.app}${exe}`),
-  );
-  copyFileSync(
-    join(built, `${product.executables.bridge}${exe}`),
-    join(into, `${product.executables.bridge}${exe}`),
-  );
+  for (const name of [product.executables.app, product.executables.bridge]) {
+    copyFileSync(join(built, `${name}${exe}`), join(into, `${name}${exe}`));
+  }
 }
 
 function windows(product, built, arch) {
@@ -181,7 +168,6 @@ function windows(product, built, arch) {
     BridgeExe: product.executables.bridge,
     Arch: arch === 'x64' ? 'x64compatible' : 'arm64',
     Icon: join(ICONS, 'icon.ico'),
-    Sidebar: SIDEBAR,
     Stage: stage,
     Output: OUT,
     OutputName: `${product.product.name}-${version}-windows-${arch}-setup`,

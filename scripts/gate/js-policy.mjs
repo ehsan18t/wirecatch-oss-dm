@@ -57,17 +57,12 @@ function workspacePackages() {
 }
 
 /**
- * What the root lints and formats: ESLint runs in every workspace package, then on `root`, no warnings allowed, then Prettier once over `formatted`. `skipped` leaves out package folders (the Tauri app's with `--no-desktop`, D100).
+ * What the root lints and formats: ESLint runs in every workspace package, then on `root`, no warnings allowed, then Prettier once over `formatted`.
  *
  * ESLint runs once per package, in that package's folder, never once over the whole repository: in one process, linting a file of one package first takes the type information of `.svelte` files in another (D42).
  */
-export function lintTargets(skipped = []) {
-  const parents = workspaceParents();
-  const formatted =
-    skipped.length === 0
-      ? parents
-      : workspacePackages().filter((folder) => !skipped.includes(folder));
-  return { root: ROOT_LINTED, formatted: [...formatted, ...ROOT_LINTED] };
+export function lintTargets() {
+  return { root: ROOT_LINTED, formatted: [...workspaceParents(), ...ROOT_LINTED] };
 }
 
 /**
