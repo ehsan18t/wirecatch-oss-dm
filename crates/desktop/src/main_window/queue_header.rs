@@ -1,9 +1,9 @@
 //! Above a queue's own list: its name and description, when it runs and its limits, one line on
-//! what is happening now, and the queue's actions: Start now outside its hours, Pause or Resume,
-//! Edit. Alt+Up and Alt+Down move the selection in its line.
+//! what is happening now, and the queue's actions: Rules on or off for a queue with rules, Start
+//! now outside its hours, Pause or Resume, Edit. Alt+Up and Alt+Down move the selection in its line.
 
 use gpui_kit::assets::IconName as Lucide;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::{Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -11,6 +11,7 @@ use gpui_kit::{
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadSummary, Queue, QueueSettings};
+use wirecatch_protocol::rules::AddDownloads;
 use wirecatch_shell::api;
 
 use super::{Group, MainWindow, View, order, sidebar};
@@ -32,7 +33,7 @@ impl MainWindow {
             .pt_4()
             .pb_2()
             .gap_4()
-            .items_end()
+            .items_start()
             .child(
                 v_flex()
                     .flex_1()
@@ -123,19 +124,57 @@ impl MainWindow {
     }
 }
 
-/// Start now outside the queue's hours, Pause or Resume, and Edit.
+/// Whether a queue's rules are on; `None` when it has none.
+pub(super) fn rules_on(queue: &Queue) -> Option<bool> {
+    match &queue.settings.add_downloads {
+        AddDownloads::Auto(rules) => Some(rules.enabled),
+        AddDownloads::Manual => None,
+    }
+}
+
+/// Turns a queue's rules on or off; off keeps them for when they are on again (D72.4).
+pub(super) fn set_rules(queue: &Queue, on: bool, window: &Window, cx: &mut App) {
+    let mut settings = queue.settings.clone();
+    let AddDownloads::Auto(rules) = &mut settings.add_downloads else {
+        return;
+    };
+    rules.enabled = on;
+    let id = queue.id;
+    act(window.window_handle(), cx, move |manager| {
+        api::update_queue(manager, id, settings)
+    });
+}
+
+/// Rules on or off, Start now outside the queue's hours, Pause or Resume, and Edit.
 fn queue_actions(queue: &Queue, cx: &mut Context<'_, MainWindow>) -> impl IntoElement {
     let id = queue.id;
     let outside = sidebar::outside_schedule(queue).is_some() && !queue.status.paused;
     let paused = queue.status.paused;
     h_flex()
         .flex_shrink_0()
-        .gap_1()
+        .gap_2()
+        .when_some(rules_on(queue), |bar, on| {
+            let queue = queue.clone();
+            bar.child(
+                Button::new("queue-rules")
+                    .small()
+                    .outline()
+                    .when(on, ButtonVariants::primary)
+                    .icon(Icon::new(if on { Lucide::Zap } else { Lucide::ZapOff }))
+                    .label(if on { "Rules on" } else { "Rules off" })
+                    .tooltip(if on {
+                        "New downloads that match this queue's rules go here. Click to turn them off."
+                    } else {
+                        "New downloads skip this queue. Click to turn its rules on."
+                    })
+                    .on_click(move |_, window, cx| set_rules(&queue, !on, window, cx)),
+            )
+        })
         .when(outside, |bar| {
             bar.child(
                 Button::new("queue-start-now")
                     .small()
-                    .ghost()
+                    .outline()
                     .icon(IconName::Play)
                     .label("Start now")
                     .on_click(move |_, window, cx| {
@@ -148,7 +187,7 @@ fn queue_actions(queue: &Queue, cx: &mut Context<'_, MainWindow>) -> impl IntoEl
         .child(
             Button::new("queue-pause")
                 .small()
-                .ghost()
+                .outline()
                 .icon(if paused {
                     IconName::Play
                 } else {
@@ -168,7 +207,7 @@ fn queue_actions(queue: &Queue, cx: &mut Context<'_, MainWindow>) -> impl IntoEl
         .child(
             Button::new("queue-edit")
                 .small()
-                .ghost()
+                .outline()
                 .icon(Icon::new(Lucide::Pencil))
                 .label("Edit queue")
                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -177,14 +216,20 @@ fn queue_actions(queue: &Queue, cx: &mut Context<'_, MainWindow>) -> impl IntoEl
         )
 }
 
-/// When the queue runs and its own limits, said once.
+/// What its rules add, when it runs and its own limits, said once.
 fn facts(queue: &Queue) -> String {
     let when = if queue.status.paused {
         "Paused".to_owned()
     } else {
         text::schedule(queue.settings.schedule.as_ref())
     };
-    std::iter::once(when)
+    let rules = match rules_on(queue) {
+        Some(false) => Some("New downloads skip this queue".to_owned()),
+        _ => text::rules_fact(&queue.settings.add_downloads),
+    };
+    rules
+        .into_iter()
+        .chain(std::iter::once(when))
         .chain(limits(&queue.settings))
         .collect::<Vec<_>>()
         .join(" · ")
