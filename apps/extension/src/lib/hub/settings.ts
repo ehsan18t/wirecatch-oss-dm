@@ -15,7 +15,9 @@ export type SettingsView = Pick<Snapshot, 'settings' | 'controls' | 'queues'>;
 export class KnownSettings {
   readonly #deps: Pick<HubDeps, 'cache' | 'mediaButtonSetting'>;
   /** Called after every change the popup should see. */
-  readonly #changed: () => void;
+  readonly #listeners: (() => void)[] = [];
+  readonly #ready: Promise<void>;
+  #markReady: () => void = () => undefined;
   #live: ExtensionSettings | null = null;
   #controls: BrowserControls | null = null;
   #queues: QueueSummary[] = [];
@@ -23,9 +25,21 @@ export class KnownSettings {
   /** The "Show download button on videos" value last told to the media buttons. */
   #buttonSetting: boolean | null = null;
 
-  constructor(deps: Pick<HubDeps, 'cache' | 'mediaButtonSetting'>, changed: () => void) {
+  constructor(deps: Pick<HubDeps, 'cache' | 'mediaButtonSetting'>) {
     this.#deps = deps;
-    this.#changed = changed;
+    this.#ready = new Promise((resolve) => {
+      this.#markReady = resolve;
+    });
+  }
+
+  /** Calls `listener` after every change the popup should see. */
+  onChange(listener: () => void): void {
+    this.#listeners.push(listener);
+  }
+
+  /** Resolves once the session copy was read (`loaded`), so nothing is decided without it. */
+  get ready(): Promise<void> {
+    return this.#ready;
   }
 
   /** The connected app's settings; null while it is not connected. */
@@ -48,6 +62,12 @@ export class KnownSettings {
     return this.known()?.show_media_button ?? true;
   }
 
+  /** `mediaButtonOn` for a media button asking as its page loads: once the session copy is in, since the question may be what woke the background, and pages are told only later changes. */
+  async mediaButtonOnceLoaded(): Promise<boolean> {
+    await this.#ready;
+    return this.mediaButtonOn();
+  }
+
   /** What the popup shows: the live values while connected, nothing otherwise. */
   view(connected: boolean): SettingsView {
     if (!connected || this.#live === null) return { settings: null, controls: null, queues: [] };
@@ -59,6 +79,7 @@ export class KnownSettings {
     if (this.#cached === null) this.#cached = cached;
     // The buttons ask for the setting as they start, so only a change from here on is told.
     this.#buttonSetting ??= this.mediaButtonOn();
+    this.#markReady();
   }
 
   adopt(settings: ExtensionSettings): void {
@@ -127,5 +148,9 @@ export class KnownSettings {
     this.#deps.mediaButtonSetting
       ?.publish(on)
       .catch(fallback('settings', 'Could not tell the pages about the media button', undefined));
+  }
+
+  #changed(): void {
+    for (const listener of this.#listeners) listener();
   }
 }

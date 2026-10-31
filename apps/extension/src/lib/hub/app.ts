@@ -1,18 +1,25 @@
-import type {
-  AddedDownload,
-  Call,
-  ExtensionSettings,
-  NewDownload,
-  NoticeId,
-  Reply,
-  WithdrawOutcome,
+import {
+  takesPrivateWindows,
+  type AddedDownload,
+  type Call,
+  type ExtensionSettings,
+  type NewDownload,
+  type NoticeId,
+  type Reply,
+  type WithdrawOutcome,
 } from '@wirecatch/protocol';
-import { newDownload, submit, type DownloadFields, type SubmitResult } from '../capture/handover';
+import {
+  newDownload,
+  submit,
+  type DownloadFields,
+  type JudgingSettings,
+  type SubmitResult,
+} from '../capture/handover';
 import { log } from '../diag/log';
 import type { PopupCommand } from '../messages';
 import { RequestError, type NativeClient } from '../native/client';
-import type { HubTiming } from './deps';
-import type { KnownSettings } from './settings';
+import { hubTiming, type HubDeps, type HubTiming } from './deps';
+import { KnownSettings } from './settings';
 
 /** The popup's commands that the app carries out. */
 export type AppCommand = Extract<
@@ -211,4 +218,48 @@ export class AppCalls {
     }
     return this.#client.request(call, this.#timing.requestTimeoutMs);
   }
+
+  /**
+   * The settings to judge a paused download by: the app's, connecting first if
+   * needed; when the app cannot be reached in time, the session copy (marked as
+   * such, so a "capture off" in it still keeps the download in the browser).
+   */
+  async judgingSettings(): Promise<JudgingSettings | null> {
+    const { live } = this.#settings;
+    if (live !== null && this.connected) {
+      return { settings: live, fromApp: true };
+    }
+    try {
+      const settings = await this.fetchSettings();
+      if (settings !== null) return { settings, fromApp: true };
+    } catch (error) {
+      log.warn('settings', 'Could not reach the app; judging by the session copy', error);
+    }
+    // Read after the wait: settings that came in meanwhile are the newest copy.
+    const { cached } = this.#settings;
+    return cached === null ? null : { settings: cached.settings, fromApp: false };
+  }
+
+  /** "Work in private windows" (D82). Unknown settings are asked of the app: taken as on, they would let through a private window the person turned off. */
+  async privateWindowsOn(): Promise<boolean> {
+    await this.#settings.ready;
+    const settings = this.#settings.known() ?? (await this.judgingSettings())?.settings;
+    return settings === undefined || takesPrivateWindows(settings);
+  }
+}
+
+/** The app's settings and the calls to it, which the hub, the media side and the notices share. */
+export interface AppSide {
+  settings: KnownSettings;
+  app: AppCalls;
+}
+
+export function appSide(
+  deps: Pick<HubDeps, 'client' | 'cache' | 'mediaButtonSetting' | 'timing' | 'userAgent'>,
+): AppSide {
+  const settings = new KnownSettings(deps);
+  return {
+    settings,
+    app: new AppCalls(deps.client, hubTiming(deps.timing), settings, deps.userAgent),
+  };
 }

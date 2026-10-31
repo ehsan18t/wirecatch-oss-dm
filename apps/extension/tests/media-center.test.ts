@@ -5,8 +5,10 @@
 import type { NewDownload } from '@wirecatch/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CookieContext, CookieStore } from '../src/lib/cookies';
-import type { CachedSettings } from '../src/lib/hub/deps';
+import { appSide } from '../src/lib/hub/app';
+import type { CachedSettings, HubDeps } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
+import { MediaSender } from '../src/lib/hub/media-sender';
 import {
   MEDIA_UNREACHABLE,
   MAX_MEDIA_URL_LENGTH,
@@ -277,24 +279,7 @@ async function setup(
   const buttonSaves: boolean[] = [];
   const cookieCalls: [string, CookieStore][] = [];
   const cookieContexts: CookieContext[] = [];
-  const center: MediaCenter = new MediaCenter({
-    registry,
-    getTab: (id) => Promise.resolve(tabs.get(id) ?? null),
-    send: (request) => hub.sendMedia(request),
-    store: {
-      load: () => Promise.resolve(options.saved ?? null),
-      save: (value) => {
-        saved.push(value);
-        return Promise.resolve();
-      },
-    },
-    saveDelayMs: 5,
-    ignoredSites: () => hub.knownSettings()?.ignored_sites ?? [],
-    videoSites: () => hub.knownSettings()?.video_sites ?? [],
-    mediaButtonOn: () => hub.mediaButtonOn(),
-    privateWindowsOn: () => hub.privateWindowsOn(),
-  });
-  const hub: Hub = new Hub({
+  const hubDeps = {
     client,
     cache,
     downloads: new FakeDownloads(),
@@ -306,7 +291,6 @@ async function setup(
     hasSiteAccess: () => Promise.resolve(options.siteAccess ?? true),
     userAgent: 'TestAgent/1.0',
     newHandoverId: () => `h${app.requests.length}`,
-    media: center,
     mediaButtonSetting: {
       publish: (on) => {
         buttonSaves.push(on);
@@ -314,7 +298,27 @@ async function setup(
       },
     },
     timing: { requestTimeoutMs: 60, withdrawTimeoutMs: 60, connectWaitMs: 60 },
+  } satisfies HubDeps;
+  const side = appSide(hubDeps);
+  const sender = new MediaSender(side, hubDeps);
+  const center: MediaCenter = new MediaCenter({
+    registry,
+    getTab: (id) => Promise.resolve(tabs.get(id) ?? null),
+    send: (request) => sender.send(request),
+    store: {
+      load: () => Promise.resolve(options.saved ?? null),
+      save: (value) => {
+        saved.push(value);
+        return Promise.resolve();
+      },
+    },
+    saveDelayMs: 5,
+    ignoredSites: () => side.settings.known()?.ignored_sites ?? [],
+    videoSites: () => side.settings.known()?.video_sites ?? [],
+    mediaButtonOn: () => side.settings.mediaButtonOnceLoaded(),
+    privateWindowsOn: () => side.app.privateWindowsOn(),
   });
+  const hub = new Hub({ ...hubDeps, media: center }, side);
   await center.start();
   if (options.connect !== false) {
     await hub.start();

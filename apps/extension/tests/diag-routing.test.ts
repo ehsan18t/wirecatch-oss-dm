@@ -61,10 +61,9 @@ describe('routed errors', () => {
   });
 
   it('logs a session copy of the settings that cannot be written', async () => {
-    const settings = new KnownSettings(
-      { cache: { load: () => Promise.resolve(null), save: failing('quota') } },
-      () => undefined,
-    );
+    const settings = new KnownSettings({
+      cache: { load: () => Promise.resolve(null), save: failing('quota') },
+    });
     const entries = await logged(async () => {
       settings.refreshed(DEFAULT_SETTINGS, null, QUEUES);
       await Promise.resolve();
