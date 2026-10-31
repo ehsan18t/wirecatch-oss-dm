@@ -150,7 +150,8 @@ fn servers(library: &Entity<Library>, cx: &mut App) -> AnyElement {
     let rows: Vec<AnyElement> = read
         .proxies
         .iter()
-        .map(|proxy| server_row(library, proxy, read, cx))
+        .enumerate()
+        .map(|(index, proxy)| server_row(library, proxy, index == 0, read, cx))
         .collect();
     let (adding, theme) = (library.clone(), cx.theme());
     v_flex()
@@ -203,9 +204,11 @@ fn servers(library: &Entity<Library>, cx: &mut App) -> AnyElement {
         .into_any_element()
 }
 
+/// One saved server; rows after the first draw the line between them, the box draws the rest.
 fn server_row(
     library: &Entity<Library>,
     proxy: &ProxyServer,
+    first: bool,
     read: &Library,
     cx: &App,
 ) -> AnyElement {
@@ -214,8 +217,7 @@ fn server_row(
         .px_3()
         .py_2p5()
         .gap_3()
-        .border_b_1()
-        .border_color(theme.border)
+        .when(!first, |row| row.border_t_1().border_color(theme.border))
         .child(server_facts(proxy, read, cx))
         .child(server_actions(library, proxy))
         .into_any_element()

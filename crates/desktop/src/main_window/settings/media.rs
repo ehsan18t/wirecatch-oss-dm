@@ -13,6 +13,7 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
 use wirecatch_protocol::languages::LANGUAGES;
+use wirecatch_shell::host;
 
 use super::{Typing, change, choice, current, list_field, switch};
 use crate::library::Library;
@@ -124,7 +125,7 @@ fn video(library: &Entity<Library>, cx: &App) -> SettingGroup {
                     })
                 }),
             )
-            .description("Used when Wirecatch doesn't ask, and chosen first in the quality window. Audio-only downloads use the audio settings.")
+            .description(format!("Used when {} doesn't ask, and chosen first in the quality window. Audio-only downloads use the audio settings.", host::CHANNEL.name()))
             .keywords(["quality", "1080p", "4k", "720p", "best"]),
         );
     if by_height {
@@ -221,7 +222,7 @@ fn video_sites(library: &Entity<Library>) -> SettingItem {
     };
     SettingItem::new("Additional video sites", sites)
                 .layout(Axis::Vertical)
-                .description("Wirecatch also looks for video on pages from these sites. YouTube, Vimeo, TikTok and many others work already. One per line.")
+                .description(format!("{} also looks for video on pages from these sites. YouTube, Vimeo, TikTok and many others work already. One per line.", host::CHANNEL.name()))
                 .keywords(["sites", "video", "pages"])
 }
 
@@ -545,6 +546,20 @@ fn languages(
             .detach();
             state
         });
+        // The list keeps its own selection: follow the saved one when it changes elsewhere, such
+        // as an import. Comparing with the last saved value leaves a pick not yet saved alone.
+        let last = window.use_keyed_state(SharedString::from(format!("{key}-saved")), cx, {
+            let saved = saved.clone();
+            move |_, _| saved
+        });
+        if *last.read(cx) != saved {
+            last.update(cx, |last, _| last.clone_from(&saved));
+            if state.read(cx).selected_values() != saved {
+                state.update(cx, |state, cx| {
+                    state.set_selected_values(&saved, window, cx);
+                });
+            }
+        }
         Combobox::new(&state)
             .w(px(280.))
             .placeholder("None")
