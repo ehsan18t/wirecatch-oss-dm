@@ -19,6 +19,7 @@ mod queue_dialog;
 mod queue_header;
 mod queue_proxy;
 mod queue_rules;
+mod rail;
 mod refresh_dialog;
 mod row_menu;
 mod selection;
@@ -39,8 +40,9 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable as _,
     Global, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render,
-    ScrollStrategy, SharedString, Styled as _, Subscription, UniformListScrollHandle, WeakEntity,
-    Window, WindowBounds, WindowOptions, actions, px, size,
+    ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
+    UniformListScrollHandle, WeakEntity, Window, WindowBounds, WindowOptions, actions, div, px,
+    size,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::QueueId;
@@ -288,6 +290,9 @@ pub struct MainWindow {
     picked: bool,
     sort: sort::Sort,
     frozen: std::cell::RefCell<sort::Frozen>,
+    nav: rail::Nav,
+    /// The full navigation is open over the list, from the rail of a narrow window.
+    drawer: bool,
     /// The Add dialog's form, while it is open.
     add_form: Option<WeakEntity<add_dialog::AddForm>>,
     /// The row menu the keyboard opened, while it shows.
@@ -451,6 +456,8 @@ impl MainWindow {
             picked: false,
             keyboard_menu: None,
             add_form: None,
+            nav: rail::Nav::default(),
+            drawer: false,
             sort: sort::Sort::default(),
             frozen: std::cell::RefCell::default(),
             cursor_bounds: Rc::default(),
@@ -471,6 +478,7 @@ impl MainWindow {
 
     fn show(&mut self, view: View, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.view = view;
+        self.drawer = false;
         self.clear_selection();
         let placeholder = match view {
             View::All => ALL_PLACEHOLDER.to_owned(),
@@ -490,6 +498,36 @@ impl MainWindow {
             Screen::Settings => Screen::Downloads,
         };
         cx.notify();
+    }
+
+    /// The full navigation over the list, beside the rail; it closes on a choice or a click
+    /// beside it.
+    fn drawer(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        div()
+            .absolute()
+            .top(gpui_kit::component::TITLE_BAR_HEIGHT)
+            .bottom_0()
+            .left(px(rail::WIDTH))
+            .right_0()
+            .child(
+                div()
+                    .id("drawer-scrim")
+                    .absolute()
+                    .size_full()
+                    .bg(theme.overlay)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.drawer = false;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .h_full()
+                    .shadow_lg()
+                    .child(self.sidebar(cx)),
+            )
     }
 
     /// F6 and Shift+F6: the keyboard moves between the search and the list.
@@ -621,7 +659,8 @@ impl MainWindow {
 }
 
 impl Render for MainWindow {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let rail = self.shows_rail(window.viewport_size().width);
         let background = cx.theme().background;
         v_flex()
             .id("main-window")
@@ -655,7 +694,11 @@ impl Render for MainWindow {
             .child(self.title_bar(cx))
             .child(match self.screen {
                 Screen::Downloads => layout::body(
-                    self.sidebar(cx).into_any_element(),
+                    if rail {
+                        self.rail(cx).into_any_element()
+                    } else {
+                        self.sidebar(cx).into_any_element()
+                    },
                     self.command_bar(cx).into_any_element(),
                     v_flex()
                         .flex_1()
@@ -667,6 +710,10 @@ impl Render for MainWindow {
                 ),
                 Screen::Settings => self.settings(cx),
             })
+            .when(
+                rail && self.drawer && self.screen == Screen::Downloads,
+                |window| window.child(self.drawer(cx)),
+            )
             .when_some(self.keyboard_menu.as_ref(), |window, (menu, _)| {
                 window.child(row_menu::keyboard_menu(menu, self.keyboard_menu_at()))
             })

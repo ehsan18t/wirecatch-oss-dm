@@ -1,5 +1,6 @@
 //! The title bar: the app's mark and name, the total speed, and the window's buttons (D23, D36).
 
+use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, TitleBar, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -27,6 +28,19 @@ impl MainWindow {
                     h_flex()
                         .flex_1()
                         .gap_2()
+                        .child(
+                            // A control in the bar takes its own clicks: the bar under it only drags.
+                            div().occlude().child(
+                                Button::new("toggle-nav")
+                                    .small()
+                                    .ghost()
+                                    .icon(IconName::PanelLeft)
+                                    .tooltip("Show or hide the navigation")
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.toggle_nav(window, cx);
+                                    })),
+                            ),
+                        )
                         .child(div().size(px(8.)).rounded_full().bg(theme.primary))
                         .child(
                             div()
