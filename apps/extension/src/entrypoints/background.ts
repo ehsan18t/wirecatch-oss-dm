@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import {
   browserDownloads,
-  cookieHeaderFor,
+  cookiesFor,
   cookieStoreIdOf,
   hasSiteAccess,
   helloFromExtension,
@@ -97,7 +97,7 @@ export default defineBackground(() => {
     client,
     cache: settingsCache(),
     downloads: browserDownloads(),
-    cookieHeader: cookieHeaderFor,
+    cookies: cookiesFor,
     hasSiteAccess,
     userAgent: navigator.userAgent,
     inFlight: inFlightStore(),

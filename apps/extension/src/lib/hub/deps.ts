@@ -1,7 +1,8 @@
 /** What the hub is given: the connection, browser APIs and stores, and the shapes it hands back. */
+import type { CookieRequest } from '@wirecatch/protocol';
 import type { SettingsCache } from '../cache';
 import type { DownloadControl } from '../capture/handover';
-import type { CookieContext, CookieStore } from '../cookies';
+import type { CookieStore, DownloadCookies } from '../cookies';
 import type { MediaSendResult, MediaView } from '../media/center';
 import type { Alert } from '../popup-port';
 import type { NoticeEvent } from '../notices/center';
@@ -48,7 +49,7 @@ export interface HubDeps {
   cache: SettingsCache;
   downloads: BrowserDownloads;
   /** The `Cookie` header the browser would send to a URL in this context, or null. Never rejects. */
-  cookieHeader: (url: string, store: CookieStore, context: CookieContext) => Promise<string | null>;
+  cookies: (url: string, store: CookieStore, request: CookieRequest) => Promise<DownloadCookies>;
   /** True when the extension may read cookies for this address (the person can revoke site access in Firefox). */
   hasSiteAccess: (url: string) => Promise<boolean>;
   userAgent: string | null;

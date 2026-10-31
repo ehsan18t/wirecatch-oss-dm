@@ -2,19 +2,19 @@
  * The browser APIs the background script hands to the hub and the media center, in
  * the shapes those take, so the logic behind them stays testable without a browser.
  */
-import type { BrowserInfo } from '@wirecatch/protocol';
+import type { BrowserInfo, CookieRequest } from '@wirecatch/protocol';
 import { browser } from 'wxt/browser';
 import { detectBrowser, type Brand } from '../browser-info';
 import { memoryArea, RETIRED_LOCAL_KEYS, storageCache, type SettingsCache } from '../cache';
 import {
-  cookieHeader,
   cookieReads,
-  cookiesToSend,
   mergeCookies,
-  type CookieContext,
   type CookieQuery,
   type CookieStore,
   type StoredCookie,
+  downloadCookies,
+  NO_COOKIES,
+  type DownloadCookies,
 } from '../cookies';
 import { fallback, log } from '../diag/log';
 import type {
@@ -76,16 +76,16 @@ export async function helloFromExtension(): Promise<HelloIdentity> {
 }
 
 /** The cookies the browser would send with the request, read the way this browser supports. */
-export async function cookieHeaderFor(
+export async function cookiesFor(
   url: string,
   store: CookieStore,
-  context: CookieContext,
-): Promise<string | null> {
+  context: CookieRequest,
+): Promise<DownloadCookies> {
   const storeId = await storeToRead(store);
   if (storeId === undefined) {
     // The normal window's cookies would sign a private download in as someone else (D82).
     log.warn('capture', 'Could not find the cookies of the private windows; sending none');
-    return null;
+    return NO_COOKIES;
   }
   const queries = cookieReads(url, storeId, context);
   const reads = await Promise.all(queries.map(firstAccepted));
@@ -110,7 +110,7 @@ export async function cookieHeaderFor(
     }
   }
   const cookies = reads.flatMap((read) => ('cookies' in read ? [read.cookies] : []));
-  return cookieHeader(cookiesToSend(mergeCookies(cookies), url, context));
+  return downloadCookies(mergeCookies(cookies), url, context);
 }
 
 /** The store id to read, null for the default store; undefined when a private window's cannot be found. */

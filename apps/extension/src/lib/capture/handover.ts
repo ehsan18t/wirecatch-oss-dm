@@ -1,11 +1,12 @@
 import type {
   AddAction,
   AddedDownload,
+  CookieRequest,
   ExtensionSettings,
   NewDownload,
   WithdrawOutcome,
 } from '@wirecatch/protocol';
-import type { CookieContext, CookieStore } from '../cookies';
+import type { CookieStore, DownloadCookies } from '../cookies';
 import { RequestError, type RequestErrorKind } from '../native/client';
 import { fallback, log } from '../diag/log';
 import { messageOf } from '../errors';
@@ -104,7 +105,7 @@ export interface HandoverDeps extends SubmitDeps {
    */
   liveSettings: () => Promise<JudgingSettings | null>;
   /** The `Cookie` header the browser would send to a URL in this context, or null. Never rejects. */
-  cookieHeader: (url: string, store: CookieStore, context: CookieContext) => Promise<string | null>;
+  cookies: (url: string, store: CookieStore, request: CookieRequest) => Promise<DownloadCookies>;
   userAgent: string | null;
 }
 
@@ -222,11 +223,11 @@ export async function handOver(input: HandoverInput, deps: HandoverDeps): Promis
     mime: candidate.mime,
     size_hint: candidate.size,
     // A browser download is a top-level navigation started by the page it came from.
-    cookies: await deps.cookieHeader(candidate.url, input.cookieStore, {
+    ...(await deps.cookies(candidate.url, input.cookieStore, {
       initiator: candidate.referrer,
-      originalUrl: candidate.originalUrl,
+      original_url: candidate.originalUrl,
       navigation: true,
-    }),
+    })),
     source: 'browser_download',
   });
   const result = await submit(download, deps);

@@ -1,9 +1,15 @@
 /** The `Cookie` header for a request, read from a browser's cookie store the way each browser answers. */
+import type { CookieRequest } from '@wirecatch/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { browser } from 'wxt/browser';
-import { cookieHeaderFor } from '../src/lib/browser/adapters';
-import type { CookieContext, CookieQuery, StoredCookie } from '../src/lib/cookies';
+import { cookiesFor } from '../src/lib/browser/adapters';
+import type { CookieQuery, StoredCookie } from '../src/lib/cookies';
 import { NORMAL_STORE, stubCookieStores, stubGetAll } from './fakes';
+
+/** The header picked for an app before protocol version 2. */
+async function header(...args: Parameters<typeof cookiesFor>): Promise<string | null> {
+  return (await cookiesFor(...args)).cookies;
+}
 
 const SITE = 'https://downloads.test';
 
@@ -51,11 +57,11 @@ function sent(header: string | null): string[] {
   return header === null ? [] : header.split('; ').sort();
 }
 
-describe.each(Object.entries(BROWSERS))('cookieHeaderFor in %s', (_, answer) => {
+describe.each(Object.entries(BROWSERS))('the cookie header in %s', (_, answer) => {
   it('sends a download link the cookies partitioned under its site, as the browser does', async () => {
     stubGetAll(answer);
-    const context: CookieContext = { initiator: `${SITE}/details?id=1`, navigation: true };
-    expect(sent(await cookieHeaderFor(`${SITE}/download?id=1`, NORMAL_STORE, context))).toEqual([
+    const context: CookieRequest = { initiator: `${SITE}/details?id=1`, navigation: true };
+    expect(sent(await header(`${SITE}/download?id=1`, NORMAL_STORE, context))).toEqual([
       'cf_clearance=3',
       'pref=2',
       'uid=1',
@@ -64,19 +70,17 @@ describe.each(Object.entries(BROWSERS))('cookieHeaderFor in %s', (_, answer) => 
 
   it('sends media from another site only the cookies of its partition', async () => {
     stubGetAll(answer);
-    const context: CookieContext = {
+    const context: CookieRequest = {
       initiator: 'https://news.test/watch',
-      topLevel: 'https://news.test/watch',
+      top_level: 'https://news.test/watch',
       navigation: false,
     };
-    expect(sent(await cookieHeaderFor(`${SITE}/v.mp4`, NORMAL_STORE, context))).toEqual([
-      'embedded=5',
-    ]);
+    expect(sent(await header(`${SITE}/v.mp4`, NORMAL_STORE, context))).toEqual(['embedded=5']);
   });
 });
 
-describe('cookieHeaderFor in a private window (D82)', () => {
-  const context: CookieContext = { initiator: null, navigation: true };
+describe('the cookie header in a private window (D82)', () => {
+  const context: CookieRequest = { initiator: null, navigation: true };
   const PRIVATE_CHROMIUM = { id: null, private: true };
 
   /** One sign-in per store, named after the store, so the header tells which store was read. */
@@ -101,16 +105,16 @@ describe('cookieHeaderFor in a private window (D82)', () => {
         { id: 2, incognito: true },
       ],
     );
-    expect(await cookieHeaderFor(`${SITE}/a.zip`, PRIVATE_CHROMIUM, context)).toBe('uid=1');
+    expect(await header(`${SITE}/a.zip`, PRIVATE_CHROMIUM, context)).toBe('uid=1');
     expect(new Set(reads)).toEqual(new Set(['1']));
   });
 
   it('sends no cookies when no store holds a private tab, or the stores cannot be read', async () => {
     const reads = stubStores();
     stubCookieStores([{ id: '0', tabIds: [1] }], [{ id: 1, incognito: false }]);
-    expect(await cookieHeaderFor(`${SITE}/a.zip`, PRIVATE_CHROMIUM, context)).toBeNull();
+    expect(await header(`${SITE}/a.zip`, PRIVATE_CHROMIUM, context)).toBeNull();
     vi.spyOn(browser.cookies, 'getAllCookieStores').mockRejectedValue(new Error('no stores'));
-    expect(await cookieHeaderFor(`${SITE}/a.zip`, PRIVATE_CHROMIUM, context)).toBeNull();
+    expect(await header(`${SITE}/a.zip`, PRIVATE_CHROMIUM, context)).toBeNull();
     expect(reads).toEqual([]);
   });
 
@@ -118,14 +122,14 @@ describe('cookieHeaderFor in a private window (D82)', () => {
     const reads = stubStores();
     const stores = vi.spyOn(browser.cookies, 'getAllCookieStores');
     const store = { id: 'firefox-private', private: true };
-    expect(await cookieHeaderFor(`${SITE}/a.zip`, store, context)).toBe('uid=firefox-private');
+    expect(await header(`${SITE}/a.zip`, store, context)).toBe('uid=firefox-private');
     expect(new Set(reads)).toEqual(new Set(['firefox-private']));
     expect(stores).not.toHaveBeenCalled();
   });
 
   it('reads the default store for a normal window', async () => {
     const reads = stubStores();
-    expect(await cookieHeaderFor(`${SITE}/a.zip`, NORMAL_STORE, context)).toBe('uid=default');
+    expect(await header(`${SITE}/a.zip`, NORMAL_STORE, context)).toBe('uid=default');
     expect(new Set(reads)).toEqual(new Set([undefined]));
   });
 });

@@ -1,3 +1,4 @@
+import { isSameSite, type CookieRequest, type NewDownload } from '@wirecatch/protocol';
 import { getDomain } from 'tldts';
 import { parseWebUrl } from './url';
 
@@ -15,28 +16,6 @@ export interface CookieLike {
 export function cookieHeader(cookies: readonly CookieLike[]): string | null {
   if (cookies.length === 0) return null;
   return cookies.map((c) => (c.name === '' ? c.value : `${c.name}=${c.value}`)).join('; ');
-}
-
-/**
- * Where a request for a URL comes from, so Wirecatch sends only the cookies the
- * browser itself would send with it.
- */
-export interface CookieContext {
-  /** The page or frame that started the request; null when the browser does not say. */
-  initiator: string | null;
-  /** The address before redirects, when it differs from the URL. */
-  originalUrl?: string | null;
-  /**
-   * The tab's page, for requests a page makes itself (media). Null for top-level
-   * navigations, whose own address is the top-level site.
-   */
-  topLevel?: string | null;
-  /**
-   * True when the browser would load the URL as a top-level GET navigation (a
-   * download started from a link, the context menu, a page address); false for
-   * media a page loads itself.
-   */
-  navigation: boolean;
 }
 
 /** The cookie store a request belongs to: Firefox names it (a container, or its private store); Chromium names none, so `private` says which. */
@@ -93,14 +72,14 @@ export function siteOf(url: string | null): string | null {
  * site (scheme included, as Chromium compares them). An unknown starting page
  * counts as cross-site, so a page that hides its address gains nothing by it.
  */
-export function isCrossSite(url: string, context: CookieContext): boolean {
+export function isCrossSite(url: string, context: CookieRequest): boolean {
   const target = siteOf(url);
   if (target === null) return true;
   const initiator = siteOf(context.initiator);
   if (initiator !== target) return true;
-  const originalUrl = context.originalUrl ?? null;
+  const originalUrl = context.original_url ?? null;
   if (originalUrl !== null && siteOf(originalUrl) !== target) return true;
-  const topLevel = context.topLevel ?? null;
+  const topLevel = context.top_level ?? null;
   return topLevel !== null && siteOf(topLevel) !== target;
 }
 
@@ -115,16 +94,51 @@ export function isCrossSite(url: string, context: CookieContext): boolean {
 export function cookiesToSend<T extends CookieLike>(
   cookies: readonly T[],
   url: string,
-  context: CookieContext,
+  context: CookieRequest,
 ): T[] {
   const crossSite = isCrossSite(url, context);
-  return cookies.filter((c) => {
-    if (context.navigation && c.partitionKey?.hasCrossSiteAncestor === true) return false;
+  return reachedBy(cookies, context).filter((c) => {
     if (!crossSite) return true;
     if (c.sameSite === 'strict') return false;
     if (c.sameSite === 'lax' || c.sameSite === 'unspecified') return context.navigation;
     return true;
   });
+}
+
+/** A top-level navigation has no frame above it, so it never gets cookies partitioned for a frame with a cross-site ancestor. */
+function reachedBy<T extends CookieLike>(cookies: readonly T[], request: CookieRequest): T[] {
+  return cookies.filter(
+    (c) => !request.navigation || c.partitionKey?.hasCrossSiteAncestor !== true,
+  );
+}
+
+/**
+ * What a download takes of the browser's cookies (D112): the header picked here, for an app
+ * before protocol version 2, and the cookies the request can reach with the request itself, for
+ * a newer app to pick from with its own Public Suffix List.
+ */
+export type DownloadCookies = Pick<NewDownload, 'cookies' | 'cookie_jar'>;
+
+export const NO_COOKIES: DownloadCookies = { cookies: null };
+
+export function downloadCookies(
+  cookies: readonly CookieLike[],
+  url: string,
+  request: CookieRequest,
+): DownloadCookies {
+  const reached = reachedBy(cookies, request);
+  return {
+    cookies: cookieHeader(cookiesToSend(reached, url, request)),
+    cookie_jar: {
+      cookies: reached.map((c) => ({
+        name: c.name,
+        value: c.value,
+        // Kept as SameSite=None, as `cookiesToSend` keeps it: the app reads no other value.
+        same_site: isSameSite(c.sameSite) ? c.sameSite : 'no_restriction',
+      })),
+      request,
+    },
+  };
 }
 
 /** What `cookies.getAll` returns for one cookie, as far as telling cookies apart needs. */
@@ -155,11 +169,11 @@ export interface StoredCookie extends CookieLike {
 export function cookieReads(
   url: string,
   storeId: string | null,
-  context: CookieContext,
+  context: CookieRequest,
 ): CookieQuery[][] {
   const base: CookieQuery = storeId === null ? { url } : { url, storeId };
   const site = siteOf(url);
-  const topLevel = context.navigation ? site : siteOf(context.topLevel ?? null);
+  const topLevel = context.navigation ? site : siteOf(context.top_level ?? null);
   const firstParty = topLevel ?? site;
   const firstPartyDomain = firstParty === null ? null : firstParty.replace(/^https?:\/\//, '');
   const read = (query: CookieQuery): CookieQuery[] =>

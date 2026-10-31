@@ -2,9 +2,9 @@
  * The background's media side: what the media button may show and send, the
  * popup's list, and the handover to the app (real hub and native client, fake app).
  */
-import type { NewDownload } from '@wirecatch/protocol';
+import type { NewDownload, CookieRequest } from '@wirecatch/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { CookieContext, CookieStore } from '../src/lib/cookies';
+import type { CookieStore } from '../src/lib/cookies';
 import { appSide } from '../src/lib/hub/app';
 import type { CachedSettings } from '../src/lib/cache';
 import type { HubDeps } from '../src/lib/hub/deps';
@@ -201,7 +201,7 @@ interface Harness {
   center: MediaCenter;
   tabs: Map<number, TabInfo>;
   cookieCalls: [string, CookieStore][];
-  cookieContexts: CookieContext[];
+  cookieContexts: CookieRequest[];
   saved: SavedMedia[];
   buttonSaves: boolean[];
 }
@@ -279,15 +279,15 @@ async function setup(
   const saved: SavedMedia[] = [];
   const buttonSaves: boolean[] = [];
   const cookieCalls: [string, CookieStore][] = [];
-  const cookieContexts: CookieContext[] = [];
+  const cookieContexts: CookieRequest[] = [];
   const hubDeps = {
     client,
     cache,
     downloads: new FakeDownloads(),
-    cookieHeader: (url, store, context) => {
+    cookies: (url: string, store: CookieStore, request: CookieRequest) => {
       cookieCalls.push([url, store]);
-      cookieContexts.push(context);
-      return Promise.resolve('session=1');
+      cookieContexts.push(request);
+      return Promise.resolve({ cookies: 'session=1' });
     },
     hasSiteAccess: () => Promise.resolve(options.siteAccess ?? true),
     userAgent: 'TestAgent/1.0',
@@ -450,7 +450,7 @@ describe('media button messages', () => {
     expect(cookieContexts).toEqual([
       {
         initiator: 'https://player.example.net/embed/7',
-        topLevel: 'https://example.com/watch',
+        top_level: 'https://example.com/watch',
         navigation: false,
       },
     ]);
@@ -729,7 +729,7 @@ describe('the address the frame shows now (single-page sites)', () => {
     });
     expect(cookieContexts.at(-1)).toEqual({
       initiator: VIDEO_B,
-      topLevel: VIDEO_B,
+      top_level: VIDEO_B,
       navigation: true,
     });
     // The content script's own report agrees, and changes nothing.

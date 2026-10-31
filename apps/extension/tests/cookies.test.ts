@@ -1,124 +1,50 @@
+import type { CookieRequest, SameSite } from '@wirecatch/protocol';
 import { describe, expect, it } from 'vitest';
 import {
   cookieReads,
   cookiesToSend,
+  downloadCookies,
   isCrossSite,
   mergeCookies,
-  registrableDomain,
   siteOf,
-  type CookieContext,
   type CookieLike,
   type StoredCookie,
 } from '../src/lib/cookies';
+import SHARED from '../../../packages/protocol/src/cookie-scope.cases.json';
 
-const JAR: CookieLike[] = [
-  { name: 'none', value: '1', sameSite: 'no_restriction' },
-  { name: 'lax', value: '2', sameSite: 'lax' },
-  { name: 'strict', value: '3', sameSite: 'strict' },
-  { name: 'unspecified', value: '4', sameSite: 'unspecified' },
-];
+/** The cases the app's cookie scope is tested against too (D112). */
+interface Cases {
+  sites: [string, string | null][];
+  jar: SameSite[];
+  requests: { why: string; url: string; request: CookieRequest; sent: SameSite[] }[];
+}
+
+// JSON reads as plain strings, wider than the protocol's types.
+const CASES = SHARED as unknown as Cases;
+
+/** Each cookie named after its SameSite value, as the cases name them. */
+const JAR: CookieLike[] = CASES.jar.map((sameSite) => ({ name: sameSite, value: '1', sameSite }));
 
 function names(cookies: CookieLike[]): string[] {
   return cookies.map((c) => c.name);
 }
 
 describe('sites', () => {
-  it.each([
-    ['www.example.com', 'example.com'],
-    ['a.b.example.com', 'example.com'],
-    ['example.com', 'example.com'],
-    ['shop.example.co.uk', 'example.co.uk'],
-    ['news.example.com.au', 'example.com.au'],
-    ['alice.github.io', 'alice.github.io'],
-    ['cdn.alice.github.io', 'alice.github.io'],
-    ['bucket.s3.amazonaws.com', 'bucket.s3.amazonaws.com'],
-    ['localhost', 'localhost'],
-    ['192.168.1.10', '192.168.1.10'],
-    ['[::1]', '[::1]'],
-    ['WWW.Example.COM.', 'example.com'],
-  ])('the registrable domain of %s is %s', (host, domain) => {
-    expect(registrableDomain(host)).toBe(domain);
+  it.each(CASES.sites)('the site of %s is %s', (address, site) => {
+    expect(siteOf(address)).toBe(site);
   });
 
-  it('keeps the scheme in a site, and has none for other addresses', () => {
-    expect(siteOf('https://www.example.com/a')).toBe('https://example.com');
-    expect(siteOf('http://www.example.com/a')).toBe('http://example.com');
-    expect(siteOf('blob:https://example.com/1')).toBeNull();
-    expect(siteOf('not a url')).toBeNull();
+  it('has no site for a missing address', () => {
     expect(siteOf(null)).toBeNull();
-  });
-
-  it('tells same-site from cross-site requests', () => {
-    const url = 'https://cdn.example.com/file.zip';
-    expect(isCrossSite(url, { initiator: 'https://www.example.com/page', navigation: true })).toBe(
-      false,
-    );
-    expect(isCrossSite(url, { initiator: 'https://evil.test/page', navigation: true })).toBe(true);
-    // Scheme counts, as in Chromium.
-    expect(isCrossSite(url, { initiator: 'http://www.example.com/page', navigation: true })).toBe(
-      true,
-    );
-    // Neighbours on shared hosting are different sites.
-    expect(
-      isCrossSite('https://alice.github.io/f.zip', {
-        initiator: 'https://bob.github.io/',
-        navigation: true,
-      }),
-    ).toBe(true);
-    // Unknown starting page: treated as cross-site.
-    expect(isCrossSite(url, { initiator: null, navigation: true })).toBe(true);
-    // Redirected from another site.
-    expect(
-      isCrossSite(url, {
-        initiator: 'https://www.example.com/page',
-        originalUrl: 'https://tracker.test/r',
-        navigation: true,
-      }),
-    ).toBe(true);
-    // A same-site frame inside a page on another site.
-    expect(
-      isCrossSite(url, {
-        initiator: 'https://www.example.com/embed',
-        topLevel: 'https://news.test/',
-        navigation: false,
-      }),
-    ).toBe(true);
   });
 });
 
 describe('cookiesToSend', () => {
   const url = 'https://files.example.com/report.pdf';
 
-  it('sends every cookie for a same-site request', () => {
-    const context: CookieContext = { initiator: 'https://example.com/account', navigation: true };
-    expect(names(cookiesToSend(JAR, url, context))).toEqual([
-      'none',
-      'lax',
-      'strict',
-      'unspecified',
-    ]);
-  });
-
-  it('never sends SameSite=Strict cookies across sites, but sends Lax for a top-level navigation', () => {
-    const context: CookieContext = { initiator: 'https://other.test/links', navigation: true };
-    expect(names(cookiesToSend(JAR, url, context))).toEqual(['none', 'lax', 'unspecified']);
-  });
-
-  it('sends only SameSite=None cookies with media another site loads', () => {
-    const context: CookieContext = {
-      initiator: 'https://other.test/watch',
-      topLevel: 'https://other.test/watch',
-      navigation: false,
-    };
-    expect(names(cookiesToSend(JAR, url, context))).toEqual(['none']);
-  });
-
-  it('withholds Strict cookies when the starting page is unknown', () => {
-    expect(names(cookiesToSend(JAR, url, { initiator: null, navigation: true }))).toEqual([
-      'none',
-      'lax',
-      'unspecified',
-    ]);
+  it.each(CASES.requests.map((c) => [c.why, c] as const))('%s', (_, c) => {
+    expect(names(cookiesToSend(JAR, c.url, c.request))).toEqual(c.sent);
+    expect(isCrossSite(c.url, c.request)).toBe(c.sent.length < JAR.length);
   });
 
   it('never sends a top-level navigation the cookies partitioned for a frame with a cross-site ancestor', () => {
@@ -129,7 +55,7 @@ describe('cookiesToSend', () => {
       partitionKey: { topLevelSite: 'https://example.com', hasCrossSiteAncestor },
     });
     const jar = [partitioned('top', false), partitioned('framed', true), partitioned('older')];
-    const context: CookieContext = { initiator: 'https://example.com/', navigation: true };
+    const context: CookieRequest = { initiator: 'https://example.com/', navigation: true };
     expect(names(cookiesToSend(jar, url, context))).toEqual(['top', 'older']);
   });
 
@@ -169,7 +95,7 @@ describe('cookieReads', () => {
     expect(
       cookieReads(url, null, {
         initiator: 'https://www.example.co.uk/watch',
-        topLevel: 'https://www.example.co.uk/watch',
+        top_level: 'https://www.example.co.uk/watch',
         navigation: false,
       }),
     ).toEqual([
@@ -191,7 +117,7 @@ describe('cookieReads', () => {
     expect(
       cookieReads(url, null, {
         initiator: 'https://www.example.com/watch',
-        topLevel: 'https://www.example.com/watch',
+        top_level: 'https://www.example.com/watch',
         navigation: false,
       }),
     ).toEqual([
@@ -209,9 +135,9 @@ describe('cookieReads', () => {
 
   it('reads only unpartitioned cookies for media whose tab is unknown', () => {
     const url = 'https://media.example.com/v.mp4';
-    expect(cookieReads(url, null, { initiator: null, topLevel: null, navigation: false })).toEqual([
-      [{ url }, { url, firstPartyDomain: 'example.com' }],
-    ]);
+    expect(cookieReads(url, null, { initiator: null, top_level: null, navigation: false })).toEqual(
+      [[{ url }, { url, firstPartyDomain: 'example.com' }]],
+    );
   });
 });
 
@@ -245,63 +171,41 @@ describe('mergeCookies', () => {
   });
 });
 
-describe('sites on the Public Suffix List', () => {
-  it.each([
-    // Private section: every customer has a site of their own.
-    ['victim.myshopify.com', 'victim.myshopify.com'],
-    ['cdn.victim.myshopify.com', 'victim.myshopify.com'],
-    ['bucket.r2.dev', 'bucket.r2.dev'],
-    ['bucket.s3.us-east-2.amazonaws.com', 'bucket.s3.us-east-2.amazonaws.com'],
-    ['shop.example.uk.com', 'example.uk.com'],
-    // ICANN section rules the old approximation got wrong.
-    ['www.school.k12.ca.us', 'school.k12.ca.us'],
-    ['www.example.ac.jp', 'example.ac.jp'],
-    ['www.example.xn--p1ai', 'example.xn--p1ai'],
-    // A host that is a public suffix itself is its own site.
-    ['myshopify.com', 'myshopify.com'],
-    ['co.uk', 'co.uk'],
-    // No DNS name has an empty label, so no rule applies: the host is its own site.
-    ['attacker..com', 'attacker..com'],
-    ['a..example.com', 'a..example.com'],
-  ])('the registrable domain of %s is %s', (host, domain) => {
-    expect(registrableDomain(host)).toBe(domain);
-  });
-
-  it('keeps unrelated customers of one shared host on different sites', () => {
-    const url = 'https://victim.myshopify.com/export';
-    for (const initiator of [
-      'https://attacker.myshopify.com/',
-      'https://myshopify.com/',
-      'https://victim.myshopify.com.evil.test/',
-      'https://evilvictim.myshopify.com/',
-    ]) {
-      expect(isCrossSite(url, { initiator, navigation: true }), initiator).toBe(true);
-    }
-    expect(
-      isCrossSite(url, { initiator: 'https://admin.victim.myshopify.com/', navigation: true }),
-    ).toBe(false);
-  });
-
-  it('withholds Strict cookies from a link one shared-host customer gives to another', () => {
-    const context: CookieContext = {
-      initiator: 'https://attacker.myshopify.com/links',
-      navigation: true,
+describe('downloadCookies', () => {
+  it('sends the app every cookie the request can reach, with the request, beside the header', () => {
+    const request: CookieRequest = { initiator: 'https://other.test/links', navigation: true };
+    const framed: CookieLike = {
+      name: 'framed',
+      value: '9',
+      sameSite: 'no_restriction',
+      partitionKey: { topLevelSite: 'https://example.com', hasCrossSiteAncestor: true },
     };
-    expect(names(cookiesToSend(JAR, 'https://victim.myshopify.com/export', context))).toEqual([
-      'none',
-      'lax',
-      'unspecified',
+    const cookies = downloadCookies([...JAR, framed], 'https://files.example.com/a.zip', request);
+    expect(cookies.cookies).toBe('no_restriction=1; lax=1; unspecified=1');
+    expect(cookies.cookie_jar).toEqual({
+      cookies: CASES.jar.map((sameSite) => ({ name: sameSite, value: '1', same_site: sameSite })),
+      request,
+    });
+  });
+
+  it('sends a cookie whose SameSite the browser does not report as SameSite=None', () => {
+    const request: CookieRequest = { initiator: null, navigation: false };
+    const cookies = downloadCookies([{ name: 'old', value: '1' }], 'https://example.com/', request);
+    expect(cookies.cookie_jar?.cookies).toEqual([
+      { name: 'old', value: '1', same_site: 'no_restriction' },
     ]);
   });
+});
 
+describe('sites on the Public Suffix List', () => {
   it('reads partitioned cookies for media one shared-host customer loads from another', () => {
     const url = 'https://victim.myshopify.com/v.mp4';
-    const context: CookieContext = {
+    const context: CookieRequest = {
       initiator: 'https://attacker.myshopify.com/watch',
-      topLevel: 'https://attacker.myshopify.com/watch',
+      top_level: 'https://attacker.myshopify.com/watch',
       navigation: false,
     };
-    expect(names(cookiesToSend(JAR, url, context))).toEqual(['none']);
+    expect(names(cookiesToSend(JAR, url, context))).toEqual(['no_restriction']);
     expect(cookieReads(url, null, context)[0]?.[0]).toEqual({
       url,
       partitionKey: { topLevelSite: 'https://attacker.myshopify.com' },

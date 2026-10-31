@@ -2,9 +2,9 @@
  * The most important rule: no download is ever lost. These tests run the real hub,
  * handover and native client against a fake browser downloads API and a fake port.
  */
-import { MAX_FRAME_LEN, type NewDownload } from '@wirecatch/protocol';
+import { MAX_FRAME_LEN, type NewDownload, type CookieRequest } from '@wirecatch/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CookieContext, CookieStore } from '../src/lib/cookies';
+import type { CookieStore } from '../src/lib/cookies';
 import type { DownloadState } from '../src/lib/capture/handover';
 import type { CachedSettings, SettingsCache } from '../src/lib/cache';
 import type { InFlightEntry } from '../src/lib/hub/deps';
@@ -44,7 +44,7 @@ interface Setup {
   /** Every text the toolbar badge was given, in order. */
   badges: string[];
   cookieCalls: [string, CookieStore][];
-  cookieContexts: CookieContext[];
+  cookieContexts: CookieRequest[];
   started: Promise<void>;
 }
 
@@ -57,7 +57,7 @@ async function setup(options: Options = {}): Promise<Setup> {
   const alert = options.alert ?? new MemoryAlert();
   const badges: string[] = [];
   const cookieCalls: [string, CookieStore][] = [];
-  const cookieContexts: CookieContext[] = [];
+  const cookieContexts: CookieRequest[] = [];
   const client = new NativeClient({
     transport: app,
     hello: () =>
@@ -73,10 +73,10 @@ async function setup(options: Options = {}): Promise<Setup> {
     client,
     cache: options.cache ?? memory,
     downloads,
-    cookieHeader: (url, store, context) => {
+    cookies: (url, store, request) => {
       cookieCalls.push([url, store]);
-      cookieContexts.push(context);
-      return Promise.resolve(url.includes('example.com') ? 'session=abc' : null);
+      cookieContexts.push(request);
+      return Promise.resolve({ cookies: url.includes('example.com') ? 'session=abc' : null });
     },
     hasSiteAccess: () => Promise.resolve(options.siteAccess ?? true),
     userAgent: 'TestBrowser/1.0',
@@ -210,7 +210,7 @@ describe('handover', () => {
     expect(s.cookieContexts).toEqual([
       {
         initiator: 'https://example.com/downloads',
-        originalUrl: 'https://example.com/get?id=1',
+        original_url: 'https://example.com/get?id=1',
         navigation: true,
       },
     ]);
