@@ -9,14 +9,15 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::time::Instant;
 use wirecatch_core::Manager;
-use wirecatch_protocol::app::{AppSettings, AppSettingsPatch, DownloadSummary, Repeated, UiEvent};
+use wirecatch_protocol::app::{AppSettings, DownloadSummary, Repeated, UiEvent};
 use wirecatch_protocol::extension::NoticeKind;
 use wirecatch_shell::teller::{self, Telling};
 pub use wirecatch_shell::teller::{NOTIFY_BATCH, Tell, Teller};
 use wirecatch_shell::{notifications, notifications::Notification};
 
 use crate::activity::Activity;
-use crate::autostart::{self, Action};
+use crate::autostart;
+pub use crate::autostart::{Launcher, apply as apply_autostart};
 use crate::questions::{Attention, attention};
 use crate::window::MAIN_WINDOW;
 use crate::{
@@ -246,63 +247,16 @@ pub fn show_notification<R: Runtime>(app: &AppHandle<R>, title: String, body: St
     system_notifications::show(app, notifications::plain(title, body));
 }
 
-/// What changes the start-at-sign-in entry: the system's own (the autostart plugin), or a stand-in.
-pub trait Launcher {
-    /// Writes the entry, turned on.
-    ///
-    /// # Errors
-    ///
-    /// The system refused to write the entry (the registry or the autostart folder); the text
-    /// says why.
-    fn enable(&self) -> Result<(), String>;
-    /// Removes the entry.
-    ///
-    /// # Errors
-    ///
-    /// The system refused to remove the entry; the text says why.
-    fn disable(&self) -> Result<(), String>;
-}
+/// The autostart plugin's entry.
+struct Plugin<'a>(&'a tauri_plugin_autostart::AutoLaunchManager);
 
-impl Launcher for tauri_plugin_autostart::AutoLaunchManager {
+impl Launcher for Plugin<'_> {
     fn enable(&self) -> Result<(), String> {
-        tauri_plugin_autostart::AutoLaunchManager::enable(self).map_err(|e| e.to_string())
+        self.0.enable().map_err(|e| e.to_string())
     }
     fn disable(&self) -> Result<(), String> {
-        tauri_plugin_autostart::AutoLaunchManager::disable(self).map_err(|e| e.to_string())
+        self.0.disable().map_err(|e| e.to_string())
     }
-}
-
-/// Carries out one start-at-sign-in step: decides from the entry's `state` and does it, through
-/// `launcher` or, to follow a choice made outside Wirecatch, by turning the setting off.
-///
-/// # Errors
-///
-/// The `launcher` could not write or remove the entry, or the setting could not be saved (the
-/// manager has shut down).
-pub fn apply_autostart(
-    launcher: &impl Launcher,
-    manager: &Manager,
-    state: autostart::EntryState,
-    wanted: bool,
-    just_turned_on: bool,
-) -> Result<Action, String> {
-    let action = autostart::decide(wanted, state, just_turned_on);
-    match action {
-        Action::Write => launcher.enable()?,
-        Action::Remove => launcher.disable()?,
-        Action::Nothing => {}
-        Action::TurnSettingOff => {
-            tracing::info!("starting with the system was turned off outside Wirecatch");
-            // Only this one setting, so a change made meanwhile in a window is kept.
-            manager
-                .change_settings(AppSettingsPatch {
-                    start_with_system: Some(false),
-                    ..AppSettingsPatch::default()
-                })
-                .map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(action)
 }
 
 /// Makes the system's start-at-sign-in entry match the setting (see [`crate::autostart`]). The
@@ -325,8 +279,13 @@ pub fn sync_autostart<R: Runtime>(
             return;
         }
         let state = autostart::read_state(crate::autostart_name());
-        if let Err(e) = apply_autostart(&*app.autolaunch(), &manager, state, wanted, just_turned_on)
-        {
+        if let Err(e) = apply_autostart(
+            &Plugin(&app.autolaunch()),
+            &manager,
+            state,
+            wanted,
+            just_turned_on,
+        ) {
             tracing::warn!("could not change starting with the system: {e}");
         }
     });
