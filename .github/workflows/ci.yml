@@ -4,7 +4,7 @@ name: CI
 
 on:
   push:
-    branches: [main, gpui]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -71,14 +71,14 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install
 
-      # One cache per half, since a lint build holds metadata and a test build machine code. Saved on main and on the gpui integration branch (D99), also when a check fails, so one failing test does not throw away the dependency builds. Pull requests restore their base branch's caches.
+      # One cache per half, since a lint build holds metadata and a test build machine code. Saved on main, also when a check fails, so one failing test does not throw away the dependency builds. Pull requests restore their base branch's caches.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           prefix-key: ${{ env.CACHE_PREFIX }}
           key: ${{ matrix.part }}
           cache-on-failure: true
           cache-bin: false
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/gpui' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # The streams and media tests need a real ffmpeg; they skip without one, so Linux CI is where real joins and conversions are proven. It is the build the media add-on installs, from the add-on's pinned address and checked against its pinned SHA-256 (`crates/addons/src/manifest.rs`, printed by the ffmpeg_release example), and the cache keeps it until that file changes.
       - name: Restore ffmpeg
@@ -143,7 +143,7 @@ jobs:
           prefix-key: ${{ env.CACHE_PREFIX }}
           cache-on-failure: true
           cache-bin: false
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/gpui' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Uses the pnpm version from "packageManager" in package.json.
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -194,7 +194,7 @@ jobs:
           prefix-key: ${{ env.CACHE_PREFIX }}
           cache-on-failure: true
           cache-bin: false
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/gpui' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Uses the pnpm version from "packageManager" in package.json.
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0

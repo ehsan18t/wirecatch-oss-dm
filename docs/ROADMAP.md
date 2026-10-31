@@ -4,7 +4,7 @@
 
 1. **Engine and CLI.** Segmented HTTP(S) downloads, dynamic splitting, resume, retries. Benchmarked locally. Done.
 2. **Core, Bridge and Extension.** The download manager with SQLite state, the native messaging bridge, the WXT extension for Chromium and Firefox, settings sync (D5). Done.
-3. **Desktop UI.** Tauri 2 app hosting the core: download list, queues in the sidebar, schedules, speed limits, command palette, settings export and import (D6), tray, single instance. Done.
+3. **Desktop UI.** The desktop app hosting the core, first on Tauri 2 and now drawn in Rust on GPUI (D95, D107): download list, queues in the sidebar, schedules, speed limits, command palette, settings export and import (D6), tray, single instance. Done.
 4. **Streams.** HLS and DASH detection in the extension and parallel segment download with joining (`wirecatch-streams`). Done.
 5. **Media add-on.** One-click yt-dlp, ffmpeg and Deno, pinned by SHA-256, yt-dlp updates verified by signature and a two-day delay (D20, D21). Done; smoke-tested end to end against a real Wikimedia Commons video.
 6. **Remaining v1 protocols.** FTP and FTPS done; HTTP/3 available as an experimental option (A7).
@@ -13,7 +13,7 @@
 
 ## Where things stand and what comes next
 
-As of 2026-10-30 the code quality audit has W0 to W5, W7, W8 and W14 done, most of W6, and W9's findings that could break a download (CORE-4 to CORE-7, CORE-9, CORE-10, CORE-12). Both phases of the interface revamp are on main, and so are queues that decide how their downloads run (D72), proxy profiles (D73) and queue folders (D94). [AUDIT](AUDIT.md) has the status table and every carried item. The seven items under "Before the first release" come next; this list is the order after it, which the maintainer may change.
+As of 2026-10-31 the code quality audit has W0 to W5, W7, W8 and W14 done, most of W6, and W9's findings that could break a download (CORE-4 to CORE-7, CORE-9, CORE-10, CORE-12). The GPUI desktop app is on main (D95, D107), and so are queues that decide how their downloads run (D72), proxy profiles (D73) and queue folders (D94). [AUDIT](AUDIT.md) has the status table and every carried item. Of the seven items under "Before the first release", the About page and the updates are left; this list is the order after it, which the maintainer may change.
 
 ## After the first release
 
