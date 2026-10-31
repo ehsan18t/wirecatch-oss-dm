@@ -217,9 +217,7 @@ pub fn bring_up(asked: &Asked, cx: &mut App) {
     if lifecycle::start_again_later(asked, cx) {
         return;
     }
-    let Some(running) = cx.try_global::<Running>() else {
-        return;
-    };
+    let running = cx.global::<Running>();
     let (library, shown) = (running.library.clone(), running.shown.clone());
     if shown.is_some_and(|shown| answer_in(&shown, asked, cx)) {
         return;
@@ -242,25 +240,21 @@ pub fn bring_up(asked: &Asked, cx: &mut App) {
 
 /// Whether the main window is open, whether or not it is in front.
 pub fn is_open(cx: &mut App) -> bool {
-    let Some(shown) = cx.try_global::<Running>().and_then(|r| r.shown.clone()) else {
+    let Some(shown) = cx.global::<Running>().shown.clone() else {
         return false;
     };
     shown.window.update(cx, |_, _, _| ()).is_ok()
 }
 
-/// The library the main window shows, once the app runs.
-fn library(cx: &App) -> Option<Entity<Library>> {
-    cx.try_global::<Running>()
-        .map(|running| running.library.clone())
+/// The library the main window shows.
+fn library(cx: &App) -> Entity<Library> {
+    cx.global::<Running>().library.clone()
 }
 
 /// Brings the main window up and runs `work` in it.
 pub fn bring_up_with(cx: &mut App, work: impl FnOnce(&mut Window, &mut App)) {
     bring_up(&Asked::Window, cx);
-    if let Some(shown) = cx
-        .try_global::<Running>()
-        .and_then(|running| running.shown.clone())
-    {
+    if let Some(shown) = cx.global::<Running>().shown.clone() {
         _ = shown.window.update(cx, |_, window, cx| work(window, cx));
     }
 }
@@ -447,6 +441,7 @@ impl MainWindow {
         );
         let focus = cx.focus_handle();
         focus.focus(window, cx);
+        let updates = Self::follow_updates(cx);
         Self {
             library,
             screen: Screen::Downloads,
@@ -473,16 +468,13 @@ impl MainWindow {
             all_queues: false,
             focus,
             search,
-            _subscriptions: [restyle, follow_system, redraw, searched]
-                .into_iter()
-                .chain(Self::follow_updates(cx))
-                .collect(),
+            _subscriptions: vec![restyle, follow_system, redraw, searched, updates],
         }
     }
 
     /// Redraws when the app's own update moves on, for its banner and its settings row.
-    fn follow_updates(cx: &mut Context<'_, Self>) -> Option<Subscription> {
-        crate::app_update::entity(cx).map(|updates| cx.observe(&updates, |_, _, cx| cx.notify()))
+    fn follow_updates(cx: &mut Context<'_, Self>) -> Subscription {
+        cx.observe(&crate::app_update::entity(cx), |_, _, cx| cx.notify())
     }
 
     fn show(&mut self, view: View, window: &mut Window, cx: &mut Context<'_, Self>) {

@@ -78,23 +78,19 @@ pub fn start(cx: &mut App) {
 }
 
 /// The update's stage, which views observe.
-pub fn entity(cx: &App) -> Option<Entity<Updates>> {
-    cx.try_global::<Global_>().map(|global| global.0.clone())
+pub fn entity(cx: &App) -> Entity<Updates> {
+    cx.global::<Global_>().0.clone()
 }
 
 fn set(stage: Stage, cx: &mut App) {
-    if let Some(updates) = entity(cx) {
-        updates.update(cx, |updates, cx| {
-            updates.stage = stage;
-            cx.notify();
-        });
-    }
+    entity(cx).update(cx, |updates, cx| {
+        updates.stage = stage;
+        cx.notify();
+    });
 }
 
 fn stage(cx: &App) -> Stage {
-    entity(cx)
-        .map(|updates| updates.read(cx).stage.clone())
-        .unwrap_or_default()
+    entity(cx).read(cx).stage.clone()
 }
 
 /// Looks for a newer version. A `quiet` check keeps a failure to itself and leaves an update
@@ -156,11 +152,7 @@ pub fn install(update: &AppUpdate, cx: &mut App) {
         let shown = cx.spawn(async move |cx| {
             loop {
                 cx.background_executor().timer(PROGRESS_EVERY).await;
-                cx.update(|cx| {
-                    if let Some(updates) = entity(cx) {
-                        updates.update(cx, |_, cx| cx.notify());
-                    }
-                });
+                cx.update(|cx| entity(cx).update(cx, |_, cx| cx.notify()));
             }
         });
         let result = answered(fetched.await);

@@ -179,8 +179,10 @@ impl DownloadWindow {
         let label = self.label.clone();
         cx.defer(move |cx| {
             let handle = cx
-                .try_global::<super::Windows>()
-                .and_then(|windows| windows.open.get(&label).map(|(handle, _)| *handle));
+                .global::<super::Windows>()
+                .open
+                .get(&label)
+                .map(|(handle, _)| *handle);
             super::gone(&label, cx);
             if let Some(handle) = handle {
                 _ = handle.update(cx, |_, window, _| window.remove_window());

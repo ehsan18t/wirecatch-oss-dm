@@ -56,10 +56,7 @@ pub fn add(tell: Tell, cx: &mut App) {
         .collect();
     // Counted from what the window lists, so the heading agrees with the rows under it.
     let queue = queue.map(|(id, name)| queue_header(id, &name, &rows));
-    if !cx.has_global::<Finished>() {
-        cx.set_global(Finished::default());
-    }
-    if !cx.global_mut::<Finished>().book.add(queue, &rows) {
+    if !cx.default_global::<Finished>().book.add(queue, &rows) {
         return;
     }
     match cx.global::<Finished>().window.clone() {
@@ -72,10 +69,7 @@ pub fn add(tell: Tell, cx: &mut App) {
 
 /// Keeps the listed downloads in step with the core's events.
 pub fn follow(event: &UiEvent, cx: &mut App) {
-    if !cx.has_global::<Finished>() {
-        return;
-    }
-    cx.global_mut::<Finished>().book.follow(event);
+    cx.default_global::<Finished>().book.follow(event);
     if let Some((_, view)) = cx.global::<Finished>().window.clone() {
         _ = view.update(cx, |_, cx| cx.notify());
     }
@@ -100,9 +94,7 @@ fn open(cx: &mut App) {
     };
     let built = gpui_kit::open_window(options, cx, |window, cx| {
         crate::closing::on_close(window, cx, |_, cx| {
-            if cx.has_global::<Finished>() {
-                *cx.global_mut::<Finished>() = Finished::default();
-            }
+            cx.set_global(Finished::default());
             true
         });
         cx.new(|_| FinishedView)
@@ -118,10 +110,7 @@ pub struct FinishedView;
 
 impl Render for FinishedView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let groups = cx
-            .try_global::<Finished>()
-            .map(|finished| finished.book.list().groups.clone())
-            .unwrap_or_default();
+        let groups = cx.global::<Finished>().book.list().groups.clone();
         let alone = matches!(groups.as_slice(), [group] if group.downloads.len() == 1);
         let theme = cx.theme();
         v_flex()

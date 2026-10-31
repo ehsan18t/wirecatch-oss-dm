@@ -206,9 +206,7 @@ fn troubleshooting() -> SettingGroup {
 
 /// Where the app's own update stands, with what can be done about it (D111).
 fn app_update_field(cx: &App) -> AnyElement {
-    let stage = crate::app_update::entity(cx)
-        .map(|updates| updates.read(cx).stage.clone())
-        .unwrap_or_default();
+    let stage = crate::app_update::entity(cx).read(cx).stage.clone();
     let check = |label: &'static str| {
         Button::new("check-app-update")
             .small()
