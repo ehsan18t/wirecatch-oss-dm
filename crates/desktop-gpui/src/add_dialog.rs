@@ -9,10 +9,11 @@ use gpui_kit::component::{Disableable as _, IndexPath, WindowExt as _, h_flex, v
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, SharedString,
-    Styled as _, Subscription, Window, px,
+    Styled as _, Subscription, WeakEntity, Window, px,
 };
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{AddRequest, Setting};
+use wirecatch_protocol::rules::{LinkTrial, RuleMatch};
 use wirecatch_shell::api;
 use wirecatch_sites::video_sites::video_site_for;
 
@@ -58,18 +59,33 @@ pub struct AddForm {
     /// What went wrong sending them: a title and the reason.
     problem: Option<(String, String)>,
     busy: bool,
+    /// Where Automatic sends the links, once the rules were tried on them.
+    routes: Vec<Route>,
+    /// Bumped on each change of the links, so an older trial's answer is dropped.
+    tried: u64,
     _subscriptions: Vec<Subscription>,
 }
 
-/// Opens the Add dialog in `window`, with `urls` already in it and `queue` picked.
+/// Where the rules send one link: its queue's name and the rule that sends it there.
+struct Route {
+    queue: String,
+    rule: Option<String>,
+}
+
+/// Links tried against the rules at most, for the hint under Automatic.
+const MAX_TRIED: usize = 20;
+
+/// Opens the Add dialog in `window`, with `urls` already in it and `queue` picked; the form, while
+/// the dialog is open.
 pub fn open(
     library: Entity<Library>,
     urls: &[String],
     queue: Option<QueueId>,
     window: &mut Window,
     cx: &mut App,
-) {
+) -> WeakEntity<AddForm> {
     let form = cx.new(|cx| AddForm::new(library, urls, queue, window, cx));
+    let opened = form.downgrade();
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let count = form.read(cx).link_count(cx);
         let send = form.clone();
@@ -116,6 +132,7 @@ pub fn open(
                     ),
             )
     });
+    opened
 }
 
 impl AddForm {
@@ -131,7 +148,13 @@ impl AddForm {
                 .auto_grow(3, 8)
                 .placeholder("https://example.com/file.zip")
         });
-        links.update(cx, |state, cx| state.set_value(urls.join("\n"), window, cx));
+        links.update(cx, |state, cx| {
+            state.set_value(urls.join("\n"), window, cx);
+            // With links in it, Enter downloads them; without, the box takes the typing.
+            if urls.is_empty() {
+                state.focus(window, cx);
+            }
+        });
         let file_name = cx.new(|cx| InputState::new(window, cx));
         let mut choices = vec![QueueChoice {
             title: "Automatic".into(),
@@ -154,6 +177,7 @@ impl AddForm {
             |form: &mut Self, _, event: &InputEvent, window, cx| match event {
                 InputEvent::Change => {
                     form.invalid = None;
+                    form.route(cx);
                     cx.notify();
                 }
                 InputEvent::PressEnter {
@@ -163,7 +187,7 @@ impl AddForm {
             },
         );
         let redraw = cx.observe(&queue, |_, _, cx| cx.notify());
-        Self {
+        let mut form = Self {
             library,
             links,
             file_name,
@@ -172,7 +196,108 @@ impl AddForm {
             invalid: None,
             problem: None,
             busy: false,
+            routes: Vec::new(),
+            tried: 0,
             _subscriptions: vec![edited, redraw],
+        };
+        form.route(cx);
+        form
+    }
+
+    /// Adds `urls` that are not in the box yet: links from a second launch while it is open.
+    pub fn add_links(&mut self, urls: &[String], window: &mut Window, cx: &mut Context<'_, Self>) {
+        let mut all = self.urls(cx);
+        all.extend(
+            urls.iter()
+                .filter(|url| !all.contains(url))
+                .cloned()
+                .collect::<Vec<_>>(),
+        );
+        self.links
+            .update(cx, |state, cx| state.set_value(all.join("\n"), window, cx));
+        self.route(cx);
+        cx.notify();
+    }
+
+    /// Tries the links against the queues' rules, for the hint under Automatic.
+    fn route(&mut self, cx: &mut Context<'_, Self>) {
+        self.tried += 1;
+        let tried = self.tried;
+        let urls: Vec<String> = self.urls(cx).into_iter().take(MAX_TRIED).collect();
+        let matched = Backend::run(cx, move |manager| async move {
+            urls.iter()
+                .map(|url| {
+                    api::try_link(
+                        &manager,
+                        &LinkTrial {
+                            url: url.clone(),
+                            draft: None,
+                        },
+                    )
+                    .ok()
+                })
+                .collect::<Vec<_>>()
+        });
+        cx.spawn(async move |form, cx| {
+            let Ok(Ok(matched)) = matched.await else {
+                return;
+            };
+            _ = form.update(cx, |form, cx| {
+                if form.tried != tried {
+                    return;
+                }
+                form.routes = matched
+                    .into_iter()
+                    .map(|found| form.route_of(found.and_then(|m| m.matched), cx))
+                    .collect();
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// The queue a rule match names, or the default queue when none matched.
+    fn route_of(&self, matched: Option<RuleMatch>, cx: &App) -> Route {
+        let library = self.library.read(cx);
+        let name = |id: Option<QueueId>| {
+            id.and_then(|id| library.queue(id))
+                .or_else(|| library.queues.first())
+                .map(|queue| queue.settings.name.clone())
+                .unwrap_or_default()
+        };
+        match matched {
+            Some(found) => Route {
+                queue: name(found.queue),
+                rule: Some(text::rule_phrase(&found.rule)),
+            },
+            None => Route {
+                queue: name(None),
+                rule: None,
+            },
+        }
+    }
+
+    /// Under Automatic: where the links go.
+    fn automatic_hint(&self) -> String {
+        match self.routes.as_slice() {
+            [] => "Each link goes to the queue whose rules it matches, or the default queue."
+                .to_owned(),
+            [only] => match &only.rule {
+                Some(rule) => format!("Goes to {}: {rule}.", only.queue),
+                None => format!("Goes to {}, the default queue.", only.queue),
+            },
+            routes => {
+                let mut queues: Vec<&str> = Vec::new();
+                for route in routes {
+                    if !queues.contains(&route.queue.as_str()) {
+                        queues.push(&route.queue);
+                    }
+                }
+                match queues.as_slice() {
+                    [one] => format!("All go to {one}."),
+                    many => format!("They go to {} queues: {}.", many.len(), many.join(", ")),
+                }
+            }
         }
     }
 
@@ -337,9 +462,9 @@ impl Render for AddForm {
             n => format!("{n} lines have no link in them and are left out."),
         };
         let queue_hint = if self.picked_queue(cx).is_none() {
-            "Each link goes to the queue whose rules it matches, or the default queue."
+            self.automatic_hint()
         } else {
-            "For this add only."
+            "For this add only.".to_owned()
         };
         v_flex()
             .gap_4()
