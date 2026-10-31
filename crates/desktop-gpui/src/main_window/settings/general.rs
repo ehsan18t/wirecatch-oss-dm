@@ -27,13 +27,15 @@ const THEMES: &[(Theme, &str)] = &[
 const SWATCH: f32 = 22.;
 
 pub(super) fn page(library: &Entity<Library>) -> SettingPage {
-    SettingPage::new("General").resettable(false).groups([
-        appearance(library),
-        startup(library),
-        updates(library),
-        backup(library),
-        troubleshooting(),
-    ])
+    SettingPage::new(super::Page::General.title())
+        .resettable(false)
+        .groups([
+            appearance(library),
+            startup(library),
+            updates(library),
+            backup(library),
+            troubleshooting(),
+        ])
 }
 
 fn appearance(library: &Entity<Library>) -> SettingGroup {

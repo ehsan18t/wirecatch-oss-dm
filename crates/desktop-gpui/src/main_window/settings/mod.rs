@@ -68,8 +68,23 @@ pub(super) enum Page {
     Network,
 }
 
+impl Page {
+    /// The page's name, on its heading and wherever it is offered.
+    pub(super) fn title(self) -> &'static str {
+        match self {
+            Self::General => "General",
+            Self::Files => "Saving files",
+            Self::Notifications => "Notifications",
+            Self::Browser => "Browser",
+            Self::Media => "Media",
+            Self::Speed => "Speed and queues",
+            Self::Network => "Network",
+        }
+    }
+}
+
 /// Every page, in the order D85 gives.
-const PAGES: [Page; 7] = [
+pub(super) const PAGES: [Page; 7] = [
     Page::General,
     Page::Files,
     Page::Notifications,

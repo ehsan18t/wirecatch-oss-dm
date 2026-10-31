@@ -37,7 +37,7 @@ pub(super) fn page(
     main: &WeakEntity<MainWindow>,
     cx: &App,
 ) -> SettingPage {
-    SettingPage::new("Speed and queues")
+    SettingPage::new(super::Page::Speed.title())
         .resettable(false)
         .groups([limits(library, cx), queues(library, main)])
 }

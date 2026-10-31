@@ -36,7 +36,7 @@ const TYPES: [Category; 6] = [
 const FOLDER_WIDTH: f32 = 220.;
 
 pub(super) fn page(library: &Entity<Library>) -> SettingPage {
-    SettingPage::new("Saving files")
+    SettingPage::new(super::Page::Files.title())
         .resettable(false)
         .groups([where_files_go(library)])
 }

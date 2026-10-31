@@ -57,14 +57,18 @@ const UNEMBEDDED: &[(UnembeddedSubtitles, &str)] = &[
 const USUAL: &str = "usual";
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
-    SettingPage::new("Media").resettable(false).groups([
-        SettingGroup::new()
-            .title("Add-on")
-            .item(super::addon::item(library, AddonId::Media, cx)),
-        video(library, cx),
-        video_subtitles(library, cx),
-        audio(library, cx),
-    ])
+    SettingPage::new(super::Page::Media.title())
+        .resettable(false)
+        .groups([
+            SettingGroup::new().title("Add-on").item(super::addon::item(
+                library,
+                AddonId::Media,
+                cx,
+            )),
+            video(library, cx),
+            video_subtitles(library, cx),
+            audio(library, cx),
+        ])
 }
 
 fn media(patch: MediaDefaultsPatch) -> AppSettingsPatch {
