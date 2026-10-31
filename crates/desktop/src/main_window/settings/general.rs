@@ -245,7 +245,7 @@ fn accent_swatches(library: &Entity<Library>, cx: &App) -> impl IntoElement + us
 
 fn accent_name(accent: Accent) -> &'static str {
     match accent {
-        Accent::Cyan => "Cyan",
+        Accent::Cyan => "Mint",
         Accent::Purple => "Purple",
         Accent::Blue => "Blue",
         Accent::Green => "Green",
