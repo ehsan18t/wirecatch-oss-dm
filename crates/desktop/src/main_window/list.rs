@@ -39,9 +39,19 @@ enum Line {
 
 /// What a heading's button does to every download.
 #[derive(Clone, Copy)]
-enum GroupCommand {
+pub(super) enum GroupCommand {
     PauseAll,
     ResumeAll,
+}
+
+impl GroupCommand {
+    pub(super) fn run(self, window: &Window, cx: &mut App) {
+        let work = match self {
+            Self::PauseAll => api::pause_all,
+            Self::ResumeAll => api::resume_all,
+        };
+        act(window.window_handle(), cx, work);
+    }
 }
 
 impl MainWindow {
@@ -106,9 +116,9 @@ impl MainWindow {
     }
 
     /// The list's lines: the view's downloads that hold the search in their name or link. A queue's
-    /// view lists its line first, numbered in the order it runs, then what is over by group; other
-    /// views group everything, each group under its heading. A search shows everything it finds,
-    /// folded or not.
+    /// view lists its line first, numbered in the order it runs, then what is over by group; All
+    /// downloads groups everything, each group under its heading, and a status's own page lists its
+    /// downloads with no heading. A search shows everything it finds, folded or not.
     fn lines(&self, cx: &App) -> Vec<Line> {
         let downloads = &self.library.read(cx).downloads;
         let needle = self.needle(cx);
@@ -146,9 +156,11 @@ impl MainWindow {
             if members.is_empty() {
                 continue;
             }
-            lines.push(Line::Heading(group, members.len()));
-            if needle.is_empty() && self.folded.contains(&group) {
-                continue;
+            if !matches!(self.view, View::Group(_)) {
+                lines.push(Line::Heading(group, members.len()));
+                if needle.is_empty() && self.folded.contains(&group) {
+                    continue;
+                }
             }
             lines.extend(members.into_iter().map(|index| Line::Row(index, None)));
         }
@@ -160,9 +172,13 @@ impl MainWindow {
         self.search.read(cx).value().trim().to_lowercase()
     }
 
-    /// The button a heading offers for every download: Pause all over what runs, or over what
-    /// waits when nothing runs, and Resume all over what is paused.
-    fn group_command(&self, group: Group, cx: &App) -> Option<(&'static str, GroupCommand)> {
+    /// The button a heading, or a status's own page, offers for every download: Pause all over
+    /// what runs, or over what waits when nothing runs, and Resume all over what is paused.
+    pub(super) fn group_command(
+        &self,
+        group: Group,
+        cx: &App,
+    ) -> Option<(&'static str, GroupCommand)> {
         let running = self
             .library
             .read(cx)
@@ -225,13 +241,7 @@ impl MainWindow {
                         .xsmall()
                         .ghost()
                         .label(label)
-                        .on_click(cx.listener(move |_, _, window, cx| {
-                            let work = match command {
-                                GroupCommand::PauseAll => api::pause_all,
-                                GroupCommand::ResumeAll => api::resume_all,
-                            };
-                            act(window.window_handle(), cx, work);
-                        })),
+                        .on_click(cx.listener(move |_, _, window, cx| command.run(window, cx))),
                 )
             })
             .into_any_element()

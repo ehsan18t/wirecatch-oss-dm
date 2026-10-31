@@ -11,7 +11,8 @@ use gpui_kit::{
     App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _, Window,
 };
 
-use super::{MainWindow, sort};
+use super::list::GroupCommand;
+use super::{MainWindow, View, sort};
 use crate::links;
 use crate::ui::tokens;
 
@@ -52,6 +53,14 @@ impl MainWindow {
                         )
                     }),
             )
+            .when_some(self.page_command(cx), |bar, (label, command)| {
+                bar.child(
+                    Button::new("page-command")
+                        .ghost()
+                        .label(label)
+                        .on_click(cx.listener(move |_, _, window, cx| command.run(window, cx))),
+                )
+            })
             .child(self.sort_menu(cx))
             .when(!first_run, |bar| {
                 bar.child(
@@ -64,6 +73,15 @@ impl MainWindow {
                         ),
                 )
             })
+    }
+
+    /// The button a status's own page offers for all its downloads, which a heading offers on All
+    /// downloads.
+    fn page_command(&self, cx: &App) -> Option<(&'static str, GroupCommand)> {
+        match self.view {
+            View::Group(group) => self.group_command(group, cx),
+            View::All | View::Queue(_) => None,
+        }
     }
 
     /// How the list is sorted: choosing the sort it has turns its direction around.
