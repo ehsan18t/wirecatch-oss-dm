@@ -15,12 +15,11 @@ use gpui_kit::{
 use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, Queue, Setting};
 use wirecatch_protocol::proxy::ProxyUse;
-use wirecatch_protocol::rules::AddDownloads;
 use wirecatch_queues::schedule;
 use wirecatch_shell::api;
 
 use super::drag::{self, DraggedQueue, DraggedRows};
-use super::{Group, MainWindow, Screen, View};
+use super::{Group, MainWindow, Screen, View, queue_header};
 use crate::backend::act;
 use crate::text;
 use crate::ui::speed_graph::{SpeedHistory, speed_graph};
@@ -346,10 +345,7 @@ impl MainWindow {
 
     /// A queue's marks: whether its rules are on, if it has rules, and the saved proxy it uses.
     fn marks(&self, queue: &Queue, cx: &App) -> (Option<bool>, Option<String>) {
-        let rules = match &queue.settings.add_downloads {
-            AddDownloads::Auto(rules) => Some(rules.enabled),
-            AddDownloads::Manual => None,
-        };
+        let rules = queue_header::rules_on(queue);
         let proxy = match queue.settings.proxy.own_ref() {
             Some(ProxyUse::Server(id)) => self
                 .library
@@ -641,8 +637,8 @@ pub(super) fn outside_schedule(queue: &Queue) -> Option<wirecatch_protocol::app:
     .then_some(schedule.start)
 }
 
-/// A queue's own menu, opened by right-clicking it: start now outside its hours, pause or
-/// resume, moving it, the default queue staying first (D72.9), and deleting it.
+/// A queue's own menu, opened by right-clicking it: start now outside its hours, pause or resume,
+/// its rules on or off, moving it, the default queue staying first (D72.9), and deleting it.
 fn queue_menu(
     menu: PopupMenu,
     queue: &Queue,
@@ -699,6 +695,7 @@ fn queue_menu(
             });
         }),
     )
+    .when_some(rules_item(queue), PopupMenu::item)
     .when(index > 0 && last > 1, PopupMenu::separator)
     .when(index > 1, |menu| {
         menu.item(reorder(
@@ -723,6 +720,21 @@ fn queue_menu(
                 }),
         )
     })
+}
+
+/// Turn rules on or off, for a queue with rules.
+fn rules_item(queue: &Queue) -> Option<PopupMenuItem> {
+    let on = queue_header::rules_on(queue)?;
+    let queue = queue.clone();
+    Some(
+        PopupMenuItem::new(if on {
+            "Turn rules off"
+        } else {
+            "Turn rules on"
+        })
+        .icon(Icon::new(if on { Lucide::ZapOff } else { Lucide::Zap }))
+        .on_click(move |_, window, cx| queue_header::set_rules(&queue, !on, window, cx)),
+    )
 }
 
 /// A menu item that puts the queues in `order`.

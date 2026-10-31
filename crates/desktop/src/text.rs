@@ -9,7 +9,7 @@ use wirecatch_protocol::app::{
     PER_MILLE_DONE, ProcessingStep, Schedule, TimeOfDay, WaitReason, Weekday,
 };
 use wirecatch_protocol::extension::MediaKind;
-use wirecatch_protocol::rules::{LinkProtocol, Rule};
+use wirecatch_protocol::rules::{AddDownloads, LinkProtocol, Rule};
 use wirecatch_shell::activity::format_bytes;
 
 const SECONDS_PER_MINUTE: u64 = 60;
@@ -290,6 +290,31 @@ pub fn file_kind(name: &str, category: Category) -> String {
         }
         _ => category_label(category).to_owned(),
     }
+}
+
+/// An auto queue's rules in a few words: `Adds youtube.com and 2 more`.
+pub fn rules_fact(add: &AddDownloads) -> Option<String> {
+    let AddDownloads::Auto(rules) = add else {
+        return None;
+    };
+    if !rules.enabled {
+        return Some("Rules off".to_owned());
+    }
+    let all: Vec<Rule> = rules
+        .sites
+        .iter()
+        .cloned()
+        .map(Rule::Site)
+        .chain(rules.file_names.iter().cloned().map(Rule::FileName))
+        .chain(rules.file_types.iter().cloned().map(Rule::FileType))
+        .chain(rules.categories.iter().copied().map(Rule::Category))
+        .chain(rules.protocols.iter().copied().map(Rule::Protocol))
+        .collect();
+    let first = all.first()?;
+    Some(match all.len() - 1 {
+        0 => format!("Adds {}", rule_phrase(first)),
+        more => format!("Adds {} and {more} more", rule_phrase(first)),
+    })
 }
 
 /// What `rule` matches: `youtube.com`, `files named *.iso`, `.iso files`, `videos`.

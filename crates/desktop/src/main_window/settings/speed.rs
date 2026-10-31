@@ -20,7 +20,6 @@ use wirecatch_protocol::app::{
     AppSettingsPatch, MAX_CONCURRENT_DOWNLOADS, MAX_CONNECTIONS_PER_DOWNLOAD, Queue, QueueNotify,
     Update,
 };
-use wirecatch_protocol::rules::{AddDownloads, Rule};
 
 use super::super::MainWindow;
 use super::super::link_trial::LinkTrial;
@@ -353,33 +352,8 @@ fn queue_facts(queue: &Queue) -> Vec<String> {
             facts.push("Other limits are global".to_owned());
         }
     }
-    facts.extend(rules_fact(&settings.add_downloads));
+    facts.extend(text::rules_fact(&settings.add_downloads));
     facts
-}
-
-/// An auto queue's rules in a few words: `Adds youtube.com and 2 more`.
-fn rules_fact(add: &AddDownloads) -> Option<String> {
-    let AddDownloads::Auto(rules) = add else {
-        return None;
-    };
-    if !rules.enabled {
-        return Some("Rules off".to_owned());
-    }
-    let all: Vec<Rule> = rules
-        .sites
-        .iter()
-        .cloned()
-        .map(Rule::Site)
-        .chain(rules.file_names.iter().cloned().map(Rule::FileName))
-        .chain(rules.file_types.iter().cloned().map(Rule::FileType))
-        .chain(rules.categories.iter().copied().map(Rule::Category))
-        .chain(rules.protocols.iter().copied().map(Rule::Protocol))
-        .collect();
-    let first = all.first()?;
-    Some(match all.len() - 1 {
-        0 => format!("Adds {}", text::rule_phrase(first)),
-        more => format!("Adds {} and {more} more", text::rule_phrase(first)),
-    })
 }
 
 /// Test a link against the saved rules, kept while the page shows.
@@ -396,7 +370,7 @@ fn link_trial(library: &Entity<Library>, window: &mut Window, cx: &mut App) -> A
 mod tests {
     use super::*;
     use wirecatch_protocol::app::{QueueSettings, Setting};
-    use wirecatch_protocol::rules::QueueRules;
+    use wirecatch_protocol::rules::{AddDownloads, QueueRules};
 
     #[test]
     fn an_auto_queue_names_its_first_rule_and_counts_the_rest() {
@@ -409,11 +383,14 @@ mod tests {
             })
         };
         assert_eq!(
-            rules_fact(&rules(true)).as_deref(),
+            text::rules_fact(&rules(true)).as_deref(),
             Some("Adds youtube.com and 2 more")
         );
-        assert_eq!(rules_fact(&rules(false)).as_deref(), Some("Rules off"));
-        assert_eq!(rules_fact(&AddDownloads::Manual), None);
+        assert_eq!(
+            text::rules_fact(&rules(false)).as_deref(),
+            Some("Rules off")
+        );
+        assert_eq!(text::rules_fact(&AddDownloads::Manual), None);
     }
 
     #[test]
