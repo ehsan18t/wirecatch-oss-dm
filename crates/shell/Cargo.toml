@@ -50,7 +50,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["sync", "time", "macros", "rt-multi-thread", "io-util", "process"] }
-wirecatch-test-support = { path = "../test-support", features = ["bridge", "servers"] }
+wirecatch-test-support = { path = "../test-support", features = ["bridge", "downloads", "servers"] }
 
 [lints]
 workspace = true
