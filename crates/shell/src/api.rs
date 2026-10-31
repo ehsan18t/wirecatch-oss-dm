@@ -459,28 +459,31 @@ impl Drop for WarningShowing<'_> {
 ///
 /// There is no download `id`, it has not finished, or its file is no longer where it was saved.
 /// Each message says what to do instead.
-pub fn file_to_open(m: &Manager, id: DownloadId) -> CommandResult<ToOpen> {
+pub async fn file_to_open(m: &Manager, id: DownloadId) -> CommandResult<ToOpen> {
     let row = find(m, id)?;
     if row.status != DownloadStatus::Completed {
         return Err(refused(
             "The file is not finished yet. It opens once the download completes.",
         ));
     }
-    let path = PathBuf::from(&row.path);
-    if !path.is_file() {
-        return Err(refused(format!(
-            "{} is no longer at {}. It may have been moved or deleted. Download it again with Retry, or look for it in another folder.",
-            row.file_name, row.path
-        )));
-    }
-    Ok(if is_program(&path) {
-        ToOpen::Program {
-            warning: ProgramWarning::new(&path, &row.url),
-            path,
+    on_disk(move || {
+        let path = PathBuf::from(&row.path);
+        if !path.is_file() {
+            return Err(refused(format!(
+                "{} is no longer at {}. It may have been moved or deleted. Download it again with Retry, or look for it in another folder.",
+                row.file_name, row.path
+            )));
         }
-    } else {
-        ToOpen::File(path)
+        Ok(if is_program(&path) {
+            ToOpen::Program {
+                warning: ProgramWarning::new(&path, &row.url),
+                path,
+            }
+        } else {
+            ToOpen::File(path)
+        })
     })
+    .await
 }
 
 /// What `open_folder` shows.
@@ -497,20 +500,33 @@ pub enum Reveal {
 /// # Errors
 ///
 /// There is no download `id`, or neither its file nor its folder exists yet.
-pub fn item_to_reveal(m: &Manager, id: DownloadId) -> CommandResult<Reveal> {
+pub async fn item_to_reveal(m: &Manager, id: DownloadId) -> CommandResult<Reveal> {
     let row = find(m, id)?;
-    let path = PathBuf::from(&row.path);
-    if path.is_file() {
-        return Ok(Reveal::File(path));
-    }
-    match path.parent() {
-        Some(folder) if folder.is_dir() => Ok(Reveal::Folder(folder.to_path_buf())),
-        Some(folder) => Err(refused(format!(
-            "The folder {} does not exist yet. Wirecatch creates it when the download starts.",
-            folder.display()
-        ))),
-        None => Err(refused(format!("{} has no folder to show.", row.path))),
-    }
+    on_disk(move || {
+        let path = PathBuf::from(&row.path);
+        if path.is_file() {
+            return Ok(Reveal::File(path));
+        }
+        match path.parent() {
+            Some(folder) if folder.is_dir() => Ok(Reveal::Folder(folder.to_path_buf())),
+            Some(folder) => Err(refused(format!(
+                "The folder {} does not exist yet. Wirecatch creates it when the download starts.",
+                folder.display()
+            ))),
+            None => Err(refused(format!("{} has no folder to show.", row.path))),
+        }
+    })
+    .await
+}
+
+/// Runs `look` on a blocking thread: a folder on an unreachable network share holds a disk
+/// check for many seconds, which would stall the runtime that also serves the browser.
+async fn on_disk<T: Send + 'static>(
+    look: impl FnOnce() -> CommandResult<T> + Send + 'static,
+) -> CommandResult<T> {
+    tokio::task::spawn_blocking(look)
+        .await
+        .unwrap_or_else(|e| Err(failed(format!("Could not look at the file: {e}"))))
 }
 
 /// Downloads the chosen quality of a media choice. An option that needs the media add-on

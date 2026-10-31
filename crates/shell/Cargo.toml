@@ -18,7 +18,7 @@ wirecatch-ipc.workspace = true
 wirecatch-product.workspace = true
 wirecatch-updates.workspace = true
 wirecatch-protocol = { workspace = true, features = ["tokio"] }
-tokio = { workspace = true, features = ["sync", "time", "macros"] }
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
 tracing = { workspace = true }
 url.workspace = true
 wirecatch-logging = { workspace = true, features = ["setup"] }
