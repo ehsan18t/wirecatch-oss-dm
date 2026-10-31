@@ -8,8 +8,8 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, IntoElement, Modifiers, ParentElement as _, ScrollStrategy,
-    Styled as _, Window, div, px,
+    AnyElement, App, Context, IntoElement, Modifiers, ParentElement as _, Styled as _, Window, div,
+    px,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadSummary;
@@ -158,9 +158,7 @@ impl MainWindow {
         } else {
             self.pick(id);
         }
-        if let Some(line) = self.line_of(id, cx) {
-            self.scroll.scroll_to_item(line, ScrollStrategy::Nearest);
-        }
+        self.scroll_to_row(id, cx);
         cx.notify();
     }
 

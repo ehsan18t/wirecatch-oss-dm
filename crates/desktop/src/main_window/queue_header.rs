@@ -1,13 +1,14 @@
-//! Above a queue's own list: its name and description, when it runs and its limits, one line on
-//! what is happening now, and the queue's actions: Rules on or off for a queue with rules, Start
-//! now outside its hours, Pause or Resume, Edit. Alt+Up and Alt+Down move the selection in its line.
+//! Above a queue's own list, on one line: its name, what its rules add, when it runs and its
+//! limits, what is happening now, and its actions (Rules on or off for a queue with rules, Start
+//! now outside its hours, Pause or Resume, Edit); its description under it. Alt+Up and Alt+Down
+//! move the selection in its line.
 
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::{Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, IntoElement, ParentElement as _, Styled as _, Window, div,
+    AnyElement, App, Context, IntoElement, ParentElement as _, Styled as _, Window, div, relative,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadSummary, Queue, QueueSettings};
@@ -28,35 +29,40 @@ impl MainWindow {
         let queue = self.library.read(cx).queue(id)?.clone();
         let facts = facts(&queue);
         let summary = self.summary(&queue, cx);
-        let header = h_flex()
+        let header = v_flex()
             .px_5()
-            .pt_4()
-            .pb_2()
-            .gap_4()
-            .items_start()
+            .pt_3()
+            .pb_1()
+            .gap_0p5()
             .child(
-                v_flex()
-                    .flex_1()
-                    .min_w_0()
-                    .gap_0p5()
+                h_flex()
+                    .gap_3()
                     .child(
                         div()
+                            .flex_shrink_0()
+                            .max_w(relative(0.4))
                             .truncate()
                             .text_role(Role::PageTitle, cx)
                             .child(queue.settings.name.clone()),
                     )
-                    .when(!queue.settings.description.is_empty(), |text| {
-                        text.child(
-                            div()
-                                .truncate()
-                                .text_role(Role::Body, cx)
-                                .child(queue.settings.description.clone()),
-                        )
-                    })
-                    .child(div().truncate().text_role(Role::Meta, cx).child(facts))
-                    .child(div().truncate().text_role(Role::Meta, cx).child(summary)),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_role(Role::Meta, cx)
+                            .child(format!("{facts} · {summary}")),
+                    )
+                    .child(queue_actions(&queue, cx)),
             )
-            .child(queue_actions(&queue, cx));
+            .when(!queue.settings.description.is_empty(), |header| {
+                header.child(
+                    div()
+                        .truncate()
+                        .text_role(Role::Secondary, cx)
+                        .child(queue.settings.description.clone()),
+                )
+            });
         Some(header.into_any_element())
     }
 
