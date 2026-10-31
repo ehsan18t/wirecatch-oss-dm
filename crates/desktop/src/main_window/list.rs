@@ -44,6 +44,8 @@ const TEXT_START: f32 = BORDER + PAD + CIRCLE_WIDTH + GAP + TIME_WIDTH + GAP + T
 /// The figure at a row's end, and the buttons that take its place on hover.
 const END_WIDTH: f32 = 112.;
 const PROGRESS_HEIGHT: f32 = 2.;
+/// The part of a heading's line its content is centred in, at the line's bottom.
+const HEADING_HEIGHT: f32 = 32.;
 
 /// One line of the list.
 #[derive(Clone, Copy)]
@@ -526,15 +528,16 @@ fn finished_day(row: &DownloadSummary) -> Option<NaiveDate> {
 
 /// A heading's line, in the rows' grid; its content sits at the bottom, over the rows it heads.
 fn heading_line(shown: ListLines) -> gpui_kit::Div {
+    // Bottom-aligning would set the circle and the text on different centres: pad down instead.
     h_flex()
         .w_full()
         .h(px(line_height(shown)))
+        .pt(px(line_height(shown) - HEADING_HEIGHT))
         .pl(px(PAD))
         .pr(px(PAD))
         .gap(px(GAP))
         .border_l(px(BORDER))
-        .items_end()
-        .pb_2()
+        .items_center()
 }
 
 /// The cell a circle sits in, kept when the circle is hidden so the columns stay put.
