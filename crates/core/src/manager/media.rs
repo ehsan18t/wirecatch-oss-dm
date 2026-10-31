@@ -1231,11 +1231,7 @@ pub(super) fn media_options(
 
 /// The browser's `Cookie` header, if it sent one.
 pub(super) fn cookie_header(origin: &Origin) -> Option<String> {
-    origin
-        .headers
-        .iter()
-        .find(|h| h.name.trim().eq_ignore_ascii_case("cookie"))
-        .map(|h| h.value.expose().to_owned())
+    headers::find(&origin.headers, "cookie").map(str::to_owned)
 }
 
 pub(super) fn addon_missing() -> UserError {

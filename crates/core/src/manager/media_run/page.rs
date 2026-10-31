@@ -299,13 +299,8 @@ pub(super) fn part_options(job: &Job, format: &Format, rule: PrivateNetwork) -> 
         })
         .collect();
     options.headers = headers::to_map(&format_headers);
-    if let Some(agent) = format
-        .http_headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
-        .map(|(_, v)| v.expose().to_owned())
-    {
-        options.user_agent = agent;
+    if let Some(agent) = headers::find(&format_headers, "user-agent") {
+        agent.clone_into(&mut options.user_agent);
     }
     options.private_network = rule;
     options.max_request_bytes = format.request_limit();
