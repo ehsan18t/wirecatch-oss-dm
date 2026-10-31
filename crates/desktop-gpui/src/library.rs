@@ -4,13 +4,13 @@
 
 use gpui_kit::{AppContext as _, Context, Entity, EventEmitter};
 use tokio::sync::broadcast::error::RecvError;
-use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
     AddonInfo, AppSettings, DownloadSummary, Queue, StartupNotice, UiEvent,
 };
 use wirecatch_protocol::desktop::Reveal;
 use wirecatch_protocol::proxy::ProxyServer;
 use wirecatch_protocol::wire::ProtocolError;
+use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
 
 use crate::backend::Backend;
@@ -182,6 +182,28 @@ impl Library {
             _ => return,
         }
         cx.notify();
+    }
+
+    /// Puts `ids_in_order` in that order among the places they hold, once the manager took the
+    /// same order: no event carries it.
+    pub fn reorder(&mut self, ids_in_order: &[DownloadId]) {
+        let places: Vec<usize> = self
+            .downloads
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| ids_in_order.contains(&row.id))
+            .map(|(index, _)| index)
+            .collect();
+        let rows: Vec<DownloadSummary> = ids_in_order
+            .iter()
+            .filter_map(|id| self.downloads.iter().find(|row| row.id == *id).cloned())
+            .collect();
+        if rows.len() != places.len() {
+            return;
+        }
+        for (place, row) in places.into_iter().zip(rows) {
+            self.downloads[place] = row;
+        }
     }
 
     pub fn queue(&self, id: QueueId) -> Option<&Queue> {

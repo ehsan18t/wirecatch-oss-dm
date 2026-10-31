@@ -6,6 +6,7 @@ mod backup_dialog;
 mod command_bar;
 mod confirm;
 mod details;
+mod drag;
 mod empty;
 mod fixes;
 mod keymap;
@@ -38,11 +39,11 @@ use gpui_kit::component::menu::PopupMenu;
 use gpui_kit::component::{ActiveTheme as _, TitleBar, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable as _,
-    Global, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render,
-    ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
-    UniformListScrollHandle, WeakEntity, Window, WindowBounds, WindowOptions, actions, div, px,
-    size,
+    AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, ExternalPaths, FocusHandle,
+    Focusable as _, Global, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
+    Render, ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Subscription, UniformListScrollHandle, WeakEntity, Window, WindowBounds, WindowOptions,
+    actions, div, px, size,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::QueueId;
@@ -680,6 +681,9 @@ impl Render for MainWindow {
             .on_action(
                 cx.listener(|this, _: &OpenPalette, window, cx| this.open_palette(window, cx)),
             )
+            .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                this.drop_paths(paths, window, cx);
+            }))
             .on_action(cx.listener(|_, _: &ShowShortcuts, window, cx| keymap::open(window, cx)))
             .on_action(cx.listener(|this, _: &NextRegion, window, cx| this.next_region(window, cx)))
             .on_action(

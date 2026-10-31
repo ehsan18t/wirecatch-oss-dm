@@ -19,6 +19,7 @@ use wirecatch_protocol::rules::AddDownloads;
 use wirecatch_queues::schedule;
 use wirecatch_shell::api;
 
+use super::drag::{self, DraggedQueue, DraggedRows};
 use super::{Group, MainWindow, Screen, View};
 use crate::backend::act;
 use crate::text;
@@ -229,20 +230,7 @@ impl MainWindow {
         let speed: u64 = rows().map(|row| row.speed).sum();
         let count = rows().count();
         let status = self.describe(queue, cx);
-        let rules = match &queue.settings.add_downloads {
-            AddDownloads::Auto(rules) => Some(rules.enabled),
-            AddDownloads::Manual => None,
-        };
-        let proxy = match queue.settings.proxy.own_ref() {
-            Some(ProxyUse::Server(id)) => self
-                .library
-                .read(cx)
-                .proxies
-                .iter()
-                .find(|server| server.id == *id)
-                .map(|server| server.settings.name.clone()),
-            _ => None,
-        };
+        let (rules, proxy) = self.marks(queue, cx);
         let menu = queue_menu(
             queue,
             index,
@@ -293,8 +281,28 @@ impl MainWindow {
                 }
                 cx.notify();
             }))
+            .map(|item| drops(item, id, index, &queue.settings.name, cx))
             .on_click(cx.listener(move |this, _, window, cx| this.show(view, window, cx)))
             .into_any_element()
+    }
+
+    /// A queue's marks: whether its rules are on, if it has rules, and the saved proxy it uses.
+    fn marks(&self, queue: &Queue, cx: &App) -> (Option<bool>, Option<String>) {
+        let rules = match &queue.settings.add_downloads {
+            AddDownloads::Auto(rules) => Some(rules.enabled),
+            AddDownloads::Manual => None,
+        };
+        let proxy = match queue.settings.proxy.own_ref() {
+            Some(ProxyUse::Server(id)) => self
+                .library
+                .read(cx)
+                .proxies
+                .iter()
+                .find(|server| server.id == *id)
+                .map(|server| server.settings.name.clone()),
+            _ => None,
+        };
+        (rules, proxy)
     }
 
     /// What a queue is doing right now, and when idle how many it may run at once when it has
@@ -375,6 +383,33 @@ fn name_line(name: &str, current: bool, speed: u64, count: usize, cx: &App) -> i
                 .text_color(color)
                 .child(figure),
         )
+}
+
+/// A queue's drag and drops: it drags to a new place, the default queue staying first, and takes
+/// queues dropped before it and downloads dropped into it.
+fn drops(
+    item: gpui_kit::Stateful<gpui_kit::Div>,
+    id: QueueId,
+    index: usize,
+    name: &str,
+    cx: &mut Context<'_, MainWindow>,
+) -> gpui_kit::Stateful<gpui_kit::Div> {
+    item.when(index > 0, |item| {
+        item.on_drag(
+            DraggedQueue::new(id, name.to_owned()),
+            |dragged, _, _, cx| gpui_kit::AppContext::new(cx, |_| dragged.clone()),
+        )
+    })
+    .drag_over::<DraggedRows>(|style, _, _, cx| drag::drop_target(style, cx))
+    .drag_over::<DraggedQueue>(|style, _, _, cx| drag::drop_target(style, cx))
+    .on_drop(move |dragged: &DraggedRows, window, cx| {
+        MainWindow::drop_rows_on_queue(id, dragged, window, cx);
+    })
+    .on_drop(
+        cx.listener(move |this, dragged: &DraggedQueue, window, cx| {
+            this.drop_queue_before(id, dragged, window, cx);
+        }),
+    )
 }
 
 /// A queue's second line: its rules mark, the saved proxy it uses (D73.13), and what it is doing.

@@ -20,7 +20,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Queues: the proxy icon while a saved profile is in use (D73.13).
 - [x] Queue "…" menu: Start now (outside its schedule), Pause or Resume the queue, Move up, Move down.
 - [x] Queue menu: Edit queue.
-- [ ] Drag queues to reorder them, the default queue first (D72.9).
+- [x] Drag queues to reorder them, the default queue first (D72.9).
 - [x] Settings (Ctrl+,), at the foot of the navigation, where the settings screen offers Downloads.
 - [x] Find any action (Ctrl+Shift+P) and Keyboard shortcuts (F1), reachable from the main window.
 - [x] Each group heading with its count; Pause all on what runs (or waits), Resume all on what is paused.
@@ -44,7 +44,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [ ] Details: Open in a separate window (comes with the download windows).
 - [x] Context menu on rows; Menu key and Shift+F10.
 - [x] Keyboard: every shortcut of `lib/keymap.ts`, list keys; F6 moves between the search and the list (the navigation takes no keyboard focus yet).
-- [ ] Drag a link in to add it; drag rows to reorder in a queue and onto a queue to move them.
+- [x] Drag rows to reorder in a queue and onto a queue to move them; drop an Internet shortcut file to add its link. GPUI takes only files from other programs, so a link dragged straight from a browser cannot be dropped.
 - [x] Paste a link anywhere (Ctrl+V) to open the Add dialog.
 - [x] Command palette: the selection's commands, general commands, every view and queue, and the settings pages.
 - [x] The total speed readout, with "Starting" and "Finishing videos", and its tooltip (D23).

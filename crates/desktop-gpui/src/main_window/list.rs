@@ -16,6 +16,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MILLE_DONE};
 use wirecatch_shell::api;
 
+use super::drag::{self, DraggedRows};
 use super::{Group, MainWindow, View, fixes, row_menu};
 use crate::backend::act;
 use crate::ui::{FileTile, Role, Typed as _, tokens};
@@ -290,6 +291,14 @@ impl MainWindow {
             .when(self.cursor == Some(id), |line| {
                 line.child(marker(cursor_bounds))
             })
+            .on_drag(
+                self.dragged_rows(id, &row.file_name),
+                |dragged, _, _, cx| gpui_kit::AppContext::new(cx, |_| dragged.clone()),
+            )
+            .drag_over::<DraggedRows>(|style, _, _, cx| drag::drop_target(style, cx))
+            .on_drop(cx.listener(move |this, dragged: &DraggedRows, window, cx| {
+                this.drop_rows_before(id, dragged, window, cx);
+            }))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |this, _, _, cx| this.right_click_row(id, cx)),
