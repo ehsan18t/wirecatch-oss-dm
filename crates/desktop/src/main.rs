@@ -5,6 +5,7 @@
 
 mod add_dialog;
 mod backend;
+mod closing;
 mod download_windows;
 mod files;
 mod library;

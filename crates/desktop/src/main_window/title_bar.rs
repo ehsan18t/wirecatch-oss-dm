@@ -23,37 +23,39 @@ const READOUT_WIDTH: f32 = 140.;
 impl MainWindow {
     pub(super) fn title_bar(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let theme = cx.theme();
-        TitleBar::new().child(
-            h_flex()
-                .w_full()
-                .pr_2()
-                .gap_3()
-                .child(
-                    h_flex()
-                        .flex_1()
-                        .gap_2()
-                        .child(
-                            // A control in the bar takes its own clicks: the bar under it only drags.
-                            div().occlude().child(
-                                Button::new("toggle-nav")
-                                    .small()
-                                    .ghost()
-                                    .icon(IconName::PanelLeft)
-                                    .tooltip("Show or hide the navigation")
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.toggle_nav(window, cx);
-                                    })),
+        TitleBar::new()
+            .on_close_window(|_, window, cx| crate::closing::close(window, cx))
+            .child(
+                h_flex()
+                    .w_full()
+                    .pr_2()
+                    .gap_3()
+                    .child(
+                        h_flex()
+                            .flex_1()
+                            .gap_2()
+                            .child(
+                                // A control in the bar takes its own clicks: the bar under it only drags.
+                                div().occlude().child(
+                                    Button::new("toggle-nav")
+                                        .small()
+                                        .ghost()
+                                        .icon(IconName::PanelLeft)
+                                        .tooltip("Show or hide the navigation")
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.toggle_nav(window, cx);
+                                        })),
+                                ),
+                            )
+                            .child(mark(px(MARK_HEIGHT), theme.primary))
+                            .child(
+                                div()
+                                    .text_role(Role::Strong, cx)
+                                    .child(wirecatch_shell::host::CHANNEL.name()),
                             ),
-                        )
-                        .child(mark(px(MARK_HEIGHT), theme.primary))
-                        .child(
-                            div()
-                                .text_role(Role::Strong, cx)
-                                .child(wirecatch_shell::host::CHANNEL.name()),
-                        ),
-                )
-                .child(h_flex().flex_1().justify_end().child(self.readout(cx))),
-        )
+                    )
+                    .child(h_flex().flex_1().justify_end().child(self.readout(cx))),
+            )
     }
 
     /// How fast everything moves right now; in its tooltip, what is going on. Hidden while

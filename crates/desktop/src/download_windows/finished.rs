@@ -99,7 +99,7 @@ fn open(cx: &mut App) {
         ..crate::window_options()
     };
     let built = gpui_kit::open_window(options, cx, |window, cx| {
-        window.on_window_should_close(cx, |_, cx| {
+        crate::closing::on_close(window, cx, |_, cx| {
             if cx.has_global::<Finished>() {
                 *cx.global_mut::<Finished>() = Finished::default();
             }

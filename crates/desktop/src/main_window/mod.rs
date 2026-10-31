@@ -421,7 +421,7 @@ impl MainWindow {
             });
         }
         let closing = library.downgrade();
-        window.on_window_should_close(cx, move |_, cx| {
+        crate::closing::on_close(window, cx, move |_, cx| {
             let close_to_tray = closing
                 .read_with(cx, |library, _| {
                     library.settings.as_ref().map(|s| s.close_to_tray)

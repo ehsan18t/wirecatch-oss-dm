@@ -187,7 +187,7 @@ fn open(opened: &OpenWindow, cx: &mut App) {
     let shows = opened.shows;
     let built = gpui_kit::open_window(options, cx, |window, cx| {
         let closing = label.clone();
-        window.on_window_should_close(cx, move |_, cx| {
+        crate::closing::on_close(window, cx, move |_, cx| {
             gone(&closing, cx);
             true
         });
