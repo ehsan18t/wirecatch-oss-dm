@@ -30,5 +30,8 @@ png = "0.18.1"
 # D-Bus (StatusNotifierItem) on Linux, not GTK: the app runs no GTK loop (D104).
 tray-icon = { version = "0.25.1", default-features = false, features = ["ksni"] }
 
+[dev-dependencies]
+wirecatch-test-support = { path = "../test-support", features = ["downloads"] }
+
 [lints]
 workspace = true

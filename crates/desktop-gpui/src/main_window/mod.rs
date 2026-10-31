@@ -20,6 +20,7 @@ mod row_menu;
 mod selection;
 mod settings;
 mod sidebar;
+mod sort;
 mod title_bar;
 
 use std::cell::Cell;
@@ -288,6 +289,8 @@ pub struct MainWindow {
     cursor: Option<DownloadId>,
     /// The selection was built on purpose (Ctrl, Shift, Ctrl+A), so it shows its bar.
     picked: bool,
+    sort: sort::Sort,
+    frozen: std::cell::RefCell<sort::Frozen>,
     /// The row menu the keyboard opened, while it shows.
     keyboard_menu: Option<(Entity<PopupMenu>, Subscription)>,
     /// Where the cursor's row was last drawn, for the keyboard's menu.
@@ -438,6 +441,8 @@ impl MainWindow {
             cursor: None,
             picked: false,
             keyboard_menu: None,
+            sort: sort::Sort::default(),
+            frozen: std::cell::RefCell::default(),
             cursor_bounds: Rc::default(),
             folded: Group::ALL
                 .into_iter()
