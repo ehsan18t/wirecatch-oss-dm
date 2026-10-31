@@ -31,6 +31,8 @@ tracing = { workspace = true }
 regex.workspace = true
 url.workspace = true
 png = "0.18.1"
+serde.workspace = true
+serde_json.workspace = true
 # D-Bus (StatusNotifierItem) on Linux, not GTK: the app runs no GTK loop (D104).
 tray-icon = { version = "0.25.1", default-features = false, features = ["ksni"] }
 

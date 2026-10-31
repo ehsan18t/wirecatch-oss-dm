@@ -1077,3 +1077,11 @@ Decided by the maintainer on 2026-10-31, once the GPUI app had every screen (D95
 2. The GPUI crate becomes the desktop app: `crates/desktop`, package `wirecatch-desktop`, whose executable is `wirecatch-app`, named from `config/product.toml`. Its icons and installer pictures live in the crate.
 3. `packages/ui` keeps only what the extension uses and what that needs, with their tests; the window shell, dialogs, menus, sidebars and the form controls only the desktop used are gone.
 4. CI checks the desktop crate again on every system; `--no-desktop` remains for machines without GPUI's system libraries, such as the Docker run of `scripts/linux-test.sh`.
+
+### D108. A new mark, drawn from one file
+
+Decided on 2026-10-31; the maintainer left the design open and asked for a better mark used everywhere, following the theme where that is cheap.
+
+1. The mark is a "W" whose two lower points land on a bar: the product's initial, and a download caught. It reads at 16 pixels, which the old wire, arrow and bar did not.
+2. Its strokes live once, in `packages/ui/src/mark.json`. The extension's `AppMark` and the desktop app's title bar draw it from there in the accent colour, so it follows the theme and the chosen accent. The desktop app reads the file at build time.
+3. The icons (the executable, the taskbar, the tray, notifications, the Linux packages, the installer's pictures and the extension's icons) show it white on a teal tile, `crates/desktop/assets/icons/icon.svg`, rendered from the same file. They stay one colour: the system shows them before any theme is known.

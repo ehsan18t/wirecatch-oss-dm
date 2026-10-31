@@ -9,6 +9,7 @@ pub mod file_tile;
 pub mod folder_row;
 pub mod icon;
 pub mod layout;
+pub mod mark;
 pub mod switch_row;
 pub mod tokens;
 

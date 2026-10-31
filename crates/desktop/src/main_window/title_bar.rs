@@ -11,7 +11,11 @@ use wirecatch_protocol::app::{DownloadStatus, ProcessingStep};
 
 use super::{Group, MainWindow};
 use crate::text;
+use crate::ui::mark::mark;
 use crate::ui::{Role, Typed as _, tokens};
+
+/// The mark beside the app's name, as tall as its capitals and a little more.
+const MARK_HEIGHT: f32 = 13.;
 
 /// The readout keeps this width whatever it says, so the bar never shifts.
 const READOUT_WIDTH: f32 = 140.;
@@ -41,7 +45,7 @@ impl MainWindow {
                                     })),
                             ),
                         )
-                        .child(div().size(px(8.)).rounded_full().bg(theme.primary))
+                        .child(mark(px(MARK_HEIGHT), theme.primary))
                         .child(
                             div()
                                 .text_role(Role::Strong, cx)
