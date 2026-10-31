@@ -1086,3 +1086,12 @@ Decided on 2026-10-31; the maintainer left the design open and asked for a bette
 1. The mark is a "W" whose two lower points land on a bar: the product's initial, and a download caught. It reads at 16 pixels, which the old wire, arrow and bar did not.
 2. Its strokes live once, in `packages/ui/src/mark.json`. The extension's `AppMark` and the desktop app's title bar draw it from there in the accent colour, so it follows the theme and the chosen accent. The desktop app reads the file at build time.
 3. The icons (the executable, the taskbar, the tray, notifications, the Linux packages, the installer's pictures and the extension's icons) show it white on a teal tile, `crates/desktop/assets/icons/icon.svg`, rendered from the same file. They stay one colour: the system shows them before any theme is known.
+
+### D109. Settings ends with an About page
+
+Decided on 2026-10-31 (ROADMAP item 6). It amends D85.1: Settings has eight pages, About last.
+
+1. The page opens with the mark, the app's name and its one-line summary, and the version with the system it runs on ("Version 0.1.0, Windows x64"), which a button copies as one line for a problem report. Under it, the media add-on's programs with their versions, or "Not installed".
+2. Project: the licence with a link to its text, the publisher, the website and the source code. Help: where to report a problem (the repository's issues) and the support address.
+3. Every value comes from `config/product.toml` through `wirecatch-product` (`PRODUCT_SUMMARY`, `PRODUCT_LICENSE`, `PUBLISHER_NAME`, `WEBSITE_URL`, `REPOSITORY_URL`, `ISSUES_URL`, `SUPPORT_EMAIL`), so a placeholder shows until the maintainer sets it, and the release check refuses a release while one is left.
+4. The app's own updates are not on this page: they go in General > Updates (D85.2), with the add-on's.
