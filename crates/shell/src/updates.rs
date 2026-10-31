@@ -3,9 +3,31 @@
 //! takes the place of the one running. A `.deb` or `.rpm` install needs the system's package
 //! manager, so the app offers the release page instead.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub use wirecatch_updates::FileKind;
+
+/// Why an update could not be installed.
+#[derive(Debug, thiserror::Error)]
+pub enum InstallError {
+    #[error("A system package is installed by the system's package manager.")]
+    SystemPackage,
+    #[error("A Windows setup cannot run here.")]
+    SetupElsewhere,
+    #[error("An AppImage cannot run here.")]
+    AppImageElsewhere,
+    #[error("The update could not be started (error {0}).")]
+    Start(usize),
+    #[error("The app is not running from an AppImage.")]
+    NotAppImage,
+    #[error("The update could not be put in place of {} ({source}).", .current.display())]
+    Replace {
+        current: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("The updated app could not be started ({0}).")]
+    Restart(#[source] std::io::Error),
+}
 
 /// The installer the app can install itself, as it was installed; `None` for a system package.
 #[must_use]
@@ -25,13 +47,11 @@ pub fn install_kind() -> Option<FileKind> {
 /// # Errors
 ///
 /// The installer could not be started, or the AppImage could not take the old one's place.
-pub fn install(installer: &Path, kind: FileKind) -> Result<(), String> {
+pub fn install(installer: &Path, kind: FileKind) -> Result<(), InstallError> {
     match kind {
         FileKind::Setup => run_setup(installer),
         FileKind::AppImage => replace_appimage(installer),
-        FileKind::Deb | FileKind::Rpm => {
-            Err("A system package is installed by the system's package manager.".into())
-        }
+        FileKind::Deb | FileKind::Rpm => Err(InstallError::SystemPackage),
     }
 }
 
@@ -39,7 +59,7 @@ pub fn install(installer: &Path, kind: FileKind) -> Result<(), String> {
 /// requires; a plain process start cannot. `/SILENT` shows progress and asks nothing, and the
 /// setup starts the new version when it is done.
 #[cfg(windows)]
-fn run_setup(installer: &Path) -> Result<(), String> {
+fn run_setup(installer: &Path) -> Result<(), InstallError> {
     use std::os::windows::ffi::OsStrExt as _;
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
@@ -68,44 +88,39 @@ fn run_setup(installer: &Path) -> Result<(), String> {
     if started as usize > 32 {
         Ok(())
     } else {
-        Err(format!(
-            "The update could not be started (error {}).",
-            started as usize
-        ))
+        Err(InstallError::Start(started as usize))
     }
 }
 
 #[cfg(not(windows))]
-fn run_setup(_installer: &Path) -> Result<(), String> {
-    Err("A Windows setup cannot run here.".into())
+fn run_setup(_installer: &Path) -> Result<(), InstallError> {
+    Err(InstallError::SetupElsewhere)
 }
 
 /// Moves the new AppImage over the running one, in one step on the same folder, and starts it.
 #[cfg(unix)]
-fn replace_appimage(installer: &Path) -> Result<(), String> {
+fn replace_appimage(installer: &Path) -> Result<(), InstallError> {
     use std::os::unix::fs::PermissionsExt as _;
 
     let current = std::env::var_os(crate::appimage::APPIMAGE_VAR)
-        .map(std::path::PathBuf::from)
-        .ok_or("The app is not running from an AppImage.")?;
-    let folder = current.parent().ok_or("The AppImage has no folder.")?;
+        .map(PathBuf::from)
+        .ok_or(InstallError::NotAppImage)?;
+    let folder = current.parent().ok_or(InstallError::NotAppImage)?;
     let staged = folder.join(".wirecatch-update.AppImage");
-    let failed = |e: std::io::Error| {
-        format!(
-            "The update could not be put in place of {} ({e}).",
-            current.display()
-        )
+    let failed = |source: std::io::Error| InstallError::Replace {
+        current: current.clone(),
+        source,
     };
     std::fs::copy(installer, &staged).map_err(failed)?;
     std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755)).map_err(failed)?;
     std::fs::rename(&staged, &current).map_err(failed)?;
     std::process::Command::new(&current)
         .spawn()
-        .map_err(|e| format!("The updated app could not be started ({e})."))?;
+        .map_err(InstallError::Restart)?;
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn replace_appimage(_installer: &Path) -> Result<(), String> {
-    Err("An AppImage cannot run here.".into())
+fn replace_appimage(_installer: &Path) -> Result<(), InstallError> {
+    Err(InstallError::AppImageElsewhere)
 }

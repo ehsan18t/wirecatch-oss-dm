@@ -157,15 +157,15 @@ pub fn install(update: &AppUpdate, cx: &mut App) {
         });
         let result = answered(fetched.await);
         drop(shown);
-        cx.update(
-            |cx| match result.and_then(|path| updates::install(&path, kind)) {
+        cx.update(|cx| {
+            match result.and_then(|path| updates::install(&path, kind).map_err(|e| e.to_string())) {
                 Ok(()) => {
                     set(Stage::Installing, cx);
                     lifecycle::quit(cx);
                 }
                 Err(message) => set(Stage::Failed(message), cx),
-            },
-        );
+            }
+        });
     })
     .detach();
 }
