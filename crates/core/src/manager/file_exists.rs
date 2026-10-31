@@ -7,6 +7,7 @@ use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use tracing::warn;
+use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
     DownloadStatus, FileExistsAnswer, FileExistsChoice, FileExistsQuestion, UiEvent, UserError,
     WhenFileExists,
@@ -231,7 +232,7 @@ impl Manager {
         });
     }
 
-    fn now(&self) -> i64 {
+    fn now(&self) -> UnixMillis {
         self.inner.clock.unix_millis()
     }
 }
@@ -254,7 +255,7 @@ fn replace_at(state: &mut State, id: DownloadId, path: &Path) {
 }
 
 /// Download `id` is the file `found` already in the folder: completed, with nothing downloaded.
-fn keep_existing(state: &mut State, id: DownloadId, found: &Found, now: i64) {
+fn keep_existing(state: &mut State, id: DownloadId, found: &Found, now: UnixMillis) {
     let Some(entry) = state.downloads.get_mut(&id) else {
         return;
     };
@@ -272,8 +273,10 @@ fn settle_at(entry: &mut super::state::Entry, path: &Path) {
     entry.video_check = false;
 }
 
-/// When the file at `path` was last changed, in Unix milliseconds.
-pub(super) fn saved_at(path: &Path) -> Option<i64> {
+/// When the file at `path` was last changed.
+pub(super) fn saved_at(path: &Path) -> Option<UnixMillis> {
     let modified = std::fs::metadata(path).ok()?.modified().ok()?;
-    i64::try_from(modified.duration_since(UNIX_EPOCH).ok()?.as_millis()).ok()
+    i64::try_from(modified.duration_since(UNIX_EPOCH).ok()?.as_millis())
+        .ok()
+        .map(UnixMillis)
 }

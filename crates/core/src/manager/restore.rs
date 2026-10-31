@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use chrono::NaiveDateTime;
 use wirecatch_protocol::QueueId;
+use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{AppSettings, DownloadStatus, Queue, Setting};
 use wirecatch_protocol::proxy::ProxyUse;
 use wirecatch_protocol::rules::QueueReason;
@@ -37,8 +38,8 @@ pub(super) struct Restored {
 pub(super) struct Surroundings<'a> {
     /// Local time, for schedules.
     pub now: NaiveDateTime,
-    /// Unix milliseconds, for timestamps.
-    pub now_millis: i64,
+    /// The moment, for timestamps.
+    pub now_millis: UnixMillis,
     /// The size of the finished file at a path, if it is there with no part or
     /// resume file next to it.
     pub finished_size: &'a dyn Fn(&Path) -> Option<u64>,
@@ -234,7 +235,7 @@ fn restore_entry(
 pub(super) fn first_start() -> State {
     let surroundings = Surroundings {
         now: NaiveDateTime::default(),
-        now_millis: 0,
+        now_millis: UnixMillis(0),
         finished_size: &|_| None,
         suffixes: SuffixList::built_in(),
     };
@@ -253,7 +254,7 @@ mod tests {
     fn nowhere(finished_size: &dyn Fn(&Path) -> Option<u64>) -> Surroundings<'_> {
         Surroundings {
             now: NaiveDateTime::default(),
-            now_millis: 7,
+            now_millis: UnixMillis(7),
             finished_size,
             suffixes: SuffixList::built_in(),
         }
@@ -275,7 +276,7 @@ mod tests {
         for id in [1, 3] {
             assert_eq!(row(id).status, DownloadStatus::Completed);
             assert_eq!((row(id).done, row(id).total), (42, Some(42)));
-            assert_eq!(row(id).completed_at, Some(7));
+            assert_eq!(row(id).completed_at, Some(UnixMillis(7)));
         }
         assert_eq!(row(2).status, DownloadStatus::Cancelled);
         assert!(!restored.state.downloads[&DownloadId(1)].resume_first);
@@ -297,7 +298,7 @@ mod tests {
         let visited = |state: &State| state.unfinished().map(|e| e.row.id.0).collect::<Vec<_>>();
         assert_eq!(visited(&state), [2, 3]);
         let finished = state.downloads.get_mut(&DownloadId(3)).unwrap();
-        mark_completed(finished, 10, 8);
+        mark_completed(finished, 10, UnixMillis(8));
         assert_eq!(visited(&state), [2]);
         state.prune_finished();
         assert_eq!(

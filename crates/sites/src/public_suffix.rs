@@ -9,9 +9,11 @@ use std::io::{self, Read};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use publicsuffix::{List, Psl};
 use wirecatch_engine::units::MIB;
+use wirecatch_protocol::UnixMillis;
 
 /// The snapshot built into this release, publicsuffix.org's file as published.
 const BUILT_IN: &str = include_str!("../data/public_suffix_list.dat");
@@ -35,7 +37,7 @@ const VERSION_LINE: &str = "// VERSION: ";
 pub const MAX_LIST_BYTES: u64 = 2 * MIB;
 
 /// How far past the clock a list may say it was published, for a clock a little behind.
-const CLOCK_SLACK_MILLIS: i64 = 24 * 60 * 60 * 1000;
+const CLOCK_SLACK: Duration = Duration::from_hours(24);
 
 /// A Public Suffix List, both its ICANN and its private section.
 pub struct SuffixList {
@@ -44,8 +46,8 @@ pub struct SuffixList {
     count: usize,
     /// How many of them are in its ICANN section.
     icann: usize,
-    /// When publicsuffix.org published it, in milliseconds since the Unix epoch.
-    published: i64,
+    /// When publicsuffix.org published it.
+    published: UnixMillis,
 }
 
 impl std::fmt::Debug for SuffixList {
@@ -113,21 +115,20 @@ impl SuffixList {
                     rules: List::new(),
                     count: 0,
                     icann: 0,
-                    published: 0,
+                    published: UnixMillis(0),
                 }
             }))
         })
         .clone()
     }
 
-    /// `bytes` as a list that may take the place of `current` at `now` (milliseconds since
-    /// the Unix epoch): one `read` takes that holds at least nine tenths of
+    /// `bytes` as a list that may take the place of `current` at `now`: one `read` takes that holds at least nine tenths of
     /// `current`'s rules and of its ICANN rules, at most twice its rules, and says it was
     /// published no later than a day after `now`. A list loses a few rules from one week to
     /// the next; one that lost more is not the list, or was cut short where no section
     /// marker shows it. One far larger or dated ahead would stay in use for good, since
     /// every real list after it would look much smaller or older.
-    pub fn accept(bytes: &[u8], current: &Self, now: i64) -> Result<Self, Refused> {
+    pub fn accept(bytes: &[u8], current: &Self, now: UnixMillis) -> Result<Self, Refused> {
         let list = Self::read(bytes)?;
         let too_small = |rules: usize, current: usize| rules * 10 < current * 9;
         if too_small(list.count, current.count) {
@@ -150,7 +151,7 @@ impl SuffixList {
                 current: current.count,
             });
         }
-        if list.published > now.saturating_add(CLOCK_SLACK_MILLIS) {
+        if list.published > now.saturating_add(CLOCK_SLACK) {
             return Err(Refused::FromTheFuture);
         }
         Ok(list)
@@ -177,7 +178,7 @@ impl SuffixList {
     /// The list to use at start, at `now`: the one kept in `dir`, unless it is damaged, not
     /// newer than the built-in one (which an update of the app may have overtaken it with),
     /// or one [`accept`](Self::accept) would refuse today. Blocks on the disk.
-    pub fn load(dir: &Path, now: i64) -> Arc<Self> {
+    pub fn load(dir: &Path, now: UnixMillis) -> Arc<Self> {
         let built_in = Self::built_in();
         let bytes = match read_kept(&dir.join(KEPT_FILE)) {
             Ok(bytes) => bytes,
@@ -220,9 +221,9 @@ impl SuffixList {
             .is_some_and(|suffix| suffix.is_known() && suffix.as_bytes() == name.as_bytes())
     }
 
-    /// When publicsuffix.org published this list, in milliseconds since the Unix epoch.
+    /// When publicsuffix.org published this list.
     #[must_use]
-    pub fn published(&self) -> i64 {
+    pub fn published(&self) -> UnixMillis {
         self.published
     }
 }
@@ -268,25 +269,25 @@ fn whole(text: &str) -> Result<Counted, Refused> {
 }
 
 /// When the list in `text` was published, from its `VERSION` line
-/// (`// VERSION: 2026-09-15_10-18-26_UTC`), in milliseconds since the Unix epoch.
-fn published(text: &str) -> Option<i64> {
+/// (`// VERSION: 2026-09-15_10-18-26_UTC`).
+fn published(text: &str) -> Option<UnixMillis> {
     let version = text
         .lines()
         .take_while(|line| line.is_empty() || line.starts_with("//"))
         .find_map(|line| line.strip_prefix(VERSION_LINE))?;
     let at = chrono::NaiveDateTime::parse_from_str(version.trim(), "%Y-%m-%d_%H-%M-%S_UTC").ok()?;
-    Some(at.and_utc().timestamp_millis())
+    Some(UnixMillis(at.and_utc().timestamp_millis()))
 }
 
 /// Lists for tests, all made from the built-in snapshot.
 #[cfg(any(test, feature = "testing"))]
 pub mod testing {
-    use super::{BUILT_IN, SECTIONS, VERSION_LINE};
+    use super::{BUILT_IN, SECTIONS, UnixMillis, VERSION_LINE};
 
     /// A `VERSION` later than any snapshot's.
     pub const NEWER: &str = "2099-01-01_00-00-00_UTC";
-    /// [`NEWER`] in milliseconds since the Unix epoch.
-    pub const NEWER_MILLIS: i64 = 4_070_908_800_000;
+    /// [`NEWER`] as a moment.
+    pub const NEWER_AT: UnixMillis = UnixMillis(4_070_908_800_000);
 
     /// The built-in snapshot as published at `version` (`2099-01-01_00-00-00_UTC`), with
     /// `rules` added at the start of its private section.
@@ -337,8 +338,8 @@ mod tests {
         assert!(list.count > 9_000, "{}", list.count);
         // 2026-09-15_10-18-26_UTC, or a later snapshot.
         assert!(
-            list.published() >= 1_789_467_506_000,
-            "{}",
+            list.published() >= UnixMillis(1_789_467_506_000),
+            "{:?}",
             list.published()
         );
     }
@@ -363,18 +364,14 @@ mod tests {
     }
 
     fn accept(text: impl AsRef<[u8]>) -> Result<SuffixList, Refused> {
-        SuffixList::accept(
-            text.as_ref(),
-            &SuffixList::built_in(),
-            testing::NEWER_MILLIS,
-        )
+        SuffixList::accept(text.as_ref(), &SuffixList::built_in(), testing::NEWER_AT)
     }
 
     #[test]
     fn a_whole_newer_list_is_accepted() {
         let list = accept(newer()).unwrap();
         assert!(list.is_public_suffix("github.io"));
-        assert_eq!(list.published(), testing::NEWER_MILLIS);
+        assert_eq!(list.published(), testing::NEWER_AT);
     }
 
     #[test]
@@ -440,11 +437,11 @@ mod tests {
     fn a_list_dated_after_today_is_refused() {
         let at = |now| SuffixList::accept(newer().as_bytes(), &SuffixList::built_in(), now);
         assert_eq!(
-            at(testing::NEWER_MILLIS - 2 * DAY).unwrap_err(),
+            at(UnixMillis(testing::NEWER_AT.0 - 2 * DAY)).unwrap_err(),
             Refused::FromTheFuture
         );
         // A clock a few hours behind still takes it.
-        at(testing::NEWER_MILLIS - DAY / 2).unwrap();
+        at(UnixMillis(testing::NEWER_AT.0 - DAY / 2)).unwrap();
     }
 
     #[test]
@@ -500,7 +497,7 @@ mod tests {
         let dir = private_dir("suffix-kept-ahead").unwrap();
         keep(dir.path(), newer().as_bytes());
         assert_eq!(
-            SuffixList::load(dir.path(), testing::NEWER_MILLIS - 2 * DAY).published(),
+            SuffixList::load(dir.path(), UnixMillis(testing::NEWER_AT.0 - 2 * DAY)).published(),
             SuffixList::built_in().published()
         );
     }
@@ -510,8 +507,8 @@ mod tests {
         let dir = private_dir("suffix-kept").unwrap();
         keep(dir.path(), newer().as_bytes());
         assert_eq!(
-            SuffixList::load(dir.path(), testing::NEWER_MILLIS).published(),
-            testing::NEWER_MILLIS
+            SuffixList::load(dir.path(), testing::NEWER_AT).published(),
+            testing::NEWER_AT
         );
     }
 
@@ -522,19 +519,19 @@ mod tests {
         let dir = private_dir("suffix-kept-old").unwrap();
         let built_in = SuffixList::built_in().published();
         assert_eq!(
-            SuffixList::load(dir.path(), testing::NEWER_MILLIS).published(),
+            SuffixList::load(dir.path(), testing::NEWER_AT).published(),
             built_in
         );
         let older = testing::list("2020-01-01_00-00-00_UTC", &[]);
         keep(dir.path(), older.as_bytes());
         assert_eq!(
-            SuffixList::load(dir.path(), testing::NEWER_MILLIS).published(),
+            SuffixList::load(dir.path(), testing::NEWER_AT).published(),
             built_in
         );
         let text = newer();
         keep(dir.path(), &text.as_bytes()[..text.len() / 2]);
         assert_eq!(
-            SuffixList::load(dir.path(), testing::NEWER_MILLIS).published(),
+            SuffixList::load(dir.path(), testing::NEWER_AT).published(),
             built_in
         );
     }

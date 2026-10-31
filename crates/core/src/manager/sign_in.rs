@@ -6,9 +6,11 @@
 use std::sync::{Arc, Weak};
 
 use chrono::TimeDelta;
+use std::time::Duration;
 use tracing::info;
 use wirecatch_engine::CancellationToken;
 use wirecatch_protocol::DownloadId;
+use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{DownloadStatus, FixAction, UserError};
 
 use super::state::{Entry, State};
@@ -18,8 +20,8 @@ use crate::headers;
 use crate::headers::Origin;
 
 /// How long an unfinished download keeps the browser's sign-in.
-const FORGET_AFTER_DAYS: i64 = 7;
-pub(super) const FORGET_AFTER_MILLIS: i64 = FORGET_AFTER_DAYS * 24 * 60 * 60 * 1000;
+const FORGET_AFTER_DAYS: u64 = 7;
+const FORGET_AFTER: Duration = Duration::from_hours(FORGET_AFTER_DAYS * 24);
 /// How often downloads are looked at.
 const LOOK_EVERY: TimeDelta = TimeDelta::hours(1);
 
@@ -57,7 +59,7 @@ impl Manager {
 /// was added at least a week before `now`; returns whether anything was
 /// deleted. Also used right before a download starts, so a stale sign-in is
 /// never sent.
-pub(super) fn forget_if_old(entry: &mut Entry, now: i64) -> bool {
+pub(super) fn forget_if_old(entry: &mut Entry, now: UnixMillis) -> bool {
     let unfinished = matches!(
         entry.row.status,
         DownloadStatus::Queued
@@ -65,7 +67,7 @@ pub(super) fn forget_if_old(entry: &mut Entry, now: i64) -> bool {
             | DownloadStatus::Failed
             | DownloadStatus::Cancelled
     );
-    if !unfinished || now.saturating_sub(entry.row.added_at) < FORGET_AFTER_MILLIS {
+    if !unfinished || now.since(entry.row.added_at) < FORGET_AFTER {
         return false;
     }
     let Some(kept) = headers::without_sign_in(&entry.origin.headers) else {

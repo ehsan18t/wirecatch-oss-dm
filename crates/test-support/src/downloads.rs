@@ -24,7 +24,7 @@ pub fn download(id: i64) -> DownloadSummary {
         error: None,
         waiting: None,
         media: None,
-        added_at: 0,
+        added_at: wirecatch_protocol::UnixMillis(0),
         completed_at: None,
         processing: None,
         proxy: None,

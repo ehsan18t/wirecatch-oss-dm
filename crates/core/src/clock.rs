@@ -4,6 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
+use wirecatch_protocol::UnixMillis;
 
 use chrono::{Local, NaiveDateTime, TimeDelta, Utc};
 use tokio::sync::watch;
@@ -25,8 +26,8 @@ pub trait Clock: Send + Sync + 'static {
     /// The current local date and time, as shown on the user's own clock.
     fn local_now(&self) -> NaiveDateTime;
 
-    /// Milliseconds since the Unix epoch.
-    fn unix_millis(&self) -> i64;
+    /// The current moment, for timestamps.
+    fn unix_millis(&self) -> UnixMillis;
 
     /// Waits until this clock shows `deadline` or later. May return early, so
     /// callers read the time again after waking.
@@ -42,8 +43,8 @@ impl Clock for SystemClock {
         Local::now().naive_local()
     }
 
-    fn unix_millis(&self) -> i64 {
-        Utc::now().timestamp_millis()
+    fn unix_millis(&self) -> UnixMillis {
+        UnixMillis(Utc::now().timestamp_millis())
     }
 
     fn sleep_until(&self, deadline: NaiveDateTime) -> Sleep<'_> {
@@ -96,8 +97,8 @@ impl Clock for ManualClock {
         *self.now()
     }
 
-    fn unix_millis(&self) -> i64 {
-        self.local_now().and_utc().timestamp_millis()
+    fn unix_millis(&self) -> UnixMillis {
+        UnixMillis(self.local_now().and_utc().timestamp_millis())
     }
 
     fn sleep_until(&self, deadline: NaiveDateTime) -> Sleep<'_> {

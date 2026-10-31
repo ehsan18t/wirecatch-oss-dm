@@ -1,6 +1,7 @@
 //! A download's numbers and states in short words, as its row says them.
 
 use chrono::{Local, TimeZone as _};
+use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
     Category, DownloadStatus, DownloadSummary, FixAction, MediaSummary, PER_MILLE_DONE,
     ProcessingStep, Schedule, TimeOfDay, WaitReason, Weekday,
@@ -310,8 +311,8 @@ pub fn folder(path: &str) -> String {
 }
 
 /// A moment for the details: `Today, 14:05`, `Yesterday, 09:12` or `3 Oct 2026, 09:12`.
-pub fn date(ms: i64) -> String {
-    let Some(at) = Local.timestamp_millis_opt(ms).single() else {
+pub fn date(at: UnixMillis) -> String {
+    let Some(at) = Local.timestamp_millis_opt(at.0).single() else {
         return String::new();
     };
     let today = Local::now().date_naive();
@@ -328,12 +329,12 @@ pub fn date(ms: i64) -> String {
 
 /// How long ago a moment was, for a row: `Just now`, `5 min ago`, `3 h ago`, `Yesterday` or
 /// `3 Oct`.
-pub fn ago(ms: i64) -> String {
-    ago_from(ms, Local::now())
+pub fn ago(at: UnixMillis) -> String {
+    ago_from(at, Local::now())
 }
 
-fn ago_from(ms: i64, now: chrono::DateTime<Local>) -> String {
-    let Some(at) = Local.timestamp_millis_opt(ms).single() else {
+fn ago_from(at: UnixMillis, now: chrono::DateTime<Local>) -> String {
+    let Some(at) = Local.timestamp_millis_opt(at.0).single() else {
         return String::new();
     };
     let minutes = (now - at).num_minutes();
@@ -431,10 +432,10 @@ fn time(at: TimeOfDay) -> String {
     format!("{:02}:{:02}", at.hour, at.minute)
 }
 
-/// The local clock time of a Unix time in milliseconds: `07:05`.
-pub fn clock(ms: i64) -> String {
+/// The local clock time of a moment: `07:05`.
+pub fn clock(at: UnixMillis) -> String {
     Local
-        .timestamp_millis_opt(ms)
+        .timestamp_millis_opt(at.0)
         .single()
         .map_or_else(String::new, |at| at.format("%H:%M").to_string())
 }
@@ -465,13 +466,17 @@ mod tests {
     fn a_finished_moment_reads_as_how_long_ago() {
         let now = Local.with_ymd_and_hms(2026, 10, 30, 15, 0, 0).unwrap();
         let at = |y, mo, d, h, mi| {
-            Local
+            let at = Local
                 .with_ymd_and_hms(y, mo, d, h, mi, 0)
                 .unwrap()
-                .timestamp_millis()
+                .timestamp_millis();
+            UnixMillis(at)
         };
         assert_eq!(ago_from(at(2026, 10, 30, 14, 59), now), "1 min ago");
-        assert_eq!(ago_from(now.timestamp_millis(), now), "Just now");
+        assert_eq!(
+            ago_from(UnixMillis(now.timestamp_millis()), now),
+            "Just now"
+        );
         assert_eq!(ago_from(at(2026, 10, 30, 11, 30), now), "3 h ago");
         assert_eq!(ago_from(at(2026, 10, 29, 22, 0), now), "Yesterday");
         assert_eq!(ago_from(at(2026, 10, 3, 9, 0), now), "3 Oct");

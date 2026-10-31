@@ -1047,7 +1047,9 @@ async fn pausing_while_waiting_to_read_the_page_again_stops_it() -> TestResult {
     // manager's clock (a manual one here, so exactly two minutes from now).
     let now = wirecatch_core::Clock::unix_millis(h.clock.as_ref());
     match waiting.waiting {
-        Some(WaitReason::ServerRefused { retry_at }) => assert_eq!(retry_at, now + 120_000),
+        Some(WaitReason::ServerRefused { retry_at }) => {
+            assert_eq!(retry_at, now.saturating_add(Duration::from_mins(2)));
+        }
         other => panic!("expected the refusal as the wait reason, got {other:?}"),
     }
 

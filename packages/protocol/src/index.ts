@@ -131,6 +131,7 @@ export type { Theme } from './generated/Theme';
 export type { TimeOfDay } from './generated/TimeOfDay';
 export type { UiEvent } from './generated/UiEvent';
 export type { UnembeddedSubtitles } from './generated/UnembeddedSubtitles';
+export type { UnixMillis } from './generated/UnixMillis';
 export type { UserError } from './generated/UserError';
 export type { VideoQuality } from './generated/VideoQuality';
 export type { WaitReason } from './generated/WaitReason';

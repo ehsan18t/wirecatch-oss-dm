@@ -18,12 +18,14 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use std::time::Duration;
 use tracing::warn;
 use wirecatch_addons::Check;
 use wirecatch_engine::{CancellationToken, DownloadOptions, PrivateNetwork, ProxyChoice, Url};
 use wirecatch_media::MediaTools;
 use wirecatch_media::choice::{self, Offer, Plan, Resolved};
 use wirecatch_media::{MediaJob, Pick, StoredMedia, describe, output, ytdlp};
+use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
     AddonRequestItem, Category, MediaChoice, MediaReading, MediaSelection, MediaSubtitle,
     MediaSummary, OutputFormat, PortablePath, Repeated, UiEvent, UserError, VideoQuality,
@@ -46,7 +48,7 @@ use crate::headers::Origin;
 
 /// How long a page waits for the media add-on before it becomes a failed
 /// download, so a question is never asked long after the person moved on.
-const ADDON_WAIT_MILLIS: i64 = 30 * 60 * 1000;
+const ADDON_WAIT: Duration = Duration::from_mins(30);
 
 /// Where a media capture came from.
 #[derive(Debug, Clone)]
@@ -61,7 +63,7 @@ pub(super) struct MediaSource {
 /// A media capture that is not a download yet.
 pub(super) struct MediaPending {
     /// When it was captured, in Unix milliseconds.
-    pub added_at: i64,
+    pub added_at: UnixMillis,
     pub source: MediaSource,
     /// Where it goes for now; placed again once its window proposes a name (D72.11).
     pub placed: Placed,
@@ -623,12 +625,12 @@ impl Manager {
             .collect()
     }
 
-    /// Turns pages that waited longer than [`ADDON_WAIT_MILLIS`] into failed
+    /// Turns pages that waited longer than [`ADDON_WAIT`] into failed
     /// downloads.
     pub(super) fn expire_addon_waits(&self) {
         let now = self.inner.clock.unix_millis();
         self.fail_addon_waits(
-            |m| now.saturating_sub(m.added_at) >= ADDON_WAIT_MILLIS,
+            |m| now.since(m.added_at) >= ADDON_WAIT,
             "This video waited for the media add-on for a long time, so Wirecatch stopped waiting. Install the media add-on in Settings > Media, then try again.",
         );
     }

@@ -11,6 +11,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 use wirecatch_engine::{CancellationToken, Fetcher, PrivateNetwork, Url};
+use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{SuffixListInfo, UiEvent};
 use wirecatch_sites::public_suffix::{KEPT_FILE, MAX_LIST_BYTES, Refused, SuffixList};
 
@@ -22,9 +23,9 @@ use crate::error::{CoreError, Result};
 pub const PUBLIC_SUFFIX_LIST_URL: &str = "https://publicsuffix.org/list/public_suffix_list.dat";
 
 /// How long a list stays current before a newer one is looked for.
-const CHECK_EVERY_MILLIS: i64 = 7 * 24 * 60 * 60 * 1000;
+const CHECK_EVERY: Duration = Duration::from_hours(7 * 24);
 /// How soon a check that failed is tried again.
-const RETRY_AFTER_MILLIS: i64 = 24 * 60 * 60 * 1000;
+const RETRY_AFTER: Duration = Duration::from_hours(24);
 /// How often the background task looks whether a check is due. It waits this
 /// long after the app starts too, so a start is never slowed by a check.
 const LOOK_EVERY: Duration = Duration::from_hours(1);
@@ -38,8 +39,8 @@ const CHECK_FILE: &str = "public-suffix-check.json";
 /// The last check, kept across starts so the check stays weekly.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct SuffixCheck {
-    /// When it ran, in milliseconds since the Unix epoch.
-    at: Option<i64>,
+    /// When it ran.
+    at: Option<UnixMillis>,
     /// Whether it ended with the newest list in use: a newer one taken, or none found.
     current: bool,
 }
@@ -71,12 +72,12 @@ impl SuffixCheck {
     /// after the last check that ended current, a day after one that did not, and before
     /// any check, once the list in use is a week old. A check recorded after `now` ran while
     /// the clock was ahead, so how long ago it was is unknown, and it is due.
-    fn due(self, published: i64, now: i64) -> bool {
+    fn due(self, published: UnixMillis, now: UnixMillis) -> bool {
         match self.at {
-            None => now.saturating_sub(published) >= CHECK_EVERY_MILLIS,
+            None => now.since(published) >= CHECK_EVERY,
             Some(at) if at > now => true,
-            Some(at) if self.current => now.saturating_sub(at) >= CHECK_EVERY_MILLIS,
-            Some(at) => now.saturating_sub(at) >= RETRY_AFTER_MILLIS,
+            Some(at) if self.current => now.since(at) >= CHECK_EVERY,
+            Some(at) => now.since(at) >= RETRY_AFTER,
         }
     }
 }
@@ -159,7 +160,7 @@ impl Manager {
         let failed = match found {
             Ok(Some(list)) => {
                 info!(
-                    published = list.published(),
+                    published = list.published().0,
                     "took a newer public suffix list"
                 );
                 state.suffixes = list;
@@ -305,21 +306,21 @@ mod tests {
     fn a_check_is_due_weekly_and_a_day_after_one_that_failed() {
         let published = 1_000 * DAY;
         let never = SuffixCheck::default();
-        assert!(!never.due(published, published + 6 * DAY));
-        assert!(never.due(published, published + 7 * DAY));
+        assert!(!never.due(UnixMillis(published), UnixMillis(published + 6 * DAY)));
+        assert!(never.due(UnixMillis(published), UnixMillis(published + 7 * DAY)));
         let at = published + 10 * DAY;
         let current = SuffixCheck {
-            at: Some(at),
+            at: Some(UnixMillis(at)),
             current: true,
         };
-        assert!(!current.due(published, at + 6 * DAY));
-        assert!(current.due(published, at + 7 * DAY));
+        assert!(!current.due(UnixMillis(published), UnixMillis(at + 6 * DAY)));
+        assert!(current.due(UnixMillis(published), UnixMillis(at + 7 * DAY)));
         let failed = SuffixCheck {
-            at: Some(at),
+            at: Some(UnixMillis(at)),
             current: false,
         };
-        assert!(!failed.due(published, at + DAY - 1));
-        assert!(failed.due(published, at + DAY));
+        assert!(!failed.due(UnixMillis(published), UnixMillis(at + DAY - 1)));
+        assert!(failed.due(UnixMillis(published), UnixMillis(at + DAY)));
     }
 
     #[test]
@@ -328,10 +329,13 @@ mod tests {
         let now = published + 10 * DAY;
         for current in [true, false] {
             let ahead = SuffixCheck {
-                at: Some(now + 365 * DAY),
+                at: Some(UnixMillis(now + 365 * DAY)),
                 current,
             };
-            assert!(ahead.due(published, now), "current: {current}");
+            assert!(
+                ahead.due(UnixMillis(published), UnixMillis(now)),
+                "current: {current}"
+            );
         }
     }
 
@@ -348,7 +352,7 @@ mod tests {
         async fn new() -> Self {
             let server = FileServer::start().await;
             let dir = tempfile::tempdir().unwrap();
-            let now = chrono::DateTime::from_timestamp_millis(testing::NEWER_MILLIS)
+            let now = chrono::DateTime::from_timestamp_millis(testing::NEWER_AT.0)
                 .unwrap()
                 .naive_utc();
             let clock = Arc::new(ManualClock::new(now));
@@ -396,7 +400,7 @@ mod tests {
 
         let checked = h.manager.check_suffix_list().await.unwrap();
         assert_eq!(h.server.requests(LIST), 1);
-        assert_eq!(checked.published, testing::NEWER_MILLIS);
+        assert_eq!(checked.published, testing::NEWER_AT);
 
         h.set_updates(true);
         h.clock.advance(chrono::TimeDelta::days(7));
@@ -413,7 +417,7 @@ mod tests {
         h.add_local_site("customers.example.net").unwrap();
         h.serve(testing::NEWER, &["customers.example.net"]);
         let checked = h.manager.check_suffix_list().await.unwrap();
-        assert_eq!(checked.published, testing::NEWER_MILLIS);
+        assert_eq!(checked.published, testing::NEWER_AT);
         let refused = h.add_local_site("customers.example.net").unwrap_err();
         assert!(matches!(refused, CoreError::Invalid(_)), "{refused:?}");
 
@@ -458,7 +462,7 @@ mod tests {
         assert_eq!(info, h.manager.suffix_list());
         assert_eq!(
             (info.published, info.check_failed),
-            (testing::NEWER_MILLIS, false)
+            (testing::NEWER_AT, false)
         );
 
         h.server.put(LIST, "not a list");
@@ -467,7 +471,7 @@ mod tests {
         assert_eq!(info, h.manager.suffix_list());
         assert_eq!(
             (info.published, info.check_failed),
-            (testing::NEWER_MILLIS, true)
+            (testing::NEWER_AT, true)
         );
     }
 

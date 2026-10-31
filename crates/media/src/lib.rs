@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use wirecatch_engine::Progress;
 use wirecatch_files::with_suffix;
+use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{PER_MILLE_DONE, ProcessingProgress, ProcessingStep};
 use wirecatch_streams::{Stage, StreamProgress};
 
@@ -54,7 +55,7 @@ struct State {
     /// yt-dlp's own report when it downloads by itself: bytes so far and the total, when known.
     own: Option<(u64, Option<u64>)>,
     /// When the next try with fresh addresses from the page starts, in Unix milliseconds.
-    retry_at: Option<i64>,
+    retry_at: Option<UnixMillis>,
 }
 
 #[derive(Debug)]
@@ -79,7 +80,7 @@ pub struct Reading {
     /// Waiting to try again (a server refused, and the page is read again
     /// for fresh addresses) at this Unix time in milliseconds; nothing is being
     /// received meanwhile.
-    pub retry_at: Option<i64>,
+    pub retry_at: Option<UnixMillis>,
 }
 
 impl MediaProgress {
@@ -110,8 +111,8 @@ impl MediaProgress {
 
     /// Marks the download as waiting to try again at `at` (Unix milliseconds),
     /// or, with `None`, no longer waiting.
-    pub fn set_retry_at(&self, at: Option<i64>) {
-        self.lock().retry_at = at.filter(|t| *t > 0);
+    pub fn set_retry_at(&self, at: Option<UnixMillis>) {
+        self.lock().retry_at = at.filter(|t| t.0 > 0);
     }
 
     /// Forgets the parts of an attempt that did not finish, before the next
@@ -296,9 +297,9 @@ mod tests {
 
         // Waiting to try again keeps what is shown until the next attempt
         // starts over with its own parts.
-        progress.set_retry_at(Some(1_000));
+        progress.set_retry_at(Some(UnixMillis(1_000)));
         let waiting = progress.read();
-        assert_eq!(waiting.retry_at, Some(1_000));
+        assert_eq!(waiting.retry_at, Some(UnixMillis(1_000)));
         assert_eq!((waiting.done, waiting.total), (10, Some(40)));
         progress.start_over();
         progress.add_done(10);
