@@ -6,7 +6,10 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/svelt
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it } from 'vitest';
+import { appSide } from '../src/lib/hub/app';
+import type { HubDeps } from '../src/lib/hub/deps';
 import { Hub } from '../src/lib/hub/hub';
+import { MediaSender } from '../src/lib/hub/media-sender';
 import { MediaCenter, type TabInfo } from '../src/lib/media/center';
 import { MediaRegistry } from '../src/lib/media/registry';
 import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';
@@ -66,22 +69,24 @@ async function openPopup(
       }),
     backoffMs: [60_000],
   });
-  const media: MediaCenter = new MediaCenter({
-    registry,
-    getTab: (id) => Promise.resolve(TABS.get(id) ?? null),
-    send: (request) => hub.sendMedia(request),
-    privateWindowsOn: () => hub.privateWindowsOn(),
-  });
-  const hub: Hub = new Hub({
+  const hubDeps = {
     client,
     cache: new MemoryCache(),
     downloads: new FakeDownloads(),
     cookieHeader: () => Promise.resolve(null),
     hasSiteAccess: () => Promise.resolve(true),
     userAgent: null,
-    media,
     timing: { connectWaitMs: 50, requestTimeoutMs: 50, withdrawTimeoutMs: 50 },
+  } satisfies HubDeps;
+  const side = appSide(hubDeps);
+  const sender = new MediaSender(side, hubDeps);
+  const media = new MediaCenter({
+    registry,
+    getTab: (id) => Promise.resolve(TABS.get(id) ?? null),
+    send: (request) => sender.send(request),
+    privateWindowsOn: () => side.app.privateWindowsOn(),
   });
+  const hub = new Hub({ ...hubDeps, media }, side);
   await hub.start();
   await flush();
   const [popupEnd, backgroundEnd] = channelPair<PopupRequest, BackgroundMessage>();

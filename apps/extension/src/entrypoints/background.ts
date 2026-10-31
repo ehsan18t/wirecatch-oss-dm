@@ -20,10 +20,12 @@ import {
 import { registerCapture, type DownloadEvents } from '@/lib/capture/register';
 import { installDiagnostics } from '@/lib/diag/install';
 import { fallback } from '@/lib/diag/log';
-import type { MenuTab } from '@/lib/hub/deps';
+import { appSide } from '@/lib/hub/app';
+import type { HubDeps, MenuTab } from '@/lib/hub/deps';
 import { Hub } from '@/lib/hub/hub';
+import { MediaSender } from '@/lib/hub/media-sender';
 import { announcer } from '@/lib/media/announce';
-import { MediaCenter, type MediaSendResult } from '@/lib/media/center';
+import { MediaCenter } from '@/lib/media/center';
 import { registerMediaListeners } from '@/lib/media/listen';
 import { MediaRegistry } from '@/lib/media/registry';
 import { MediaWatcher } from '@/lib/media/watch';
@@ -90,23 +92,40 @@ export default defineBackground(() => {
   installDiagnostics('background', self);
   const client = new NativeClient({ transport: browserTransport(), hello: helloFromExtension });
 
+  const hubDeps = {
+    mediaButtonSetting: { publish: publishButtonSetting },
+    client,
+    cache: settingsCache(),
+    downloads: browserDownloads(),
+    cookieHeader: cookieHeaderFor,
+    hasSiteAccess,
+    userAgent: navigator.userAgent,
+    inFlight: inFlightStore(),
+    alert: alertStore(),
+    badge: toolbarBadge(),
+  } satisfies HubDeps;
+  // Built before the hub, the media side and the notices, which all use them.
+  const side = appSide(hubDeps);
+  const { settings, app } = side;
+  const sender = new MediaSender(side, hubDeps);
+
   const registry = new MediaRegistry();
-  const media: MediaCenter = new MediaCenter({
+  const media = new MediaCenter({
     registry,
     getTab: tabInfo,
-    send: (request): Promise<MediaSendResult> => hub.sendMedia(request),
+    send: (request) => sender.send(request),
     store: mediaStore(),
-    ignoredSites: () => hub.knownSettings()?.ignored_sites ?? [],
-    videoSites: () => hub.knownSettings()?.video_sites ?? [],
-    mediaButtonOn: () => hub.mediaButtonOn(),
-    privateWindowsOn: () => hub.privateWindowsOn(),
+    ignoredSites: () => settings.known()?.ignored_sites ?? [],
+    videoSites: () => settings.known()?.video_sites ?? [],
+    mediaButtonOn: () => settings.mediaButtonOnceLoaded(),
+    privateWindowsOn: () => app.privateWindowsOn(),
     liveTabs,
   });
   // Started before any listener can fire, so every response waits for the restored lists.
   const restored = media.start();
   const watcher = new MediaWatcher(registry, {
     isPrivateTab: async (tabId) => (await browser.tabs.get(tabId)).incognito,
-    privateWindowsOn: () => hub.privateWindowsOn(),
+    privateWindowsOn: () => app.privateWindowsOn(),
     ready: restored,
   });
 
@@ -115,7 +134,7 @@ export default defineBackground(() => {
       focusedWebTab({
         lastFocusedWindow: () => browser.windows.getLastFocused(),
         activeTab: async (windowId) => (await browser.tabs.query({ active: true, windowId }))[0],
-        privateWindowsOn: () => hub.privateWindowsOn(),
+        privateWindowsOn: () => app.privateWindowsOn(),
       }),
     mount: async (tabId) => {
       const answer: unknown = await browser.tabs.sendMessage(
@@ -128,25 +147,12 @@ export default defineBackground(() => {
     unmount: async (tabId) => {
       await browser.tabs.sendMessage(tabId, { type: NOTICE_UNMOUNT }, { frameId: 0 });
     },
-    shown: (id) => hub.noticeShown(id),
-    pressed: (id, button) => hub.noticePressed(id, button),
+    shown: (id) => app.noticeShown(id),
+    pressed: (id, button) => app.noticePressed(id, button),
     now: () => Date.now(),
   });
 
-  const hub: Hub = new Hub({
-    media,
-    mediaButtonSetting: { publish: publishButtonSetting },
-    client,
-    cache: settingsCache(),
-    downloads: browserDownloads(),
-    cookieHeader: cookieHeaderFor,
-    hasSiteAccess,
-    userAgent: navigator.userAgent,
-    inFlight: inFlightStore(),
-    alert: alertStore(),
-    badge: toolbarBadge(),
-    notices,
-  });
+  const hub = new Hub({ ...hubDeps, media, notices }, side);
 
   // Every listener is registered synchronously so a sleeping background wakes up for it.
   const downloadEvents: DownloadEvents = browser.downloads;

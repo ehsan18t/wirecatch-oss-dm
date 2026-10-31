@@ -57,7 +57,7 @@ describe('the waits', () => {
       transport: app,
       hello: () => Promise.resolve({ client: 'extension', client_version: '0.1.0', browser: null }),
     });
-    const settings = new KnownSettings({ cache: new MemoryCache() }, () => undefined);
+    const settings = new KnownSettings({ cache: new MemoryCache() });
     const calls = new AppCalls(client, hubTiming(), settings, null);
 
     const added = calls.addDownload({

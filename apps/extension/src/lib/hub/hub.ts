@@ -1,51 +1,33 @@
 import {
   DEFAULT_EXTENSION_SETTINGS,
-  takesPrivateWindows,
   type Call,
   type Event,
-  type ExtensionSettings,
-  type NoticeId,
   type Outcome,
 } from '@wirecatch/protocol';
 import { candidateFromItem, type DownloadItemLike } from '../capture/candidate';
-import {
-  handOver,
-  readBrowserCopy,
-  type HandoverResult,
-  type JudgingSettings,
-} from '../capture/handover';
+import { handOver, readBrowserCopy, type HandoverResult } from '../capture/handover';
 import { shouldCapture } from '../capture/should-capture';
-import { cookieStoreOf, isCrossSite, type CookieContext } from '../cookies';
+import { cookieStoreOf } from '../cookies';
 import { fallback, log } from '../diag/log';
 import { fileNameFromUrl } from '../file-types';
-import type { MediaRequest, MediaSendResult } from '../media/center';
 import type { Alert, PopupCommand, Snapshot } from '../messages';
 import type { NativeClient } from '../native/client';
 import type { ConnectionStatus } from '../native/status';
 import { refererFor } from '../referrer';
-import { AppCalls, isLocalCommand } from './app';
-import {
-  hubTiming,
-  type HubDeps,
-  type InFlightEntry,
-  type MenuClick,
-  type MenuResult,
-  type MenuTab,
-} from './deps';
+import { appSide, isLocalCommand, type AppCalls, type AppSide } from './app';
+import type { HubDeps, InFlightEntry, MenuClick, MenuResult, MenuTab } from './deps';
 import { planMenuClick } from './menu';
-import { MEDIA_UNREACHABLE } from '../media/messages';
 import { AlertBoard } from './alert-board';
 import {
   BROWSER_DOWNLOAD_FAILED,
-  MEDIA_NO_SITE_ACCESS,
   MENU_PRIVATE_WINDOW,
   NO_SITE_ACCESS,
-  mediaAnswer,
   menuNotTaken,
 } from './alerts';
 import { Popups, type PopupChannel } from './popups';
 import { recoverHandover } from './recovery';
-import { KnownSettings } from './settings';
+import { hasAccess, newHandoverId } from './media-sender';
+import type { KnownSettings } from './settings';
 
 /**
  * The background script's state: the connection, the app's settings and queues,
@@ -66,12 +48,13 @@ export class Hub {
   #markReady: () => void = () => undefined;
   readonly #alerts: AlertBoard;
 
-  constructor(deps: HubDeps) {
+  /** `side` is shared with the media side and the notices; tests that need neither leave it out. */
+  constructor(deps: HubDeps, side: AppSide = appSide(deps)) {
     this.#deps = deps;
     this.#now = deps.now ?? Date.now;
-    const timing = hubTiming(deps.timing);
-    this.#settings = new KnownSettings(deps, () => this.#publish());
-    this.#app = new AppCalls(deps.client, timing, this.#settings, deps.userAgent);
+    this.#settings = side.settings;
+    this.#app = side.app;
+    this.#settings.onChange(() => this.#publish());
     this.#alerts = new AlertBoard({
       now: this.#now,
       store: deps.alert,
@@ -155,13 +138,13 @@ export class Hub {
       if (!shouldCapture(candidate, known).capture) return null;
       const name = candidate.fileName ?? fileNameFromUrl(candidate.url) ?? 'A download';
 
-      if (!(await this.#siteAccess(candidate.url))) {
+      if (!(await hasAccess(this.#deps, candidate.url))) {
         this.#alerts.warn(`${name} stayed in the browser. ${NO_SITE_ACCESS}`);
         return null;
       }
 
       // Recorded before pausing, so a restarted background can withdraw it and act on the answer.
-      const handoverId = this.#newHandoverId();
+      const handoverId = newHandoverId(this.#deps);
       this.#inFlight.set(item.id, handoverId);
       await this.#persistInFlight();
       persisted = true;
@@ -169,7 +152,7 @@ export class Hub {
         { downloadId: item.id, handoverId, candidate, cookieStore: cookieStoreOf(item) },
         {
           downloads: this.#deps.downloads,
-          liveSettings: () => this.#judgingSettings(),
+          liveSettings: () => this.#app.judgingSettings(),
           addDownload: (download) => this.#app.addDownload(download),
           withdraw: (handoverId) => this.#app.withdraw(handoverId),
           cookieHeader: (url, store, context) => this.#deps.cookieHeader(url, store, context),
@@ -189,7 +172,7 @@ export class Hub {
    * link, the browser downloads it instead, so the click is never lost.
    */
   async onMenuClick(click: MenuClick, tab: MenuTab | undefined): Promise<MenuResult> {
-    const privateWindows = tab?.incognito === true && (await this.privateWindowsOn());
+    const privateWindows = tab?.incognito === true && (await this.#app.privateWindowsOn());
     const plan = planMenuClick(click, tab, privateWindows);
     switch (plan.kind) {
       case 'failed':
@@ -210,14 +193,14 @@ export class Hub {
     click: MenuClick,
     tab: MenuTab | undefined,
   ): Promise<MenuResult> {
-    if (!(await this.#siteAccess(url))) {
+    if (!(await hasAccess(this.#deps, url))) {
       return this.#browserFallback(
         url,
         `The browser is downloading ${name} instead. ${NO_SITE_ACCESS}`,
       );
     }
     await this.#ready;
-    const handoverId = this.#newHandoverId();
+    const handoverId = newHandoverId(this.#deps);
     const page = click.frameUrl ?? click.pageUrl ?? null;
     const result = await this.#app.submit(handoverId, {
       url,
@@ -249,45 +232,6 @@ export class Hub {
    * lost. There is no browser download to keep, so when the app cannot be reached
    * the answer says to open Wirecatch instead of failing quietly.
    */
-  async sendMedia(request: MediaRequest): Promise<MediaSendResult> {
-    const { target } = request;
-    if (!(await this.#siteAccess(target.url))) return { ok: false, message: MEDIA_NO_SITE_ACCESS };
-    await this.#ready;
-    if (!this.#app.connected || this.#settings.live === null) {
-      // Connect (and learn the default queue) first, so "could not be reached" is certain: nothing has been sent yet when this fails.
-      try {
-        await this.#app.fetchSettings();
-      } catch (error) {
-        log.warn('hub', 'Could not reach the app to send media', error);
-        return { ok: false, message: MEDIA_UNREACHABLE };
-      }
-    }
-    // Media is loaded by the page itself (a top-level navigation only for the page address).
-    const context: CookieContext = {
-      initiator: request.referrer,
-      topLevel: request.pageUrl,
-      navigation: target.kind === 'page',
-    };
-    const result = await this.#app.submit(this.#newHandoverId(), {
-      url: target.url,
-      referrer: refererFor(target.url, request.referrer),
-      page_url: request.pageUrl,
-      // The document that requested the media chose its address; left out when unknown.
-      ...(target.requestedBy === null ? {} : { frame_url: target.requestedBy }),
-      suggested_name: null,
-      mime: target.mime,
-      size_hint: target.size,
-      // Media from another site goes with the cookies its own request carried, when it was seen: no cookie read can tell whether the browser sends its unpartitioned cookies to another site (D59). Otherwise they are read now, so they are the freshest.
-      cookies:
-        target.sentCookies !== undefined && isCrossSite(target.url, context)
-          ? target.sentCookies
-          : await this.#deps.cookieHeader(target.url, request.cookieStore, context),
-      source: 'media_button',
-      media: { kind: target.kind, title: request.title },
-    });
-    return mediaAnswer(result);
-  }
-
   async #browserFallback(url: string, message: string | null): Promise<'browser' | 'failed'> {
     try {
       await this.#deps.downloads.start(url);
@@ -298,40 +242,6 @@ export class Hub {
       this.#alerts.error(BROWSER_DOWNLOAD_FAILED);
       return 'failed';
     }
-  }
-
-  async #siteAccess(url: string): Promise<boolean> {
-    try {
-      return await this.#deps.hasSiteAccess(url);
-    } catch (error) {
-      log.warn('hub', 'Could not check access to the site; taking it as not granted', error);
-      return false;
-    }
-  }
-
-  #newHandoverId(): string {
-    return this.#deps.newHandoverId?.() ?? crypto.randomUUID();
-  }
-
-  /**
-   * The settings to judge a paused download by: the app's, connecting first if
-   * needed; when the app cannot be reached in time, the session copy (marked as
-   * such, so a "capture off" in it still keeps the download in the browser).
-   */
-  async #judgingSettings(): Promise<JudgingSettings | null> {
-    const { live } = this.#settings;
-    if (live !== null && this.#app.connected) {
-      return { settings: live, fromApp: true };
-    }
-    try {
-      const settings = await this.#app.fetchSettings();
-      if (settings !== null) return { settings, fromApp: true };
-    } catch (error) {
-      log.warn('settings', 'Could not reach the app; judging by the session copy', error);
-    }
-    // Read after the wait: settings that came in meanwhile are the newest copy.
-    const { cached } = this.#settings;
-    return cached === null ? null : { settings: cached.settings, fromApp: false };
   }
 
   async #persistInFlight(): Promise<void> {
@@ -423,16 +333,6 @@ export class Hub {
     }
   }
 
-  /** Tells the app a notice showed in the tab the person is looking at (D65). */
-  noticeShown(id: NoticeId): Promise<void> {
-    return this.#app.noticeShown(id);
-  }
-
-  /** Tells the app the person pressed one of a notice's buttons, or its text (D65). */
-  noticePressed(id: NoticeId, button: number | null): Promise<void> {
-    return this.#app.noticePressed(id, button);
-  }
-
   /**
    * The app answered `add_download` after this side gave up waiting. `outcome` is null for an
    * answer that cannot be read and was not marked as an error, which may be a confirmation.
@@ -446,24 +346,6 @@ export class Hub {
     }
     const name = call.params.suggested_name ?? fileNameFromUrl(call.params.url) ?? 'A download';
     this.#alerts.confirmedLate(call.params.handover_id, name, outcome !== null);
-  }
-
-  /** The app's settings, or the session copy when the app is not connected; null before either is known. */
-  knownSettings(): ExtensionSettings | null {
-    return this.#settings.known();
-  }
-
-  /** "Show download button on videos", for a media button asking as its page loads: once the session copy is in, since the question may be what woke the background, and pages are told only later changes. */
-  async mediaButtonOn(): Promise<boolean> {
-    await this.#ready;
-    return this.#settings.mediaButtonOn();
-  }
-
-  /** "Work in private windows" (D82). Unknown settings are asked of the app: taken as on, they would let through a private window the person turned off. */
-  async privateWindowsOn(): Promise<boolean> {
-    await this.#ready;
-    const settings = this.#settings.known() ?? (await this.#judgingSettings())?.settings;
-    return settings === undefined || takesPrivateWindows(settings);
   }
 
   /** The browser reports a download running or finished, so a alert asking to resume it is done. */
