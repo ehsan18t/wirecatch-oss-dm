@@ -9,8 +9,8 @@ On 2026-10-11 nine independent reviewers read the whole repository and reported 
 | [core-media.md](audit/core-media.md) | `crates/core/src/media`, `crates/core/src/addons` | CMD |
 | [core.md](audit/core.md) | the rest of `crates/core` | CORE |
 | [ipc-bridge.md](audit/ipc-bridge.md) | `crates/ipc`, `crates/bridge`, `crates/cli`, `crates/protocol` | IPB |
-| [desktop-rust.md](audit/desktop-rust.md) | `apps/desktop/src-tauri` | DRS |
-| [desktop-ui.md](audit/desktop-ui.md) | `apps/desktop/src` | DUI |
+| [desktop-rust.md](audit/desktop-rust.md) | `apps/desktop/src-tauri` (gone, D107; see "After the move to GPUI") | DRS |
+| [desktop-ui.md](audit/desktop-ui.md) | `apps/desktop/src` (gone, D107; see "After the move to GPUI") | DUI |
 | [extension.md](audit/extension.md) | `apps/extension` | EXT |
 | [cross-cutting.md](audit/cross-cutting.md) | seams between packages, CI, tooling, identity inventory | XC |
 
@@ -64,7 +64,7 @@ XC-15, DRS-3, EXT-7, CMD-14
 
 One unpublished test-support crate replaces the copied local servers and helpers. Every suite that exists runs in CI.
 
-XC-13, XC-18, XC-20, XC-21, STR-10, STR-11, STR-19, STR-20, STR-21, DRS-24, IPB-20, CORE-29, DUI-17, DUI-18, DUI-27, IPB-16
+XC-13, XC-18, XC-20, XC-21, STR-10, STR-11, STR-19, STR-20, STR-21, DRS-24, IPB-20, CORE-29, DUI-18, DUI-27, IPB-16 (DUI-17 went with the Svelte desktop, D107)
 
 IPB-16 moved here from W2: a test-only bridge binary only helps once the overrides are chosen by the binary rather than by a package feature, and its variable names belong with XC-13's shared test support.
 
@@ -73,19 +73,17 @@ Where each stands (2026-10-29):
 - Done: STR-10 and DRS-24 (one local server in `crates/test-support`), CORE-29 (every window in which nothing must happen is `QUIET`, from test-support), STR-11 (the HLS resume test hangs segments instead of slowing them), STR-19 (`crates/streams/tests/common`), STR-20 (the fake extension reports a frame it cannot read), STR-21 (the e2e README).
 - XC-13: one `real_ffmpeg` in test-support, which honours `WIRECATCH_REQUIRE_FFMPEG` everywhere, and the bridge's test variables in one place. The bridge's own `src/app.rs` keeps its names, since product code cannot use test-support.
 - IPB-16: the variable names are shared; a test-only bridge binary that never overwrites `wirecatch-bridge` is still to build.
-- XC-18 and DUI-18: a11y and layout run in CI's browser job, which keeps a failed run's results. `e2e:perf` still runs nowhere: it asserts frame times, which a shared runner cannot promise, so it belongs in a scheduled run that reports them rather than in every pull request's gate.
+- XC-18 and DUI-18: done; the extension's a11y and layout checks run in CI's browser job, which keeps a failed run's results. The desktop's `e2e:perf` went with the Svelte desktop.
 - XC-21: done; Windows runs only the JavaScript tests and build, and installs no Rust.
 - IPB-20: every test endpoint is named through `private_dir`; still untested are `accept` recovering after a failed `new_instance`, the `ERROR_MORE_DATA` branch and the `OpenProcess` fallback.
-- XC-20: `release.yml` builds the installers and the extension's store packages on a version tag or by hand, and drafts the release after `gate.mjs publish`; unsigned until the certificate and updater key exist, and not run yet.
+- XC-20: done; `release.yml` builds every installer on x64 and ARM64 and the extension's store packages, checks each Linux package on a fresh system, and drafts the release with the signed update manifest after `gate.mjs publish` (D106, D110, D111).
 - DUI-27: done; the review-round file is split into tests by area, and `features.test.ts` stays as the acceptance suite.
-- Open: DUI-17 (the mock is not checked against the real core).
 
 #### Proposed gate checks
 
 Every check proposed during the audit run, so none lives only in a reviewer's notes. Each is cheap to run and would have caught a defect found by hand; none is built yet. Proposals already written in the carried lists below (fixed sleeps in tests, `Result<_, String>`, a bare `vi.waitFor`, the `RuleTester` check, `cargo doc` of private items, a log line that formats an error with `%` alone, and history words in comments, W15) are not repeated here. A check of every commit in `origin/main..HEAD` is not proposed: on 2026-10-15 the maintainer decided that regrouped commits are not checked one by one, and only the final tree is gated before a merge.
 
 - A test run elevated on Windows: the endpoint key ownership bug (IPB-10) showed only when tests ran as administrator, as GitHub's Windows runners do.
-- The desktop's 10,000-row `performance.spec.ts` run in the gate and CI (`pnpm e2e:perf`), the part of DUI-18 still open: its `a11y.spec.ts` and `layout.spec.ts` are in the gate now (`e2e-desktop`, `scripts/gate/browser.mjs`), where they found three real bugs in the main window rebuild.
 - Control characters other than tab, carriage return and line feed rejected by the `text` check.
 - `eslint-plugin-regexp` with `no-super-linear-backtracking`, for patterns that can backtrack catastrophically.
 - Prettier over `docs/` and `docs/audit/`: `AUDIT.md`, `DECISIONS.md`, `PLAN.md` and the audit reports fail `prettier --check` today and no lint script covers them.
@@ -97,19 +95,15 @@ Every check proposed during the audit run, so none lives only in a reviewer's no
 - `cargo test -p wirecatch-bridge` without `--features test-overrides` silently skips its integration test and passes: make the skip explicit or fail. Built (2026-10-29): `tests/bridge.rs` is empty without the feature and `tests/needs_overrides.rs` fails then, naming the command.
 - The add-on tests run the `fake_media_tool` example from `<target>/<profile>/examples`, which a targeted `cargo test --test` does not rebuild, so a stale build fails the wrong tests. Make the tool a test-only bin target, so cargo builds it for the test. Built (2026-10-29): it is a test-only binary of the core crate, read from `CARGO_BIN_EXE_fake_media_tool`.
 - CI caches are actually saved (a cache hit on the second run) and runner disk use is watched, so the disk exhaustion that failed the Linux job (D33) is seen before it fails.
-- `wirecatch/no-silent-catch` for every package, not the extension only (the desktop has 14 sites and protocol one to handle first).
+- `wirecatch/no-silent-catch` for every package, not the extension only (protocol has one site to handle first).
 - `no-magic-numbers` applied to object property values, which it skips today.
-- Each desktop window's capability names exactly the commands its page calls: the commands reached from `apps/desktop/src/lib/window` and its route against `capabilities/download-windows.json`, and the rest of the interface against `capabilities/default.json`, so a grant nothing uses, or a call no grant allows, fails the gate rather than a running window (D43). Needs first: a download-window backend type narrowed to what those windows call (`DownloadWindowBackend` extends the whole `Backend` today), which the check can then hold against `download-windows.json`; a scan of method names cannot tell `pause` the command from other `pause` methods.
 - A `publish` check that the `VERSION` date of `crates/sites/data/public_suffix_list.dat` is recent, as `suffix-list` checks the extension's `tldts` (D44.5).
-- A Windows smoke step in the real app for a window's first frames: start the app, capture the window from the moment it is shown until its page has drawn, and require every frame to be the scheme's base colour or the page (D45). No gate check or Playwright spec can see these frames, since the page is not drawn yet.
 - No hard-wrapped comment: a `text` check that flags a comment continued on a following line where the sentence has not ended. It can only be switched on once W15 has cleaned main, or it fails on every file W15 has not reached yet.
 - Linux compiled and tested for the crates with native dependencies: `clippy-linux` skips the engine, streams and core, so Linux-only code (the no-replace rename, the `/tmp` endpoint fallback) is never compiled by the local gate. A check or a CI run on the branch before it lands, as W4's landing did by hand with a Docker container and a dispatched CI run. The Linux run must be as a non-root user, or `a_link_whose_old_name_stays_is_undone` does not run.
-- The desktop's Playwright specs run a second time in a bundled DejaVu Sans, as the extension's do, so a Windows run catches what Linux fonts break (the extension popup overflowed only in DejaVu Sans on CI).
-- The product name written literally in the desktop's rebuilt screens, outside comments, is refused, beside D29's check for the rest; it must come from `@wirecatch/product`. `apps/desktop/src/ui/download/ReadingView.svelte` and `MediaQuestion.svelte` had it, and the occurrences outside the rebuilt screens are still listed under W2's carried prose.
+- The product name written literally in the desktop app's strings is refused; it must come from `wirecatch_product` or `host::CHANNEL.name()`, as D29 requires everywhere else.
 - Svelte dev-mode warnings in the browser specs fail the gate. `state_proxy_equality_mismatch` from `same()`, which went first, is fixed (2026-10-29). Built (2026-10-29): the browser specs' `test` from `@wirecatch/ui/testing/playwright` fails a test whose page logged one, and ESLint refuses Playwright's own `test` in `e2e/`.
-- Every cut label has a tooltip, checked once over every page of the desktop and the extension, with an extension preview flag that makes every button and label about 2.5 times longer so cutting happens.
+- Every cut label has a tooltip, checked once over every page of the extension, with a preview flag that makes every button and label about 2.5 times longer so cutting happens.
 - A layout check counts as a guard only once it has been shown failing on the code before its fix: U-S4's two layout checks passed on the old code. A mutation step in review, or a check that runs the spec against the parent of the fixing commit.
-- The `e2e-desktop` description in the gate names every spec it runs: `a11y.spec.ts` and `layout.spec.ts`, and also `add.spec.ts` and `download-window.spec.ts` (`scripts/gate/browser.mjs`).
 - A review rule: a test that binds the `Channel::Dev` or `Channel::Release` endpoint uses a private runtime folder, so it cannot collide with a running app or another test (`--no-fail-fast` is built: `ci.yml`, `scripts/gate/rust.mjs`).
 - A merge procedure line: when two branches are merged, look for a test each side added before taking one side's version of the file.
 - Every wait in a test is bounded by `PATIENCE` (ENGINEERING section 7). Built in Rust: the `test-timing` check refuses a fixed `Duration` written into a wait that has to succeed and an upper bound on a measured duration, also one a helper in the same file measures and returns. Left to review: a comparison split across lines, a short timeout held in a named constant, and the same rules for TypeScript.
@@ -131,7 +125,6 @@ Every flaky test seen in the audit run, in the order to fix them.
 - Fixed (2026-10-30): `protocol::requests_beyond_the_limit_are_refused` failed again on Linux CI (run 40940160759 on main, run 40967787870), the request beyond the limit answered with the download. A repeat of the capture looked for its handover before the first add registered it, then found the download that add made and joined it (D89.2): it was answered at once, freeing a place, and replaced the first add's handover with one that a withdrawal no longer takes back. A repeat whose handover is known by the time it would join now waits for that add's outcome (`a_repeated_handover_never_joins_its_own_download`).
 - Fixed (2026-10-29): `limits::progress_events_are_batched` (core, `crates/core/tests/manager/limits.rs`) failed on Windows CI (run 40829901361, on a change to the extension alone) with a speed of 45 KiB/s against a floor of 64. It read the smoothed speed one second after the first progress, but the speed is a three-second moving average that starts from the first 100 ms sample, connection setup included, so a slow first sample left it low; its floor of five batches in that second had the same weakness. It now waits under `PATIENCE` for five batches of progress from a 1 MiB download at 64 KiB/s a connection, checks the batches against the ticks that fit in the time it measured (`PROGRESS_TICK`, which a slow machine only loosens), and checks a speed reaches the row; the smoothing itself is `speed.rs`'s unit tests. It fails when the ticker runs every millisecond.
 - Fixed (2026-10-29): `pausing_or_lifting_the_limit_never_waits_out_the_rate_limiter` (engine, `crates/engine/tests/download.rs`) failed on Windows CI (run 40845788910, on a change with no engine code) with "nothing arrived": it gave the first bytes 3 s, which connecting and the first chunk overran on a busy runner. Its limit is now 1 byte/s, so the first chunk puts the limiter hours in debt, and every wait is `PATIENCE`; it fails after `PATIENCE` when a pause waits for the limiter. The `test-timing` check missed it because the 3 s was a hand-written deadline loop, not a `timeout(..)`. `test-timing` now refuses a wait given a `Duration` constant under `PATIENCE`, and a deadline a short time away that a test asserts is not yet past (2026-10-29).
-- Watch: the media tests in `apps/desktop/e2e/a11y.spec.ts` (90 s waiting for the sample download window, also on the base branch), and one desktop e2e page-draw timeout on a Windows CI run of the revamp branch that passed on rerun.
 
 ### W7. Engine
 
@@ -163,13 +156,11 @@ IPB-6, IPB-7, IPB-17, IPB-18, IPB-19, CORE-21
 
 ### W11. Desktop shell
 
-DRS-8, DRS-9, DRS-10, DRS-12, DRS-13, DRS-15, DRS-16, DRS-17, DRS-20, DRS-21, DRS-22, DRS-23
+DRS-10, DRS-12, DRS-16, DRS-17, DRS-20, DRS-22, DRS-23, as they apply to `crates/shell` and `crates/desktop` (see "After the move to GPUI")
 
 ### W12. Desktop interface
 
-DUI-5, DUI-6, DUI-7, DUI-8, DUI-9, DUI-10, DUI-12, DUI-13, DUI-14, DUI-15, DUI-16, DUI-20, DUI-22, DUI-23, DUI-25, DUI-26, XC-12
-
-The revamp ([REVAMP](REVAMP.md)) replaces the interface the component, layout and focus findings were written against, so it absorbs them. What stays W12's: DUI-8 and DUI-16, DUI-3, DUI-5, DUI-6, DUI-12, DUI-14, DUI-25 and XC-12 (state, backend, tests and tokens, which a redesign does not remove), and DUI-9 and DUI-10, which stay as requirements the new components are reviewed against.
+Closed (2026-10-31): every finding was written against the Svelte desktop, which is gone (D107). What it asked for that still matters is listed under "After the move to GPUI".
 
 ### W13. Extension
 
@@ -202,6 +193,29 @@ Done on 2026-10-12 as its own round: all 72 `let _ =` outside test code (and the
 
 Added by the maintainer on 2026-10-12, to run after every other workstream. Most files carry comments that restate the code, narrate history or repeat what a commit message says; they add lines and cost every review its reading time. Remove them across every crate and package, keeping the comments that carry what the code cannot: critical paths, decisions and invariants that are not obvious, `SAFETY:` proofs. The rules that asked for comments everywhere, a doc comment on every named constant and on every public item, are gone (D76). Propose a gate check, for example one that flags history words such as "now", "no longer", "used to" and "previously" in comments.
 
+## After the move to GPUI
+
+Checked on 2026-10-31, when the GPUI app replaced the Tauri app and its Svelte interface (D95, D107). The engine, core, streams, IPC, bridge, CLI and extension did not change, so W6 to W10, W13 and W14 stand as written, apart from the desktop items taken out of their lists. The desktop findings were checked against `crates/shell` and `crates/desktop`:
+
+Still apply (W11):
+
+- DRS-10: the browser bridge's connection tasks are spawned untracked (`crates/shell/src/bridge.rs`, `serve`), so quitting stops accepting but not the connections still calling the manager.
+- DRS-12: `crates/shell` returns `Result<_, String>` in 16 places, against the thiserror-in-libraries rule.
+- DRS-16, in a new form: GPUI globals are read with `try_global` or `has_global` and skipped when missing (`download_windows`, `finished`, `app_update`), so a wiring mistake is silent.
+- DRS-17: `api::file_to_open` and `api::item_to_reveal` look at the disk on the runtime's async workers, through `Backend::run`.
+- DRS-20, in part: the `StartupApproved\Run` key is written in `crates/shell/src/autostart.rs` and again in the installer's `[Code]`; the autostart plugin it reimplemented is gone.
+- DRS-22: paths still cross as text (`files.rs` picks a folder with `to_string_lossy`, and the protocol's path fields are strings), so a Linux path that is not UTF-8 is changed on the way.
+- DRS-23: moving a data folder from the roaming to the local folder runs on the main thread before the first window (`host::data_dir`, from `backend::config`).
+- D43.1: the program warning's default button is Open (listed under W4's carried items).
+- New: the desktop app has no view tests. gpui-kit's `test-support` cannot be switched on: cargo also resolves its optional GPUI Fast engine, which pins taffy 0.15.0 against gpui-pre's 0.15.1.
+
+Gone with the Tauri app and the Svelte interface:
+
+- W11: DRS-8 (events to every webview), DRS-9 (an update held in memory: D111 downloads to disk), DRS-13 (window labels and capabilities), DRS-15 (the shell's `download_windows` is pure bookkeeping now, the windows live in `crates/desktop`), DRS-21 (WebView2).
+- W12: every DUI finding. Three were also checked against the GPUI code: DUI-5 (one place decides what a download allows, `main_window/applies.rs`), DUI-8 (links that arrive join an open add dialog, `add_links`) and XC-12 (byte formatting in Rust reads the cases file `packages/units` tests).
+- W4's carried D43.4 and D43.5, which guarded commands against a script in a window's page: GPUI windows run no page, so no script can reach them.
+- W6: DUI-17 (the desktop mock) and the desktop-only proposed gate checks (the 10,000-row performance spec, window capabilities, first-frame flashes, the desktop's specs in DejaVu Sans, the `e2e-desktop` spec list).
+
 ## Status
 
 | Workstream | Status |
@@ -213,60 +227,25 @@ Added by the maintainer on 2026-10-12, to run after every other workstream. Most
 | W7 | done (2026-10-12) and independently reviewed in four rounds, whose defects were fixed with tests, each test shown to fail without its fix: every ENG finding of W7 and the engine half of XC-14, plus `NO_PROXY` for HTTP/3 and FTP, data flushed before a resume file counts it (D30), and no file touched after a download is dropped. The published API changed on purpose (D30, commits marked breaking). What is left moved to later workstreams, listed below |
 | W8 | done (2026-10-13) and independently reviewed in four rounds (round 1 by two verifiers, then a streams and a core reviewer), whose defects were fixed with tests, each test shown to fail without its fix: one media layer in `wirecatch-streams` shared by core and streams (D31), with the codec and container policy (D24), the one list of media extensions, the ffmpeg argument layer and the only runner of the add-on's programs (process groups on Unix, job objects on Windows, time limits, and an idle watchdog that also watches the result being written); HLS and DASH readers bounded against hostile playlists (memory measured with a counting allocator, reading linear in the manifest) with typed errors; every media error worded in `media::describe`; and the gate's `docs` check. What is left moved to later workstreams, listed below |
 | W3 | done (2026-10-13) and independently reviewed in three rounds by two verifiers (the Rust contract and the TypeScript side), after reviews of its versioning and desktop units, whose defects were fixed with tests, each test shown to fail without its fix: every type, command and event name, limit, default and error code that crosses a process boundary is declared once in `crates/protocol` and generated for TypeScript, with a generated validator for every type and branded ids; the desktop's 50 commands are one contract the shell and the interface are held to; errors cross a boundary as typed codes, never wording; one frame header reader; `hello` agrees on a protocol version from a range, a call one end lacks gets `unsupported_call`, and version 1 is frozen against snapshots of what it shipped (D32); one rule for ignored sites and for file types, in Rust with a TypeScript port tested against fixtures Rust writes, and site lists bounded before the manager's lock; and the lint rules `wirecatch/no-brand-assertion` and `wirecatch/no-type-argument-assertion`. D37 records what the contract carries beyond types. What is left moved to later workstreams, listed below |
-| W4 | done (2026-10-14), independently reviewed per unit and as a whole in a milestone review, and on main (55395e4c), with CI green on its branch, on Linux and Windows, before it landed: the engine's checks of answers and starting hosts (D34), the extension's cookie scope and Public Suffix List (D35), the media add-on's trust (D38), the private-network guard for captured links (D39), names reserved by creating them in the engine, the command-line downloader and streams (ENG-11, D30.7), the media button's host named afresh in every page (EXT-15, accepted in part), the local endpoint, secrets and one manager per list (D41: IPB-8 to IPB-11), the desktop windows' commands (D43: DRS-4, DRS-5, DRS-18, DRS-19), the app's own Public Suffix List kept current at run time (D44), a data folder that could not be made private told to the person (CORE-22), and rustls 0.23.46 for four new advisories. What is left is listed under "Parts of W4 carried" below: the gaps D43 records (W11), cookie scope decided by the app (D44.6, W13), core's half of ENG-11 (W9), a download window's own new-link form for a website's private-network refusal (W11), and yt-dlp and ffmpeg outliving a crashed app on Linux, which W4 did not fix (W9) |
+| W4 | done (2026-10-14), independently reviewed per unit and as a whole in a milestone review, and on main (55395e4c), with CI green on its branch, on Linux and Windows, before it landed: the engine's checks of answers and starting hosts (D34), the extension's cookie scope and Public Suffix List (D35), the media add-on's trust (D38), the private-network guard for captured links (D39), names reserved by creating them in the engine, the command-line downloader and streams (ENG-11, D30.7), the media button's host named afresh in every page (EXT-15, accepted in part), the local endpoint, secrets and one manager per list (D41: IPB-8 to IPB-11), the desktop windows' commands (D43: DRS-4, DRS-5, DRS-18, DRS-19), the app's own Public Suffix List kept current at run time (D44), a data folder that could not be made private told to the person (CORE-22), and rustls 0.23.46 for four new advisories. What is left is listed under "Parts of W4 carried" below: cookie scope decided by the app (D44.6, W13), core's half of ENG-11 (W9), and yt-dlp and ffmpeg outliving a crashed app on Linux, which W4 did not fix (W9) |
 | W5 | done (2026-10-13), landed 2026-10-14 (31da0920), and independently reviewed: the Rust part in two rounds, the extension's in four, and both together in a milestone review, whose defects were fixed with tests, each test shown to fail without its fix: XC-15, DRS-3, CMD-14 and EXT-7. Every binary logs through `wirecatch-logging` to stderr and a size-capped file in the log folder, chooses lines with `WIRECATCH_LOG`, and hides secrets in every line (D40); what ffmpeg and yt-dlp write to stderr is kept bounded and redacted, logged when a run fails or is stopped, and cut to 300 characters in a person's message. Every error the extension catches is logged through `src/lib/diag`, used, or explained in place, held by the lint rule `wirecatch/no-silent-catch`; entries are redacted (sites only, no paths, e-mail addresses or secrets, found by name and by shape), repeats are counted instead of added, entries made while a private window is open are forgotten when the last one closes, and the background and the popup keep theirs in `storage.session`. What a secret is (its names, the sign-in headers and the auth scheme words) is declared once in `crates/protocol`, and both redactors are held to one corpus Rust writes (D40.10). What is left moved to later workstreams, listed below |
 | W6 | mostly done (2026-10-29); where each finding stands, and what is open, is listed under W6 |
 | W9 | in progress: the findings that could break a download are done; the rest waits until after the first release (ROADMAP). Where each finding stands is listed under W9 |
 | W10 | later |
-| W11 | later, with the gaps D43 records carried from W4 |
-| W12 | later. Most of it folds into the interface revamp; the findings that survive a redesign are listed under W12 |
+| W11 | later: seven findings still apply to the shell and the GPUI app, listed under "After the move to GPUI" |
+| W12 | closed (2026-10-31): the Svelte desktop it was written against is gone (D107) |
 | W13 | later, with D44.6 (cookie scope decided by the app) carried from W4 |
 | Interface revamp ([REVAMP](REVAMP.md)) | not an audit workstream. Phase 1 done (2026-10-14), independently reviewed screen by screen and as a whole, and on main (e18e845f): the stack and `packages/ui`, theme and accent settings, the frameless window shell with its material, the main window, the add-download flow, the download window, and the extension's popup and options page. Phase 2 done (2026-10-29, d4aa002a): the settings pages, the add-ons page, the dialogs, the command palette, the in-page media button, the tray menu, the installer's pictures and Copy diagnostics. Never seen in the real app: Windows 10 and the solid background on Linux (REVAMP, for the maintainer). What the revamp left open is listed below, for W12 and W13 |
 | W15 | later, last, after W13 (maintainer, 2026-10-12); the rule for new comments is in ENGINEERING section 8 from now on |
 
-Parts of the interface revamp's phase 1 carried into later work:
+Interface and core items found while building the revamp and D72 to D73, still open after the move to GPUI:
 
-- The theme review's open lows. The remembered look wins over the settings the shell knows, so after a reset or a moved data folder every new window first paints the old look, then switches (`apps/desktop/src/lib/first-paint.js`; send whether the shell read real settings and prefer the remembered look only when it did not). Per-window state outlives a closed window (`frame.rs` `Frames::sends` creates its entry again, `maximize_overlay.rs` never removes a window's overlay). The window's theme following the setting (`match_stored_theme`) and the quiet reveal (`show_quietly`) have no automated test, and download windows never call `match_stored_theme`. Phase 2, with the shell's windows.
-- A window's first frames have no automated check in the real app (D45); the Windows smoke step that would catch a flash is proposed under W6.
-- With `overflow-anchor` off in the desktop's download list, the rows on screen may shift by one when a row above the visible part leaves or joins the list (suspected, not reproduced; phase 2, or W12).
 - In the extension popup while the app is offline, a label cut short shows only the offline reason in its tooltip, not the whole label (`apps/extension/src/ui/cut-label.ts`; W13).
-- Fixed (2026-10-29): `same()` in `apps/desktop/src/lib/state/downloads.svelte.ts` compares a row's state proxy with a plain value, so Svelte warns `state_proxy_equality_mismatch` about 50 times a run in development (the structural fallback still answers correctly; W12). It now compares objects by their fields only, never a proxy with `===`; the dev server's console shows no such warning on the tour.
-- Real-app checks attached through Playwright's `connectOverCDP` see a light `prefers-color-scheme` whatever the system's; check the theme or take screenshots through raw CDP or with `colorScheme: null`.
 - The protocol's doc of `remove`'s `delete_file` should say that an unfinished download's partial files always go (W9).
-- A link that failed after its add dialog was closed with Escape has nowhere to show the failure (`apps/desktop/src/ui/add`; phase 2, with the dialogs).
-- The add spec's check that nothing sits past the dialog's sides (`apps/desktop/e2e/add.spec.ts:174`) did not fire when the folder row's wrapping was removed; the sideways-scroll check caught it instead. Show the check failing on some break of its own, or drop it (W12).
-
-Found while reviewing the queue editor of D72 (2026-10-25), in shared parts it did not change (W12, or phase 2 of the revamp):
-
-- Fixed (2026-10-29): In the dark theme, white text on the cyan primary buttons ("Create queue", "Save", "New download") has a contrast near 2:1; give the primary button dark text or a darker fill in that theme (`packages/ui`). The dark theme's primary buttons already carry dark text (`--wc-accent-fg`).
-- Fixed (2026-10-29): An off switch looks heavier than an on one in the light theme (its knob is dark); an off switch wants a muted knob and an outlined track. Its knob is `line-strong` now, on the outlined track.
-- The selected option of a segmented control (KB/s or MB/s, the day patterns) is hard to tell apart in both themes, and the control is slightly shorter than a number field beside it.
-- Fixed (2026-10-29): A dialog whose content scrolls shows no sign of it at the footer; add a shadow or fade at the edge that has more content. The footer casts `shadow-scroll-edge` while more content lies below.
-- Fixed (2026-10-29): A queue's header line puts its settings and what it is doing now in one line (`apps/desktop/src/ui/list/ListHeader.svelte`); split them, or show the live part as a chip. The settings and the live state are two lines, the live one in the primary text colour.
-- Fixed (2026-10-29): The sidebar's "1 of 1 running" reads as one download of one (`apps/desktop/src/lib/state/queues.svelte.ts`). It reads "1 running, at most 3".
-- Fixed (2026-10-29): The edit dialog of a queue has no intro line where New queue has one. Neither dialog has one since D84 cut it.
-
-Found while building the rest of D72's windows (2026-10-29), outside what they change:
-
-- The queue editor is long once Auto is on: the claims push the hours and the notices far down. Tabs or folded sections for its cards would shorten it (phase 2 of the revamp).
-- Fixed (2026-10-29): A switched-on limit's number field reads as disabled in the queue editor's light theme (its value is grey). Fixed with the field recipe's disabled rule (#58).
-- Fixed (2026-10-29): The three queues in the icon rail share one icon and cannot be told apart; give each its initial or a colour (`apps/desktop/src/ui/sidebar`). Each shows its initials in the rail.
-- The "Sample data" badge in the title bar competes with the total speed beside it.
-- Fixed (2026-10-29): "Across all queues. A queue can run fewer, set in the queue." under Downloads at the same time reads clumsily (`apps/desktop/src/lib/settings-schema.ts`). The help was rewritten under D84.
 - A regular expression in a queue's file name claims is checked only when a link is tried or the queue saved, not as it is typed; checking it as typed needs a core command that checks claims alone (W12).
 - Core's public methods still carry `# Errors` doc sections that restate the error type (`crates/core/src/manager/*.rs`, about 40); the comment rules allow one line where the signature is unclear.
-
-Found while building D73 (2026-10-29), outside what it changes:
-
-- Fixed (2026-10-29): Toasts sit over the controls at the bottom right of a page, Proxy servers' Test, Edit and Delete among them, and info toasts stay until closed (`apps/desktop/src/lib/state/toasts.svelte.ts`, the shared toaster). Info toasts go after 4 s; only a startup notice stays until closed, by design, and the corner is kept.
-- A toast breaks a host name at its hyphen (`backup-` / `proxy.example`), which reads as two names.
-- Fixed (2026-10-29): A dialog is centred on its height, so it moves when a line appears in it, such as a proxy's test result. A dialog hangs from a fixed space at the top, which gives way in a short window.
-- Fixed (2026-10-29): A tooltip always opens above what it describes, so a queue's proxy mark in the sidebar covers the queue's own name (`packages/ui/src/attachments/tooltip.svelte.ts`); a placement option would let it open beside the mark. `tooltip(text, { beside: true })` opens it after its node; the proxy mark and the rail use it.
-- Fixed (2026-10-29): The sidebar's icon rail shows nothing of a queue's second line (Auto, Auto off, the proxy mark), and its tooltip is only the name. The rail's tooltip names the queue, its state and its proxy.
-- Fixed (2026-10-29): A dialog opened over another, such as New proxy over the queue editor, is the same width and lines up with it, so the one below shows round its edges. One opened over another sits lower.
-- A select has no groups or dividers, so following the app, the fixed choices and the saved proxies run together in the queue's proxy list.
-- The palette ranks a setting that only opens Settings ("Network: Proxy") above commands that act on the same word, and shows no mark on the one in use among a group of choices.
-- "<local> for names without a dot" in the help of the hosts to go directly to is jargon.
+- A toast breaks a host name at its hyphen (`backup-` / `proxy.example`), which reads as two names. (W13: the extension's notices use the same toasts.)
+- "<local>" in the help of the hosts that skip the proxy is jargon; it is in the GPUI app's network settings, queue proxy and queue rules (`crates/desktop/src/main_window`).
 - The `test-timing` check misses an upper bound on a duration measured through a helper: three FTP tests asserted `since(&paused_at) < 2 s` until one failed on a busy Windows runner (`crates/engine/tests/ftp.rs`). Proposed: also refuse, in a test outside tokio's paused clock, a comparison of any `Duration` value with a `Duration` written out (W6).
 - A run's proxy is read under the manager's lock, and with the computer's proxy and something added that reads the environment and on Windows the registry (`crates/core/src/manager/policy.rs`, `crates/settings/src/proxy.rs`); fast, but a blocking call on an async thread (W9).
 
@@ -274,24 +253,20 @@ Parts of W4 carried into later work:
 
 - Fixed (2026-10-29, D88): ENG-11 in core: the app still hands the engine the exact path it picked when the download was added, with the default `ExistingFile::Replace`, so a file another program saves under the name meanwhile is replaced in the app. Carried to W9, as the item under "Parts of W7 carried" describes.
 - D44.6: cookie scope decided by the app with the Public Suffix List it keeps current. Today the extension decides which cookies go with a captured download from its own `tldts` list, current only at each release (D35). It needs the extension to send every cookie for the download's address with its `SameSite` and the request's context (the page's site, top-level navigation or not, the method), a protocol addition under a new version (D32) that an older app is still served by, and core filtering the cookies with the list its manager holds. Carried to W13, whose unit owns `apps/extension` and changes `crates/protocol` with it; W4 landed without it. The maintainer confirmed on 2026-10-15 that it waits for W13.
-- D43.4: a command that takes a path accepts any path the page names, in every window: a download window's `set_download_folder` and the folder in `confirm_capture`, the main window's `export_settings`, `preview_import`, `import_settings` and `set_download_folder` (`apps/desktop/src-tauri/src/commands.rs`, `api.rs`). The fix is to accept only a path the shell's own picker returned to that window, or a folder the settings already name (W11).
-- D43.5: a download window reads every setting, through `get_settings` and the `settings_changed` event every window gets, and a link given in a download window for a download the person or a local page chose can still point at the local network. Narrowing it needs a projection of the settings in the protocol, a per-window settings event, the window's page reading only what it shows (`settings.media` and `theme`), and a link the shell itself asks the person for (W11, with the protocol change). `refresh_link` cannot be narrowed to one site without breaking mirrors and CDNs.
-- D43.1: the program warning's default button is Open, not Cancel (`agrees_to_open` in `apps/desktop/src-tauri/src/commands.rs`). The system dialog makes the first button the default, and the dialog plugin reads a dismissed dialog as its second button, so Cancel first would open the file on Escape. Cancel as the default needs a default-button option in the plugin or a dialog of the shell's own. A possible stopgap, not built: on Windows only, a third button, "Don't open", made the default. No check of a user gesture is possible from the shell, so a page can still raise the warning unprompted (W11).
+- D43.1: the program warning's default button is Open, not Cancel (`files::ask_to_open` in `crates/desktop/src/files.rs`): Enter opens the program. Cancel should be the default (W11).
 - On Linux, yt-dlp and ffmpeg keep running after the app crashes: their process group is killed only by a live app (`crates/streams/src/process/tree.rs` sets `process_group(0)` and calls `killpg`). W4 did not fix it, though it was listed under W4 before. `PR_SET_PDEATHSIG` is not the answer: it fires when the thread that started the program exits, and the runtime's threads come and go. It needs another mechanism, such as a small supervisor process that kills the group when the app's end of a pipe closes, started by the media runner in core and so carried to W9, with a test that kills the app and finds both programs gone.
-- The progress window of a download still offers its own new-link form when a website's link is refused for reaching the private network. That window keeps the website's rule, so the form cannot fix it, and the message names the main window instead (D39.6). A "show in main window" fix action would, but it needs a new protocol `FixAction`, an addition under a new version (D32) (W11, with the protocol change, or phase 2 of the revamp with the dialogs).
-- Two test gaps in the D43 tests, both with the code correct today (W11): `remove` is aimed only at `ids: [another]` in `aimed_at` (`apps/desktop/src-tauri/tests/windows.rs:223`), so a loop weakened to check only the first id still passes, and D43.3 promises every id is checked; and the wiring of the program warning's name from the file on disk (`file_to_open`, `api.rs:462`) is untested, since the test calls `ProgramWarning::new` directly.
 
 Parts of W5 carried into later workstreams:
 
 - Fixed (2026-10-29): EXT-7: the popup's "Copy diagnostics" action, which phase 1 of the revamp left for phase 2 ([REVAMP](REVAMP.md)). Phase 2 added it (D87).
 - EXT-7: content scripts keep their entries in memory only, where nothing reads them; they should send `warn` and `error` entries to the background, which validates them and logs them under the `page` scope (W13).
-- `wirecatch/no-silent-catch` is on for the extension only; the shared baseline takes it once the desktop's 14 sites and protocol's one are handled (W12, with the desktop's logging). The gate checks W5 proposed are listed under W6.
+- `wirecatch/no-silent-catch` is on for the extension only; the shared baseline takes it once protocol's one site is handled. The gate checks W5 proposed are listed under W6.
 - Review rule, proposed: a decode error of a message from another process (`crates/core/src/server.rs`, where `serde_json` quotes the offending value) is logged without its text, since no redaction can tell a secret in such a value (W9).
 
 Parts of W0 findings carried into later workstreams:
 
 - XC-23: every workspace package is linted and format-checked (`packages/eslint-config` lints itself, its rules without type information; `packages/protocol` lints its scripts and index and type-checks the generated types), and the `js-policy` check keeps it so. `scripts/` is linted and format-checked by the root `lint` script with the same configuration, now that the gate is split into modules in `scripts/gate/` that fit the size limits. Done.
-- XC-25: `windows-sys` 0.59 and 0.61 both compiled. Done: every first-party crate is on 0.61, the version Tauri uses, and 0.59 is gone; Tauri's own dependencies (rfd, muda, tray-icon, dirs-sys and others) still bring 0.60, which only their updates can remove.
+- XC-25: every first-party crate is on `windows-sys` 0.61; GPUI's dependencies still bring 0.48 and 0.52, which only their updates remove.
 - XC-29: installers and the extension do not yet ship a third-party notices file (W6, with the release workflow of XC-20).
 - XC-30: `authors`, `repository` and `homepage` come from `config/product.toml`, and the `product` check requires every crate to inherit them. Done (W2).
 - XC-32: `SECURITY.md` is generated from `config/product.toml` with its security contact address, a placeholder until it is decided. Done (W2).
@@ -307,7 +282,6 @@ Parts of W14 carried into later workstreams:
 - Gate checks: byte sizes written as `n * 1024` or `1 << 20` in crates that depend on the engine, outside protocol, e2e, test-support and bridge (none today; two commits claimed every size converted without one); unused TypeScript exports; a `DownloadOptions::default()` in core outside `headers.rs`, which would send the engine's user agent instead of the app's (W6).
 - The HLS and DASH parsers return typed `thiserror` errors. Done (W8).
 - Win32 helpers are copied: `win32_size_of` (`crates/ipc/src/windows.rs:51`, `crates/bridge/src/shell_parent.rs:89`), `os_error` (`crates/ipc/src/windows.rs:62`, `crates/bridge/src/install.rs:741`), a fourth `wide` (`crates/files/src/owner_only.rs:163`) and two current-user SID readers (`crates/files/src/owner_only.rs:124`, `crates/ipc/src/windows.rs:196`); add them to IPB-6, and the registry loop's literal 520 (`crates/bridge/src/install.rs:759`) to IPB-17 (W10).
-- Desktop lint rules, each clean today: no type argument on `querySelector` or `closest` and no `as` on DOM values (unchecked casts), no `setTimeout` in a `$effect` without its cleanup, no `vi.useRealTimers()` or timer spies outside `vitest-setup.ts`, and no import of `window/**` from `backend/**` (W12).
 - Extension lint rule: type predicates (`x is T`) only in `src/lib/validate.ts`, so only its combinators declare guards; two are outside it today (`src/lib/file-types.ts:54`, `src/lib/media/detect.ts:255`) (W13).
 
 Parts of W2 carried into later workstreams:
@@ -324,7 +298,6 @@ Parts of the W1 review carried into later workstreams:
 
 - CORE-1: the start-up notice (a damaged list set aside, downloads hidden) reaches the person only as a system notification, which is lost when notifications are off; the main window should show it too. Done (interface revamp): the main window shows each start-up notice until it is dismissed.
 - EXT-1: with an empty display cache, the first browser download is judged against capture-everything, so it may start the app only for the app to decline it; the extension needs the app's default settings, generated from `crates/protocol`. Done (W3): it judges against `DEFAULT_EXTENSION_SETTINGS`, and a core test holds the app's defaults equal to it.
-- DUI-2: applying an `ExtensionSettingsPatch` is written twice in TypeScript, in the extension (`lib/protocol.ts`) and the desktop mock (`state/settings-changes.svelte.ts`); it belongs once in `@wirecatch/protocol`. Done (W3): `applyExtensionSettingsPatch` in `packages/protocol/src/extension-settings.ts`, tested against fixtures the Rust `ExtensionSettings::apply` writes.
 - EXT-2: the media content script is injected into every frame even with the button off, where it does one storage read and nothing else; registering it only while the setting is on needs the `scripting` permission (W13).
 - ENG-1: `bench_local` varies by about 40 percent between runs on the same machine, too much to show a regression; it should repeat each case and report the median (W7). Done: `bench_local` repeats each case and reports the median.
 
@@ -344,7 +317,7 @@ Parts of W7 carried into later workstreams:
 Parts of W8 carried into later workstreams:
 
 - STR-17: a stream is joined without first checking that the disk has room for the joined file; that needs a free-space helper in the engine or core (W7 follow-up, or W9).
-- CMD-12: the VA-API render node is assumed to be `/dev/dri/renderD128` instead of being discovered (W9); `apps/desktop/src-tauri/src/bridge.rs` defines `CREATE_NO_WINDOW` by hand instead of taking it from windows-sys (W10); the YouTube host list is also in `apps/extension/src/lib/media/page-sites.ts` (W13).
+- CMD-12: the VA-API render node is assumed to be `/dev/dri/renderD128` instead of being discovered (W9); `crates/shell/src/bridge.rs` defines `CREATE_NO_WINDOW` by hand instead of taking it from `windows-sys`, as `crates/streams` does (W11).
 - CMD-16: the add-on slot's wording when its record cannot be read, if the interface needs one of its own (W9).
 - CMD-8: the manager's add-on install errors are still `String` (W9).
 - CMD-13: a third `real_ffmpeg` helper in `crates/core/tests/manager/media_support.rs` (W6).
@@ -361,9 +334,8 @@ Parts of W3 carried into later workstreams:
 - The release workflow checks that the protocol version it ships is frozen, its generated types copied into `crates/protocol/released` and named in `RELEASED` (`crates/protocol/src/version.rs`, D32.8), before it publishes (W6, with XC-20).
 - EXT-14's longer-term step: the app sends the media add-on's site list so the extension's offer tracks what is installed. It is a protocol feature for a later version, not a quality fix; D37.4 says how it is added (ROADMAP). It is the first call newer than version 1, and its caller in the extension is the first user of `NativeClient.supports` (D32.3), which keeps the offer to the extension's own list with an app that lacks the call.
 - Lint gaps the final TypeScript review left open, each clean in the code today: `wirecatch/no-type-argument-assertion` checks a callback's annotated parameters only when the callback is written in the call, not when it is passed by name (judge the argument by its type instead); `wirecatch/no-brand-assertion` does not look into the properties of an object type written in place or of a mapped type, so `v is { data: Queue }` and `v is Pick<Queue, 'id'>` pass; and the declarers `no-type-argument-assertion` exempts (`$state`, `createContext`, `writable`) are matched by the callee's text, not its import (W6).
-- A lint rule reporting `Number(event.currentTarget.value)` or `Number(event.target.value)` on a `<select>`, which the assertion rules cannot see and which read unchecked menu values before W3 (W12).
+- A lint rule reporting `Number(event.currentTarget.value)` or `Number(event.target.value)` on a `<select>`, which the assertion rules cannot see and which read unchecked menu values before W3 (W13).
 - `packages/protocol`'s Vitest runs in Node only, while the extension runs `normalizeSite` on Chromium's and Firefox's own host parsers: run its fixtures in browser mode on both (W6).
-- `fileType` in `apps/desktop/src/lib/filetypes.ts` has no fixtures from Rust. Whether a file opens is decided in Rust; the TypeScript copy only words the dialog and drives the stand-in backend, and moving it into the protocol needs a platform parameter, since trailing dots are trimmed only on Windows. The redesign's file type editor calls `normalizeFileType` (W12).
 - The product name in the extension's prose, about 60 places in `apps/extension/src/lib`; `versions.ts` uses `PRODUCT_NAME` (W13, with EXT-14).
-- `vi.waitFor` gives up after one second unless told otherwise, which races a busy machine against a time limit as ENGINEERING section 7 rules out; the desktop and extension tests call it bare 13 times. Proposed: one shared wait in test setup bounded by `PATIENCE`'s two minutes, and a lint rule against a bare `vi.waitFor` (W6). Built (2026-10-29): `PATIENCE_MS` in `@wirecatch/ui/testing/jsdom`, Testing Library's default too, every call given it, and the `wirecatch/wait-with-patience` rule.
+- `vi.waitFor` gives up after one second unless told otherwise, which races a busy machine against a time limit as ENGINEERING section 7 rules out; the extension's tests call it bare. Proposed: one shared wait in test setup bounded by `PATIENCE`'s two minutes, and a lint rule against a bare `vi.waitFor` (W6). Built (2026-10-29): `PATIENCE_MS` in `@wirecatch/ui/testing/jsdom`, Testing Library's default too, every call given it, and the `wirecatch/wait-with-patience` rule.
 - A check that the typed rule tests build their `RuleTester` through `typedRuleTester()`, or the `packages/eslint-config` tests run with `CI=true` on every machine, so local runs see what CI sees (W6).

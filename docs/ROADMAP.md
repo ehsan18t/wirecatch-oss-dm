@@ -18,8 +18,8 @@ As of 2026-10-31 the code quality audit has W0 to W5, W7, W8 and W14 done, most 
 ## After the first release
 
 1. The rest of W6: shared test support, CI, and the backlog of proposed gate checks listed under W6.
-2. W10 (IPC, bridge and CLI), W11 (desktop shell, with the gaps D43 records) and W13 (extension, with D44.6, the cookie scope the app decides).
-3. The rest of W9 (CORE-8, CORE-11, CORE-13, CORE-14, CORE-19, CORE-23, CORE-25, CORE-26 and the small items). These improve the code without changing what a download does. W12's findings in the Svelte interface go with it (D95); any that still apply to the GPUI interface are carried over.
+2. W10 (IPC, bridge and CLI), W11 (the seven desktop findings that still apply to the shell and the GPUI app, with a way to test the app's views; AUDIT, "After the move to GPUI") and W13 (extension, with D44.6, the cookie scope the app decides).
+3. The rest of W9 (CORE-8, CORE-11, CORE-13, CORE-14, CORE-19, CORE-23, CORE-25, CORE-26 and the small items). These improve the code without changing what a download does. W12 is closed: the Svelte interface it covered is gone (D107).
 4. W15 last: comments only where they earn their place.
 
 ## Before the first release
