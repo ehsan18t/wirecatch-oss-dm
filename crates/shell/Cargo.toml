@@ -27,7 +27,7 @@ wirecatch-logging = { workspace = true, features = ["setup"] }
 # Reads the start-at-sign-in entry's state, registers the app's notification identity, and
 # reads the Windows build (D64).
 winreg = "0.10.1"
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 # The system's own notifications, with buttons, under the app's identity (D52).
 # And the accent colour chosen in Windows.
 windows = { version = "0.62.2", features = [

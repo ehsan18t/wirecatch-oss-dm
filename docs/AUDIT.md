@@ -206,7 +206,6 @@ Still apply (W11):
 - DRS-20, in part: the `StartupApproved\Run` key is written in `crates/shell/src/autostart.rs` and again in the installer's `[Code]`; the autostart plugin it reimplemented is gone.
 - DRS-22: paths still cross as text (`files.rs` picks a folder with `to_string_lossy`, and the protocol's path fields are strings), so a Linux path that is not UTF-8 is changed on the way.
 - DRS-23: moving a data folder from the roaming to the local folder runs on the main thread before the first window (`host::data_dir`, from `backend::config`).
-- D43.1: the program warning's default button is Open (listed under W4's carried items).
 - New: the desktop app has no view tests. gpui-kit's `test-support` cannot be switched on: cargo also resolves its optional GPUI Fast engine, which pins taffy 0.15.0 against gpui-pre's 0.15.1.
 
 Gone with the Tauri app and the Svelte interface:
@@ -245,7 +244,7 @@ Interface and core items found while building the revamp and D72 to D73, still o
 - A regular expression in a queue's file name claims is checked only when a link is tried or the queue saved, not as it is typed; checking it as typed needs a core command that checks claims alone (W12).
 - Core's public methods still carry `# Errors` doc sections that restate the error type (`crates/core/src/manager/*.rs`, about 40); the comment rules allow one line where the signature is unclear.
 - A toast breaks a host name at its hyphen (`backup-` / `proxy.example`), which reads as two names. (W13: the extension's notices use the same toasts.)
-- "<local>" in the help of the hosts that skip the proxy is jargon; it is in the GPUI app's network settings, queue proxy and queue rules (`crates/desktop/src/main_window`).
+- Done: "<local>" in the help of the hosts that skip the proxy now says what it covers, in one text for Settings and a queue's proxy, and in the queue rules.
 - The `test-timing` check misses an upper bound on a duration measured through a helper: three FTP tests asserted `since(&paused_at) < 2 s` until one failed on a busy Windows runner (`crates/engine/tests/ftp.rs`). Proposed: also refuse, in a test outside tokio's paused clock, a comparison of any `Duration` value with a `Duration` written out (W6).
 - A run's proxy is read under the manager's lock, and with the computer's proxy and something added that reads the environment and on Windows the registry (`crates/core/src/manager/policy.rs`, `crates/settings/src/proxy.rs`); fast, but a blocking call on an async thread (W9).
 
@@ -253,7 +252,7 @@ Parts of W4 carried into later work:
 
 - Fixed (2026-10-29, D88): ENG-11 in core: the app still hands the engine the exact path it picked when the download was added, with the default `ExistingFile::Replace`, so a file another program saves under the name meanwhile is replaced in the app. Carried to W9, as the item under "Parts of W7 carried" describes.
 - D44.6: cookie scope decided by the app with the Public Suffix List it keeps current. Today the extension decides which cookies go with a captured download from its own `tldts` list, current only at each release (D35). It needs the extension to send every cookie for the download's address with its `SameSite` and the request's context (the page's site, top-level navigation or not, the method), a protocol addition under a new version (D32) that an older app is still served by, and core filtering the cookies with the list its manager holds. Carried to W13, whose unit owns `apps/extension` and changes `crates/protocol` with it; W4 landed without it. The maintainer confirmed on 2026-10-15 that it waits for W13.
-- D43.1: the program warning's default button is Open, not Cancel (`files::ask_to_open` in `crates/desktop/src/files.rs`): Enter opens the program. Cancel should be the default (W11).
+- D43.1: done in the GPUI app. The program warning opens with focus on the dialog itself, Enter presses only a focused button, and Tab reaches Cancel before Open (`files::ask_to_open`).
 - On Linux, yt-dlp and ffmpeg keep running after the app crashes: their process group is killed only by a live app (`crates/streams/src/process/tree.rs` sets `process_group(0)` and calls `killpg`). W4 did not fix it, though it was listed under W4 before. `PR_SET_PDEATHSIG` is not the answer: it fires when the thread that started the program exits, and the runtime's threads come and go. It needs another mechanism, such as a small supervisor process that kills the group when the app's end of a pipe closes, started by the media runner in core and so carried to W9, with a test that kills the app and finds both programs gone.
 
 Parts of W5 carried into later workstreams:
@@ -317,7 +316,7 @@ Parts of W7 carried into later workstreams:
 Parts of W8 carried into later workstreams:
 
 - STR-17: a stream is joined without first checking that the disk has room for the joined file; that needs a free-space helper in the engine or core (W7 follow-up, or W9).
-- CMD-12: the VA-API render node is assumed to be `/dev/dri/renderD128` instead of being discovered (W9); `crates/shell/src/bridge.rs` defines `CREATE_NO_WINDOW` by hand instead of taking it from `windows-sys`, as `crates/streams` does (W11).
+- CMD-12: the VA-API render node is assumed to be `/dev/dri/renderD128` instead of being discovered (W9); the bridge takes `CREATE_NO_WINDOW` from `windows-sys` (done).
 - CMD-16: the add-on slot's wording when its record cannot be read, if the interface needs one of its own (W9).
 - CMD-8: the manager's add-on install errors are still `String` (W9).
 - CMD-13: a third `real_ffmpeg` helper in `crates/core/tests/manager/media_support.rs` (W6).

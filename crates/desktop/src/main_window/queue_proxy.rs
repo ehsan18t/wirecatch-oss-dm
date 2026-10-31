@@ -21,6 +21,9 @@ use super::proxy_dialog;
 use crate::library::Library;
 use crate::ui::{Field, Role, Typed as _, choice};
 
+/// How the hosts that skip the proxy are typed, in Settings and in a queue's proxy.
+pub(super) const BYPASS_HELP: &str = "One per line. A host covers its subdomains. IP addresses and ranges (10.0.0.0/8) work too, and <local> covers every name without a dot, such as a printer or router at home.";
+
 /// One entry of the proxy list: the global proxy, or one of the queue's own.
 #[derive(Clone)]
 struct ProxyChoice {
@@ -297,9 +300,7 @@ impl ProxyForm {
                         .pl_6()
                         .gap_1p5()
                         .child(Textarea::new(&self.hosts))
-                        .child(div().text_role(Role::Meta, cx).child(
-                            "One per line. A host covers its subdomains; IP addresses, ranges (10.0.0.0/8) and <local> work too.",
-                        )),
+                        .child(div().text_role(Role::Meta, cx).child(BYPASS_HELP)),
                 )
             })
     }

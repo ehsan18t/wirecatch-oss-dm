@@ -204,7 +204,7 @@ impl Render for RulesForm {
             .child(self.kind(
                 Kind::Sites,
                 "By site",
-                Some("One per line. A site covers its subdomains; *.example.com, IP addresses, ranges (10.0.0.0/8) and <local> work too."),
+                Some("One per line. A site covers its subdomains. *.example.com, IP addresses and ranges (10.0.0.0/8) work too, and <local> covers every name without a dot."),
                 Textarea::new(&self.sites).into_any_element(),
                 cx,
             ))

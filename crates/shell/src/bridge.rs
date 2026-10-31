@@ -262,8 +262,7 @@ pub fn run_bridge(bridge: &Path, subcommand: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        /// Keeps a console window from flashing up.
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
         command.creation_flags(CREATE_NO_WINDOW);
     }
     let output = command
