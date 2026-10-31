@@ -35,7 +35,7 @@ Set with the maintainer on 2026-10-30, and extended on 2026-10-31 with items 8 t
 9. **W11, the desktop shell** (done). The seven findings that still apply to `crates/shell` and `crates/desktop`: DRS-10, DRS-12, DRS-16, DRS-17, DRS-20, DRS-22 and DRS-23.
 10. **W10, IPC, bridge and CLI** (done). IPB-6, IPB-7, IPB-17, IPB-18, IPB-19 and CORE-21.
 11. **W13, the extension** (done, D112). EXT-4, EXT-5, EXT-10, EXT-11, EXT-12, EXT-13 and EXT-16, and D44.6: the extension takes the cookie scope from the app's Public Suffix List, which the app keeps current (D44), instead of the copy bundled with each extension release. It changes what the app and the extension send each other, which after the release protocol version 1 freezes (D32), and a stale list can send a site's cookies with another site's download.
-12. **The rest of W9, the core.** CORE-8, CORE-11, CORE-13, CORE-14, CORE-19, CORE-23, CORE-25, CORE-26 and the small items, with CORE-23 and CORE-8, which change what a download does, last.
+12. **The rest of W9, the core** (done). CORE-8, CORE-11, CORE-13, CORE-14, CORE-19, CORE-23, CORE-25, CORE-26 and the small items, with CORE-23 and CORE-8, which change what a download does, last.
 
 Done before the release:
 
