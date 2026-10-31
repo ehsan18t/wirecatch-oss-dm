@@ -1095,3 +1095,11 @@ Decided on 2026-10-31 (ROADMAP item 6). It amends D85.1: Settings has eight page
 2. Project: the licence with a link to its text, the publisher, the website and the source code. Help: where to report a problem (the repository's issues) and the support address.
 3. Every value comes from `config/product.toml` through `wirecatch-product` (`PRODUCT_SUMMARY`, `PRODUCT_LICENSE`, `PUBLISHER_NAME`, `WEBSITE_URL`, `REPOSITORY_URL`, `ISSUES_URL`, `SUPPORT_EMAIL`), so a placeholder shows until the maintainer sets it, and the release check refuses a release while one is left.
 4. The app's own updates are not on this page: they go in General > Updates (D85.2), with the add-on's.
+
+### D110. The AppImage carries the keyboard libraries
+
+Decided on 2026-10-31, when the release workflow first started each Linux package on a fresh system. It amends D106.2.
+
+1. The AppImage carries `libxkbcommon.so.0`, `libxkbcommon-x11.so.0` and the `libxcb-xkb.so.1` the latter needs, copied from the build machine, and starts through an `AppRun` script that puts its own library folder first. Without them it does not start on a system with no GTK or Qt, such as a fresh server image.
+2. Everything else stays the system's: the C library, X11 and xcb, fontconfig, freetype, Wayland and the Vulkan loader, which AppImage's exclude list keeps out because they must match the system's drivers and services.
+3. The release workflow installs the `.deb` on Ubuntu and the `.rpm` on Fedora in fresh containers and runs the AppImage on the runner; each must start, register the bridge, and (for the packages) unregister it on removal. The release draft waits for these checks.

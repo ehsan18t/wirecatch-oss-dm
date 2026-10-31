@@ -69,6 +69,46 @@ jobs:
             target/packages/*.AppImage
           if-no-files-found: error
 
+  # Each Linux package installed on a fresh system of its kind: its dependencies cover the app, the app starts and registers the bridge, and removal unregisters it (scripts/ci/linux-package-check.sh).
+  linux-packages:
+    name: Linux ${{ matrix.kind }}
+    needs: desktop
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: deb
+            image: ubuntu:24.04
+          - kind: rpm
+            image: fedora:42
+          - kind: appimage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: desktop-Linux
+          path: packages
+
+      - name: Read the app's name
+        id: names
+        run: echo "app=$(sed -n 's/^app = "\(.*\)"/\1/p' config/product.toml)" >> "$GITHUB_OUTPUT"
+
+      - name: Check the package
+        if: matrix.kind != 'appimage'
+        run: >-
+          docker run --rm -v "$PWD:/work" -w /work ${{ matrix.image }}
+          bash scripts/ci/linux-package-check.sh ${{ matrix.kind }} packages/*.${{ matrix.kind }} ${{ steps.names.outputs.app }}
+
+      - name: Check the AppImage
+        if: matrix.kind == 'appimage'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb xauth mesa-vulkan-drivers >/dev/null
+          sudo bash scripts/ci/linux-package-check.sh appimage packages/*.AppImage ${{ steps.names.outputs.app }}
+
   extension:
     name: Extension
     timeout-minutes: 20
@@ -108,7 +148,7 @@ jobs:
   draft:
     name: Draft the release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [desktop, extension]
+    needs: [desktop, linux-packages, extension]
     timeout-minutes: 10
     runs-on: ubuntu-latest
     permissions:
