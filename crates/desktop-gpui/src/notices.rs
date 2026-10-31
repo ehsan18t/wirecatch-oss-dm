@@ -28,10 +28,20 @@ use crate::main_window;
 /// The icon the system shows beside the app's name.
 const ICON: &[u8] = include_bytes!("../../../apps/desktop/src-tauri/icons/128x128.png");
 
-/// The two ways of telling, shared by the watch and the notices it waits on.
+/// The two ways of telling, shared by the watch and the notices it waits on, and the way to the
+/// app's own thread.
 struct Tellers {
     system: Notifier,
     browser: BrowserNotices,
+    to_app: mpsc::UnboundedSender<ToApp>,
+}
+
+/// What the watch hands to the app's own thread.
+enum ToApp {
+    /// The person clicked a notification or pressed a browser notice.
+    Act(Act),
+    /// Downloads ended, told in the download complete window.
+    Finished(Tell),
 }
 
 /// The tellers, for what the app's own thread tells.
@@ -42,7 +52,7 @@ impl Global for Kept {}
 /// Starts telling, once the manager opens, or tells why it could not. Clicks come back to the
 /// app's own thread.
 pub fn start(cx: &mut App) {
-    let (clicked, mut clicks) = mpsc::unbounded_channel::<Act>();
+    let (to_app, mut from_watch) = mpsc::unbounded_channel::<ToApp>();
     let folder = dirs::cache_dir()
         .unwrap_or_default()
         .join(host::CHANNEL.identifier());
@@ -52,22 +62,23 @@ pub fn start(cx: &mut App) {
         icon: ICON,
         icon_folder: &folder,
     };
-    let to_app = clicked.clone();
+    let clicked = to_app.clone();
     let tellers = Arc::new(Tellers {
         system: Notifier::new(
             &identity,
             Arc::new(move |act| {
-                if to_app.send(act).is_err() {
+                if clicked.send(ToApp::Act(act)).is_err() {
                     tracing::debug!("a notification was clicked while the app was closing");
                 }
             }),
         ),
         browser: BrowserNotices::default(),
+        to_app,
     });
     cx.set_global(Kept(Arc::clone(&tellers)));
     let unopened = Arc::clone(&tellers);
     // Runs until the manager stops, or ends at once when it could not open.
-    let watching = Backend::run(cx, move |manager| watch(manager, tellers, clicked));
+    let watching = Backend::run(cx, move |manager| watch(manager, tellers));
     cx.spawn(async move |_| {
         if let Ok(Err(why)) = watching.await
             && !why.another_copy
@@ -80,15 +91,18 @@ pub fn start(cx: &mut App) {
     })
     .detach();
     cx.spawn(async move |cx| {
-        while let Some(act) = clicks.recv().await {
-            cx.update(|cx| carry_out(act, cx));
+        while let Some(next) = from_watch.recv().await {
+            cx.update(|cx| match next {
+                ToApp::Act(act) => carry_out(act, cx),
+                ToApp::Finished(tell) => crate::download_windows::finished::add(tell, cx),
+            });
         }
     })
     .detach();
 }
 
 /// Follows the manager's events, telling each as the settings say when it is due.
-async fn watch(manager: Manager, tellers: Arc<Tellers>, clicked: mpsc::UnboundedSender<Act>) {
+async fn watch(manager: Manager, tellers: Arc<Tellers>) {
     let mut events = manager.subscribe();
     let mut activity = Activity::default();
     let mut teller = Teller::default();
@@ -128,7 +142,7 @@ async fn watch(manager: Manager, tellers: Arc<Tellers>, clicked: mpsc::Unbounded
                         UiEvent::NoticeShown(id) => tellers.browser.shown(id),
                         UiEvent::NoticePressed(pressed) => {
                             if let Some(act) = tellers.browser.pressed(&pressed)
-                                && clicked.send(act).is_err()
+                                && tellers.to_app.send(ToApp::Act(act)).is_err()
                             {
                                 return;
                             }
@@ -164,15 +178,14 @@ async fn due(at: Option<Instant>) {
     }
 }
 
-/// Tells `now` the way `settings` say. The download complete window is not built yet, so it is
-/// told by a notification meanwhile.
+/// Tells `now` the way `settings` say.
 fn tell(manager: &Manager, tellers: &Arc<Tellers>, settings: &AppSettings, now: &Tell) {
     match now.telling(settings) {
         Telling::Nothing => {}
         Telling::System(notification) => show(tellers, settings, notification),
         Telling::Window => {
-            if let Some(notification) = now.notification() {
-                show(tellers, settings, notification);
+            if tellers.to_app.send(ToApp::Finished(now.clone())).is_err() {
+                tracing::debug!("downloads ended while the app was closing");
             }
         }
         Telling::Browser {

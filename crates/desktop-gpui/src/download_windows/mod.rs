@@ -4,6 +4,7 @@
 //! Which windows are open and where they go is `wirecatch_shell::download_windows`; this opens and
 //! closes the GPUI windows it says.
 
+pub mod finished;
 mod view;
 
 use std::collections::HashMap;
@@ -104,6 +105,12 @@ fn gone(label: &str, cx: &mut App) {
     }
     let steps = update(cx, |registry| registry.gone(label)).unwrap_or_default();
     run(steps, cx);
+}
+
+/// Whether a download window shows `shows` now.
+fn shows(shows: Shows, cx: &App) -> bool {
+    cx.try_global::<Windows>()
+        .is_some_and(|windows| windows.registry.window_showing(shows).is_some())
 }
 
 /// `change` applied to the registry; `None` before the windows are kept.

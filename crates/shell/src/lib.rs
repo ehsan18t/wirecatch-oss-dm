@@ -11,6 +11,7 @@ pub mod bridge;
 pub mod browser_notices;
 pub mod download_windows;
 pub mod elevation;
+pub mod finished;
 pub mod host;
 pub mod launch;
 pub mod message_box;

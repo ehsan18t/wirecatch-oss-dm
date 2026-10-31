@@ -85,7 +85,7 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] One window per question or download, at most five at once, cascaded, height fitted to the content. GPUI has no always-on-top that can be turned off, so a window comes to the front when it opens and is a normal window after.
 - [x] File question (D72.8, D94.6), reading a video, add-on needed, media quality (D50), file already exists (D96), progress, finished.
 - [x] Reopened at start for open questions; `capture_repeated` brings one back (D89).
-- [ ] Finished window ("Open a summary window", D52); until it exists, that setting shows a notification.
+- [x] Finished window ("Open a summary window", D52).
 
 ## Shell
 
