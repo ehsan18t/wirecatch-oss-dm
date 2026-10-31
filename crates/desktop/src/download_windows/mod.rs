@@ -194,6 +194,9 @@ fn open(opened: &OpenWindow, cx: &mut App) {
             cx.global_mut::<Windows>()
                 .open
                 .insert(opened.label.clone(), (handle, view.downgrade()));
+            // Opening alone leaves it behind the browser: Windows brings a background app's new
+            // window forward only through activation.
+            _ = handle.update(cx, |_, window, _| window.activate_window());
         }
         Err(e) => {
             tracing::error!("could not open a download window: {e}");
