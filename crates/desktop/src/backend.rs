@@ -37,11 +37,14 @@ impl Backend {
     }
 
     /// Begins opening the manager in the background, so the first window never waits on the
-    /// database, then serves the browser on `listener`; registers the bridge with the browsers.
+    /// data folder or the database, then serves the browser on `listener`; registers the bridge
+    /// with the browsers.
     pub fn start(runtime: tokio::runtime::Runtime, listener: Option<Listener>) -> Self {
-        let config = config();
-        bridge::register_on_start(&config.data_dir);
-        let core = Arc::new(Core::new(config));
+        let core = Arc::new(Core::preparing(|| {
+            let config = config();
+            bridge::register_on_start(&config.data_dir);
+            config
+        }));
         let serving = runtime.spawn(serve(Arc::clone(&core), listener));
         Self {
             runtime,
@@ -153,7 +156,8 @@ async fn serve(core: Arc<Core>, listener: Option<Listener>) {
     }
 }
 
-/// Where the manager keeps its data and which folders it saves to.
+/// Where the manager keeps its data and which folders it saves to. Blocks on the disk: it may
+/// move the data folder (`host::data_dir`).
 fn config() -> ManagerConfig {
     let local = dirs::data_local_dir().unwrap_or_default();
     let roaming = dirs::data_dir().unwrap_or_else(|| local.clone());

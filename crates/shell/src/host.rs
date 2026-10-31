@@ -5,6 +5,7 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use tokio::sync::OnceCell;
 use wirecatch_core::{
@@ -32,9 +33,13 @@ pub const CHANNEL: Channel = if DEV_BUILD {
     Channel::Release
 };
 
+/// What makes the manager's configuration, on a blocking thread. It runs again when an open
+/// was given up halfway, so it must be safe to repeat.
+type Prepare = Arc<dyn Fn() -> ManagerConfig + Send + Sync>;
+
 /// The download manager this process hosts, opened on first use.
 pub struct Core {
-    config: ManagerConfig,
+    prepare: Prepare,
     cell: OnceCell<Result<Manager, Unopened>>,
 }
 
@@ -60,8 +65,16 @@ impl Core {
     /// A manager that will open with `config`.
     #[must_use]
     pub fn new(config: ManagerConfig) -> Self {
+        Self::preparing(move || config.clone())
+    }
+
+    /// A manager whose configuration `prepare` makes when it first opens, on a blocking thread:
+    /// for work on the disk, such as moving the data folder ([`data_dir`]), that must not hold
+    /// up the first window.
+    #[must_use]
+    pub fn preparing(prepare: impl Fn() -> ManagerConfig + Send + Sync + 'static) -> Self {
         Self {
-            config,
+            prepare: Arc::new(prepare),
             cell: OnceCell::new(),
         }
     }
@@ -87,7 +100,17 @@ impl Core {
     pub async fn opened(&self) -> Result<&Manager, &Unopened> {
         self.cell
             .get_or_init(|| async {
-                Manager::open(self.config.clone()).await.map_err(|e| {
+                let prepare = Arc::clone(&self.prepare);
+                let config = tokio::task::spawn_blocking(move || prepare())
+                    .await
+                    .map_err(|e| {
+                        CoreError::Internal(format!("preparing the download list stopped ({e})"))
+                    });
+                match config {
+                    Ok(config) => Manager::open(config).await,
+                    Err(e) => Err(e),
+                }
+                .map_err(|e| {
                     tracing::error!("could not open the download manager: {e}");
                     Unopened::from_core(&e)
                 })
@@ -370,6 +393,25 @@ pub fn known_folders(home: &Path) -> KnownFolders {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_configuration_is_prepared_off_the_caller() {
+        let dir = wirecatch_test_support::private_dir("desktop-prepare").unwrap();
+        let mut config = ManagerConfig::new(
+            dir.path().join("data"),
+            KnownFolders::under_home(dir.path()),
+        );
+        config.addon_sources.ytdlp_releases = None;
+        let caller = std::thread::current().id();
+        let (prepared_on, on) = std::sync::mpsc::channel();
+        let core = Core::preparing(move || {
+            prepared_on.send(std::thread::current().id()).unwrap();
+            config.clone()
+        });
+        let manager = core.opened().await.expect("the list opens");
+        assert_ne!(on.recv().unwrap(), caller);
+        manager.shutdown().await;
+    }
 
     // An unelevated copy beside an elevated one gets past the endpoint (the elevated pipe's label keeps its probe out), and the list's lock then refuses it. It stayed open as a manager that could not open its list, instead of saying that Wirecatch runs already (W4I review R2-L3).
     #[tokio::test]
