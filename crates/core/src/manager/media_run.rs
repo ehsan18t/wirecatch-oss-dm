@@ -997,22 +997,20 @@ async fn fetch_part(
         match Box::pin(wirecatch_engine::download(request, file, cancel.clone())).await {
             Ok(Outcome::Completed { .. }) => path,
             Ok(_) | Err(EngineError::Cancelled) => return Ok(None),
+            Err(EngineError::PrivateNetwork { .. }) => {
+                return Err(wirecatch_messages::private_network(job.chosen_by).into());
+            }
+            Err(e) if address_gone(&e) => {
+                let status = match e {
+                    EngineError::HttpStatus { status, .. } => Some(status),
+                    _ => None,
+                };
+                return Err(PageError::Refused { status });
+            }
             Err(e) => {
                 let folder = job.output.parent().unwrap_or(Path::new(""));
-                // A format address that was refused or has expired: a
-                // fresh one from the page usually works.
-                if let EngineError::PrivateNetwork { .. } = e {
-                    return Err(wirecatch_messages::private_network(job.chosen_by).into());
-                }
                 let error =
                     wirecatch_messages::describe(&e, folder, wirecatch_messages::Worked::Before);
-                if error.fix == Some(FixAction::RefreshLink) {
-                    let status = match e {
-                        EngineError::HttpStatus { status, .. } => Some(status),
-                        _ => None,
-                    };
-                    return Err(PageError::Refused { status });
-                }
                 return Err(error.into());
             }
         }
@@ -1022,6 +1020,21 @@ async fn fetch_part(
         .await
         .map_err(|e| disk(&e, &job.output))?;
     Ok(Some(file))
+}
+
+/// A format address the server refused, or one that no longer leads to the file: a fresh one
+/// from the page usually works.
+fn address_gone(e: &EngineError) -> bool {
+    matches!(
+        e,
+        EngineError::HttpStatus {
+            status: 401 | 403 | 404 | 410,
+            ..
+        } | EngineError::InvalidUrl(_)
+            | EngineError::TooManyRedirects { .. }
+            | EngineError::RedirectWithoutLocation { .. }
+            | EngineError::TargetRejected(_)
+    )
 }
 
 /// Moves the finished file from the work folder to its place and removes the
@@ -1379,6 +1392,27 @@ fn disk(error: &std::io::Error, near: &Path) -> UserError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The page is read again for a refused or broken format address, whatever the person is told.
+    #[test]
+    fn a_refused_format_address_is_fetched_again_from_the_page() {
+        let status = |status| EngineError::HttpStatus {
+            status,
+            url: "https://example.com/v.mp4".into(),
+        };
+        for gone in [401, 403, 404, 410] {
+            assert!(address_gone(&status(gone)), "{gone}");
+        }
+        assert!(address_gone(&EngineError::TooManyRedirects {
+            url: "https://example.com/v.mp4".into()
+        }));
+        for kept in [429, 500, 503] {
+            assert!(!address_gone(&status(kept)), "{kept}");
+        }
+        assert!(!address_gone(&EngineError::Stalled {
+            after: Duration::from_secs(30)
+        }));
+    }
 
     #[tokio::test]
     async fn formats_of_a_page_on_the_internet_stay_on_the_internet() {
