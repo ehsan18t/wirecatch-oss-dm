@@ -19,9 +19,9 @@ use super::extras::fetch_extras;
 use super::network::network_rule;
 use super::save::{joined_container, save, stored_kept_ext};
 use super::workdir::Downloaded;
-use super::{Job, PageError, PageJob, ROLES, disk, refresh, refused_after_refreshing, workdir};
+use super::{Job, PageError, PageJob, ROLES, disk, workdir};
 use crate::headers;
-use crate::manager::media::{addon_missing, cookie_header};
+use crate::manager::media::cookie_header;
 use crate::manager::run::MediaDone;
 
 /// Downloads a page's chosen formats. When the server refuses a format's
@@ -42,7 +42,7 @@ pub(super) async fn run_page(
             Err(PageError::Refused { status }) => status,
         };
         let Some(delay) = delays.next() else {
-            return Err(refused_after_refreshing(status));
+            return Err(describe::refused_after_refreshing(status));
         };
         warn!(
             status,
@@ -69,7 +69,7 @@ pub(super) async fn page_attempt(
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<MediaDone, PageError> {
-    let tools = job.tools.as_ref().ok_or_else(addon_missing)?;
+    let tools = job.tools.as_ref().ok_or_else(describe::addon_missing)?;
     let work = wirecatch_media::work_dir(&job.output);
     tokio::fs::create_dir_all(&work)
         .await
@@ -157,7 +157,7 @@ pub(super) async fn fetch_parts(
             .url
             .as_deref()
             .and_then(|u| Url::parse(u).ok())
-            .ok_or_else(|| refresh("The page gave an address for the video that is not valid."))?;
+            .ok_or_else(describe::invalid_format_address)?;
         rules.push(network_rule(job.chosen_by, &job.url, &url).await?);
     }
     let parts = found
@@ -215,7 +215,7 @@ pub(super) async fn fetch_part(
         .url
         .as_deref()
         .and_then(|u| Url::parse(u).ok())
-        .ok_or_else(|| refresh("The page gave an address for the video that is not valid."))?;
+        .ok_or_else(describe::invalid_format_address)?;
     let options = part_options(job, format, private_network);
     let part = work.join(part_name(format, role));
     let file = if format.transport() == Transport::Hls {

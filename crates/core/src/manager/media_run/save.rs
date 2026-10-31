@@ -17,7 +17,6 @@ use wirecatch_streams::Role;
 use super::placement::finish;
 use super::workdir::Downloaded;
 use super::{Job, PageJob, workdir};
-use crate::manager::media::addon_missing;
 use crate::manager::run::MediaDone;
 
 /// Saves what was downloaded into the file the person chose: as it came
@@ -115,7 +114,7 @@ pub(super) async fn join_original(
                 Finished::Cancelled => Ok(None),
             }
         }
-        _ => Err(addon_missing()),
+        _ => Err(describe::addon_missing()),
     }
 }
 
@@ -148,7 +147,7 @@ pub(super) async fn inputs_for(
         ([video, audio], _) => (Some(video), Some(audio)),
         ([single], VideoAction::None) => (None, Some(single)),
         ([single], _) => (Some(single), None),
-        _ => return Err(addon_missing()),
+        _ => return Err(describe::addon_missing()),
     };
     let video = match merge::optional_input(video, Role::Video).await {
         Ok(video) => video,

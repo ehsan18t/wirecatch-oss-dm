@@ -4,7 +4,8 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use wirecatch_engine::{PrivateNetwork, Url};
-use wirecatch_protocol::app::{FixAction, UserError};
+use wirecatch_media::describe;
+use wirecatch_protocol::app::UserError;
 use wirecatch_sites::local_network::{self, ChosenBy};
 
 /// How a format's address may use the local network. A page that is itself on
@@ -57,10 +58,7 @@ pub(super) fn format_rule(
     found: &[IpAddr],
 ) -> Result<PrivateNetwork, UserError> {
     if found.is_empty() {
-        return Err(UserError {
-            message: "The server of this video's file could not be found, so Wirecatch could not check where it is and did not download it. Check your connection, then try again.".into(),
-            fix: Some(FixAction::Retry),
-        });
+        return Err(describe::format_server_not_found());
     }
     if found.iter().copied().any(local_network::is_local) {
         return Err(wirecatch_messages::private_network(chosen_by));

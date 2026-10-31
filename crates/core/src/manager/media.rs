@@ -631,20 +631,17 @@ impl Manager {
         let now = self.inner.clock.unix_millis();
         self.fail_addon_waits(
             |m| now.since(m.added_at) >= ADDON_WAIT,
-            "This video waited for the media add-on for a long time, so Wirecatch stopped waiting. Install the media add-on in Settings > Media, then try again.",
+            &describe::addon_waited_too_long(),
         );
     }
 
     /// An install the person started failed: the pages waiting for it become
     /// failed downloads that say so.
     pub(super) fn media_addon_failed(&self) {
-        self.fail_addon_waits(
-            |_| true,
-            "This video needs the media add-on, which could not be installed. Install the media add-on in Settings > Media, then try again.",
-        );
+        self.fail_addon_waits(|_| true, &describe::addon_not_installed());
     }
 
-    fn fail_addon_waits(&self, which: impl Fn(&MediaPending) -> bool, message: &str) {
+    fn fail_addon_waits(&self, which: impl Fn(&MediaPending) -> bool, error: &UserError) {
         let failed: Vec<(QuestionId, MediaPending)> = {
             let mut state = self.lock();
             let ids: Vec<QuestionId> = state
@@ -660,10 +657,7 @@ impl Manager {
         for (id, pending) in failed {
             self.emit(UiEvent::ConfirmationClosed { id });
             let manager = self.clone();
-            let error = UserError {
-                message: message.to_string(),
-                fix: Some(wirecatch_protocol::app::FixAction::Retry),
-            };
+            let error = error.clone();
             self.spawn(async move { manager.record_media_failure(pending, error).await });
         }
     }
@@ -702,7 +696,7 @@ impl Manager {
                     }
                     found
                 }
-                None => Err(addon_missing()),
+                None => Err(describe::addon_missing()),
             },
             _ => {
                 self.read_stream(
@@ -1231,13 +1225,6 @@ pub(super) fn media_options(
 /// The browser's `Cookie` header, if it sent one.
 pub(super) fn cookie_header(origin: &Origin) -> Option<String> {
     headers::find(&origin.headers, "cookie").map(str::to_owned)
-}
-
-pub(super) fn addon_missing() -> UserError {
-    UserError {
-        message: "This needs the media add-on, which is not installed. Install it from Settings > Media, then try again.".into(),
-        fix: Some(wirecatch_protocol::app::FixAction::Retry),
-    }
 }
 
 /// A title for media whose source gave none: the last part of its address.

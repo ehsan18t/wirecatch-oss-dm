@@ -169,6 +169,55 @@ pub fn conversion(error: &FfmpegError, output: &OutputJob, tools: &MediaTools) -
     }
 }
 
+/// A media download reached a step that needs the add-on, which is not installed.
+#[must_use]
+pub fn addon_missing() -> UserError {
+    retry("This needs the media add-on, which is not installed. Install it from Settings > Media, then try again.".into())
+}
+
+/// A video waited for the add-on longer than the app waits.
+#[must_use]
+pub fn addon_waited_too_long() -> UserError {
+    retry("This video waited for the media add-on for a long time, so Wirecatch stopped waiting. Install the media add-on in Settings > Media, then try again.".into())
+}
+
+/// A video waited for the add-on, whose install failed.
+#[must_use]
+pub fn addon_not_installed() -> UserError {
+    retry("This video needs the media add-on, which could not be installed. Install the media add-on in Settings > Media, then try again.".into())
+}
+
+/// The format addresses kept being refused (`status`, when the server answered with one), with fresh ones from the page each time.
+#[must_use]
+pub fn refused_after_refreshing(status: Option<u16>) -> UserError {
+    let answered = status
+        .map(|s| format!(" (it answered {s})"))
+        .unwrap_or_default();
+    retry(format!(
+        "The video's server kept refusing to send the video{answered}, even though Wirecatch tried again automatically several times with fresh addresses from the page. Sites sometimes refuse one video for a while. Try again later; what was already downloaded is kept."
+    ))
+}
+
+/// The page gave a format an address that is not a valid link.
+#[must_use]
+pub fn invalid_format_address() -> UserError {
+    retry("The page gave an address for the video that is not valid. Try again; Wirecatch reads the page again.".into())
+}
+
+/// The name of a format's server did not resolve, so where it leads could not be checked (D39).
+#[must_use]
+pub fn format_server_not_found() -> UserError {
+    retry("The server of this video's file could not be found, so Wirecatch could not check where it is and did not download it. Check your connection, then try again.".into())
+}
+
+/// A step of the media run stopped without an answer (`detail`), which is a defect in the app.
+#[must_use]
+pub fn internal(detail: &dyn std::fmt::Display) -> UserError {
+    retry(format!(
+        "Something went wrong inside Wirecatch ({detail}). Try again."
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,6 +311,21 @@ mod tests {
         let unknown = join(&FfmpegError::UnknownFormat { role: Role::Audio }, &tools);
         assert_eq!(unknown.fix, Some(FixAction::RefreshLink));
         assert!(!tools.is_broken());
+        let run_errors = [
+            addon_missing(),
+            addon_waited_too_long(),
+            addon_not_installed(),
+            refused_after_refreshing(Some(403)),
+            refused_after_refreshing(None),
+            invalid_format_address(),
+            format_server_not_found(),
+            internal(&"task panicked"),
+        ];
+        for error in &run_errors {
+            assert!(error.message.ends_with('.'), "{}", error.message);
+            assert!(!error.message.contains('\u{2014}'), "{}", error.message);
+            assert_eq!(error.fix, Some(FixAction::Retry), "{}", error.message);
+        }
     }
 
     #[test]
