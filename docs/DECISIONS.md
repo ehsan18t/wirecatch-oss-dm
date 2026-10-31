@@ -1077,6 +1077,7 @@ Decided by the maintainer on 2026-10-31, once the GPUI app had every screen (D95
 2. The GPUI crate becomes the desktop app: `crates/desktop`, package `wirecatch-desktop`, whose executable is `wirecatch-app`, named from `config/product.toml`. Its icons and installer pictures live in the crate.
 3. `packages/ui` keeps only what the extension uses and what that needs, with their tests; the window shell, dialogs, menus, sidebars and the form controls only the desktop used are gone.
 4. CI checks the desktop crate again on every system; `--no-desktop` remains for machines without GPUI's system libraries, such as the Docker run of `scripts/linux-test.sh`.
+5. `gpui` is merged into main and retired: CI runs on pushes to `main` alone and saves its Rust caches there (D100.3 ends).
 
 ### D108. A new mark, drawn from one file
 
