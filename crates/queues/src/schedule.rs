@@ -48,6 +48,18 @@ impl Gate {
     }
 }
 
+/// Whether `schedule` lets its queue run at local time `now`, as a person reads it: inside its
+/// window, or, without a stop time, from its start until the day ends. [`Gate`] decides when the
+/// queue really starts.
+#[must_use]
+pub fn allows(schedule: &Schedule, now: NaiveDateTime) -> bool {
+    if schedule.stop.is_some() {
+        return window_open(schedule, now);
+    }
+    to_time(schedule.start)
+        .is_some_and(|start| runs_on(schedule, now.date()) && now.time() >= start)
+}
+
 /// A schedule without a stop time has no window and is never open here.
 fn window_open(schedule: &Schedule, now: NaiveDateTime) -> bool {
     let (Some(start), Some(stop)) = (to_time(schedule.start), schedule.stop.and_then(to_time))
@@ -147,6 +159,23 @@ mod tests {
             stop: Some(stop),
             days,
         }
+    }
+
+    #[test]
+    fn a_schedule_without_a_stop_allows_running_from_its_start_on_its_days() {
+        let s = Schedule {
+            start: tod(22, 0),
+            stop: None,
+            days: vec![Weekday::Mon],
+        };
+        assert!(!allows(&s, mon(21, 59)));
+        assert!(allows(&s, mon(22, 0)));
+        assert!(!allows(&s, day(13, 22, 30)));
+        let windowed = window(tod(2, 0), tod(6, 30), vec![]);
+        assert_eq!(
+            allows(&windowed, mon(3, 0)),
+            window_open(&windowed, mon(3, 0))
+        );
     }
 
     #[test]

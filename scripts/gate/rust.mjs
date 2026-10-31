@@ -1,7 +1,7 @@
 // The Rust checks: lint policy, clippy, tests, the published engine, and the cargo tools the supply-chain checks use.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { capture, cargo, cargoMetadata, GateError, options, ROOT, run } from './process.mjs';
 
 /** Features every workspace-wide cargo command needs. `test-overrides` exists for the bridge's end-to-end tests only and is never enabled in a build. */
@@ -16,7 +16,6 @@ export const TOOLS = {
 export const DESKTOP_CRATE = 'wirecatch-desktop';
 export const BRIDGE_CRATE = 'wirecatch-bridge';
 const ENGINE_CRATE = 'wirecatch-engine';
-const TAURI_CONFIG = 'apps/desktop/src-tauri/tauri.conf.json';
 /** Folders the published engine must not ship: its tests and examples use the unpublished test-support crate, so they cannot build from the package. */
 const UNPACKAGED_ENGINE_FOLDERS = ['tests/', 'examples/'];
 
@@ -45,21 +44,6 @@ export function toolSpecs(tools = TOOLS) {
     .join(',');
 }
 
-/** Tauri embeds the built frontend at compile time. When it has not been built, a placeholder page lets clippy and the tests compile, and says what to do if someone runs that build. */
-function ensureDesktopFrontend() {
-  const config = JSON.parse(readFileSync(join(ROOT, TAURI_CONFIG), 'utf8'));
-  const folder = resolve(ROOT, dirname(TAURI_CONFIG), config.build.frontendDist);
-  if (existsSync(folder)) return;
-  console.log(
-    `The desktop interface is not built; writing a placeholder to ${relative(ROOT, folder)} so the desktop crate compiles. Run \`pnpm --filter @wirecatch/desktop build\` for the real interface.`,
-  );
-  mkdirSync(folder, { recursive: true });
-  writeFileSync(
-    join(folder, 'index.html'),
-    '<!doctype html><meta charset="utf-8"><title>Not built</title><p>The interface was not built. Run <code>pnpm --filter @wirecatch/desktop build</code>, then build the app again.</p>\n',
-  );
-}
-
 /** Whether a manifest has `workspace = true` inside its `[lints]` table. */
 function followsWorkspaceLints(manifest) {
   const table = /^\[lints\][^\S\r\n]*\r?\n([\s\S]*?)(?=^\[|(?![\s\S]))/m.exec(manifest);
@@ -85,7 +69,6 @@ function desktopExclusion({ desktop }) {
 }
 
 function clippy() {
-  if (options.desktop) ensureDesktopFrontend();
   cargo(
     'clippy',
     '--workspace',
@@ -129,7 +112,6 @@ function workspaceBridge() {
 }
 
 function test() {
-  if (options.desktop) ensureDesktopFrontend();
   run('cargo', testArguments(options), { env: { [BRIDGE_VARIABLE]: workspaceBridge() } });
 }
 

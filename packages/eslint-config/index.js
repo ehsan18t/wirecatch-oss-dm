@@ -15,7 +15,6 @@ import { noBrandAssertion } from './rules/no-brand-assertion.js';
 import { noMagicNumbers } from './rules/no-magic-numbers.js';
 import { noSilentCatch } from './rules/no-silent-catch.js';
 import { noTypeArgumentAssertion } from './rules/no-type-argument-assertion.js';
-import { noValueOfType } from './rules/no-value-of-type.js';
 import { tokensOnly } from './rules/tokens-only.js';
 import { useUiPrimitives } from './rules/use-ui-primitives.js';
 import { waitWithPatience } from './rules/wait-with-patience.js';
@@ -37,7 +36,6 @@ const plugin = {
     'no-magic-numbers': noMagicNumbers,
     'no-silent-catch': noSilentCatch,
     'no-type-argument-assertion': noTypeArgumentAssertion,
-    'no-value-of-type': noValueOfType,
     'tokens-only': tokensOnly,
     'use-ui-primitives': useUiPrimitives,
     'wait-with-patience': waitWithPatience,

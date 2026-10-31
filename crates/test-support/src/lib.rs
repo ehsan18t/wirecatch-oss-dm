@@ -43,6 +43,8 @@
 
 #[cfg(feature = "bridge")]
 pub mod bridge;
+#[cfg(feature = "downloads")]
+pub mod downloads;
 #[cfg(feature = "servers")]
 pub mod files;
 #[cfg(feature = "servers")]

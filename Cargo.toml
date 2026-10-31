@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 # New crates under crates/ join automatically. The desktop app's Rust side is listed explicitly.
-members = ["crates/*", "apps/desktop/src-tauri"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -83,6 +83,34 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# Running the GPUI app (`cargo ui`): unoptimised, GPUI takes about 20 ms a frame while a dialog animates, below the display's rate. Its own profile, so the dev builds of checks and tests stay unoptimised and quick to compile.
+[profile.ui]
+inherits = "dev"
+
+[profile.ui.package.gpui-pre]
+opt-level = 3
+
+[profile.ui.package.gpui-pre-windows]
+opt-level = 3
+
+[profile.ui.package.gpui-pre-linux]
+opt-level = 3
+
+[profile.ui.package.gpui-pre-wgpu]
+opt-level = 3
+
+[profile.ui.package.gpui-pre-sum-tree]
+opt-level = 3
+
+[profile.ui.package.gpui-base]
+opt-level = 3
+
+[profile.ui.package.gpui-component]
+opt-level = 3
+
+[profile.ui.package.taffy]
+opt-level = 3
 
 [profile.release]
 lto = "thin"

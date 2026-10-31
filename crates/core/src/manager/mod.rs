@@ -46,7 +46,7 @@ use wirecatch_engine::{Backoff, CancellationToken, RateLimiter, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{StartupNotice, UiEvent};
 use wirecatch_protocol::extension::{BrowserNotice, NoticeId, NoticePressed};
-use wirecatch_protocol::wire::Event;
+use wirecatch_protocol::wire::{Event, MAX_OPEN_LINKS};
 use wirecatch_settings::folders::KnownFolders;
 use wirecatch_settings::proxy::ComputerProxy;
 use wirecatch_sites::public_suffix::SuffixList;
@@ -261,8 +261,7 @@ impl ManagerConfig {
 /// The download manager. Cheap to clone; every clone is the same manager.
 ///
 /// Operations take effect at once and report what changed through [`subscribe`]
-/// (for the desktop UI) and [`subscribe_events`] (for socket clients). Method names
-/// match the desktop app's Tauri commands.
+/// (for the desktop UI) and [`subscribe_events`] (for socket clients).
 ///
 /// [`subscribe`]: Manager::subscribe
 /// [`subscribe_events`]: Manager::subscribe_events
@@ -273,8 +272,8 @@ pub struct Manager {
 
 struct Inner {
     /// The runtime the manager was opened on. Every task is spawned here, so
-    /// methods also work when called from a thread outside any runtime (Tauri runs
-    /// synchronous commands on its main thread).
+    /// methods also work when called from a thread outside any runtime, such as the
+    /// desktop app's window thread.
     runtime: Handle,
     state: Mutex<State>,
     store: Store,
@@ -469,6 +468,13 @@ impl Manager {
     /// Asks the desktop to show its main window ([`UiEvent::WindowRequested`]), for a client such as the extension's "Open Wirecatch".
     pub fn request_window(&self) {
         self.emit(UiEvent::WindowRequested);
+    }
+
+    /// Asks the desktop to show its main window with the Add dialog holding `links`
+    /// ([`UiEvent::LinksRequested`]), the first [`MAX_OPEN_LINKS`] of them.
+    pub fn request_links(&self, mut links: Vec<String>) {
+        links.truncate(MAX_OPEN_LINKS);
+        self.emit(UiEvent::LinksRequested(links));
     }
 
     /// Asks every connected browser to show `notice` (D65) and says how many may answer: the

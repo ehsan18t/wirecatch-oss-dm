@@ -5,3 +5,7 @@ TS_RS_EXPORT_DIR = { value = "target/ts-rs", relative = true }
 [build]
 # Incremental caches roughly double the size of each build folder; disk is the tighter constraint here than rebuild time.
 incremental = false
+
+[alias]
+# The desktop app with GPUI optimised; see `[profile.ui]` in Cargo.toml.
+ui = "run -p wirecatch-desktop --profile ui"

@@ -139,6 +139,7 @@ impl CallMethod {
         CallMethod::ShowBrowserSettings,
         CallMethod::NoticeShown,
         CallMethod::NoticePressed,
+        CallMethod::OpenLinks,
     ];
 
     /// The protocol version that added the call, or `None` for a method this build does not
@@ -160,7 +161,8 @@ impl CallMethod {
             | CallMethod::UpdateBrowserControls
             | CallMethod::ShowBrowserSettings
             | CallMethod::NoticeShown
-            | CallMethod::NoticePressed => Some(2),
+            | CallMethod::NoticePressed
+            | CallMethod::OpenLinks => Some(2),
             CallMethod::Unknown => None,
         }
     }
@@ -553,7 +555,7 @@ mod tests {
             ("NoticeKind", NoticeKind::inline(&cfg)),
         ];
         let settled = [
-            ("ClientKind", r#""extension" | "bridge" | "cli""#),
+            ("ClientKind", r#""extension" | "bridge" | "cli" | "app""#),
             ("MediaKind", r#""hls" | "dash" | "direct" | "page""#),
             (
                 "CaptureSource",

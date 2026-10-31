@@ -1,4 +1,0 @@
-/* The component gallery's stylesheet: the design system, plus the gallery's own sources for utilities. */
-@import '@wirecatch/ui/tokens.css';
-@import '@wirecatch/ui/base.css';
-@source './';

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "GPL-3.0-only",
-  "description": "Byte units, and how sizes and speeds are shown and typed, for the desktop app and the extension alike.",
+  "description": "Byte units, and how sizes and speeds are shown and typed, for the extension.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -56,11 +56,8 @@ test('the generated files in the repository are current', async () => {
 
 test('a generated file edited by hand, or missing, is reported until generated again', async () => {
   edit('packages/product/src/index.ts', (text) => text.replace("'Wirecatch'", "'Other'"));
-  rmSync(join(root, 'apps/desktop/src-tauri/linux/prerm.sh'));
-  assert.deepEqual(await staleOutputs(root), [
-    'packages/product/src/index.ts',
-    'apps/desktop/src-tauri/linux/prerm.sh',
-  ]);
+  rmSync(join(root, 'SECURITY.md'));
+  assert.deepEqual(await staleOutputs(root), ['packages/product/src/index.ts', 'SECURITY.md']);
   await generate(root);
   assert.deepEqual(await staleOutputs(root), []);
 });
@@ -92,13 +89,7 @@ test('a change to product.toml makes every file that carries the value stale', a
     text.replace('bridge = "wirecatch-bridge"', 'bridge = "wc-bridge"'),
   );
   const stale = await staleOutputs(root);
-  for (const path of [
-    'crates/product/src/lib.rs',
-    'apps/desktop/src-tauri/linux/prerm.sh',
-    'apps/desktop/src-tauri/windows/hooks.nsh',
-    'crates/bridge/Cargo.toml',
-    'apps/desktop/src-tauri/tauri.bundle.conf.json',
-  ]) {
+  for (const path of ['crates/product/src/lib.rs', 'crates/bridge/Cargo.toml']) {
     assert.ok(stale.includes(path), `${path} should be stale: ${stale.join(', ')}`);
   }
   await generate(root);
@@ -120,7 +111,14 @@ test('the release check finds every placeholder until the values are decided', a
   assert.deepEqual(await remainingPlaceholders(root), { values: [], lines: [] });
 });
 
+test('an empty folder among the packages is not taken for a package', async () => {
+  mkdirSync(join(root, 'apps/leftover'));
+  assert.deepEqual(await staleOutputs(root), []);
+  rmSync(join(root, 'apps/leftover'), { recursive: true });
+});
+
 test('a workspace package whose package.json was deleted is reported, not skipped', async () => {
+  writeFileSync(join(root, 'apps/extension/README.md'), 'A package keeps its other files.');
   rmSync(join(root, 'apps/extension/package.json'));
   await assert.rejects(staleOutputs(root), /apps\/extension\/package\.json is missing/);
 });

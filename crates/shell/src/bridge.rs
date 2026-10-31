@@ -207,6 +207,39 @@ pub fn register_in_background(find: impl FnOnce() -> Option<PathBuf> + Send + 's
     }
 }
 
+/// Registers the bridge beside the running app, in the background, unless this is a debug build
+/// ([`registers_on_start`]). Under an AppImage a private copy in `data_dir` is registered.
+pub fn register_on_start(data_dir: &Path) {
+    if !registers_on_start() {
+        tracing::info!("debug build: not registering the browser bridge");
+        return;
+    }
+    #[cfg(unix)]
+    let private_dir = data_dir.join("bin");
+    #[cfg(not(unix))]
+    let _ = data_dir;
+    register_in_background(move || {
+        let app_exe = std::env::current_exe()
+            .map_err(|e| tracing::warn!("could not find the app's own file: {e}"))
+            .ok()?;
+        // An AppImage's bundled bridge sits in a mount that goes away when the app exits.
+        #[cfg(unix)]
+        let chosen = match std::env::var_os(crate::appimage::APPIMAGE_VAR) {
+            Some(appimage) => bundled_bridge(&app_exe).and_then(|bundled| {
+                crate::appimage::install_private_bridge(
+                    &bundled,
+                    Path::new(&appimage),
+                    &private_dir,
+                )
+            }),
+            None => bridge_to_register(&app_exe),
+        };
+        #[cfg(not(unix))]
+        let chosen = bridge_to_register(&app_exe);
+        chosen.map_err(|e| tracing::warn!("{e}")).ok()
+    });
+}
+
 /// Runs the bridge with one subcommand (`install` or `uninstall`) and waits for it.
 ///
 /// # Errors

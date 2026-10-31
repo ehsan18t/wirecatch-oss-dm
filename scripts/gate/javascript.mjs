@@ -1,14 +1,20 @@
 // The JavaScript checks: the generated protocol types are current, every package is linted the one way (js-policy.mjs), and the packages check, lint, test, build and audit.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { jsPolicy } from './js-policy.mjs';
-import { capture, GateError, pnpm, ROOT } from './process.mjs';
+import { jsPolicy, lintTargets } from './js-policy.mjs';
+import { capture, GateError, pnpm, ROOT, run } from './process.mjs';
 
 const GENERATED_TYPES = 'packages/protocol/src';
 /** The generated types of each released protocol version, copied once when it was released (D32.8). */
 const RELEASED_SNAPSHOTS = 'crates/protocol/released';
 /** The branch whose snapshots are released: one it has can never change. */
 const RELEASED_BASE = 'origin/main';
+function lint() {
+  const { root, formatted } = lintTargets();
+  pnpm('-r', 'exec', 'eslint', '.', '--max-warnings', '0');
+  pnpm('exec', 'eslint', ...root, '--max-warnings', '0');
+  pnpm('exec', 'prettier', '--check', ...formatted);
+}
 
 /** Every file under `dir`, with its contents, keyed by its path from the repository root. */
 function folderContents(dir) {
@@ -71,10 +77,13 @@ export const JS_CHECKS = {
     releasedSnapshotsKept();
   },
   'js-policy': jsPolicy,
-  'js-check': () => pnpm('check'),
-  'js-lint': () => pnpm('lint'),
-  'js-test': () => pnpm('test'),
-  'js-build': () => pnpm('build'),
+  'js-check': () => pnpm('-r', '--if-present', 'check'),
+  'js-lint': lint,
+  'js-test': () => {
+    pnpm('-r', '--if-present', 'test');
+    run('node', ['--test', 'scripts/**/*.test.mjs']);
+  },
+  'js-build': () => pnpm('-r', '--if-present', 'build'),
   // Ignored advisories, each with its reason, live in `auditConfig` in pnpm-workspace.yaml.
   'npm-audit': () => pnpm('audit'),
 };

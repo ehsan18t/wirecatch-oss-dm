@@ -23,9 +23,24 @@ url.workspace = true
 wirecatch-logging = { workspace = true, features = ["setup"] }
 
 [target.'cfg(windows)'.dependencies]
-# The version tauri-plugin-autostart uses, to read the start-at-sign-in entry's state.
+# Reads the start-at-sign-in entry's state, registers the app's notification identity, and
+# reads the Windows build (D64).
 winreg = "0.10.1"
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+# The system's own notifications, with buttons, under the app's identity (D52).
+# And the accent colour chosen in Windows.
+windows = { version = "0.62.2", features = [
+    "Data_Xml_Dom",
+    "Foundation",
+    "UI",
+    "UI_Notifications",
+    "UI_ViewManagement",
+] }
+windows-core = "0.62.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The desktop's notification service, with the buttons of a notification (D52).
+notify-rust = "4.18.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
@@ -35,7 +50,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["sync", "time", "macros", "rt-multi-thread", "io-util", "process"] }
-wirecatch-test-support = { path = "../test-support", features = ["bridge", "servers"] }
+wirecatch-test-support = { path = "../test-support", features = ["bridge", "downloads", "servers"] }
 
 [lints]
 workspace = true

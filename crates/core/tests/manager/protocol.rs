@@ -21,8 +21,8 @@ use wirecatch_protocol::extension::{
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
 use wirecatch_protocol::wire::{
-    Call, ClientKind, ErrorCode, Event, Hello, Message, Outcome, ProtocolError, Reply,
-    UNKNOWN_REQUEST_ID,
+    Call, ClientKind, ErrorCode, Event, Hello, MAX_OPEN_LINKS, Message, OpenLinks, Outcome,
+    ProtocolError, Reply, UNKNOWN_REQUEST_ID,
 };
 use wirecatch_protocol::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION, QuestionId};
 use wirecatch_server::serve_connection;
@@ -568,6 +568,27 @@ async fn a_client_can_ask_for_the_window() -> TestResult {
     );
     while !matches!(ui.recv().await.unwrap(), UiEvent::BrowserSettingsRequested) {}
     Ok(())
+}
+
+/// D103: a second launch hands over its links, and the app keeps the first ones.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_second_launch_hands_over_its_links() -> TestResult {
+    let h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    let mut client = Client::connected(&h.manager).await?;
+    let links: Vec<String> = (0..=MAX_OPEN_LINKS)
+        .map(|i| format!("https://example.com/{i}"))
+        .collect();
+    let call = Call::OpenLinks(OpenLinks {
+        links: links.clone(),
+    });
+    assert_eq!(client.call(call).await?.unwrap(), Reply::Done);
+    loop {
+        if let UiEvent::LinksRequested(got) = ui.recv().await.unwrap() {
+            assert_eq!(got, links[..MAX_OPEN_LINKS]);
+            return Ok(());
+        }
+    }
 }
 
 /// D65: the app asks every browser to show a notice, and hears which showed it and what was pressed.

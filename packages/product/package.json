@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "GPL-3.0-only",
-  "description": "Wirecatch's product identity for the desktop app and the extension, generated from config/product.toml. Do not edit src by hand: run pnpm product:generate.",
+  "description": "Wirecatch's product identity for the extension, generated from config/product.toml. Do not edit src by hand: run pnpm product:generate.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
