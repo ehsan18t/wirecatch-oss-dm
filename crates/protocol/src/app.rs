@@ -958,6 +958,27 @@ pub enum Theme {
     Dark,
 }
 
+/// The lines a row of the download list shows under the file's name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ListLines {
+    /// The link it is downloaded from.
+    #[serde(default = "default_true")]
+    pub link: bool,
+    /// The folder it is saved in.
+    #[serde(default = "default_true")]
+    pub folder: bool,
+}
+
+impl Default for ListLines {
+    fn default() -> Self {
+        Self {
+            link: true,
+            folder: true,
+        }
+    }
+}
+
 /// How clock times show.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
@@ -1193,6 +1214,8 @@ pub struct AppSettingsPatch {
     pub accent: Option<Accent>,
     /// The new [`AppSettings::clock`].
     pub clock: Option<ClockFormat>,
+    /// The new [`AppSettings::list_lines`].
+    pub list_lines: Option<ListLines>,
     /// The new [`AppSettings::start_with_system`].
     pub start_with_system: Option<bool>,
     /// The new [`AppSettings::close_to_tray`].
@@ -1318,6 +1341,13 @@ fn set<T>(slot: &mut T, value: Option<T>) {
     }
 }
 
+/// Changes `slot` by its own patch, when there is one.
+fn apply_part<T, P>(slot: &mut T, patch: Option<P>, apply: fn(&mut T, P)) {
+    if let Some(patch) = patch {
+        apply(slot, patch);
+    }
+}
+
 /// Replaces `slot` when the patch sets it.
 fn update<T>(slot: &mut T, value: Update<T>) {
     if let Update::Set(value) = value {
@@ -1428,6 +1458,9 @@ pub struct AppSettings {
     #[serde(default, with = "known_or_default")]
     #[ts(as = "ClockFormat")]
     pub clock: ClockFormat,
+    /// What the download list shows under each name.
+    #[serde(default)]
+    pub list_lines: ListLines,
     /// Start Wirecatch when the person signs in to the computer.
     pub start_with_system: bool,
     /// Closing the window keeps downloads running in the tray.
@@ -1503,6 +1536,7 @@ impl AppSettings {
             theme,
             accent,
             clock,
+            list_lines,
             start_with_system,
             close_to_tray,
             notify_on_finish,
@@ -1529,6 +1563,7 @@ impl AppSettings {
             theme: new_theme,
             accent: new_accent,
             clock: new_clock,
+            list_lines: new_list_lines,
             start_with_system: new_start_with_system,
             close_to_tray: new_close_to_tray,
             notify_on_finish: new_notify_on_finish,
@@ -1550,12 +1585,11 @@ impl AppSettings {
         set(connections_per_download, new_connections_per_download);
         set(max_concurrent_downloads, new_max_concurrent_downloads);
         update(global_speed_limit, new_global_speed_limit);
-        if let Some(extension_patch) = extension_patch {
-            extension.apply(extension_patch);
-        }
+        apply_part(extension, extension_patch, ExtensionSettings::apply);
         set(theme, new_theme);
         set(accent, new_accent);
         set(clock, new_clock);
+        set(list_lines, new_list_lines);
         set(start_with_system, new_start_with_system);
         set(close_to_tray, new_close_to_tray);
         set(notify_on_finish, new_notify_on_finish);
@@ -1566,9 +1600,7 @@ impl AppSettings {
         set(auto_update_addons, new_auto_update_addons);
         set(show_progress_windows, new_show_progress_windows);
         set(when_file_exists, new_when_file_exists);
-        if let Some(media_patch) = media_patch {
-            media.apply(media_patch);
-        }
+        apply_part(media, media_patch, MediaDefaults::apply);
         set(local_sites, new_local_sites);
         set(update_suffix_list, new_update_suffix_list);
         set(prerelease_updates, new_prerelease_updates);

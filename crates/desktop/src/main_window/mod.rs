@@ -156,11 +156,6 @@ impl Group {
     fn is_over(self) -> bool {
         matches!(self, Self::Finished | Self::Cancelled)
     }
-
-    /// Finished and cancelled downloads start folded: they are done with.
-    fn starts_folded(self) -> bool {
-        matches!(self, Self::Finished | Self::Cancelled)
-    }
 }
 
 /// What fills the window beside the navigation.
@@ -452,10 +447,7 @@ impl MainWindow {
             sort: sort::Sort::default(),
             frozen: std::cell::RefCell::default(),
             cursor_bounds: Rc::default(),
-            folded: Group::ALL
-                .into_iter()
-                .filter(|g| g.starts_folded())
-                .collect(),
+            folded: HashSet::new(),
             hovered: None,
             scroll: UniformListScrollHandle::new(),
             settings_on: settings::OpenOn::default(),

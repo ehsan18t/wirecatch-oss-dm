@@ -11,6 +11,7 @@ pub mod icon;
 pub mod layout;
 pub mod mark;
 pub mod queue_tile;
+pub mod select_circle;
 pub mod small_title_bar;
 pub mod speed_graph;
 pub mod switch_row;

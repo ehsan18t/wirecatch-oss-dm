@@ -63,6 +63,10 @@
   "theme": "system",
   "accent": "cyan",
   "clock": "twelve_hour",
+  "list_lines": {
+    "link": true,
+    "folder": true
+  },
   "start_with_system": false,
   "close_to_tray": true,
   "notify_on_finish": "browser",

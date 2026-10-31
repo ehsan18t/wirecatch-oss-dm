@@ -9,7 +9,7 @@ use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, IntoElement, Modifiers, ParentElement as _, ScrollStrategy,
-    Styled as _, Window, div,
+    Styled as _, Window, div, px,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadSummary;
@@ -17,9 +17,10 @@ use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::api;
 
 use super::applies::{self, Applicable};
-use super::{MainWindow, confirm, details};
+use super::{MainWindow, confirm, details, list};
 use crate::backend::act;
 use crate::files;
+use crate::ui::select_circle::{Picked, SelectCircle};
 use crate::ui::{Role, Typed as _};
 
 /// How far Page Up and Page Down move the cursor.
@@ -86,6 +87,25 @@ impl MainWindow {
             self.pick(id);
             details::open(self.library.clone(), id, window, cx);
         }
+        cx.notify();
+    }
+
+    /// A circle's click: ticks every one of `ids` while any is unticked, else unticks them all. A
+    /// row only clicked is let go first, since its circle never showed it ticked.
+    pub(super) fn toggle_rows(&mut self, ids: &[DownloadId], cx: &mut Context<'_, Self>) {
+        if !self.picked {
+            self.selected.clear();
+        }
+        if ids.iter().all(|id| self.selected.contains(id)) {
+            for id in ids {
+                self.selected.remove(id);
+            }
+        } else {
+            self.selected.extend(ids.iter().copied());
+        }
+        self.picked = !self.selected.is_empty();
+        self.anchor = ids.first().copied().filter(|_| self.picked);
+        self.cursor = self.anchor;
         cx.notify();
     }
 
@@ -187,6 +207,22 @@ impl MainWindow {
         confirm::remove(&self.library, &ids, window, cx);
     }
 
+    /// The bar's circle, in the list's column of circles: ticks every download the list shows,
+    /// or unticks them when all are.
+    fn every_circle(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let every = self.picked_of(&self.shown_ids(cx));
+        h_flex().w(px(list::CIRCLE_WIDTH)).justify_center().child(
+            SelectCircle::new("sel-every", every).on_click(cx.listener(move |this, _, _, cx| {
+                if every == Picked::All {
+                    this.clear_selection();
+                    cx.notify();
+                } else {
+                    this.select_all(cx);
+                }
+            })),
+        )
+    }
+
     /// The bar over the list while a selection is built up on purpose: several downloads, or one
     /// added with Ctrl. A row only clicked has its details instead.
     pub(super) fn selection_bar(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
@@ -209,13 +245,15 @@ impl MainWindow {
         let theme = cx.theme();
         let library = self.library.clone();
         let bar = h_flex()
-            .mx_5()
+            .mx_1()
             .mb_2()
-            .px_2()
+            .pl(px(list::PAD - 2.))
+            .pr_2()
             .py_1()
             .gap_1()
             .rounded(theme.radius)
             .bg(theme.list_active)
+            .child(self.every_circle(cx))
             .child(
                 div()
                     .px_2()

@@ -4,6 +4,7 @@ import type { CategoryRule } from './CategoryRule';
 import type { ClockFormat } from './ClockFormat';
 import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
 import type { FinishNoticeTime } from './FinishNoticeTime';
+import type { ListLines } from './ListLines';
 import type { MediaDefaultsPatch } from './MediaDefaultsPatch';
 import type { NotifyOnFinish } from './NotifyOnFinish';
 import type { NotifyOnStart } from './NotifyOnStart';
@@ -53,6 +54,10 @@ export type AppSettingsPatch = {
    * The new [`AppSettings::clock`].
    */
   clock?: ClockFormat;
+  /**
+   * The new [`AppSettings::list_lines`].
+   */
+  list_lines?: ListLines;
   /**
    * The new [`AppSettings::start_with_system`].
    */

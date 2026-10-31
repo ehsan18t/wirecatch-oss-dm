@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use wirecatch_protocol::app::{
     Accent, AppSettings, Category, CategoryRule, ClockFormat, DEFAULT_CONNECTIONS_PER_DOWNLOAD,
-    DEFAULT_MAX_CONCURRENT_DOWNLOADS, FinishNoticeTime, MAX_CONCURRENT_DOWNLOADS,
+    DEFAULT_MAX_CONCURRENT_DOWNLOADS, FinishNoticeTime, ListLines, MAX_CONCURRENT_DOWNLOADS,
     MAX_CONNECTIONS_PER_DOWNLOAD, MAX_QUEUE_DESCRIPTION_CHARS, MediaDefaults, NotifyOnFinish,
     NotifyOnStart, OutputDefaults, PortablePath, Queue, QueueSettings, QueueStatus, Setting,
     StartNoticeTime, Theme, VideoQuality, WhenFileExists,
@@ -111,6 +111,7 @@ pub fn default_settings() -> AppSettings {
         theme: Theme::System,
         accent: Accent::Cyan,
         clock: ClockFormat::TwelveHour,
+        list_lines: ListLines::default(),
         start_with_system: false,
         close_to_tray: true,
         notify_on_finish: NotifyOnFinish::Notification,
