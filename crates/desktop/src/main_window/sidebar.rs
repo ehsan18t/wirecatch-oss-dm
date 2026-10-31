@@ -4,7 +4,7 @@
 use chrono::Local;
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -260,13 +260,9 @@ impl MainWindow {
         let count = rows().count();
         let status = self.describe(queue, cx);
         let (rules, proxy) = self.marks(queue, cx);
-        let menu = queue_menu(
-            queue,
-            index,
-            total,
-            self.library.read(cx).queues.clone(),
-            cx.entity().downgrade(),
-        );
+        let order: Vec<QueueId> = self.library.read(cx).queues.iter().map(|q| q.id).collect();
+        let main = cx.entity().downgrade();
+        let shown = queue.clone();
         let theme = cx.theme();
         h_flex()
             .id(ElementId::NamedInteger("queue".into(), id.0.unsigned_abs()))
@@ -299,19 +295,11 @@ impl MainWindow {
                     .child(name_line(&queue.settings.name, current, speed, count, cx))
                     .child(doing(queue.id, rules, proxy, status, cx)),
             )
-            .when(current || self.hovered_queue == Some(id), |item| {
-                item.child(menu)
-            })
-            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                if *hovered {
-                    this.hovered_queue = Some(id);
-                } else if this.hovered_queue == Some(id) {
-                    this.hovered_queue = None;
-                }
-                cx.notify();
-            }))
             .map(|item| drops(item, id, index, &queue.settings.name, cx))
             .on_click(cx.listener(move |this, _, window, cx| this.show(view, window, cx)))
+            .context_menu(move |menu, _, _| {
+                queue_menu(menu, &shown, index, total, order.clone(), main.clone())
+            })
             .into_any_element()
     }
 
@@ -488,92 +476,77 @@ pub(super) fn outside_schedule(queue: &Queue) -> Option<wirecatch_protocol::app:
     .then_some(schedule.start)
 }
 
-/// A queue's own menu: start now outside its hours, pause or resume, and moving it, the default
-/// queue staying first (D72.9).
+/// A queue's own menu, opened by right-clicking it: start now outside its hours, pause or
+/// resume, and moving it, the default queue staying first (D72.9).
 fn queue_menu(
+    menu: PopupMenu,
     queue: &Queue,
     index: usize,
     total: usize,
-    order: Vec<Queue>,
+    order: Vec<QueueId>,
     main: WeakEntity<MainWindow>,
-) -> impl IntoElement {
+) -> PopupMenu {
     let id = queue.id;
     let paused = queue.status.paused;
     let outside = outside_schedule(queue).is_some() && !paused;
     let last = total.saturating_sub(1);
-    Button::new(ElementId::NamedInteger(
-        "queue-menu".into(),
-        id.0.unsigned_abs(),
-    ))
-    .xsmall()
-    .ghost()
-    .icon(IconName::Ellipsis)
-    .tooltip(format!("Actions for {}", queue.settings.name))
-    .dropdown_menu(move |menu, _, _| {
-        let order: Vec<QueueId> = order.iter().map(|q| q.id).collect();
-        let moved = move |to: usize| {
-            let mut order = order.clone();
-            let from = index;
-            let queue = order.remove(from);
-            order.insert(to, queue);
-            order
-        };
-        let up = moved.clone();
-        let main = main.clone();
+    let moved = move |to: usize| {
+        let mut order = order.clone();
+        let queue = order.remove(index);
+        order.insert(to, queue);
+        order
+    };
+    let up = moved.clone();
+    menu.item(
+        PopupMenuItem::new("Edit queue")
+            .icon(Icon::new(Lucide::Pencil))
+            .on_click(move |_, window, cx| {
+                _ = main.update(cx, |main, cx| main.edit_queue(Some(id), window, cx));
+            }),
+    )
+    .separator()
+    .when(outside, |menu| {
         menu.item(
-            PopupMenuItem::new("Edit queue")
-                .icon(Icon::new(Lucide::Pencil))
+            PopupMenuItem::new("Start now (ignore schedule)")
+                .icon(IconName::Play)
                 .on_click(move |_, window, cx| {
-                    _ = main.update(cx, |main, cx| main.edit_queue(Some(id), window, cx));
+                    act(window.window_handle(), cx, move |manager| {
+                        api::start_queue_now(manager, id)
+                    });
                 }),
         )
-        .separator()
-        .when(outside, |menu| {
-            menu.item(
-                PopupMenuItem::new("Start now (ignore schedule)")
-                    .icon(IconName::Play)
-                    .on_click(move |_, window, cx| {
-                        act(window.window_handle(), cx, move |manager| {
-                            api::start_queue_now(manager, id)
-                        });
-                    }),
-            )
+    })
+    .item(
+        PopupMenuItem::new(if paused {
+            "Resume the queue"
+        } else {
+            "Pause the queue"
         })
-        .item(
-            PopupMenuItem::new(if paused {
-                "Resume the queue"
-            } else {
-                "Pause the queue"
-            })
-            .icon(if paused {
-                IconName::Play
-            } else {
-                IconName::Pause
-            })
-            .on_click(move |_, window, cx| {
-                act(window.window_handle(), cx, move |manager| {
-                    api::set_queue_paused(manager, id, !paused)
-                });
-            }),
-        )
-        .when(
-            index > 0 && last > 1,
-            gpui_kit::component::menu::PopupMenu::separator,
-        )
-        .when(index > 1, |menu| {
-            menu.item(reorder(
-                "Move up",
-                Icon::new(Lucide::ArrowUp),
-                up(index - 1),
-            ))
+        .icon(if paused {
+            IconName::Play
+        } else {
+            IconName::Pause
         })
-        .when(index > 0 && index < last, |menu| {
-            menu.item(reorder(
-                "Move down",
-                Icon::new(IconName::ArrowDown),
-                moved(index + 1),
-            ))
-        })
+        .on_click(move |_, window, cx| {
+            act(window.window_handle(), cx, move |manager| {
+                api::set_queue_paused(manager, id, !paused)
+            });
+        }),
+    )
+    .when(index > 0 && last > 1, PopupMenu::separator)
+    .when(index > 1, |menu| {
+        menu.item(reorder(
+            "Move up",
+            Icon::new(Lucide::ArrowUp),
+            up(index - 1),
+        ))
+    })
+    .when(index > 0 && index < last, |menu| {
+        menu.item(reorder(
+            "Move down",
+            Icon::new(IconName::ArrowDown),
+            moved(index + 1),
+        ))
     })
 }
 
