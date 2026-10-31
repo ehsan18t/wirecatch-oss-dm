@@ -18,8 +18,7 @@ As of 2026-10-31 the code quality audit has W0 to W5, W7, W8 and W14 done, most 
 ## After the first release
 
 1. The rest of W6: shared test support, CI, the backlog of proposed gate checks listed under W6, and a way to test the GPUI app's views (blocked until gpui-kit's test support resolves alongside gpui-pre).
-2. D44.6, from W13: the extension takes the cookie scope from the app's Public Suffix List rather than its bundled `tldts` copy. The app already keeps its own list current (D44); the extension's copy is refreshed with each of its releases, and the gate refuses a store upload while it is stale, so only a suffix added between two releases is scoped wrongly.
-3. W15 last: comments only where they earn their place.
+2. W15 last: comments only where they earn their place.
 
 ## Before the first release
 
@@ -35,7 +34,7 @@ Set with the maintainer on 2026-10-30, and extended on 2026-10-31 with items 8 t
 8. **Fixes in the GPUI app** (done; AUDIT, "After the move to GPUI"). The help of the hosts that skip the proxy says in plain words what `<local>` covers, and the bridge takes `CREATE_NO_WINDOW` from `windows-sys` (CMD-12). The program warning never opened on Enter in the GPUI app (D43.1).
 9. **W11, the desktop shell.** The seven findings that still apply to `crates/shell` and `crates/desktop`: DRS-10, DRS-12, DRS-16, DRS-17, DRS-20, DRS-22 and DRS-23.
 10. **W10, IPC, bridge and CLI.** IPB-6, IPB-7, IPB-17, IPB-18, IPB-19 and CORE-21.
-11. **W13, the extension.** EXT-4, EXT-5, EXT-10, EXT-11, EXT-12, EXT-13 and EXT-16; D44.6 waits until after the release.
+11. **W13, the extension.** EXT-4, EXT-5, EXT-10, EXT-11, EXT-12, EXT-13 and EXT-16, and D44.6: the extension takes the cookie scope from the app's Public Suffix List, which the app keeps current (D44), instead of the copy bundled with each extension release. It changes what the app and the extension send each other, which after the release protocol version 1 freezes (D32), and a stale list can send a site's cookies with another site's download.
 12. **The rest of W9, the core.** CORE-8, CORE-11, CORE-13, CORE-14, CORE-19, CORE-23, CORE-25, CORE-26 and the small items, with CORE-23 and CORE-8, which change what a download does, last.
 
 Done before the release:

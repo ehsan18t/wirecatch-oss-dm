@@ -233,7 +233,7 @@ Gone with the Tauri app and the Svelte interface:
 | W10 | before the first release (ROADMAP item 10) |
 | W11 | before the first release (ROADMAP items 8 and 9): seven findings still apply to the shell and the GPUI app, listed under "After the move to GPUI"; the view tests wait for W6 |
 | W12 | closed (2026-10-31): the Svelte desktop it was written against is gone (D107) |
-| W13 | before the first release (ROADMAP item 11); D44.6 (cookie scope decided by the app), carried from W4, after it |
+| W13 | before the first release (ROADMAP item 11), with D44.6 (cookie scope decided by the app), carried from W4 |
 | Interface revamp ([REVAMP](REVAMP.md)) | not an audit workstream. Phase 1 done (2026-10-14), independently reviewed screen by screen and as a whole, and on main (e18e845f): the stack and `packages/ui`, theme and accent settings, the frameless window shell with its material, the main window, the add-download flow, the download window, and the extension's popup and options page. Phase 2 done (2026-10-29, d4aa002a): the settings pages, the add-ons page, the dialogs, the command palette, the in-page media button, the tray menu, the installer's pictures and Copy diagnostics. Never seen in the real app: Windows 10 and the solid background on Linux (REVAMP, for the maintainer). What the revamp left open is listed below, for W12 and W13 |
 | W15 | later, last, after W13 (maintainer, 2026-10-12); the rule for new comments is in ENGINEERING section 8 from now on |
 
