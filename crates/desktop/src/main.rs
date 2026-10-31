@@ -25,7 +25,7 @@ use gpui_kit::{QuitMode, WindowOptions};
 use wirecatch_ipc::IpcError;
 use wirecatch_shell::launch::{self, Launch};
 use wirecatch_shell::message_box::{self, Tone};
-use wirecatch_shell::{bridge, elevation, host};
+use wirecatch_shell::{autostart, bridge, elevation, host};
 
 use crate::library::Asked;
 
@@ -50,6 +50,14 @@ const LOG_FILTER: &str = "info";
 fn main() {
     let logging = wirecatch_logging::start(wirecatch_product::APP_EXECUTABLE, LOG_FILTER);
     logging.write_to(host::log_folder(std::env::var_os(host::DATA_DIR_VAR)).as_deref());
+    let args: Vec<String> = std::env::args().collect();
+    // Before the elevation check: the uninstaller runs elevated.
+    if args.iter().any(|a| a == autostart::REMOVE_ENTRY_FLAG) {
+        if let Err(e) = autostart::remove(host::CHANNEL.name()) {
+            tracing::warn!("could not remove the start-at-sign-in entry: {e}");
+        }
+        return;
+    }
     if elevation::decide(wirecatch_ipc::elevation()) == elevation::Start::Refuse {
         if host::DEV_BUILD {
             tracing::warn!("running as administrator; a release build would refuse to start");
@@ -58,7 +66,6 @@ fn main() {
             return;
         }
     }
-    let args: Vec<String> = std::env::args().collect();
     let launch = Launch::from_args(&args);
     let runtime = match backend::Backend::runtime() {
         Ok(runtime) => runtime,

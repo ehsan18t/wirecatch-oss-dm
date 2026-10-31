@@ -59,17 +59,18 @@ Filename: "{app}\{#AppExe}.exe"; Description: "Start {#AppName}"; Flags: nowait 
 Filename: "{app}\{#AppExe}.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [Code]
-const
-  RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
-  ApprovedKey = 'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run';
-
-function RunBridge(Params: String): Integer;
+function RunProgram(Exe: String; Params: String): Integer;
 var
   Code: Integer;
 begin
-  if not Exec(ExpandConstant('{app}\{#BridgeExe}.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, Code) then
+  if not Exec(ExpandConstant('{app}\' + Exe + '.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, Code) then
     Code := -1;
   Result := Code;
+end;
+
+function RunBridge(Params: String): Integer;
+begin
+  Result := RunProgram('{#BridgeExe}', Params);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -95,6 +96,6 @@ begin
   // account running the uninstaller can be reached for the per-user parts.
   RunBridge('uninstall --all-users');
   RunBridge('uninstall');
-  RegDeleteValue(HKEY_CURRENT_USER, RunKey, '{#AppName}');
-  RegDeleteValue(HKEY_CURRENT_USER, ApprovedKey, '{#AppName}');
+  // The app owns where its start-at-sign-in entry is kept.
+  RunProgram('{#AppExe}', '--remove-start-entry');
 end;
