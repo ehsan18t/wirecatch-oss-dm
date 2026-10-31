@@ -10,7 +10,9 @@ pub mod folder_row;
 pub mod icon;
 pub mod layout;
 pub mod mark;
+pub mod queue_tile;
 pub mod small_title_bar;
+pub mod speed_graph;
 pub mod switch_row;
 pub mod tokens;
 
@@ -18,5 +20,6 @@ pub use callout::Callout;
 pub use field::Field;
 pub use file_tile::FileTile;
 pub use folder_row::FolderRow;
+pub use queue_tile::QueueTile;
 pub use switch_row::SwitchRow;
 pub use tokens::{Role, Typed};

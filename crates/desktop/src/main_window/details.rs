@@ -2,7 +2,7 @@
 //! now, the short facts, where it is saved and where it came from, and what happened to it, with
 //! its actions at the foot.
 
-use std::collections::VecDeque;
+use std::time::Instant;
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
@@ -13,8 +13,8 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, InteractiveElement as _,
-    IntoElement, ParentElement as _, PathBuilder, Render, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Subscription, Window, canvas, div, point, px,
+    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Subscription, Window, div, px,
 };
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MILLE_DONE};
 use wirecatch_protocol::{DownloadId, QueueId};
@@ -25,6 +25,7 @@ use super::{Group, applies, confirm, fixes, refresh_dialog};
 use crate::backend::act;
 use crate::library::Library;
 use crate::ui::layout::{self, Rule};
+use crate::ui::speed_graph::{SpeedHistory, speed_graph};
 use crate::ui::{Callout, Role, Typed as _, tokens};
 use crate::{files, text};
 
@@ -44,12 +45,10 @@ pub struct Details {
     library: Entity<Library>,
     id: DownloadId,
     /// The speeds seen while the dialog is open, oldest first, for the graph.
-    speeds: VecDeque<u64>,
+    speeds: SpeedHistory,
     _subscriptions: Vec<Subscription>,
 }
 
-/// Speeds the graph keeps: about a minute at one a second.
-const KEPT_SPEEDS: usize = 60;
 const GRAPH_HEIGHT: f32 = 40.;
 
 /// Opens the details of download `id` in a dialog over `window`. It closes by itself once the
@@ -69,7 +68,7 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
                 match row {
                     Some((status, speed)) => {
                         if Group::of(status) == Group::Downloading {
-                            details.keep_speed(speed);
+                            details.speeds.keep(speed, Instant::now());
                         }
                         cx.notify();
                     }
@@ -80,22 +79,13 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
         Details {
             library,
             id,
-            speeds: VecDeque::with_capacity(KEPT_SPEEDS),
+            speeds: SpeedHistory::default(),
             _subscriptions: vec![follow],
         }
     });
     crate::ui::dialog::open(window, cx, move |dialog, _, _| {
         dialog.w(px(WIDTH)).p_0().child(details.clone())
     });
-}
-
-impl Details {
-    fn keep_speed(&mut self, speed: u64) {
-        if self.speeds.len() == KEPT_SPEEDS {
-            self.speeds.pop_front();
-        }
-        self.speeds.push_back(speed);
-    }
 }
 
 impl Render for Details {
@@ -118,7 +108,7 @@ impl Render for Details {
             .filter(|q| q.id != row.queue)
             .map(|q| (q.id, q.settings.name.clone()))
             .collect();
-        let speeds: Vec<u64> = self.speeds.iter().copied().collect();
+        let speeds = self.speeds.speeds();
         v_flex()
             .id("details")
             .max_h(px(MAX_HEIGHT))
@@ -199,7 +189,11 @@ fn now_section(
         );
     }
     if live && speeds.len() > 1 {
-        section = section.child(speed_graph(speeds.to_vec(), cx));
+        section = section.child(
+            speed_graph(speeds.to_vec(), cx.theme().primary)
+                .w_full()
+                .h(px(GRAPH_HEIGHT)),
+        );
     }
     if row.done > 0 || live || row.status == DownloadStatus::Completed {
         let size = match (row.status, text::percent(row)) {
@@ -251,46 +245,6 @@ fn now_section(
         );
     }
     section
-}
-
-/// The speeds seen while the dialog is open, as a line from oldest to newest.
-fn speed_graph(speeds: Vec<u64>, cx: &App) -> impl IntoElement {
-    let color = cx.theme().primary;
-    canvas(
-        |_, _, _| (),
-        move |bounds, (), window, _| {
-            // A quarter above the fastest, so a steady speed does not run along the top edge.
-            let top = (speeds.iter().copied().max().unwrap_or_default() / 4 * 5).max(1);
-            let last = speeds.len().saturating_sub(1).max(1);
-            let at = |index: usize, speed: u64| {
-                let across = thousandths(index as u128, last as u128);
-                let up = thousandths(u128::from(speed), u128::from(top));
-                point(
-                    bounds.origin.x + bounds.size.width * across,
-                    bounds.origin.y + bounds.size.height * (1. - up),
-                )
-            };
-            let mut line = PathBuilder::stroke(px(1.5));
-            for (index, speed) in speeds.iter().enumerate() {
-                if index == 0 {
-                    line.move_to(at(index, *speed));
-                } else {
-                    line.line_to(at(index, *speed));
-                }
-            }
-            if let Ok(path) = line.build() {
-                window.paint_path(path, color);
-            }
-        },
-    )
-    .w_full()
-    .h(px(GRAPH_HEIGHT))
-}
-
-/// `part` of `whole` to a thousandth, as a fraction.
-fn thousandths(part: u128, whole: u128) -> f32 {
-    let scaled = u16::try_from((part * 1000) / whole.max(1)).unwrap_or(1000);
-    f32::from(scaled.min(1000)) / 1000.
 }
 
 /// The short facts in one strip, each one the rest of the dialog does not already say. With other
