@@ -1,5 +1,5 @@
-//! The Wirecatch desktop app on GPUI (D95, D99). It is built beside the Tauri app until it shows
-//! every screen. One copy runs per user: a second launch hands its command line to it (D103).
+//! The Wirecatch desktop app on GPUI (D95, D99). One copy runs per user: a second launch hands
+//! its command line to it (D103).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
