@@ -118,9 +118,7 @@ impl MainWindow {
             .collect();
         let chosen: Vec<DownloadId> = self.selected.iter().copied().collect();
         if let Some(order) = order::nudged(&line, &chosen, up) {
-            act(window.window_handle(), cx, move |manager| {
-                api::reorder(manager, queue, &order)
-            });
+            order::apply(&self.library, queue, order, window, cx);
         }
     }
 }
