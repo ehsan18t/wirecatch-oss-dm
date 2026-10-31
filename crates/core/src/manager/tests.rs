@@ -16,7 +16,7 @@ use wirecatch_test_support::{PATIENCE, QUIET};
 
 use super::fake::{EngineFuture, FakeEngine, FakeRun};
 use super::settle::ServerAnswer;
-use super::{LinkFrom, Manager};
+use super::{LinkFrom, Manager, RemoveFiles};
 use crate::error::CoreError;
 use crate::naming;
 use crate::{DEFAULT_CAPTURE_TIMEOUT, DEFAULT_QUEUE_ID, KnownFolders, ManagerConfig};
@@ -193,7 +193,7 @@ async fn a_download_being_removed_cannot_be_brought_back() {
     assert!(manager.lock().downloads[&id].is_running());
 
     let removing = manager.clone();
-    let removal = tokio::spawn(async move { removing.remove(&[id], false).await });
+    let removal = tokio::spawn(async move { removing.remove(&[id], RemoveFiles::Keep).await });
     wait_until("the removal to begin", || {
         manager.list_downloads().is_empty()
     })
@@ -674,7 +674,7 @@ async fn running_download(let_go: &Arc<Notify>) -> (Manager, DownloadId, tempfil
 async fn a_removal_finishes_after_its_caller_gives_up() {
     let let_go = Arc::new(Notify::new());
     let (manager, id, _dir) = running_download(&let_go).await;
-    give_up_on(manager.remove(&[id], false)).await;
+    give_up_on(manager.remove(&[id], RemoveFiles::Keep)).await;
     let_go.notify_one();
     wait_until("the download to be removed", || {
         !manager.lock().downloads.contains_key(&id)

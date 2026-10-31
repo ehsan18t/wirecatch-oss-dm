@@ -21,6 +21,7 @@ pub use manager::app_update::{AppReleases, AppUpdate, UpdateDownload};
 pub use manager::{
     DEFAULT_CAPTURE_TIMEOUT, DEFAULT_MEDIA_REFRESH_DELAYS, DEFAULT_MEDIA_TIMEOUT,
     DEFAULT_STOP_TIMEOUT, LinkFrom, Manager, ManagerConfig, PROGRESS_TICK, PUBLIC_SUFFIX_LIST_URL,
+    RemoveFiles,
 };
 pub use proxy::PROXY_TEST_URL;
 pub use wirecatch_addons::manifest::{

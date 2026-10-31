@@ -15,14 +15,18 @@ const DISK_FULL_CODES: &[i32] = &[28, 122]; // ENOSPC, EDQUOT
 #[cfg(not(any(windows, unix)))]
 const DISK_FULL_CODES: &[i32] = &[];
 
-/// Describes why a download failed.
-///
-/// `folder` is where the file is saved; `previously_worked` tells whether the link
-/// delivered data before, which turns a refusal into an expired link.
+/// Whether the link delivered data before it failed, which turns a refusal into an expired link.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Worked {
+    Before,
+    Never,
+}
+
+/// Describes why a download failed, saved in `folder`.
 #[must_use]
-pub fn describe(error: &EngineError, folder: &Path, previously_worked: bool) -> UserError {
+pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError {
     match error {
-        EngineError::HttpStatus { status, .. } => http_status(*status, previously_worked),
+        EngineError::HttpStatus { status, .. } => http_status(*status, worked),
         EngineError::InvalidUrl(_) => fix(
             "This link is not a valid web address. Refresh the link with one copied from the page.",
             FixAction::RefreshLink,
@@ -116,7 +120,7 @@ pub fn invalid_link(reason: &str) -> UserError {
     describe(
         &EngineError::InvalidUrl(reason.to_owned()),
         Path::new(""),
-        false,
+        Worked::Never,
     )
 }
 
@@ -147,7 +151,7 @@ pub fn private_network(chosen_by: ChosenBy) -> UserError {
 pub fn describe_run(
     error: &EngineError,
     folder: &Path,
-    previously_worked: bool,
+    worked: Worked,
     chosen_by: ChosenBy,
     through_proxy: Option<&str>,
 ) -> UserError {
@@ -160,7 +164,7 @@ pub fn describe_run(
             ),
             FixAction::ChangeQueue,
         ),
-        (other, _) => describe(other, folder, previously_worked),
+        (other, _) => describe(other, folder, worked),
     }
 }
 
@@ -292,9 +296,9 @@ fn ftp_reply(code: u16, message: &str) -> UserError {
     }
 }
 
-fn http_status(status: u16, previously_worked: bool) -> UserError {
+fn http_status(status: u16, worked: Worked) -> UserError {
     match status {
-        401 | 403 | 404 | 410 if previously_worked => fix(
+        401 | 403 | 404 | 410 if worked == Worked::Before => fix(
             format!(
                 "The download link has expired (the server answered {status}). Open the page again and refresh the link; the part already downloaded is kept."
             ),
@@ -403,7 +407,7 @@ mod tests {
             describe(
                 &EngineError::InvalidUrl("relative URL without a base".into()),
                 Path::new(""),
-                false,
+                Worked::Never,
             )
         );
     }
@@ -415,7 +419,7 @@ mod tests {
         }
     }
 
-    fn action(error: &EngineError, worked: bool) -> Option<FixAction> {
+    fn action(error: &EngineError, worked: Worked) -> Option<FixAction> {
         describe(error, Path::new("/downloads"), worked).fix
     }
 
@@ -423,7 +427,7 @@ mod tests {
     #[test]
     fn an_option_out_of_range_is_not_offered_a_retry() {
         let error = EngineError::InvalidOption("connections");
-        let described = describe(&error, Path::new("/downloads"), false);
+        let described = describe(&error, Path::new("/downloads"), Worked::Never);
         assert_eq!(described.fix, None);
         assert!(
             !described.message.contains("Try again"),
@@ -477,7 +481,11 @@ mod tests {
         let given = ftp_proxy_unsupported(&ProxySetting::Given);
         assert!(given.message.contains("FTP links skip the proxy"));
         // A proxy that refuses the login is another queue's to avoid (D73.4).
-        let login = describe(&EngineError::ProxyLoginRefused, Path::new(""), false);
+        let login = describe(
+            &EngineError::ProxyLoginRefused,
+            Path::new(""),
+            Worked::Never,
+        );
         assert!(login.message.contains("user name and password"));
         assert_eq!(login.fix, Some(FixAction::ChangeQueue));
         for e in [variable, system, given] {
@@ -489,12 +497,12 @@ mod tests {
     #[test]
     fn refused_link_that_worked_before_is_expired() {
         for code in [403, 404, 410] {
-            let e = describe(&status(code), Path::new("/d"), true);
+            let e = describe(&status(code), Path::new("/d"), Worked::Before);
             assert_eq!(e.fix, Some(FixAction::RefreshLink));
             assert!(e.message.contains("expired"), "{}", e.message);
         }
         assert!(
-            !describe(&status(404), Path::new("/d"), false)
+            !describe(&status(404), Path::new("/d"), Worked::Never)
                 .message
                 .contains("expired")
         );
@@ -502,15 +510,15 @@ mod tests {
 
     #[test]
     fn server_trouble_and_network_problems_offer_retry() {
-        assert_eq!(action(&status(503), false), Some(FixAction::Retry));
-        assert_eq!(action(&status(429), true), Some(FixAction::Retry));
-        assert_eq!(action(&stalled(), true), Some(FixAction::Retry));
+        assert_eq!(action(&status(503), Worked::Never), Some(FixAction::Retry));
+        assert_eq!(action(&status(429), Worked::Before), Some(FixAction::Retry));
+        assert_eq!(action(&stalled(), Worked::Before), Some(FixAction::Retry));
         assert_eq!(
-            action(&EngineError::RemoteChanged, true),
+            action(&EngineError::RemoteChanged, Worked::Before),
             Some(FixAction::Retry)
         );
         assert_eq!(
-            action(&EngineError::PrematureEof { at: 1, end: 2 }, true),
+            action(&EngineError::PrematureEof { at: 1, end: 2 }, Worked::Before),
             Some(FixAction::Retry)
         );
     }
@@ -534,14 +542,24 @@ mod tests {
     #[test]
     fn full_disk_asks_for_space() {
         let kind = io(io::ErrorKind::StorageFull.into());
-        assert_eq!(action(&kind, true), Some(FixAction::FreeDiskSpace));
+        assert_eq!(
+            action(&kind, Worked::Before),
+            Some(FixAction::FreeDiskSpace)
+        );
         let raw = io(io::Error::from_raw_os_error(DISK_FULL_CODES[0]));
-        assert_eq!(action(&raw, true), Some(FixAction::FreeDiskSpace));
+        assert_eq!(action(&raw, Worked::Before), Some(FixAction::FreeDiskSpace));
     }
 
     #[test]
     fn a_stall_says_how_long_in_words() {
-        let said = |after| describe(&EngineError::Stalled { after }, Path::new("/d"), true).message;
+        let said = |after| {
+            describe(
+                &EngineError::Stalled { after },
+                Path::new("/d"),
+                Worked::Before,
+            )
+            .message
+        };
         let short = said(std::time::Duration::from_millis(500));
         assert!(short.contains("for less than a second"), "{short}");
         let one = said(std::time::Duration::from_secs(1));
@@ -560,7 +578,7 @@ mod tests {
             path: "/downloads/f.bin.wcpart".into(),
             source: io::ErrorKind::Other.into(),
         };
-        let message = describe(&error, Path::new("/downloads"), true).message;
+        let message = describe(&error, Path::new("/downloads"), Worked::Before).message;
         assert_eq!(
             message,
             "Could not flush the file to the disk (/downloads/f.bin.wcpart): other error. Check the drive, then try again."
@@ -570,7 +588,7 @@ mod tests {
             path: "/downloads/f.bin.wcpart".into(),
             source: io::ErrorKind::Other.into(),
         };
-        let message = describe(&resize, Path::new("/downloads"), true).message;
+        let message = describe(&resize, Path::new("/downloads"), Worked::Before).message;
         assert!(
             message.starts_with("Could not set the size of the file (/downloads/f.bin.wcpart)"),
             "{message}"
@@ -582,7 +600,7 @@ mod tests {
         let e = describe(
             &io(io::ErrorKind::PermissionDenied.into()),
             Path::new("/locked"),
-            false,
+            Worked::Never,
         );
         assert_eq!(e.fix, Some(FixAction::ChooseFolder));
         assert!(e.message.contains("locked"));
@@ -597,7 +615,7 @@ mod tests {
 
     #[test]
     fn redirect_problems_are_explained() {
-        let insecure = describe(&insecure(), Path::new("/d"), true);
+        let insecure = describe(&insecure(), Path::new("/d"), Worked::Before);
         assert_eq!(
             insecure.fix, None,
             "an insecure redirect must not offer a retry"
@@ -608,7 +626,10 @@ mod tests {
             insecure.message
         );
         assert_eq!(
-            action(&EngineError::TooManyRedirects { url: "u".into() }, false),
+            action(
+                &EngineError::TooManyRedirects { url: "u".into() },
+                Worked::Never
+            ),
             Some(FixAction::RefreshLink)
         );
         // The app refused what the server sent (another file than the browser
@@ -618,12 +639,12 @@ mod tests {
                 "The server sent a web page instead of the file. Refresh the link.",
             )),
             Path::new("/d"),
-            false,
+            Worked::Never,
         );
         assert!(rejected.message.starts_with("The server sent a web page"));
         assert_eq!(rejected.fix, Some(FixAction::RefreshLink));
         assert_eq!(
-            action(&EngineError::Internal("bug".into()), false),
+            action(&EngineError::Internal("bug".into()), Worked::Never),
             Some(FixAction::Retry)
         );
     }
@@ -631,7 +652,13 @@ mod tests {
     #[test]
     fn a_refused_link_says_who_can_open_it() {
         let error = EngineError::PrivateNetwork { url: "u".into() };
-        let website = describe_run(&error, Path::new("/d"), false, ChosenBy::Website, None);
+        let website = describe_run(
+            &error,
+            Path::new("/d"),
+            Worked::Never,
+            ChosenBy::Website,
+            None,
+        );
         assert_eq!(website.fix, Some(FixAction::RefreshLink));
         assert!(
             website.message.contains("a website gave"),
@@ -647,7 +674,7 @@ mod tests {
             website.message
         );
         for own in [ChosenBy::Person, ChosenBy::LocalPage] {
-            let refused = describe_run(&error, Path::new("/d"), false, own, None);
+            let refused = describe_run(&error, Path::new("/d"), Worked::Never, own, None);
             assert_eq!(refused.fix, None, "pasting it again would not help");
             assert!(!refused.message.contains("website"), "{}", refused.message);
         }
@@ -685,7 +712,7 @@ mod tests {
             EngineError::Internal("x".into()),
         ];
         for e in &errors {
-            for worked in [false, true] {
+            for worked in [Worked::Never, Worked::Before] {
                 let m = describe(e, Path::new("/d"), worked).message;
                 assert!(!m.contains('\u{2014}'), "em dash in {m}");
                 assert!(m.ends_with('.'), "{m}");

@@ -162,7 +162,8 @@ impl Manager {
             Err(e) => {
                 return Err(CoreError::UpdateCheckFailed(format!(
                     "The update could not be downloaded: {}",
-                    wirecatch_messages::describe(&e, &folder, false).message
+                    wirecatch_messages::describe(&e, &folder, wirecatch_messages::Worked::Never)
+                        .message
                 )));
             }
         }

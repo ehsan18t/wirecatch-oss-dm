@@ -62,7 +62,10 @@ async fn ids_are_never_reused_after_deleting_the_newest() -> TestResult {
     let paused = |r: &mut wirecatch_protocol::app::AddRequest| r.start = false;
     h.add_with("https://example.com/a.bin", paused).await?;
     let newest = h.add_with("https://example.com/b.bin", paused).await?;
-    h.manager.remove(&[newest.id], false).await.unwrap();
+    h.manager
+        .remove(&[newest.id], wirecatch_core::RemoveFiles::Keep)
+        .await
+        .unwrap();
     h.manager.create_queue(QueueSettings::new("Kept")).unwrap();
     let newest_queue = h
         .manager

@@ -300,6 +300,13 @@ pub(super) enum Stop {
     FileExists,
 }
 
+/// What a download that is being cancelled does once it has stopped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AfterCancel {
+    Stay,
+    Restart,
+}
+
 impl Entry {
     /// Queued but not started while its files move to another name.
     pub fn held_for_another_name(&mut self) {
@@ -753,13 +760,14 @@ impl Entry {
     }
 
     /// Resume or Retry pressed while the download is still stopping: once it has
-    /// stopped it goes back in line instead of staying paused (or, with
-    /// `restart_cancelled`, cancelled).
-    pub fn requeue_when_stopped(&mut self, restart_cancelled: bool) {
+    /// stopped it goes back in line instead of staying paused, and a cancelled one as `cancelled` says.
+    pub fn requeue_when_stopped(&mut self, cancelled: AfterCancel) {
         if let Some(run) = &mut self.run {
             match run.stop {
                 Some(Stop::Pause) => run.stop = Some(Stop::Requeue),
-                Some(Stop::Cancel) if restart_cancelled => run.stop = Some(Stop::Restart),
+                Some(Stop::Cancel) if cancelled == AfterCancel::Restart => {
+                    run.stop = Some(Stop::Restart);
+                }
                 _ => {}
             }
         }

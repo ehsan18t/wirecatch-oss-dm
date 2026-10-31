@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use chrono::TimeDelta;
-use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID};
+use wirecatch_core::{CoreError, DEFAULT_QUEUE_ID, RemoveFiles};
 use wirecatch_protocol::app::{
     AddRequest, CaptureConfirmation, DownloadStatus, PortablePath, Queue, QueueNotify, QueueReport,
     QueueSettings, Schedule, Setting, TimeOfDay, UiEvent, WaitReason,
@@ -329,7 +329,7 @@ async fn a_queue_counts_what_finished_before_a_restart() -> TestResult {
     h.restart().await?;
     let mut ui = h.manager.subscribe();
     // Removing the one left makes the queue done, so it tells what it did before the restart.
-    h.manager.remove(&[stuck], false).await?;
+    h.manager.remove(&[stuck], RemoveFiles::Keep).await?;
     let report = queue_finished(&mut ui).await;
     assert_eq!(ids_of(&report.completed), vec![done]);
     assert_eq!(report.failed, Vec::new());

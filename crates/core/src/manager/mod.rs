@@ -58,7 +58,7 @@ use wirecatch_store::{FailureHandler, Recovery, Store};
 use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
 use crate::naming;
-pub use downloads::LinkFrom;
+pub use downloads::{LinkFrom, RemoveFiles};
 use state::{Entry, State, Stop};
 pub use suffix_list::PUBLIC_SUFFIX_LIST_URL;
 pub use ticker::PROGRESS_TICK;

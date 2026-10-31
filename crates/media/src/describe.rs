@@ -86,7 +86,7 @@ pub fn stream(
         fix,
     };
     match error {
-        E::Request(e) => wirecatch_messages::describe(e, folder, false),
+        E::Request(e) => wirecatch_messages::describe(e, folder, wirecatch_messages::Worked::Never),
         E::Io(e) => wirecatch_messages::disk(e, folder),
         // A track that is not a real video or audio file: the link most likely does not point at the video any more.
         E::UnknownFormat { role } => unknown_format(*role),
