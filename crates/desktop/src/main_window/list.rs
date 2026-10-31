@@ -3,7 +3,7 @@
 //! else: a running download its bar, speed and time left; a finished one its size and when.
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _};
+use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -488,10 +488,9 @@ fn fix_button(id: DownloadId, fix: FixAction) -> impl IntoElement {
         )
 }
 
-/// The buttons a row offers on hover, then its menu.
+/// The buttons a row offers on hover, then its details; its menu opens on a right click.
 fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl IntoElement {
     let id = row.id;
-    let main = cx.entity().downgrade();
     h_flex()
         .w(px(END_WIDTH))
         .flex_shrink_0()
@@ -511,12 +510,14 @@ fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl 
                 }),
         )
         .child(
-            Button::new(row_id("menu", id))
+            Button::new(row_id("details", id))
                 .small()
                 .ghost()
-                .icon(IconName::Ellipsis)
-                .tooltip("More")
-                .dropdown_menu(move |menu, _, cx| row_menu::build(menu, &main, id, cx)),
+                .icon(IconName::Info)
+                .tooltip("Details")
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    super::details::open(this.library.clone(), id, window, cx);
+                })),
         )
 }
 
