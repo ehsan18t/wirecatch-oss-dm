@@ -297,8 +297,6 @@ pub struct MainWindow {
     folded: HashSet<Group>,
     /// The title bar's search, which narrows the list to names and links holding it.
     search: Entity<InputState>,
-    /// The queue under the pointer, which shows its menu.
-    hovered_queue: Option<QueueId>,
     /// Every queue shows in the navigation, not only the first few.
     all_queues: bool,
     /// The row under the pointer, which shows its buttons.
@@ -464,7 +462,6 @@ impl MainWindow {
             hovered: None,
             scroll: UniformListScrollHandle::new(),
             settings_on: settings::OpenOn::default(),
-            hovered_queue: None,
             all_queues: false,
             focus,
             search,
