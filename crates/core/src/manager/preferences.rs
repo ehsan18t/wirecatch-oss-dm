@@ -24,6 +24,16 @@ impl Manager {
         self.lock().settings.clone()
     }
 
+    /// The default download folder on this machine.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Path`] when the setting names no folder here.
+    pub fn default_folder(&self) -> Result<std::path::PathBuf> {
+        let folder = self.lock().settings.default_folder.clone();
+        Ok(self.inner.folders.resolve(&folder)?)
+    }
+
     /// Replaces every setting after checking them. Lists are cleaned up (lower case,
     /// no duplicates), and the stored result arrives as `SettingsChanged`. New
     /// limits apply to running downloads at once, and a new proxy to downloads that start later
