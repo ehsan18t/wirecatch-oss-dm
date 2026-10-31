@@ -169,6 +169,7 @@ async fn run(
             audio,
             output,
             keep_ext,
+            conversion_failed: _,
         } => {
             let page = PageJob {
                 video,

@@ -979,6 +979,7 @@ impl Manager {
                 audio: None,
                 output: None,
                 keep_ext: None,
+                conversion_failed: false,
             },
             _ => MediaJob::Stream {
                 video: Pick::Auto,
@@ -1081,9 +1082,7 @@ impl Manager {
 }
 
 impl Manager {
-    /// Saves a download whose conversion failed (its error offers
-    /// [`FixAction::KeepOriginal`](wirecatch_protocol::app::FixAction::KeepOriginal))
-    /// as it was downloaded instead (D24): the conversion, subtitles and
+    /// Saves a download whose conversion failed as it was downloaded instead (D24): the conversion, subtitles and
     /// chapters are dropped, and it finishes from the parts already downloaded,
     /// in their own format.
     ///
@@ -1096,20 +1095,20 @@ impl Manager {
         {
             let mut state = self.lock_open()?;
             let entry = state.entry_mut(id)?;
-            let offered = entry.row.status == wirecatch_protocol::app::DownloadStatus::Failed
-                && entry.row.error.as_ref().and_then(|e| e.fix)
-                    == Some(wirecatch_protocol::app::FixAction::KeepOriginal);
+            let failed = entry.row.status == wirecatch_protocol::app::DownloadStatus::Failed;
             let Some(MediaJob::Page {
                 output: output @ Some(_),
                 keep_ext,
+                conversion_failed: conversion_failed @ true,
                 ..
-            }) = entry.media_job.as_mut().filter(|_| offered)
+            }) = entry.media_job.as_mut().filter(|_| failed)
             else {
                 return Err(CoreError::WrongState(
                     "This download is not waiting to be kept as it was downloaded.",
                 ));
             };
             *keep_ext = output.take().map(|o| o.original_ext);
+            *conversion_failed = false;
             self.save(&mut state, id);
         }
         self.retry(id)
