@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::{Local, NaiveTime, TimeZone as _};
+use chrono::{Datelike as _, Local, NaiveDate, NaiveTime, TimeZone as _};
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
     Category, ClockFormat, DownloadStatus, DownloadSummary, FixAction, MediaSummary,
@@ -357,32 +357,48 @@ pub fn date(at: UnixMillis) -> String {
     }
 }
 
-/// How long ago a moment was, for a row: `Just now`, `5 min ago`, `3 h ago`, `Yesterday` or
-/// `3 Oct`.
-pub fn ago(at: UnixMillis) -> String {
-    ago_from(at, Local::now())
+/// The local day of a moment.
+pub fn local_day(at: UnixMillis) -> Option<NaiveDate> {
+    Local
+        .timestamp_millis_opt(at.0)
+        .single()
+        .map(|at| at.date_naive())
 }
 
-fn ago_from(at: UnixMillis, now: chrono::DateTime<Local>) -> String {
-    let Some(at) = Local.timestamp_millis_opt(at.0).single() else {
-        return String::new();
-    };
-    let minutes = (now - at).num_minutes();
-    let day = at.date_naive();
-    let today = now.date_naive();
-    if minutes < 1 {
-        "Just now".to_owned()
-    } else if minutes < 60 {
-        format!("{minutes} min ago")
-    } else if day == today {
-        format!("{} h ago", minutes / 60)
+/// A day over the downloads that finished on it: `Today`, `Yesterday`, `Thursday, 29 October`,
+/// or `Thursday, 29 October 2025` in another year.
+pub fn day_heading(day: NaiveDate) -> String {
+    day_name(day, Local::now().date_naive(), "%A, %-d %B")
+}
+
+/// A day under a time, where it fits a narrow column: `Today`, `Yesterday`, `29 Oct`.
+pub fn day_brief(day: NaiveDate) -> String {
+    day_name(day, Local::now().date_naive(), "%-d %b")
+}
+
+fn day_name(day: NaiveDate, today: NaiveDate, format: &str) -> String {
+    if day == today {
+        "Today".to_owned()
     } else if today.pred_opt() == Some(day) {
         "Yesterday".to_owned()
-    } else if at.format("%Y").to_string() == now.format("%Y").to_string() {
-        at.format("%-d %b").to_string()
+    } else if day.year() == today.year() {
+        day.format(format).to_string()
     } else {
-        at.format("%-d %b %Y").to_string()
+        format!("{} {}", day.format(format), day.year())
     }
+}
+
+/// A moment's clock time to the second, split for a row: `3:42` and `:07 PM`.
+pub fn clock_parts(at: UnixMillis) -> (String, String) {
+    let Some(at) = Local.timestamp_millis_opt(at.0).single() else {
+        return (String::new(), String::new());
+    };
+    split_seconds(&format_time(at.time(), true, clock_format()))
+}
+
+fn split_seconds(time: &str) -> (String, String) {
+    let at = time.rfind(':').unwrap_or(time.len());
+    (time[..at].to_owned(), time[at..].to_owned())
 }
 
 /// A link as it may be shown or copied: a password in it becomes `***`, and a user name without
@@ -490,6 +506,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_day_reads_by_its_name_near_today() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 31).unwrap();
+        let day = |m, d| NaiveDate::from_ymd_opt(2026, m, d).unwrap();
+        assert_eq!(day_name(today, today, "%A, %-d %B"), "Today");
+        assert_eq!(day_name(day(10, 30), today, "%A, %-d %B"), "Yesterday");
+        assert_eq!(
+            day_name(day(10, 29), today, "%A, %-d %B"),
+            "Thursday, 29 October"
+        );
+        let last_year = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        assert_eq!(day_name(last_year, today, "%-d %b"), "31 Dec 2025");
+    }
+
+    #[test]
+    fn a_time_splits_before_its_seconds() {
+        assert_eq!(
+            split_seconds("3:42:07 PM"),
+            ("3:42".to_owned(), ":07 PM".to_owned())
+        );
+        assert_eq!(
+            split_seconds("15:42:07"),
+            ("15:42".to_owned(), ":07".to_owned())
+        );
+    }
+
+    #[test]
     fn a_time_reads_in_the_chosen_clock() {
         let time = NaiveTime::from_hms_opt(15, 42, 7).unwrap();
         let morning = NaiveTime::from_hms_opt(7, 5, 0).unwrap();
@@ -516,27 +558,6 @@ mod tests {
         assert_eq!(folder("{Downloads}/Video"), "Downloads/Video");
         assert_eq!(folder("D:/Media"), "D:/Media");
         assert_eq!(folder("{not a name}/x"), "{not a name}/x");
-    }
-
-    #[test]
-    fn a_finished_moment_reads_as_how_long_ago() {
-        let now = Local.with_ymd_and_hms(2026, 10, 30, 15, 0, 0).unwrap();
-        let at = |y, mo, d, h, mi| {
-            let at = Local
-                .with_ymd_and_hms(y, mo, d, h, mi, 0)
-                .unwrap()
-                .timestamp_millis();
-            UnixMillis(at)
-        };
-        assert_eq!(ago_from(at(2026, 10, 30, 14, 59), now), "1 min ago");
-        assert_eq!(
-            ago_from(UnixMillis(now.timestamp_millis()), now),
-            "Just now"
-        );
-        assert_eq!(ago_from(at(2026, 10, 30, 11, 30), now), "3 h ago");
-        assert_eq!(ago_from(at(2026, 10, 29, 22, 0), now), "Yesterday");
-        assert_eq!(ago_from(at(2026, 10, 3, 9, 0), now), "3 Oct");
-        assert_eq!(ago_from(at(2025, 12, 31, 9, 0), now), "31 Dec 2025");
     }
 
     #[test]

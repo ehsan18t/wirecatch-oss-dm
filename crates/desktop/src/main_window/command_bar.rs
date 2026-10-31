@@ -11,8 +11,12 @@ use gpui_kit::{
     App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _, Window,
 };
 
+use wirecatch_protocol::app::{AppSettingsPatch, ListLines};
+use wirecatch_shell::api;
+
 use super::list::GroupCommand;
 use super::{MainWindow, View, sort};
+use crate::backend::act;
 use crate::links;
 use crate::ui::tokens;
 
@@ -62,6 +66,7 @@ impl MainWindow {
                 )
             })
             .child(self.sort_menu(cx))
+            .child(self.view_menu(cx))
             .when(!first_run, |bar| {
                 bar.child(
                     Button::new("new-download")
@@ -114,6 +119,47 @@ impl MainWindow {
                             }),
                     )
                 })
+            })
+    }
+
+    /// Which lines each row shows under its name; the rows grow or shrink with them.
+    fn view_menu(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let shown = self.list_lines(cx);
+        let toggle = |label: &'static str, on: bool, changed: ListLines| {
+            PopupMenuItem::new(label)
+                .checked(on)
+                .on_click(move |_, window, cx| {
+                    let patch = AppSettingsPatch {
+                        list_lines: Some(changed),
+                        ..AppSettingsPatch::default()
+                    };
+                    act(window.window_handle(), cx, move |manager| {
+                        api::change_settings(manager, patch)
+                    });
+                })
+        };
+        Button::new("view")
+            .ghost()
+            .icon(Icon::new(Lucide::LayoutList))
+            .tooltip("View")
+            .dropdown_menu(move |menu, _, _| {
+                menu.label("Show on each row")
+                    .item(toggle(
+                        "Link",
+                        shown.link,
+                        ListLines {
+                            link: !shown.link,
+                            ..shown
+                        },
+                    ))
+                    .item(toggle(
+                        "Save folder",
+                        shown.folder,
+                        ListLines {
+                            folder: !shown.folder,
+                            ..shown
+                        },
+                    ))
             })
     }
 

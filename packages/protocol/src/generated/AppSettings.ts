@@ -4,6 +4,7 @@ import type { CategoryRule } from './CategoryRule';
 import type { ClockFormat } from './ClockFormat';
 import type { ExtensionSettings } from './ExtensionSettings';
 import type { FinishNoticeTime } from './FinishNoticeTime';
+import type { ListLines } from './ListLines';
 import type { MediaDefaults } from './MediaDefaults';
 import type { NotifyOnFinish } from './NotifyOnFinish';
 import type { NotifyOnStart } from './NotifyOnStart';
@@ -53,6 +54,10 @@ export type AppSettings = {
    * Clock times in 12 or 24 hours.
    */
   clock: ClockFormat;
+  /**
+   * What the download list shows under each name.
+   */
+  list_lines: ListLines;
   /**
    * Start Wirecatch when the person signs in to the computer.
    */

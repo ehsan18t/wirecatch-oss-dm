@@ -61,6 +61,7 @@ export type { Link } from './generated/Link';
 export type { LinkMatch } from './generated/LinkMatch';
 export type { LinkProtocol } from './generated/LinkProtocol';
 export type { LinkTrial } from './generated/LinkTrial';
+export type { ListLines } from './generated/ListLines';
 export type { MediaChoice } from './generated/MediaChoice';
 export type { MediaDefaults } from './generated/MediaDefaults';
 export type { MediaDefaultsPatch } from './generated/MediaDefaultsPatch';

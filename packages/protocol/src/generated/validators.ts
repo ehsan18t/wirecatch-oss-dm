@@ -52,6 +52,7 @@ import type { Link } from './Link';
 import type { LinkMatch } from './LinkMatch';
 import type { LinkProtocol } from './LinkProtocol';
 import type { LinkTrial } from './LinkTrial';
+import type { ListLines } from './ListLines';
 import type { MediaChoice } from './MediaChoice';
 import type { MediaDefaults } from './MediaDefaults';
 import type { MediaDefaultsPatch } from './MediaDefaultsPatch';
@@ -265,6 +266,7 @@ export function isAppSettings(value: unknown): value is AppSettings {
     isTheme(value1['theme']) &&
     isAccent(value1['accent']) &&
     isClockFormat(value1['clock']) &&
+    isListLines(value1['list_lines']) &&
     typeof value1['start_with_system'] === 'boolean' &&
     typeof value1['close_to_tray'] === 'boolean' &&
     isNotifyOnFinish(value1['notify_on_finish']) &&
@@ -299,6 +301,7 @@ export function isAppSettingsPatch(value: unknown): value is AppSettingsPatch {
     (value1['theme'] === undefined || isTheme(value1['theme'])) &&
     (value1['accent'] === undefined || isAccent(value1['accent'])) &&
     (value1['clock'] === undefined || isClockFormat(value1['clock'])) &&
+    (value1['list_lines'] === undefined || isListLines(value1['list_lines'])) &&
     (value1['start_with_system'] === undefined ||
       typeof value1['start_with_system'] === 'boolean') &&
     (value1['close_to_tray'] === undefined || typeof value1['close_to_tray'] === 'boolean') &&
@@ -803,6 +806,14 @@ export function isLinkTrial(value: unknown): value is LinkTrial {
     isRecord(value1) &&
     typeof value1['url'] === 'string' &&
     (isDraftRules(value1['draft']) || value1['draft'] === null))(value);
+}
+
+/** Whether `value` has the shape of a {@link ListLines}; fields it does not name are not checked. */
+export function isListLines(value: unknown): value is ListLines {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    typeof value1['link'] === 'boolean' &&
+    typeof value1['folder'] === 'boolean')(value);
 }
 
 /** Whether `value` has the shape of a {@link MediaChoice}; fields it does not name are not checked. */

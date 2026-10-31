@@ -22,6 +22,8 @@ pub enum Role {
     Meta,
     /// The small label over a group.
     Label,
+    /// The least of a row, under its meta: a folder.
+    Caption,
 }
 
 pub trait Typed: Styled + Sized {
@@ -60,6 +62,10 @@ pub trait Typed: Styled + Sized {
                 .text_xs()
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(theme.muted_foreground),
+            Role::Caption => self
+                .text_size(px(11.))
+                .font_weight(FontWeight::NORMAL)
+                .text_color(theme.muted_foreground.opacity(0.8)),
         }
     }
 }
