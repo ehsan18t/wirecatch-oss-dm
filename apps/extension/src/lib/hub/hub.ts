@@ -15,13 +15,7 @@ import type { NativeClient } from '../native/client';
 import type { ConnectionStatus } from '../native/status';
 import { refererFor } from '../referrer';
 import { appSide, isLocalCommand, type AppCalls, type AppSide } from './app';
-import type {
-  HubDeps,
-  InFlightEntry,
-  MenuClick,
-  MenuResult,
-  MenuTab,
-} from './deps';
+import type { HubDeps, InFlightEntry, MenuClick, MenuResult, MenuTab } from './deps';
 import { planMenuClick } from './menu';
 import { AlertBoard } from './alert-board';
 import {
