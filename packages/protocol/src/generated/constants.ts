@@ -192,45 +192,6 @@ export const MAX_RULES_PER_KIND = 200;
 export const MAX_RULE_CHARS = 256;
 
 /**
- * The Tauri event that carries every [`UiEvent`](crate::app::UiEvent), in order.
- */
-export const UI_EVENT = 'wirecatch://event';
-
-/**
- * The Tauri event, with no payload, that says events were missed: reload everything.
- */
-export const RESYNC_EVENT = 'wirecatch://resync';
-
-/**
- * The Tauri event, with no payload, that says links arrived from a second launch: fetch
- * them with `take_launch_links`.
- */
-export const LINKS_EVENT = 'wirecatch://links';
-
-/**
- * The Tauri event, sent to one window, that carries its [`WindowFrame`] after it changed.
- */
-export const WINDOW_FRAME_EVENT = 'wirecatch://window-frame';
-
-/**
- * The Tauri event, sent to every window, that carries the [`SystemAppearance`] after the
- * system changed it.
- */
-export const SYSTEM_APPEARANCE_EVENT = 'wirecatch://system-appearance';
-
-/**
- * The Tauri event, sent to the main window, that carries a [`Reveal`]: the person clicked a
- * notification about these downloads (D52).
- */
-export const REVEAL_EVENT = 'wirecatch://reveal';
-
-/**
- * The Tauri event, sent to the download complete window, that carries its [`FinishedList`]
- * after it changed (D52).
- */
-export const FINISHED_EVENT = 'wirecatch://finished';
-
-/**
  * The most downloads one [`FinishedGroup`] lists; a queue's summary counts the rest.
  */
 export const MAX_FINISHED_LISTED = 100;
@@ -239,27 +200,6 @@ export const MAX_FINISHED_LISTED = 100;
  * The most groups the download complete window keeps; the oldest go first.
  */
 export const MAX_FINISHED_GROUPS = 20;
-
-/**
- * The page a download window shows, relative to the app's address.
- */
-export const DOWNLOAD_WINDOW_PAGE = 'download.html';
-
-/**
- * The query parameter of [`DOWNLOAD_WINDOW_PAGE`] naming the question a window asks.
- */
-export const QUESTION_PARAMETER = 'question';
-
-/**
- * The query parameter of [`DOWNLOAD_WINDOW_PAGE`] naming the download a window shows.
- */
-export const DOWNLOAD_PARAMETER = 'download';
-
-/**
- * The query parameter of [`DOWNLOAD_WINDOW_PAGE`] that makes it the download complete
- * window (D52).
- */
-export const FINISHED_PARAMETER = 'finished';
 
 /**
  * File types that open directly, without asking first: common video, audio, image, document
@@ -274,8 +214,8 @@ export const FINISHED_PARAMETER = 'finished';
  * `docx`, `xlsx` and `pptx` stay: they cannot hold macros, and Office opens downloaded ones,
  * which carry the mark of the web, in Protected View.
  *
- * The shell decides with it (`is_program` in `apps/desktop/src-tauri/src/api.rs`) and asks in
- * a warning of its own; the sample backend reads it to ask the same way.
+ * The shell decides with it (`is_program` in `crates/shell/src/api.rs`) and asks in a
+ * warning of its own.
  */
 export const SAFE_EXTENSIONS: readonly string[] = [
   'mp4',
