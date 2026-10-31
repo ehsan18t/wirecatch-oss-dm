@@ -36,7 +36,7 @@ use std::rc::Rc;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::menu::PopupMenu;
-use gpui_kit::component::{ActiveTheme as _, TitleBar, v_flex};
+use gpui_kit::component::{ActiveTheme as _, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, ExternalPaths, FocusHandle,
@@ -326,7 +326,7 @@ impl MainWindow {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             window_min_size: Some(size(px(960.), px(600.))),
-            ..TitleBar::window_options()
+            ..crate::window_options()
         };
         let (window, view) = gpui_kit::open_window(options, cx, |window, cx| {
             cx.new(|cx| Self::new(library, window, cx))

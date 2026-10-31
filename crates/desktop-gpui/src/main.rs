@@ -18,7 +18,8 @@ mod theme;
 mod tray;
 mod ui;
 
-use gpui_kit::QuitMode;
+use gpui_kit::component::TitleBar;
+use gpui_kit::{QuitMode, WindowOptions};
 use wirecatch_ipc::IpcError;
 use wirecatch_shell::launch::{self, Launch};
 use wirecatch_shell::message_box::{self, Tone};
@@ -29,6 +30,16 @@ use crate::library::Asked;
 /// Says why the app is closing, in a system message box: it has no window to say it in.
 pub fn say_before_exit(text: &str) {
     message_box::show(Tone::Warning, host::CHANNEL.name(), text);
+}
+
+/// What every window opens with: the app's own title bar, and the app id that Linux desktops
+/// match to its `.desktop` file for the icon and the taskbar entry.
+#[must_use]
+pub fn window_options() -> WindowOptions {
+    WindowOptions {
+        app_id: Some(host::CHANNEL.identifier().to_owned()),
+        ..TitleBar::window_options()
+    }
 }
 
 /// Which lines the app logs unless the log filter variable chooses others (`wirecatch-logging`).

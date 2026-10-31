@@ -975,3 +975,14 @@ Decided on 2026-10-31. It replaces the last sentence of D104.4 and matches the T
 1. A launch that reaches the GPUI app while it quits (a second launch, a link from the command line, a notification clicked) brings up no window, which would close at once. The app keeps its links and, once every download has stopped, starts a new copy of itself with them: the AppImage on Linux, since the program unpacked from it is gone once it exits.
 2. The new copy starts only after the old one stopped serving the browser, so it claims the endpoint itself instead of handing its launch to a copy that is about to exit (D103). The manager's runtime holds that endpoint; the old copy aborts the serving task and waits for it to end.
 3. Only the links are kept: a launch that asked for the browser settings, or a notification's downloads, starts the app on its main window.
+
+### D106. The GPUI app's installers are built without Tauri
+
+Decided on 2026-10-31 with the maintainer. It replaces the Tauri bundler of D19 for the GPUI app (D95.5); what the installers do stays as D19 and D25 say.
+
+1. Windows gets an Inno Setup installer, per machine in Program Files (D25). Inno Setup starts the app after installing as the person who ran the installer, not elevated (D25.4), without a plug-in; it finds an earlier install by its id, and Restart Manager closes a running copy before its files are replaced. Its wizard follows the system's light or dark mode. NSIS needed a plug-in for the first and a hand-written uninstall record for the second.
+2. Linux keeps every format the Tauri app made: `.deb` and `.rpm` from nfpm, which writes both from one description, and an AppImage from appimagetool. The AppImage bundles no libraries: GPUI needs the system's graphics, font and keyboard libraries, which every desktop has.
+3. `scripts/package.mjs` builds them from `config/product.toml` (D29), with no generated copy of the identity: Inno Setup takes it as defines, nfpm as a description the script writes, and the `.desktop` entry is written at packaging time. Files are named `<product>-<version>-<system>-<architecture>`, as release item 7 asks.
+4. The packaging tools are pinned. nfpm, appimagetool and the AppImage runtime are downloaded at fixed versions and checked against their SHA-256; appimagetool is given the runtime, since it would otherwise fetch the newest one. CI installs a pinned Inno Setup the same way.
+5. The executable carries its icon and version details on Windows, so Explorer and Task Manager show the product's name and GPUI finds the window icon. Every window carries the app id, which Linux desktops match to the `.desktop` entry for the icon and the taskbar.
+6. The installer does not ask to accept the licence: the GPL does not ask a user to agree to anything. `LICENSE.txt` is installed beside the app.

@@ -99,4 +99,4 @@ What the Tauri app can do that the GPUI app must also do before Tauri is removed
 - [x] Open a file, with the warning for programs; show in folder; folder and file pickers.
 - [x] Start at sign-in.
 - [x] Startup failure dialogs.
-- [ ] Installers for Windows and Linux; the updater comes with release item 7.
+- [x] Installers for Windows and Linux (D106); the updater comes with release item 7.
