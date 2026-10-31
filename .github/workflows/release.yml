@@ -101,6 +101,8 @@ jobs:
         with:
           name: extension
           path: apps/extension/.output/*.zip
+          # WXT writes the packages to `.output`, which the action skips as hidden unless told.
+          include-hidden-files: true
           if-no-files-found: error
 
   draft:
