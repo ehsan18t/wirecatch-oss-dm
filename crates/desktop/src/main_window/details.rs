@@ -516,44 +516,59 @@ fn activity(row: &DownloadSummary, cx: &App) -> impl IntoElement {
         })
 }
 
-/// The actions at the foot: the main one for its state and Show in folder; More holds the link
-/// and cancelling, and Remove stands apart.
+/// The actions at the foot: quiet icon buttons on the left (show in folder, cancel, remove), and
+/// the one action its state calls for on the right.
 fn footer(
     row: &DownloadSummary,
     library: Entity<Library>,
     cx: &mut Context<'_, Details>,
 ) -> impl IntoElement {
     let id = row.id;
-    let main: Option<(&'static str, IconName, bool)> = match row.status {
-        DownloadStatus::Completed => Some(("Open", IconName::ExternalLink, true)),
-        DownloadStatus::Paused => Some(("Resume", IconName::Play, true)),
-        DownloadStatus::Cancelled => Some(("Start over", IconName::RotateCw, true)),
-        DownloadStatus::Failed => None,
-        _ => Some(("Pause", IconName::Pause, false)),
+    let main: (&'static str, IconName) = match row.status {
+        DownloadStatus::Completed => ("Open", IconName::ExternalLink),
+        DownloadStatus::Paused => ("Resume", IconName::Play),
+        DownloadStatus::Cancelled => ("Start over", IconName::RotateCw),
+        DownloadStatus::Failed => ("Try again", IconName::RotateCw),
+        _ => ("Pause", IconName::Pause),
     };
     let status = row.status;
     let cancellable = !matches!(
         row.status,
-        DownloadStatus::Completed | DownloadStatus::Cancelled
+        DownloadStatus::Completed | DownloadStatus::Cancelled | DownloadStatus::Failed
     );
-    let link = text::link_for_display(&row.url);
+    let quiet = |name: &'static str, icon: IconName, tip: &'static str| {
+        Button::new(name).ghost().icon(icon).tooltip(tip)
+    };
+    let cancelled = library.clone();
     layout::bar(Rule::Above, cx)
-        .when_some(main, |bar, (label, icon, primary)| {
-            let button = Button::new("details-main").small().icon(icon).label(label);
-            let button = if primary {
-                button.primary()
-            } else {
-                button.outline()
-            };
+        .child(
+            quiet("details-folder", IconName::FolderOpen, "Show in folder")
+                .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
+        )
+        .when(cancellable, |bar| {
             bar.child(
-                button.on_click(cx.listener(move |_, _, window, cx| match status {
+                quiet("details-cancel", IconName::CircleX, "Cancel download")
+                    .on_click(move |_, window, cx| confirm::cancel(&cancelled, &[id], window, cx)),
+            )
+        })
+        .child(
+            quiet("details-remove", IconName::Delete, "Remove")
+                .on_click(move |_, window, cx| confirm::remove(&library, &[id], window, cx)),
+        )
+        .child(div().flex_1())
+        .child(
+            Button::new("details-main")
+                .primary()
+                .icon(main.1)
+                .label(main.0)
+                .on_click(cx.listener(move |_, _, window, cx| match status {
                     DownloadStatus::Completed => files::open(id, window, cx),
                     DownloadStatus::Paused => {
                         act(window.window_handle(), cx, move |manager| {
                             api::resume(manager, id)
                         });
                     }
-                    DownloadStatus::Cancelled => {
+                    DownloadStatus::Cancelled | DownloadStatus::Failed => {
                         act(window.window_handle(), cx, move |manager| {
                             api::retry(manager, id)
                         });
@@ -562,59 +577,5 @@ fn footer(
                         api::pause(manager, id)
                     }),
                 })),
-            )
-        })
-        .child(
-            Button::new("details-folder")
-                .small()
-                .ghost()
-                .icon(IconName::FolderOpen)
-                .label("Show in folder")
-                .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
         )
-        .child(div().flex_1())
-        .child(more(id, link, cancellable, library.clone()))
-        .child(
-            Button::new("details-remove")
-                .small()
-                .ghost()
-                .icon(IconName::Delete)
-                .label("Remove")
-                .on_click(move |_, window, cx| confirm::remove(&library, &[id], window, cx)),
-        )
-}
-
-/// More: copying the link, and cancelling while there is something to cancel.
-fn more(
-    id: DownloadId,
-    link: String,
-    cancellable: bool,
-    library: Entity<Library>,
-) -> impl IntoElement {
-    Button::new("details-more")
-        .small()
-        .ghost()
-        .icon(IconName::Ellipsis)
-        .tooltip("More actions")
-        .dropdown_menu(move |menu, _, _| {
-            let copied = link.clone();
-            let cancelled = library.clone();
-            menu.item(
-                PopupMenuItem::new("Copy link")
-                    .icon(IconName::Copy)
-                    .on_click(move |_, window, cx| {
-                        cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
-                        window.push_notification("Link copied.", cx);
-                    }),
-            )
-            .when(cancellable, |menu| {
-                menu.item(
-                    PopupMenuItem::new("Cancel download")
-                        .icon(IconName::CircleX)
-                        .on_click(move |_, window, cx| {
-                            confirm::cancel(&cancelled, &[id], window, cx);
-                        }),
-                )
-            })
-        })
 }
