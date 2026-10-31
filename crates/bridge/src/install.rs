@@ -605,8 +605,9 @@ pub(crate) mod files {
             .parent()
             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
         fs::create_dir_all(dir)?;
+        // Named by process: two app starts can register at the same time.
         let mut temp_name = path.file_name().unwrap_or_default().to_os_string();
-        temp_name.push(".tmp");
+        temp_name.push(format!(".{}.tmp", std::process::id()));
         let temp = dir.join(temp_name);
         let result = fs::write(&temp, contents).and_then(|()| fs::rename(&temp, path));
         if result.is_err()
@@ -909,23 +910,38 @@ impl Report {
     }
 }
 
-/// Writes every manifest and registry key in `plan`.
+/// Writes every manifest and registry key in `plan` that does not already hold what it should.
+/// The app runs this on every start, so an unchanged registration is left untouched.
 pub(crate) fn install(plan: &Plan, host: &mut dyn Host) -> Report {
     let mut report = Report::default();
     for file in &plan.files {
+        let browsers = file.browsers.join(", ");
+        if host.read_file(&file.path).ok().flatten().as_deref() == Some(file.contents.as_bytes()) {
+            report.ok(format!(
+                "Already in place: {} ({browsers})",
+                file.path.display()
+            ));
+            continue;
+        }
         match host.write_file(&file.path, file.contents.as_bytes()) {
-            Ok(()) => report.ok(format!(
-                "Wrote {} ({})",
-                file.path.display(),
-                file.browsers.join(", ")
-            )),
+            Ok(()) => report.ok(format!("Wrote {} ({browsers})", file.path.display())),
             Err(e) => report.fail(format!("Could not write {}: {e}", file.path.display())),
         }
     }
     for entry in &plan.keys {
         let name = format!(r"{}\{}", entry.hive.name(), entry.key);
+        let browsers = entry.browsers.join(", ");
+        if host
+            .registry_value(entry.hive, &entry.key)
+            .ok()
+            .flatten()
+            .is_some_and(|value| value == entry.value)
+        {
+            report.ok(format!("Already registered: {name} ({browsers})"));
+            continue;
+        }
         match host.set_registry_value(entry.hive, &entry.key, &entry.value) {
-            Ok(()) => report.ok(format!("Registered {name} ({})", entry.browsers.join(", "))),
+            Ok(()) => report.ok(format!("Registered {name} ({browsers})")),
             Err(e) => report.fail(format!("Could not register {name}: {e}")),
         }
     }
@@ -1217,6 +1233,8 @@ mod tests {
         registry: BTreeMap<String, (String, Option<String>)>,
         /// The machine's registry, the same way.
         machine: BTreeMap<String, (String, Option<String>)>,
+        /// Files and registry values written.
+        writes: usize,
     }
 
     impl FakeHost {
@@ -1256,6 +1274,7 @@ mod tests {
             path.is_file()
         }
         fn write_file(&mut self, path: &Path, contents: &[u8]) -> io::Result<()> {
+            self.writes += 1;
             files::write(path, contents)
         }
         fn remove_file(&mut self, path: &Path) -> io::Result<()> {
@@ -1271,6 +1290,7 @@ mod tests {
                 .and_then(|(_, value)| value.clone()))
         }
         fn set_registry_value(&mut self, hive: Hive, key: &str, value: &str) -> io::Result<()> {
+            self.writes += 1;
             let parts: Vec<&str> = key.split('\\').collect();
             let registry = self.hive_mut(hive);
             for depth in 1..parts.len() {
@@ -1477,12 +1497,17 @@ mod tests {
         let (chromium, firefox) = assert_windows_manifests(&dir, &exe);
         assert_windows_keys(&plan, &host, &chromium, &firefox);
 
-        // Installing again changes nothing.
+        // Installing again changes nothing, and writes nothing.
         let files_installed = tree(temp.path());
         let registry_installed = host.snapshot();
+        let writes = host.writes;
         assert_eq!(install(&plan, &mut host).failures, 0);
         assert_eq!(tree(temp.path()), files_installed);
         assert_eq!(host.snapshot(), registry_installed);
+        assert_eq!(
+            host.writes, writes,
+            "an unchanged registration is written again"
+        );
 
         let report = uninstall(&plan, &mut host);
         assert_eq!(report.failures, 0, "{:?}", report.lines);
