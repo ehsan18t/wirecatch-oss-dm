@@ -189,6 +189,10 @@ pub fn bring_up(asked: &Asked, cx: &mut App) {
         }
         Err(e) => {
             tracing::error!("could not open the main window: {e}");
+            crate::say_before_exit(&format!(
+                "{} could not open its window ({e}) and has closed. Start it again, and if this keeps happening, restart your computer.",
+                wirecatch_shell::host::CHANNEL.name()
+            ));
             lifecycle::quit(cx);
         }
     }

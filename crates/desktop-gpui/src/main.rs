@@ -20,9 +20,15 @@ mod ui;
 use gpui_kit::QuitMode;
 use wirecatch_ipc::IpcError;
 use wirecatch_shell::launch::{self, Launch};
+use wirecatch_shell::message_box::{self, Tone};
 use wirecatch_shell::{bridge, elevation, host};
 
 use crate::library::Asked;
+
+/// Says why the app is closing, in a system message box: it has no window to say it in.
+pub fn say_before_exit(text: &str) {
+    message_box::show(Tone::Warning, host::CHANNEL.name(), text);
+}
 
 /// Which lines the app logs unless the log filter variable chooses others (`wirecatch-logging`).
 const LOG_FILTER: &str = "info";
@@ -44,6 +50,10 @@ fn main() {
         Ok(runtime) => runtime,
         Err(e) => {
             tracing::error!("could not start the download manager's threads: {e}");
+            say_before_exit(&format!(
+                "{} could not start because the system would not give it the threads it needs ({e}). Restart your computer and try again.",
+                host::CHANNEL.name()
+            ));
             return;
         }
     };
