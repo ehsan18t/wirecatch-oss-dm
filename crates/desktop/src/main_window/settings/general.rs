@@ -14,8 +14,8 @@ use wirecatch_protocol::app::{ACCENTS, Accent, AppSettingsPatch, ClockFormat, Th
 use wirecatch_shell::host;
 
 use super::super::backup_dialog::{self, Direction};
-use super::{change, choice, current, switch};
-use crate::app_update::Stage;
+use super::{change, choice, current, field_row, switch};
+use crate::app_update::{NoUpdates, Stage};
 use crate::library::Library;
 use crate::theme;
 use crate::ui::{Role, Typed as _, tokens};
@@ -130,27 +130,39 @@ fn startup(library: &Entity<Library>) -> SettingGroup {
 }
 
 fn updates(library: &Entity<Library>) -> SettingGroup {
+    let no_updates = crate::app_update::no_updates();
+    let (description, field) = match no_updates {
+        None => (
+            "Looks for a newer version once a day and asks before installing it.",
+            SettingField::render(|_, _, cx| app_update_field(cx)),
+        ),
+        Some(NoUpdates::DevBuild) => (
+            "Development builds don't update themselves.",
+            SettingField::render(|_, _, _| div()),
+        ),
+        Some(NoUpdates::Unofficial) => (
+            "This is an unofficial build, so it can't update itself. Get the official version from the website.",
+            SettingField::render(|_, _, _| website_button()),
+        ),
+    };
     SettingGroup::new()
         .title("Updates")
         .item(
-            SettingItem::new(
-                app_name(),
-                SettingField::render(|_, _, cx| app_update_field(cx)),
-            )
-            .description("Looks for a newer version once a day and asks before installing it.")
-            .keywords(["update", "upgrade", "version", "new version"]),
+            SettingItem::new(app_name(), field)
+                .description(description)
+                .keywords(["update", "upgrade", "version", "new version"]),
         )
-        .item(
-            SettingItem::new(
-                "Get pre-release versions",
-                switch(library, |s| s.prerelease_updates, |on| AppSettingsPatch {
-                    prerelease_updates: Some(on),
-                    ..AppSettingsPatch::default()
-                }),
-            )
-            .description("Also offers versions still being tested, which come sooner and may have problems.")
-            .keywords(["beta", "preview", "pre-release", "test"]),
-        )
+        .items(no_updates.is_none().then(|| {
+                SettingItem::new(
+                    "Get pre-release versions",
+                    switch(library, |s| s.prerelease_updates, |on| AppSettingsPatch {
+                        prerelease_updates: Some(on),
+                        ..AppSettingsPatch::default()
+                    }),
+                )
+                .description("Also offers versions still being tested, which come sooner and may have problems.")
+                .keywords(["beta", "preview", "pre-release", "test"])
+        }))
         .item(
             SettingItem::new(
                 "Keep add-ons up to date",
@@ -206,7 +218,7 @@ fn backup(library: &Entity<Library>) -> SettingGroup {
 }
 
 fn troubleshooting() -> SettingGroup {
-    SettingGroup::new().item(
+    SettingGroup::new().title("Troubleshooting").item(
         SettingItem::new(
             "Log folder",
             SettingField::render(|_, _, _| {
@@ -235,8 +247,8 @@ fn app_update_field(cx: &App) -> AnyElement {
             .label(label)
             .on_click(|_, _, cx| crate::app_update::check(false, cx))
     };
-    let status = |text: String, cx: &App| div().text_role(Role::Meta, cx).child(text);
-    let row = h_flex().gap_2().items_center();
+    let status = |text: String, cx: &App| div().text_right().text_role(Role::Meta, cx).child(text);
+    let row = field_row();
     match stage {
         Stage::Unchecked => row.child(check("Check for updates")),
         Stage::Checking => row
@@ -297,7 +309,7 @@ fn app_update_field(cx: &App) -> AnyElement {
         Stage::Failed(message) => row
             .child(
                 div()
-                    .max_w(px(360.))
+                    .text_right()
                     .text_role(Role::Meta, cx)
                     .text_color(cx.theme().danger)
                     .child(message),
@@ -305,6 +317,20 @@ fn app_update_field(cx: &App) -> AnyElement {
             .child(check("Try again")),
     }
     .into_any_element()
+}
+
+/// The official website, for an unofficial build; nothing while the product has no website yet.
+fn website_button() -> AnyElement {
+    let url = wirecatch_product::WEBSITE_URL;
+    if url.contains("TODO-PRODUCT-") {
+        return div().into_any_element();
+    }
+    Button::new("open-website")
+        .small()
+        .outline()
+        .label("Open website")
+        .on_click(move |_, _, cx| cx.open_url(url))
+        .into_any_element()
 }
 
 fn app_name() -> &'static str {
