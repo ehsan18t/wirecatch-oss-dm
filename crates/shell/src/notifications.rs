@@ -308,33 +308,16 @@ pub fn queue_done(report: &QueueReport) -> Option<Notification> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use wirecatch_protocol::app::{Category, DownloadStatus, FixAction, UserError};
+    use wirecatch_protocol::app::{DownloadStatus, FixAction, UserError};
 
     pub(crate) fn row(id: i64, folder: &str, status: DownloadStatus) -> DownloadSummary {
         DownloadSummary {
-            id: DownloadId(id),
-            url: String::new(),
-            file_name: format!("file-{id}.zip"),
             path: Path::new(folder)
                 .join(format!("file-{id}.zip"))
                 .to_string_lossy()
                 .into_owned(),
-            queue: QueueId(1),
-            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
-            category: Category::Archive,
             status,
-            total: None,
-            done: 0,
-            speed: 0,
-            connections: 0,
-            eta_secs: None,
-            error: None,
-            waiting: None,
-            media: None,
-            added_at: 0,
-            completed_at: None,
-            processing: None,
-            proxy: None,
+            ..wirecatch_test_support::downloads::download(id)
         }
     }
 

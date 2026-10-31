@@ -1495,32 +1495,22 @@ mod tests {
     fn download(id: i64) -> StoredDownload {
         StoredDownload {
             summary: DownloadSummary {
-                id: DownloadId(id),
                 url: "https://example.com/a.zip".into(),
                 file_name: "a.zip".into(),
                 path: std::env::temp_dir()
                     .join("a.zip")
                     .to_string_lossy()
                     .into_owned(),
-                queue: QueueId(1),
-                queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
-                category: Category::Archive,
                 status: DownloadStatus::Failed,
                 total: Some(100),
                 done: 40,
-                speed: 0,
-                connections: 0,
-                eta_secs: None,
                 error: Some(UserError {
                     message: "expired".into(),
                     fix: Some(FixAction::RefreshLink),
                 }),
                 added_at: 1,
-                completed_at: None,
-                waiting: None,
-                media: None,
-                processing: None,
                 proxy: Some("Office (10.0.0.5:1080)".into()),
+                ..wirecatch_test_support::downloads::download(id)
             },
             position: 3,
             origin: Origin {

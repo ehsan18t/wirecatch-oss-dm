@@ -179,31 +179,13 @@ pub fn tooltip(active: usize, speed: u64) -> String {
 mod tests {
     use super::*;
     use wirecatch_engine::units::{KIB, MIB};
-    use wirecatch_protocol::QueueId;
-    use wirecatch_protocol::app::Category;
 
     fn row(id: i64, status: DownloadStatus, speed: u64) -> DownloadSummary {
         DownloadSummary {
-            id: DownloadId(id),
-            url: format!("https://example.com/{id}"),
-            file_name: format!("file-{id}.zip"),
-            path: format!("C:/Downloads/file-{id}.zip"),
-            queue: QueueId(1),
-            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
-            category: Category::Archive,
             status,
             total: Some(100),
-            done: 0,
             speed,
-            connections: 0,
-            eta_secs: None,
-            error: None,
-            waiting: None,
-            media: None,
-            added_at: 0,
-            completed_at: None,
-            processing: None,
-            proxy: None,
+            ..wirecatch_test_support::downloads::download(id)
         }
     }
 

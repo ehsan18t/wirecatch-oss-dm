@@ -778,29 +778,10 @@ impl Entry {
 /// for tests of what a run is given.
 #[cfg(test)]
 pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
-    use wirecatch_protocol::app::Category;
     Entry {
         row: DownloadSummary {
-            id: DownloadId(1),
             url: url.into(),
-            file_name: "f".into(),
-            path: "f".into(),
-            queue: QueueId(1),
-            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
-            category: Category::Other,
-            status: DownloadStatus::Queued,
-            total: None,
-            done: 0,
-            speed: 0,
-            connections: 0,
-            eta_secs: None,
-            error: None,
-            added_at: 0,
-            completed_at: None,
-            waiting: None,
-            media: None,
-            processing: None,
-            proxy: None,
+            ..wirecatch_test_support::downloads::download(1)
         },
         position: 1,
         origin: Origin::default(),
@@ -822,31 +803,12 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wirecatch_protocol::app::Category;
 
     fn running() -> Entry {
         Entry {
             row: DownloadSummary {
-                id: DownloadId(1),
-                url: "https://example.com/f".into(),
-                file_name: "f".into(),
-                path: "f".into(),
-                queue: QueueId(1),
-                queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
-                category: Category::Other,
                 status: DownloadStatus::Downloading,
-                total: None,
-                done: 0,
-                speed: 0,
-                connections: 0,
-                eta_secs: None,
-                error: None,
-                added_at: 0,
-                completed_at: None,
-                waiting: None,
-                media: None,
-                processing: None,
-                proxy: None,
+                ..wirecatch_test_support::downloads::download(1)
             },
             position: 1,
             origin: Origin::default(),

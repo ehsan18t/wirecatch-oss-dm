@@ -200,33 +200,15 @@ impl Batches {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wirecatch_protocol::app::Category;
 
     const MAIN: QueueId = QueueId(1);
     const NIGHT: QueueId = QueueId(2);
 
     fn row(id: i64, queue: QueueId, status: DownloadStatus) -> DownloadSummary {
         DownloadSummary {
-            id: DownloadId(id),
-            url: String::new(),
-            file_name: format!("file-{id}"),
-            path: String::new(),
             queue,
-            queue_reason: wirecatch_protocol::rules::QueueReason::DefaultQueue,
-            category: Category::Other,
             status,
-            total: None,
-            done: 0,
-            speed: 0,
-            connections: 0,
-            eta_secs: None,
-            error: None,
-            waiting: None,
-            media: None,
-            added_at: 0,
-            completed_at: None,
-            processing: None,
-            proxy: None,
+            ..wirecatch_test_support::downloads::download(id)
         }
     }
 
