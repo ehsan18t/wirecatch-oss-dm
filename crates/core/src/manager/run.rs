@@ -49,6 +49,9 @@ pub(super) enum MediaDone {
     /// Its name is taken in the folder and the person is asked (D96); the answer starts it
     /// again, which puts the finished file in place.
     FileExists(Found),
+    /// The parts are downloaded but could not be converted; they stay in the work folder,
+    /// so "Keep the original" can save them as they came (D24).
+    NotConverted(UserError),
 }
 
 /// A run's end, in the terms that decide the download's new state.
@@ -60,6 +63,7 @@ enum Ended {
     /// Ended without finishing or failing (cancelled, or an outcome added later).
     Stopped,
     Failed(UserError),
+    NotConverted(UserError),
     Vanished,
 }
 
@@ -91,6 +95,10 @@ impl Ended {
             RunEnd::Media(Err(error)) => {
                 warn!(id = id.0, error = %error.message, "media download failed");
                 Ended::Failed(error)
+            }
+            RunEnd::Media(Ok(MediaDone::NotConverted(error))) => {
+                warn!(id = id.0, error = %error.message, "media conversion failed");
+                Ended::NotConverted(error)
             }
             RunEnd::Vanished => Ended::Vanished,
         }
@@ -248,14 +256,7 @@ impl Manager {
             return;
         };
         state.running.remove(&id);
-        let reading = run.gauge.read();
-        let started = reading.answered;
-        let worked = worked_before(started, entry.row.done);
-        if started {
-            entry.row.done = reading.done;
-            entry.row.total = reading.total;
-        }
-        entry.clear_live_fields();
+        let worked = take_reading(entry, &run.gauge);
         // A file saved under its name meanwhile holds the path: it moves to the next free name.
         if run.stop.is_none() && matches!(end, RunEnd::Engine(Err(EngineError::TargetTaken { .. })))
         {
@@ -272,6 +273,9 @@ impl Manager {
 
         let folder = entry.path().parent().unwrap_or(Path::new("")).to_path_buf();
         let ended = Ended::of(end, id, &folder, worked, entry);
+        if let Some(job) = &mut entry.media_job {
+            job.set_conversion_failed(matches!((&ended, run.stop), (Ended::NotConverted(_), None)));
+        }
         let mut answered_page = None;
         match (ended, run.stop) {
             (Ended::Completed { bytes, path }, _) => {
@@ -302,7 +306,7 @@ impl Manager {
                 self.discard_partial(entry);
                 entry.row.status = DownloadStatus::Queued;
             }
-            (Ended::Failed(error), None) => {
+            (Ended::Failed(error) | Ended::NotConverted(error), None) => {
                 entry.row.status = DownloadStatus::Failed;
                 entry.row.error = Some(super::sign_in::explain(&entry.origin, error));
             }
@@ -335,6 +339,19 @@ impl Manager {
             deleted.cancel();
         });
     }
+}
+
+/// Keeps the progress a run's `gauge` last read, once the server had answered, and clears the
+/// live fields; whether anything had arrived before is what a failure is worded by.
+fn take_reading(entry: &mut Entry, gauge: &Gauge) -> Worked {
+    let reading = gauge.read();
+    let worked = worked_before(reading.answered, entry.row.done);
+    if reading.answered {
+        entry.row.done = reading.done;
+        entry.row.total = reading.total;
+    }
+    entry.clear_live_fields();
+    worked
 }
 
 /// Records a run that finished its file, `bytes` long, at `path` when that is not the planned one.

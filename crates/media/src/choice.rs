@@ -190,6 +190,7 @@ impl Plan {
                 audio: variant.audio.clone(),
                 output: Some(Box::new(job)),
                 keep_ext: None,
+                conversion_failed: false,
             },
             ext: variant.fit.ext.clone(),
             needs_ffmpeg: true,
@@ -523,6 +524,7 @@ fn video_offer(
         audio: audio.map(|a| a.id.clone()),
         output: None,
         keep_ext: None,
+        conversion_failed: false,
     };
     let label = format!("{quality}, {}", format_name(&ext));
     let mut variants =
@@ -559,6 +561,7 @@ fn audio_offer(audios: &[&Format], duration_ms: Option<u64>) -> Option<Offer> {
                 audio: Some(audio.id.clone()),
                 output: None,
                 keep_ext: None,
+                conversion_failed: false,
             },
             ext,
             quality: "Audio only".into(),

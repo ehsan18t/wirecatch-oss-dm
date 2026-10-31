@@ -49,20 +49,23 @@ pub(super) async fn save(
             None => Ok(MediaDone::Paused),
         };
     };
-    let Some(sidecars) = subtitle_files(tools, output, downloaded, work, cancel).await? else {
-        return Ok(MediaDone::Paused);
+    let sidecars = match subtitle_files(tools, output, downloaded, work, cancel).await {
+        Ok(Some(sidecars)) => sidecars,
+        Ok(None) => return Ok(MediaDone::Paused),
+        Err(e) => return Ok(not_converted(&e, output, tools)),
     };
     let file = if output.needs_pass() {
-        let inputs = inputs_for(output, downloaded, &files, work)
-            .await?
-            .map_err(|e| describe::conversion(&e, output, tools))?;
+        let inputs = match inputs_for(output, downloaded, &files, work).await? {
+            Ok(inputs) => inputs,
+            Err(e) => return Ok(not_converted(&e, output, tools)),
+        };
         let target = work.join(workdir::output(output.container.ext()));
         let result = convert::convert(tools, output, &inputs, &target, progress, cancel).await;
         progress.set_step(None);
         match result {
             Ok(Finished::Done) => target,
             Ok(Finished::Cancelled) => return Ok(MediaDone::Paused),
-            Err(e) => return Err(describe::conversion(&e, output, tools)),
+            Err(e) => return Ok(not_converted(&e, output, tools)),
         }
     } else {
         match join_original(
@@ -81,6 +84,10 @@ pub(super) async fn save(
         }
     };
     finish(&file, job, work, &sidecars).await
+}
+
+fn not_converted(error: &FfmpegError, output: &OutputJob, tools: &MediaTools) -> MediaDone {
+    MediaDone::NotConverted(describe::conversion(error, output, tools))
 }
 
 /// The downloaded file as it came: the one file, or the video and audio joined
@@ -169,14 +176,14 @@ pub(super) async fn inputs_for(
 
 /// The subtitles saved next to the file, as `SubRip` files in `work` with their
 /// language, made with ffmpeg; nothing when they go inside the file. One that
-/// ffmpeg cannot read is left out. `None` when stopped.
+/// ffmpeg cannot read is left out. `None` when stopped; an error when ffmpeg does not start.
 pub(super) async fn subtitle_files(
     tools: &MediaTools,
     output: &OutputJob,
     downloaded: &Downloaded,
     work: &Path,
     cancel: &CancellationToken,
-) -> Result<Option<Vec<(PathBuf, String)>>, UserError> {
+) -> Result<Option<Vec<(PathBuf, String)>>, FfmpegError> {
     let mut made = Vec::new();
     if !output.sidecar_subtitles() {
         return Ok(Some(made));
@@ -194,7 +201,7 @@ pub(super) async fn subtitle_files(
         {
             Ok(Finished::Done) => made.push((target, subtitle.pick.language.clone())),
             Ok(Finished::Cancelled) => return Ok(None),
-            Err(e @ FfmpegError::Start(_)) => return Err(describe::conversion(&e, output, tools)),
+            Err(e @ FfmpegError::Start(_)) => return Err(e),
             // One subtitle ffmpeg cannot read is left out; the video is saved without it.
             Err(e) => {
                 warn!(language = %subtitle.pick.language, error = %e, "could not make a subtitle file");

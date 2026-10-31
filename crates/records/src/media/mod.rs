@@ -43,11 +43,27 @@ pub enum MediaJob {
         /// planned file's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         keep_ext: Option<String>,
+        /// The last run downloaded the parts but could not convert them, so
+        /// "Keep the original" may save them as they came (D24).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        conversion_failed: bool,
     },
     /// What to download was stored but cannot be read back (a damaged
     /// database). It never runs: downloading the link as a plain file would
     /// save a web page, or worse.
     Unreadable,
+}
+
+impl MediaJob {
+    /// Records whether the last run of a page job ended with its parts downloaded but not converted.
+    pub fn set_conversion_failed(&mut self, failed: bool) {
+        if let MediaJob::Page {
+            conversion_failed, ..
+        } = self
+        {
+            *conversion_failed = failed;
+        }
+    }
 }
 
 /// The message for a media download whose stored details cannot be read.
@@ -129,6 +145,7 @@ mod tests {
             audio: Some(id("140")),
             output: None,
             keep_ext: None,
+            conversion_failed: false,
         };
         let json = serde_json::to_string(&job).unwrap();
         // The selection is made from the ids, never stored.
@@ -160,6 +177,7 @@ mod tests {
                 original: false,
             })),
             keep_ext: None,
+            conversion_failed: false,
         };
         let json = serde_json::to_string(&converting).unwrap();
         // The extras are stored as fields of the job, as jobs saved before were.
@@ -168,6 +186,19 @@ mod tests {
             "{json}"
         );
         assert_eq!(serde_json::from_str::<MediaJob>(&json).unwrap(), converting);
+        let unconverted = MediaJob::Page {
+            video: Some(id("137")),
+            audio: None,
+            output: None,
+            keep_ext: None,
+            conversion_failed: true,
+        };
+        let json = serde_json::to_string(&unconverted).unwrap();
+        assert!(json.ends_with(r#""conversion_failed":true}"#), "{json}");
+        assert_eq!(
+            serde_json::from_str::<MediaJob>(&json).unwrap(),
+            unconverted
+        );
         let job = MediaJob::Stream {
             video: Pick::Track("v1".into()),
             audio: Pick::Skip,

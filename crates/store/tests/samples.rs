@@ -85,6 +85,7 @@ fn a_page_saved_with_its_selection_reads_from_its_ids() {
             audio: Some(id("140")),
             output: None,
             keep_ext: None,
+            conversion_failed: false,
         })
     );
 }

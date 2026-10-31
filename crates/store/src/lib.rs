@@ -1830,6 +1830,7 @@ mod tests {
                 audio: "140".to_string().try_into().ok(),
                 output: None,
                 keep_ext: None,
+                conversion_failed: false,
             }),
         };
         row.summary.media = Some(media.summary.clone());
@@ -1936,6 +1937,7 @@ mod tests {
                 audio: Some(id("140")),
                 output: None,
                 keep_ext: None,
+                conversion_failed: false,
             }),
         });
         store.save_downloads(vec![row]);
