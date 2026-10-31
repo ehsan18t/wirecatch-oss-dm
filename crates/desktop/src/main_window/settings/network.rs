@@ -29,7 +29,6 @@ use crate::ui::{Role, Typed as _};
 
 const SYSTEM: &str = "system";
 const DIRECT: &str = "direct";
-const HOSTS_HELP: &str = "One per line. A host covers its subdomains; IP addresses, ranges (10.0.0.0/8) and <local> (names without a dot) work too.";
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
     SettingPage::new(super::Page::Network.title())
@@ -406,7 +405,11 @@ fn exceptions(library: &Entity<Library>, window: &mut Window, cx: &mut App) -> A
                         window,
                         cx,
                     ))
-                    .child(div().text_role(Role::Meta, cx).child(HOSTS_HELP)),
+                    .child(
+                        div()
+                            .text_role(Role::Meta, cx)
+                            .child(super::super::queue_proxy::BYPASS_HELP),
+                    ),
             )
         })
         .into_any_element()
