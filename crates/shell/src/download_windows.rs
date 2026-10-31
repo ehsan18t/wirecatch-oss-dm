@@ -374,7 +374,7 @@ mod tests {
         // Unknown screen: no taller than the opening size.
         assert_eq!(fitted_height(900.0, None), WINDOW_SIZE.1);
         // A tiny screen still gets the smallest window, and nonsense gives the smallest too.
-        assert_eq!(fitted_height(700.0, Some(300.0)), MIN_WINDOW_SIZE.1);
+        assert_eq!(fitted_height(700.0, Some(250.0)), MIN_WINDOW_SIZE.1);
         assert_eq!(fitted_height(f64::NAN, Some(1040.0)), MIN_WINDOW_SIZE.1);
         assert_eq!(
             fitted_height(f64::INFINITY, Some(1040.0)),

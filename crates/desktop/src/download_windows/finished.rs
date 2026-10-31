@@ -3,7 +3,7 @@
 //! without taking the keyboard. "Use notifications instead" switches the setting in one click.
 
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, TitleBar, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, AnyWindowHandle, App, AppContext as _, Bounds, Context, ElementId, Global,
@@ -23,6 +23,7 @@ use wirecatch_shell::teller::Tell;
 
 use crate::backend::act;
 use crate::files;
+use crate::ui::small_title_bar::small_title_bar;
 use crate::ui::{Role, Typed as _};
 
 const WIDTH: f32 = 380.;
@@ -116,7 +117,7 @@ fn open(cx: &mut App) {
 pub struct FinishedView;
 
 impl Render for FinishedView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let groups = cx
             .try_global::<Finished>()
             .map(|finished| finished.book.list().groups.clone())
@@ -127,13 +128,13 @@ impl Render for FinishedView {
             .size_full()
             .bg(theme.background)
             .text_role(Role::Body, cx)
-            .child(
-                TitleBar::new().child(
-                    div()
-                        .text_role(Role::Strong, cx)
-                        .child("Downloads finished"),
-                ),
-            )
+            .child(small_title_bar(
+                div()
+                    .text_role(Role::Strong, cx)
+                    .child("Downloads finished"),
+                window,
+                cx,
+            ))
             .child(
                 v_flex()
                     .id("finished-list")

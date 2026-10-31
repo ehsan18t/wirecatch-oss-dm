@@ -113,15 +113,15 @@ export const MAX_QUESTION_WINDOWS = 5;
 export const DOWNLOAD_WINDOW_CASCADE_STEP = 28;
 
 /**
- * A download window's width, in logical pixels; the sample app's windows take it too, so
- * they lay out as the real ones do.
+ * A download window's width, in logical pixels.
  */
 export const DOWNLOAD_WINDOW_WIDTH = 460;
 
 /**
- * The least height a download window keeps, in logical pixels, however little it shows.
+ * The least height a download window keeps, in logical pixels, however little it shows:
+ * below the shortest question, so every window fits what it asks.
  */
-export const DOWNLOAD_WINDOW_MIN_HEIGHT = 320;
+export const DOWNLOAD_WINDOW_MIN_HEIGHT = 200;
 
 /**
  * The most height a download window takes, in logical pixels, however much it shows: past
