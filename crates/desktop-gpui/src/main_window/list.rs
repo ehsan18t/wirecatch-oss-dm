@@ -16,13 +16,15 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MILLE_DONE};
 use wirecatch_shell::api;
 
-use super::{Group, MainWindow, fixes, row_menu};
+use super::{Group, MainWindow, View, fixes, row_menu};
 use crate::backend::act;
 use crate::ui::{FileTile, Role, Typed as _, tokens};
 use crate::{files, text};
 
 /// Every line is this tall, headings included, so the list can lay out only what shows.
 const LINE_HEIGHT: f32 = 56.;
+/// The place of a download in its queue's line.
+const PLACE_WIDTH: f32 = 20.;
 /// The figures at a row's end, and the buttons that take their place on hover.
 const END_WIDTH: f32 = 160.;
 
@@ -30,7 +32,8 @@ const END_WIDTH: f32 = 160.;
 #[derive(Clone, Copy)]
 enum Line {
     Heading(Group, usize),
-    Row(usize),
+    /// A download by its index in the library, with its place in its queue's line.
+    Row(usize, Option<usize>),
 }
 
 /// What a heading's button does to every download.
@@ -55,7 +58,7 @@ impl MainWindow {
                     .filter_map(|index| lines.get(index).copied())
                     .map(|line| match line {
                         Line::Heading(group, shown) => this.heading(group, shown, cx),
-                        Line::Row(index) => this.row(index, cx),
+                        Line::Row(index, place) => this.row(index, place, cx),
                     })
                     .collect::<Vec<_>>()
             }),
@@ -71,7 +74,7 @@ impl MainWindow {
         self.lines(cx)
             .into_iter()
             .filter_map(|line| match line {
-                Line::Row(index) => Some(index),
+                Line::Row(index, _) => Some(index),
                 Line::Heading(..) => None,
             })
             .collect()
@@ -82,25 +85,54 @@ impl MainWindow {
         let downloads = &self.library.read(cx).downloads;
         self.lines(cx)
             .iter()
-            .position(|line| matches!(line, Line::Row(index) if downloads[*index].id == id))
+            .position(|line| matches!(line, Line::Row(index, _) if downloads[*index].id == id))
     }
 
-    /// The list's lines: the view's downloads that hold the search in their name or link, by
-    /// group, each under its heading. A search shows everything it finds, folded or not.
+    /// The downloads of a queue's own view that are still to run or running, in the order they
+    /// run, by their index in the library; empty in other views.
+    pub(super) fn queue_line(&self, cx: &App) -> Vec<usize> {
+        let View::Queue(queue) = self.view else {
+            return Vec::new();
+        };
+        self.library
+            .read(cx)
+            .downloads
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row.queue == queue && !Group::of(row.status).is_over())
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    /// The list's lines: the view's downloads that hold the search in their name or link. A queue's
+    /// view lists its line first, numbered in the order it runs, then what is over by group; other
+    /// views group everything, each group under its heading. A search shows everything it finds,
+    /// folded or not.
     fn lines(&self, cx: &App) -> Vec<Line> {
         let downloads = &self.library.read(cx).downloads;
         let needle = self.needle(cx);
-        let mut lines = Vec::new();
+        let found = |row: &DownloadSummary| {
+            needle.is_empty()
+                || row.file_name.to_lowercase().contains(&needle)
+                || row.url.to_lowercase().contains(&needle)
+        };
+        let mut lines: Vec<Line> = self
+            .queue_line(cx)
+            .into_iter()
+            .enumerate()
+            .filter(|(_, index)| found(&downloads[*index]))
+            .map(|(place, index)| Line::Row(index, Some(place + 1)))
+            .collect();
+        let in_queue = matches!(self.view, View::Queue(_));
         for group in Group::ALL {
+            if in_queue && !group.is_over() {
+                continue;
+            }
             let members: Vec<usize> = downloads
                 .iter()
                 .enumerate()
                 .filter(|(_, row)| {
-                    self.view.shows(row)
-                        && Group::of(row.status) == group
-                        && (needle.is_empty()
-                            || row.file_name.to_lowercase().contains(&needle)
-                            || row.url.to_lowercase().contains(&needle))
+                    self.view.shows(row) && Group::of(row.status) == group && found(row)
                 })
                 .map(|(index, _)| index)
                 .collect();
@@ -111,7 +143,7 @@ impl MainWindow {
             if needle.is_empty() && self.folded.contains(&group) {
                 continue;
             }
-            lines.extend(members.into_iter().map(Line::Row));
+            lines.extend(members.into_iter().map(|index| Line::Row(index, None)));
         }
         lines
     }
@@ -198,7 +230,7 @@ impl MainWindow {
             .into_any_element()
     }
 
-    fn row(&self, index: usize, cx: &mut Context<'_, Self>) -> AnyElement {
+    fn row(&self, index: usize, place: Option<usize>, cx: &mut Context<'_, Self>) -> AnyElement {
         let Some(row) = self.library.read(cx).downloads.get(index).cloned() else {
             return div().h(px(LINE_HEIGHT)).into_any_element();
         };
@@ -227,6 +259,7 @@ impl MainWindow {
             .when(!selected, |line| {
                 line.hover(|line| line.bg(theme.list_hover))
             })
+            .when_some(place, |line, place| line.child(place_cell(place, cx)))
             .child(FileTile::new(row.category).tone(tone))
             .child(
                 v_flex()
@@ -249,14 +282,7 @@ impl MainWindow {
                 figures(&row, tone, cx).into_any_element()
             })
             .when(self.cursor == Some(id), |line| {
-                line.child(
-                    canvas(
-                        move |bounds, _, _| cursor_bounds.set(Some(bounds)),
-                        |_, (), _, _| {},
-                    )
-                    .absolute()
-                    .size_full(),
-                )
+                line.child(marker(cursor_bounds))
             })
             .on_mouse_down(
                 MouseButton::Right,
@@ -411,6 +437,25 @@ impl RowAction {
             Self::ShowInFolder => files::show_in_folder(id, window, cx),
         }
     }
+}
+
+/// A download's place in its queue's line, before its tile.
+fn place_cell(place: usize, cx: &App) -> impl IntoElement {
+    div()
+        .w(px(PLACE_WIDTH))
+        .flex_shrink_0()
+        .text_right()
+        .text_role(Role::Meta, cx)
+        .child(place.to_string())
+}
+
+/// Records where the cursor's row is drawn, for the menu the keyboard opens.
+fn marker(
+    bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<gpui_kit::Pixels>>>>,
+) -> impl IntoElement {
+    canvas(move |drawn, _, _| bounds.set(Some(drawn)), |_, (), _, _| {})
+        .absolute()
+        .size_full()
 }
 
 /// A failed row's fix, shown where its figures would be.

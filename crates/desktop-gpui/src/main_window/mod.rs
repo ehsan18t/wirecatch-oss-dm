@@ -10,8 +10,10 @@ mod empty;
 mod fixes;
 mod link_trial;
 mod list;
+mod order;
 mod proxy_dialog;
 mod queue_dialog;
+mod queue_header;
 mod queue_proxy;
 mod queue_rules;
 mod row_menu;
@@ -67,7 +69,9 @@ actions!(
         ShowDetails,
         RemoveSelected,
         SearchToList,
-        OpenMenu
+        OpenMenu,
+        NudgeUp,
+        NudgeDown
     ]
 );
 
@@ -106,6 +110,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("delete", RemoveSelected, Some(KEY_CONTEXT)),
         KeyBinding::new("menu", OpenMenu, Some(KEY_CONTEXT)),
         KeyBinding::new("shift-f10", OpenMenu, Some(KEY_CONTEXT)),
+        KeyBinding::new("alt-up", NudgeUp, Some(KEY_CONTEXT)),
+        KeyBinding::new("alt-down", NudgeDown, Some(KEY_CONTEXT)),
         // Bound after the field's own Down, which it outranks in the field.
         KeyBinding::new("down", SearchToList, Some("MainSearch > Input")),
     ]);
@@ -154,6 +160,11 @@ impl Group {
             Self::Finished => "Finished",
             Self::Cancelled => "Cancelled",
         }
+    }
+
+    /// Work that is over: it has left its queue's line.
+    fn is_over(self) -> bool {
+        matches!(self, Self::Finished | Self::Cancelled)
     }
 
     /// Finished and cancelled downloads start folded: they are done with.
@@ -517,6 +528,8 @@ impl MainWindow {
         cx: &mut Context<'_, Self>,
     ) -> gpui_kit::Stateful<gpui_kit::Div> {
         window
+            .on_action(cx.listener(|this, _: &NudgeUp, window, cx| this.nudge(true, window, cx)))
+            .on_action(cx.listener(|this, _: &NudgeDown, window, cx| this.nudge(false, window, cx)))
             .on_action(cx.listener(|this, _: &OpenMenu, window, cx| {
                 this.open_keyboard_menu(window, cx);
             }))
@@ -597,6 +610,7 @@ impl Render for MainWindow {
                     v_flex()
                         .flex_1()
                         .min_h_0()
+                        .children(self.queue_header(cx))
                         .children(self.selection_bar(cx))
                         .child(self.list(cx)),
                 ),
