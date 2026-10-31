@@ -1,5 +1,5 @@
 import { log } from '../diag/log';
-import type { Alert } from '../messages';
+import type { Alert } from '../popup-port';
 import type { MediaSendResult } from './center';
 import { MEDIA_ANNOUNCE, type AnnounceMessage } from './messages';
 

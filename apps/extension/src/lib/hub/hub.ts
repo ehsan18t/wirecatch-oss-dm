@@ -10,7 +10,7 @@ import { shouldCapture } from '../capture/should-capture';
 import { cookieStoreOf } from '../cookies';
 import { fallback, log } from '../diag/log';
 import { fileNameFromUrl } from '../file-types';
-import type { Alert, PopupCommand, Snapshot } from '../messages';
+import type { Alert, PopupCommand, Snapshot } from '../popup-port';
 import type { NativeClient } from '../native/client';
 import type { ConnectionStatus } from '../native/status';
 import { refererFor } from '../referrer';

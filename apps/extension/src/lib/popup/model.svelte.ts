@@ -14,8 +14,8 @@ import {
   type PopupCommand,
   type PopupRequest,
   type Snapshot,
-} from '../messages';
-import { patchOf, type SettingsChange } from '../protocol';
+} from '../popup-port';
+import { patchOf, type SettingsChange } from '../settings-patch';
 import { log } from '../diag/log';
 import { Requests } from './requests';
 

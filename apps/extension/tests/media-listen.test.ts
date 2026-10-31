@@ -17,7 +17,7 @@ import {
 import { MEDIA_CHECK, MEDIA_COMMAND } from '../src/lib/media/messages';
 import { MediaRegistry } from '../src/lib/media/registry';
 import { MAX_UNANSWERED_REQUESTS, MediaWatcher } from '../src/lib/media/watch';
-import { POPUP_PORT_NAME, acceptsPopupPort } from '../src/lib/messages';
+import { POPUP_PORT_NAME, acceptsPopupPort } from '../src/lib/popup-port';
 import { flush } from './fakes';
 
 type MessageListener = (

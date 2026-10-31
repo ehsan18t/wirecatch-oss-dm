@@ -5,7 +5,7 @@
 import type { BrowserInfo } from '@wirecatch/protocol';
 import { browser } from 'wxt/browser';
 import { detectBrowser, type Brand } from '../browser-info';
-import { memoryArea, RETIRED_LOCAL_KEYS, storageCache } from '../cache';
+import { memoryArea, RETIRED_LOCAL_KEYS, storageCache, type SettingsCache } from '../cache';
 import {
   cookieHeader,
   cookieReads,
@@ -23,11 +23,10 @@ import type {
   InFlightEntry,
   InFlightStore,
   AlertStore,
-  SettingsCache,
 } from '../hub/deps';
 import type { MediaStore, TabInfo } from '../media/center';
 import { MEDIA_BUTTON_SETTING, type ButtonSetting } from '../media/messages';
-import { isAlert } from '../messages';
+import { isAlert } from '../popup-port';
 import type { HelloIdentity } from '../native/client';
 import { originPattern } from '../site-access';
 import { fields, isNumber, isString, itemsOf, object } from '../validate';

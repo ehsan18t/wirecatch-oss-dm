@@ -1,7 +1,7 @@
 /** The alerts the popup and the badge show, and which outcomes are worth one. */
 import type { DownloadState, HandoverResult } from '../capture/handover';
 import { fallback } from '../diag/log';
-import type { Alert } from '../messages';
+import type { Alert } from '../popup-port';
 import type { AlertStore } from './deps';
 import { DuplicateWatch } from './duplicates';
 import {

@@ -1,6 +1,9 @@
 import { globals, wirecatch } from '@wirecatch/eslint-config';
 import svelteConfig from './svelte.config.js';
 
+const BACKGROUND_ONLY =
+  'Content scripts run in every page: they reach the background through messages only, never its modules.';
+
 const NATIVE_ONLY =
   'Talk to the app through `src/lib/native` only: `port.ts` opens the connection and `client.ts` uses it.';
 
@@ -28,6 +31,36 @@ export default wirecatch({
         'wirecatch/no-silent-catch': [
           'error',
           { factories: [{ name: 'fallback', module: 'diag/log' }] },
+        ],
+      },
+    },
+    {
+      // Code that runs in pages imports nothing that only the background or the popup uses.
+      files: [
+        'src/entrypoints/*.content.ts',
+        'src/lib/media/{button,button-style,checks,host-name,live-message,messages,page-media,placement}.ts',
+        'src/lib/notices/{frame,messages}.ts',
+      ],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            patterns: [
+              {
+                group: [
+                  '**/hub/**',
+                  '**/capture/**',
+                  '**/native/**',
+                  '**/browser/**',
+                  '**/popup/**',
+                  '**/cookies',
+                  '**/cache',
+                  '**/popup-port',
+                ],
+                message: BACKGROUND_ONLY,
+              },
+            ],
+          },
         ],
       },
     },

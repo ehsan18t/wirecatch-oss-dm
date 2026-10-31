@@ -12,7 +12,7 @@ import { Hub } from '../src/lib/hub/hub';
 import { MediaSender } from '../src/lib/hub/media-sender';
 import { MediaCenter, type TabInfo } from '../src/lib/media/center';
 import { MediaRegistry } from '../src/lib/media/registry';
-import type { BackgroundMessage, PopupRequest } from '../src/lib/messages';
+import type { BackgroundMessage, PopupRequest } from '../src/lib/popup-port';
 import { NativeClient } from '../src/lib/native/client';
 import { PopupModel } from '../src/lib/popup/model.svelte';
 import Popup from '../src/ui/popup/Popup.svelte';

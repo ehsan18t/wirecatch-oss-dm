@@ -7,7 +7,7 @@ import { hubTiming } from '../src/lib/hub/deps';
 import { planMenuClick } from '../src/lib/hub/menu';
 import { MAX_ALERTS, AlertBoard } from '../src/lib/hub/alert-board';
 import { keptInBrowser, mediaAnswer } from '../src/lib/hub/alerts';
-import type { Alert } from '../src/lib/messages';
+import type { Alert } from '../src/lib/popup-port';
 import { KnownSettings } from '../src/lib/hub/settings';
 import { NativeClient, UNREADABLE_ANSWER } from '../src/lib/native/client';
 import { MemoryCache, FakeApp } from './fakes';

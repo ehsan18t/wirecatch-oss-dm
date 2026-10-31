@@ -1,7 +1,8 @@
 import type { BrowserControls, ExtensionSettings, QueueSummary } from '@wirecatch/protocol';
 import { fallback } from '../diag/log';
-import type { Snapshot } from '../messages';
-import type { CachedSettings, HubDeps } from './deps';
+import type { Snapshot } from '../popup-port';
+import type { CachedSettings } from '../cache';
+import type { HubDeps } from './deps';
 
 /** The part of the popup's snapshot that comes from the settings. */
 export type SettingsView = Pick<Snapshot, 'settings' | 'controls' | 'queues'>;
