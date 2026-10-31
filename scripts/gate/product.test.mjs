@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -111,7 +111,14 @@ test('the release check finds every placeholder until the values are decided', a
   assert.deepEqual(await remainingPlaceholders(root), { values: [], lines: [] });
 });
 
+test('an empty folder among the packages is not taken for a package', async () => {
+  mkdirSync(join(root, 'apps/leftover'));
+  assert.deepEqual(await staleOutputs(root), []);
+  rmSync(join(root, 'apps/leftover'), { recursive: true });
+});
+
 test('a workspace package whose package.json was deleted is reported, not skipped', async () => {
+  writeFileSync(join(root, 'apps/extension/README.md'), 'A package keeps its other files.');
   rmSync(join(root, 'apps/extension/package.json'));
   await assert.rejects(staleOutputs(root), /apps\/extension\/package\.json is missing/);
 });
