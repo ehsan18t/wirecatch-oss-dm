@@ -97,9 +97,9 @@ const ICON_SIZES = [32, 64, 128, 256, 512];
  * The rest (the C library, X11, fontconfig, freetype, Wayland, Vulkan) come with every desktop
  * and must be the system's own, as AppImage's exclude list says.
  */
-const APPIMAGE_LIBRARIES = ['libxkbcommon.so.0', 'libxkbcommon-x11.so.0'];
+const APPIMAGE_LIBRARIES = ['libxkbcommon.so.0', 'libxkbcommon-x11.so.0', 'libxcb-xkb.so.1'];
 
-/** Copies the `APPIMAGE_LIBRARIES` the app at `binary` links, as this machine resolves them, into `folder`. */
+/** Copies the `APPIMAGE_LIBRARIES` the app at `binary` links, directly or through another, as this machine resolves them, into `folder`. */
 function bundleLibraries(binary, folder) {
   mkdirSync(folder, { recursive: true });
   // Lines read `name => /path/name (0x...)`.

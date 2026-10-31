@@ -1100,6 +1100,6 @@ Decided on 2026-10-31 (ROADMAP item 6). It amends D85.1: Settings has eight page
 
 Decided on 2026-10-31, when the release workflow first started each Linux package on a fresh system. It amends D106.2.
 
-1. The AppImage carries `libxkbcommon.so.0` and `libxkbcommon-x11.so.0`, copied from the build machine, and starts through an `AppRun` script that puts its own library folder first. Without them it does not start on a system with no GTK or Qt, such as a fresh server image.
+1. The AppImage carries `libxkbcommon.so.0`, `libxkbcommon-x11.so.0` and the `libxcb-xkb.so.1` the latter needs, copied from the build machine, and starts through an `AppRun` script that puts its own library folder first. Without them it does not start on a system with no GTK or Qt, such as a fresh server image.
 2. Everything else stays the system's: the C library, X11 and xcb, fontconfig, freetype, Wayland and the Vulkan loader, which AppImage's exclude list keeps out because they must match the system's drivers and services.
 3. The release workflow installs the `.deb` on Ubuntu and the `.rpm` on Fedora in fresh containers and runs the AppImage on the runner; each must start, register the bridge, and (for the packages) unregister it on removal. The release draft waits for these checks.
