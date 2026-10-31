@@ -11,6 +11,7 @@ export const TEST_FEATURES = ['--features', 'wirecatch-bridge/test-overrides'];
 export const TOOLS = {
   'cargo-deny': '0.19.0',
   'cargo-machete': '0.9.2',
+  'cargo-nextest': '0.9.148',
 };
 
 export const DESKTOP_CRATE = 'wirecatch-desktop';
@@ -85,14 +86,27 @@ function clippy() {
     cargo('clippy', '-p', DESKTOP_CRATE, '--all-targets', '--locked', ...DENY_WARNINGS);
 }
 
-/** The arguments of the one `cargo test` run: every crate, the desktop crate included, in one feature resolution, so the dependencies are built once. */
+/** The arguments of the one test run: every crate, the desktop crate included, in one feature resolution, so the dependencies are built once. nextest runs the test binaries side by side, where `cargo test` runs them one after another. */
 export function testArguments({ desktop, failFast }) {
   return [
-    'test',
+    'nextest',
+    'run',
     '--workspace',
     ...desktopExclusion({ desktop }),
     '--locked',
     ...(failFast ? [] : ['--no-fail-fast']),
+    ...TEST_FEATURES,
+  ];
+}
+
+/** The documentation examples, which nextest does not run. */
+export function docTestArguments({ desktop }) {
+  return [
+    'test',
+    '--doc',
+    '--workspace',
+    ...desktopExclusion({ desktop }),
+    '--locked',
     ...TEST_FEATURES,
   ];
 }
@@ -112,7 +126,10 @@ function workspaceBridge() {
 }
 
 function test() {
-  run('cargo', testArguments(options), { env: { [BRIDGE_VARIABLE]: workspaceBridge() } });
+  requireCargoTool('cargo-nextest');
+  const env = { env: { [BRIDGE_VARIABLE]: workspaceBridge() } };
+  run('cargo', testArguments(options), env);
+  run('cargo', docTestArguments(options), env);
 }
 
 /** The published engine still builds with the oldest Rust its manifest promises. */
@@ -170,7 +187,8 @@ export const RUST_CHECKS = {
     ),
   test,
   // The engine with its off-by-default http3 feature, which no other check compiles into a test.
-  'test-http3': () => cargo('test', '-p', ENGINE_CRATE, '--locked', '--features', 'http3'),
+  'test-http3': () =>
+    cargo('nextest', 'run', '-p', ENGINE_CRATE, '--locked', '--features', 'http3'),
   // With every feature, as docs.rs builds them (`package.metadata.docs.rs` in the engine's Cargo.toml).
   'engine-docs': () =>
     run('cargo', ['doc', '-p', ENGINE_CRATE, '--no-deps', '--locked', '--all-features'], {

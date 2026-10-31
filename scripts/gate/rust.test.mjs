@@ -3,7 +3,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { ROOT } from './process.mjs';
-import { DESKTOP_CRATE, TEST_FEATURES, testArguments, TOOLS, toolSpecs } from './rust.mjs';
+import {
+  DESKTOP_CRATE,
+  docTestArguments,
+  TEST_FEATURES,
+  testArguments,
+  TOOLS,
+  toolSpecs,
+} from './rust.mjs';
 
 const WORKFLOWS = join(ROOT, '.github', 'workflows');
 /** The one `tool:` input a workflow may give an installer: the output of `node scripts/gate.mjs --tool-specs`. */
@@ -34,14 +41,24 @@ test('the workflows install the cargo tools only from the gate tool specs', () =
   }
 });
 
-test('the tests run in one cargo invocation that includes the desktop crate', () => {
+test('the tests run in one nextest invocation that includes the desktop crate', () => {
   const args = testArguments({ desktop: true, failFast: true });
-  assert.deepEqual(args, ['test', '--workspace', '--locked', ...TEST_FEATURES]);
+  assert.deepEqual(args, ['nextest', 'run', '--workspace', '--locked', ...TEST_FEATURES]);
 });
 
 test('without the desktop crate the tests leave it out', () => {
   const args = testArguments({ desktop: false, failFast: true });
-  assert.deepEqual(args.slice(0, 4), ['test', '--workspace', '--exclude', DESKTOP_CRATE]);
+  assert.deepEqual(args.slice(0, 5), ['nextest', 'run', '--workspace', '--exclude', DESKTOP_CRATE]);
+});
+
+test('the documentation examples run in their own cargo test, with the same crates', () => {
+  assert.deepEqual(docTestArguments({ desktop: false }).slice(0, 5), [
+    'test',
+    '--doc',
+    '--workspace',
+    '--exclude',
+    DESKTOP_CRATE,
+  ]);
 });
 
 test('--no-fail-fast reaches cargo', () => {

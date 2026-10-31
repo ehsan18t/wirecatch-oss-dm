@@ -80,6 +80,24 @@ jobs:
           cache-bin: false
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # cargo-nextest at the version in scripts/gate/rust.mjs, as a prebuilt binary whose checksum the action verifies (D33).
+      - name: Read the gate tool versions
+        id: tools
+        if: matrix.part == 'test'
+        run: echo "specs=$(node scripts/gate.mjs --tool-specs)" >> "$GITHUB_OUTPUT"
+
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        if: matrix.part == 'test'
+        with:
+          tool: ${{ steps.tools.outputs.specs }}
+          fallback: none
+
+      # Rust's own lld links the many test binaries several times faster than the MSVC linker.
+      - name: Link with rust-lld
+        if: runner.os == 'Windows' && matrix.part == 'test'
+        shell: bash
+        run: echo "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=rust-lld.exe" >> "$GITHUB_ENV"
+
       # The streams and media tests need a real ffmpeg; they skip without one, so Linux CI is where real joins and conversions are proven. It is the build the media add-on installs, from the add-on's pinned address and checked against its pinned SHA-256 (`crates/addons/src/manifest.rs`, printed by the ffmpeg_release example), and the cache keeps it until that file changes.
       - name: Restore ffmpeg
         id: ffmpeg
