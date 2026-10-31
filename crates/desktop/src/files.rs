@@ -12,7 +12,8 @@ use wirecatch_shell::api::{self, ProgramWarning, Reveal, ToOpen};
 
 use crate::backend::Backend;
 
-/// Asks for a folder to save in; `None` when none is picked.
+/// Asks for a folder to save in; `None` when none is picked, or when its name is not valid text,
+/// which the window in front is told.
 pub fn choose_folder(cx: &mut App) -> impl Future<Output = Option<String>> + use<> {
     let picked = cx.prompt_for_paths(PathPromptOptions {
         files: false,
@@ -20,9 +21,20 @@ pub fn choose_folder(cx: &mut App) -> impl Future<Output = Option<String>> + use
         multiple: false,
         prompt: Some("Save here".into()),
     });
+    let cx = cx.to_async();
     async move {
         let folder = picked.await.ok()?.ok()??.into_iter().next()?;
-        Some(folder.to_string_lossy().into_owned())
+        api::path_text(&folder)
+            .map_err(|refused| {
+                cx.update(|cx| {
+                    if let Some(window) = cx.active_window() {
+                        _ = window.update(cx, |_, window, cx| {
+                            window.push_notification(refused.message, cx);
+                        });
+                    }
+                });
+            })
+            .ok()
     }
 }
 
