@@ -13,8 +13,8 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ClipboardItem, Context, ElementId, Hsla, InteractiveElement as _, IntoElement,
-    MouseButton, ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Window, canvas, div, px, relative, uniform_list,
+    ListAlignment, ListState, MouseButton, ParentElement as _, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, canvas, div, list, px, relative,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
@@ -44,11 +44,30 @@ const TEXT_START: f32 = BORDER + PAD + CIRCLE_WIDTH + GAP + TIME_WIDTH + GAP + T
 /// The figure at a row's end, and the buttons that take its place on hover.
 const END_WIDTH: f32 = 112.;
 const PROGRESS_HEIGHT: f32 = 2.;
-/// The part of a heading's line its content is centred in, at the line's bottom.
+/// How far past the visible lines the list lays out, so scrolling shows no gaps.
+const OVERDRAW: f32 = 400.;
 const HEADING_HEIGHT: f32 = 32.;
+const HEADING_SPACE: f32 = 12.;
+
+/// The list's scroll and the lines it last laid out, which its state follows.
+pub(super) struct Scroll {
+    state: ListState,
+    drawn: Vec<Line>,
+    shown: Option<ListLines>,
+}
+
+impl Default for Scroll {
+    fn default() -> Self {
+        Self {
+            state: ListState::new(0, ListAlignment::Top, px(OVERDRAW)),
+            drawn: Vec::new(),
+            shown: None,
+        }
+    }
+}
 
 /// One line of the list.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Line {
     Heading(Group, usize),
     /// The day the rows under it finished on.
@@ -75,8 +94,7 @@ impl GroupCommand {
     }
 }
 
-/// How tall every line is: the list lays out only what shows, so a line's height is fixed by
-/// how many lines a row shows under its name.
+/// How tall a row is, by how many lines it shows under its name.
 fn line_height(shown: ListLines) -> f32 {
     match usize::from(shown.link) + usize::from(shown.folder) {
         0 => 36.,
@@ -91,29 +109,64 @@ impl MainWindow {
         if lines.is_empty() {
             return self.empty(cx).into_any_element();
         }
-        let count = lines.len();
-        uniform_list(
-            "downloads",
-            count,
-            cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
+        self.sync_scroll(&lines, cx);
+        list(
+            self.scroll.state.clone(),
+            cx.processor(move |this, index: usize, _, cx| {
                 let shown = this.list_lines(cx);
-                range
-                    .filter_map(|index| Some((index, *lines.get(index)?)))
-                    .map(|(index, line)| match line {
-                        Line::Heading(group, count) => this.heading(group, count, shown, cx),
-                        Line::Day(day) => {
-                            let rows = rows_under(&lines[index + 1..]);
-                            this.day_heading(day, &rows, shown, cx)
-                        }
-                        Line::Row(row, place, dated) => this.row(row, place, dated, shown, cx),
-                    })
-                    .collect::<Vec<_>>()
+                match lines.get(index).copied() {
+                    Some(Line::Heading(group, count)) => this.heading(group, count, cx),
+                    Some(Line::Day(day)) => {
+                        let rows = rows_under(&lines[index + 1..]);
+                        this.day_heading(day, &rows, cx)
+                    }
+                    Some(Line::Row(row, place, dated)) => this.row(row, place, dated, shown, cx),
+                    None => div().into_any_element(),
+                }
             }),
         )
-        .track_scroll(&self.scroll)
         .flex_1()
         .pb_4()
         .into_any_element()
+    }
+
+    /// Keeps the list's state on `lines`: only the lines that changed are laid out again, so the
+    /// scroll stays where it was, and every line is when the View menu changes the rows' height.
+    fn sync_scroll(&mut self, lines: &[Line], cx: &App) {
+        let shown = self.list_lines(cx);
+        let scroll = &mut self.scroll;
+        let drawn = &scroll.drawn;
+        let same_start = drawn.iter().zip(lines).take_while(|(a, b)| a == b).count();
+        let same_end = drawn[same_start..]
+            .iter()
+            .rev()
+            .zip(lines[same_start..].iter().rev())
+            .take_while(|(a, b)| a == b)
+            .count();
+        if same_start < drawn.len() || drawn.len() != lines.len() {
+            scroll.state.splice(
+                same_start..drawn.len() - same_end,
+                lines.len() - same_start - same_end,
+            );
+        }
+        if scroll.shown != Some(shown) {
+            scroll.state.remeasure();
+            scroll.shown = Some(shown);
+        }
+        scroll.drawn = lines.to_vec();
+    }
+
+    /// Scrolls download `id` into view, if the list shows it.
+    pub(super) fn scroll_to_row(&mut self, id: DownloadId, cx: &App) {
+        let lines = self.lines(cx);
+        self.sync_scroll(&lines, cx);
+        let downloads = &self.library.read(cx).downloads;
+        if let Some(line) = lines
+            .iter()
+            .position(|line| matches!(line, Line::Row(index, ..) if downloads[*index].id == id))
+        {
+            self.scroll.state.scroll_to_reveal_item(line);
+        }
     }
 
     /// The lines the settings keep under each row's name.
@@ -135,14 +188,6 @@ impl MainWindow {
                 Line::Heading(..) | Line::Day(_) => None,
             })
             .collect()
-    }
-
-    /// Where download `id` is among the list's lines, if it shows.
-    pub(super) fn line_of(&self, id: DownloadId, cx: &App) -> Option<usize> {
-        let downloads = &self.library.read(cx).downloads;
-        self.lines(cx)
-            .iter()
-            .position(|line| matches!(line, Line::Row(index, ..) if downloads[*index].id == id))
     }
 
     /// The downloads of a queue's own view that are still to run or running, in the order they
@@ -294,18 +339,12 @@ impl MainWindow {
         )
     }
 
-    fn heading(
-        &self,
-        group: Group,
-        count: usize,
-        shown: ListLines,
-        cx: &mut Context<'_, Self>,
-    ) -> AnyElement {
+    fn heading(&self, group: Group, count: usize, cx: &mut Context<'_, Self>) -> AnyElement {
         let (quiet, loud) = (cx.theme().muted_foreground, cx.theme().foreground);
         let folded = self.folded.contains(&group);
         let command = self.group_command(group, cx);
         let ids = self.ids_of(&self.members(group, cx), cx);
-        heading_line(shown)
+        heading_line()
             .child(self.heading_circle(format!("pick-{group:?}").into(), ids, cx))
             .child(
                 h_flex()
@@ -354,7 +393,6 @@ impl MainWindow {
         &self,
         day: NaiveDate,
         rows: &[usize],
-        shown: ListLines,
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
         let downloads = &self.library.read(cx).downloads;
@@ -368,7 +406,7 @@ impl MainWindow {
             n => format!("{n} files"),
         };
         let ids = self.ids_of(rows, cx);
-        heading_line(shown)
+        heading_line()
             .child(self.heading_circle(format!("pick-day-{day}").into(), ids, cx))
             .child(
                 div()
@@ -526,13 +564,12 @@ fn finished_day(row: &DownloadSummary) -> Option<NaiveDate> {
     text::local_day(row.completed_at.unwrap_or(row.added_at))
 }
 
-/// A heading's line, in the rows' grid; its content sits at the bottom, over the rows it heads.
-fn heading_line(shown: ListLines) -> gpui_kit::Div {
-    // Bottom-aligning would set the circle and the text on different centres: pad down instead.
+/// A heading's line, in the rows' grid, with room above it to set it apart from the rows before.
+fn heading_line() -> gpui_kit::Div {
     h_flex()
         .w_full()
-        .h(px(line_height(shown)))
-        .pt(px(line_height(shown) - HEADING_HEIGHT))
+        .h(px(HEADING_HEIGHT + HEADING_SPACE))
+        .pt(px(HEADING_SPACE))
         .pl(px(PAD))
         .pr(px(PAD))
         .gap(px(GAP))

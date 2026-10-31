@@ -43,9 +43,8 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, ExternalPaths, FocusHandle,
     Focusable as _, Global, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
-    Render, ScrollStrategy, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Subscription, UniformListScrollHandle, WeakEntity, Window, WindowBounds, WindowOptions,
-    actions, div, px, size,
+    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity,
+    Window, WindowBounds, WindowOptions, actions, div, px, size,
 };
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::QueueId;
@@ -301,7 +300,7 @@ pub struct MainWindow {
     queue_speeds: HashMap<QueueId, SpeedHistory>,
     /// The row under the pointer, which shows its buttons.
     hovered: Option<DownloadId>,
-    scroll: UniformListScrollHandle,
+    scroll: list::Scroll,
     settings_on: settings::OpenOn,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
@@ -381,12 +380,8 @@ impl MainWindow {
         self.anchor = reveal.ids.first().copied();
         self.cursor = self.anchor;
         self.picked = reveal.ids.len() > 1;
-        if let Some(line) = reveal
-            .ids
-            .first()
-            .and_then(|first| self.line_of(*first, cx))
-        {
-            self.scroll.scroll_to_item(line, ScrollStrategy::Center);
+        if let Some(first) = reveal.ids.first() {
+            self.scroll_to_row(*first, cx);
         }
     }
 
@@ -449,7 +444,7 @@ impl MainWindow {
             cursor_bounds: Rc::default(),
             folded: HashSet::new(),
             hovered: None,
-            scroll: UniformListScrollHandle::new(),
+            scroll: list::Scroll::default(),
             settings_on: settings::OpenOn::default(),
             all_queues: false,
             queue_speeds: HashMap::new(),
