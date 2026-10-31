@@ -28,7 +28,7 @@ use wirecatch_media::output::OutputJob;
 use wirecatch_media::ytdlp::FormatId;
 use wirecatch_media::{MediaJob, MediaProgress, Pick};
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::{FixAction, UserError};
+use wirecatch_protocol::app::UserError;
 use wirecatch_sites::local_network::{self, ChosenBy};
 use wirecatch_streams::{Choice, StreamProgress, StreamRequest};
 
@@ -268,25 +268,6 @@ struct PageJob {
 }
 
 /// The error once every automatic try with fresh addresses was refused too.
-fn refused_after_refreshing(status: Option<u16>) -> UserError {
-    let answered = status
-        .map(|s| format!(" (it answered {s})"))
-        .unwrap_or_default();
-    UserError {
-        message: format!(
-            "The video's server kept refusing to send the video{answered}, even though Wirecatch tried again automatically several times with fresh addresses from the page. Sites sometimes refuse one video for a while. Try again later; what was already downloaded is kept."
-        ),
-        fix: Some(FixAction::Retry),
-    }
-}
-
-fn refresh(message: &str) -> UserError {
-    UserError {
-        message: format!("{message} Try again; Wirecatch reads the page again."),
-        fix: Some(FixAction::Retry),
-    }
-}
-
 fn disk(error: &std::io::Error, near: &Path) -> UserError {
     let folder = near.parent().unwrap_or(near);
     wirecatch_messages::disk(error, folder)

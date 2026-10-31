@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use tracing::warn;
 use wirecatch_engine::Url;
-use wirecatch_protocol::app::{FixAction, UserError, WhenFileExists};
+use wirecatch_media::describe;
+use wirecatch_protocol::app::{UserError, WhenFileExists};
 
 use super::{Job, disk, workdir};
 use crate::headers;
@@ -102,10 +103,7 @@ pub(super) async fn finish(
             })
         })
         .await
-        .map_err(|e| UserError {
-            message: format!("Something went wrong inside Wirecatch ({e}). Try again."),
-            fix: Some(FixAction::Retry),
-        })?;
+        .map_err(|e| describe::internal(&e))?;
     moved.map_err(|e| disk(&e, output))
 }
 
