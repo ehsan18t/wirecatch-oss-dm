@@ -196,6 +196,12 @@ impl DownloadWindow {
         .detach();
     }
 
+    /// The core started reading `url`. A read can end before this window first asks about it.
+    pub fn reading_from(&mut self, url: &str, cx: &App) {
+        self.reading = Some(url.to_owned());
+        self.earlier = newest_attempt(&self.library.read(cx).downloads, url);
+    }
+
     fn name_from(&mut self, name: &str, cx: &mut Context<'_, Self>) {
         let field = self.name.read(cx).value();
         if core_name_applies(&field, self.core_name.as_deref(), name) {
@@ -1452,6 +1458,14 @@ fn put_name(state: Entity<InputState>, name: String, window: AnyWindowHandle, cx
     });
 }
 
+fn newest_attempt(downloads: &[DownloadSummary], link: &str) -> Option<DownloadId> {
+    downloads
+        .iter()
+        .filter(|row| row.url == link)
+        .map(|row| row.id)
+        .max()
+}
+
 /// The newest failed attempt at `link` made after `earlier`, the newest from before this question.
 fn failed_video<'a>(
     downloads: &'a [DownloadSummary],
@@ -1477,6 +1491,21 @@ mod tests {
         row.url = url.to_owned();
         row.status = status;
         row
+    }
+
+    #[test]
+    fn the_newest_attempt_at_a_link_is_found() {
+        use super::newest_attempt;
+        use wirecatch_protocol::DownloadId;
+
+        let page = "https://example.com/watch/1";
+        let downloads = [
+            row(1, page, DownloadStatus::Failed),
+            row(2, page, DownloadStatus::Completed),
+            row(3, "https://example.com/other", DownloadStatus::Failed),
+        ];
+        assert_eq!(newest_attempt(&downloads, page), Some(DownloadId(2)));
+        assert_eq!(newest_attempt(&downloads, "https://example.com/new"), None);
     }
 
     #[test]
