@@ -407,6 +407,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_installer_of_the_wrong_size_is_refused() {
+        let h = Harness::new().await;
+        h.publish("v0.2.0", false, &key(), b"a different installer");
+        let update = h
+            .manager
+            .check_app_update("0.1.0", Some(FileKind::Setup))
+            .await
+            .unwrap()
+            .unwrap();
+        let failed = h
+            .manager
+            .fetch_app_update(
+                &update.download.unwrap(),
+                Arc::new(Progress::default()),
+                CancellationToken::new(),
+            )
+            .await;
+        let Err(CoreError::UpdateCheckFailed(message)) = failed else {
+            panic!("expected a refusal, got {failed:?}");
+        };
+        assert!(message.contains("not the size"), "{message}");
+    }
+
+    #[tokio::test]
     async fn an_installer_that_does_not_match_its_manifest_is_deleted() {
         let h = Harness::new().await;
         h.publish("v0.2.0", false, &key(), &vec![b'x'; INSTALLER.len()]);
