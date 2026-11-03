@@ -1149,7 +1149,7 @@ Decided with the maintainer on 2026-11-04. It amends D89's progress window and t
 
 Decided with the maintainer on 2026-10-31.
 
-1. Every row shares one grid: a circle that ticks it, its time or state, the file tile, the name over its link and save folder, and one figure. Finished downloads sit under day headings with their count and total size, each row showing its time to the second, in the 12 or 24-hour format of the `clock` setting.
+1. Every row shares one grid: a circle that ticks it (none while it downloads), its time or state, the file tile, the name over its link and save folder, and one figure. In the queue-order sort, finished downloads sit under day headings with their count and total size, each row showing its time to the second, in the 12 or 24-hour format of the `clock` setting; other sorts keep one Finished heading.
 2. A View menu beside the sort chooses which lines rows show, saved in `list_lines`; a row with neither is one compact line. Rows therefore differ in height, so the list draws with GPUI's variable-height list and keeps its scroll position across changes.
 3. Circles beside each heading and in the selection bar tick a whole day, group or list.
 4. A queue with rules has a Rules on or Rules off button in its one-line header and the same choice in the sidebar's menu, so its rules can be switched without opening the editor. A queue with no rules shows neither.
