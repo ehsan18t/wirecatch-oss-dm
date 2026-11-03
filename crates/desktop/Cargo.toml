@@ -41,6 +41,8 @@ embed-resource = "3.0.12"
 wirecatch-product.workspace = true
 
 [dev-dependencies]
+# GPUI's own feature, not gpui-kit's `test-support`: that one locks in gpui-fast, whose exact taffy pin conflicts with GPUI's.
+gpui-pre = { version = "0.3.10", features = ["test-support"] }
 wirecatch-test-support = { path = "../test-support", features = ["downloads"] }
 
 [lints]

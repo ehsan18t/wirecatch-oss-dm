@@ -20,9 +20,10 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Subscription, Window, canvas, div, px, relative, size,
+    AnyElement, AnyWindowHandle, App, AppContext as _, Context, Entity, Hsla,
+    InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Window, canvas, div, px, relative,
+    size,
 };
 use wirecatch_protocol::app::{
     AddonId, AddonRequestItem, AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus,
@@ -61,6 +62,7 @@ const PICKER_WIDTH: f32 = 136.;
 /// One download window.
 pub struct DownloadWindow {
     library: Entity<Library>,
+    window: AnyWindowHandle,
     label: String,
     shows: Shows,
     /// The question, once read; `None` while reading and once it closed.
@@ -119,6 +121,7 @@ impl DownloadWindow {
         });
         let mut view = Self {
             library,
+            window: window.window_handle(),
             label,
             shows,
             question: None,
@@ -180,15 +183,7 @@ impl DownloadWindow {
     }
 
     fn name_from(&mut self, name: &str, cx: &mut Context<'_, Self>) {
-        let name = name.to_owned();
-        let state = self.name.clone();
-        cx.defer(move |cx| {
-            if let Some(window) = cx.active_window() {
-                _ = window.update(cx, |_, window, cx| {
-                    state.update(cx, |state, cx| state.set_value(name, window, cx));
-                });
-            }
-        });
+        put_name(self.name.clone(), name.to_owned(), self.window, cx);
     }
 
     /// Runs `work` on the manager; the answer turns the window into the download's progress, or
@@ -1415,9 +1410,51 @@ fn button(id: &'static str, label: &'static str, variant: ButtonVariant, busy: b
         .disabled(busy)
 }
 
+/// `window` is the field's own: a question's window can open behind another, so the active one may be neither.
+fn put_name(state: Entity<InputState>, name: String, window: AnyWindowHandle, cx: &mut App) {
+    cx.defer(move |cx| {
+        _ = window.update(cx, |_, window, cx| {
+            state.update(cx, |state, cx| state.set_value(name, window, cx));
+        });
+    });
+}
+
 #[cfg(test)]
 mod tests {
+    use gpui_kit::{Render, TestAppContext};
     use wirecatch_protocol::rules::Rule;
+
+    struct NameField(gpui_kit::Entity<super::InputState>);
+
+    impl Render for NameField {
+        fn render(
+            &mut self,
+            _: &mut gpui_kit::Window,
+            _: &mut gpui_kit::Context<'_, Self>,
+        ) -> impl gpui_kit::IntoElement {
+            gpui_kit::div()
+        }
+    }
+
+    #[gpui_kit::test]
+    fn a_window_behind_the_others_still_gets_its_name(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::component::init);
+        let (field, cx) = cx.add_window_view(|window, cx| {
+            NameField(cx.new(|cx| super::InputState::new(window, cx)))
+        });
+        cx.deactivate_window();
+
+        let state = field.read_with(cx, |field, _| field.0.clone());
+        let put = state.clone();
+        cx.update(|window, cx| {
+            super::put_name(put, "report.pdf".to_owned(), window.window_handle(), cx);
+        });
+        cx.run_until_parked();
+
+        state.read_with(cx, |state, _| {
+            assert_eq!(state.value().as_ref(), "report.pdf");
+        });
+    }
 
     #[test]
     fn an_addon_question_follows_the_install() {
