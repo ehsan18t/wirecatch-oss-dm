@@ -20,7 +20,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
+    AnyElement, App, AppContext as _, Context, Entity, Hsla, InteractiveElement as _, IntoElement,
     ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
     Subscription, Window, canvas, div, px, relative, size,
 };
@@ -65,6 +65,8 @@ pub struct DownloadWindow {
     shows: Shows,
     /// The question, once read; `None` while reading and once it closed.
     question: Option<Question>,
+    /// The download already in the list for the question's link.
+    earlier: Option<DownloadId>,
     /// The question is no longer open in the core.
     over: bool,
     /// The file name the person may change.
@@ -116,6 +118,7 @@ impl DownloadWindow {
             label,
             shows,
             question: None,
+            earlier: None,
             over: false,
             name: cx.new(|cx| InputState::new(window, cx)),
             queue: None,
@@ -140,12 +143,14 @@ impl DownloadWindow {
             cx.notify();
             return;
         };
-        let read = Backend::run(
-            cx,
-            move |manager| async move { api::question(&manager, id) },
-        );
+        let read = Backend::run(cx, move |manager| async move {
+            (
+                api::question(&manager, id),
+                api::earlier_download(&manager, id),
+            )
+        });
         cx.spawn(async move |view, cx| {
-            let Ok(Ok(question)) = read.await else {
+            let Ok(Ok((question, earlier))) = read.await else {
                 return;
             };
             _ = view.update(cx, |view, cx| {
@@ -158,6 +163,7 @@ impl DownloadWindow {
                     view.name_from(&capture.file_name, cx);
                 }
                 view.question = question;
+                view.earlier = earlier.map(|row| row.id);
                 cx.notify();
             });
         })
@@ -439,11 +445,17 @@ impl DownloadWindow {
     fn capture(&mut self, capture: &PendingCapture, cx: &mut Context<'_, Self>) -> AnyElement {
         let id = capture.id;
         let busy = self.busy || matches!(self.shows, Shows::Download(_));
+        let earlier = self.earlier.and_then(|earlier| self.download(earlier, cx));
         v_flex()
             .min_h(px(FILE_CONTENT_HEIGHT))
             .justify_between()
             .gap_4()
-            .child(heading(&capture.file_name, &capture.url, capture.size, cx))
+            .child(
+                v_flex()
+                    .gap_1p5()
+                    .child(heading(&capture.file_name, &capture.url, capture.size, cx))
+                    .children(earlier.map(|row| earlier_chip(&row, cx))),
+            )
             .child(Field::new("Save as", Input::new(&self.name)))
             .child(Field::new("Folder", self.folder_field(capture, cx)))
             .child(
@@ -592,7 +604,11 @@ impl DownloadWindow {
         let Some((form, _)) = &self.media else {
             return div().into_any_element();
         };
-        form.update(cx, |form, _| form.busy = busy);
+        let earlier = self.earlier;
+        form.update(cx, |form, _| {
+            form.busy = busy;
+            form.earlier = earlier;
+        });
         form.clone().into_any_element()
     }
 
@@ -1003,18 +1019,45 @@ pub(super) fn automatic_reason(queue: &str, reason: &QueueReason) -> (String, Op
 
 /// A queue's name, tinted so it reads as the name of something.
 fn queue_badge(name: String, cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
+    tinted_chip(Lucide::ListOrdered, name, cx.theme().primary, cx)
+}
+
+/// A warning that the question's link is already in the list, with the way to the file once it
+/// is finished: downloading again stays allowed.
+pub(super) fn earlier_chip(row: &DownloadSummary, cx: &App) -> AnyElement {
+    let id = row.id;
+    h_flex()
+        .gap_2()
+        .child(tinted_chip(
+            Lucide::TriangleAlert,
+            text::earlier_notice(row),
+            cx.theme().warning,
+            cx,
+        ))
+        .when(row.status == DownloadStatus::Completed, |line| {
+            line.child(
+                Button::new("earlier-show-in-folder")
+                    .xsmall()
+                    .link()
+                    .label("Show in folder")
+                    .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
+            )
+        })
+        .into_any_element()
+}
+
+fn tinted_chip(icon: Lucide, label: String, tint: Hsla, cx: &App) -> impl IntoElement {
     h_flex()
         .min_w_0()
         .h(px(24.))
         .px_2()
         .gap_1()
-        .rounded(theme.radius)
-        .bg(theme.primary.opacity(BADGE_TINT))
+        .rounded(cx.theme().radius)
+        .bg(tint.opacity(BADGE_TINT))
         .text_role(Role::Meta, cx)
-        .text_color(theme.primary)
-        .child(Icon::new(Lucide::ListOrdered).with_size(tokens::ICON))
-        .child(div().min_w_0().truncate().child(name))
+        .text_color(tint)
+        .child(Icon::new(icon).with_size(tokens::ICON))
+        .child(div().min_w_0().truncate().child(label))
 }
 
 /// How a download ended or that it waits, beside its name.
