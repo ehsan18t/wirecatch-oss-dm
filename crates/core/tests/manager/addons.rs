@@ -1100,6 +1100,47 @@ async fn a_program_taken_away_is_reinstalled() -> TestResult {
     Ok(())
 }
 
+/// A page waiting for a program that came back goes on when Install finds nothing to do, since no
+/// install runs to tell it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_page_goes_on_when_install_finds_the_add_on_in_place() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "back")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let ytdlp = addon_dir(&h).join("yt-dlp").join(exe("yt-dlp"));
+    let program = std::fs::read(&ytdlp).unwrap();
+    std::fs::remove_file(&ytdlp).unwrap();
+    let page = |path: &str| {
+        crate::media_support::media_capture(
+            server.url(path),
+            wirecatch_protocol::extension::MediaKind::Page,
+            None,
+        )
+    };
+    // The first page finds the program gone, which marks the add-on damaged; the next one waits.
+    h.manager.add_capture(page("watch/2")).await.unwrap();
+    crate::common::wait_until("the add-on shown as damaged", || {
+        matches!(
+            h.manager.list_addons().remove(0).state,
+            AddonState::Failed { .. }
+        )
+        .then_some(())
+    })
+    .await;
+    h.manager.add_capture(page("watch/3")).await.unwrap();
+    crate::common::wait_until("the page waiting for the add-on", || {
+        (!h.manager.pending_addon_requests().is_empty()).then_some(())
+    })
+    .await;
+    std::fs::write(&ytdlp, program).unwrap();
+    h.manager.install_addon(AddonId::Media).await.unwrap();
+    crate::common::wait_until("the page going on", || {
+        h.manager.pending_addon_requests().is_empty().then_some(())
+    })
+    .await;
+    Ok(())
+}
+
 /// When a program cannot be started, the add-on is looked at again, so the UI
 /// offers the repair instead of showing it as installed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

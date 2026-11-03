@@ -232,7 +232,16 @@ impl Manager {
         self.rescan_addon(Check::Hashes).await;
         let mut state = self.lock_open()?;
         let plan = self.addon_plan(&state.addon);
-        if state.addon.op.is_some() || plan.is_empty() {
+        if state.addon.op.is_some() {
+            return Ok(());
+        }
+        if plan.is_empty() {
+            // No install runs to tell the pages waiting for it.
+            let ready = state.addon.tools.is_some();
+            drop(state);
+            if ready {
+                self.media_addon_ready();
+            }
             return Ok(());
         }
         self.start_addon_op(&mut state.addon, plan, OpKind::Visible);
