@@ -22,6 +22,7 @@ pub struct Callout {
     title: Option<SharedString>,
     message: SharedString,
     actions: Vec<AnyElement>,
+    actions_beside: bool,
 }
 
 impl Callout {
@@ -39,6 +40,7 @@ impl Callout {
             title: None,
             message: message.into(),
             actions: Vec::new(),
+            actions_beside: false,
         }
     }
 
@@ -51,24 +53,27 @@ impl Callout {
         self.actions.push(action.into_any_element());
         self
     }
+
+    /// Puts the buttons on the right of the words instead of under them.
+    pub fn actions_beside(mut self) -> Self {
+        self.actions_beside = true;
+        self
+    }
 }
 
 impl RenderOnce for Callout {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
         let titled = self.title.is_some();
+        let has_actions = !self.actions.is_empty();
         let tint = match self.tone {
             Tone::Danger => theme.danger,
             Tone::Info => theme.info,
         };
-        v_flex()
-            .p_3()
+        let said = v_flex()
             .gap_1()
-            .rounded(theme.radius)
-            .bg(tint.opacity(0.12))
-            .text_role(Role::Body, cx)
-            .when_some(self.title, |callout, title| {
-                callout.child(
+            .when_some(self.title, |said, title| {
+                said.child(
                     div()
                         .text_role(Role::Strong, cx)
                         .text_color(tint)
@@ -79,9 +84,25 @@ impl RenderOnce for Callout {
                 div()
                     .when(!titled, |message| message.text_color(tint))
                     .child(self.message),
-            )
-            .when(!self.actions.is_empty(), |callout| {
-                callout.child(h_flex().pt_1().gap_2().children(self.actions))
-            })
+            );
+        let box_ = div()
+            .p_3()
+            .rounded(theme.radius)
+            .bg(tint.opacity(0.12))
+            .text_role(Role::Body, cx);
+        let buttons = h_flex().gap_2().children(self.actions);
+        if self.actions_beside {
+            box_.flex()
+                .items_center()
+                .gap_3()
+                .child(said.flex_1().min_w_0())
+                .child(buttons)
+        } else {
+            box_.flex()
+                .flex_col()
+                .gap_1()
+                .child(said)
+                .when(has_actions, |callout| callout.child(buttons.pt_1()))
+        }
     }
 }

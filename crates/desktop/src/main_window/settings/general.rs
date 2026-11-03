@@ -264,22 +264,20 @@ pub(super) fn app_update_field(cx: &App) -> AnyElement {
                 format!("Version {} is available.", update.version),
                 cx,
             ))
-            .child(
-                Button::new("app-update-notes")
-                    .small()
-                    .ghost()
-                    .label("What's new")
-                    .on_click(move |_, _, cx| cx.open_url(&page)),
-            )
+            .when(installs, |row| {
+                row.child(
+                    Button::new("app-update-notes")
+                        .small()
+                        .ghost()
+                        .label("What's new")
+                        .on_click(move |_, _, cx| cx.open_url(&page)),
+                )
+            })
             .child(
                 Button::new("install-app-update")
                     .small()
                     .primary()
-                    .label(if installs {
-                        "Install and restart"
-                    } else {
-                        "Download"
-                    })
+                    .label(crate::app_update::install_label(&update))
                     .on_click(move |_, _, cx| crate::app_update::install(&update, cx)),
             )
         }

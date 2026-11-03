@@ -5,6 +5,7 @@ use gpui_kit::component::Sizable as _;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::notification::Notification;
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, Context, IntoElement, ParentElement as _, Styled as _, Window, div,
 };
@@ -16,8 +17,7 @@ use crate::backend::{Backend, act};
 use crate::ui::Callout;
 
 impl MainWindow {
-    /// A newer version of the app, until it is installed or put aside: Install, What's new and
-    /// Later (D111).
+    /// A newer version of the app, until it is installed or put aside (D111.4).
     pub(super) fn update_banner(cx: &App) -> Option<AnyElement> {
         let updates = crate::app_update::entity(cx);
         let read = updates.read(cx);
@@ -42,22 +42,7 @@ impl MainWindow {
                         "Install it with your package manager.".to_owned()
                     })
                     .title(format!("{app} {version} is available"))
-                    .action(
-                        Button::new("update-install")
-                            .small()
-                            .primary()
-                            .label(if installs { "Install" } else { "Download" })
-                            .on_click(move |_, _, cx| {
-                                crate::app_update::install(&update, cx);
-                            }),
-                    )
-                    .action(
-                        Button::new("update-notes")
-                            .small()
-                            .ghost()
-                            .label("What's new")
-                            .on_click(move |_, _, cx| cx.open_url(&page)),
-                    )
+                    .actions_beside()
                     .action(
                         Button::new("update-later")
                             .small()
@@ -68,6 +53,24 @@ impl MainWindow {
                                     updates.dismissed = Some(version.clone());
                                     cx.notify();
                                 });
+                            }),
+                    )
+                    .when(installs, |callout| {
+                        callout.action(
+                            Button::new("update-notes")
+                                .small()
+                                .ghost()
+                                .label("What's new")
+                                .on_click(move |_, _, cx| cx.open_url(&page)),
+                        )
+                    })
+                    .action(
+                        Button::new("update-install")
+                            .small()
+                            .primary()
+                            .label(crate::app_update::install_label(&update))
+                            .on_click(move |_, _, cx| {
+                                crate::app_update::install(&update, cx);
                             }),
                     ),
                 )
