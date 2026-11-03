@@ -33,10 +33,17 @@ pub enum Stage {
     Downloading {
         update: AppUpdate,
         progress: Arc<Progress>,
+        cancel: CancellationToken,
     },
     /// Started; the app is quitting so the installer can replace it.
     Installing,
+    /// The check the person asked for failed.
     Failed(String),
+    /// The update the person chose could not be downloaded or started.
+    InstallFailed {
+        update: AppUpdate,
+        message: String,
+    },
 }
 
 /// The update's stage, shown in Settings and over the downloads.
@@ -120,7 +127,8 @@ pub fn check(quiet: bool, cx: &mut App) {
         stage(cx),
         Stage::Checking | Stage::Downloading { .. } | Stage::Installing
     );
-    if busy || (quiet && matches!(stage(cx), Stage::Available(_))) {
+    let waiting_on_person = matches!(stage(cx), Stage::Available(_) | Stage::InstallFailed { .. });
+    if busy || (quiet && waiting_on_person) {
         return;
     }
     if !set_up() {
@@ -163,14 +171,17 @@ pub fn install(update: &AppUpdate, cx: &mut App) {
         return;
     };
     let progress = Arc::new(Progress::default());
+    let cancel = CancellationToken::new();
     set(
         Stage::Downloading {
             update: update.clone(),
             progress: Arc::clone(&progress),
+            cancel: cancel.clone(),
         },
         cx,
     );
-    let fetched = fetch(&download, &progress, cx);
+    let fetched = fetch(&download, &progress, &cancel, cx);
+    let update = update.clone();
     cx.spawn(async move |cx| {
         let shown = cx.spawn(async move |cx| {
             loop {
@@ -181,28 +192,51 @@ pub fn install(update: &AppUpdate, cx: &mut App) {
         let result = answered(fetched.await);
         drop(shown);
         cx.update(|cx| {
+            if cancel.is_cancelled() {
+                set(Stage::Available(update), cx);
+                return;
+            }
             match result.and_then(|path| updates::install(&path, kind).map_err(|e| e.to_string())) {
                 Ok(()) => {
                     set(Stage::Installing, cx);
                     lifecycle::quit(cx);
                 }
-                Err(message) => set(Stage::Failed(message), cx),
+                Err(message) => set(Stage::InstallFailed { update, message }, cx),
             }
         });
     })
     .detach();
 }
 
+/// Stops the download of an update, which goes back to being offered.
+pub fn cancel(cx: &App) {
+    if let Stage::Downloading { cancel, .. } = stage(cx) {
+        cancel.cancel();
+    }
+}
+
+/// How much of the download is done, in percent, once its size is known.
+#[must_use]
+pub fn percent(progress: &Progress) -> Option<f32> {
+    // In tenths of a percent, as whole numbers.
+    progress
+        .total()
+        .filter(|total| *total > 0)
+        .and_then(|total| u16::try_from(progress.done().min(total) * 1000 / total).ok())
+        .map(|tenths| f32::from(tenths) / 10.)
+}
+
 fn fetch(
     download: &UpdateDownload,
     progress: &Arc<Progress>,
+    cancel: &CancellationToken,
     cx: &App,
 ) -> tokio::task::JoinHandle<
     Result<Result<std::path::PathBuf, wirecatch_protocol::wire::ProtocolError>, Unopened>,
 > {
-    let (download, progress) = (download.clone(), Arc::clone(progress));
+    let (download, progress, cancel) = (download.clone(), Arc::clone(progress), cancel.clone());
     Backend::run(cx, move |manager| async move {
-        api::fetch_app_update(&manager, &download, progress, CancellationToken::new()).await
+        api::fetch_app_update(&manager, &download, progress, cancel).await
     })
 }
 
@@ -217,5 +251,15 @@ fn answered<T>(
         Ok(Ok(answer)) => answer.map_err(|e| e.message),
         Ok(Err(unopened)) => Err(unopened.reason.message),
         Err(e) => Err(format!("The update stopped unexpectedly ({e}).")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_download_of_unknown_size_has_no_percent() {
+        assert_eq!(percent(&Progress::default()), None);
     }
 }

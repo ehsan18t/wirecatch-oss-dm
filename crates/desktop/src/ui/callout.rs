@@ -23,6 +23,7 @@ pub struct Callout {
     message: SharedString,
     actions: Vec<AnyElement>,
     actions_beside: bool,
+    under: Option<AnyElement>,
 }
 
 impl Callout {
@@ -41,6 +42,7 @@ impl Callout {
             message: message.into(),
             actions: Vec::new(),
             actions_beside: false,
+            under: None,
         }
     }
 
@@ -51,6 +53,12 @@ impl Callout {
 
     pub fn action(mut self, action: impl IntoElement) -> Self {
         self.actions.push(action.into_any_element());
+        self
+    }
+
+    /// Draws `element` under the words, such as a progress bar.
+    pub fn under(mut self, element: impl IntoElement) -> Self {
+        self.under = Some(element.into_any_element());
         self
     }
 
@@ -84,7 +92,8 @@ impl RenderOnce for Callout {
                 div()
                     .when(!titled, |message| message.text_color(tint))
                     .child(self.message),
-            );
+            )
+            .children(self.under);
         let box_ = div()
             .p_3()
             .rounded(theme.radius)

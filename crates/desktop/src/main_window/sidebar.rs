@@ -39,11 +39,11 @@ pub(super) fn foot_page(screen: Screen) -> (&'static str, &'static str, Lucide) 
     }
 }
 
-/// An app update is ready: the About icon shows a dot, and About offers it.
+/// An app update is ready or could not be installed: the About icon shows a dot, and About offers it.
 pub(super) fn update_waiting(cx: &App) -> bool {
     matches!(
         crate::app_update::entity(cx).read(cx).stage,
-        crate::app_update::Stage::Available(_)
+        crate::app_update::Stage::Available(_) | crate::app_update::Stage::InstallFailed { .. }
     )
 }
 
