@@ -11,7 +11,7 @@ use wirecatch_protocol::app::{DownloadStatus, FixAction};
 use wirecatch_shell::api;
 
 use super::applies::{self, Applicable};
-use super::{Group, MainWindow, Screen, View, confirm, details, keymap, settings};
+use super::{Group, MainWindow, Screen, View, confirm, details, settings};
 use crate::backend::act;
 use crate::files;
 
@@ -265,9 +265,14 @@ fn general() -> Vec<Entry> {
         entry("Resume every download", "start all continue", |_, w, cx| {
             act(w.window_handle(), cx, api::resume_all);
         }),
-        entry("Keyboard shortcuts", "keys help", |_, w, cx| {
-            keymap::open(w, cx);
+        entry("Keyboard shortcuts", "keys help", |main, _, cx| {
+            main.open_screen(Screen::Shortcuts, cx);
         }),
+        entry(
+            "About",
+            "version licence license website report problem help support",
+            |main, _, cx| main.open_screen(Screen::About, cx),
+        ),
     ]
 }
 

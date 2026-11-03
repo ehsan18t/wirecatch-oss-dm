@@ -162,6 +162,8 @@ impl Group {
 pub enum Screen {
     Downloads,
     Settings,
+    Shortcuts,
+    About,
 }
 
 /// What the list shows.
@@ -493,12 +495,19 @@ impl MainWindow {
         cx.notify();
     }
 
-    pub(super) fn toggle_settings(&mut self, cx: &mut Context<'_, Self>) {
-        self.screen = match self.screen {
-            Screen::Downloads => Screen::Settings,
-            Screen::Settings => Screen::Downloads,
-        };
+    pub(super) fn open_screen(&mut self, screen: Screen, cx: &mut Context<'_, Self>) {
+        self.screen = screen;
         cx.notify();
+    }
+
+    /// Ctrl+,: Settings, or back to the downloads from there.
+    fn toggle_settings(&mut self, cx: &mut Context<'_, Self>) {
+        let screen = if self.screen == Screen::Settings {
+            Screen::Downloads
+        } else {
+            Screen::Settings
+        };
+        self.open_screen(screen, cx);
     }
 
     /// The full navigation over the list, beside the rail; it closes on a choice or a click
@@ -546,9 +555,14 @@ impl MainWindow {
         cx.notify();
     }
 
-    /// Escape outside a field clears the selection; a dialog closes on its own Escape first.
+    /// Escape outside a field goes back to the downloads, else clears the selection; a dialog
+    /// closes on its own Escape first.
     fn dismiss(&mut self, cx: &mut Context<'_, Self>) {
-        self.clear_selection();
+        if self.screen == Screen::Downloads {
+            self.clear_selection();
+        } else {
+            self.screen = Screen::Downloads;
+        }
         cx.notify();
     }
 
@@ -667,6 +681,11 @@ impl MainWindow {
 impl Render for MainWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let rail = self.shows_rail(window.viewport_size().width);
+        let navigation = if rail {
+            self.rail(cx).into_any_element()
+        } else {
+            self.sidebar(cx).into_any_element()
+        };
         let background = cx.theme().background;
         v_flex()
             .id("main-window")
@@ -689,7 +708,9 @@ impl Render for MainWindow {
             .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                 this.drop_paths(paths, window, cx);
             }))
-            .on_action(cx.listener(|_, _: &ShowShortcuts, window, cx| keymap::open(window, cx)))
+            .on_action(cx.listener(|this, _: &ShowShortcuts, _, cx| {
+                this.open_screen(Screen::Shortcuts, cx);
+            }))
             .on_action(cx.listener(|this, _: &NextRegion, window, cx| this.next_region(window, cx)))
             .on_action(
                 cx.listener(|this, _: &PreviousRegion, window, cx| this.next_region(window, cx)),
@@ -703,11 +724,7 @@ impl Render for MainWindow {
             .child(self.title_bar(cx))
             .child(match self.screen {
                 Screen::Downloads => layout::body(
-                    if rail {
-                        self.rail(cx).into_any_element()
-                    } else {
-                        self.sidebar(cx).into_any_element()
-                    },
+                    navigation,
                     self.command_bar(cx).into_any_element(),
                     v_flex()
                         .flex_1()
@@ -719,9 +736,15 @@ impl Render for MainWindow {
                         .child(self.list(cx)),
                 ),
                 Screen::Settings => self.settings(cx),
+                Screen::Shortcuts => {
+                    layout::body(navigation, div(), settings::shortcuts_screen(cx))
+                }
+                Screen::About => {
+                    layout::body(navigation, div(), settings::about_screen(&self.library, cx))
+                }
             })
             .when(
-                rail && self.drawer && self.screen == Screen::Downloads,
+                rail && self.drawer && self.screen != Screen::Settings,
                 |window| window.child(self.drawer(cx)),
             )
             .when_some(self.keyboard_menu.as_ref(), |window, (menu, _)| {

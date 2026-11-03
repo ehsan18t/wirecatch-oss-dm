@@ -3,7 +3,7 @@
 
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, Context, ElementId, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -58,11 +58,9 @@ impl MainWindow {
     /// The rail: an icon for each view, each queue's initials, and the screen switch.
     pub(super) fn rail(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let (view_items, queue_items) = self.rail_items(cx);
+        let foot = [Screen::Settings, Screen::Shortcuts, Screen::About]
+            .map(|screen| self.rail_foot_item(screen, cx));
         let theme = cx.theme();
-        let (switch_icon, switch_label) = match self.screen {
-            Screen::Downloads => (Icon::new(IconName::Settings), "Settings"),
-            Screen::Settings => (Icon::new(Lucide::Download), "Downloads"),
-        };
         v_flex()
             .id("rail")
             .w(px(WIDTH))
@@ -86,19 +84,42 @@ impl MainWindow {
                     .children(queue_items),
             )
             .child(
-                div()
+                v_flex()
                     .py_2()
+                    .gap_1()
                     .border_t_1()
                     .border_color(theme.sidebar_border)
                     .w_full()
-                    .flex()
-                    .justify_center()
-                    .child(
-                        rail_button("rail-switch", switch_label, cx)
-                            .child(switch_icon.with_size(tokens::ICON))
-                            .on_click(cx.listener(|this, _, _, cx| this.toggle_settings(cx))),
-                    ),
+                    .items_center()
+                    .children(foot),
             )
+    }
+
+    /// Settings, Keyboard shortcuts or About at the rail's foot.
+    fn rail_foot_item(&self, screen: Screen, cx: &mut Context<'_, Self>) -> AnyElement {
+        let theme = cx.theme();
+        let (id, label, icon) = sidebar::foot_page(screen);
+        let current = self.screen == screen;
+        let dot = screen == Screen::About && sidebar::update_waiting(cx);
+        rail_button(id, label, cx)
+            .relative()
+            .when(current, |item| {
+                item.bg(theme.sidebar_accent).text_color(theme.primary)
+            })
+            .child(Icon::new(icon).with_size(tokens::ICON))
+            .when(dot, |item| {
+                item.child(
+                    div()
+                        .absolute()
+                        .top(px(7.))
+                        .right(px(7.))
+                        .size(px(7.))
+                        .rounded_full()
+                        .bg(theme.primary),
+                )
+            })
+            .on_click(cx.listener(move |this, _, _, cx| this.open_screen(screen, cx)))
+            .into_any_element()
     }
 
     /// The rail's buttons: one per view, then one per queue.

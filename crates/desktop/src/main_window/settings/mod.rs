@@ -14,26 +14,28 @@ mod speed;
 use std::rc::Rc;
 use std::time::Duration;
 
+use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::group_box::GroupBoxVariant;
 use gpui_kit::component::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::component::setting::{SelectIndex, SettingField, SettingPage, Settings};
-use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex};
+use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, h_flex};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Div, Entity, Focusable as _, IntoElement as _,
-    ParentElement as _, SharedString, StyleRefinement, Styled as _, Subscription, Task, WeakEntity,
+    AnyElement, App, AppContext as _, Context, Div, Entity, Focusable as _,
+    InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+    StatefulInteractiveElement as _, StyleRefinement, Styled as _, Subscription, Task, WeakEntity,
     Window, div, px,
 };
 use wirecatch_protocol::app::{AppSettings, AppSettingsPatch};
 use wirecatch_shell::api;
 
-use super::{MainWindow, sidebar};
+use super::{MainWindow, Screen, sidebar};
 use crate::backend::act;
 use crate::library::Library;
-use crate::ui::{Role, Typed as _};
+use crate::ui::{Role, Typed as _, tokens};
 
 impl MainWindow {
-    /// The settings pages with their own navigation, which ends in the way back to the downloads
-    /// where the main navigation has Settings.
+    /// The settings pages with their own navigation, under the way back to the downloads and over
+    /// the foot the main navigation has. gpui-kit's settings own that column, so both lie over it.
     pub(super) fn settings(&self, cx: &mut Context<'_, Self>) -> Div {
         let pages = screen(
             &self.library,
@@ -41,17 +43,76 @@ impl MainWindow {
             self.settings_on,
             cx,
         );
-        let switch = self.screen_switch(cx);
-        div().relative().flex_1().min_h_0().child(pages).child(
-            div()
-                .absolute()
-                .bottom_0()
-                .left_0()
-                .w(px(sidebar::WIDTH))
-                .bg(cx.theme().sidebar)
-                .child(switch),
-        )
+        let foot = self.foot(cx);
+        let theme = cx.theme();
+        let back = h_flex()
+            .id("back-to-downloads")
+            .h(px(30.))
+            .px_2()
+            .gap_2()
+            .rounded(theme.radius)
+            .cursor_pointer()
+            .hover(|item| item.bg(theme.list_hover))
+            .child(Icon::new(Lucide::ArrowLeft).with_size(tokens::ICON))
+            .child("Back to downloads")
+            .on_click(cx.listener(|this, _, _, cx| this.open_screen(Screen::Downloads, cx)));
+        div()
+            .relative()
+            .flex_1()
+            .min_h_0()
+            .child(pages)
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .w(px(sidebar::WIDTH))
+                    .p_2()
+                    .child(back),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .bottom_0()
+                    .left_0()
+                    .w(px(sidebar::WIDTH))
+                    .bg(theme.sidebar)
+                    .child(foot),
+            )
     }
+}
+
+/// The room the way back takes over gpui-kit's search field.
+const BACK_HEIGHT: f32 = 38.;
+
+/// One page drawn like a settings page, in the main navigation's place: gpui-kit's settings with
+/// no room for their own column.
+fn lone_page(id: &'static str, page: SettingPage, cx: &App) -> impl IntoElement + use<> {
+    div().flex_1().min_h_0().child(
+        Settings::new(id)
+            .small()
+            .sidebar_width(px(0.))
+            .sidebar_size_range(px(0.)..px(0.))
+            .with_group_variant(GroupBoxVariant::Outline)
+            .page(page.header_style(&page_header(cx))),
+    )
+}
+
+/// The About screen.
+pub(super) fn about_screen(library: &Entity<Library>, cx: &App) -> impl IntoElement + use<> {
+    lone_page("about", about::page(library), cx)
+}
+
+/// The Keyboard shortcuts screen.
+pub(super) fn shortcuts_screen(cx: &App) -> impl IntoElement + use<> {
+    lone_page("shortcuts", super::keymap::page(), cx)
+}
+
+fn page_header(cx: &App) -> StyleRefinement {
+    StyleRefinement::default()
+        .px_5()
+        .py_3()
+        .text_role(Role::PageTitle, cx)
 }
 
 /// How long a list field waits after the last keystroke before saving.
@@ -70,7 +131,6 @@ pub(super) enum Page {
     Media,
     Speed,
     Network,
-    About,
 }
 
 impl Page {
@@ -84,13 +144,24 @@ impl Page {
             Self::Media => "Media",
             Self::Speed => "Speed and queues",
             Self::Network => "Network",
-            Self::About => "About",
+        }
+    }
+
+    fn icon(self) -> Lucide {
+        match self {
+            Self::General => Lucide::SlidersHorizontal,
+            Self::Files => Lucide::Folder,
+            Self::Notifications => Lucide::Bell,
+            Self::Browser => Lucide::Globe,
+            Self::Media => Lucide::Film,
+            Self::Speed => Lucide::Gauge,
+            Self::Network => Lucide::Network,
         }
     }
 }
 
 /// Every page, in the order D85 gives.
-pub(super) const PAGES: [Page; 8] = [
+pub(super) const PAGES: [Page; 7] = [
     Page::General,
     Page::Files,
     Page::Notifications,
@@ -98,7 +169,6 @@ pub(super) const PAGES: [Page; 8] = [
     Page::Media,
     Page::Speed,
     Page::Network,
-    Page::About,
 ];
 
 /// The page the settings screen opens on. A new `opening` starts the screen afresh on `page`,
@@ -123,8 +193,8 @@ fn page(
         Page::Media => media::page(library, cx),
         Page::Speed => speed::page(library, main, cx),
         Page::Network => network::page(library, cx),
-        Page::About => about::page(library),
     }
+    .icon(Icon::new(page.icon()))
 }
 
 /// Every page, headed like the downloads' page.
@@ -134,10 +204,7 @@ fn screen(
     open_on: OpenOn,
     cx: &App,
 ) -> Settings {
-    let header = StyleRefinement::default()
-        .px_5()
-        .py_3()
-        .text_role(Role::PageTitle, cx);
+    let header = page_header(cx);
     let first = open_on
         .page
         .and_then(|page| PAGES.iter().position(|known| *known == page))
@@ -150,6 +217,7 @@ fn screen(
         .small()
         .sidebar_width(px(sidebar::WIDTH))
         .sidebar_size_range(px(sidebar::WIDTH)..px(sidebar::WIDTH))
+        .header_style(&StyleRefinement::default().mt(px(BACK_HEIGHT)))
         .with_group_variant(GroupBoxVariant::Outline)
         .pages(PAGES.map(|shown| page(shown, library, main, cx).header_style(&header)))
 }

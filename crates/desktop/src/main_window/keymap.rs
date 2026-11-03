@@ -1,12 +1,12 @@
 //! Every keyboard shortcut of the main window, in one table: it binds the keys, and the Keyboard
-//! shortcuts dialog lists them, so a shortcut changes in one place.
+//! shortcuts page lists them, so a shortcut changes in one place.
 
 use std::rc::Rc;
 
-use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
+use gpui_kit::component::setting::{SettingGroup, SettingItem, SettingPage};
+use gpui_kit::component::{ActiveTheme as _, h_flex};
 use gpui_kit::{
-    Action, App, KeyBinding, KeyBindingContextPredicate, ParentElement as _, Styled as _, Window,
-    div, px,
+    Action, App, KeyBinding, KeyBindingContextPredicate, ParentElement as _, Styled as _, div, px,
 };
 
 use super::{
@@ -17,10 +17,8 @@ use super::{
 };
 use crate::ui::{Role, Typed as _};
 
-const WIDTH: f32 = 520.;
-
 /// One shortcut: its keys as GPUI writes them, what it does, where it works, and what the
-/// shortcuts dialog says (keys with the same words share a line; `None` is left out).
+/// shortcuts page says (keys with the same words share a line; `None` is left out).
 struct Shortcut {
     keys: &'static str,
     action: fn() -> Box<dyn Action>,
@@ -35,7 +33,7 @@ const NUDGE: &str = "Move the selection up or down in its queue";
 const MENU: &str = "Open the menu of the selected downloads";
 const REGION: &str = "Move between the search and the list";
 
-/// Every shortcut, in the order the dialog lists them.
+/// Every shortcut, in the order the page lists them.
 fn shortcuts() -> [Shortcut; 26] {
     let on = |keys, action: fn() -> Box<dyn Action>, help| Shortcut {
         keys,
@@ -97,19 +95,19 @@ fn shortcuts() -> [Shortcut; 26] {
         on(
             "escape",
             || Box::new(Dismiss),
-            Some("Close a dialog, or clear the selection"),
+            Some("Close a dialog, go back to the downloads, or clear the selection"),
         ),
         on(
             "f1",
             || Box::new(ShowShortcuts),
-            Some("Show these shortcuts"),
+            Some("Show keyboard shortcuts"),
         ),
         on("f6", || Box::new(NextRegion), Some(REGION)),
         on("shift-f6", || Box::new(PreviousRegion), Some(REGION)),
     ]
 }
 
-/// The shortcut the dialog does not list: Down leaving the search, where the field's own Down
+/// The shortcut the page does not list: Down leaving the search, where the field's own Down
 /// would otherwise win.
 fn quiet() -> [Shortcut; 1] {
     [Shortcut {
@@ -161,7 +159,7 @@ fn label(keys: &str) -> String {
         .join("+")
 }
 
-/// What the dialog lists: each line's words with every key that does it.
+/// What the page lists: each line's words with every key that does it.
 fn lines() -> Vec<(&'static str, Vec<String>)> {
     let mut lines: Vec<(&'static str, Vec<String>)> = Vec::new();
     for shortcut in shortcuts() {
@@ -177,28 +175,29 @@ fn lines() -> Vec<(&'static str, Vec<String>)> {
     lines
 }
 
-/// The Keyboard shortcuts dialog.
-pub fn open(window: &mut Window, cx: &mut App) {
-    crate::ui::dialog::open(window, cx, |dialog, _, cx| {
-        let rows = lines().into_iter().map(|(help, keys)| {
+/// The Keyboard shortcuts page.
+pub(super) fn page() -> SettingPage {
+    let rows = lines().into_iter().map(|(help, keys)| {
+        let search = keys.join(" ");
+        SettingItem::render(move |_, _, cx| {
             h_flex()
+                .w_full()
                 .gap_4()
-                .py_1()
                 .child(div().flex_1().text_role(Role::Body, cx).child(help))
-                .child(h_flex().gap_1().children(keys.into_iter().map(|key| {
+                .child(h_flex().gap_1().children(keys.iter().map(|key| {
                     div()
                         .px_1p5()
                         .rounded(px(4.))
                         .bg(cx.theme().muted)
                         .text_role(Role::Meta, cx)
-                        .child(key)
+                        .child(key.clone())
                 })))
-        });
-        dialog
-            .title("Keyboard shortcuts")
-            .w(px(WIDTH))
-            .child(v_flex().children(rows))
+        })
+        .keywords([help.to_owned(), search])
     });
+    SettingPage::new("Keyboard shortcuts")
+        .resettable(false)
+        .group(SettingGroup::new().items(rows))
 }
 
 #[cfg(test)]
