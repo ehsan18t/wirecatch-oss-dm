@@ -89,6 +89,8 @@ pub struct DownloadWindow {
     addon_asked: Option<AddonId>,
     /// The add-on this window's page has waited for, kept once the question ends.
     addon_awaited: Option<AddonId>,
+    /// The page this window last saw being read, kept once the question ends.
+    reading: Option<String>,
     busy: bool,
     problem: Option<String>,
     /// The content's height when last drawn, for fitting the window to it.
@@ -131,6 +133,7 @@ impl DownloadWindow {
             over: false,
             addon_asked: None,
             addon_awaited: None,
+            reading: None,
             name: cx.new(|cx| InputState::new(window, cx)),
             core_name: None,
             queue: None,
@@ -177,8 +180,16 @@ impl DownloadWindow {
                 if let Some(Question::Addon(item)) = &question {
                     view.addon_awaited = Some(item.addon.id);
                 }
+                match &question {
+                    Some(Question::Reading(reading)) => view.reading = Some(reading.url.clone()),
+                    Some(Question::Addon(item)) => view.reading = Some(item.url.clone()),
+                    Some(_) => view.reading = None,
+                    None => {}
+                }
+                if question.is_some() {
+                    view.earlier = earlier.map(|row| row.id);
+                }
                 view.question = question;
-                view.earlier = earlier.map(|row| row.id);
                 cx.notify();
             });
         })
@@ -321,10 +332,7 @@ impl Render for DownloadWindow {
                 self.media_form(&choice, window, cx)
             }
             (Shows::Download(id), _) => self.progress(id, cx),
-            (Shows::Question(_), _) if self.over => match self.addon_failure(cx) {
-                Some(message) => addon_failed_note(&message, cx),
-                None => closed_note(cx),
-            },
+            (Shows::Question(_), _) if self.over => self.over_note(cx),
             (Shows::Question(_), None) => div().into_any_element(),
             (Shows::Question(_), Some(question)) => match question.clone() {
                 Question::Capture(capture) => self.capture(&capture, cx),
@@ -1329,6 +1337,24 @@ impl DownloadWindow {
         }
     }
 
+    fn over_note(&self, cx: &mut Context<'_, Self>) -> AnyElement {
+        if let Some(message) = self.addon_failure(cx) {
+            failed_note("The media add-on could not be installed", &message, cx)
+        } else if let Some(message) = self.reading_failure(cx) {
+            failed_note("This video could not be downloaded", &message, cx)
+        } else {
+            closed_note(cx)
+        }
+    }
+
+    /// Why the page this window was reading failed; its question ends when it does.
+    fn reading_failure(&self, cx: &App) -> Option<String> {
+        let link = self.reading.as_deref()?;
+        let library = self.library.read(cx);
+        let row = failed_video(&library.downloads, link, self.earlier)?;
+        row.error.as_ref().map(|error| error.message.clone())
+    }
+
     fn install_addon(&mut self, addon: AddonId, cx: &mut Context<'_, Self>) {
         self.addon_asked = Some(addon);
         self.problem = None;
@@ -1354,28 +1380,23 @@ impl DownloadWindow {
     }
 }
 
-/// The add-on failed, which ended the page's question: the person starts the video again.
-fn addon_failed_note(message: &str, cx: &mut Context<'_, DownloadWindow>) -> AnyElement {
+/// What ended the page's question; the list's row has Try again.
+fn failed_note(
+    title: &'static str,
+    message: &str,
+    cx: &mut Context<'_, DownloadWindow>,
+) -> AnyElement {
     v_flex()
         .gap_4()
-        .child(
-            div()
-                .text_role(Role::Title, cx)
-                .child("The media add-on could not be installed"),
-        )
+        .child(div().text_role(Role::Title, cx).child(title))
         .child(
             div()
                 .text_color(cx.theme().danger)
                 .child(message.to_owned()),
         )
         .child(actions(vec![
-            button(
-                "addon-failed-close",
-                "Close",
-                ButtonVariant::Secondary,
-                false,
-            )
-            .on_click(cx.listener(|view, _, _, cx| view.close(cx))),
+            button("failed-close", "Close", ButtonVariant::Secondary, false)
+                .on_click(cx.listener(|view, _, _, cx| view.close(cx))),
         ]))
         .into_any_element()
 }
@@ -1431,10 +1452,51 @@ fn put_name(state: Entity<InputState>, name: String, window: AnyWindowHandle, cx
     });
 }
 
+/// The newest failed attempt at `link`, not counting the one from before this question.
+fn failed_video<'a>(
+    downloads: &'a [DownloadSummary],
+    link: &str,
+    earlier: Option<DownloadId>,
+) -> Option<&'a DownloadSummary> {
+    downloads
+        .iter()
+        .filter(|row| {
+            row.url == link && row.status == DownloadStatus::Failed && Some(row.id) != earlier
+        })
+        .max_by_key(|row| row.id)
+}
+
 #[cfg(test)]
 mod tests {
     use gpui_kit::{Render, TestAppContext};
+    use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
     use wirecatch_protocol::rules::Rule;
+
+    fn row(id: i64, url: &str, status: DownloadStatus) -> DownloadSummary {
+        let mut row = wirecatch_test_support::downloads::download(id);
+        row.url = url.to_owned();
+        row.status = status;
+        row
+    }
+
+    #[test]
+    fn a_window_finds_the_video_it_was_reading_failed() {
+        use super::failed_video;
+        use wirecatch_protocol::DownloadId;
+
+        let page = "https://example.com/watch/1";
+        let downloads = [
+            row(1, page, DownloadStatus::Failed),
+            row(2, "https://example.com/other", DownloadStatus::Failed),
+            row(3, page, DownloadStatus::Failed),
+        ];
+        let found = failed_video(&downloads, page, Some(DownloadId(1)));
+        assert_eq!(found.map(|row| row.id), Some(DownloadId(3)));
+        // Only the attempt from before this question failed: this one was answered elsewhere.
+        assert!(failed_video(&downloads[..1], page, Some(DownloadId(1))).is_none());
+        let going = [row(4, page, DownloadStatus::Downloading)];
+        assert!(failed_video(&going, page, None).is_none());
+    }
 
     struct NameField(gpui_kit::Entity<super::InputState>);
 
