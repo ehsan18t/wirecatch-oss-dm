@@ -164,7 +164,9 @@ impl Library {
     }
 
     fn apply(&mut self, event: UiEvent, cx: &mut Context<'_, Self>) {
-        crate::download_windows::follow(&event, cx);
+        // Opening a window draws it, and its first draw reads this library: not during this update.
+        let opening = event.clone();
+        cx.defer(move |cx| crate::download_windows::follow(&opening, cx));
         crate::download_windows::finished::follow(&event, cx);
         if let Some(asked) = asked_question(&event)
             && !self.open_questions.contains(&asked)

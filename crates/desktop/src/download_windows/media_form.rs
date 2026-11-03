@@ -1,40 +1,44 @@
-//! The quality window's form: quality, Save as, subtitles, chapters and where the file goes.
+//! The quality window's form: quality, format, subtitles, chapters and where the file goes.
 
-use std::path::Path;
+use std::rc::Rc;
 
 use gpui_kit::component::IndexPath;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
-use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::combobox::{Combobox, ComboboxEvent, ComboboxState};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::searchable_list::{SearchableListItem, SearchableVec};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::switch::Switch;
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, Hsla, InteractiveElement as _,
     IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Window, div, px, relative,
+    Styled as _, Subscription, Window, div, px,
 };
-use wirecatch_protocol::QueueId;
 use wirecatch_protocol::app::{
-    AddonState, Category, MediaChoice, MediaOption, MediaSelection, OutputFormat,
+    AddonId, AddonState, Category, MediaChoice, MediaOption, MediaSelection, OutputFormat,
+    StreamAction,
 };
+use wirecatch_protocol::{QuestionId, QueueId};
 use wirecatch_shell::activity::format_bytes;
-use wirecatch_shell::host;
+use wirecatch_shell::{api, host};
 
 use super::media_output::{
-    OutputChoice, conversion_note, fit_for, format_label, kbps_for, quality_notes, size_for,
-    subtitle_labels,
+    OutputChoice, conversion_note, fit_for, format_label, kbps_for, quality_notes, shown_subtitles,
+    size_for, video_length,
 };
-use super::view::{automatic_reason, folder_box, heading};
+use super::view::{folder_box, queue_badge_picker};
 use crate::backend::Backend;
 use crate::library::Library;
-use crate::ui::{Field, Role, Typed as _};
+use crate::ui::{Role, Typed as _};
 use crate::{files, text};
 
 const LABEL_WIDTH: f32 = 64.;
+/// How far the notes under a control sit in: the label and the gap after it.
+const NOTE_INSET: f32 = 72.;
+const BEST_TINT: f32 = 0.14;
 
 /// What the person decided.
 pub enum MediaAnswer {
@@ -90,7 +94,7 @@ impl Quality {
                         .px_1p5()
                         .rounded(px(4.))
                         .text_xs()
-                        .bg(self.accent.opacity(0.14))
+                        .bg(self.accent.opacity(BEST_TINT))
                         .text_color(self.accent)
                         .child("Best"),
                 )
@@ -125,6 +129,7 @@ impl SearchableListItem for Quality {
 }
 
 type Picker<T> = Entity<SelectState<SearchableVec<Choice<T>>>>;
+type Subtitles = Entity<ComboboxState<SearchableVec<Choice<String>>>>;
 
 pub struct MediaForm {
     library: Entity<Library>,
@@ -135,18 +140,18 @@ pub struct MediaForm {
     folder: Option<String>,
     /// Where audio only goes when its type decides: the question names only the video's folder.
     audio_folder: Option<String>,
-    queue_id: QueueId,
-    where_open: bool,
-    every_video: Option<bool>,
+    /// The queue picked; `None` is Automatic.
+    queue: Option<QueueId>,
     /// The selects list what the quality and format offer: they are rebuilt on the next draw.
     stale: bool,
     /// An answer is on its way.
     pub busy: bool,
+    /// A quality that needs the media add-on: it is sent once the add-on is in.
+    awaiting_addon: Option<MediaSelection>,
     quality: Entity<SelectState<SearchableVec<Quality>>>,
     format: Picker<OutputFormat>,
     kbps: Picker<Option<u32>>,
-    queue: Picker<QueueId>,
-    subtitles: Entity<ComboboxState<SearchableVec<Choice<String>>>>,
+    subtitles: Subtitles,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -159,9 +164,14 @@ impl MediaForm {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) -> Self {
-        let output = OutputChoice::proposed(&choice.start);
+        let mut output = OutputChoice::proposed(&choice.start);
         let option_id = choice.start.option_id.clone();
-        let queue_id = choice.queue;
+        let fit = choice
+            .options
+            .iter()
+            .find(|option| option.id == option_id)
+            .and_then(|option| fit_for(option, output.format));
+        output.kbps = kbps_for(fit, output.format, output.kbps);
 
         let quality = cx.new(|cx| {
             SelectState::new(SearchableVec::new(Vec::new()), None, window, cx).searchable(true)
@@ -169,8 +179,6 @@ impl MediaForm {
         let format =
             cx.new(|cx| SelectState::new(SearchableVec::new(Vec::new()), None, window, cx));
         let kbps = cx.new(|cx| SelectState::new(SearchableVec::new(Vec::new()), None, window, cx));
-
-        let queue = queue_picker(&library, queue_id, window, cx);
         let subtitles = subtitle_picker(&choice, &output, window, cx);
         let audio_folder = Backend::now(cx).0.and_then(|manager| {
             let folder = manager.type_folder(Category::Audio).ok()?;
@@ -179,8 +187,8 @@ impl MediaForm {
 
         let title = choice.title.clone();
         let file_name = cx.new(|cx| InputState::new(window, cx).placeholder(title));
-
-        let subscriptions = follow_pickers(&quality, &format, &kbps, &queue, &subtitles, cx);
+        let mut subscriptions = follow_pickers(&quality, &format, &kbps, &subtitles, cx);
+        subscriptions.push(cx.observe(&library, |form, _, cx| form.addon_moved(cx)));
 
         Self {
             library,
@@ -190,21 +198,19 @@ impl MediaForm {
             file_name,
             folder: None,
             audio_folder,
-            queue_id,
-            where_open: false,
-            every_video: None,
+            queue: None,
             stale: true,
             busy: false,
+            awaiting_addon: None,
             quality,
             format,
             kbps,
-            queue,
             subtitles,
             _subscriptions: subscriptions,
         }
     }
 
-    pub fn question(&self) -> wirecatch_protocol::QuestionId {
+    pub fn question(&self) -> QuestionId {
         self.choice.id
     }
 
@@ -334,8 +340,7 @@ impl MediaForm {
         let fit = picked.as_ref().and_then(|option| fit_for(option, format));
         let mut rates: Vec<Choice<Option<u32>>> = Vec::new();
         if let Some(fit) = fit.filter(|fit| {
-            !fit.format.kbps_choices().is_empty()
-                && fit.audio != wirecatch_protocol::app::StreamAction::Encode
+            !fit.format.kbps_choices().is_empty() && fit.audio != StreamAction::Encode
         }) {
             let usual = fit
                 .audio_kbps
@@ -356,51 +361,24 @@ impl MediaForm {
         });
     }
 
-    /// Where the file goes unless the person picked a folder: its queue's, or the one for its type.
+    /// Where the file goes unless the person picked a folder here: the one picked when the link
+    /// was added, its queue's, or the one for its type.
     fn app_folder(&self, cx: &App) -> String {
+        let Some(type_folder) = &self.choice.type_folder else {
+            return self.choice.folder.clone();
+        };
         let library = self.library.read(cx);
         let own = library
-            .queue(self.queue_id)
+            .queue(self.queue.unwrap_or(self.choice.queue))
             .and_then(|queue| queue.settings.folder.own_ref())
             .map(|folder| folder.0.clone());
         if let Some(own) = own {
             return own;
         }
-        let Some(type_folder) = &self.choice.type_folder else {
-            return self.choice.folder.clone();
-        };
         self.audio_folder
             .clone()
             .filter(|_| self.picked().is_some_and(|option| option.audio_only))
             .unwrap_or_else(|| type_folder.clone())
-    }
-
-    fn queue_name(&self, cx: &App) -> String {
-        self.library
-            .read(cx)
-            .queue(self.queue_id)
-            .map(|queue| queue.settings.name.clone())
-            .unwrap_or_default()
-    }
-
-    /// Why the download goes to the queue shown.
-    fn queue_line(&self, cx: &App) -> String {
-        let name = self.queue_name(cx);
-        if self.queue_id != self.choice.queue {
-            return format!("Goes to {name}, as you picked");
-        }
-        let (lead, value) = automatic_reason(&name, &self.choice.queue_reason);
-        value.map_or(lead.clone(), |value| format!("{lead} {value}"))
-    }
-
-    fn every_video_shown(&self, cx: &App) -> bool {
-        self.every_video.unwrap_or_else(|| {
-            let library = self.library.read(cx);
-            library
-                .settings
-                .as_ref()
-                .is_some_and(|settings| !settings.media.ask_each_time)
-        })
     }
 
     fn needs_install(&self, cx: &App) -> bool {
@@ -414,6 +392,11 @@ impl MediaForm {
     }
 
     fn join_note(&self, cx: &App) -> Option<String> {
+        if self.awaiting_addon.is_some() {
+            return Some(
+                "Installing the media add-on. The download starts when it is ready.".to_owned(),
+            );
+        }
         if !self.picked()?.needs_ffmpeg {
             return None;
         }
@@ -429,13 +412,11 @@ impl MediaForm {
                 host::CHANNEL.name(),
             ));
         }
-        (self.output.format == OutputFormat::Original).then(|| {
-            "Video and audio download separately and are merged into one file at the end."
-                .to_owned()
-        })
+        (self.output.format == OutputFormat::Original)
+            .then(|| "Video and audio are merged into one file at the end.".to_owned())
     }
 
-    fn answer(&self, later: bool, cx: &mut Context<'_, Self>) {
+    fn answer(&mut self, later: bool, cx: &mut Context<'_, Self>) {
         let Some(option) = self.picked() else {
             return;
         };
@@ -444,25 +425,87 @@ impl MediaForm {
         let name = self.file_name.read(cx).value().trim().to_owned();
         selection.file_name = (!name.is_empty()).then_some(name);
         selection.folder.clone_from(&self.folder);
-        selection.queue = (self.queue_id != self.choice.queue).then_some(self.queue_id);
+        selection.queue = self.queue.filter(|queue| *queue != self.choice.queue);
         selection.later = later;
         self.output.apply(option, &self.choice, &mut selection);
-        selection.every_video = self
-            .library
-            .read(cx)
-            .settings
-            .is_some()
-            .then(|| self.every_video_shown(cx));
-        cx.emit(MediaAnswer::Choose(Box::new(selection)));
+        selection.every_video = None;
+        if self.needs_install(cx) {
+            self.install_then(selection, cx);
+        } else {
+            cx.emit(MediaAnswer::Choose(Box::new(selection)));
+        }
     }
 
-    fn save_as(&self, cx: &App) -> Option<AnyElement> {
+    /// Installs the media add-on; `addon_moved` sends `selection` once it is in.
+    fn install_then(&mut self, selection: MediaSelection, cx: &mut Context<'_, Self>) {
+        self.awaiting_addon = Some(selection);
+        cx.notify();
+        let started = Backend::run(cx, move |manager| async move {
+            api::install_addon(&manager, AddonId::Media).await
+        });
+        cx.spawn(async move |form, cx| {
+            let failed = !matches!(started.await, Ok(Ok(Ok(()))));
+            if failed {
+                _ = form.update(cx, |form: &mut Self, cx| {
+                    form.awaiting_addon = None;
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    fn addon_moved(&mut self, cx: &mut Context<'_, Self>) {
+        if self.awaiting_addon.is_none() {
+            return;
+        }
+        let state = self
+            .library
+            .read(cx)
+            .addons
+            .first()
+            .map(|addon| addon.state.clone());
+        match state {
+            Some(AddonState::Installed | AddonState::UpdateAvailable) => {
+                if let Some(selection) = self.awaiting_addon.take() {
+                    cx.emit(MediaAnswer::Choose(Box::new(selection)));
+                }
+            }
+            Some(AddonState::Installing { .. }) => {}
+            _ => self.awaiting_addon = None,
+        }
+        cx.notify();
+    }
+
+    fn heading(&self, cx: &mut Context<'_, Self>) -> AnyElement {
+        let page = self.choice.page_url.clone().unwrap_or_default();
+        let host_name = text::host(&page).to_owned();
+        let meta = match self.choice.duration_ms.map(video_length) {
+            Some(length) => format!("{host_name} · {length}"),
+            None => host_name,
+        };
+        let title: SharedString = self.choice.title.clone().into();
+        let tip = title.clone();
+        v_flex()
+            .child(
+                div()
+                    .id("media-title")
+                    .truncate()
+                    .text_role(Role::Strong, cx)
+                    .child(title)
+                    .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx)),
+            )
+            .child(div().text_role(Role::Meta, cx).child(meta))
+            .into_any_element()
+    }
+
+    fn format_row(&self, cx: &App) -> Option<AnyElement> {
         let option = self.picked()?;
         (option.outputs.len() > 1).then(|| {
             let format = self.output.format;
             let rates = fit_for(option, format).is_some() && !format.kbps_choices().is_empty();
             row(
-                "Save as",
+                "Format",
                 h_flex()
                     .w_full()
                     .gap_2()
@@ -470,7 +513,7 @@ impl MediaForm {
                         div()
                             .flex_1()
                             .min_w_0()
-                            .child(Select::new(&self.format).accessibility_label("Save as")),
+                            .child(Select::new(&self.format).accessibility_label("Format")),
                     )
                     .when(rates, |line| {
                         line.child(
@@ -494,13 +537,21 @@ impl MediaForm {
             .and_then(|option| fit_for(option, self.output.format))
             .is_some_and(|fit| fit.embeds_subtitles);
         Some(if embeds {
-            Checkbox::new("media-subtitle-files")
-                .label("Save subtitles as .srt files next to the video")
-                .checked(self.output.subtitle_files)
-                .on_click(cx.listener(|form, on: &bool, _, cx| {
-                    form.output.subtitle_files = *on;
-                    cx.notify();
-                }))
+            let label = "Save as .srt files next to the video";
+            h_flex()
+                .ml(px(NOTE_INSET))
+                .gap_2()
+                .child(
+                    Switch::new("media-subtitle-files")
+                        .small()
+                        .checked(self.output.subtitle_files)
+                        .accessibility_label(label)
+                        .on_click(cx.listener(|form, on: &bool, _, cx| {
+                            form.output.subtitle_files = *on;
+                            cx.notify();
+                        })),
+                )
+                .child(div().text_role(Role::Meta, cx).child(label))
                 .into_any_element()
         } else {
             note(
@@ -517,61 +568,71 @@ impl MediaForm {
                 .and_then(|option| fit_for(option, self.output.format))
                 .is_some_and(|fit| fit.chapters);
         offered.then(|| {
-            h_flex()
-                .w_full()
-                .justify_between()
-                .child("Add the video's chapters")
-                .child(
-                    Switch::new("media-chapters")
-                        .small()
-                        .checked(self.output.chapters)
-                        .accessibility_label("Add the video's chapters")
-                        .on_click(cx.listener(|form, on: &bool, _, cx| {
-                            form.output.chapters = *on;
-                            cx.notify();
-                        })),
-                )
-                .into_any_element()
+            let label = "Add the video's chapters";
+            row(
+                "Chapters",
+                h_flex()
+                    .gap_2()
+                    .child(
+                        Switch::new("media-chapters")
+                            .small()
+                            .checked(self.output.chapters)
+                            .accessibility_label(label)
+                            .on_click(cx.listener(|form, on: &bool, _, cx| {
+                                form.output.chapters = *on;
+                                cx.notify();
+                            })),
+                    )
+                    .child(div().text_role(Role::Meta, cx).child(label)),
+                cx,
+            )
         })
     }
 
-    fn every_video_row(&self, cx: &mut Context<'_, Self>) -> Vec<AnyElement> {
-        let on = self.every_video_shown(cx);
-        let mut rows = vec![
-            Checkbox::new("media-every-video")
-                .label("Use these choices for every video")
-                .checked(on)
-                .on_click(cx.listener(|form, on: &bool, _, cx| {
-                    form.every_video = Some(*on);
+    fn folder_row(&self, cx: &mut Context<'_, Self>) -> AnyElement {
+        let shown = self.folder.clone().unwrap_or_else(|| self.app_folder(cx));
+        let pick = cx.listener(|_, _, _, cx| {
+            let picked = files::choose_folder(cx);
+            cx.spawn(async move |form, cx| {
+                let Some(folder) = picked.await else {
+                    return;
+                };
+                _ = form.update(cx, |form: &mut Self, cx| {
+                    form.folder = (folder != form.app_folder(cx)).then_some(folder);
                     cx.notify();
-                }))
-                .into_any_element(),
-        ];
-        if on {
-            let at = self.choice.missing_quality.as_ref().map_or_else(
-                || "with these choices".to_owned(),
-                |missing| format!("at {missing}, as saved"),
-            );
-            rows.push(note(
-                format!("Videos will then download right away {at}. You can change this in Settings, Media."),
-                cx,
-            ));
-        }
-        rows
+                });
+            })
+            .detach();
+        });
+        row("Folder", folder_box("media-folder", &shown, pick, cx), cx)
     }
 
     fn buttons(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let busy = self.busy;
+        let busy = self.busy || self.awaiting_addon.is_some();
+        let form = cx.entity().downgrade();
+        let choose = Rc::new(move |queue: Option<QueueId>, cx: &mut App| {
+            _ = form.update(cx, |form, cx| {
+                form.queue = queue;
+                cx.notify();
+            });
+        });
         h_flex()
             .w_full()
             .pt_1()
             .gap_2()
-            .justify_end()
+            .child(h_flex().flex_1().min_w_0().child(queue_badge_picker(
+                "media-queue",
+                self.choice.queue,
+                &self.choice.queue_reason,
+                self.queue,
+                choose,
+                cx,
+            )))
             .child(
                 Button::new("media-cancel")
                     .label("Cancel")
                     .with_variant(ButtonVariant::Ghost)
-                    .disabled(busy)
+                    .disabled(self.busy)
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(MediaAnswer::Cancel))),
             )
             .child(
@@ -593,85 +654,6 @@ impl MediaForm {
                     .on_click(cx.listener(|form, _, _, cx| form.answer(false, cx))),
             )
     }
-
-    fn where_section(&self, cx: &mut Context<'_, Self>) -> AnyElement {
-        let shown = self.folder.clone().unwrap_or_else(|| self.app_folder(cx));
-        let tail = Path::new(&shown).file_name().map_or_else(
-            || text::folder(&shown),
-            |name| name.to_string_lossy().into_owned(),
-        );
-        let name = self.file_name.read(cx).value().trim().to_owned();
-        let summary = [tail, self.queue_name(cx), name]
-            .into_iter()
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join(" · ");
-        let open = self.where_open;
-        let pick = cx.listener(|_, _, _, cx| {
-            let picked = files::choose_folder(cx);
-            cx.spawn(async move |form, cx| {
-                let Some(folder) = picked.await else {
-                    return;
-                };
-                _ = form.update(cx, |form: &mut Self, cx| {
-                    form.folder = Some(folder);
-                    cx.notify();
-                });
-            })
-            .detach();
-        });
-        let folder = folder_box("media-folder", &shown, pick, cx);
-        let toggle = cx.listener(|form, _, _, cx| {
-            form.where_open = !form.where_open;
-            cx.notify();
-        });
-        let theme = cx.theme();
-        v_flex()
-            .gap_3()
-            .child(
-                h_flex()
-                    .id("media-where")
-                    .w_full()
-                    .py_1p5()
-                    .gap_2()
-                    .border_t_1()
-                    .border_color(theme.border)
-                    .cursor_pointer()
-                    .child("Save to")
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_right()
-                            .text_role(Role::Meta, cx)
-                            .child(summary),
-                    )
-                    .child(
-                        gpui_kit::component::Icon::new(if open {
-                            gpui_kit::component::IconName::ChevronDown
-                        } else {
-                            gpui_kit::component::IconName::ChevronRight
-                        })
-                        .with_size(crate::ui::tokens::ICON)
-                        .text_color(theme.muted_foreground),
-                    )
-                    .on_click(toggle),
-            )
-            .when(open, |section| {
-                section
-                    .child(
-                        Field::new("File name", Input::new(&self.file_name))
-                            .note("Leave empty to use the video's title."),
-                    )
-                    .child(Field::new("Folder", folder))
-                    .child(Field::new(
-                        "Queue",
-                        Select::new(&self.queue).accessibility_label("Queue"),
-                    ))
-            })
-            .into_any_element()
-    }
 }
 
 impl Render for MediaForm {
@@ -681,15 +663,13 @@ impl Render for MediaForm {
             .picked()
             .and_then(|option| fit_for(option, self.output.format))
             .cloned();
-        let page = self.choice.page_url.clone().unwrap_or_default();
         v_flex()
             .gap_2p5()
-            .child(heading(&self.choice.title, &page, None, cx))
+            .child(self.heading(cx))
             .when_some(self.choice.missing_quality.clone(), |body, missing| {
-                body.child(note(
-                    format!("This video doesn't offer {missing}, your saved resolution."),
-                    cx,
-                ))
+                body.child(div().text_role(Role::Meta, cx).child(format!(
+                    "This video doesn't offer {missing}, your saved resolution."
+                )))
             })
             .child(row(
                 "Quality",
@@ -698,8 +678,8 @@ impl Render for MediaForm {
                     .search_placeholder("Search qualities"),
                 cx,
             ))
+            .children(self.format_row(cx))
             .children(self.join_note(cx).map(|text| note(text, cx)))
-            .children(self.save_as(cx))
             .children(conversion_note(fit.as_ref(), self.output.kbps).map(|text| note(text, cx)))
             .children(
                 quality_notes(fit.as_ref(), self.output.kbps)
@@ -717,37 +697,10 @@ impl Render for MediaForm {
             })
             .children(self.subtitle_placement(cx))
             .children(self.chapters(cx))
-            .child(self.where_section(cx))
-            .child(note(self.queue_line(cx), cx))
-            .children(self.every_video_row(cx))
+            .child(row("File name", Input::new(&self.file_name), cx))
+            .child(self.folder_row(cx))
             .child(self.buttons(cx))
     }
-}
-
-fn queue_picker(
-    library: &Entity<Library>,
-    queue_id: QueueId,
-    window: &mut Window,
-    cx: &mut Context<'_, MediaForm>,
-) -> Picker<QueueId> {
-    let queues: Vec<Choice<QueueId>> = library
-        .read(cx)
-        .queues
-        .iter()
-        .map(|queue| Choice {
-            title: queue.settings.name.clone().into(),
-            value: queue.id,
-        })
-        .collect();
-    let row = queues.iter().position(|each| each.value == queue_id);
-    cx.new(|cx| {
-        SelectState::new(
-            SearchableVec::new(queues),
-            row.map(|row| IndexPath::default().row(row)),
-            window,
-            cx,
-        )
-    })
 }
 
 fn subtitle_picker(
@@ -755,14 +708,12 @@ fn subtitle_picker(
     output: &OutputChoice,
     window: &mut Window,
     cx: &mut Context<'_, MediaForm>,
-) -> Entity<ComboboxState<SearchableVec<Choice<String>>>> {
-    let languages: Vec<Choice<String>> = choice
-        .subtitles
-        .iter()
-        .zip(subtitle_labels(&choice.subtitles))
-        .map(|(subtitle, label)| Choice {
+) -> Subtitles {
+    let languages: Vec<Choice<String>> = shown_subtitles(&choice.subtitles)
+        .into_iter()
+        .map(|(id, label)| Choice {
             title: label.into(),
-            value: subtitle.id.clone(),
+            value: id,
         })
         .collect();
     let ticked = output
@@ -782,8 +733,7 @@ fn follow_pickers(
     quality: &Entity<SelectState<SearchableVec<Quality>>>,
     format: &Picker<OutputFormat>,
     kbps: &Picker<Option<u32>>,
-    queue: &Picker<QueueId>,
-    subtitles: &Entity<ComboboxState<SearchableVec<Choice<String>>>>,
+    subtitles: &Subtitles,
     cx: &mut Context<'_, MediaForm>,
 ) -> Vec<Subscription> {
     vec![
@@ -814,15 +764,6 @@ fn follow_pickers(
             },
         ),
         cx.subscribe(
-            queue,
-            |form, _, event: &SelectEvent<SearchableVec<Choice<QueueId>>>, cx| {
-                if let SelectEvent::Confirm(Some(queue)) = event {
-                    form.queue_id = *queue;
-                    cx.notify();
-                }
-            },
-        ),
-        cx.subscribe(
             subtitles,
             |form, _, event: &ComboboxEvent<SearchableVec<Choice<String>>>, cx| {
                 if let ComboboxEvent::Change(ids) = event {
@@ -845,12 +786,13 @@ fn row(label: &'static str, control: impl IntoElement, cx: &App) -> AnyElement {
                 .text_color(cx.theme().muted_foreground)
                 .child(label),
         )
-        .child(div().flex_1().min_w_0().w(relative(1.)).child(control))
+        .child(div().flex_1().min_w_0().child(control))
         .into_any_element()
 }
 
 fn note(text: String, cx: &App) -> AnyElement {
     div()
+        .ml(px(NOTE_INSET))
         .text_role(Role::Meta, cx)
         .child(text)
         .into_any_element()

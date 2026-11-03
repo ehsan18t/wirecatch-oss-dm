@@ -59,10 +59,14 @@ impl RunRecord {
             self.first_done = None;
             self.last_seen_running = None;
             self.sampled_done = None;
+            self.samples.clear();
+            self.peak = 0;
         }
         let waiting = look.done == self.last_done && self.stalled(now);
+        // A gap this long means no frames were drawn during a stall: it did not run either.
         if let Some(last) = self.last_seen_running
             && !waiting
+            && now.saturating_duration_since(last) < STALLED_AFTER
         {
             self.ran += now.saturating_duration_since(last);
         }
@@ -83,11 +87,6 @@ impl RunRecord {
         }
         self.last_sampled = Some(now);
         self.sampled_done = Some(look.done);
-        // A server that cannot resume starts the file over: the graph starts over with it.
-        if let Some(at) = look.per_mille {
-            self.samples
-                .retain(|sample| sample.per_mille.is_none_or(|was| was <= at));
-        }
         if self.samples.len() == MOST_SAMPLES {
             let mut keep = false;
             self.samples.retain(|_| {
@@ -315,6 +314,30 @@ mod tests {
         record.see(running(300, 10, 4000), start + Duration::from_secs(62));
         assert_eq!(record.ran(), Some(Duration::from_secs(4)));
         assert_eq!(record.average(), Some(1000));
+    }
+
+    #[test]
+    fn a_stall_with_no_looks_does_not_count_as_running() {
+        let start = Instant::now();
+        let mut record = RunRecord::default();
+        record.see(running(100, 10, 0), start);
+        record.see(running(200, 10, 2000), start + Duration::from_secs(2));
+        record.see(running(300, 10, 4000), start + Duration::from_secs(60));
+        assert_eq!(record.ran(), Some(Duration::from_secs(2)));
+    }
+
+    #[test]
+    fn a_file_started_over_forgets_its_peak_and_curve_of_unknown_size() {
+        let start = Instant::now();
+        let mut record = RunRecord::default();
+        let unknown = |speed, done| Look {
+            per_mille: None,
+            ..running(0, speed, done)
+        };
+        record.see(unknown(90, 5000), start);
+        record.see(unknown(10, 100), start + SAMPLE_EVERY);
+        assert_eq!(record.peak(), Some(10));
+        assert_eq!(record.points(1.), [(0., 10), (1., 10)]);
     }
 
     #[test]

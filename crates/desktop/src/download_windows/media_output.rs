@@ -6,6 +6,7 @@ use wirecatch_protocol::app::{
     MediaChoice, MediaOption, MediaSelection, MediaSubtitle, OutputDefaults, OutputFit,
     OutputFormat, StreamAction,
 };
+use wirecatch_protocol::languages::LANGUAGES;
 use wirecatch_shell::host;
 
 use crate::text::format_name;
@@ -116,15 +117,34 @@ pub fn nearest_kbps(format: OutputFormat, wanted: u32) -> Option<u32> {
 }
 
 /// The audio quality to start from for `format`: `None` keeps the downloaded audio when it fits as
-/// it is and nothing else was wanted, else the wanted quality, or the format's usual one.
+/// it is and nothing else was wanted, else the wanted quality or the format's usual one, at or
+/// below what the download has, since a higher one only makes the file bigger.
 pub fn kbps_for(fit: Option<&OutputFit>, format: OutputFormat, wanted: Option<u32>) -> Option<u32> {
-    if let Some(wanted) = wanted {
-        return nearest_kbps(format, wanted);
-    }
-    if fit.is_some_and(|fit| fit.audio != StreamAction::Encode) {
+    if wanted.is_none() && fit.is_some_and(|fit| fit.audio != StreamAction::Encode) {
         return None;
     }
-    format.default_kbps()
+    let wanted = wanted.or_else(|| format.default_kbps())?;
+    let limit = fit
+        .and_then(|fit| fit.audio_kbps)
+        .map_or(wanted, |source| source.min(wanted));
+    format
+        .kbps_choices()
+        .iter()
+        .copied()
+        .filter(|choice| *choice <= limit)
+        .max()
+        .or_else(|| nearest_kbps(format, limit))
+}
+
+/// A video's length: "3:33", "1:02:03".
+pub fn video_length(milliseconds: u64) -> String {
+    let seconds = milliseconds / 1000;
+    let (hours, minutes, seconds) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
 }
 
 /// One sentence on what saving as `format` does to this quality, before the person starts.
@@ -134,7 +154,7 @@ pub fn conversion_note(fit: Option<&OutputFit>, kbps: Option<u32>) -> Option<Str
     Some(match fit.video {
         StreamAction::None if fit.audio == StreamAction::Encode || kbps.is_some() => {
             let at = kbps.map_or_else(String::new, |kbps| format!(" at {kbps} kbps"));
-            format!("The audio is converted to {name}{at} after it is downloaded, which is quick.")
+            format!("Converted to {name}{at} after downloading, which is quick.")
         }
         StreamAction::None => format!("No conversion: the audio is copied into {name} as it is."),
         StreamAction::Encode => format!(
@@ -196,31 +216,61 @@ pub fn size_for(
     fit.size
 }
 
-/// Each subtitle's name as the window shows it: auto-generated ones marked, and two that would
-/// read alike told apart by their language code.
-pub fn subtitle_labels(subtitles: &[MediaSubtitle]) -> Vec<String> {
+/// The subtitles the window lists, as id and name: a repeat of a language left out, a site's code
+/// given its language's name, auto-generated ones marked, and two that read alike told apart by
+/// their code.
+pub fn shown_subtitles(subtitles: &[MediaSubtitle]) -> Vec<(String, String)> {
+    let mut seen: Vec<(&str, bool)> = Vec::new();
+    let kept: Vec<&MediaSubtitle> = subtitles
+        .iter()
+        .filter(|subtitle| {
+            let key = (subtitle.language.as_str(), subtitle.auto);
+            let new = !seen.contains(&key);
+            seen.push(key);
+            new
+        })
+        .collect();
     let base = |subtitle: &MediaSubtitle| {
+        let name = language_name(subtitle);
         if subtitle.auto {
-            format!("{} (auto)", subtitle.name)
+            format!("{name} (auto-generated)")
         } else {
-            subtitle.name.clone()
+            name
         }
     };
-    subtitles
-        .iter()
+    kept.iter()
         .map(|subtitle| {
             let label = base(subtitle);
-            let alike = subtitles
-                .iter()
-                .filter(|other| base(other) == label)
-                .count();
-            match (alike > 1, subtitle.auto) {
-                (false, _) => label,
-                (true, true) => format!("{} (auto, {})", subtitle.name, subtitle.language),
-                (true, false) => format!("{} ({})", subtitle.name, subtitle.language),
-            }
+            let alike = kept.iter().filter(|other| base(other) == label).count();
+            let shown = if alike > 1 {
+                let name = language_name(subtitle);
+                let code = &subtitle.language;
+                if subtitle.auto {
+                    format!("{name} (auto-generated, {code})")
+                } else {
+                    format!("{name} ({code})")
+                }
+            } else {
+                label
+            };
+            (subtitle.id.clone(), shown)
         })
         .collect()
+}
+
+/// The subtitle's name, or its language's when the site gave only a code.
+fn language_name(subtitle: &MediaSubtitle) -> String {
+    if !subtitle.name.eq_ignore_ascii_case(&subtitle.language) {
+        return subtitle.name.clone();
+    }
+    let code = subtitle.language.split('-').next().unwrap_or_default();
+    LANGUAGES
+        .iter()
+        .find(|language| language.code.eq_ignore_ascii_case(code))
+        .map_or_else(
+            || subtitle.name.clone(),
+            |language| language.name.to_owned(),
+        )
 }
 
 #[cfg(test)]
@@ -278,16 +328,31 @@ mod tests {
     }
 
     #[test]
-    fn a_format_starts_from_the_wanted_bit_rate_or_the_download_or_its_usual_one() {
+    fn a_format_starts_at_or_below_what_the_download_has() {
         let copied = fit(OutputFormat::M4a, StreamAction::None, StreamAction::Copy);
         let encoded = fit(OutputFormat::Mp3, StreamAction::None, StreamAction::Encode);
         assert_eq!(
-            kbps_for(Some(&encoded), OutputFormat::Mp3, Some(200)),
-            Some(192)
+            kbps_for(Some(&encoded), OutputFormat::Mp3, Some(320)),
+            Some(128)
         );
+        assert_eq!(kbps_for(Some(&encoded), OutputFormat::Mp3, None), Some(128));
         assert_eq!(kbps_for(Some(&copied), OutputFormat::M4a, None), None);
-        assert_eq!(kbps_for(Some(&encoded), OutputFormat::Mp3, None), Some(192));
+        assert_eq!(kbps_for(None, OutputFormat::Mp3, None), Some(192));
         assert_eq!(kbps_for(None, OutputFormat::Flac, None), None);
+    }
+
+    #[test]
+    fn a_source_below_every_choice_starts_at_the_lowest() {
+        let mut low = fit(OutputFormat::Mp3, StreamAction::None, StreamAction::Encode);
+        low.audio_kbps = Some(64);
+        assert_eq!(kbps_for(Some(&low), OutputFormat::Mp3, None), Some(128));
+    }
+
+    #[test]
+    fn a_length_shows_hours_only_when_it_has_them() {
+        assert_eq!(video_length(213_000), "3:33");
+        assert_eq!(video_length(3_723_000), "1:02:03");
+        assert_eq!(video_length(0), "0:00");
     }
 
     #[test]
@@ -349,20 +414,26 @@ mod tests {
     }
 
     #[test]
-    fn subtitles_that_read_alike_are_told_apart() {
-        let labels = subtitle_labels(&[
+    fn subtitles_are_named_for_people() {
+        let shown = shown_subtitles(&[
             subtitle("a", "en", "English", false),
             subtitle("b", "en", "English", true),
+            subtitle("b2", "en", "English", true),
             subtitle("c", "pt-BR", "Portuguese", false),
             subtitle("d", "pt-PT", "Portuguese", false),
+            subtitle("e", "de-DE", "de-DE", true),
+            subtitle("f", "xx-YY", "xx-YY", false),
         ]);
+        let labels: Vec<&str> = shown.iter().map(|(_, label)| label.as_str()).collect();
         assert_eq!(
             labels,
             [
                 "English",
-                "English (auto)",
+                "English (auto-generated)",
                 "Portuguese (pt-BR)",
-                "Portuguese (pt-PT)"
+                "Portuguese (pt-PT)",
+                "German (auto-generated)",
+                "xx-YY",
             ]
         );
     }
