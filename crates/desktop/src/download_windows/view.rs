@@ -73,6 +73,8 @@ pub struct DownloadWindow {
     over: bool,
     /// The file name the person may change.
     name: Entity<InputState>,
+    /// The name the core last gave the field.
+    core_name: Option<String>,
     /// The queue picked for a file; `None` is Automatic.
     queue: Option<QueueId>,
     /// The folder picked for a file; `None` is where its queue saves.
@@ -130,6 +132,7 @@ impl DownloadWindow {
             addon_asked: None,
             addon_awaited: None,
             name: cx.new(|cx| InputState::new(window, cx)),
+            core_name: None,
             queue: None,
             folder: None,
             record: RunRecord::default(),
@@ -183,7 +186,11 @@ impl DownloadWindow {
     }
 
     fn name_from(&mut self, name: &str, cx: &mut Context<'_, Self>) {
-        put_name(self.name.clone(), name.to_owned(), self.window, cx);
+        let field = self.name.read(cx).value();
+        if core_name_applies(&field, self.core_name.as_deref(), name) {
+            self.core_name = Some(name.to_owned());
+            put_name(self.name.clone(), name.to_owned(), self.window, cx);
+        }
     }
 
     /// Runs `work` on the manager; the answer turns the window into the download's progress, or
@@ -1411,6 +1418,11 @@ fn button(id: &'static str, label: &'static str, variant: ButtonVariant, busy: b
 }
 
 /// `window` is the field's own: a question's window can open behind another, so the active one may be neither.
+/// Whether the core's name replaces what the field holds: never a name the person typed.
+fn core_name_applies(field: &str, last: Option<&str>, core: &str) -> bool {
+    last.is_none_or(|last| last != core && field == last)
+}
+
 fn put_name(state: Entity<InputState>, name: String, window: AnyWindowHandle, cx: &mut App) {
     cx.defer(move |cx| {
         _ = window.update(cx, |_, window, cx| {
@@ -1434,6 +1446,34 @@ mod tests {
         ) -> impl gpui_kit::IntoElement {
             gpui_kit::div()
         }
+    }
+
+    #[test]
+    fn a_name_the_person_typed_outlasts_the_question_being_read_again() {
+        use super::core_name_applies;
+
+        assert!(core_name_applies("", None, "report.pdf"));
+        assert!(!core_name_applies(
+            "my name.pdf",
+            Some("report.pdf"),
+            "report.pdf"
+        ));
+        assert!(!core_name_applies(
+            "report.pdf",
+            Some("report.pdf"),
+            "report.pdf"
+        ));
+        // The core found a better name, and the person has not changed the field.
+        assert!(core_name_applies(
+            "report.pdf",
+            Some("report.pdf"),
+            "final.pdf"
+        ));
+        assert!(!core_name_applies(
+            "my name.pdf",
+            Some("report.pdf"),
+            "final.pdf"
+        ));
     }
 
     #[gpui_kit::test]
