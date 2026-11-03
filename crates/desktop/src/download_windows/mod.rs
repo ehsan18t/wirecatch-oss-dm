@@ -5,6 +5,8 @@
 //! closes the GPUI windows it says.
 
 pub mod finished;
+mod media_form;
+pub mod media_output;
 mod run_record;
 mod view;
 

@@ -16,7 +16,9 @@ use wirecatch_protocol::languages::LANGUAGES;
 use wirecatch_shell::host;
 
 use super::{Typing, change, choice, current, list_field, switch};
+use crate::download_windows::media_output::nearest_kbps;
 use crate::library::Library;
+use crate::text::{AUDIO_FORMATS, VIDEO_FORMATS};
 
 const ASKING: &[(bool, &str)] = &[(true, "Ask each time"), (false, "Use my choices")];
 const QUALITIES: &[(VideoQuality, &str)] = &[
@@ -33,22 +35,6 @@ const FALLBACKS: &[(QualityFallback, &str)] = &[
     (QualityFallback::Lower, "Next lower"),
     (QualityFallback::Higher, "Next higher"),
     (QualityFallback::Ask, "Ask me"),
-];
-/// In the order a menu lists them, the original first (`OutputFormat::saves_video`).
-const VIDEO_FORMATS: &[(OutputFormat, &str)] = &[
-    (OutputFormat::Original, "Original"),
-    (OutputFormat::Mp4, "MP4"),
-    (OutputFormat::Mkv, "MKV"),
-    (OutputFormat::Webm, "WebM"),
-];
-/// In the order a menu lists them, the original first (`OutputFormat::saves_audio`).
-const AUDIO_FORMATS: &[(OutputFormat, &str)] = &[
-    (OutputFormat::Original, "Original"),
-    (OutputFormat::Mp3, "MP3"),
-    (OutputFormat::M4a, "M4A"),
-    (OutputFormat::Opus, "Opus"),
-    (OutputFormat::Flac, "FLAC"),
-    (OutputFormat::Wav, "WAV"),
 ];
 const PLACEMENTS: &[(bool, &str)] = &[(false, "Inside the video"), (true, "As separate files")];
 const UNEMBEDDED: &[(UnembeddedSubtitles, &str)] = &[
@@ -455,12 +441,7 @@ fn audio_quality(library: &Entity<Library>, format: OutputFormat) -> SettingFiel
 /// The bit rate to keep when the audio format becomes `format`: the one nearest `kbps` when the
 /// format has a choice, else the format's usual one.
 fn kbps_for(format: OutputFormat, kbps: Option<u32>) -> Option<u32> {
-    let wanted = kbps?;
-    format
-        .kbps_choices()
-        .iter()
-        .copied()
-        .min_by_key(|choice| (choice.abs_diff(wanted), *choice))
+    nearest_kbps(format, kbps?)
 }
 
 /// A language to pick subtitles in, found by its name, its code or another name.

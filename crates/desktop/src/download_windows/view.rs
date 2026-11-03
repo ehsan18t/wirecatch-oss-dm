@@ -20,14 +20,14 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, ElementId, Entity, InteractiveElement as _,
-    IntoElement, ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Window, canvas, div, px, relative, size,
+    AnyElement, App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
+    ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Subscription, Window, canvas, div, px, relative, size,
 };
 use wirecatch_protocol::app::{
     AddonRequestItem, AppSettingsPatch, CaptureConfirmation, DownloadStatus, DownloadSummary,
-    FileExistsAnswer, FileExistsChoice, FileExistsQuestion, MediaChoice, MediaSelection,
-    PER_MILLE_DONE, PendingCapture, Question,
+    FileExistsAnswer, FileExistsChoice, FileExistsQuestion, MediaChoice, PER_MILLE_DONE,
+    PendingCapture, Question,
 };
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
 use wirecatch_protocol::rules::QueueReason;
@@ -37,6 +37,7 @@ use wirecatch_shell::activity::format_bytes;
 use wirecatch_shell::api;
 use wirecatch_shell::download_windows::{Shows, fitted_height};
 
+use super::media_form::{MediaAnswer, MediaForm};
 use super::run_record::{Look, RunRecord};
 use crate::backend::{Backend, act, command};
 use crate::library::Library;
@@ -71,8 +72,8 @@ pub struct DownloadWindow {
     folder: Option<String>,
     /// What this window saw of the download's run.
     record: RunRecord,
-    /// The quality picked for a video.
-    picked: Option<String>,
+    /// The form of a video's quality question.
+    media: Option<(Entity<MediaForm>, Subscription)>,
     /// Do the same every time, for a file already in the folder.
     remember: bool,
     busy: bool,
@@ -102,7 +103,7 @@ impl DownloadWindow {
             queue: None,
             folder: None,
             record: RunRecord::default(),
-            picked: None,
+            media: None,
             remember: false,
             busy: false,
             problem: None,
@@ -136,9 +137,6 @@ impl DownloadWindow {
                 view.over = question.is_none();
                 if let Some(Question::Capture(capture)) = &question {
                     view.name_from(&capture.file_name, cx);
-                }
-                if let Some(Question::Choice(choice)) = &question {
-                    view.picked = Some(choice.start.option_id.clone());
                 }
                 view.question = question;
                 cx.notify();
@@ -265,13 +263,19 @@ impl Render for DownloadWindow {
                 let capture = capture.clone();
                 self.capture(&capture, cx)
             }
+            (Shows::Download(id), Some(Question::Choice(choice)))
+                if self.download(id, cx).is_none() =>
+            {
+                let choice = choice.clone();
+                self.media_form(&choice, window, cx)
+            }
             (Shows::Download(id), _) => self.progress(id, cx),
             (Shows::Question(_), _) if self.over => closed_note(cx),
             (Shows::Question(_), None) => div().into_any_element(),
             (Shows::Question(_), Some(question)) => match question.clone() {
                 Question::Capture(capture) => self.capture(&capture, cx),
                 Question::Reading(reading) => reading_view(reading.id, &reading.url, cx),
-                Question::Choice(choice) => self.choice(&choice, cx),
+                Question::Choice(choice) => self.media_form(&choice, window, cx),
                 Question::Addon(item) => addon_view(&item, cx),
                 Question::FileExists(question) => self.file_exists(&question, cx),
             },
@@ -311,7 +315,15 @@ impl Render for DownloadWindow {
                             .children(strip)
                             .child(
                                 canvas(
-                                    move |bounds, _, _| measured.set(Some(bounds.size.height)),
+                                    move |bounds, window, _| {
+                                        // `fit` reads this on the next draw: without one, a window
+                                        // whose content grew stays short.
+                                        if measured.replace(Some(bounds.size.height))
+                                            != Some(bounds.size.height)
+                                        {
+                                            window.request_animation_frame();
+                                        }
+                                    },
                                     |_, (), _, _| {},
                                 )
                                 .absolute()
@@ -456,32 +468,7 @@ impl DownloadWindow {
             })
             .detach();
         });
-        let theme = cx.theme();
-        h_flex()
-            .id("capture-folder")
-            .w_full()
-            .h(px(32.))
-            .px_3()
-            .gap_2()
-            .border_1()
-            .border_color(theme.input)
-            .rounded(theme.radius)
-            .cursor_pointer()
-            .hover(|field| field.bg(theme.list_hover))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .child(text::folder(&shown)),
-            )
-            .child(
-                Icon::new(Lucide::Folder)
-                    .with_size(tokens::ICON)
-                    .text_color(theme.muted_foreground),
-            )
-            .on_click(pick)
-            .into_any_element()
+        folder_box("capture-folder", &shown, pick, cx)
     }
 
     /// The queue the file joins, styled like the queue's badge: a bolt while Automatic picks it.
@@ -579,93 +566,48 @@ impl DownloadWindow {
         );
     }
 
-    /// A video waiting for its quality: the qualities it is offered in, the proposed one picked.
-    fn choice(&mut self, choice: &MediaChoice, cx: &mut Context<'_, Self>) -> AnyElement {
+    /// A video waiting for its quality: its form, kept for as long as the question lasts.
+    fn media_form(
+        &mut self,
+        choice: &MediaChoice,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) -> AnyElement {
         let id = choice.id;
-        let busy = self.busy;
-        let picked = self.picked.clone();
-        let theme = cx.theme();
-        let options: Vec<AnyElement> = choice
-            .options
-            .iter()
-            .map(|option| {
-                let chosen = picked.as_deref() == Some(option.id.as_str());
-                let option_id = option.id.clone();
-                let size = option
-                    .size
-                    .map(wirecatch_shell::activity::format_bytes)
-                    .unwrap_or_default();
-                h_flex()
-                    .id(ElementId::Name(format!("quality-{}", option.id).into()))
-                    .px_3()
-                    .py_2()
-                    .gap_3()
-                    .rounded(theme.radius)
-                    .cursor_pointer()
-                    .border_1()
-                    .border_color(if chosen { theme.primary } else { theme.border })
-                    .when(chosen, |row| row.bg(theme.list_active))
-                    .child(div().flex_1().child(option.quality.clone()))
-                    .child(div().text_role(Role::Meta, cx).child(size))
-                    .on_click(cx.listener(move |view, _, _, cx| {
-                        view.picked = Some(option_id.clone());
-                        cx.notify();
-                    }))
-                    .into_any_element()
-            })
-            .collect();
-        let (start, later_start) = (choice.start.clone(), choice.start.clone());
-        let page = choice.page_url.clone().unwrap_or_default();
-        v_flex()
-            .gap_3()
-            .child(heading(&choice.title, &page, None, cx))
-            .when_some(choice.missing_quality.clone(), |body, missing| {
-                body.child(div().text_role(Role::Meta, cx).child(format!(
-                    "This video has no {missing}; the closest is picked."
-                )))
-            })
-            .child(v_flex().gap_1p5().children(options))
-            .child(actions(vec![
-                button("choice-cancel", "Cancel", ButtonVariant::Ghost, busy).on_click(
-                    cx.listener(move |view, _, _, cx| {
-                        view.answer(
+        let same = self
+            .media
+            .as_ref()
+            .is_some_and(|(form, _)| form.read(cx).question() == id);
+        if !same {
+            let library = self.library.clone();
+            let question = choice.clone();
+            let form = cx.new(|cx| MediaForm::new(question, library, window, cx));
+            let answers = cx.subscribe(
+                &form,
+                move |view, _, answer: &MediaAnswer, cx| match answer {
+                    MediaAnswer::Cancel => view.answer(
                         move |m| async move { api::dismiss_media_choice(&m, id).map(|()| None) },
                         cx,
-                    );
-                    }),
-                ),
-                button(
-                    "choice-later",
-                    "Download later",
-                    ButtonVariant::Secondary,
-                    busy,
-                )
-                .on_click(cx.listener(move |view, _, _, cx| {
-                    view.choose(id, later_start.clone(), true, cx);
-                })),
-                button("choice-now", "Download", ButtonVariant::Primary, busy).on_click(
-                    cx.listener(move |view, _, _, cx| view.choose(id, start.clone(), false, cx)),
-                ),
-            ]))
-            .into_any_element()
-    }
-
-    /// Downloads the picked quality, saved the way the window proposed.
-    fn choose(
-        &mut self,
-        id: QuestionId,
-        mut selection: MediaSelection,
-        later: bool,
-        cx: &mut Context<'_, Self>,
-    ) {
-        if let Some(picked) = self.picked.clone() {
-            selection.option_id = picked;
+                    ),
+                    MediaAnswer::Choose(selection) => {
+                        let selection = (**selection).clone();
+                        view.answer(
+                            move |m| async move {
+                                api::choose_media(&m, id, selection).await.map(Some)
+                            },
+                            cx,
+                        );
+                    }
+                },
+            );
+            self.media = Some((form, answers));
         }
-        selection.later = later;
-        self.answer(
-            move |m| async move { api::choose_media(&m, id, selection).await.map(Some) },
-            cx,
-        );
+        let busy = self.busy || matches!(self.shows, Shows::Download(_));
+        let Some((form, _)) = &self.media else {
+            return div().into_any_element();
+        };
+        form.update(cx, |form, _| form.busy = busy);
+        form.clone().into_any_element()
     }
 
     /// A file already in the folder: Replace, Keep both or Cancel, and whether to do the same
@@ -918,8 +860,43 @@ impl DownloadWindow {
     }
 }
 
+/// A folder, the whole width; a click picks another.
+pub(super) fn folder_box(
+    id: &'static str,
+    shown: &str,
+    pick: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> AnyElement {
+    let theme = cx.theme();
+    h_flex()
+        .id(id)
+        .w_full()
+        .h(px(32.))
+        .px_3()
+        .gap_2()
+        .border_1()
+        .border_color(theme.input)
+        .rounded(theme.radius)
+        .cursor_pointer()
+        .hover(|field| field.bg(theme.list_hover))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .child(text::folder(shown)),
+        )
+        .child(
+            Icon::new(Lucide::Folder)
+                .with_size(tokens::ICON)
+                .text_color(theme.muted_foreground),
+        )
+        .on_click(pick)
+        .into_any_element()
+}
+
 /// Why Automatic picks `queue`: the words, and the value to colour after them.
-fn automatic_reason(queue: &str, reason: &QueueReason) -> (String, Option<String>) {
+pub(super) fn automatic_reason(queue: &str, reason: &QueueReason) -> (String, Option<String>) {
     match reason {
         QueueReason::Matched(rule) => (
             format!("Goes to {queue}, for"),
@@ -1106,7 +1083,7 @@ fn closed_note(cx: &mut Context<'_, DownloadWindow>) -> AnyElement {
 }
 
 /// The name, where it comes from, and its size when known.
-fn heading(name: &str, link: &str, size: Option<u64>, cx: &App) -> impl IntoElement {
+pub(super) fn heading(name: &str, link: &str, size: Option<u64>, cx: &App) -> impl IntoElement {
     let host = text::host(link).to_owned();
     let meta = match size {
         Some(size) => format!("{host} · {}", wirecatch_shell::activity::format_bytes(size)),
