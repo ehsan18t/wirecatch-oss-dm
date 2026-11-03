@@ -25,9 +25,9 @@ use gpui_kit::{
     Subscription, Window, canvas, div, px, relative, size,
 };
 use wirecatch_protocol::app::{
-    AddonRequestItem, AppSettingsPatch, CaptureConfirmation, DownloadStatus, DownloadSummary,
-    FileExistsAnswer, FileExistsChoice, FileExistsQuestion, MediaChoice, MediaDefaultsPatch,
-    PER_MILLE_DONE, PendingCapture, Question,
+    AddonId, AddonRequestItem, AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus,
+    DownloadSummary, FileExistsAnswer, FileExistsChoice, FileExistsQuestion, MediaChoice,
+    MediaDefaultsPatch, PER_MILLE_DONE, PendingCapture, Question,
 };
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
 use wirecatch_protocol::rules::QueueReason;
@@ -39,7 +39,7 @@ use wirecatch_shell::download_windows::{Shows, fitted_height};
 
 use super::media_form::{MediaAnswer, MediaForm};
 use super::run_record::{Look, RunRecord};
-use crate::backend::{Backend, act, command};
+use crate::backend::{Backend, act};
 use crate::library::Library;
 use crate::ui::small_title_bar::small_title_bar;
 use crate::ui::speed_graph::run_graph;
@@ -81,6 +81,10 @@ pub struct DownloadWindow {
     media: Option<(Entity<MediaForm>, Subscription)>,
     /// Do the same every time, for a file already in the folder.
     remember: bool,
+    /// Install was pressed for the add-on this page needs, and it has not been seen to start.
+    addon_asked: Option<AddonId>,
+    /// The add-on this window's page has waited for, kept once the question ends.
+    addon_awaited: Option<AddonId>,
     busy: bool,
     problem: Option<String>,
     /// The content's height when last drawn, for fitting the window to it.
@@ -120,6 +124,8 @@ impl DownloadWindow {
             question: None,
             earlier: None,
             over: false,
+            addon_asked: None,
+            addon_awaited: None,
             name: cx.new(|cx| InputState::new(window, cx)),
             queue: None,
             folder: None,
@@ -161,6 +167,9 @@ impl DownloadWindow {
                 view.over = question.is_none();
                 if let Some(Question::Capture(capture)) = &question {
                     view.name_from(&capture.file_name, cx);
+                }
+                if let Some(Question::Addon(item)) = &question {
+                    view.addon_awaited = Some(item.addon.id);
                 }
                 view.question = question;
                 view.earlier = earlier.map(|row| row.id);
@@ -310,13 +319,16 @@ impl Render for DownloadWindow {
                 self.media_form(&choice, window, cx)
             }
             (Shows::Download(id), _) => self.progress(id, cx),
-            (Shows::Question(_), _) if self.over => closed_note(cx),
+            (Shows::Question(_), _) if self.over => match self.addon_failure(cx) {
+                Some(message) => addon_failed_note(&message, cx),
+                None => closed_note(cx),
+            },
             (Shows::Question(_), None) => div().into_any_element(),
             (Shows::Question(_), Some(question)) => match question.clone() {
                 Question::Capture(capture) => self.capture(&capture, cx),
                 Question::Reading(reading) => reading_view(reading.id, &reading.url, cx),
                 Question::Choice(choice) => self.media_form(&choice, window, cx),
-                Question::Addon(item) => addon_view(&item, cx),
+                Question::Addon(item) => self.addon_view(&item, cx),
                 Question::FileExists(question) => self.file_exists(&question, cx),
             },
         };
@@ -1206,32 +1218,162 @@ fn reading_view(id: QuestionId, url: &str, cx: &mut Context<'_, DownloadWindow>)
         .into_any_element()
 }
 
-/// A video page waiting for the media add-on.
-fn addon_view(item: &AddonRequestItem, cx: &mut Context<'_, DownloadWindow>) -> AnyElement {
-    let (id, addon) = (item.id, item.addon.id);
-    let title = format!("This video needs the {}", item.addon.name.to_lowercase());
+/// Where a page waiting for an add-on stands.
+#[derive(Debug, PartialEq, Eq)]
+enum AddonStep {
+    Offer,
+    /// With how far along it is in percent, once its size is known.
+    Installing(Option<u64>),
+    Failed(String),
+}
+
+/// `asked`: Install was pressed and the install has not been seen to start yet, so a click cannot
+/// start a second one, and an earlier failure does not stay on show.
+fn addon_step(state: Option<&AddonState>, asked: bool) -> AddonStep {
+    match state {
+        Some(AddonState::Installing { done, total }) => AddonStep::Installing(
+            total
+                .filter(|total| *total > 0)
+                .map(|total| (*done).min(total) * 100 / total),
+        ),
+        // Installed: the core is about to carry on with the download and close this question.
+        Some(AddonState::Installed | AddonState::UpdateAvailable) => AddonStep::Installing(None),
+        _ if asked => AddonStep::Installing(None),
+        Some(AddonState::Failed { message }) => AddonStep::Failed(message.clone()),
+        _ => AddonStep::Offer,
+    }
+}
+
+impl DownloadWindow {
+    /// A video page waiting for the media add-on.
+    fn addon_view(&mut self, item: &AddonRequestItem, cx: &mut Context<'_, Self>) -> AnyElement {
+        let (id, addon) = (item.id, item.addon.id);
+        let state = self
+            .library
+            .read(cx)
+            .addons
+            .iter()
+            .find(|known| known.id == addon)
+            .map(|known| known.state.clone());
+        if matches!(state, Some(AddonState::Installing { .. })) {
+            self.addon_asked = None;
+        }
+        let step = addon_step(state.as_ref(), self.addon_asked.is_some());
+        let name = item.addon.name.to_lowercase();
+        let installing = matches!(step, AddonStep::Installing(_));
+        let main = match step {
+            AddonStep::Installing(_) => "Installing",
+            AddonStep::Failed(_) => "Try again",
+            AddonStep::Offer => "Install and download",
+        };
+        let said = match step {
+            AddonStep::Offer => {
+                div().child("Install it to download videos from sites like this one.")
+            }
+            AddonStep::Installing(done) => v_flex()
+                .gap_2()
+                .child(done.map_or_else(
+                    || format!("Installing the {name}. The download starts when it is ready."),
+                    |done| {
+                        format!(
+                            "Installing the {name}, {done}%. The download starts when it is ready."
+                        )
+                    },
+                ))
+                .child(
+                    Progress::new("addon-progress")
+                        .loading(done.is_none())
+                        .value(
+                            done.map_or(0., |done| f32::from(u8::try_from(done).unwrap_or(100))),
+                        ),
+                ),
+            AddonStep::Failed(message) => div().text_color(cx.theme().danger).child(message),
+        };
+        v_flex()
+            .gap_4()
+            .child(heading(
+                &format!("This video needs the {name}"),
+                &item.url,
+                None,
+                cx,
+            ))
+            .child(said)
+            .child(actions(vec![
+                button("addon-cancel", "Cancel", ButtonVariant::Ghost, false).on_click(
+                    cx.listener(move |view, _, _, cx| {
+                        view.answer(
+                            move |m| async move {
+                                api::dismiss_media_choice(&m, id).map(|()| None)
+                            },
+                            cx,
+                        );
+                    }),
+                ),
+                button("addon-install", main, ButtonVariant::Primary, installing)
+                    .loading(installing)
+                    .on_click(cx.listener(move |view, _, _, cx| view.install_addon(addon, cx))),
+            ]))
+            .into_any_element()
+    }
+
+    /// Why the add-on this window's page waited for failed; the core drops the page when it does.
+    fn addon_failure(&self, cx: &App) -> Option<String> {
+        let awaited = self.addon_awaited?;
+        let library = self.library.read(cx);
+        let addon = library.addons.iter().find(|known| known.id == awaited)?;
+        match &addon.state {
+            AddonState::Failed { message } => Some(message.clone()),
+            _ => None,
+        }
+    }
+
+    fn install_addon(&mut self, addon: AddonId, cx: &mut Context<'_, Self>) {
+        self.addon_asked = Some(addon);
+        self.problem = None;
+        cx.notify();
+        let started = Backend::run(
+            cx,
+            move |m| async move { api::install_addon(&m, addon).await },
+        );
+        cx.spawn(async move |view, cx| {
+            let refused = match started.await {
+                Ok(Ok(Ok(()))) => return,
+                Ok(Ok(Err(error))) => error.message,
+                Ok(Err(unopened)) => unopened.reason.message,
+                Err(e) => format!("The install stopped unexpectedly ({e})."),
+            };
+            _ = view.update(cx, |view: &mut Self, cx| {
+                view.addon_asked = None;
+                view.problem = Some(refused);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+}
+
+/// The add-on failed, which ended the page's question: the person starts the video again.
+fn addon_failed_note(message: &str, cx: &mut Context<'_, DownloadWindow>) -> AnyElement {
     v_flex()
         .gap_4()
-        .child(heading(&title, &item.url, None, cx))
-        .child(div().child(
-            "Install it to download videos from sites like this one. The download continues once it is installed.",
-        ))
+        .child(
+            div()
+                .text_role(Role::Title, cx)
+                .child("The media add-on could not be installed"),
+        )
+        .child(
+            div()
+                .text_color(cx.theme().danger)
+                .child(message.to_owned()),
+        )
         .child(actions(vec![
-            button("addon-cancel", "Cancel", ButtonVariant::Ghost, false).on_click(cx.listener(
-                move |view, _, _, cx| {
-                    view.answer(
-                        move |m| async move { api::dismiss_media_choice(&m, id).map(|()| None) },
-                        cx,
-                    );
-                },
-            )),
-            button("addon-install", "Install", ButtonVariant::Primary, false).on_click(
-                move |_, window, cx| {
-                    command(window.window_handle(), cx, move |m| async move {
-                        api::install_addon(&m, addon).await
-                    });
-                },
-            ),
+            button(
+                "addon-failed-close",
+                "Close",
+                ButtonVariant::Secondary,
+                false,
+            )
+            .on_click(cx.listener(|view, _, _, cx| view.close(cx))),
         ]))
         .into_any_element()
 }
@@ -1276,6 +1418,40 @@ fn button(id: &'static str, label: &'static str, variant: ButtonVariant, busy: b
 #[cfg(test)]
 mod tests {
     use wirecatch_protocol::rules::Rule;
+
+    #[test]
+    fn an_addon_question_follows_the_install() {
+        use super::{AddonState, AddonStep, addon_step};
+
+        assert_eq!(
+            addon_step(Some(&AddonState::NotInstalled), false),
+            AddonStep::Offer
+        );
+        // Pressed: no second click while the install has not been seen to start.
+        assert_eq!(
+            addon_step(Some(&AddonState::NotInstalled), true),
+            AddonStep::Installing(None)
+        );
+        assert_eq!(
+            addon_step(
+                Some(&AddonState::Installing {
+                    done: 42,
+                    total: Some(100),
+                }),
+                false,
+            ),
+            AddonStep::Installing(Some(42))
+        );
+        let failed = AddonState::Failed {
+            message: "No connection.".to_owned(),
+        };
+        assert_eq!(
+            addon_step(Some(&failed), false),
+            AddonStep::Failed("No connection.".to_owned())
+        );
+        // Try again pressed: the old failure does not stay on show.
+        assert_eq!(addon_step(Some(&failed), true), AddonStep::Installing(None));
+    }
 
     use super::*;
 
