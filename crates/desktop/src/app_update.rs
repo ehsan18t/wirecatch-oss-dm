@@ -145,6 +145,16 @@ pub fn check(quiet: bool, cx: &mut App) {
     .detach();
 }
 
+/// The button that takes `update`, the same wherever it is offered.
+#[must_use]
+pub fn install_label(update: &AppUpdate) -> &'static str {
+    if update.download.is_some() {
+        "Install and restart"
+    } else {
+        "Open release page"
+    }
+}
+
 /// Installs `update`: downloads and checks its installer, starts it and quits. A system
 /// package, which the app cannot install, opens the release page instead.
 pub fn install(update: &AppUpdate, cx: &mut App) {
