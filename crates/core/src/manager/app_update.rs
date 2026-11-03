@@ -182,8 +182,9 @@ impl Manager {
                 Ok(())
             })
             .await?;
-            return Err(refused(
-                "the downloaded installer does not match its list of files",
+            return Err(CoreError::UpdateCheckFailed(
+                "The downloaded installer does not match this release, so it was not run. Try again."
+                    .into(),
             ));
         }
         Ok(target)
@@ -408,7 +409,7 @@ mod tests {
     #[tokio::test]
     async fn an_installer_that_does_not_match_its_manifest_is_deleted() {
         let h = Harness::new().await;
-        h.publish("v0.2.0", false, &key(), b"a different installer");
+        h.publish("v0.2.0", false, &key(), &vec![b'x'; INSTALLER.len()]);
         let update = h
             .manager
             .check_app_update("0.1.0", Some(FileKind::Setup))
@@ -424,7 +425,13 @@ mod tests {
                 CancellationToken::new(),
             )
             .await;
-        assert!(failed.is_err());
+        let Err(CoreError::UpdateCheckFailed(message)) = failed else {
+            panic!("expected a refusal, got {failed:?}");
+        };
+        assert_eq!(
+            message,
+            "The downloaded installer does not match this release, so it was not run. Try again."
+        );
         let kept = h
             .manager
             .inner
