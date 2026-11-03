@@ -766,14 +766,22 @@ impl DownloadWindow {
         };
         let front = per_mille
             .filter(|_| {
-                !matches!(
-                    row.status,
-                    DownloadStatus::Completed | DownloadStatus::Processing
-                )
+                row.total.is_some_and(|total| total > 0)
+                    && !matches!(
+                        row.status,
+                        DownloadStatus::Completed
+                            | DownloadStatus::Processing
+                            | DownloadStatus::Cancelled
+                    )
             })
             .map(|done| f32::from(done) / f32::from(PER_MILLE_DONE));
+        // Cancelling zeroes the row's progress: the curve stays where the run got to.
+        let end = match row.status {
+            DownloadStatus::Cancelled => self.record.reached(),
+            _ => front,
+        };
         let graph = self.record.drawable().then(|| {
-            run_graph(self.record.points(front.unwrap_or(1.)), front, color)
+            run_graph(self.record.points(end.unwrap_or(1.)), front, color)
                 .absolute()
                 .size_full()
         });

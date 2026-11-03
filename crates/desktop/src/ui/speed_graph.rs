@@ -138,7 +138,7 @@ fn paint(
 }
 
 /// `part` of `whole` to a thousandth, as a fraction.
-fn thousandths(part: u128, whole: u128) -> f32 {
+pub fn thousandths(part: u128, whole: u128) -> f32 {
     let scaled = u16::try_from((part * 1000) / whole.max(1)).unwrap_or(1000);
     f32::from(scaled.min(1000)) / 1000.
 }
