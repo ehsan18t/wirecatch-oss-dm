@@ -120,28 +120,23 @@ pub(super) fn open(
 /// Save and Cancel, with Delete queue on the left, which closes the editor for its own question.
 fn footer(form: &Entity<QueueForm>, cx: &App) -> Div {
     let state = form.read(cx);
-    let row = h_flex().w_full().gap_2().items_center();
     let (save, delete) = (form.clone(), form.clone());
     let deletable = state
         .original
         .as_ref()
         .is_some_and(|queue| !queue.is_default);
-    // Shown here, not above the form, so it is in sight wherever the form is scrolled.
-    let left = match &state.problem {
-        Some(problem) => div()
-            .text_role(Role::Secondary, cx)
-            .text_color(cx.theme().danger)
-            .child(problem.clone())
-            .into_any_element(),
-        None if deletable => Button::new("ask-delete")
+    let left = deletable.then(|| {
+        Button::new("ask-delete")
             .ghost()
             .text_color(cx.theme().danger)
             .label("Delete queue")
             .on_click(move |_, window, cx| delete.update(cx, |form, cx| form.delete(window, cx)))
-            .into_any_element(),
-        None => div().into_any_element(),
-    };
-    row.child(h_flex().flex_1().min_w_0().child(left))
+    });
+    let buttons = h_flex()
+        .w_full()
+        .gap_2()
+        .items_center()
+        .child(h_flex().flex_1().min_w_0().children(left))
         .child(
             Button::new("cancel")
                 .label("Cancel")
@@ -158,7 +153,18 @@ fn footer(form: &Entity<QueueForm>, cx: &App) -> Div {
                 .loading(state.stage == Stage::Saving)
                 .disabled(state.stage == Stage::Saving)
                 .on_click(move |_, window, cx| save.update(cx, |form, cx| form.save(window, cx))),
-        )
+        );
+    // Shown here, not above the form, so it is in sight wherever the form is scrolled.
+    v_flex()
+        .w_full()
+        .gap_2()
+        .children(state.problem.as_ref().map(|problem| {
+            div()
+                .text_role(Role::Secondary, cx)
+                .text_color(cx.theme().danger)
+                .child(problem.clone())
+        }))
+        .child(buttons)
 }
 
 pub struct QueueForm {
