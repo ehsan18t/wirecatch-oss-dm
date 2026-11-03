@@ -13,7 +13,7 @@
 
 ## Where things stand and what comes next
 
-As of 2026-10-31 the code quality audit has W0 to W5, W7, W8 and W14 done, most of W6, and W9's findings that could break a download (CORE-4 to CORE-7, CORE-9, CORE-10, CORE-12). The GPUI desktop app is on main (D95, D107), and so are queues that decide how their downloads run (D72), proxy profiles (D73) and queue folders (D94). [AUDIT](AUDIT.md) has the status table and every carried item. Items 1 to 7 under "Before the first release" are done; items 8 to 12, the audit's remaining code fixes, come next, then the release setup that is the maintainer's; this list is the order after it, which the maintainer may change.
+As of 2026-10-31 the code quality audit has W0 to W5, W7, W8 and W14 done, most of W6, and W9's findings that could break a download (CORE-4 to CORE-7, CORE-9, CORE-10, CORE-12). The GPUI desktop app is on main (D95, D107), and so are queues that decide how their downloads run (D72), proxy profiles (D73), queue folders (D94) and the rebuilt download list (D115). [AUDIT](AUDIT.md) has the status table and every carried item. Items 1 to 7 under "Before the first release" are done; items 8 to 12, the audit's remaining code fixes, come next, then the release setup that is the maintainer's; this list is the order after it, which the maintainer may change.
 
 ## After the first release
 
