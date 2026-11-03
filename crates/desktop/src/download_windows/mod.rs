@@ -5,6 +5,7 @@
 //! closes the GPUI windows it says.
 
 pub mod finished;
+mod run_record;
 mod view;
 
 use std::collections::HashMap;
