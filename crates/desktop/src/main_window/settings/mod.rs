@@ -224,7 +224,7 @@ fn screen(
 
 /// Sends `patch` to the manager; a refusal shows in the window in front.
 fn change(patch: AppSettingsPatch, cx: &mut App) {
-    if let Some(window) = cx.active_window() {
+    if let Some(window) = crate::backend::window_in_front(cx) {
         act(window, cx, move |manager| {
             api::change_settings(manager, patch)
         });

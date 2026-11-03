@@ -27,7 +27,7 @@ pub fn choose_folder(cx: &mut App) -> impl Future<Output = Option<String>> + use
         api::path_text(&folder)
             .map_err(|refused| {
                 cx.update(|cx| {
-                    if let Some(window) = cx.active_window() {
+                    if let Some(window) = crate::backend::window_in_front(cx) {
                         _ = window.update(cx, |_, window, cx| {
                             window.push_notification(refused.message, cx);
                         });

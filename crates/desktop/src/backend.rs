@@ -124,6 +124,14 @@ where
     .detach();
 }
 
+/// The window to tell something in. None is active while the app is in the background, as when a
+/// system dialog has just closed, so any open window does.
+#[must_use]
+pub fn window_in_front(cx: &App) -> Option<AnyWindowHandle> {
+    cx.active_window()
+        .or_else(|| cx.windows().into_iter().next())
+}
+
 /// [`command`] for work that does not wait.
 pub fn act(
     window: AnyWindowHandle,
