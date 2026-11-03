@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 
 use wirecatch_protocol::app::PER_MILLE_DONE;
 
+use crate::ui::speed_graph::thousandths;
+
 const SAMPLE_EVERY: Duration = Duration::from_millis(500);
 /// Most samples kept: every other one goes when full, so a long run keeps its whole shape.
 const MOST_SAMPLES: usize = 240;
@@ -29,7 +31,7 @@ pub struct Look {
 
 #[derive(Clone, Copy, Debug)]
 struct Sample {
-    per_mille: Option<u16>,
+    done: u64,
     speed: u64,
 }
 
@@ -43,6 +45,7 @@ pub struct RunRecord {
     sampled_done: Option<u64>,
     first_done: Option<u64>,
     last_done: u64,
+    reached: Option<u16>,
     peak: u64,
 }
 
@@ -76,6 +79,7 @@ impl RunRecord {
             self.last_moved = Some(now);
         }
         self.last_done = look.done;
+        self.reached = look.per_mille;
         self.peak = self.peak.max(look.speed);
         let due = self
             .last_sampled
@@ -95,7 +99,7 @@ impl RunRecord {
             });
         }
         self.samples.push(Sample {
-            per_mille: look.per_mille,
+            done: look.done,
             speed: look.speed,
         });
     }
@@ -105,24 +109,28 @@ impl RunRecord {
         self.samples.len() >= FEWEST_DRAWN
     }
 
+    /// How far across the run got, when its size is known.
+    pub fn reached(&self) -> Option<f32> {
+        self.reached
+            .map(|at| f32::from(at) / f32::from(PER_MILLE_DONE))
+    }
+
     /// Each sample as how far across (0 to 1) and its speed: across the file when its size is
-    /// known, else across the time watched. Runs from the left edge to `end`, the nearest sample's
-    /// speed filling what the window did not watch.
+    /// known, else across the bytes watched. Runs from the left edge to `end`, the nearest
+    /// sample's speed filling what the window did not watch.
     pub fn points(&self, end: f32) -> Vec<(f32, u64)> {
-        let last = self.samples.len().saturating_sub(1).max(1);
+        let from = match self.reached {
+            Some(_) => 0,
+            None => self.samples.first().map_or(0, |sample| sample.done),
+        };
+        let span = self.last_done.saturating_sub(from).max(1);
+        // Placed by bytes, which only rise in a run; the percent falls when an estimated size grows.
         let mut points: Vec<(f32, u64)> = self
             .samples
             .iter()
-            .enumerate()
-            .map(|(index, sample)| {
-                let across = sample.per_mille.map_or_else(
-                    || {
-                        let part = u16::try_from(index * 1000 / last).unwrap_or(1000);
-                        f32::from(part) / 1000.
-                    },
-                    |at| f32::from(at) / f32::from(PER_MILLE_DONE),
-                );
-                (across, sample.speed)
+            .map(|sample| {
+                let part = u128::from(sample.done.saturating_sub(from));
+                (thousandths(part, u128::from(span)) * end, sample.speed)
             })
             .collect();
         if let Some(&(across, speed)) = points.first()
@@ -203,10 +211,10 @@ mod tests {
     fn looks_within_the_sampling_gap_keep_one_sample() {
         let start = Instant::now();
         let mut record = RunRecord::default();
-        record.see(running(100, 10, 1), start);
-        record.see(running(110, 90, 2), start + Duration::from_millis(100));
-        record.see(running(120, 20, 3), start + SAMPLE_EVERY);
-        assert_eq!(record.points(0.12), [(0., 10), (0.1, 10), (0.12, 20)]);
+        record.see(running(100, 10, 100), start);
+        record.see(running(150, 90, 150), start + Duration::from_millis(100));
+        record.see(running(200, 20, 200), start + SAMPLE_EVERY);
+        assert_eq!(record.points(0.2), [(0., 10), (0.1, 10), (0.2, 20)]);
         assert_eq!(record.peak(), Some(90), "the peak sees every look");
     }
 
@@ -233,6 +241,40 @@ mod tests {
     }
 
     #[test]
+    fn a_moving_size_estimate_never_turns_the_curve_back() {
+        let start = Instant::now();
+        let mut record = RunRecord::default();
+        let unsized_yet = Look {
+            per_mille: None,
+            ..running(0, 10, 1000)
+        };
+        let looks = [
+            unsized_yet,
+            Look {
+                done: 2000,
+                ..unsized_yet
+            },
+            Look {
+                done: 3000,
+                ..unsized_yet
+            },
+            running(300, 20, 4000),
+            running(300, 30, 5000),
+            running(150, 40, 6000),
+            running(200, 50, 8000),
+        ];
+        for (step, look) in (0u32..).zip(looks) {
+            record.see(look, start + SAMPLE_EVERY * step);
+        }
+        let points = record.points(0.2);
+        assert!(
+            points.windows(2).all(|pair| pair[0].0 < pair[1].0),
+            "{points:?}"
+        );
+        assert_eq!(points.last(), Some(&(0.2, 50)));
+    }
+
+    #[test]
     fn a_long_run_thins_its_samples_and_keeps_its_ends() {
         let start = Instant::now();
         let mut record = RunRecord::default();
@@ -253,14 +295,14 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_size_spreads_across_the_time_watched() {
+    fn an_unknown_size_spreads_across_the_bytes_watched() {
         let start = Instant::now();
         let mut record = RunRecord::default();
         for step in 0..3u32 {
             record.see(
                 Look {
                     per_mille: None,
-                    ..running(0, 10, u64::from(step))
+                    ..running(0, 10, 1000 + u64::from(step))
                 },
                 start + SAMPLE_EVERY * step,
             );
@@ -273,13 +315,34 @@ mod tests {
     fn the_curve_runs_from_the_start_to_the_end_asked_for() {
         let start = Instant::now();
         let mut record = RunRecord::default();
-        record.see(running(100, 10, 1), start);
-        record.see(running(500, 30, 2), start + SAMPLE_EVERY);
+        record.see(running(100, 10, 1000), start);
+        record.see(running(200, 30, 2000), start + SAMPLE_EVERY);
+        record.see(
+            running(400, 30, 4000),
+            start + SAMPLE_EVERY + Duration::from_millis(100),
+        );
         assert_eq!(
             record.points(0.8),
-            [(0., 10), (0.1, 10), (0.5, 30), (0.8, 30)]
+            [(0., 10), (0.2, 10), (0.4, 30), (0.8, 30)]
         );
         assert_eq!(record.points(1.).last(), Some(&(1., 30)));
+    }
+
+    #[test]
+    fn the_last_look_says_how_far_the_run_reached() {
+        let start = Instant::now();
+        let mut record = RunRecord::default();
+        assert_eq!(record.reached(), None);
+        record.see(running(500, 10, 5000), start);
+        assert_eq!(record.reached(), Some(0.5));
+        record.see(
+            Look {
+                running: false,
+                ..running(0, 0, 0)
+            },
+            start + SAMPLE_EVERY,
+        );
+        assert_eq!(record.reached(), Some(0.5), "only running looks count");
     }
 
     #[test]
