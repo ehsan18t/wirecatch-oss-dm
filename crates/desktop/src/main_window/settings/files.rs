@@ -54,6 +54,7 @@ fn where_files_go(library: &Entity<Library>) -> SettingGroup {
         .title("Where files go")
         .item(
             SettingItem::new("Download folder", folder)
+                .layout(Axis::Vertical)
                 .description("Used when no file type rule below matches.")
                 .keywords(["location", "directory", "path", "save", "destination"]),
         )
@@ -88,11 +89,19 @@ fn download_folder(library: &Entity<Library>, cx: &App) -> AnyElement {
         |s| text::folder(&s.default_folder.0),
         String::new(),
     );
+    let theme = cx.theme();
     h_flex()
+        .w_full()
         .gap_2()
         .child(
             div()
-                .max_w(px(FOLDER_WIDTH * 1.5))
+                .flex_1()
+                .min_w_0()
+                .px_2()
+                .py_1()
+                .border_1()
+                .border_color(theme.border)
+                .rounded(theme.radius)
                 .truncate()
                 .text_role(Role::Secondary, cx)
                 .child(folder),
