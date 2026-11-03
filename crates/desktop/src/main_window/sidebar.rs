@@ -5,6 +5,7 @@ use chrono::Local;
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -28,6 +29,23 @@ use crate::ui::{QueueTile, Role, Typed as _, tokens};
 pub(super) const WIDTH: f32 = 256.;
 /// Queues shown before the rest fold away under "more queues".
 const QUEUES_SHOWN: usize = 3;
+
+/// A foot page's element id, name and icon.
+pub(super) fn foot_page(screen: Screen) -> (&'static str, &'static str, Lucide) {
+    match screen {
+        Screen::Shortcuts => ("open-shortcuts", "Keyboard shortcuts", Lucide::Keyboard),
+        Screen::About => ("open-about", "About", Lucide::Info),
+        Screen::Downloads | Screen::Settings => ("open-settings", "Settings", Lucide::Settings),
+    }
+}
+
+/// An app update is ready: the About icon shows a dot, and About offers it.
+pub(super) fn update_waiting(cx: &App) -> bool {
+    matches!(
+        crate::app_update::entity(cx).read(cx).stage,
+        crate::app_update::Stage::Available(_)
+    )
+}
 
 impl MainWindow {
     pub(super) fn sidebar(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
@@ -81,7 +99,7 @@ impl MainWindow {
                     .child(v_flex().gap_px().children(downloads).children(waiting))
                     .child(queues),
             )
-            .child(self.screen_switch(cx))
+            .child(self.foot(cx))
     }
 
     /// The questions waiting about browser downloads, which brings all their windows up.
@@ -112,31 +130,85 @@ impl MainWindow {
         )
     }
 
-    /// The foot of the navigation: Settings, or the way back to the downloads from there.
-    pub(super) fn screen_switch(&self, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
-        let (icon, label) = match self.screen {
-            Screen::Downloads => (Icon::new(IconName::Settings), "Settings"),
-            Screen::Settings => (Icon::new(Lucide::Download), "Downloads"),
-        };
+    /// The foot of the navigation: Settings by name, then the two pages that fit in an icon.
+    pub(super) fn foot(&self, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
+        let on_settings = self.screen == Screen::Settings;
+        let shortcuts = self.foot_icon(Screen::Shortcuts, cx);
+        let about = self.foot_icon(Screen::About, cx);
+        let open_settings = cx.listener(|this, _, _, cx| this.open_screen(Screen::Settings, cx));
         let theme = cx.theme();
-        div()
+        let settings = h_flex()
+            .id("open-settings")
+            .flex_1()
+            .min_w_0()
+            .h(px(30.))
+            .px_2()
+            .gap_2()
+            .rounded(theme.radius)
+            .cursor_pointer()
+            .when(on_settings, |item| {
+                item.bg(theme.sidebar_accent)
+                    .text_color(theme.sidebar_accent_foreground)
+                    .font_weight(FontWeight::MEDIUM)
+            })
+            .when(!on_settings, |item| {
+                item.text_color(theme.muted_foreground)
+                    .hover(|item| item.bg(theme.list_hover).text_color(theme.foreground))
+            })
+            .child(
+                Icon::new(IconName::Settings)
+                    .with_size(tokens::ICON)
+                    .when(on_settings, |icon| icon.text_color(theme.primary)),
+            )
+            .child("Settings")
+            .on_click(open_settings);
+        h_flex()
             .p_2()
+            .gap_0p5()
             .border_t_1()
             .border_color(theme.sidebar_border)
-            .child(
-                h_flex()
-                    .id("screen-switch")
-                    .h(px(30.))
-                    .px_2()
-                    .gap_2()
-                    .rounded(theme.radius)
-                    .cursor_pointer()
-                    .text_color(theme.muted_foreground)
+            .child(settings)
+            .child(shortcuts)
+            .child(about)
+    }
+
+    /// Keyboard shortcuts or About at the foot: an icon, with its name on hover.
+    fn foot_icon(&self, screen: Screen, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
+        let theme = cx.theme();
+        let current = self.screen == screen;
+        let (id, label, icon) = foot_page(screen);
+        let dot = screen == Screen::About && update_waiting(cx);
+        div()
+            .id(id)
+            .relative()
+            .flex_shrink_0()
+            .size(px(30.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(theme.radius)
+            .cursor_pointer()
+            .when(current, |item| {
+                item.bg(theme.sidebar_accent).text_color(theme.primary)
+            })
+            .when(!current, |item| {
+                item.text_color(theme.muted_foreground)
                     .hover(|item| item.bg(theme.list_hover).text_color(theme.foreground))
-                    .child(icon.with_size(tokens::ICON))
-                    .child(label)
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_settings(cx))),
-            )
+            })
+            .tooltip(move |window, cx| Tooltip::new(label).build(window, cx))
+            .child(Icon::new(icon).with_size(tokens::ICON))
+            .when(dot, |item| {
+                item.child(
+                    div()
+                        .absolute()
+                        .top(px(5.))
+                        .right(px(5.))
+                        .size(px(7.))
+                        .rounded_full()
+                        .bg(theme.primary),
+                )
+            })
+            .on_click(cx.listener(move |this, _, _, cx| this.open_screen(screen, cx)))
     }
 
     /// The queues, in one panel: the first few, the one on screen, and the rest behind "more
@@ -227,7 +299,7 @@ impl MainWindow {
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
         let theme = cx.theme();
-        let current = self.view == view;
+        let current = self.screen == Screen::Downloads && self.view == view;
         let alarming = view == View::Group(Group::Attention) && count > 0;
         h_flex()
             .id(id)

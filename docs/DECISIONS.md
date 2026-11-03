@@ -1124,3 +1124,11 @@ Recorded on 2026-10-31 for W13. It carries out D44.6: which cookies go with a ca
 3. The extension still sends `cookies`, picked with `tldts` as before (D35), because an app from before version 2 ignores the jar and uses it. `tldts` stays until `MIN_PROTOCOL_VERSION` passes 2, and with such an app the extension's list still decides.
 4. Media from another site whose request was seen goes with the header the browser sent and no jar (D59.3), since no cookie read says what the browser sends there.
 5. `packages/protocol/src/cookie-scope.cases.json` holds the sites and requests both sides are tested against, so the app and the extension pick alike.
+
+### D113. Settings, Keyboard shortcuts and About at the sidebar's foot, with a way back from settings
+
+Decided with the maintainer on 2026-11-04. It replaces D91's switch, restores the "Back to downloads" item D91 removed, and moves About (D109) and the Keyboard shortcuts dialog to screens of their own.
+
+1. The foot of the sidebar is always the same: Settings by name, then Keyboard shortcuts and About as icons with their names on hover. In the icon rail, all three stack as icons. The one open is tinted, and the About icon shows a dot while an app update is ready, which About then offers.
+2. The settings screen has "Back to downloads" at the top of its own navigation. Escape outside a field leaves any of the three screens for the downloads, and Ctrl+, still switches settings on and off.
+3. Keyboard shortcuts and About fill the content area beside the main navigation, so choosing a view goes straight back. They are no longer in the settings list, so its search no longer finds them; the palette does.

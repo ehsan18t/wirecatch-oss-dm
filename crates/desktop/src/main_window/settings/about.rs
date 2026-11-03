@@ -1,4 +1,4 @@
-//! About: the app, its version and the media add-on's, and where its licence, source and help
+//! About: the app, its version, its update and the media add-on's, and where its licence, source and help
 //! live, all from `config/product.toml`.
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -22,9 +22,23 @@ use crate::ui::{Role, Typed as _, mark};
 const MARK_HEIGHT: f32 = 36.;
 
 pub(super) fn page(library: &Entity<Library>) -> SettingPage {
-    SettingPage::new(super::Page::About.title())
+    let page = SettingPage::new("About")
         .resettable(false)
-        .groups([product(library), project(), help()])
+        .group(product(library));
+    let page = if crate::app_update::no_updates().is_none() {
+        page.group(update())
+    } else {
+        page
+    };
+    page.groups([project(), help()])
+}
+
+/// Where the app's update stands, for the dot on the About icon to lead somewhere.
+fn update() -> SettingGroup {
+    SettingGroup::new().title("Updates").item(SettingItem::new(
+        "App version",
+        SettingField::render(|_, _, cx| super::general::app_update_field(cx)),
+    ))
 }
 
 /// The app with its version, and the media add-on's programs with theirs.
