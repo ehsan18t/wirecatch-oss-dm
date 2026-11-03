@@ -781,17 +781,21 @@ impl DownloadWindow {
             _ => theme.muted_foreground,
         };
         let label = self.panel_label(row);
-        // No percent or front once it is over: a cancelled download's progress reads zero.
         let moving = !matches!(
             row.status,
             DownloadStatus::Completed | DownloadStatus::Processing | DownloadStatus::Cancelled
         );
         let front = per_mille
-            .filter(|_| moving)
+            .filter(|_| moving && row.total.is_some_and(|total| total > 0))
             .map(|done| f32::from(done) / f32::from(PER_MILLE_DONE));
-        let end = if cancelled { 0. } else { front.unwrap_or(1.) };
+        // Cancelling zeroes the row's progress: the curve stays where the run got to.
+        let end = if cancelled {
+            self.record.reached()
+        } else {
+            front
+        };
         let graph = self.record.drawable().then(|| {
-            run_graph(self.record.points(end), front, color)
+            run_graph(self.record.points(end.unwrap_or(1.)), front, color)
                 .absolute()
                 .size_full()
         });
