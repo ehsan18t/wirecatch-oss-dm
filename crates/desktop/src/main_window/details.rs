@@ -313,8 +313,9 @@ fn facts(
 fn queue_picker(id: DownloadId, queue: String, others: Vec<(QueueId, String)>) -> impl IntoElement {
     Button::new("details-queue")
         .xsmall()
-        .ghost()
+        .outline()
         .label(queue)
+        .dropdown_caret(true)
         .dropdown_menu(move |menu, _, _| {
             others.iter().fold(menu, |menu, (other, name)| {
                 let other = *other;
@@ -383,7 +384,7 @@ fn places(
             (row.status != DownloadStatus::Completed).then(|| {
                 Button::new("details-change-folder")
                     .xsmall()
-                    .ghost()
+                    .outline()
                     .label("Change")
                     .on_click(cx.listener(move |_, _, window, cx| {
                         fixes::choose_folder(id, false, window, cx);
@@ -399,7 +400,7 @@ fn places(
             Some(
                 Button::new("details-copy-link")
                     .xsmall()
-                    .ghost()
+                    .outline()
                     .label("Copy")
                     .on_click(move |_, window, cx| {
                         cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
@@ -422,7 +423,7 @@ fn places(
                     .child(
                         Button::new("details-new-link")
                             .xsmall()
-                            .ghost()
+                            .outline()
                             .label("Get a new link")
                             .on_click(move |_, window, cx| {
                                 refresh_dialog::open(library.clone(), id, window, cx);
