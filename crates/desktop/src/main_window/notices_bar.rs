@@ -5,77 +5,40 @@ use gpui_kit::component::Sizable as _;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::notification::Notification;
+use gpui_kit::component::progress::Progress as ProgressBar;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, IntoElement, ParentElement as _, Styled as _, Window, div,
+    AnyElement, App, Context, Entity, IntoElement, ParentElement as _, Styled as _, Window, div,
 };
+use wirecatch_core::AppUpdate;
+use wirecatch_engine::Progress;
 use wirecatch_protocol::app::AppSettingsPatch;
 use wirecatch_shell::{api, host};
 
 use super::MainWindow;
+use crate::app_update::{Stage, Updates};
 use crate::backend::{Backend, act};
 use crate::ui::Callout;
 
 impl MainWindow {
-    /// A newer version of the app, until it is installed or put aside (D111.4).
+    /// A newer version of the app, until it is installed or put aside, with its download and why
+    /// it failed (D111.4).
     pub(super) fn update_banner(cx: &App) -> Option<AnyElement> {
         let updates = crate::app_update::entity(cx);
         let read = updates.read(cx);
-        let crate::app_update::Stage::Available(update) = read.stage.clone() else {
-            return None;
+        let put_aside =
+            |update: &AppUpdate| read.dismissed.as_deref() == Some(update.version.as_str());
+        let callout = match read.stage.clone() {
+            Stage::Available(update) if !put_aside(&update) => update_available(&update, &updates),
+            Stage::Downloading {
+                update, progress, ..
+            } => update_downloading(&update, &progress),
+            Stage::InstallFailed { update, message } if !put_aside(&update) => {
+                update_failed(update, message, &updates)
+            }
+            _ => return None,
         };
-        if read.dismissed.as_deref() == Some(update.version.as_str()) {
-            return None;
-        }
-        let app = host::CHANNEL.name();
-        let version = update.version.clone();
-        let page = update.page.clone();
-        let installs = update.download.is_some();
-        Some(
-            div()
-                .px_5()
-                .pb_2()
-                .child(
-                    Callout::info(if installs {
-                        format!("{app} restarts to finish installing it.")
-                    } else {
-                        "Install it with your package manager.".to_owned()
-                    })
-                    .title(format!("{app} {version} is available"))
-                    .actions_beside()
-                    .action(
-                        Button::new("update-later")
-                            .small()
-                            .ghost()
-                            .label("Later")
-                            .on_click(move |_, _, cx| {
-                                updates.update(cx, |updates, cx| {
-                                    updates.dismissed = Some(version.clone());
-                                    cx.notify();
-                                });
-                            }),
-                    )
-                    .when(installs, |callout| {
-                        callout.action(
-                            Button::new("update-notes")
-                                .small()
-                                .ghost()
-                                .label("What's new")
-                                .on_click(move |_, _, cx| cx.open_url(&page)),
-                        )
-                    })
-                    .action(
-                        Button::new("update-install")
-                            .small()
-                            .primary()
-                            .label(crate::app_update::install_label(&update))
-                            .on_click(move |_, _, cx| {
-                                crate::app_update::install(&update, cx);
-                            }),
-                    ),
-                )
-                .into_any_element(),
-        )
+        Some(div().px_5().pb_2().child(callout).into_any_element())
     }
 
     /// The banner while the list could not be saved: Try again saves again, Dismiss hides it.
@@ -148,6 +111,91 @@ impl MainWindow {
             window.push_notification(shown, cx);
         }
     }
+}
+
+fn update_available(update: &AppUpdate, updates: &Entity<Updates>) -> Callout {
+    let app = host::CHANNEL.name();
+    let installs = update.download.is_some();
+    let page = update.page.clone();
+    let chosen = update.clone();
+    Callout::info(if installs {
+        format!("{app} restarts to finish installing it.")
+    } else {
+        "Install it with your package manager.".to_owned()
+    })
+    .title(format!("{app} {} is available", update.version))
+    .actions_beside()
+    .action(later(update, updates))
+    .when(installs, |callout| {
+        callout.action(
+            Button::new("update-notes")
+                .small()
+                .ghost()
+                .label("What's new")
+                .on_click(move |_, _, cx| cx.open_url(&page)),
+        )
+    })
+    .action(
+        Button::new("update-install")
+            .small()
+            .primary()
+            .label(crate::app_update::install_label(update))
+            .on_click(move |_, _, cx| crate::app_update::install(&chosen, cx)),
+    )
+}
+
+fn update_downloading(update: &AppUpdate, progress: &Progress) -> Callout {
+    let app = host::CHANNEL.name();
+    let done = crate::app_update::percent(progress);
+    Callout::info(done.map_or_else(
+        || format!("Downloading {app} {}", update.version),
+        |done| format!("Downloading {app} {}, {done:.0}%", update.version),
+    ))
+    .under(
+        ProgressBar::new("update-progress")
+            .loading(done.is_none())
+            .value(done.unwrap_or_default()),
+    )
+    .actions_beside()
+    .action(
+        Button::new("update-cancel")
+            .small()
+            .outline()
+            .label("Cancel")
+            .on_click(|_, _, cx| crate::app_update::cancel(cx)),
+    )
+}
+
+fn update_failed(update: AppUpdate, message: String, updates: &Entity<Updates>) -> Callout {
+    let app = host::CHANNEL.name();
+    let later = later(&update, updates);
+    Callout::danger(message)
+        .title(format!("{app} {} could not be installed", update.version))
+        .actions_beside()
+        .action(later)
+        .action(
+            Button::new("update-retry")
+                .small()
+                .outline()
+                .label("Try again")
+                .on_click(move |_, _, cx| crate::app_update::install(&update, cx)),
+        )
+}
+
+/// Puts the banner aside for this version.
+fn later(update: &AppUpdate, updates: &Entity<Updates>) -> Button {
+    let version = update.version.clone();
+    let updates = updates.clone();
+    Button::new("update-later")
+        .small()
+        .ghost()
+        .label("Later")
+        .on_click(move |_, _, cx| {
+            updates.update(cx, |updates, cx| {
+                updates.dismissed = Some(version.clone());
+                cx.notify();
+            });
+        })
 }
 
 /// Shows the download list set aside at this start in its folder.

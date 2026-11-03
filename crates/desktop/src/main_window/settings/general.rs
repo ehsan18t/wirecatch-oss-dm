@@ -4,7 +4,9 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _, h_flex};
+use gpui_kit::component::{
+    ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _, h_flex, v_flex,
+};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, ElementId, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -19,6 +21,9 @@ use crate::app_update::{NoUpdates, Stage};
 use crate::library::Library;
 use crate::theme;
 use crate::ui::{Role, Typed as _, tokens};
+
+/// Narrow enough to leave the setting's title its room while an update downloads.
+const DOWNLOADING_WIDTH: f32 = 200.;
 
 const CLOCKS: &[(ClockFormat, &str)] = &[
     (ClockFormat::TwelveHour, "12-hour"),
@@ -281,40 +286,61 @@ pub(super) fn app_update_field(cx: &App) -> AnyElement {
                     .on_click(move |_, _, cx| crate::app_update::install(&update, cx)),
             )
         }
-        Stage::Downloading { update, progress } => {
-            // In tenths of a percent, as whole numbers.
-            let done = progress
-                .total()
-                .filter(|total| *total > 0)
-                .and_then(|total| u16::try_from(progress.done().min(total) * 1000 / total).ok())
-                .map(|tenths| f32::from(tenths) / 10.);
-            row.child(status(
-                done.map_or_else(
-                    || format!("Downloading version {}.", update.version),
-                    |done| format!("Downloading version {}, {done:.0}%.", update.version),
-                ),
-                cx,
-            ))
+        Stage::Downloading {
+            update, progress, ..
+        } => row
+            .child(update_downloading(&update.version, &progress, cx))
             .child(
-                div().w(px(160.)).child(
-                    Progress::new("app-update-progress")
-                        .loading(done.is_none())
-                        .value(done.unwrap_or_default()),
-                ),
-            )
-        }
+                Button::new("cancel-app-update")
+                    .small()
+                    .outline()
+                    .label("Cancel")
+                    .on_click(|_, _, cx| crate::app_update::cancel(cx)),
+            ),
         Stage::Installing => row.child(status("Installing.".into(), cx)),
-        Stage::Failed(message) => row
-            .child(
-                div()
-                    .text_right()
-                    .text_role(Role::Meta, cx)
-                    .text_color(cx.theme().danger)
-                    .child(message),
-            )
-            .child(check("Try again")),
+        Stage::Failed(message) => row.child(failure(message, cx)).child(check("Try again")),
+        Stage::InstallFailed { update, message } => row.child(failure(message, cx)).child(
+            Button::new("retry-app-update")
+                .small()
+                .outline()
+                .label("Try again")
+                .on_click(move |_, _, cx| crate::app_update::install(&update, cx)),
+        ),
     }
     .into_any_element()
+}
+
+fn update_downloading(
+    version: &str,
+    progress: &wirecatch_engine::Progress,
+    cx: &App,
+) -> impl IntoElement + use<> {
+    let done = crate::app_update::percent(progress);
+    v_flex()
+        .w(px(DOWNLOADING_WIDTH))
+        .gap_1()
+        .child(
+            div()
+                .text_right()
+                .text_role(Role::Meta, cx)
+                .child(done.map_or_else(
+                    || format!("Downloading version {version}."),
+                    |done| format!("Downloading version {version}, {done:.0}%."),
+                )),
+        )
+        .child(
+            Progress::new("app-update-progress")
+                .loading(done.is_none())
+                .value(done.unwrap_or_default()),
+        )
+}
+
+fn failure(message: String, cx: &App) -> impl IntoElement + use<> {
+    div()
+        .text_right()
+        .text_role(Role::Meta, cx)
+        .text_color(cx.theme().danger)
+        .child(message)
 }
 
 /// The official website, for an unofficial build; nothing while the product has no website yet.
