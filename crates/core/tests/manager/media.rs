@@ -1266,8 +1266,9 @@ async fn a_page_yt_dlp_cannot_read_explains_why_in_the_list() -> TestResult {
         _ => None,
     })
     .await;
-    let row = wait_until("the failed row", || h.manager.list_downloads().pop()).await;
-    let row = h.wait_status(row.id, DownloadStatus::Failed).await;
+    // Already there: a window watching the question shows why as soon as the question closes.
+    let row = h.manager.list_downloads().pop().unwrap();
+    assert_eq!(row.status, DownloadStatus::Failed);
     let error = row.error.unwrap();
     assert!(
         error.message.contains("[site] 42: Video unavailable"),

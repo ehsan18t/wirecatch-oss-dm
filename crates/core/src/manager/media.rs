@@ -714,12 +714,13 @@ impl Manager {
         }
         if let Some((pending, error)) = self.offer(id, found) {
             warn!(error = %error.message, "media could not be read");
-            // The reading is over; the failed download (or the page) that follows says why.
-            self.emit(UiEvent::ConfirmationClosed { id });
             if pending.page_otherwise {
+                self.emit(UiEvent::ConfirmationClosed { id });
                 self.add_page_as_file(pending).await;
             } else {
+                // Closed after the row exists: a window on this question shows the row's reason.
                 self.record_media_failure(pending, error).await;
+                self.emit(UiEvent::ConfirmationClosed { id });
             }
         }
     }
