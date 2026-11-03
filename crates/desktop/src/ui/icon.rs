@@ -39,6 +39,7 @@ gpui_kit::assets::icon_assets!(
         Settings,
         SlidersHorizontal,
         Trash,
+        TriangleAlert,
         Zap,
         ZapOff,
     ]

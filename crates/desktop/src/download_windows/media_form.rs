@@ -21,7 +21,7 @@ use wirecatch_protocol::app::{
     AddonId, AddonState, Category, MediaChoice, MediaOption, MediaSelection, OutputFormat,
     StreamAction,
 };
-use wirecatch_protocol::{QuestionId, QueueId};
+use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use wirecatch_shell::activity::format_bytes;
 use wirecatch_shell::{api, host};
 
@@ -29,7 +29,7 @@ use super::media_output::{
     OutputChoice, conversion_note, fit_for, format_label, kbps_for, quality_notes, shown_subtitles,
     size_for, video_length,
 };
-use super::view::{folder_box, queue_badge_picker};
+use super::view::{earlier_chip, folder_box, queue_badge_picker};
 use crate::backend::Backend;
 use crate::library::Library;
 use crate::ui::{Role, Typed as _};
@@ -146,6 +146,8 @@ pub struct MediaForm {
     stale: bool,
     /// An answer is on its way.
     pub busy: bool,
+    /// The download already in the list for this video.
+    pub earlier: Option<DownloadId>,
     /// A quality that needs the media add-on: it is sent once the add-on is in.
     awaiting_addon: Option<MediaSelection>,
     quality: Entity<SelectState<SearchableVec<Quality>>>,
@@ -201,6 +203,7 @@ impl MediaForm {
             queue: None,
             stale: true,
             busy: false,
+            earlier: None,
             awaiting_addon: None,
             quality,
             format,
@@ -478,25 +481,31 @@ impl MediaForm {
     }
 
     fn heading(&self, cx: &mut Context<'_, Self>) -> AnyElement {
-        let page = self.choice.page_url.clone().unwrap_or_default();
-        let host_name = text::host(&page).to_owned();
-        let meta = match self.choice.duration_ms.map(video_length) {
-            Some(length) => format!("{host_name} · {length}"),
-            None => host_name,
-        };
+        let meta = video_meta(
+            self.choice.page_url.as_deref(),
+            self.choice.duration_ms.map(video_length),
+        );
         let title: SharedString = self.choice.title.clone().into();
         let tip = title.clone();
         v_flex()
+            .gap_0p5()
             .child(
                 div()
                     .id("media-title")
                     .truncate()
-                    .text_role(Role::Strong, cx)
+                    .text_role(Role::Title, cx)
                     .child(title)
                     .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx)),
             )
-            .child(div().text_role(Role::Meta, cx).child(meta))
+            .children(meta.map(|meta| div().text_role(Role::Meta, cx).child(meta)))
             .into_any_element()
+    }
+
+    fn earlier_note(&self, cx: &App) -> Option<AnyElement> {
+        let earlier = self.earlier?;
+        let library = self.library.read(cx);
+        let row = library.downloads.iter().find(|row| row.id == earlier)?;
+        Some(earlier_chip(row, cx))
     }
 
     fn format_row(&self, cx: &App) -> Option<AnyElement> {
@@ -665,7 +674,12 @@ impl Render for MediaForm {
             .cloned();
         v_flex()
             .gap_2p5()
-            .child(self.heading(cx))
+            .child(
+                v_flex()
+                    .gap_1p5()
+                    .child(self.heading(cx))
+                    .children(self.earlier_note(cx)),
+            )
             .when_some(self.choice.missing_quality.clone(), |body, missing| {
                 body.child(div().text_role(Role::Meta, cx).child(format!(
                     "This video doesn't offer {missing}, your saved resolution."
@@ -796,4 +810,32 @@ fn note(text: String, cx: &App) -> AnyElement {
         .text_role(Role::Meta, cx)
         .child(text)
         .into_any_element()
+}
+
+/// The line under a video's title: its site and length, whichever are known.
+fn video_meta(page: Option<&str>, length: Option<String>) -> Option<String> {
+    let site = page.map(text::host).filter(|host| !host.is_empty());
+    match (site, length) {
+        (Some(site), Some(length)) => Some(format!("{site} · {length}")),
+        (Some(site), None) => Some(site.to_owned()),
+        (None, length) => length,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_video_without_a_page_or_length_has_no_line_under_its_title() {
+        let page = Some("https://example.com/watch");
+        let length = || Some("12:04".to_owned());
+        assert_eq!(
+            video_meta(page, length()).as_deref(),
+            Some("example.com · 12:04")
+        );
+        assert_eq!(video_meta(page, None).as_deref(), Some("example.com"));
+        assert_eq!(video_meta(None, length()).as_deref(), Some("12:04"));
+        assert_eq!(video_meta(None, None), None);
+    }
 }

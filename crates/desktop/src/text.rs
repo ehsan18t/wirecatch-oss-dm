@@ -441,6 +441,45 @@ fn day_name(day: NaiveDate, today: NaiveDate, format: &str) -> String {
     }
 }
 
+/// What a question's window says of the download already in the list for its link (D23):
+/// `Already downloaded yesterday at 7:05 AM`, `Already in your list, paused`.
+pub fn earlier_notice(row: &DownloadSummary) -> String {
+    earlier_notice_on(row, Local::now().date_naive(), clock_format())
+}
+
+fn earlier_notice_on(row: &DownloadSummary, today: NaiveDate, clock: ClockFormat) -> String {
+    let when = |at| when_said(at, today, clock);
+    match row.status {
+        DownloadStatus::Completed => format!(
+            "Already downloaded {}",
+            when(row.completed_at.unwrap_or(row.added_at))
+        ),
+        DownloadStatus::Connecting | DownloadStatus::Downloading | DownloadStatus::Processing => {
+            "Already downloading".to_owned()
+        }
+        DownloadStatus::Queued => "Already in your list, queued".to_owned(),
+        DownloadStatus::Paused => "Already in your list, paused".to_owned(),
+        DownloadStatus::Failed => "Already in your list, failed".to_owned(),
+        DownloadStatus::Cancelled => format!("Started {}, then cancelled", when(row.added_at)),
+    }
+}
+
+/// A moment in a sentence: `today at 6:38 PM`, `yesterday at 7:05 AM` or `on 3 Sep 2026`.
+fn when_said(at: UnixMillis, today: NaiveDate, clock: ClockFormat) -> String {
+    let Some(at) = Local.timestamp_millis_opt(at.0).single() else {
+        return "earlier".to_owned();
+    };
+    let day = at.date_naive();
+    let time = format_time(at.time(), false, clock);
+    if day == today {
+        format!("today at {time}")
+    } else if today.pred_opt() == Some(day) {
+        format!("yesterday at {time}")
+    } else {
+        at.format("on %-d %b %Y").to_string()
+    }
+}
+
 /// A moment's clock time to the second, split for a row: `3:42` and `:07 PM`.
 pub fn clock_parts(at: UnixMillis) -> (String, String) {
     let Some(at) = Local.timestamp_millis_opt(at.0).single() else {
@@ -603,6 +642,73 @@ mod tests {
         assert_eq!(
             format_time(morning, false, ClockFormat::TwentyFourHour),
             "07:05"
+        );
+    }
+
+    #[test]
+    fn an_earlier_download_says_when_it_finished_or_what_it_is_doing() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 10).unwrap();
+        let moment = |month, day, hour, minute| {
+            UnixMillis(
+                Local
+                    .with_ymd_and_hms(2026, month, day, hour, minute, 0)
+                    .unwrap()
+                    .timestamp_millis(),
+            )
+        };
+        let said = |status, clock| {
+            let mut row = wirecatch_test_support::downloads::download(1);
+            row.status = status;
+            row.added_at = moment(10, 10, 18, 30);
+            row.completed_at = Some(moment(10, 10, 18, 38));
+            earlier_notice_on(&row, today, clock)
+        };
+        let finished_on = |at| {
+            let mut row = wirecatch_test_support::downloads::download(1);
+            row.status = DownloadStatus::Completed;
+            row.completed_at = Some(at);
+            earlier_notice_on(&row, today, ClockFormat::TwelveHour)
+        };
+        let twelve = ClockFormat::TwelveHour;
+
+        assert_eq!(
+            said(DownloadStatus::Completed, twelve),
+            "Already downloaded today at 6:38 PM"
+        );
+        assert_eq!(
+            said(DownloadStatus::Completed, ClockFormat::TwentyFourHour),
+            "Already downloaded today at 18:38"
+        );
+        assert_eq!(
+            finished_on(moment(10, 9, 7, 5)),
+            "Already downloaded yesterday at 7:05 AM"
+        );
+        assert_eq!(
+            finished_on(moment(9, 3, 9, 0)),
+            "Already downloaded on 3 Sep 2026"
+        );
+        for status in [
+            DownloadStatus::Connecting,
+            DownloadStatus::Downloading,
+            DownloadStatus::Processing,
+        ] {
+            assert_eq!(said(status, twelve), "Already downloading");
+        }
+        assert_eq!(
+            said(DownloadStatus::Queued, twelve),
+            "Already in your list, queued"
+        );
+        assert_eq!(
+            said(DownloadStatus::Paused, twelve),
+            "Already in your list, paused"
+        );
+        assert_eq!(
+            said(DownloadStatus::Failed, twelve),
+            "Already in your list, failed"
+        );
+        assert_eq!(
+            said(DownloadStatus::Cancelled, twelve),
+            "Started today at 6:30 PM, then cancelled"
         );
     }
 

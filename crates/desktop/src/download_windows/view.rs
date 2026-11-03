@@ -20,7 +20,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
+    AnyElement, App, AppContext as _, Context, Entity, Hsla, InteractiveElement as _, IntoElement,
     ParentElement as _, Pixels, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
     Subscription, Window, canvas, div, px, relative, size,
 };
@@ -53,8 +53,8 @@ const STALL_CHECK: std::time::Duration = std::time::Duration::from_secs(1);
 /// A file's question and its progress share this height: the window stays still between them and
 /// Pause lands where Download was.
 const FILE_CONTENT_HEIGHT: f32 = 288.;
-/// How strongly a queue's name is tinted with the accent colour.
-const BADGE_TINT: f32 = 0.14;
+/// How strongly a chip or panel is tinted with its colour.
+const TINT: f32 = 0.14;
 /// The queue picker's widest, leaving the row's buttons their full labels.
 const PICKER_WIDTH: f32 = 136.;
 
@@ -65,6 +65,8 @@ pub struct DownloadWindow {
     shows: Shows,
     /// The question, once read; `None` while reading and once it closed.
     question: Option<Question>,
+    /// The download already in the list for the question's link.
+    earlier: Option<DownloadId>,
     /// The question is no longer open in the core.
     over: bool,
     /// The file name the person may change.
@@ -116,6 +118,7 @@ impl DownloadWindow {
             label,
             shows,
             question: None,
+            earlier: None,
             over: false,
             name: cx.new(|cx| InputState::new(window, cx)),
             queue: None,
@@ -140,12 +143,14 @@ impl DownloadWindow {
             cx.notify();
             return;
         };
-        let read = Backend::run(
-            cx,
-            move |manager| async move { api::question(&manager, id) },
-        );
+        let read = Backend::run(cx, move |manager| async move {
+            (
+                api::question(&manager, id),
+                api::earlier_download(&manager, id),
+            )
+        });
         cx.spawn(async move |view, cx| {
-            let Ok(Ok(question)) = read.await else {
+            let Ok(Ok((question, earlier))) = read.await else {
                 return;
             };
             _ = view.update(cx, |view, cx| {
@@ -158,6 +163,7 @@ impl DownloadWindow {
                     view.name_from(&capture.file_name, cx);
                 }
                 view.question = question;
+                view.earlier = earlier.map(|row| row.id);
                 cx.notify();
             });
         })
@@ -439,16 +445,22 @@ impl DownloadWindow {
     fn capture(&mut self, capture: &PendingCapture, cx: &mut Context<'_, Self>) -> AnyElement {
         let id = capture.id;
         let busy = self.busy || matches!(self.shows, Shows::Download(_));
+        let earlier = self.earlier.and_then(|earlier| self.download(earlier, cx));
         v_flex()
             .min_h(px(FILE_CONTENT_HEIGHT))
-            .justify_between()
             .gap_4()
-            .child(heading(&capture.file_name, &capture.url, capture.size, cx))
+            .child(
+                v_flex()
+                    .gap_1p5()
+                    .child(heading(&capture.file_name, &capture.url, capture.size, cx))
+                    .children(earlier.map(|row| earlier_chip(&row, cx))),
+            )
             .child(Field::new("Save as", Input::new(&self.name)))
             .child(Field::new("Folder", self.folder_field(capture, cx)))
             .child(
                 h_flex()
                     .w_full()
+                    .mt_auto()
                     .gap_2()
                     .child(
                         h_flex()
@@ -592,7 +604,11 @@ impl DownloadWindow {
         let Some((form, _)) = &self.media else {
             return div().into_any_element();
         };
-        form.update(cx, |form, _| form.busy = busy);
+        let earlier = self.earlier;
+        form.update(cx, |form, _| {
+            form.busy = busy;
+            form.earlier = earlier;
+        });
         form.clone().into_any_element()
     }
 
@@ -682,7 +698,6 @@ impl DownloadWindow {
         let theme = cx.theme();
         v_flex()
             .min_h(px(FILE_CONTENT_HEIGHT))
-            .justify_between()
             .gap_3()
             .child(
                 h_flex()
@@ -697,8 +712,8 @@ impl DownloadWindow {
                     )))
                     .children(state_mark(&row, self.record.stalled(Instant::now()), cx)),
             )
-            .children(self.run_panel(&row, per_mille, cx))
-            .child(self.facts(&row, cx))
+            .child(self.run_panel(&row, per_mille, cx))
+            .children(self.facts(&row, cx))
             .when_some(folder, |body, folder| {
                 body.child(
                     h_flex()
@@ -728,22 +743,35 @@ impl DownloadWindow {
     }
 
     /// The progress bar and speed graph in one: across is how much is done, height is how fast,
-    /// with the speed and percent over it. A download too short to draw shows a plain full bar.
-    fn run_panel(
-        &self,
-        row: &DownloadSummary,
-        per_mille: Option<u16>,
-        cx: &App,
-    ) -> Option<AnyElement> {
-        let over = matches!(
-            row.status,
-            DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled
-        );
-        if over && !self.record.drawable() {
-            return (row.status == DownloadStatus::Completed)
-                .then(|| Progress::new("progress-bar").value(100.).into_any_element());
-        }
+    /// with the speed and percent over it. It is in every state and takes the spare height, so the
+    /// rows keep even gaps: a failure's reason fills it, and a download too short to draw says it
+    /// finished.
+    fn run_panel(&self, row: &DownloadSummary, per_mille: Option<u16>, cx: &App) -> AnyElement {
         let theme = cx.theme();
+        let panel = v_flex()
+            .w_full()
+            .flex_1()
+            .min_h(px(GRAPH_HEIGHT))
+            .rounded(theme.radius)
+            .overflow_hidden();
+        if let (DownloadStatus::Failed, Some(error)) = (row.status, &row.error) {
+            return panel
+                .px_2p5()
+                .py_1p5()
+                .bg(theme.danger.opacity(TINT))
+                .text_color(theme.danger)
+                .child(error.message.clone())
+                .into_any_element();
+        }
+        if row.status == DownloadStatus::Completed && !self.record.drawable() {
+            return panel
+                .px_2p5()
+                .pt_1p5()
+                .bg(theme.primary.opacity(TINT))
+                .child(div().text_role(Role::Strong, cx).child("Download finished"))
+                .into_any_element();
+        }
+        let cancelled = row.status == DownloadStatus::Cancelled;
         let color = match row.status {
             DownloadStatus::Downloading if self.record.stalled(Instant::now()) => {
                 theme.muted_foreground
@@ -752,7 +780,55 @@ impl DownloadWindow {
             DownloadStatus::Failed => theme.danger,
             _ => theme.muted_foreground,
         };
-        let label = match row.status {
+        let label = self.panel_label(row);
+        let moving = !matches!(
+            row.status,
+            DownloadStatus::Completed | DownloadStatus::Processing | DownloadStatus::Cancelled
+        );
+        let front = per_mille
+            .filter(|_| moving && row.total.is_some_and(|total| total > 0))
+            .map(|done| f32::from(done) / f32::from(PER_MILLE_DONE));
+        // Cancelling zeroes the row's progress: the curve stays where the run got to.
+        let end = if cancelled {
+            self.record.reached()
+        } else {
+            front
+        };
+        let graph = self.record.drawable().then(|| {
+            run_graph(self.record.points(end.unwrap_or(1.)), front, color)
+                .absolute()
+                .size_full()
+        });
+        panel
+            .bg(theme.secondary)
+            .child(
+                h_flex()
+                    .flex_shrink_0()
+                    .px_2p5()
+                    .pt_1p5()
+                    .justify_between()
+                    .child(div().text_role(Role::Strong, cx).children(label))
+                    .child(
+                        div()
+                            .text_role(Role::Meta, cx)
+                            .children(text::percent(row).filter(|_| moving)),
+                    ),
+            )
+            .when(cancelled, |panel| {
+                panel.child(
+                    div()
+                        .flex_shrink_0()
+                        .px_2p5()
+                        .text_role(Role::Meta, cx)
+                        .child("The partial file was removed. Try again starts over."),
+                )
+            })
+            .child(div().relative().mt_1p5().flex_1().min_h_0().children(graph))
+            .into_any_element()
+    }
+
+    fn panel_label(&self, row: &DownloadSummary) -> Option<String> {
+        match row.status {
             DownloadStatus::Downloading if self.record.stalled(Instant::now()) => {
                 Some("Waiting for the server".to_owned())
             }
@@ -761,78 +837,33 @@ impl DownloadWindow {
                 .record
                 .peak()
                 .map(|peak| format!("Peak {}", text::speed(peak))),
-            DownloadStatus::Failed | DownloadStatus::Cancelled => None,
+            DownloadStatus::Failed => None,
+            DownloadStatus::Cancelled => Some("Download cancelled".to_owned()),
             _ => Some(text::status_short(row)),
-        };
-        let front = per_mille
-            .filter(|_| {
-                row.total.is_some_and(|total| total > 0)
-                    && !matches!(
-                        row.status,
-                        DownloadStatus::Completed
-                            | DownloadStatus::Processing
-                            | DownloadStatus::Cancelled
-                    )
-            })
-            .map(|done| f32::from(done) / f32::from(PER_MILLE_DONE));
-        // Cancelling zeroes the row's progress: the curve stays where the run got to.
-        let end = match row.status {
-            DownloadStatus::Cancelled => self.record.reached(),
-            _ => front,
-        };
-        let graph = self.record.drawable().then(|| {
-            run_graph(self.record.points(end.unwrap_or(1.)), front, color)
-                .absolute()
-                .size_full()
-        });
-        Some(
-            v_flex()
-                .w_full()
-                .h(px(GRAPH_HEIGHT))
-                .rounded(theme.radius)
-                .bg(theme.secondary)
-                .overflow_hidden()
-                .child(
-                    h_flex()
-                        .flex_shrink_0()
-                        .px_2p5()
-                        .py_1p5()
-                        .justify_between()
-                        .child(div().text_role(Role::Strong, cx).children(label))
-                        .child(div().text_role(Role::Meta, cx).children(
-                            text::percent(row).filter(|_| {
-                                !matches!(
-                                    row.status,
-                                    DownloadStatus::Completed | DownloadStatus::Processing
-                                )
-                            }),
-                        )),
-                )
-                .child(div().relative().flex_1().min_h_0().children(graph))
-                .into_any_element(),
-        )
+        }
     }
 
-    /// The figures under the graph, by state; why it failed takes their place.
-    fn facts(&self, row: &DownloadSummary, cx: &App) -> AnyElement {
-        if let (DownloadStatus::Failed, Some(error)) = (row.status, &row.error) {
-            let kept = (row.done > 0).then(|| match row.total {
-                Some(total) => format!(
-                    "Downloaded {} of {}",
-                    format_bytes(row.done),
-                    format_bytes(total)
-                ),
-                None => format!("Downloaded {}", format_bytes(row.done)),
+    /// The figures under the panel, by state: a failure keeps what it downloaded, and a cancelled
+    /// download has nothing left to count.
+    fn facts(&self, row: &DownloadSummary, cx: &App) -> Option<AnyElement> {
+        if row.status == DownloadStatus::Cancelled {
+            return None;
+        }
+        if row.status == DownloadStatus::Failed && row.error.is_some() {
+            return (row.done > 0).then(|| {
+                let kept = match row.total {
+                    Some(total) => format!(
+                        "Downloaded {} of {}",
+                        format_bytes(row.done),
+                        format_bytes(total)
+                    ),
+                    None => format!("Downloaded {}", format_bytes(row.done)),
+                };
+                div()
+                    .text_role(Role::Meta, cx)
+                    .child(kept)
+                    .into_any_element()
             });
-            return v_flex()
-                .gap_1()
-                .child(
-                    div()
-                        .text_color(cx.theme().danger)
-                        .child(error.message.clone()),
-                )
-                .children(kept.map(|kept| div().text_role(Role::Meta, cx).child(kept)))
-                .into_any_element();
         }
         let average = self
             .record
@@ -853,7 +884,6 @@ impl DownloadWindow {
                 average,
                 ran.map(|secs| ("Time so far", text::eta(secs))),
             ],
-            DownloadStatus::Cancelled => vec![Some(("Downloaded", format_bytes(row.done)))],
             _ => vec![
                 Some(("Downloaded", format_bytes(row.done))),
                 Some((
@@ -869,16 +899,18 @@ impl DownloadWindow {
         .into_iter()
         .flatten()
         .collect();
-        h_flex()
-            .w_full()
-            .children(facts.into_iter().map(|(label, value)| {
-                v_flex()
-                    .w(relative(0.25))
-                    .min_w_0()
-                    .child(div().text_role(Role::Meta, cx).child(label))
-                    .child(div().truncate().child(value))
-            }))
-            .into_any_element()
+        Some(
+            h_flex()
+                .w_full()
+                .children(facts.into_iter().map(|(label, value)| {
+                    v_flex()
+                        .w(relative(0.25))
+                        .min_w_0()
+                        .child(div().text_role(Role::Meta, cx).child(label))
+                        .child(div().truncate().child(value))
+                }))
+                .into_any_element(),
+        )
     }
 }
 
@@ -921,7 +953,7 @@ pub(super) fn queue_badge_picker(
         .label(shown)
         .dropdown_caret(true)
         .max_w(px(PICKER_WIDTH))
-        .bg(accent.opacity(BADGE_TINT))
+        .bg(accent.opacity(TINT))
         .text_color(accent)
         .tooltip(tip)
         .dropdown_menu(move |mut menu, _, _| {
@@ -1011,18 +1043,45 @@ pub(super) fn automatic_reason(queue: &str, reason: &QueueReason) -> (String, Op
 
 /// A queue's name, tinted so it reads as the name of something.
 fn queue_badge(name: String, cx: &App) -> impl IntoElement {
-    let theme = cx.theme();
+    tinted_chip(Lucide::ListOrdered, name, cx.theme().primary, cx)
+}
+
+/// A warning that the question's link is already in the list, with the way to the file once it
+/// is finished: downloading again stays allowed.
+pub(super) fn earlier_chip(row: &DownloadSummary, cx: &App) -> AnyElement {
+    let id = row.id;
+    h_flex()
+        .gap_2()
+        .child(tinted_chip(
+            Lucide::TriangleAlert,
+            text::earlier_notice(row),
+            cx.theme().warning,
+            cx,
+        ))
+        .when(row.status == DownloadStatus::Completed, |line| {
+            line.child(
+                Button::new("earlier-show-in-folder")
+                    .xsmall()
+                    .link()
+                    .label("Show in folder")
+                    .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
+            )
+        })
+        .into_any_element()
+}
+
+fn tinted_chip(icon: Lucide, label: String, tint: Hsla, cx: &App) -> impl IntoElement {
     h_flex()
         .min_w_0()
         .h(px(24.))
         .px_2()
         .gap_1()
-        .rounded(theme.radius)
-        .bg(theme.primary.opacity(BADGE_TINT))
+        .rounded(cx.theme().radius)
+        .bg(tint.opacity(TINT))
         .text_role(Role::Meta, cx)
-        .text_color(theme.primary)
-        .child(Icon::new(Lucide::ListOrdered).with_size(tokens::ICON))
-        .child(div().min_w_0().truncate().child(name))
+        .text_color(tint)
+        .child(Icon::new(icon).with_size(tokens::ICON))
+        .child(div().min_w_0().truncate().child(label))
 }
 
 /// How a download ended or that it waits, beside its name.
