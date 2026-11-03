@@ -1438,12 +1438,12 @@ fn button(id: &'static str, label: &'static str, variant: ButtonVariant, busy: b
         .disabled(busy)
 }
 
-/// `window` is the field's own: a question's window can open behind another, so the active one may be neither.
 /// Whether the core's name replaces what the field holds: never a name the person typed.
 fn core_name_applies(field: &str, last: Option<&str>, core: &str) -> bool {
     last.is_none_or(|last| last != core && field == last)
 }
 
+/// `window` is the field's own: a question's window can open behind another, so the active one may be neither.
 fn put_name(state: Entity<InputState>, name: String, window: AnyWindowHandle, cx: &mut App) {
     cx.defer(move |cx| {
         _ = window.update(cx, |_, window, cx| {
@@ -1452,7 +1452,7 @@ fn put_name(state: Entity<InputState>, name: String, window: AnyWindowHandle, cx
     });
 }
 
-/// The newest failed attempt at `link`, not counting the one from before this question.
+/// The newest failed attempt at `link` made after `earlier`, the newest from before this question.
 fn failed_video<'a>(
     downloads: &'a [DownloadSummary],
     link: &str,
@@ -1461,7 +1461,7 @@ fn failed_video<'a>(
     downloads
         .iter()
         .filter(|row| {
-            row.url == link && row.status == DownloadStatus::Failed && Some(row.id) != earlier
+            row.url == link && row.status == DownloadStatus::Failed && Some(row.id) > earlier
         })
         .max_by_key(|row| row.id)
 }
@@ -1494,6 +1494,8 @@ mod tests {
         assert_eq!(found.map(|row| row.id), Some(DownloadId(3)));
         // Only the attempt from before this question failed: this one was answered elsewhere.
         assert!(failed_video(&downloads[..1], page, Some(DownloadId(1))).is_none());
+        // `earlier` names only the newest attempt; the ones before it are older still.
+        assert!(failed_video(&downloads, page, Some(DownloadId(3))).is_none());
         let going = [row(4, page, DownloadStatus::Downloading)];
         assert!(failed_video(&going, page, None).is_none());
     }
