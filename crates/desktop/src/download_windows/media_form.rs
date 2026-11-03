@@ -493,7 +493,7 @@ impl MediaForm {
                 div()
                     .id("media-title")
                     .truncate()
-                    .text_role(Role::Strong, cx)
+                    .text_role(Role::Title, cx)
                     .child(title)
                     .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx)),
             )

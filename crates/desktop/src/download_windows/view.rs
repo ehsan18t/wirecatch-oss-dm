@@ -53,8 +53,8 @@ const STALL_CHECK: std::time::Duration = std::time::Duration::from_secs(1);
 /// A file's question and its progress share this height: the window stays still between them and
 /// Pause lands where Download was.
 const FILE_CONTENT_HEIGHT: f32 = 288.;
-/// How strongly a queue's name is tinted with the accent colour.
-const BADGE_TINT: f32 = 0.14;
+/// How strongly a chip or panel is tinted with its colour.
+const TINT: f32 = 0.14;
 /// The queue picker's widest, leaving the row's buttons their full labels.
 const PICKER_WIDTH: f32 = 136.;
 
@@ -448,7 +448,6 @@ impl DownloadWindow {
         let earlier = self.earlier.and_then(|earlier| self.download(earlier, cx));
         v_flex()
             .min_h(px(FILE_CONTENT_HEIGHT))
-            .justify_between()
             .gap_4()
             .child(
                 v_flex()
@@ -461,6 +460,7 @@ impl DownloadWindow {
             .child(
                 h_flex()
                     .w_full()
+                    .mt_auto()
                     .gap_2()
                     .child(
                         h_flex()
@@ -698,7 +698,6 @@ impl DownloadWindow {
         let theme = cx.theme();
         v_flex()
             .min_h(px(FILE_CONTENT_HEIGHT))
-            .justify_between()
             .gap_3()
             .child(
                 h_flex()
@@ -713,8 +712,8 @@ impl DownloadWindow {
                     )))
                     .children(state_mark(&row, self.record.stalled(Instant::now()), cx)),
             )
-            .children(self.run_panel(&row, per_mille, cx))
-            .child(self.facts(&row, cx))
+            .child(self.run_panel(&row, per_mille, cx))
+            .children(self.facts(&row, cx))
             .when_some(folder, |body, folder| {
                 body.child(
                     h_flex()
@@ -744,22 +743,35 @@ impl DownloadWindow {
     }
 
     /// The progress bar and speed graph in one: across is how much is done, height is how fast,
-    /// with the speed and percent over it. A download too short to draw shows a plain full bar.
-    fn run_panel(
-        &self,
-        row: &DownloadSummary,
-        per_mille: Option<u16>,
-        cx: &App,
-    ) -> Option<AnyElement> {
-        let over = matches!(
-            row.status,
-            DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled
-        );
-        if over && !self.record.drawable() {
-            return (row.status == DownloadStatus::Completed)
-                .then(|| Progress::new("progress-bar").value(100.).into_any_element());
-        }
+    /// with the speed and percent over it. It is in every state and takes the spare height, so the
+    /// rows keep even gaps: a failure's reason fills it, and a download too short to draw says it
+    /// finished.
+    fn run_panel(&self, row: &DownloadSummary, per_mille: Option<u16>, cx: &App) -> AnyElement {
         let theme = cx.theme();
+        let panel = v_flex()
+            .w_full()
+            .flex_1()
+            .min_h(px(GRAPH_HEIGHT))
+            .rounded(theme.radius)
+            .overflow_hidden();
+        if let (DownloadStatus::Failed, Some(error)) = (row.status, &row.error) {
+            return panel
+                .px_2p5()
+                .py_1p5()
+                .bg(theme.danger.opacity(TINT))
+                .text_color(theme.danger)
+                .child(error.message.clone())
+                .into_any_element();
+        }
+        if row.status == DownloadStatus::Completed && !self.record.drawable() {
+            return panel
+                .px_2p5()
+                .pt_1p5()
+                .bg(theme.primary.opacity(TINT))
+                .child(div().text_role(Role::Strong, cx).child("Download finished"))
+                .into_any_element();
+        }
+        let cancelled = row.status == DownloadStatus::Cancelled;
         let color = match row.status {
             DownloadStatus::Downloading if self.record.stalled(Instant::now()) => {
                 theme.muted_foreground
@@ -768,7 +780,51 @@ impl DownloadWindow {
             DownloadStatus::Failed => theme.danger,
             _ => theme.muted_foreground,
         };
-        let label = match row.status {
+        let label = self.panel_label(row);
+        // No percent or front once it is over: a cancelled download's progress reads zero.
+        let moving = !matches!(
+            row.status,
+            DownloadStatus::Completed | DownloadStatus::Processing | DownloadStatus::Cancelled
+        );
+        let front = per_mille
+            .filter(|_| moving)
+            .map(|done| f32::from(done) / f32::from(PER_MILLE_DONE));
+        let end = if cancelled { 0. } else { front.unwrap_or(1.) };
+        let graph = self.record.drawable().then(|| {
+            run_graph(self.record.points(end), front, color)
+                .absolute()
+                .size_full()
+        });
+        panel
+            .bg(theme.secondary)
+            .child(
+                h_flex()
+                    .flex_shrink_0()
+                    .px_2p5()
+                    .pt_1p5()
+                    .justify_between()
+                    .child(div().text_role(Role::Strong, cx).children(label))
+                    .child(
+                        div()
+                            .text_role(Role::Meta, cx)
+                            .children(text::percent(row).filter(|_| moving)),
+                    ),
+            )
+            .when(cancelled, |panel| {
+                panel.child(
+                    div()
+                        .flex_shrink_0()
+                        .px_2p5()
+                        .text_role(Role::Meta, cx)
+                        .child("The partial file was removed. Try again starts over."),
+                )
+            })
+            .child(div().relative().mt_1p5().flex_1().min_h_0().children(graph))
+            .into_any_element()
+    }
+
+    fn panel_label(&self, row: &DownloadSummary) -> Option<String> {
+        match row.status {
             DownloadStatus::Downloading if self.record.stalled(Instant::now()) => {
                 Some("Waiting for the server".to_owned())
             }
@@ -777,70 +833,33 @@ impl DownloadWindow {
                 .record
                 .peak()
                 .map(|peak| format!("Peak {}", text::speed(peak))),
-            DownloadStatus::Failed | DownloadStatus::Cancelled => None,
+            DownloadStatus::Failed => None,
+            DownloadStatus::Cancelled => Some("Download cancelled".to_owned()),
             _ => Some(text::status_short(row)),
-        };
-        let front = per_mille
-            .filter(|_| {
-                !matches!(
-                    row.status,
-                    DownloadStatus::Completed | DownloadStatus::Processing
-                )
-            })
-            .map(|done| f32::from(done) / f32::from(PER_MILLE_DONE));
-        let graph = self.record.drawable().then(|| {
-            run_graph(self.record.points(front.unwrap_or(1.)), front, color)
-                .absolute()
-                .size_full()
-        });
-        Some(
-            v_flex()
-                .w_full()
-                .h(px(GRAPH_HEIGHT))
-                .rounded(theme.radius)
-                .bg(theme.secondary)
-                .overflow_hidden()
-                .child(
-                    h_flex()
-                        .flex_shrink_0()
-                        .px_2p5()
-                        .py_1p5()
-                        .justify_between()
-                        .child(div().text_role(Role::Strong, cx).children(label))
-                        .child(div().text_role(Role::Meta, cx).children(
-                            text::percent(row).filter(|_| {
-                                !matches!(
-                                    row.status,
-                                    DownloadStatus::Completed | DownloadStatus::Processing
-                                )
-                            }),
-                        )),
-                )
-                .child(div().relative().flex_1().min_h_0().children(graph))
-                .into_any_element(),
-        )
+        }
     }
 
-    /// The figures under the graph, by state; why it failed takes their place.
-    fn facts(&self, row: &DownloadSummary, cx: &App) -> AnyElement {
-        if let (DownloadStatus::Failed, Some(error)) = (row.status, &row.error) {
-            let kept = (row.done > 0).then(|| match row.total {
-                Some(total) => format!(
-                    "Downloaded {} of {}",
-                    format_bytes(row.done),
-                    format_bytes(total)
-                ),
-                None => format!("Downloaded {}", format_bytes(row.done)),
+    /// The figures under the panel, by state: a failure keeps what it downloaded, and a cancelled
+    /// download has nothing left to count.
+    fn facts(&self, row: &DownloadSummary, cx: &App) -> Option<AnyElement> {
+        if row.status == DownloadStatus::Cancelled {
+            return None;
+        }
+        if row.status == DownloadStatus::Failed && row.error.is_some() {
+            return (row.done > 0).then(|| {
+                let kept = match row.total {
+                    Some(total) => format!(
+                        "Downloaded {} of {}",
+                        format_bytes(row.done),
+                        format_bytes(total)
+                    ),
+                    None => format!("Downloaded {}", format_bytes(row.done)),
+                };
+                div()
+                    .text_role(Role::Meta, cx)
+                    .child(kept)
+                    .into_any_element()
             });
-            return v_flex()
-                .gap_1()
-                .child(
-                    div()
-                        .text_color(cx.theme().danger)
-                        .child(error.message.clone()),
-                )
-                .children(kept.map(|kept| div().text_role(Role::Meta, cx).child(kept)))
-                .into_any_element();
         }
         let average = self
             .record
@@ -861,7 +880,6 @@ impl DownloadWindow {
                 average,
                 ran.map(|secs| ("Time so far", text::eta(secs))),
             ],
-            DownloadStatus::Cancelled => vec![Some(("Downloaded", format_bytes(row.done)))],
             _ => vec![
                 Some(("Downloaded", format_bytes(row.done))),
                 Some((
@@ -877,16 +895,18 @@ impl DownloadWindow {
         .into_iter()
         .flatten()
         .collect();
-        h_flex()
-            .w_full()
-            .children(facts.into_iter().map(|(label, value)| {
-                v_flex()
-                    .w(relative(0.25))
-                    .min_w_0()
-                    .child(div().text_role(Role::Meta, cx).child(label))
-                    .child(div().truncate().child(value))
-            }))
-            .into_any_element()
+        Some(
+            h_flex()
+                .w_full()
+                .children(facts.into_iter().map(|(label, value)| {
+                    v_flex()
+                        .w(relative(0.25))
+                        .min_w_0()
+                        .child(div().text_role(Role::Meta, cx).child(label))
+                        .child(div().truncate().child(value))
+                }))
+                .into_any_element(),
+        )
     }
 }
 
@@ -929,7 +949,7 @@ pub(super) fn queue_badge_picker(
         .label(shown)
         .dropdown_caret(true)
         .max_w(px(PICKER_WIDTH))
-        .bg(accent.opacity(BADGE_TINT))
+        .bg(accent.opacity(TINT))
         .text_color(accent)
         .tooltip(tip)
         .dropdown_menu(move |mut menu, _, _| {
@@ -1053,7 +1073,7 @@ fn tinted_chip(icon: Lucide, label: String, tint: Hsla, cx: &App) -> impl IntoEl
         .px_2()
         .gap_1()
         .rounded(cx.theme().radius)
-        .bg(tint.opacity(BADGE_TINT))
+        .bg(tint.opacity(TINT))
         .text_role(Role::Meta, cx)
         .text_color(tint)
         .child(Icon::new(icon).with_size(tokens::ICON))
