@@ -104,7 +104,7 @@ describe('popup', () => {
   it('turns the window before each download on and off in the app', async () => {
     const { app } = await openPopup();
     const ask = screen.getByRole('switch', {
-      name: 'Show a window before each download',
+      name: 'Ask before each download',
       description: 'Choose where each file goes before it starts.',
     });
     expect(ask.getAttribute('aria-checked')).toBe('false');
@@ -604,8 +604,8 @@ describe('popup accessibility', () => {
       'button:Open Wirecatch settings',
       'button:About Capture downloads',
       'switch:Capture downloads',
-      'button:About Show a window before each download',
-      'switch:Show a window before each download',
+      'button:About Ask before each download',
+      'switch:Ask before each download',
       'button:About Ask about each video',
       'switch:Ask about each video',
       'button:About Ignore example.com',

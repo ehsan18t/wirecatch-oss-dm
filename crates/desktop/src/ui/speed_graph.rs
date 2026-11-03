@@ -1,5 +1,5 @@
 //! A speed graph: about the last minute of speeds as a filled curve, newest at the right edge with
-//! a dot, in one colour.
+//! a dot, in one colour; and a download's whole run the same way, edge to edge with no dot.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -46,29 +46,57 @@ impl SpeedHistory {
 
 /// Draws `speeds` filling the element; the caller sizes it.
 pub fn speed_graph(speeds: Vec<u64>, color: Hsla) -> gpui_kit::Canvas<()> {
+    let last = speeds.len().saturating_sub(1).max(1);
+    let points: Vec<(f32, u64)> = speeds
+        .into_iter()
+        .enumerate()
+        .map(|(index, speed)| (thousandths(index as u128, last as u128), speed))
+        .collect();
     canvas(
         |_, _, _| (),
-        move |bounds, (), window, _| paint(&speeds, bounds, color, window),
+        move |bounds, (), window, _| paint(&points, None, px(1.75), bounds, color, window),
     )
 }
 
-fn paint(speeds: &[u64], bounds: Bounds<Pixels>, color: Hsla, window: &mut Window) {
-    let dot = px(1.75);
+/// Draws `points`, each how far across (0 to 1) and its speed, filling the element; `front`, how
+/// far across, gets a rule, so the graph reads as a progress bar.
+pub fn run_graph(points: Vec<(f32, u64)>, front: Option<f32>, color: Hsla) -> gpui_kit::Canvas<()> {
+    canvas(
+        |_, _, _| (),
+        move |bounds, (), window, _| paint(&points, front, px(0.), bounds, color, window),
+    )
+}
+
+fn paint(
+    samples: &[(f32, u64)],
+    front: Option<f32>,
+    dot: Pixels,
+    bounds: Bounds<Pixels>,
+    color: Hsla,
+    window: &mut Window,
+) {
+    if let Some(front) = front {
+        window.paint_quad(fill(
+            Bounds::new(
+                bounds.origin + point(bounds.size.width * front, px(0.)),
+                gpui_kit::size(px(1.), bounds.size.height),
+            ),
+            color,
+        ));
+    }
     // Room for the dot, and a quarter above the fastest so a steady speed stays off the top.
     let area = Bounds::new(
         bounds.origin + point(px(0.), dot),
         bounds.size - gpui_kit::size(dot, dot),
     );
-    let top = (speeds.iter().copied().max().unwrap_or_default() / 4 * 5).max(1);
-    let last = speeds.len().saturating_sub(1).max(1);
-    let points: Vec<Point<Pixels>> = speeds
+    let fastest = samples.iter().map(|sample| sample.1).max();
+    let top = (fastest.unwrap_or_default() / 4 * 5).max(1);
+    let points: Vec<Point<Pixels>> = samples
         .iter()
-        .enumerate()
-        .map(|(index, speed)| {
-            let across = thousandths(index as u128, last as u128);
+        .map(|(across, speed)| {
             let up = thousandths(u128::from(*speed), u128::from(top));
             point(
-                area.origin.x + area.size.width * across,
+                area.origin.x + area.size.width * *across,
                 area.origin.y + area.size.height * (1. - up),
             )
         })
@@ -98,13 +126,15 @@ fn paint(speeds: &[u64], bounds: Bounds<Pixels>, color: Hsla, window: &mut Windo
     if let Ok(path) = line.build() {
         window.paint_path(path, color);
     }
-    window.paint_quad(
-        fill(
-            Bounds::new(newest - point(dot, dot), gpui_kit::size(dot * 2., dot * 2.)),
-            color,
-        )
-        .corner_radii(dot),
-    );
+    if dot > px(0.) {
+        window.paint_quad(
+            fill(
+                Bounds::new(newest - point(dot, dot), gpui_kit::size(dot * 2., dot * 2.)),
+                color,
+            )
+            .corner_radii(dot),
+        );
+    }
 }
 
 /// `part` of `whole` to a thousandth, as a fraction.

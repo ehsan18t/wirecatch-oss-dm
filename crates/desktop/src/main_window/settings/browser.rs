@@ -130,7 +130,7 @@ fn download_window(library: &Entity<Library>) -> SettingGroup {
         .title("Download window")
         .item(
             SettingItem::new(
-                "Show a window before each download",
+                "Ask before each download",
                 switch(library, |s| s.extension.ask_before_download, |on| {
                     extension(ExtensionSettingsPatch {
                         ask_before_download: Some(on),
@@ -143,13 +143,13 @@ fn download_window(library: &Entity<Library>) -> SettingGroup {
         )
         .item(
             SettingItem::new(
-                "Keep the download window open to show progress",
+                "Show progress while downloading",
                 switch(library, |s| s.show_progress_windows, |on| AppSettingsPatch {
                     show_progress_windows: Some(on),
                     ..AppSettingsPatch::default()
                 }),
             )
-            .description("After you click Download now, the window stays open and shows the download's progress.")
+            .description("After you click Download, a window stays open and shows how the download is going.")
             .keywords(["progress", "window", "popup"]),
         )
 }

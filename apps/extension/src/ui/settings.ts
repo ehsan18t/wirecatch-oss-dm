@@ -18,7 +18,7 @@ export const SETTINGS = {
     help: 'Send downloads from this browser to Wirecatch.',
   },
   askBeforeDownload: {
-    label: 'Show a window before each download',
+    label: 'Ask before each download',
     help: 'Choose where each file goes before it starts.',
   },
   askEachVideo: {

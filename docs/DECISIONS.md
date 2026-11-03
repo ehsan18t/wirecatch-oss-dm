@@ -1132,3 +1132,14 @@ Decided with the maintainer on 2026-11-04. It replaces D91's switch, restores th
 1. The foot of the sidebar is always the same: Settings by name, then Keyboard shortcuts and About as icons with their names on hover. In the icon rail, all three stack as icons. The one open is tinted, and the About icon shows a dot while an app update is ready, which About then offers.
 2. The settings screen has "Back to downloads" at the top of its own navigation. Escape outside a field leaves any of the three screens for the downloads, and Ctrl+, still switches settings on and off.
 3. Keyboard shortcuts and About fill the content area beside the main navigation, so choosing a view goes straight back. They are no longer in the settings list, so its search no longer finds them; the palette does.
+
+### D114. One layout for a download window, with its run drawn as the progress bar
+
+Decided with the maintainer on 2026-11-04. It amends D89's progress window and the wording of `ask_before_download` and `show_progress_windows`.
+
+1. A file's question and its progress share one height, so the window does not resize between them and Pause lands where Download was. The question's form stays until the download's row exists.
+2. Progress, paused, finished and failed use one layout: name and how it ended, the graph, four facts (or why it failed), the folder, then the queue on the left and the buttons on the right. A running download offers Cancel, Hide and Pause; Hide leaves it running, Close is for one with nothing left to run.
+3. The bar is the graph: across is how much is done, height is how fast. It runs from the left edge to the progress line, or to the right edge once finished. The speed and percent sit in their own row above it. The app keeps no history, so a window knows only what it watched (`RunRecord`), and a download too short to draw shows a plain full bar.
+4. Three seconds with no new bytes reads "Waiting for the server": the engine retries on its own and does not say so. That time does not count towards Took or Average, and a file that starts over starts those figures over.
+5. A file's question picks its queue with a badge in the button row, Automatic by default, whose menu and tooltip say why Automatic chose that queue. The folder field takes the whole width.
+6. A switch along the foot changes the setting behind what the window shows: "Ask before each download" and "Show progress while downloading". The same words are in Settings and the extension.
