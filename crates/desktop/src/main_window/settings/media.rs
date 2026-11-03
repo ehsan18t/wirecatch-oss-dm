@@ -61,11 +61,9 @@ pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
     SettingPage::new(super::Page::Media.title())
         .resettable(false)
         .groups([
-            SettingGroup::new().title("Add-on").item(super::addon::item(
-                library,
-                AddonId::Media,
-                cx,
-            )),
+            SettingGroup::new()
+                .title("Add-on")
+                .item(super::addon::item(library, AddonId::Media)),
             video(library, cx),
             video_subtitles(library, cx),
             audio(library, cx),
