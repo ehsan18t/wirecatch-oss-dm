@@ -4,7 +4,9 @@
 use std::path::Path;
 
 use wirecatch_files::FileError;
-use wirecatch_protocol::app::{AddonId, AppSettings, AppSettingsPatch, ImportPreview, UiEvent};
+use wirecatch_protocol::app::{
+    AddonId, AppSettings, AppSettingsPatch, Category, ImportPreview, UiEvent,
+};
 use wirecatch_protocol::extension::{
     BrowserControls, BrowserControlsPatch, ExtensionSettings, ExtensionSettingsPatch,
 };
@@ -32,6 +34,20 @@ impl Manager {
     pub fn default_folder(&self) -> Result<std::path::PathBuf> {
         let folder = self.lock().settings.default_folder.clone();
         Ok(self.inner.folders.resolve(&folder)?)
+    }
+
+    /// The folder files of `category` go to when their queue has no folder of its own.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Path`] when the setting names no folder here.
+    pub fn type_folder(&self, category: Category) -> Result<std::path::PathBuf> {
+        let state = self.lock();
+        Ok(wirecatch_settings::type_folder(
+            &state.settings,
+            category,
+            &self.inner.folders,
+        )?)
     }
 
     /// Replaces every setting after checking them. Lists are cleaned up (lower case,

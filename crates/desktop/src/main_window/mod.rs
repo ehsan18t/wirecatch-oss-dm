@@ -481,6 +481,7 @@ impl MainWindow {
 
     fn show(&mut self, view: View, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.view = view;
+        self.screen = Screen::Downloads;
         self.drawer = false;
         self.clear_selection();
         let placeholder = match view {

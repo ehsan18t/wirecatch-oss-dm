@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::{Datelike as _, Local, NaiveDate, NaiveTime, TimeZone as _};
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
-    Category, ClockFormat, DownloadStatus, DownloadSummary, FixAction, MediaSummary,
+    Category, ClockFormat, DownloadStatus, DownloadSummary, FixAction, MediaSummary, OutputFormat,
     PER_MILLE_DONE, ProcessingStep, Schedule, TimeOfDay, WaitReason, Weekday,
 };
 use wirecatch_protocol::extension::MediaKind;
@@ -163,6 +163,32 @@ pub fn shown_wait(row: &DownloadSummary) -> Option<&WaitReason> {
         | (DownloadStatus::Connecting, WaitReason::ServerRefused { .. }) => Some(wait),
         _ => None,
     }
+}
+
+/// The formats a video can be saved as, in the order a menu lists them (`OutputFormat::saves_video`).
+pub const VIDEO_FORMATS: &[(OutputFormat, &str)] = &[
+    (OutputFormat::Original, "Original"),
+    (OutputFormat::Mp4, "MP4"),
+    (OutputFormat::Mkv, "MKV"),
+    (OutputFormat::Webm, "WebM"),
+];
+/// The formats audio can be saved as, in the order a menu lists them (`OutputFormat::saves_audio`).
+pub const AUDIO_FORMATS: &[(OutputFormat, &str)] = &[
+    (OutputFormat::Original, "Original"),
+    (OutputFormat::Mp3, "MP3"),
+    (OutputFormat::M4a, "M4A"),
+    (OutputFormat::Opus, "Opus"),
+    (OutputFormat::Flac, "FLAC"),
+    (OutputFormat::Wav, "WAV"),
+];
+
+/// A format's name.
+pub fn format_name(format: OutputFormat) -> &'static str {
+    VIDEO_FORMATS
+        .iter()
+        .chain(AUDIO_FORMATS)
+        .find(|(each, _)| *each == format)
+        .map_or("Original", |(_, name)| name)
 }
 
 /// Why a download waits, in a couple of words.
