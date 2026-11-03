@@ -92,12 +92,16 @@ fn open(cx: &mut App) {
         focus: false,
         ..crate::window_options()
     };
+    let library = cx.global::<super::Windows>().library.clone();
     let built = gpui_kit::open_window(options, cx, |window, cx| {
         crate::closing::on_close(window, cx, |_, cx| {
             cx.set_global(Finished::default());
             true
         });
-        cx.new(|_| FinishedView)
+        cx.new(|cx| {
+            cx.observe(&library, |_, _, cx| cx.notify()).detach();
+            FinishedView
+        })
     });
     match built {
         Ok((handle, view)) => cx.global_mut::<Finished>().window = Some((handle, view.downgrade())),
@@ -148,24 +152,68 @@ impl Render for FinishedView {
                             )
                     })),
             )
+            .child(foot(cx))
+    }
+}
+
+/// What the foot says once finished downloads go somewhere other than this window.
+fn moved_note(notify: NotifyOnFinish) -> Option<&'static str> {
+    match notify {
+        NotifyOnFinish::Window => None,
+        NotifyOnFinish::Notification => Some("Finished downloads now show as notifications."),
+        NotifyOnFinish::Browser => Some("Finished downloads now show in your browser."),
+        NotifyOnFinish::Nothing => Some("Finished downloads now show only in the download list."),
+    }
+}
+
+fn set_notify(notify: NotifyOnFinish, window: &Window, cx: &mut App) {
+    act(window.window_handle(), cx, move |manager| {
+        api::change_settings(
+            manager,
+            AppSettingsPatch {
+                notify_on_finish: Some(notify),
+                ..AppSettingsPatch::default()
+            },
+        )
+    });
+}
+
+/// The switch to notifications, or what it did with a way back. Read from the settings, so a
+/// refused change or one made in Settings shows too.
+fn foot(cx: &App) -> AnyElement {
+    let library = cx.global::<super::Windows>().library.read(cx);
+    let moved = library
+        .settings
+        .as_ref()
+        .and_then(|settings| moved_note(settings.notify_on_finish));
+    match moved {
+        Some(note) => h_flex()
+            .p_3()
+            .gap_2()
             .child(
-                h_flex().p_3().justify_end().child(
-                    Button::new("use-notifications")
-                        .ghost()
-                        .label("Use notifications instead")
-                        .on_click(|_, window, cx| {
-                            act(window.window_handle(), cx, |manager| {
-                                api::change_settings(
-                                    manager,
-                                    AppSettingsPatch {
-                                        notify_on_finish: Some(NotifyOnFinish::Notification),
-                                        ..AppSettingsPatch::default()
-                                    },
-                                )
-                            });
-                        }),
-                ),
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_role(Role::Meta, cx)
+                    .child(note),
             )
+            .child(
+                Button::new("undo-notifications")
+                    .ghost()
+                    .label("Undo")
+                    .on_click(|_, window, cx| set_notify(NotifyOnFinish::Window, window, cx)),
+            )
+            .into_any_element(),
+        None => h_flex()
+            .p_3()
+            .justify_end()
+            .child(
+                Button::new("use-notifications")
+                    .ghost()
+                    .label("Use notifications instead")
+                    .on_click(|_, window, cx| set_notify(NotifyOnFinish::Notification, window, cx)),
+            )
+            .into_any_element(),
     }
 }
 
@@ -242,5 +290,22 @@ fn row_buttons(id: DownloadId, status: DownloadStatus, alone: bool) -> Vec<Butto
                 }),
         ],
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_foot_says_where_finished_downloads_went() {
+        assert_eq!(moved_note(NotifyOnFinish::Window), None);
+        for elsewhere in [
+            NotifyOnFinish::Notification,
+            NotifyOnFinish::Browser,
+            NotifyOnFinish::Nothing,
+        ] {
+            assert!(moved_note(elsewhere).is_some());
+        }
     }
 }
