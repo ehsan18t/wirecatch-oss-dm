@@ -83,6 +83,8 @@ pub struct DownloadWindow {
     remember: bool,
     /// Install was pressed for the add-on this page needs, and it has not been seen to start.
     addon_asked: Option<AddonId>,
+    /// The add-on this window's page has waited for, kept once the question ends.
+    addon_awaited: Option<AddonId>,
     busy: bool,
     problem: Option<String>,
     /// The content's height when last drawn, for fitting the window to it.
@@ -123,6 +125,7 @@ impl DownloadWindow {
             earlier: None,
             over: false,
             addon_asked: None,
+            addon_awaited: None,
             name: cx.new(|cx| InputState::new(window, cx)),
             queue: None,
             folder: None,
@@ -164,6 +167,9 @@ impl DownloadWindow {
                 view.over = question.is_none();
                 if let Some(Question::Capture(capture)) = &question {
                     view.name_from(&capture.file_name, cx);
+                }
+                if let Some(Question::Addon(item)) = &question {
+                    view.addon_awaited = Some(item.addon.id);
                 }
                 view.question = question;
                 view.earlier = earlier.map(|row| row.id);
@@ -313,7 +319,10 @@ impl Render for DownloadWindow {
                 self.media_form(&choice, window, cx)
             }
             (Shows::Download(id), _) => self.progress(id, cx),
-            (Shows::Question(_), _) if self.over => closed_note(cx),
+            (Shows::Question(_), _) if self.over => match self.addon_failure(cx) {
+                Some(message) => addon_failed_note(&message, cx),
+                None => closed_note(cx),
+            },
             (Shows::Question(_), None) => div().into_any_element(),
             (Shows::Question(_), Some(question)) => match question.clone() {
                 Question::Capture(capture) => self.capture(&capture, cx),
@@ -1307,6 +1316,17 @@ impl DownloadWindow {
             .into_any_element()
     }
 
+    /// Why the add-on this window's page waited for failed; the core drops the page when it does.
+    fn addon_failure(&self, cx: &App) -> Option<String> {
+        let awaited = self.addon_awaited?;
+        let library = self.library.read(cx);
+        let addon = library.addons.iter().find(|known| known.id == awaited)?;
+        match &addon.state {
+            AddonState::Failed { message } => Some(message.clone()),
+            _ => None,
+        }
+    }
+
     fn install_addon(&mut self, addon: AddonId, cx: &mut Context<'_, Self>) {
         self.addon_asked = Some(addon);
         self.problem = None;
@@ -1330,6 +1350,32 @@ impl DownloadWindow {
         })
         .detach();
     }
+}
+
+/// The add-on failed, which ended the page's question: the person starts the video again.
+fn addon_failed_note(message: &str, cx: &mut Context<'_, DownloadWindow>) -> AnyElement {
+    v_flex()
+        .gap_4()
+        .child(
+            div()
+                .text_role(Role::Title, cx)
+                .child("The media add-on could not be installed"),
+        )
+        .child(
+            div()
+                .text_color(cx.theme().danger)
+                .child(message.to_owned()),
+        )
+        .child(actions(vec![
+            button(
+                "addon-failed-close",
+                "Close",
+                ButtonVariant::Secondary,
+                false,
+            )
+            .on_click(cx.listener(|view, _, _, cx| view.close(cx))),
+        ]))
+        .into_any_element()
 }
 
 /// The question was answered elsewhere, or the download is gone.
