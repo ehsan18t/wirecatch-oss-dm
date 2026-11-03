@@ -3,22 +3,25 @@
 
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::progress::Progress;
-use gpui_kit::component::setting::{SettingField, SettingItem};
-use gpui_kit::component::{ActiveTheme as _, Sizable as _, v_flex};
+use gpui_kit::component::setting::SettingItem;
+use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Entity, IntoElement as _, ParentElement as _, Styled as _, Window, div, px,
+    AnyElement, App, Entity, IntoElement, ParentElement as _, Styled as _, Window, div, px,
 };
 use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState};
 use wirecatch_shell::activity::format_bytes;
 use wirecatch_shell::api;
 
-use super::field_row;
 use crate::backend::command;
 use crate::library::Library;
 use crate::ui::{Role, Typed as _};
 
 const PER_MILLE: u64 = 1000;
+/// Wide enough for "Check for updates" and "Install (999.9 MB)", so stacked buttons match.
+const BUTTONS_WIDTH: f32 = 148.;
+/// The settings card's own padding, which the strip at its foot reaches past.
+const CARD_PADDING: f32 = 16.;
 
 /// How far an install is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -28,24 +31,12 @@ enum Installing {
     Done(u16),
 }
 
-/// The add-on `id` as a settings row, named and described as the core gives it.
-pub(super) fn item(library: &Entity<Library>, id: AddonId, cx: &App) -> SettingItem {
-    let (name, description) = library
-        .read(cx)
-        .addons
-        .iter()
-        .find(|addon| addon.id == id)
-        .map_or_else(
-            || ("Media add-on".to_owned(), String::new()),
-            |addon| (addon.name.clone(), addon.description.clone()),
-        );
+/// The add-on `id` as a settings card: what it does beside its buttons, then where it stands.
+pub(super) fn item(library: &Entity<Library>, id: AddonId) -> SettingItem {
     let library = library.clone();
-    SettingItem::new(
-        name,
-        SettingField::render(move |_, _, cx| card(&library, id, cx)),
-    )
-    .description(description)
-    .keywords(["addon", "yt-dlp", "ffmpeg", "youtube", "install", "update"])
+    SettingItem::render(move |_, _, cx| card(&library, id, cx)).keywords([
+        "media", "addon", "add-on", "yt-dlp", "ffmpeg", "youtube", "install", "update",
+    ])
 }
 
 fn card(library: &Entity<Library>, id: AddonId, cx: &App) -> AnyElement {
@@ -61,69 +52,109 @@ fn card(library: &Entity<Library>, id: AddonId, cx: &App) -> AnyElement {
             .child("Checking.")
             .into_any_element();
     };
+    v_flex()
+        .w_full()
+        .gap_3()
+        .child(
+            h_flex()
+                .w_full()
+                .gap_4()
+                .child(
+                    v_flex()
+                        .flex_1()
+                        .min_w_0()
+                        .child(div().text_role(Role::Strong, cx).child(addon.name.clone()))
+                        .child(
+                            div()
+                                .text_role(Role::Secondary, cx)
+                                .child(addon.description.clone()),
+                        ),
+                )
+                .child(
+                    v_flex()
+                        .flex_shrink_0()
+                        .w(px(BUTTONS_WIDTH))
+                        .gap_1p5()
+                        .children(buttons(&addon, cx)),
+                ),
+        )
+        .child(standing(&addon, cx))
+        .into_any_element()
+}
+
+/// The strip along the card's foot, edge to edge: where the add-on stands, and how far an install
+/// is.
+fn standing(addon: &AddonInfo, cx: &App) -> impl IntoElement {
     let theme = cx.theme();
     let failed = matches!(addon.state, AddonState::Failed { .. });
-    let progress = installing(&addon.state);
-    let installed = matches!(
-        addon.state,
-        AddonState::Installed | AddonState::UpdateAvailable
-    );
-    let main = main_button(&addon);
     v_flex()
-        .items_end()
-        .gap_2()
+        .mx(px(-CARD_PADDING))
+        .mb(px(-CARD_PADDING))
+        .px(px(CARD_PADDING))
+        .py_2()
+        .gap_1()
+        .border_t_1()
+        .border_color(theme.border)
         .child(
-            field_row()
+            h_flex()
+                .gap_3()
                 .child(
                     div()
-                        .text_right()
                         .text_role(Role::Meta, cx)
                         .when(failed, |text| text.text_color(theme.danger))
-                        .child(status(&addon)),
+                        .child(status(addon)),
                 )
-                .when(installed, |row| {
-                    row.child(
-                        Button::new("check-addon-updates")
-                            .small()
-                            .outline()
-                            .label("Check for updates")
-                            .on_click(|_, window, cx| {
-                                command(window.window_handle(), cx, |manager| async move {
-                                    api::check_addon_updates(&manager).await.map(|_| ())
-                                });
-                            }),
+                .when_some(installing(&addon.state), |line, progress| {
+                    let done = match progress {
+                        Installing::Done(done) => Some(done),
+                        Installing::SizeUnknown => None,
+                    };
+                    line.child(
+                        div().flex_1().child(
+                            Progress::new("addon-progress")
+                                .loading(done.is_none())
+                                .value(done.map_or(0., |done| f32::from(done) / 10.)),
+                        ),
                     )
-                    .child(
-                        Button::new("remove-addon")
-                            .small()
-                            .outline()
-                            .text_color(theme.danger)
-                            .label("Remove")
-                            .on_click({
-                                let name = addon.name.to_lowercase();
-                                move |_, window, cx| ask_to_remove(id, &name, window, cx)
-                            }),
-                    )
-                })
-                .children(main),
+                }),
         )
-        .when_some(addon.note.clone(), |card, note| {
-            card.child(div().max_w(px(320.)).text_role(Role::Meta, cx).child(note))
+        .when_some(addon.note.clone(), |strip, note| {
+            strip.child(div().text_role(Role::Meta, cx).child(note))
         })
-        .when_some(progress, |card, progress| {
-            let done = match progress {
-                Installing::Done(done) => Some(done),
-                Installing::SizeUnknown => None,
-            };
-            card.child(
-                div().w(px(224.)).child(
-                    Progress::new("addon-progress")
-                        .loading(done.is_none())
-                        .value(done.map_or(0., |done| f32::from(done) / 10.)),
-                ),
-            )
-        })
-        .into_any_element()
+}
+
+/// The add-on's buttons, its main one first and Remove last.
+fn buttons(addon: &AddonInfo, cx: &App) -> Vec<Button> {
+    let id = addon.id;
+    let mut buttons: Vec<Button> = main_button(addon).into_iter().collect();
+    if addon.state == AddonState::Installed {
+        buttons.push(
+            Button::new("check-addon-updates")
+                .small()
+                .outline()
+                .label("Check for updates")
+                .on_click(|_, window, cx| {
+                    command(window.window_handle(), cx, |manager| async move {
+                        api::check_addon_updates(&manager).await.map(|_| ())
+                    });
+                }),
+        );
+    }
+    if matches!(
+        addon.state,
+        AddonState::Installed | AddonState::UpdateAvailable
+    ) {
+        let name = addon.name.to_lowercase();
+        buttons.push(
+            Button::new("remove-addon")
+                .small()
+                .outline()
+                .text_color(cx.theme().danger)
+                .label("Remove")
+                .on_click(move |_, window, cx| ask_to_remove(id, &name, window, cx)),
+        );
+    }
+    buttons
 }
 
 /// Install, Update, Try again or Stop, by the add-on's state.
@@ -183,18 +214,18 @@ fn installing(state: &AddonState) -> Option<Installing> {
 /// One line on where the add-on stands.
 fn status(addon: &AddonInfo) -> String {
     match &addon.state {
-        AddonState::NotInstalled => "Not installed.".to_owned(),
+        AddonState::NotInstalled => "Not installed".to_owned(),
         AddonState::Installing { .. } => match installing(&addon.state) {
             Some(Installing::Done(done)) if u64::from(done) >= PER_MILLE => {
                 // Everything is downloaded; the files are being checked and unpacked.
-                "Installing: verifying files.".to_owned()
+                "Installing: verifying files".to_owned()
             }
-            Some(Installing::Done(done)) => format!("Installing, {}%.", done / 10),
-            Some(Installing::SizeUnknown) | None => "Installing.".to_owned(),
+            Some(Installing::Done(done)) => format!("Installing, {}%", done / 10),
+            Some(Installing::SizeUnknown) | None => "Installing".to_owned(),
         },
         AddonState::Installed => addon.installed_version.as_ref().map_or_else(
-            || "Installed.".to_owned(),
-            |version| format!("Installed: {version}."),
+            || "Installed".to_owned(),
+            |version| format!("Installed: {version}"),
         ),
         AddonState::UpdateAvailable => addon.latest_version.as_ref().map_or_else(
             || "A newer version is ready to install.".to_owned(),
