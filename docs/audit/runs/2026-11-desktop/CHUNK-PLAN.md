@@ -1097,7 +1097,28 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Flow `second-review-resume`             | done        |
 | 1     | Flow `second-review-disk-writes`        | done        |
 | 1     | UI review (`ui.md`)                     | done        |
-| 2     | Grouping (`GROUPS.md`)                  | pending     |
+| 2     | Grouping (`GROUPS.md`)                  | done        |
+| 2     | Batch B01                               | pending     |
+| 2     | Batch B02                               | pending     |
+| 2     | Batch B03                               | pending     |
+| 2     | Batch B04                               | pending     |
+| 2     | Batch B05                               | pending     |
+| 2     | Batch B06                               | pending     |
+| 2     | Batch B07                               | pending     |
+| 2     | Batch B08                               | pending     |
+| 2     | Batch B09                               | pending     |
+| 2     | Batch B10                               | pending     |
+| 2     | Batch B11                               | pending     |
+| 2     | Batch B12                               | pending     |
+| 2     | Batch B13                               | pending     |
+| 2     | Batch B14                               | pending     |
+| 2     | Batch B15                               | pending     |
+| 2     | Batch B16                               | pending     |
+| 2     | Batch B17                               | pending     |
+| 2     | Batch B18                               | pending     |
+| 2     | Batch B19                               | pending     |
+| 2     | Mutation survivors                      | pending     |
+| 2     | New findings batch                      | pending     |
 | 3     | Stage 3 (`AUDIT-LOG.md`)                | pending     |
 
 ## Approvals

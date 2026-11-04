@@ -81,7 +81,8 @@ Everything is in the run's folder. Commit after every finished row of `## Progre
 - `chunks/NN.md` and `contracts/NN.md`: a chunk's review and its contract.
 - `cross/<flow>.md`: a cross-module review.
 - `ui.md`: the list of UI states and their review. Screenshots go in `%TEMP%\wirecatch-audit\<run>\`, outside the repo.
-- `GROUPS.md`: findings grouped by related cause, with each batch's progress.
+- `GROUPS.md`: findings grouped by related cause, with each batch's findings.
+- `verdicts/<batch>.md`: each batch's verdicts.
 - `proofs/<id>.patch`: a failing test or reproduction against the recorded commit, with one line on how to run it and the output it gave.
 - `AUDIT-LOG.md`: the final ordered list.
 
@@ -224,7 +225,7 @@ Validate in batches of related findings, not one agent per finding. Related find
 
 1. **Read all the findings together.** Read only the findings and suggestions in `chunks/`, `cross/`, `ui.md` and `fault-tests.md`. They are small next to the code, so this is cheap.
 2. **Find related causes.** Issues in different modules may share one main cause. Group them by cause, then by shared flow or area. A finding with no relation joins a batch for its area. A batch's code must fit one reader, within the chunk size limit. Write the groups to `GROUPS.md` and add a `## Progress` row per batch.
-3. **Validate batch by batch.** Each batch goes to one worker that found none of its findings. It reads the code the batch shares, tries to disprove each finding on its own merits, and adds a verdict to each: `- Verdict: confirmed | disproved | downgraded to Pn, <reason>`. It records whether the group really shares a cause, splits it if not, and reports other places the same cause appears.
+3. **Validate batch by batch.** Each batch goes to one worker that found none of its findings. It reads the code the batch shares, tries to disprove each finding on its own merits, and writes a verdict for each in `verdicts/<batch>.md` (one file per batch, so validators running together never edit the same file): `- <id>: confirmed | disproved | downgraded to Pn, <reason>`. It records whether the group really shares a cause, splits it if not, and reports other places the same cause appears.
 4. **Check new findings too.** A place reported in step 3 is a new finding `B<batch>-n`. The next batch's worker, or a small final batch, validates it, never the agent that reported it.
 5. **Prove the serious ones.** P0 and P1 findings need a failing test or a reproduction in `proofs/` where one is possible.
 
