@@ -146,7 +146,7 @@ fn header(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElem
                             .gap_1()
                             .text_color(tone)
                             .child(div().size(px(6.)).rounded_full().bg(tone))
-                            .child(text::status_label(row.status)),
+                            .child(text::status_name(row)),
                     )
                     .child(div().child(text::host(&row.url).to_owned())),
             ),
