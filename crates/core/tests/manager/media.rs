@@ -700,9 +700,9 @@ async fn a_typed_name_names_the_video() -> TestResult {
     assert_eq!(choice_requested(&mut ui).await.title, "holiday");
 
     let mut request = added(&server.url("watch/40"));
-    request.file_name = Some("lecture".into());
+    request.file_name = Some("Dr. Who".into());
     h.manager.add_video_page(request)?;
-    assert_eq!(choice_requested(&mut ui).await.title, "lecture");
+    assert_eq!(choice_requested(&mut ui).await.title, "Dr. Who");
     Ok(())
 }
 

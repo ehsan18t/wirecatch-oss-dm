@@ -16,7 +16,7 @@
 //! installed first, or when the download cannot be added as chosen.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use std::time::Duration;
 use tracing::warn;
@@ -1247,13 +1247,20 @@ pub(super) fn cookie_header(origin: &Origin) -> Option<String> {
     headers::find(&origin.headers, "cookie").map(str::to_owned)
 }
 
+/// `name` without a media extension: the words after any other dot are its own (`Dr. Who`).
+fn without_media_extension(name: &str) -> String {
+    match name.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() && wirecatch_media::is_media_ext(ext) => stem.into(),
+        _ => name.into(),
+    }
+}
+
 /// What a video is called: the name typed for it without its extension, else the title `read` from it or its source, else its address.
 fn title_of(pending: &MediaPending, read: Option<String>) -> String {
     pending
         .file_name
         .as_deref()
-        .and_then(|typed| Path::new(typed).file_stem())
-        .map(|stem| stem.to_string_lossy().into_owned())
+        .map(without_media_extension)
         .or(read)
         .or_else(|| pending.source.title.clone())
         .filter(|t| !t.trim().is_empty())
