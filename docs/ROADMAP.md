@@ -296,7 +296,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 231. A download waiting on the question reads Paused at Size unknown (open)
 232. The complete window stays open and blank once its rows are removed (open)
 233. The notice of a failed save ignores Do Not Disturb (open)
-234. The language list names Twi "Akan" and gives Ossetic itself as its other name (open)
+234. The language list names Twi "Akan" and gives Ossetic itself as its other name (fixed)
 235. The comment on RecvError::Closed in the server's loop is wrong (open)
 236. Manager::update_settings has no caller outside tests (open)
 237. lock_path repeats with_suffix (open)
