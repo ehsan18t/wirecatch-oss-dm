@@ -14,7 +14,11 @@ use wirecatch_shell::api::{self, ProgramWarning, Reveal, ToOpen};
 
 use crate::backend::Backend;
 
-const CHOOSER_FAILED: &str = "The file chooser could not open. On Linux, install xdg-desktop-portal with the portal for your desktop, then try again.";
+const CHOOSER_FAILED: &str = if cfg!(target_os = "linux") {
+    "The file chooser could not open. Install xdg-desktop-portal with the portal for your desktop, then try again."
+} else {
+    "The file chooser could not open. Try again, and restart your computer if this keeps happening."
+};
 
 /// Asks for a folder to save in; `None` when none is picked, or when its name is not valid text,
 /// which the window in front is told.

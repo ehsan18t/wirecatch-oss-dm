@@ -147,12 +147,12 @@ fn global_proxy(library: &Entity<Library>, cx: &App) -> SettingField<SharedStrin
 /// What Copy from system says when no server was added to `known`; one that was shows in the list.
 fn nothing_copied(copied: &[ProxyServerId], known: &[ProxyServerId]) -> Option<&'static str> {
     if copied.is_empty() {
-        return Some("This computer has no proxy set, so there is nothing to copy.");
+        return Some("No system proxy is set, so there is nothing to copy.");
     }
     copied
         .iter()
         .all(|id| known.contains(id))
-        .then_some("This computer's proxy is already saved.")
+        .then_some("The system proxy is already saved.")
 }
 
 /// The saved servers, with New proxy and Copy from system above them.
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn copy_from_system_answers_only_when_it_added_nothing() {
         let (a, b) = (ProxyServerId(1), ProxyServerId(2));
-        assert!(nothing_copied(&[], &[a]).is_some_and(|said| said.contains("no proxy set")));
+        assert!(nothing_copied(&[], &[a]).is_some_and(|said| said.contains("No system proxy")));
         assert!(nothing_copied(&[a], &[a, b]).is_some_and(|said| said.contains("already saved")));
         assert_eq!(nothing_copied(&[a, b], &[a]), None);
     }

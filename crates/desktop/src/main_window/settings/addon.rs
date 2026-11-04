@@ -123,7 +123,6 @@ fn standing(addon: &AddonInfo, cx: &App) -> impl IntoElement {
         })
 }
 
-/// The add-on's buttons, its main one first and Remove last.
 /// What Check for updates says when add-on `id` has none; a new version shows on its own row.
 fn nothing_to_update(addons: &[AddonInfo], id: AddonId) -> Option<String> {
     addons
@@ -133,6 +132,7 @@ fn nothing_to_update(addons: &[AddonInfo], id: AddonId) -> Option<String> {
         .map(|addon| format!("{} is up to date.", addon.name))
 }
 
+/// The add-on's buttons, its main one first and Remove last.
 fn buttons(addon: &AddonInfo, cx: &App) -> Vec<Button> {
     let id = addon.id;
     let mut buttons: Vec<Button> = main_button(addon).into_iter().collect();
@@ -272,6 +272,41 @@ fn ask_to_remove(id: AddonId, name: &str, window: &mut Window, cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn check_for_updates_answers_only_when_there_is_nothing_new() {
+        let addon = |state| AddonInfo {
+            id: AddonId::Media,
+            name: "Media add-on".to_owned(),
+            description: String::new(),
+            state,
+            installed_version: None,
+            latest_version: None,
+            size: None,
+            note: None,
+        };
+        let said = |state| nothing_to_update(&[addon(state)], AddonId::Media);
+        assert_eq!(
+            said(AddonState::Installed).as_deref(),
+            Some("Media add-on is up to date.")
+        );
+        assert_eq!(said(AddonState::UpdateAvailable), None);
+        assert_eq!(said(AddonState::NotInstalled), None);
+        assert_eq!(
+            said(AddonState::Installing {
+                done: 1,
+                total: None
+            }),
+            None
+        );
+        assert_eq!(
+            said(AddonState::Failed {
+                message: String::new()
+            }),
+            None
+        );
+        assert_eq!(nothing_to_update(&[], AddonId::Media), None);
+    }
 
     #[test]
     fn an_install_reads_as_how_far_it_is() {
