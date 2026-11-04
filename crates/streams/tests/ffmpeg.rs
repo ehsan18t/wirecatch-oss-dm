@@ -342,8 +342,8 @@ fn one_segment(server: &FileServer, payload: impl Into<bytes::Bytes>) {
 async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
     let ffmpeg = fake_ffmpeg().unwrap();
     let server = FileServer::start().await;
-    // An ffconcat script would make ffmpeg read whatever files it names. A character no text has leaves it to the format check.
-    one_segment(&server, "ffconcat version 1.0\u{85}\nfile secret.mp4\n");
+    // An ffconcat script would make ffmpeg read whatever files it names. A control byte, which no text has, leaves it to the format check.
+    one_segment(&server, "ffconcat version 1.0\u{1}\nfile secret.mp4\n");
     let dir = private_dir("ffmpeg-unknown").unwrap();
     let output = dir.join("clip.mp4");
     let mut request = request(server.url("index.m3u8"), &output);
@@ -386,10 +386,10 @@ async fn real_ffmpeg_does_not_follow_a_manifest_disguised_as_a_segment() {
         status.success(),
         "ffmpeg could not generate the secret file"
     );
-    // A DASH manifest naming that file. The leading comment puts `free` at bytes 4 to 8 and a character no text has, so the segment passes as MP4; ffmpeg left to guess would read it as DASH and copy the file in.
+    // A DASH manifest naming that file. The leading comment puts `free` at bytes 4 to 8 and a control byte, which no text has, so the segment passes as MP4; ffmpeg left to guess would read it as DASH and copy the file in.
     let target = secret.to_string_lossy().replace('\\', "/");
     let payload = format!(
-        "<!--free\u{85}--><MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" \
+        "<!--free\u{1}--><MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" \
          profiles=\"urn:mpeg:dash:profile:isoff-on-demand:2011\" type=\"static\" \
          mediaPresentationDuration=\"PT1S\" minBufferTime=\"PT1S\"><Period>\
          <AdaptationSet mimeType=\"video/mp4\" contentType=\"video\">\

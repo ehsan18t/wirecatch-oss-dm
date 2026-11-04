@@ -152,18 +152,12 @@ pub fn holds_no_media(path: &Path) -> io::Result<bool> {
     Ok(head.get(..len).is_none_or(is_empty_or_text))
 }
 
-/// Whether `head`, the start of a file, is empty or reads as text. It may end in the middle of a character.
+/// Whether `head`, the start of a file, is empty or reads as text in any encoding: no control byte but white space. Not a test of valid UTF-8, since a page may be in Latin-1 or Shift-JIS. Audio frames are looked for first, since a bare frame header has no control byte either.
 fn is_empty_or_text(head: &[u8]) -> bool {
-    let text = match std::str::from_utf8(head) {
-        Ok(text) => text,
-        Err(cut) if cut.error_len().is_none() => {
-            let whole = head.get(..cut.valid_up_to()).unwrap_or_default();
-            return !whole.is_empty() && is_empty_or_text(whole);
-        }
-        Err(_) => return false,
-    };
-    text.chars()
-        .all(|c| !c.is_control() || matches!(c, '\t' | '\n' | '\r' | '\u{c}'))
+    audio_frame(head).is_none()
+        && head
+            .iter()
+            .all(|b| !b.is_ascii_control() || matches!(b, b'\t' | b'\n' | b'\r' | 0x0C))
 }
 
 /// The ffmpeg arguments that open `path` as one input read as `format`, and nothing else: `-protocol_whitelist file -format_whitelist <demuxer> -f <demuxer> -i file:<path>`.
@@ -380,7 +374,7 @@ mod tests {
 
     #[test]
     fn only_what_is_empty_or_text_holds_no_media() {
-        let holds_none: [&[u8]; 6] = [
+        let holds_none: [&[u8]; 8] = [
             b"",
             b"<!doctype html><html><body>Sign in</body></html>\r\n",
             b"\xEF\xBB\xBF<?xml version=\"1.0\"?><Error/>",
@@ -388,6 +382,9 @@ mod tests {
             "Der Zugriff wurde verweigert \u{2026}".as_bytes(),
             // A page cut off by the head in the middle of a character.
             b"<p>caf\xC3",
+            // Latin-1 and Shift-JIS, which are not valid UTF-8.
+            b"<p>Acc\xE8s refus\xE9</p>",
+            b"<p>\x83\x8D\x83\x4F\x83\x43\x83\x93</p>",
         ];
         for body in holds_none {
             assert!(is_empty_or_text(body), "{body:?}");
