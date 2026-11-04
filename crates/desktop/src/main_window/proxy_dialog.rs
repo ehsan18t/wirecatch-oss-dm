@@ -48,6 +48,10 @@ pub(super) fn open(
     cx: &mut App,
 ) {
     let form = cx.new(|cx| ProxyForm::new(library, id, created, window, cx));
+    if id.is_none() {
+        let name = form.read(cx).name.clone();
+        crate::ui::dialog::focus_after_opening(&name, window, cx);
+    }
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let saving = form.clone();
         let state = form.read(cx);
