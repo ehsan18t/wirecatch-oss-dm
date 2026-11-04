@@ -201,10 +201,6 @@ impl Manager {
                 "This download has already finished, so there is nothing to cancel.",
             ));
         }
-        let asked_about = state
-            .file_exists
-            .values()
-            .find_map(|asked| (asked.question.download == id).then(|| asked.path.clone()));
         self.close_file_exists(&mut state, id);
         let entry = state.entry_mut(id)?;
         if self.stop_run(entry, Stop::Cancel) {
@@ -213,9 +209,7 @@ impl Manager {
         if entry.row.status != DownloadStatus::Cancelled {
             mark_cancelled(entry);
             self.discard_partial(entry);
-            if let Some(path) = asked_about {
-                give_up_the_name(&mut state, id, &path);
-            }
+            give_up_the_name(&mut state, id);
             self.save(&mut state, id);
             self.reconcile(&mut state);
         }
@@ -715,6 +709,7 @@ impl Manager {
             cleanup: None,
             hold: Hold::Free,
             on_existing: None,
+            plain_name: None,
             offered_file: false,
             stranded: None,
             media_job,

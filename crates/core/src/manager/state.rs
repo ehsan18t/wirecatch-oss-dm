@@ -212,6 +212,8 @@ pub(super) struct Entry {
     pub media_job: Option<MediaJob>,
     /// What the person chose for the file already in its folder (D88), for its next run, also after a restart.
     pub on_existing: Option<OnExisting>,
+    /// See [`Answers::plain_name`]. The row keeps showing it; only the path differs.
+    pub plain_name: Option<String>,
     /// A server answered with the file, and the run stopped there for the one already in the folder, before a path was settled.
     pub offered_file: bool,
     /// Added in the app itself: if the server first answers with a web page while
@@ -739,6 +741,7 @@ impl Entry {
             answers: Answers {
                 on_existing: self.on_existing,
                 expect: self.expect.clone(),
+                plain_name: self.plain_name.clone(),
             },
         }
     }
@@ -822,6 +825,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         cleanup: None,
         hold: Hold::Free,
         on_existing: None,
+        plain_name: None,
         offered_file: false,
         stranded: None,
         media_job: None,
@@ -861,6 +865,7 @@ mod tests {
             cleanup: None,
             hold: Hold::Free,
             on_existing: None,
+            plain_name: None,
             offered_file: false,
             stranded: None,
             media_job: None,

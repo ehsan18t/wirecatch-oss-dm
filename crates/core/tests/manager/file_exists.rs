@@ -754,6 +754,74 @@ async fn a_name_from_the_link_stays_plain_in_a_folder_chosen_before_the_answer()
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_name_from_the_link_is_asked_about_again_when_a_cancelled_download_is_retried()
+-> TestResult {
+    let server = server().await;
+    let mut h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let mut events = h.manager.subscribe();
+    let row = add_named_by_the_link(&h, &server, &dir).await?;
+    let question = asked(&mut events).await?;
+    h.manager
+        .answer_file_exists(question.id, answer(FileExistsChoice::Cancel, false))?;
+    let cancelled = h.wait_status(row.id, DownloadStatus::Cancelled).await;
+    assert_eq!(cancelled.file_name, NAME);
+
+    h.restart().await?;
+    assert_eq!(h.row(row.id).file_name, NAME);
+    let mut events = h.manager.subscribe();
+    h.manager.retry(row.id)?;
+    let question = asked(&mut events).await?;
+    assert_eq!(question.download, row.id);
+    assert_eq!(question.file_name, NAME);
+    h.manager
+        .answer_file_exists(question.id, answer(FileExistsChoice::Replace, false))?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(Path::new(&done.path), dir.join(NAME));
+    assert_eq!(std::fs::read(dir.join(NAME))?, server.data);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_download_cancelled_before_it_ran_leaves_the_name_to_the_next() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let waiting = h
+        .add_with(server.url(NAME).as_str(), |r| {
+            r.folder = Some(dir.to_string_lossy().into_owned());
+            r.start = false;
+        })
+        .await?;
+    h.manager.cancel(waiting.id)?;
+    h.wait_status(waiting.id, DownloadStatus::Cancelled).await;
+
+    let mut events = h.manager.subscribe();
+    let next = add_named_by_the_link(&h, &server, &dir).await?;
+    assert_eq!(next.file_name, NAME);
+    assert_eq!(asked(&mut events).await?.download, next.id);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_download_cancelled_before_the_answer_leaves_the_name_to_the_next() -> TestResult {
+    let server = server().await;
+    server.hold();
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let running = add_named_by_the_link(&h, &server, &dir).await?;
+    h.manager.cancel(running.id)?;
+    h.wait_status(running.id, DownloadStatus::Cancelled).await;
+    server.release();
+
+    let mut events = h.manager.subscribe();
+    let next = add_named_by_the_link(&h, &server, &dir).await?;
+    assert_eq!(next.file_name, NAME);
+    assert_eq!(asked(&mut events).await?.download, next.id);
+    Ok(())
+}
+
 /// Removing a download that never got an answer leaves the file its name only points at.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn removing_a_download_before_the_answer_keeps_the_file_of_that_name() -> TestResult {

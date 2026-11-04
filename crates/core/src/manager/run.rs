@@ -18,6 +18,7 @@ use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{DownloadStatus, UserError};
 
 use super::added_pages::AnsweredPage;
+use super::file_exists::give_up_the_name;
 use super::policy::RunPolicy;
 use super::settle::path_resolver;
 use super::state::{Entry, Found, Gauge, OnExisting, Run, State, Stop};
@@ -314,6 +315,9 @@ impl Manager {
                 entry.row.status = DownloadStatus::Failed;
                 entry.row.error = Some(wirecatch_messages::stopped_unexpectedly());
             }
+        }
+        if matches!(run.stop, Some(Stop::Cancel)) {
+            give_up_the_name(state, id);
         }
         // Whatever stopped it since the duplicate was found decides instead; a later run finds it again.
         if let Some(found) = found

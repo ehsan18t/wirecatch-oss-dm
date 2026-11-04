@@ -81,7 +81,7 @@ impl Manager {
                     mark_cancelled(entry);
                     self.discard_partial(entry);
                 }
-                give_up_the_name(state, download, &path);
+                give_up_the_name(state, download);
                 WhenFileExists::Ask
             }
         };
@@ -256,24 +256,29 @@ fn keep_both(state: &mut State, id: DownloadId) {
     }
 }
 
-/// Download `id`, cancelled at the question about `path` with nothing written, takes a name no other download holds: it stays in the list, and the name would keep the next download of that file from being asked.
-pub(super) fn give_up_the_name(state: &mut State, id: DownloadId, path: &Path) {
+/// Download `id`, cancelled before its name was final, stays in the list with nothing written: holding the name would keep the next download of that file from being asked, so it holds another. Tried again, it is judged by the plain name (D96).
+pub(super) fn give_up_the_name(state: &mut State, id: DownloadId) {
     let Some(entry) = state.downloads.get(&id) else {
         return;
     };
-    if entry.naming.settled || !naming::same_path(entry.path(), path) {
+    if entry.naming.settled {
         return;
     }
-    let free = naming::unclaimed_path(
-        path.parent().unwrap_or(Path::new("")),
-        &naming::file_name_of(path),
-        |taken| state.claimed.contains(taken),
-    );
-    state.claimed.remove(path, id);
+    let path = entry.path().to_path_buf();
+    let dir = path.parent().unwrap_or(Path::new(""));
+    let plain = entry
+        .plain_name
+        .clone()
+        .unwrap_or_else(|| naming::file_name_of(&path));
+    let plain_path = dir.join(&plain);
+    let free = naming::unclaimed_path(dir, &plain, |taken| {
+        state.claimed.contains(taken) || naming::same_path(taken, &plain_path)
+    });
+    state.claimed.remove(&path, id);
     state.claimed.insert(&free, id);
     if let Some(entry) = state.downloads.get_mut(&id) {
         entry.row.path = free.to_string_lossy().into_owned();
-        entry.row.file_name = naming::file_name_of(&free);
+        entry.plain_name = Some(plain);
     }
 }
 
@@ -311,6 +316,7 @@ fn settle_at(entry: &mut super::state::Entry, path: &Path) {
     entry.row.path = path.to_string_lossy().into_owned();
     entry.row.file_name = naming::file_name_of(path);
     entry.naming.settled = true;
+    entry.plain_name = None;
     entry.expect = None;
     entry.video_check = false;
 }
