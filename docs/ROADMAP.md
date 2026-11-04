@@ -263,7 +263,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 202. A failed browser registration logs no reason (fixed)
 203. The autostart Exec line escapes reserved characters once (fixed)
 204. The autostart Launcher trait has one implementation and no test (fixed)
-205. Every window has an empty native title (open)
+205. Every window has an empty native title (fixed)
 206. invalid_link ignores its argument, and its doc and test claim otherwise (open)
 207. An import can leave two queues with the same name (open)
 208. An update offer names a yt-dlp older than the one installed (fixed)
