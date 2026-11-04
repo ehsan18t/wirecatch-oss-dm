@@ -136,7 +136,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 109 | The add-on check acts on what it read before its wait, so a removed add-on comes back             | `11-2`                                                                                             | P2       | small  | P2, 1 finding, small; after item 108                                                                             | none                                          | fixed  |
 | 110 | One bad yt-dlp release stops the check, and a failed check forgets its offers                     | `Xsecurity-addon-unpacking-3`                                                                      | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 111 | Cancel on a selection stops at a finished download                                                | `25-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 112 | The drawer stays open over a page opened from its foot                                            | `25-7`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 112 | The drawer stays open over a page opened from its foot                                            | `25-7`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 113 | Change queue inside the details opens the same details again                                      | `25-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 114 | A page address that is not a web address counts as on the person's network                        | `10-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 115 | A Windows socks= proxy fails on sites whose first address is IPv6                                 | `09-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -2198,7 +2198,7 @@ P2, small, fixed.
 
 ### 112. The drawer stays open over a page opened from its foot
 
-P2, small, open.
+P2, small, fixed.
 
 `open_screen` and `open_settings` leave `drawer` set, and `render` hides it only on Settings. The minimum window (960) is under `NARROW` (1100). F1 and Ctrl+, reach the same state.
 
@@ -3056,6 +3056,8 @@ P3, small, open.
 
 - `U-1`: confirmed, P3. The settings page left behind keeps the accent colour. Full text in `ui.md`, verdict in `verdicts/B18.md`.
 - `B18-2`: confirmed, P3. The main navigation keeps a page's old hover colour after leaving it. Full text in `verdicts/B18.md`, verdict in `verdicts/new-findings.md`.
+
+**Left to do:** The sidebar is fixed. The Settings page's navigation is drawn by gpui-component (sidebar/menu.rs sets is_hoverable to !is_active) and keeps the fault; only a change there can close this.
 
 ### 163. Empty pages offer Pause all or Resume all
 

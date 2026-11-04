@@ -174,7 +174,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 109. The add-on check acts on what it read before its wait, so a removed add-on comes back (fixed)
 110. One bad yt-dlp release stops the check, and a failed check forgets its offers (fixed)
 111. Cancel on a selection stops at a finished download (fixed)
-112. The drawer stays open over a page opened from its foot (open)
+112. The drawer stays open over a page opened from its foot (fixed)
 113. Change queue inside the details opens the same details again (open)
 114. A page address that is not a web address counts as on the person's network (fixed)
 115. A Windows socks= proxy fails on sites whose first address is IPv6 (fixed)
