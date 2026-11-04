@@ -1555,6 +1555,40 @@ async fn a_page_on_the_internet_cannot_send_wirecatch_into_the_local_network() -
     Ok(())
 }
 
+/// Cookies on a format send it to yt-dlp, whose requests the engine's block cannot reach, but never let a website's page name a local address.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_format_with_cookies_on_a_websites_page_cannot_name_the_local_network() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let info = serde_json::json!({
+        "title": "Signed in only",
+        "formats": [{"format_id": "0", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
+            "protocol": "https", "url": server.url("fmt/gated.mp4").as_str(),
+            "cookies": "sid=abc123; Domain=127.0.0.1; Path=/"}],
+    });
+    tell_tool(&h, "info.json", &info.to_string())?;
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(from_website(media_capture(
+            "http://93.184.215.14/watch?v=1",
+            MediaKind::Page,
+            None,
+        )))
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    h.manager.choose_media(choice.id, select("0")).await?;
+    let id = h.manager.list_downloads()[0].id;
+
+    let failed = h.wait_status(id, DownloadStatus::Failed).await;
+
+    let message = failed.error.ok_or("no error")?.message;
+    assert!(message.contains("your own network"), "{message}");
+    // Read for the choice and at the start; never run to download.
+    assert_eq!(ytdlp_calls(&h)?.len(), 2);
+    Ok(())
+}
+
 /// `url` with its host written as a name that resolves to this computer, as a
 /// website's name can when its owner makes it answer with a local address.
 fn by_name(mut url: wirecatch_engine::Url) -> TestResult<wirecatch_engine::Url> {
