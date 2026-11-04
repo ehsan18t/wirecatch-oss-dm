@@ -1083,7 +1083,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Chunk 33: repo-checks                   | done        |
 | 1     | Flow `path-normal-download`             | done        |
 | 1     | Flow `path-media-download`              | pending     |
-| 1     | Flow `path-app-update`                  | pending     |
+| 1     | Flow `path-app-update`                  | done        |
 | 1     | Flow `feature-behaviour`                | pending     |
 | 1     | Flow `crash-and-resume`                 | pending     |
 | 1     | Flow `shutdown`                         | pending     |
