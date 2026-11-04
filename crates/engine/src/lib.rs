@@ -98,7 +98,9 @@
 //! # Pausing and resuming
 //!
 //! Cancelling the [`CancellationToken`] stops every connection, writes what has
-//! arrived, saves the resume file and returns [`Outcome::Paused`]. Running the
+//! arrived, saves the resume file and returns [`Outcome::Paused`], or the error
+//! when the part file could not be flushed to the disk, which also stops a
+//! running download by itself. Running the
 //! same request again continues from there, as long as the server still reports
 //! the same size, `ETag` and `Last-Modified`; if the file changed on the server,
 //! the download starts over cleanly instead of mixing old and new bytes. A killed

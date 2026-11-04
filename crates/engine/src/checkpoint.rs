@@ -27,7 +27,7 @@ use crate::storage;
 /// only of the process, never leaves a resume file that counts bytes the disk
 /// never received (which would read back as zeros).
 ///
-/// A failed flush may have lost bytes that a later flush then passes without, so it ends the saving: the resume file stays as the last good save left it, and [`close`](Self::close) reports the failure.
+/// A failed flush may have lost bytes that a later flush then passes without, so it ends the saving and stops the run, whose later bytes could never be counted: the resume file stays as the last good save left it, and [`close`](Self::close) reports the failure.
 ///
 /// Every method blocks, on file I/O or on a save in progress, so it is only
 /// called on the blocking pool.
@@ -106,7 +106,7 @@ impl ResumeSaver {
             }
             part.sync_data()
         };
-        flush_then(
+        let saved = flush_then(
             flush,
             &shared.part_path,
             &self.abandoned,
@@ -121,7 +121,11 @@ impl ResumeSaver {
                 )
                 .save(&self.path, &self.abandoned)
             },
-        )
+        );
+        if failed_flush.is_some() {
+            shared.request.cancel.cancel();
+        }
+        saved
     }
 
     /// A save whose failed flush ends the download at once: the first one, before anything is fetched.
@@ -133,11 +137,7 @@ impl ResumeSaver {
         }
     }
 
-    /// Waits for a save still writing, then stops any later one.
-    ///
-    /// # Errors
-    ///
-    /// The failed flush of any save of this download.
+    /// Waits for a save still writing, then stops any later one. Gives the failed flush of any save of this download.
     pub fn close(&self) -> Result<()> {
         let mut saving = self.saving();
         saving.closed = true;
@@ -158,7 +158,7 @@ fn flush_then(
     write: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
     if let Err(failure) = flush().context(IoAction::Flush, path) {
-        warn!(error = %Chain(&failure), "could not flush the part file; the download will fail when it ends");
+        warn!(error = %Chain(&failure), "could not flush the part file; stopping the download");
         *failed_flush = Some(failure);
         return Ok(());
     }
@@ -237,7 +237,6 @@ mod tests {
 
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
-    use tokio::sync::Notify;
     use tokio_util::sync::CancellationToken;
     use url::Url;
     use wirecatch_test_support::resume::kept_ranges;
@@ -308,8 +307,8 @@ mod tests {
         );
     }
 
-    /// Answers `/f.bin` with half of its `len` bytes, then the rest once `release` says.
-    async fn half_then_wait(len: usize, release: Arc<Notify>) -> Url {
+    /// Answers `/f.bin` with half of its `len` bytes and holds back the rest.
+    async fn half_then_hold(len: usize) -> Url {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move {
@@ -323,11 +322,9 @@ mod tests {
             let body = test_data(len);
             let answer = format!("HTTP/1.1 200 OK\r\nContent-Length: {len}\r\n\r\n");
             socket.write_all(answer.as_bytes()).await.unwrap();
-            let (first, second) = body.split_at(len / 2);
-            socket.write_all(first).await.unwrap();
-            release.notified().await;
-            socket.write_all(second).await.unwrap();
-            socket.shutdown().await.unwrap();
+            socket.write_all(&body[..len / 2]).await.unwrap();
+            std::future::pending::<()>().await;
+            drop(socket);
         });
         Url::parse(&format!("http://127.0.0.1:{port}/f.bin")).unwrap()
     }
@@ -346,29 +343,24 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn a_download_whose_checkpoint_flush_failed_is_not_reported_complete() {
+    async fn a_failed_checkpoint_flush_stops_the_run_with_the_rest_still_to_come() {
         let len = MIB_USIZE;
-        let release = Arc::new(Notify::new());
-        let url = half_then_wait(len, release.clone()).await;
+        let url = half_then_hold(len).await;
         let dir = private_dir("failed-flush").unwrap();
         let mut request = DownloadRequest::new(url, dir.to_path_buf());
         request.options.checkpoint_interval = Duration::from_millis(1);
+        // A longer wait for the held half than `PATIENCE`, so only the flush can end the run.
+        request.options.stall_timeout = 2 * PATIENCE;
         // The first save, before anything is fetched, passes; the first checkpoint's fails.
         request.file_work.fail_flush_after(1);
-        let files = request.file_work.clone();
-        let run = tokio::spawn(download(
+        let run = download(
             request,
             Arc::new(Progress::default()),
             CancellationToken::new(),
-        ));
-        tokio::time::timeout(PATIENCE, files.flush_failed())
-            .await
-            .expect("no checkpoint flushed");
-        release.notify_one();
+        );
         let result = tokio::time::timeout(PATIENCE, run)
             .await
-            .expect("the download hung")
-            .unwrap();
+            .expect("the failed flush did not stop the download");
         assert_flush_error(&result);
         let kept = kept_ranges(&dir.join("f.bin.wcstate"), len as u64).unwrap();
         assert!(
@@ -379,23 +371,24 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn a_paused_download_whose_checkpoint_flush_failed_reports_the_failure() {
+    async fn a_pause_whose_last_flush_fails_reports_the_failure() {
         let len = MIB_USIZE;
-        let url = half_then_wait(len, Arc::new(Notify::new())).await;
+        let url = half_then_hold(len).await;
         let dir = private_dir("failed-flush-paused").unwrap();
         let mut request = DownloadRequest::new(url, dir.to_path_buf());
-        request.options.checkpoint_interval = Duration::from_millis(1);
+        // No checkpoint comes first: the flush that fails is the pause's own.
+        request.options.checkpoint_interval = 2 * PATIENCE;
         request.file_work.fail_flush_after(1);
-        let files = request.file_work.clone();
+        let progress = Arc::new(Progress::default());
         let cancel = CancellationToken::new();
-        let run = tokio::spawn(download(
-            request,
-            Arc::new(Progress::default()),
-            cancel.clone(),
-        ));
-        tokio::time::timeout(PATIENCE, files.flush_failed())
-            .await
-            .expect("no checkpoint flushed");
+        let run = tokio::spawn(download(request, progress.clone(), cancel.clone()));
+        tokio::time::timeout(PATIENCE, async {
+            while progress.done() == 0 {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("no byte arrived");
         cancel.cancel();
         let result = tokio::time::timeout(PATIENCE, run)
             .await
@@ -408,7 +401,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn a_download_whose_first_flush_failed_ends_at_once() {
         let len = MIB_USIZE;
-        let url = half_then_wait(len, Arc::new(Notify::new())).await;
+        let url = half_then_hold(len).await;
         let dir = private_dir("failed-flush-first").unwrap();
         let request = DownloadRequest::new(url, dir.to_path_buf());
         request.file_work.fail_flush_after(0);
