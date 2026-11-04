@@ -778,6 +778,8 @@ fn a_stream_request_names_the_jobs_owner() {
     job.work_owner = "https://example.com:443".to_owned();
     let request = stream_request(&job, &output, Pick::Auto, Pick::Auto);
     assert_eq!(request.work_owner, "https://example.com:443");
+}
+
 /// A part says only its role, so what one set of formats finished is never taken for another's, whichever way the page changes back.
 #[tokio::test]
 async fn parts_are_kept_only_for_the_formats_that_wrote_them() {

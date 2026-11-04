@@ -40,6 +40,18 @@ pub(super) fn joined(ext: &str) -> String {
 /// The digest of the link the folder's contents came from (a token in a link stays out of the folder).
 const LINK: &str = "link.digest";
 
+/// Removes `work`, if it is there.
+async fn clear(work: &Path) -> std::io::Result<()> {
+    let folder = work.to_owned();
+    let removed = tokio::task::spawn_blocking(move || wirecatch_files::remove_own_folder(&folder))
+        .await
+        .map_err(std::io::Error::other)?;
+    match removed {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
 /// Makes `work` the folder of `url`: what another link left there, or a folder that names no link, is cleared, so a name shared by two downloads never gives one the other's video.
 pub(super) async fn claim_for_link(work: &Path, url: &Url) -> std::io::Result<()> {
     let digest = link_digest(url.as_str());
@@ -50,14 +62,7 @@ pub(super) async fn claim_for_link(work: &Path, url: &Url) -> std::io::Result<()
     {
         return Ok(());
     }
-    let folder = work.to_owned();
-    let removed = tokio::task::spawn_blocking(move || wirecatch_files::remove_own_folder(&folder))
-        .await
-        .map_err(std::io::Error::other)?;
-    match removed {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-        _ => {}
-    }
+    clear(work).await?;
     tokio::fs::create_dir_all(work).await?;
     tokio::fs::write(named, digest).await
 }
@@ -82,7 +87,7 @@ pub(super) async fn claim_for_formats(
     if held.as_deref() == chosen {
         return Ok(());
     }
-    tokio::fs::remove_dir_all(work).await?;
+    clear(work).await?;
     claim_for_link(work, url).await?;
     match chosen {
         Some(ids) => tokio::fs::write(named, ids).await,
