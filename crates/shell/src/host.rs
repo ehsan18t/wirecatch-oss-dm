@@ -190,10 +190,42 @@ pub fn needs_move(old: &Path, new: &Path) -> bool {
     old != new && old.is_dir() && !holds_data(new)
 }
 
+/// In the new data folder while the old one, emptied of its use by a finished move, could not be
+/// deleted. Without it an old folder beside a list may be a person's own copy, which is never deleted.
+const OLD_FOLDER_LEFT: &str = "old-data-folder-left";
+
+/// Notes a finished move that could not delete `old`, which still holds the list and its cookies.
+fn note_old_folder_left(old: &Path, new: &Path) {
+    if old.exists()
+        && let Err(e) = std::fs::write(new.join(OLD_FOLDER_LEFT), [])
+    {
+        tracing::warn!(folder = %old.display(), error = %e, "could not note that the old data folder is still there; it stays");
+    }
+}
+
+/// Tries again to delete the old data folder a finished move left behind.
+fn retry_deleting_old_folder(old: &Path, new: &Path) {
+    let note = new.join(OLD_FOLDER_LEFT);
+    if old == new || !note.is_file() {
+        return;
+    }
+    match std::fs::remove_dir_all(old) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            tracing::warn!(folder = %old.display(), error = %e, "could not delete the old data folder; the next start tries again");
+        }
+        _ => {
+            if let Err(e) = std::fs::remove_file(&note) {
+                tracing::warn!(note = %note.display(), error = %e, "could not remove the note about the old data folder");
+            }
+        }
+    }
+}
+
 /// Moves the data folder `old` to `new` when [`needs_move`] says so: a rename on the same drive, otherwise [`copy_then_delete`], which never leaves a partial copy at `new`; into a `new` that other programs made already, entry by entry. Returns the folder to use and what happened. Blocks on the disk.
 #[must_use]
 pub fn migrate(old: &Path, new: &Path) -> (PathBuf, Migration) {
     if !needs_move(old, new) {
+        retry_deleting_old_folder(old, new);
         return (new.to_path_buf(), Migration::Nothing);
     }
     if let Some(parent) = new.parent()
@@ -208,13 +240,19 @@ pub fn migrate(old: &Path, new: &Path) -> (PathBuf, Migration) {
         // The bridge may make the folder between the look and the rename.
         if !new.exists() {
             return match copy_then_delete(old, new) {
-                Ok(()) => (new.to_path_buf(), Migration::Copied),
+                Ok(()) => {
+                    note_old_folder_left(old, new);
+                    (new.to_path_buf(), Migration::Copied)
+                }
                 Err(e) => (old.to_path_buf(), Migration::Failed(e.to_string())),
             };
         }
     }
     match merge(old, new) {
-        Ok(()) => (new.to_path_buf(), Migration::Merged),
+        Ok(()) => {
+            note_old_folder_left(old, new);
+            (new.to_path_buf(), Migration::Merged)
+        }
         Err(e) => (old.to_path_buf(), Migration::Failed(e.to_string())),
     }
 }
@@ -736,6 +774,79 @@ mod tests {
         assert_eq!(migrate(&old, &new), (new.clone(), Migration::Merged));
         assert_moved_into(&new, &old);
         assert!(!staging_for(&new.join(DATABASE_FILE)).exists());
+    }
+
+    #[test]
+    fn an_old_folder_beside_a_list_is_kept_without_a_note_of_a_finished_move() {
+        let root = tempfile::tempdir().unwrap();
+        let (old, new) = (root.path().join("old"), root.path().join("new"));
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(new.join(DATABASE_FILE), b"list").unwrap();
+        assert!(matches!(migrate(&old, &new).1, Migration::Nothing));
+        assert!(old.exists());
+    }
+
+    #[test]
+    fn a_note_of_an_old_folder_goes_with_it() {
+        let root = tempfile::tempdir().unwrap();
+        let (old, new) = (root.path().join("old"), root.path().join("new"));
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(new.join(DATABASE_FILE), b"list").unwrap();
+        std::fs::write(new.join(OLD_FOLDER_LEFT), []).unwrap();
+        assert!(matches!(migrate(&old, &new).1, Migration::Nothing));
+        assert!(!old.exists());
+        assert!(!new.join(OLD_FOLDER_LEFT).exists());
+    }
+
+    /// A file held open keeps `remove_dir_all` from finishing, on Windows only.
+    #[cfg(windows)]
+    #[test]
+    fn an_old_folder_held_at_the_move_is_deleted_at_the_next_start() {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        // Others may read it, as the copy does, but not delete it.
+        const SHARE_READ: u32 = 1;
+
+        let root = tempfile::tempdir().unwrap();
+        let (old, new) = (root.path().join("old"), root.path().join("new"));
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        let database = old.join(DATABASE_FILE);
+        std::fs::write(&database, b"list").unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(SHARE_READ)
+            .open(&database)
+            .unwrap();
+
+        assert!(matches!(migrate(&old, &new).1, Migration::Merged));
+        assert!(
+            old.exists(),
+            "the delete was to fail while the file is held"
+        );
+
+        // Still held: it stays, and the next start tries again.
+        assert!(matches!(migrate(&old, &new).1, Migration::Nothing));
+        assert!(new.join(OLD_FOLDER_LEFT).is_file());
+
+        drop(held);
+        assert!(matches!(migrate(&old, &new).1, Migration::Nothing));
+        assert!(!old.exists());
+        assert!(!new.join(OLD_FOLDER_LEFT).exists());
+        assert_eq!(std::fs::read(new.join(DATABASE_FILE)).unwrap(), b"list");
+    }
+
+    /// On Linux the old and new folders are one; a note copied in from Windows names nothing.
+    #[test]
+    fn a_note_never_deletes_the_folder_in_use() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("data");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join(DATABASE_FILE), b"list").unwrap();
+        std::fs::write(folder.join(OLD_FOLDER_LEFT), []).unwrap();
+        assert!(matches!(migrate(&folder, &folder).1, Migration::Nothing));
+        assert_eq!(std::fs::read(folder.join(DATABASE_FILE)).unwrap(), b"list");
     }
 
     /// An existing `to` is refused, never copied into.

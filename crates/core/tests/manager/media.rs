@@ -1159,12 +1159,10 @@ async fn page_media_is_read_again_after_a_restart_and_continues() -> TestResult 
     // Read at the choice, at the first start and again after the restart.
     assert!(ytdlp_calls(&h)?.len() >= 3, "{}", ytdlp_calls(&h)?.len());
     // The video continued where it stopped instead of starting over.
-    let resumed = server.seen_at("fmt/video.mp4").iter().any(|s| {
-        s.headers
-            .get("range")
-            .and_then(|r| r.to_str().ok())
-            .is_some_and(|r| r != "bytes=0-")
-    });
+    let resumed = server
+        .seen_at("fmt/video.mp4")
+        .iter()
+        .any(|s| s.header("range").is_some_and(|r| r != "bytes=0-"));
     assert!(resumed, "the video was downloaded again from the start");
     Ok(())
 }
@@ -1839,5 +1837,60 @@ async fn a_password_in_a_video_link_is_never_shown() -> TestResult {
             "{text}"
         );
     }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stream_for_later_whose_name_is_taken_is_not_completed_by_a_restart() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let mut h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    let capture = media_capture(
+        server.url("hls/master.m3u8"),
+        MediaKind::Hls,
+        Some("Holiday clip"),
+    );
+    h.manager
+        .add_capture(NewDownload {
+            handover_id: "first".into(),
+            ..capture.clone()
+        })
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    h.manager
+        .choose_media(choice.id, select(&choice.options[0].id))
+        .await?;
+    let first = h.manager.list_downloads().remove(0);
+    let first = h.wait_status(first.id, DownloadStatus::Completed).await;
+    h.manager
+        .remove(&[first.id], wirecatch_core::RemoveFiles::Keep)
+        .await?;
+    std::fs::write(&first.path, b"an older video")?;
+
+    h.manager
+        .add_capture(NewDownload {
+            handover_id: "second".into(),
+            ..capture
+        })
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    let later = MediaSelection {
+        later: true,
+        ..select(&choice.options[0].id)
+    };
+    h.manager.choose_media(choice.id, later).await?;
+    let second = h.manager.list_downloads().remove(0);
+    assert_eq!(second.status, DownloadStatus::Paused);
+    assert_eq!(second.path, first.path);
+
+    h.restart().await?;
+
+    let after = h.row(second.id);
+    assert_ne!(
+        after.status,
+        DownloadStatus::Completed,
+        "completed on a file it never downloaded"
+    );
     Ok(())
 }
