@@ -42,7 +42,7 @@ pub enum PathError {
     /// A startup, Start menu or system folder (or, on Linux, a hidden folder in
     /// home) from a settings file: a file downloaded there could run by itself.
     #[error(
-        "\"{0}\" is a system or startup folder, where a downloaded file could run by itself. Folders from a settings file cannot be there; choose another folder."
+        "\"{0}\" is a system or startup folder, or one that holds apps' programs and settings, where a downloaded file could run by itself. Folders from a settings file cannot be there; choose another folder."
     )]
     Protected(String),
 }
@@ -72,11 +72,11 @@ pub struct KnownFolders {
     /// `{Pictures}`.
     pub pictures: PathBuf,
     /// Folders a settings file may never point downloads into, because a file
-    /// saved there runs by itself or shows up as a program: startup folders,
-    /// the Start menu and the system's own folders on Windows; autostart,
-    /// application entries, systemd units and system folders on Linux (where
-    /// every hidden folder in home is refused too). See
-    /// [`is_protected`](Self::is_protected).
+    /// saved there runs by itself, shows up as a program or is trusted as an
+    /// app's own: app data, the Start menu, PowerShell's profile folders and the
+    /// system's own folders on Windows; autostart, application entries, systemd
+    /// units and system folders on Linux. Every hidden folder in home is refused
+    /// on top of these. See [`is_protected`](Self::is_protected).
     pub protected: Vec<PathBuf>,
 }
 
@@ -88,17 +88,20 @@ impl KnownFolders {
     pub fn detect() -> Option<Self> {
         let home = dirs::home_dir()?;
         let or_home = |found: Option<PathBuf>, name: &str| found.unwrap_or_else(|| home.join(name));
+        let documents = or_home(dirs::document_dir(), "Documents");
+        let mut protected = protected_folders(&home, |name| {
+            std::env::var_os(name)
+                .map(PathBuf::from)
+                .filter(|p| p.is_absolute())
+        });
+        protected.extend(script_folders(&documents));
         Some(Self {
             downloads: or_home(dirs::download_dir(), "Downloads"),
-            documents: or_home(dirs::document_dir(), "Documents"),
+            documents,
             videos: or_home(dirs::video_dir(), "Videos"),
             music: or_home(dirs::audio_dir(), "Music"),
             pictures: or_home(dirs::picture_dir(), "Pictures"),
-            protected: protected_folders(&home, |name| {
-                std::env::var_os(name)
-                    .map(PathBuf::from)
-                    .filter(|p| p.is_absolute())
-            }),
+            protected,
             home,
         })
     }
@@ -107,13 +110,16 @@ impl KnownFolders {
     /// simulating another machine.
     pub fn under_home(home: impl Into<PathBuf>) -> Self {
         let home = home.into();
+        let documents = home.join("Documents");
+        let mut protected = protected_folders(&home, |_| None);
+        protected.extend(script_folders(&documents));
         Self {
             downloads: home.join("Downloads"),
-            documents: home.join("Documents"),
+            documents,
             videos: home.join("Videos"),
             music: home.join("Music"),
             pictures: home.join("Pictures"),
-            protected: protected_folders(&home, |_| None),
+            protected,
             home,
         }
     }
@@ -134,7 +140,7 @@ impl KnownFolders {
         forms.extend(real(path));
         forms.iter().any(|form| {
             roots.iter().any(|root| is_within(form, root))
-                || (cfg!(unix) && homes.iter().any(|home| in_hidden_folder(form, home)))
+                || homes.iter().any(|home| in_hidden_folder(form, home))
         })
     }
 
@@ -279,21 +285,26 @@ impl KnownFolders {
     }
 }
 
-/// The folders on Windows where a file runs by itself or shows up as a program:
-/// the Start menu of the user and of everyone (with the Startup folders in
-/// them), the folder of app shortcuts on the user's `PATH`, Windows itself and
-/// the program folders. `env` reads an environment variable (absolute paths
+/// The folders on Windows where a file runs by itself, shows up as a program or
+/// is trusted as an app's own: all of the user's app data (this app's add-ons
+/// and data, per-user programs, the Start menu with its Startup folder, the app
+/// shortcuts on the user's `PATH`), the Start menu of everyone, Windows itself
+/// and the program folders. `env` reads an environment variable (absolute paths
 /// only); the usual places are used where one is missing.
 #[cfg(windows)]
 fn protected_folders(home: &Path, env: impl Fn(&str) -> Option<PathBuf>) -> Vec<PathBuf> {
-    let roaming = env("APPDATA").unwrap_or_else(|| home.join("AppData").join("Roaming"));
-    let local = env("LOCALAPPDATA").unwrap_or_else(|| home.join("AppData").join("Local"));
+    let app_data = home.join("AppData");
+    let roaming = env("APPDATA").unwrap_or_else(|| app_data.join("Roaming"));
+    let local = env("LOCALAPPDATA").unwrap_or_else(|| app_data.join("Local"));
     let everyone = env("ProgramData").unwrap_or_else(|| PathBuf::from(r"C:\ProgramData"));
-    let start_menu = Path::new("Microsoft").join("Windows").join("Start Menu");
     let mut out = vec![
-        roaming.join(&start_menu),
-        everyone.join(&start_menu),
-        local.join("Microsoft").join("WindowsApps"),
+        app_data,
+        roaming,
+        local,
+        everyone
+            .join("Microsoft")
+            .join("Windows")
+            .join("Start Menu"),
         env("SystemRoot")
             .or_else(|| env("windir"))
             .unwrap_or_else(|| PathBuf::from(r"C:\Windows")),
@@ -307,6 +318,18 @@ fn protected_folders(home: &Path, env: impl Fn(&str) -> Option<PathBuf>) -> Vec<
     );
     out.dedup();
     out
+}
+
+/// The folders in Documents whose scripts PowerShell runs when it starts: it finds them through the Documents folder, wherever that was moved.
+fn script_folders(documents: &Path) -> Vec<PathBuf> {
+    if cfg!(windows) {
+        vec![
+            documents.join("WindowsPowerShell"),
+            documents.join("PowerShell"),
+        ]
+    } else {
+        Vec::new()
+    }
 }
 
 /// The same for Linux: autostart entries, application entries (menus and file
@@ -365,33 +388,42 @@ fn real_path(path: &Path) -> Option<PathBuf> {
 /// trailing dots and spaces, so there they are compared that way.
 fn is_within(path: &Path, root: &Path) -> bool {
     if cfg!(windows) {
-        let parts = |p: &Path| -> Vec<String> {
-            p.components()
-                .filter(|c| !matches!(c, Component::RootDir | Component::CurDir))
-                .map(|c| {
-                    c.as_os_str()
-                        .to_string_lossy()
-                        .trim_end_matches(['.', ' '])
-                        .to_lowercase()
-                })
-                .collect()
-        };
-        let (path, root) = (parts(path), parts(root));
-        !root.is_empty() && path.len() >= root.len() && path[..root.len()] == root[..]
+        let (path, root) = (windows_parts(path), windows_parts(root));
+        !root.is_empty() && path.starts_with(&root)
     } else {
         path.starts_with(root)
     }
 }
 
+/// The parts of `path` as Windows compares them.
+fn windows_parts(path: &Path) -> Vec<String> {
+    path.components()
+        .filter(|c| !matches!(c, Component::RootDir | Component::CurDir))
+        .map(|c| {
+            c.as_os_str()
+                .to_string_lossy()
+                .trim_end_matches(['.', ' '])
+                .to_lowercase()
+        })
+        .collect()
+}
+
 /// Whether `path` is inside a hidden folder of `home` (a name starting with
-/// `.` right under it), where Linux keeps settings, autostart entries and
+/// `.` right under it), where tools keep settings, keys, autostart entries and
 /// shell start-up files.
 fn in_hidden_folder(path: &Path, home: &Path) -> bool {
-    path.strip_prefix(home).is_ok_and(|rest| {
-        rest.components()
-            .next()
-            .is_some_and(|c| c.as_os_str().to_string_lossy().starts_with('.'))
-    })
+    if cfg!(windows) {
+        let (path, home) = (windows_parts(path), windows_parts(home));
+        path.strip_prefix(home.as_slice())
+            .and_then(<[String]>::first)
+            .is_some_and(|name| name.starts_with('.'))
+    } else {
+        path.strip_prefix(home).is_ok_and(|rest| {
+            rest.components()
+                .next()
+                .is_some_and(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+        })
+    }
 }
 
 #[cfg(test)]
@@ -632,7 +664,8 @@ mod tests {
         for path in [
             "{Home}/Desktop",
             "{Downloads}/Video",
-            "{Home}/AppData/Roaming/Other",
+            "{Home}/Projects/.hidden-is-only-for-home",
+            "{Documents}/Reports",
             r"D:\Media",
             r"C:\Windows Media",
         ] {
@@ -644,8 +677,48 @@ mod tests {
             "SystemRoot" => Some(PathBuf::from(r"D:\WinDir")),
             _ => None,
         });
-        assert!(moved.contains(&PathBuf::from(r"E:\Roaming\Microsoft\Windows\Start Menu")));
+        assert!(moved.contains(&PathBuf::from(r"E:\Roaming")));
         assert!(moved.contains(&PathBuf::from(r"D:\WinDir")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn powershell_profiles_follow_a_moved_documents_folder() {
+        let scripts = script_folders(Path::new(r"E:\Docs"));
+        assert!(scripts.contains(&PathBuf::from(r"E:\Docs\WindowsPowerShell")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn folders_whose_files_get_run_or_trusted_are_refused_on_windows() {
+        let folders = KnownFolders::under_home(home());
+        let accepted: Vec<&str> = [
+            "{Home}/AppData/Local/Wirecatch",
+            "{Home}/AppData/Local/Wirecatch/addons/media/ffmpeg",
+            "{Home}/AppData/Local/Wirecatch/addons/media/yt-dlp",
+            "{Home}/AppData/Local/Programs/Some App",
+            "{Home}/AppData/Roaming/Other",
+            "{Home}/AppData/LocalLow/Other",
+            "{Home}/.ssh",
+            "{Home}/.config/tool",
+            r"C:\USERS\ADA\.SSH",
+            "{Documents}/WindowsPowerShell",
+            "{Documents}/PowerShell/Modules",
+        ]
+        .into_iter()
+        .filter(|path| !refused(&folders, path))
+        .collect();
+        assert!(accepted.is_empty(), "accepted: {accepted:#?}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_app_data_folder_the_system_moved_is_refused() {
+        let moved = protected_folders(&home(), |name| match name {
+            "LOCALAPPDATA" => Some(PathBuf::from(r"E:\Local")),
+            _ => None,
+        });
+        assert!(moved.contains(&PathBuf::from(r"E:\Local")));
     }
 
     /// A short (8.3) name for a protected folder is caught through the real
