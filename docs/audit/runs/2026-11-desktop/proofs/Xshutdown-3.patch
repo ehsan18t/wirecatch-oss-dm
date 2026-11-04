@@ -1,0 +1,72 @@
+Run (reproduction, Windows): git apply docs/audit/runs/2026-11-desktop/proofs/Xshutdown-3.patch, cargo build -p wirecatch-desktop, start wirecatch-app.exe --background with WIRECATCH_DATA_DIR on a scratch folder, AUDIT_TRACE on a file and AUDIT_RELEASE on a path that does not exist yet. Output: the quit was called at second 0, the process was still alive 30 s later with Application::run not returned, and it exited with code 0 within 0.2 s of creating the AUDIT_RELEASE file ('blocking task released', 'the App's globals are being dropped', 'Application::run returned; main ends', all in the same second, 31 s after the quit). Control with the file already there: the task ended first, and the process exited in the same second as the quit.
+diff --git a/crates/desktop/src/main.rs b/crates/desktop/src/main.rs
+index 93e499509..f95c5d622 100644
+--- a/crates/desktop/src/main.rs
++++ b/crates/desktop/src/main.rs
+@@ -47,6 +47,52 @@ pub fn window_options() -> WindowOptions {
+ /// Which lines the app logs unless the log filter variable chooses others (`wirecatch-logging`).
+ const LOG_FILTER: &str = "info";
+ 
++fn audit_note(line: &str) {
++    use std::io::Write as _;
++    if let Some(path) = std::env::var_os("AUDIT_TRACE") {
++        let at = std::time::SystemTime::now()
++            .duration_since(std::time::UNIX_EPOCH)
++            .unwrap_or_default()
++            .as_secs();
++        if let Ok(mut file) = std::fs::OpenOptions::new().append(true).create(true).open(path) {
++            _ = writeln!(file, "{at} {line}");
++        }
++    }
++}
++
++/// Says when GPUI's `App` drops its globals.
++struct AuditProbe;
++impl gpui_kit::Global for AuditProbe {}
++impl Drop for AuditProbe {
++    fn drop(&mut self) {
++        audit_note("the App's globals are being dropped");
++    }
++}
++
++/// A file task that does not return until `AUDIT_RELEASE` exists, then a quit.
++fn audit_stuck_quit(cx: &mut gpui_kit::App) {
++    let Some(release) = std::env::var_os("AUDIT_RELEASE") else {
++        return;
++    };
++    cx.set_global(AuditProbe);
++    let (_, runtime) = backend::Backend::now(cx);
++    drop(runtime.spawn_blocking(move || {
++        audit_note("blocking task stuck");
++        while !std::path::Path::new(&release).exists() {
++            std::thread::sleep(std::time::Duration::from_millis(100));
++        }
++        audit_note("blocking task released");
++    }));
++    cx.spawn(async move |cx| {
++        cx.background_executor()
++            .timer(std::time::Duration::from_secs(3))
++            .await;
++        audit_note("lifecycle::quit called");
++        cx.update(lifecycle::quit);
++    })
++    .detach();
++}
++
+ fn main() {
+     let logging = wirecatch_logging::start(wirecatch_product::APP_EXECUTABLE, LOG_FILTER);
+     logging.write_to(host::log_folder(std::env::var_os(host::DATA_DIR_VAR)).as_deref());
+@@ -111,6 +157,7 @@ fn main() {
+             sign_in::start(cx);
+             app_update::start(cx);
+             main_window::run(library, cx);
++            audit_stuck_quit(cx);
+             if launch.shows_window() {
+                 let asked = if launch.links.is_empty() {
+                     Asked::Window
+@@ -120,4 +167,5 @@ fn main() {
+                 main_window::bring_up(&asked, cx);
+             }
+         });
++    audit_note("Application::run returned; main ends");
+ }

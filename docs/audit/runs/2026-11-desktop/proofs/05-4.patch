@@ -1,4 +1,4 @@
-Run (Windows, second drive needed): git apply docs/audit/runs/2026-11-desktop/proofs/05-4.patch, set AUDIT_OTHER_DRIVE to a folder on a drive other than %TEMP%'s, then cargo test -p wirecatch-core --lib audit_a_move -- --nocapture. Output: 1 failed, 'the moved file has no Zone.Identifier stream' (the mark was there before the move; the file's bytes arrived).
+Run (Windows, second drive needed): git apply docs/audit/runs/2026-11-desktop/proofs/05-4.patch, set AUDIT_OTHER_DRIVE to a folder on a drive other than %TEMP%'s, then cargo test --profile b10 -p wirecatch-core --lib audit_a_move -- --nocapture. Output: 1 failed, 'the moved file has no Zone.Identifier stream' (the mark was there before the move; the file's bytes arrived).
 diff --git a/crates/core/src/manager/relocate.rs b/crates/core/src/manager/relocate.rs
 index 267ceb00f..ce13408f4 100644
 --- a/crates/core/src/manager/relocate.rs

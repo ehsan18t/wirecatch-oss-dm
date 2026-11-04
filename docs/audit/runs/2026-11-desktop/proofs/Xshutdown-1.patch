@@ -1,4 +1,4 @@
-Run: git apply docs/audit/runs/2026-11-desktop/proofs/Xshutdown-1.patch, then cargo test -p wirecatch-core --lib audit_a_quit -- --nocapture. Output: 2 failed, 'shutdown returned while the move was held: true', 'the finished row names ...home\Downloads\Compressed\big.iso, where no file is; the file is at ...chosen\big.iso', 'the row names ...big.iso, with no part file; the part file is at ...chosen\big.iso.wcpart'.
+Run: git apply docs/audit/runs/2026-11-desktop/proofs/Xshutdown-1.patch, then cargo test --profile b10 -p wirecatch-core --lib audit_a_quit -- --nocapture. Output: 2 failed, 'shutdown returned while the move was held: true', 'the finished row names ...home\Downloads\Compressed\big.iso, where no file is; the file is at ...chosen\big.iso', 'the row names ...big.iso, with no part file; the part file is at ...chosen\big.iso.wcpart'.
 diff --git a/crates/core/src/manager/tests.rs b/crates/core/src/manager/tests.rs
 index 5752ecd66..7f5b68a88 100644
 --- a/crates/core/src/manager/tests.rs

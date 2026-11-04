@@ -1,0 +1,32 @@
+# Run: cargo test -p wirecatch-core --lib audit_proof. Failed: "a published, signed v0.2.0 was not found: None". The test reads crates/desktop/src/backend.rs, since building the desktop crate here ran out of disk, and sets the source only if config asks for it.
+diff --git a/crates/core/src/manager/app_update.rs b/crates/core/src/manager/app_update.rs
+index 10c4060ef..738b7d862 100644
+--- a/crates/core/src/manager/app_update.rs
++++ b/crates/core/src/manager/app_update.rs
+@@ -464,4 +464,26 @@ mod tests {
+             .join(&download.file.name);
+         assert!(!kept.exists());
+     }
++
++    /// Reads the app's own `config`, whose crate needs GPUI, and sets what it asks for.
++    #[tokio::test]
++    async fn audit_proof_the_app_finds_a_published_update() {
++        let app = include_str!("../../../desktop/src/backend.rs");
++        let server = FileServer::start().await;
++        let dir = tempfile::tempdir().unwrap();
++        let mut config = ManagerConfig::for_tests(
++            dir.path().join("data"),
++            KnownFolders::under_home(dir.path().join("home")),
++        );
++        if app.contains("with_official_app_releases") {
++            config = config.with_app_releases(AppReleases {
++                list: server.url(LIST),
++                public_key: URL_SAFE_NO_PAD.encode(key().verifying_key().as_bytes()),
++            });
++        }
++        let h = Harness { manager: Manager::open(config).await.unwrap(), server, _dir: dir };
++        h.publish("v0.2.0", false, &key(), INSTALLER);
++        let found = h.manager.check_app_update("0.1.0", Some(FileKind::Setup)).await.unwrap();
++        assert!(found.is_some(), "a published, signed v0.2.0 was not found: {found:?}");
++    }
+ }
