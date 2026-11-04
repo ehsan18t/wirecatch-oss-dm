@@ -71,16 +71,18 @@ const LOOKUP_PORT: u16 = 0;
 /// # With a proxy
 ///
 /// When a proxy is set (`HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` in the
-/// environment, in upper or lower case, or the system's proxy setting),
-/// requests go through it, and the proxy, not this computer, looks up each
-/// name and connects. The guard then
-/// still refuses, before every request and redirect hop, a target written as a
-/// local address and a target whose name resolves only to local addresses on
-/// this computer. It cannot see how the proxy resolves a name, so a name that
-/// the proxy resolves to a local address (because it changed after the check,
-/// or because only the proxy knows it, such as an intranet host) is not
-/// caught. The proxy itself is trusted, since the user or their administrator
-/// set it, not a website: its own address may be local.
+/// environment, in upper or lower case, the system's proxy setting, or
+/// [`ProxyChoice::Manual`](crate::ProxyChoice::Manual)), requests go through it.
+/// A `socks4://` or `socks5://` proxy is handed an address this computer looked
+/// up through the filter, so a local one is refused as without a proxy. Any
+/// other proxy looks up each name itself. The guard then still refuses, before
+/// every request and redirect hop, a target written as a local address and a
+/// target whose name resolves only to local addresses on this computer. It
+/// cannot see how the proxy resolves a name, so a name that the proxy resolves
+/// to a local address (because it changed after the check, or because only the
+/// proxy knows it, such as an intranet host) is not caught. The proxy itself is
+/// trusted, since the user or their administrator set it, not a website: its
+/// own address may be local.
 ///
 /// Requests are not refused outright while a proxy is set, because on
 /// networks that need one, every stream would then fail; such a proxy is the
@@ -323,7 +325,11 @@ pub(crate) async fn private_guard(
 /// The protection for requests starting at `url`, through clients with the
 /// proxy settings `proxies`.
 pub(crate) fn guard_from(url: &Url, timeout: Duration, proxies: &Proxies) -> PrivateGuard {
-    let check = Arc::new(NetworkGuard::new(url, timeout));
+    guard_with(NetworkGuard::new(url, timeout), proxies)
+}
+
+fn guard_with(check: NetworkGuard, proxies: &Proxies) -> PrivateGuard {
+    let check = Arc::new(check);
     PrivateGuard {
         guard: Guard(Arc::new(move |target: &Url| {
             let (check, target) = (check.clone(), target.clone());
@@ -334,6 +340,13 @@ pub(crate) fn guard_from(url: &Url, timeout: Duration, proxies: &Proxies) -> Pri
             ipv4_first: proxies.may_use_socks4(),
         }),
     }
+}
+
+/// Why the [`FilteringResolver`] gave no address for a name. [`Error::network`] finds it in a failed request's causes.
+#[derive(Debug, thiserror::Error)]
+#[error("{host} points to a device on your own network, which is blocked for safety")]
+pub(crate) struct NameRefused {
+    pub host: String,
 }
 
 /// Refuses requests to the local network, before they are sent; checked for
@@ -414,10 +427,7 @@ impl Resolve for FilteringResolver {
                 .filter(|a| trusted || !is_private(a.ip()))
                 .collect();
             if addrs.is_empty() {
-                return Err(format!(
-                    "{host} points to a device on your own network, which is blocked for safety"
-                )
-                .into());
+                return Err(NameRefused { host }.into());
             }
             if in_ipv4_order {
                 ipv4_first(&mut addrs);
@@ -700,9 +710,8 @@ mod tests {
     }
 
     /// A download's host resolves to a local address when it connects, as a
-    /// rebinding name server would make it, whatever an earlier lookup by the
-    /// caller saw. No connection of the download may reach that address, its
-    /// first one included.
+    /// rebinding name server would make it, after its check found it public. No
+    /// connection of the download may reach that address, its first one included.
     #[tokio::test]
     async fn a_download_cannot_be_rebound_to_the_local_network() {
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -766,9 +775,14 @@ mod tests {
         );
         accepted.store(0, Ordering::SeqCst);
 
-        let guard = guard_from(&url, Duration::from_secs(5), clients().proxies());
+        let check = NetworkGuard::new(&url, Duration::from_secs(5));
+        check.names().insert("localhost".to_string(), false);
+        let guard = guard_with(check, clients().proxies());
         let result = run(Some(guard)).await;
-        assert!(result.is_err(), "the download went through");
+        assert!(
+            matches!(result, Err(Error::PrivateNetwork { .. })),
+            "{result:?}"
+        );
         assert_eq!(
             accepted.load(Ordering::SeqCst),
             0,

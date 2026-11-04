@@ -189,13 +189,15 @@ impl Fetcher {
                 .map_err(|e| Error::task(&e))??
         };
         let (mut session, url) = Session::new(url, options, cancel.clone());
-        let protection = private_guard(
-            &url,
-            private_network,
-            options.stall_timeout,
-            clients.proxies(),
-        )
-        .await;
+        let protection = cancel
+            .run_until_cancelled(private_guard(
+                &url,
+                private_network,
+                options.stall_timeout,
+                clients.proxies(),
+            ))
+            .await
+            .ok_or(Error::Cancelled)?;
         let blocking_private = protection.is_some();
         let proxies = clients.proxies().clone();
         let resolver = protection.map(|p| {

@@ -3,9 +3,10 @@
 //! always agree.
 //!
 //! Some of the engine's decisions depend on whether a request goes through a
-//! proxy: HTTP/3 is not used then (QUIC would go around the proxy), FTP is
-//! refused (it cannot go through one yet), and the resolver that keeps
-//! downloads off the local network trusts the proxies' own names. The HTTP
+//! proxy: HTTP/3 is not used then (QUIC would go around the proxy), FTP goes
+//! only through a SOCKS5 proxy, and around any other only when asked (see
+//! [`ManualProxies::ftp_direct`]), and the resolver that keeps downloads off
+//! the local network trusts the proxies' own names. The HTTP
 //! client never reads a proxy setting itself: it is handed [`Proxies::client`],
 //! which asks the same settings.
 //!
