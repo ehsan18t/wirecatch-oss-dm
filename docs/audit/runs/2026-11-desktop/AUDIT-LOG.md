@@ -62,7 +62,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 35  | An open file-exists question outlives the download state it asked about                           | `04-4` `05-7` `Xconcurrency-8`                                                                     | P2       | medium | P2, 3 findings, medium                                                                                           | `04-4`                                        | open   |
 | 36  | Proxy exceptions are accepted that can never match                                                | `09-3` `19-3` `19-5`                                                                               | P2       | medium | P2, 3 findings, medium                                                                                           | none                                          | open   |
 | 37  | A typed file name is dropped when the download turns out to be a page                             | `17-7` `Xpath-normal-download-5` `Xfeature-behaviour-6`                                            | P2       | medium | P2, 3 findings, medium                                                                                           | `B07-p2-tests`                                | fixed  |
-| 38  | Pages yt-dlp describes at the top level, or with several videos, are misread                      | `Xpath-media-download-3` `Xpath-media-download-4` `B07-1`                                          | P2       | medium | P2, 3 findings, medium                                                                                           | `B07-p2-tests`                                | open   |
+| 38  | Pages yt-dlp describes at the top level, or with several videos, are misread                      | `Xpath-media-download-3` `Xpath-media-download-4` `B07-1`                                          | P2       | medium | P2, 3 findings, medium                                                                                           | `B07-p2-tests`                                | fixed  |
 | 39  | The CLI strands files under another name when a resume file is damaged or the name is numbered    | `01-1` `F-1` `M-2`                                                                                 | P2       | medium | P2, 3 findings, medium                                                                                           | `FT-kill`                                     | fixed  |
 | 40  | The add-on's state mixes an operation with whether the tools work                                 | `24-3` `27-4` `B12-2`                                                                              | P2       | medium | P2, 3 findings, medium; clears the way for item 53                                                               | none                                          | open   |
 | 41  | A download retried or removed just after it ended is still told as ended                          | `26-5` `26-8` `B17-2`                                                                              | P2       | medium | P2, 3 findings, medium                                                                                           | none                                          | open   |
@@ -85,7 +85,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 58  | A typed file name with a dot loses the words after it                                             | `17-3` `Xrepeated-logic-2`                                                                         | P2       | small  | P2, 2 findings, small                                                                                            | `17-3`                                        | open   |
 | 59  | Downloaded installers are never removed                                                           | `12-2` `Xpath-app-update-5`                                                                        | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
 | 60  | An update with no usable file is shown as a package manager update or opens the release page      | `Xpath-app-update-6` `Xsecurity-update-signatures-3`                                               | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
-| 61  | A conversion demands audio or video that a format did not describe                                | `Xpath-media-download-10` `B07-4`                                                                  | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
+| 61  | A conversion demands audio or video that a format did not describe                                | `Xpath-media-download-10` `B07-4`                                                                  | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 62  | A torn last line of a stream's log can truncate its joined track                                  | `Xsecond-review-disk-writes-4` `Xsecond-review-resume-3`                                           | P2       | small  | P2, 2 findings, small                                                                                            | `Xsecond-review-disk-writes-4`                | open   |
 | 63  | Blank lines hide a program's failure reason and grow memory without limit                         | `13-1` `13-5`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | `13-1`                                        | open   |
 | 64  | No test covers control characters in names or a part file that cannot be created                  | `M-1` `M-3`                                                                                        | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
@@ -132,9 +132,9 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 105 | Replacing a file another program has open blames the folder                                       | `28-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `28-2`                                        | open   |
 | 106 | A stream manifest over the limit offers a retry that cannot help                                  | `28-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 107 | A suffix list that could not be saved blames the internet connection                              | `10-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 108 | An add-on repair downloads everything and puts yt-dlp back to the pinned version                  | `11-1`                                                                                             | P2       | small  | P2, small; the next item's damaged-record route needs it                                                         | none                                          | open   |
-| 109 | The add-on check acts on what it read before its wait, so a removed add-on comes back             | `11-2`                                                                                             | P2       | small  | P2, 1 finding, small; after item 108                                                                             | none                                          | open   |
-| 110 | One bad yt-dlp release stops the check, and a failed check forgets its offers                     | `Xsecurity-addon-unpacking-3`                                                                      | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 108 | An add-on repair downloads everything and puts yt-dlp back to the pinned version                  | `11-1`                                                                                             | P2       | small  | P2, small; the next item's damaged-record route needs it                                                         | none                                          | fixed  |
+| 109 | The add-on check acts on what it read before its wait, so a removed add-on comes back             | `11-2`                                                                                             | P2       | small  | P2, 1 finding, small; after item 108                                                                             | none                                          | fixed  |
+| 110 | One bad yt-dlp release stops the check, and a failed check forgets its offers                     | `Xsecurity-addon-unpacking-3`                                                                      | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 111 | Cancel on a selection stops at a finished download                                                | `25-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 112 | The drawer stays open over a page opened from its foot                                            | `25-7`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 113 | Change queue inside the details opens the same details again                                      | `25-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
@@ -183,7 +183,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 156 | Tests do not cover the stored forms of enums and old settings                                     | `03-6` `Xdatabase-migrations-5`                                                                    | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 157 | A held-open output loses a program's collected output, and its test cannot fail                   | `13-2` `13-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 158 | A resume file's temporary file can stay for good                                                  | `01-8` `Xsecond-review-disk-writes-8`                                                              | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
-| 159 | Add-on release files of skipped versions stay in the work folder                                  | `11-4` `Xsecurity-addon-unpacking-4`                                                               | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
+| 159 | Add-on release files of skipped versions stay in the work folder                                  | `11-4` `Xsecurity-addon-unpacking-4`                                                               | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 160 | Tray ticks flip on a repeat click, and & in a name shows wrongly                                  | `26-2` `26-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 161 | Messages name the product with a literal                                                          | `26-9` `B17-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 162 | A navigation item left behind keeps its hover colour until the mouse moves                        | `U-1` `B18-2`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
@@ -232,8 +232,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 205 | Every window has an empty native title                                                            | `U-2`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 206 | invalid_link ignores its argument, and its doc and test claim otherwise                           | `28-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 207 | An import can leave two queues with the same name                                                 | `19-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | `19-2`                                        | open   |
-| 208 | An update offer names a yt-dlp older than the one installed                                       | `11-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 209 | swap_in spells out the release file's name                                                        | `11-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 208 | An update offer names a yt-dlp older than the one installed                                       | `11-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 209 | swap_in spells out the release file's name                                                        | `11-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 210 | Ticking the first row pushes the list down under the pointer                                      | `U-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 211 | The empty queue's Add button opens the dialog past the window's record                            | `25-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 212 | `let _theme = cx.theme()` does nothing                                                            | `25-12`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -942,7 +942,7 @@ P2, medium, fixed.
 
 ### 38. Pages yt-dlp describes at the top level, or with several videos, are misread
 
-P2, medium, open.
+P2, medium, fixed.
 
 `Info` does not read the top-level `protocol`, `http_headers`, `vcodec` or `acodec`, nor `_type` and `entries`. So a top-level HLS page reads as a plain file, top-level audio is offered as a video in the video folder (`B07-1`), and a page with two `<video>` tags is reported as having none. Real yt-dlp prints all of these.
 
@@ -1345,7 +1345,7 @@ P2, small, open.
 
 ### 61. A conversion demands audio or video that a format did not describe
 
-P2, small, open.
+P2, small, fixed.
 
 `has_audio` and `has_video` read an unknown codec as present, and `add_maps` writes `{v}:a:0` with no `?`. A silent MP4 stops ffmpeg with "Invalid argument", and an audio format with no `vcodec` is listed as a video and mapped from a file with no video (`B07-4`). Keep the original is offered.
 
@@ -2122,7 +2122,7 @@ P2, small, open.
 
 ### 108. An add-on repair downloads everything and puts yt-dlp back to the pinned version
 
-P2, small, open.
+P2, small, fixed.
 
 `addon_plan` returns every part when `tools` is `None`, and `wanted_components` gives the pin. `swap_in` replaces with no version check, so a repair goes back to the pinned yt-dlp, against D21.1, and the next check is up to 24 hours off.
 
@@ -2138,7 +2138,7 @@ P2, small, open.
 
 ### 109. The add-on check acts on what it read before its wait, so a removed add-on comes back
 
-P2, small, open.
+P2, small, fixed.
 
 `record` is cloned before `new_ytdlp_releases().await`, and `save` runs `create_dir_all` afterwards. So a removed add-on comes back through a quiet install, and a finished update's record is overwritten. The window is short.
 
@@ -2154,7 +2154,7 @@ P2, small, open.
 
 ### 110. One bad yt-dlp release stops the check, and a failed check forgets its offers
 
-P2, small, open.
+P2, small, fixed.
 
 `?` leaves the loop at the first candidate that fails, and every `Err` arm gives `Vec::new()`, which replaces `ytdlp_releases`. So one bad newest release holds updates up, and one offline check makes the offer disappear. No downgrade follows.
 
@@ -2977,7 +2977,7 @@ The temporary name is a private detail of `save`, removed only there, so a kill 
 
 ### 159. Add-on release files of skipped versions stay in the work folder
 
-P3, small, open.
+P3, small, fixed.
 
 `swap_in` deletes only the installed version's file, and files are named by version, so skipped ones stay in `.work`.
 
@@ -3781,7 +3781,7 @@ P3, small, open.
 
 ### 208. An update offer names a yt-dlp older than the one installed
 
-P3, small, open.
+P3, small, fixed.
 
 `latest_version` describes `wanted` without the record, and `status` prints it for `UpdateAvailable`, so an offer can name an older yt-dlp.
 
@@ -3797,7 +3797,7 @@ P3, small, open.
 
 ### 209. swap_in spells out the release file's name
 
-P3, small, open.
+P3, small, fixed.
 
 `swap_in` spells out what `release_file` gives, in the same file.
 
