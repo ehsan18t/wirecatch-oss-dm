@@ -10,10 +10,11 @@ use wirecatch_engine::CancellationToken;
 use wirecatch_files::FileError;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, PortablePath, UserError};
+use wirecatch_records::files::{MoveUnderWay, MovedFile};
 
 use super::Manager;
 use super::file_exists::give_up_the_name;
-use super::state::{State, Stop};
+use super::state::{Entry, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::naming::{self, partial_files};
 
@@ -23,7 +24,7 @@ const STAGED_PREFIX: &str = ".wirecatch-move-";
 impl Manager {
     /// Moves a download to `folder` (a full path or a `{Downloads}`-style path).
     ///
-    /// A finished download's file is moved. An unfinished download's partial files move with it, so it continues where it was: a running one is stopped, moved and started again, and a failed one (for example because its old folder could not be written) goes back in line. The folder is created if needed and must be writable. If the name is taken there, ` (1)` and so on is added.
+    /// A finished download's file is moved with its subtitle files. An unfinished download's partial files move with it, so it continues where it was: a running one is stopped, moved and started again, and a failed one (for example because its old folder could not be written) goes back in line. The folder is created if needed and must be writable. If the name is taken there, ` (1)` and so on is added.
     ///
     /// # Errors
     ///
@@ -114,29 +115,14 @@ impl Manager {
             return moved.map(|_| ());
         };
         entry.hold.end_move();
+        let record = entry.files.moving.take();
         match moved {
             Ok(new_path) => {
                 let finished = entry.row.status == DownloadStatus::Completed;
-                let new_name = entry
-                    .plain_name
-                    .clone()
-                    .unwrap_or_else(|| naming::file_name_of(&new_path));
                 let cancelled = entry.row.status == DownloadStatus::Cancelled;
-                if !entry.naming.settled {
-                    // The server has not answered yet, so its answer will choose the
-                    // path: it must use the folder the user chose now, and the
-                    // user's name as it is in that folder.
-                    entry.naming.folder = Some(dir.to_string_lossy().into_owned());
-                    if entry.naming.name.is_some() {
-                        entry.naming.name = Some(new_name.clone());
-                    }
-                }
-                entry.row.path = new_path.to_string_lossy().into_owned();
-                entry.row.file_name = new_name;
-                if entry.row.status == DownloadStatus::Failed {
-                    entry.row.status = DownloadStatus::Queued;
-                    entry.row.error = None;
-                }
+                let files = record.map_or_else(Vec::new, |record| record.files);
+                take_moved_path(entry, dir, &new_path);
+                entry.files.follow(&files);
                 // The new path was reserved while moving and is the download's
                 // own now; the old one is free.
                 if new_path != old_path {
@@ -146,7 +132,7 @@ impl Manager {
                     }
                 }
                 if finished {
-                    self.move_rows_of_one_file(&mut state, id, old_path, &new_path);
+                    self.move_rows_of_one_file(&mut state, id, old_path, &new_path, &files);
                 }
                 if cancelled {
                     give_up_the_name(&mut state, id);
@@ -165,6 +151,8 @@ impl Manager {
                         fix: None,
                     });
                     self.save(&mut state, id);
+                } else if record.is_some() {
+                    self.save(&mut state, id);
                 }
                 self.reconcile(&mut state);
                 Err(e)
@@ -179,6 +167,7 @@ impl Manager {
         id: DownloadId,
         old_path: &Path,
         new_path: &Path,
+        files: &[MovedFile],
     ) {
         let others: Vec<DownloadId> = state
             .downloads
@@ -194,6 +183,7 @@ impl Manager {
             if let Some(entry) = state.downloads.get_mut(&other) {
                 entry.row.path = new_path.to_string_lossy().into_owned();
                 entry.row.file_name = naming::file_name_of(new_path);
+                entry.files.follow(files);
             }
             self.save(state, other);
         }
@@ -222,12 +212,17 @@ impl Manager {
                 }))
             })
             .await?;
-        let completed = {
+        let (completed, sidecars) = {
             let mut state = self.lock();
             let completed = state
                 .downloads
                 .get(&id)
                 .is_some_and(|e| e.row.status == DownloadStatus::Completed);
+            let sidecars = if completed {
+                sidecars_of_file(&state, old_path)
+            } else {
+                Vec::new()
+            };
             // A finished file holds its name on disk, with no claim.
             let free = if completed {
                 !state.claimed.contains(&new_path)
@@ -239,15 +234,18 @@ impl Manager {
                     "Another download just took that name in the new folder. Try again.",
                 ));
             }
-            completed
+            (completed, sidecars)
         };
         let (from, to) = (old_path.to_path_buf(), new_path.clone());
+        let manager = self.clone();
         #[cfg(test)]
         let mover: Mover = self.fake_mover().unwrap_or_else(|| Arc::new(move_file));
         #[cfg(not(test))]
         let mover: Mover = Arc::new(move_file);
         let result = self
-            .blocking(move || move_download_files(&from, &to, completed, &*mover))
+            .blocking(move || {
+                manager.move_on_record(id, (&from, &to), completed, &sidecars, &*mover)
+            })
             .await;
         if let Err(e) = &result {
             let mut state = self.lock();
@@ -262,6 +260,250 @@ impl Manager {
         }
         result.map(|()| new_path)
     }
+
+    /// Records and moves the files of download `id` as it goes `between` two paths. Blocks on the disk and the database.
+    fn move_on_record(
+        &self,
+        id: DownloadId,
+        between: (&Path, &Path),
+        completed: bool,
+        sidecars: &[PathBuf],
+        move_one: &(dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync),
+    ) -> Result<()> {
+        let (from, to) = between;
+        let files = files_to_move(from, to, completed, sidecars, |sidecar| {
+            self.reserve_sidecar_target(id, sidecar, from, to)
+        });
+        self.record_move(id, to, &files);
+        let pairs: Vec<(PathBuf, PathBuf)> = files
+            .iter()
+            .map(|file| (file.from.clone(), file.to.clone()))
+            .collect();
+        let result = move_together(&pairs, move_one);
+        // A finished file holds its name on disk, with no claim.
+        if completed {
+            let mut state = self.lock();
+            for file in files.iter().skip(1) {
+                state.claimed.release(&file.to, id);
+            }
+        }
+        result
+    }
+
+    /// Picks and reserves where `sidecar` of download `id` goes when its file moves from `from` to `to`. Touches the file system.
+    fn reserve_sidecar_target(
+        &self,
+        id: DownloadId,
+        sidecar: &Path,
+        from: &Path,
+        to: &Path,
+    ) -> PathBuf {
+        loop {
+            let target =
+                sidecar_target(sidecar, from, to, |path| self.lock().claimed.contains(path));
+            if self.lock().claimed.reserve(&target, id) {
+                return target;
+            }
+        }
+    }
+
+    /// Puts the record of a move of download `id` to `to` on disk. Blocks on the database.
+    fn record_move(&self, id: DownloadId, to: &Path, files: &[MovedFile]) {
+        let mut guard = self.lock();
+        let state = &mut *guard;
+        if let Some(entry) = state.downloads.get_mut(&id) {
+            entry.files.moving = Some(MoveUnderWay {
+                path: to.to_path_buf(),
+                files: files.to_vec(),
+            });
+            self.save(state, id);
+        }
+        drop(guard);
+        self.wait_for_record(id);
+    }
+}
+
+/// The subtitle files listed by the finished rows of the file at `path`. A listed name may since be another download's, or another finished row's file; those stay.
+fn sidecars_of_file(state: &State, path: &Path) -> Vec<PathBuf> {
+    let finished = || {
+        state
+            .downloads
+            .values()
+            .filter(|e| e.row.status == DownloadStatus::Completed)
+    };
+    finished()
+        .filter(|e| naming::same_path(e.path(), path))
+        .flat_map(|e| e.files.sidecars.iter().cloned())
+        .filter(|sidecar| {
+            !state.claimed.contains(sidecar)
+                && !finished().any(|e| naming::same_path(e.path(), sidecar))
+        })
+        .collect()
+}
+
+/// The download's path and name are `new_path`, in `dir`.
+fn take_moved_path(entry: &mut Entry, dir: &Path, new_path: &Path) {
+    let new_name = entry
+        .plain_name
+        .clone()
+        .unwrap_or_else(|| naming::file_name_of(new_path));
+    if !entry.naming.settled {
+        // The server has not answered yet, so its answer will choose the path: it must use the folder the user chose now, and the user's name as it is in that folder.
+        entry.naming.folder = Some(dir.to_string_lossy().into_owned());
+        if entry.naming.name.is_some() {
+            entry.naming.name = Some(new_name.clone());
+        }
+    }
+    entry.row.path = new_path.to_string_lossy().into_owned();
+    entry.row.file_name = new_name;
+    if entry.row.status == DownloadStatus::Failed {
+        entry.row.status = DownloadStatus::Queued;
+        entry.row.error = None;
+    }
+}
+
+/// Finishes the move a kill interrupted, as far as its `record` and the disk tell (D132). Once a file has reached its new place the others follow, being the small ones; before that the download stays where it is. Blocks on the disk.
+pub(super) fn finish_interrupted_move(entry: &mut Entry, record: &MoveUnderWay) {
+    let dir = record.path.parent().unwrap_or(Path::new(""));
+    discard_staged(dir);
+    if !record.files.iter().any(has_arrived) {
+        return;
+    }
+    let mut stuck = None;
+    for file in &record.files {
+        let moved = if has_arrived(file) {
+            match std::fs::remove_file(&file.from) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            }
+        } else if file.from.exists() {
+            move_file(&file.from, &file.to)
+        } else {
+            Ok(())
+        };
+        if let Err(source) = moved {
+            warn!(from = %file.from.display(), to = %file.to.display(), error = %source, "could not finish a move a kill cut short");
+            stuck.get_or_insert((file, source));
+        }
+    }
+    match stuck {
+        // A finished file is whole at its new place; only a subtitle file can have stayed.
+        Some((file, source)) if entry.row.status != DownloadStatus::Completed => {
+            let stranded: Vec<String> = record
+                .files
+                .iter()
+                .filter(|file| file.to.exists())
+                .map(|file| {
+                    format!(
+                        "{} (it belongs at {})",
+                        file.to.display(),
+                        file.from.display()
+                    )
+                })
+                .collect();
+            let split = CoreError::FilesSplit {
+                path: file.from.display().to_string(),
+                source,
+                stuck: stranded.join(", "),
+            };
+            entry.row.status = DownloadStatus::Failed;
+            entry.row.error = Some(UserError {
+                message: split.to_string(),
+                fix: None,
+            });
+            entry.stranded = Some(record.path.clone());
+        }
+        _ => {
+            take_moved_path(entry, dir, &record.path);
+            entry.files.follow(&files_that_arrived(&record.files));
+        }
+    }
+}
+
+/// Those of `files` now only at their new place. A file at the new place of one that could not follow is someone else's, and must not be listed as the download's.
+pub(super) fn files_that_arrived(files: &[MovedFile]) -> Vec<MovedFile> {
+    files
+        .iter()
+        .filter(|file| !file.from.exists() && file.to.exists())
+        .cloned()
+        .collect()
+}
+
+/// Whether `file` is whole at its new place: a copy takes its final name only when whole, and one of another size is some other program's.
+fn has_arrived(file: &MovedFile) -> bool {
+    let size = |path: &Path| std::fs::metadata(path).map(|meta| meta.len());
+    match (size(&file.from), size(&file.to)) {
+        (Err(_), Ok(_)) => true,
+        (Ok(from), Ok(to)) => from == to,
+        (_, Err(_)) => false,
+    }
+}
+
+/// Deletes the copies under way that a kill left in `dir`. No move runs yet at a start, so none of them is in use.
+fn discard_staged(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(STAGED_PREFIX)
+        {
+            wirecatch_files::discard::file(&entry.path());
+        }
+    }
+}
+
+/// The files that move when a download goes from `from` to `to`, in the order they move, each of `sidecars` to where `sidecar_to` says. Touches the file system.
+fn files_to_move(
+    from: &Path,
+    to: &Path,
+    completed: bool,
+    sidecars: &[PathBuf],
+    sidecar_to: impl Fn(&Path) -> PathBuf,
+) -> Vec<MovedFile> {
+    if !completed {
+        return partial_files(from)
+            .into_iter()
+            .zip(partial_files(to))
+            .filter(|(old, _)| old.exists())
+            .map(|(from, to)| MovedFile { from, to })
+            .collect();
+    }
+    let mut files = vec![MovedFile {
+        from: from.to_path_buf(),
+        to: to.to_path_buf(),
+    }];
+    files.extend(
+        sidecars
+            .iter()
+            .filter(|sidecar| sidecar.exists())
+            .map(|sidecar| MovedFile {
+                from: sidecar.clone(),
+                to: sidecar_to(sidecar),
+            }),
+    );
+    files
+}
+
+/// Where `sidecar` of the file at `from` goes when that file moves to `to`: its name follows the file's, and is free there.
+fn sidecar_target(
+    sidecar: &Path,
+    from: &Path,
+    to: &Path,
+    claimed: impl Fn(&Path) -> bool,
+) -> PathBuf {
+    let stem = |path: &Path| {
+        path.file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let name = naming::file_name_of(sidecar);
+    let name = name
+        .strip_prefix(&stem(from))
+        .map_or_else(|| name.clone(), |rest| format!("{}{rest}", stem(to)));
+    naming::unique_path(to.parent().unwrap_or(Path::new("")), &name, claimed)
 }
 
 /// Moves one file from the first path to the second.
@@ -281,24 +523,6 @@ fn prepare_folder(dir: &Path) -> Result<()> {
         .open(&probe)
         .map_err(unusable)?;
     std::fs::remove_file(&probe).map_err(unusable)
-}
-
-/// Moves a finished file, or an unfinished download's part and resume files.
-fn move_download_files(
-    from: &Path,
-    to: &Path,
-    completed: bool,
-    move_one: &(dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync),
-) -> Result<()> {
-    if completed {
-        return move_one(from, to).map_err(|source| CoreError::File(FileError::new(from, source)));
-    }
-    let pairs: Vec<(PathBuf, PathBuf)> = partial_files(from)
-        .into_iter()
-        .zip(partial_files(to))
-        .filter(|(old, _)| old.exists())
-        .collect();
-    move_together(&pairs, move_one)
 }
 
 /// Moves each `(old, new)` pair of a download's files with `move_one`. When one
@@ -542,7 +766,12 @@ mod tests {
         let [part, state] = partial_files(&from);
         std::fs::write(&part, b"data").unwrap();
         std::fs::write(&state, b"state").unwrap();
-        move_download_files(&from, &to, false, &move_file).unwrap();
+        let pairs: Vec<(PathBuf, PathBuf)> =
+            files_to_move(&from, &to, false, &[], Path::to_path_buf)
+                .into_iter()
+                .map(|file| (file.from, file.to))
+                .collect();
+        move_together(&pairs, move_file).unwrap();
         let [new_part, new_state] = partial_files(&to);
         assert_eq!(std::fs::read(new_part).unwrap(), b"data");
         assert_eq!(std::fs::read(new_state).unwrap(), b"state");

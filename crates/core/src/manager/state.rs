@@ -25,6 +25,7 @@ use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
 use wirecatch_queues::schedule::Gate;
 use wirecatch_records::answers::Answers;
 pub(super) use wirecatch_records::answers::{Expectation, OnExisting};
+use wirecatch_records::files::DownloadFiles;
 use wirecatch_settings::folders::KnownFolders;
 use wirecatch_settings::proxy::{ComputerProxy, Logins, SavedProxyServer};
 use wirecatch_sites::local_network::ChosenBy;
@@ -209,6 +210,7 @@ pub(super) struct Entry {
     /// download is not moved or relinked meanwhile. Saved with the download, so
     /// this holds across restarts.
     pub stranded: Option<PathBuf>,
+    pub files: DownloadFiles,
     /// For a stream or a page read by yt-dlp: what to download. `None` for every
     /// other download, including direct media files.
     pub media_job: Option<MediaJob>,
@@ -745,6 +747,7 @@ impl Entry {
                 expect: self.expect.clone(),
                 plain_name: self.plain_name.clone(),
             },
+            files: self.files.clone(),
         }
     }
 
@@ -830,6 +833,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         plain_name: None,
         offered_file: false,
         stranded: None,
+        files: DownloadFiles::default(),
         media_job: None,
         video_check: false,
     }
@@ -870,6 +874,7 @@ mod tests {
             plain_name: None,
             offered_file: false,
             stranded: None,
+            files: DownloadFiles::default(),
             media_job: None,
             video_check: false,
         }

@@ -93,17 +93,21 @@ pub(super) async fn finish(
                 }
             };
             let anywhere: Reserve = Arc::new(|_: &Path, _| true);
+            let mut placed = Vec::new();
             for (subtitle, language) in &sidecars {
                 wirecatch_files::zone::mark(subtitle, &url, referrer.as_deref());
                 let beside = sidecar_path(&target, language);
-                if let Err(e) = place(subtitle, &beside, &anywhere, Taken::KeepBoth) {
-                    warn!(error = %e, "could not put a subtitle file next to the video");
+                match place(subtitle, &beside, &anywhere, Taken::KeepBoth) {
+                    Ok(Placed::At(path)) => placed.push(path),
+                    Ok(Placed::Kept { .. } | Placed::Asks(_)) => {}
+                    Err(e) => warn!(error = %e, "could not put a subtitle file next to the video"),
                 }
             }
             wirecatch_files::discard::dir(&work);
             Ok(MediaDone::Completed {
                 path: target,
                 bytes,
+                sidecars: placed,
             })
         })
         .await

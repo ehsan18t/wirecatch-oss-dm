@@ -1218,6 +1218,15 @@ Decided on 2026-11-04. It amends D41.4 and D41.6.
 4. `BadEndpointKey` starts the app even for a key the app will not replace (a link, a folder, another account's file, D41.4), since a client cannot tell these from a damaged one without repeating the listener's rule. The app then starts without its endpoint, and the bridge reports the key's own advice alone: close Wirecatch, delete the file, open it again. `UnsafeDirectory` in the runtime folder, which has no key to renew, starts the app the same way and reports its own advice. Such an app holds the download list, so every later bridge connection starts a copy that finds the list taken. A launch that shows no window, as the bridge's and the one at sign-in are, closes without a word; only a launch that would show a window says "already running", so the person gets no message per connection.
 5. A link, a folder or a file the user may not read in the key's place is `BadEndpointKey` on both systems, for clients and the listener, which refuses it rather than replacing it.
 
+### D132. A move is on record before its first file moves
+
+Decided on 2026-11-04.
+
+1. Before a download's files move to another folder or name, the row saves what moves where, in the order it moves: the largest file first. The save is on disk before the first file moves.
+2. A start that finds the record finishes the move if any file has reached its new place, and otherwise leaves the download where it was. A file counts as there when it is gone from its old place, or both are the same size; one of another size at the new place is another program's. What stops an unfinished download's move from finishing leaves it failed with its files split, as a move that fails while running does; a finished download keeps its new place, and a subtitle file that cannot follow stays where it is and is logged.
+3. The same start deletes the temporary copies in the record's target folder. No other folder is searched.
+4. A finished video's row lists its subtitle files. They move with it, their names following the file's, and "Remove and delete" deletes them unless another row keeps the file. A listed name another download now holds, or another finished row lists as its file, is left alone, and a moved subtitle file never takes a name another download holds. A subtitle file placed in the moment before a kill is not listed when the row is completed at the next start.
+
 ### D142. An AppImage finds its libraries from its own binaries
 
 Decided on 2026-11-04. It amends D110.1.

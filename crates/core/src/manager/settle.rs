@@ -260,7 +260,7 @@ impl Manager {
     }
 
     /// Blocks until the database has tried to save the record that a run writes at its path. Saves are queued, and a kill that outruns this one leaves the finished file looking like another program's, so the next run saves a second copy. A save that fails or runs late is logged and the run goes on, with that risk.
-    fn wait_for_record(&self, id: DownloadId) {
+    pub(super) fn wait_for_record(&self, id: DownloadId) {
         if !self.inner.store.wait_for_writes(RECORD_WAIT) {
             warn!(
                 id = id.0,

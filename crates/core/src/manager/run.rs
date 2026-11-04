@@ -43,8 +43,12 @@ pub(super) enum RunEnd {
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum MediaDone {
     /// The file is complete at `path`, which may differ from the planned path
-    /// in its extension.
-    Completed { path: PathBuf, bytes: u64 },
+    /// in its extension, with its subtitle files beside it.
+    Completed {
+        path: PathBuf,
+        bytes: u64,
+        sidecars: Vec<PathBuf>,
+    },
     /// Stopped; starting it again continues.
     Paused,
     /// Its name is taken in the folder and the person is asked (D96); the answer starts it
@@ -55,12 +59,17 @@ pub(super) enum MediaDone {
     NotConverted(UserError),
 }
 
+/// What a run that finished leaves.
+struct Finished {
+    bytes: u64,
+    /// Where a media job put the file, when not at the download's path.
+    path: Option<PathBuf>,
+    sidecars: Vec<PathBuf>,
+}
+
 /// A run's end, in the terms that decide the download's new state.
 enum Ended {
-    Completed {
-        bytes: u64,
-        path: Option<PathBuf>,
-    },
+    Completed(Finished),
     /// Ended without finishing or failing (cancelled, or an outcome added later).
     Stopped,
     Failed(UserError),
@@ -74,9 +83,11 @@ impl Ended {
     /// had arrived before it, on who chose the link and on the proxy it went through.
     fn of(end: RunEnd, id: DownloadId, folder: &Path, worked: Worked, entry: &Entry) -> Self {
         match end {
-            RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })) => {
-                Ended::Completed { bytes, path: None }
-            }
+            RunEnd::Engine(Ok(Outcome::Completed { bytes, .. })) => Ended::Completed(Finished {
+                bytes,
+                path: None,
+                sidecars: Vec::new(),
+            }),
             RunEnd::Engine(Ok(_))
             | RunEnd::Media(Ok(MediaDone::Paused | MediaDone::FileExists(_))) => Ended::Stopped,
             RunEnd::Engine(Err(error)) => {
@@ -89,10 +100,15 @@ impl Ended {
                     entry.through_proxy.as_deref(),
                 ))
             }
-            RunEnd::Media(Ok(MediaDone::Completed { path, bytes })) => Ended::Completed {
+            RunEnd::Media(Ok(MediaDone::Completed {
+                path,
+                bytes,
+                sidecars,
+            })) => Ended::Completed(Finished {
                 bytes,
                 path: Some(path),
-            },
+                sidecars,
+            }),
             RunEnd::Media(Err(error)) => {
                 warn!(id = id.0, error = %error.message, "media download failed");
                 Ended::Failed(error)
@@ -278,8 +294,8 @@ impl Manager {
         }
         let mut answered_page = None;
         match (ended, run.stop) {
-            (Ended::Completed { bytes, path }, _) => {
-                complete(&mut state.claimed, entry, bytes, path, now);
+            (Ended::Completed(finished), _) => {
+                complete(&mut state.claimed, entry, finished, now);
             }
             // A cancelled run that was not asked to stop, or an outcome added to the
             // engine later: keep it paused, so nothing is lost.
@@ -361,14 +377,14 @@ fn take_reading(entry: &mut Entry, gauge: &Gauge) -> Worked {
 }
 
 /// Records a run that finished its file, `bytes` long, at `path` when that is not the planned one.
-fn complete(
-    claimed: &mut Claimed,
-    entry: &mut Entry,
-    bytes: u64,
-    path: Option<PathBuf>,
-    now: UnixMillis,
-) {
+fn complete(claimed: &mut Claimed, entry: &mut Entry, finished: Finished, now: UnixMillis) {
+    let Finished {
+        bytes,
+        path,
+        sidecars,
+    } = finished;
     let id = entry.row.id;
+    entry.files.sidecars = sidecars;
     // The finished file now holds the name on disk.
     claimed.remove(entry.path(), id);
     if let Some(path) = path {
