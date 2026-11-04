@@ -84,7 +84,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 19. A DASH template can ask for an address of hundreds of gigabytes and abort the app (fixed)
 20. A failed flush while saving progress is forgotten (fixed)
 21. An expired redirect target fails a download whose link still works (fixed)
-22. One unreadable value in the list stops the app opening at every start (open)
+22. One unreadable value in the list stops the app opening at every start (fixed)
 23. Sources are offered that ffmpeg then refuses after the whole download (fixed)
 24. A video format that needs cookies always fails when the engine fetches it (fixed)
 25. The could-not-save banner is wrong both ways, and its Try again saves nothing (open)
