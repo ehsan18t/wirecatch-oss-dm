@@ -121,6 +121,17 @@ pub enum Error {
         role: Role,
     },
 
+    /// A segment holds no video or audio: nothing at all, or text such as a web page. A server answers this way when a link has expired or asks for a sign-in.
+    #[error(
+        "Part {number} of {total} of the video came back as a web page or as nothing instead of video. The link may have expired; open the video page again to get a fresh one."
+    )]
+    NotMedia {
+        /// The segment's position, counting from 1.
+        number: usize,
+        /// How many segments the download has.
+        total: usize,
+    },
+
     /// The decryption key could not be used.
     #[error(
         "The decryption key at {url} is not usable: {}. The link may have expired; open the video page again to get a fresh one.",
