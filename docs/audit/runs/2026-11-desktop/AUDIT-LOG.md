@@ -84,7 +84,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 57  | Choosing a file or folder without a file chooser portal does nothing and says nothing             | `23-6` `B18-1`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
 | 58  | A typed file name with a dot loses the words after it                                             | `17-3` `Xrepeated-logic-2`                                                                         | P2       | small  | P2, 2 findings, small                                                                                            | `17-3`                                        | open   |
 | 59  | Downloaded installers are never removed                                                           | `12-2` `Xpath-app-update-5`                                                                        | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
-| 60  | An update with no usable file is shown as a package manager update or opens the release page      | `Xpath-app-update-6` `Xsecurity-update-signatures-3`                                               | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
+| 60  | An update with no usable file is shown as a package manager update or opens the release page      | `Xpath-app-update-6` `Xsecurity-update-signatures-3`                                               | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 61  | A conversion demands audio or video that a format did not describe                                | `Xpath-media-download-10` `B07-4`                                                                  | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 62  | A torn last line of a stream's log can truncate its joined track                                  | `Xsecond-review-disk-writes-4` `Xsecond-review-resume-3`                                           | P2       | small  | P2, 2 findings, small                                                                                            | `Xsecond-review-disk-writes-4`                | fixed  |
 | 63  | Blank lines hide a program's failure reason and grow memory without limit                         | `13-1` `13-5`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | `13-1`                                        | fixed  |
@@ -209,9 +209,9 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 182 | A redirect error tells the CLI user to allow something the CLI cannot                             | `32-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 183 | async_and_blocking_reads_agree never does a blocking read                                         | `06-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 184 | The AppImage replacement is renamed into place without a flush                                    | `12-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 185 | The unsigned release page address reaches the system shell unchecked                              | `Xsecurity-update-signatures-4`                                                                    | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 186 | Turning off pre-release versions keeps offering the one already found                             | `Xpath-app-update-7`                                                                               | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 187 | No test holds a manifest's version and size rules                                                 | `12-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 185 | The unsigned release page address reaches the system shell unchecked                              | `Xsecurity-update-signatures-4`                                                                    | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 186 | Turning off pre-release versions keeps offering the one already found                             | `Xpath-app-update-7`                                                                               | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 187 | No test holds a manifest's version and size rules                                                 | `12-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 188 | The packaging example for ARM64 on x64 cannot work                                                | `29-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 189 | ARM64 Linux packages are drafted without the fresh-system check                                   | `29-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 190 | The .deb and .rpm state no C library version                                                      | `29-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -1328,7 +1328,7 @@ P2, small, fixed.
 
 ### 60. An update with no usable file is shown as a package manager update or opens the release page
 
-P2, small, open.
+P2, small, fixed.
 
 `download: None` has several reasons that the app reads as one. So a person on Windows is told to use a package manager and loses What's new, and a release whose asset is missing or of another size falls through to the unchecked release page with no log.
 
@@ -3411,7 +3411,7 @@ P3, small, fixed.
 
 ### 185. The unsigned release page address reaches the system shell unchecked
 
-P3, small, open.
+P3, small, fixed.
 
 `html_url` is a plain string kept unparsed and reaches `ShellExecuteW` through `open_url`, against the letter of D111.3. It takes a trusted certificate, a genuine signed manifest and a click.
 
@@ -3427,7 +3427,7 @@ P3, small, open.
 
 ### 186. Turning off pre-release versions keeps offering the one already found
 
-P3, small, open.
+P3, small, fixed.
 
 A quiet check returns early on `Available`, and that state has no check button. So turning the setting off keeps offering the pre-release already found.
 
@@ -3443,7 +3443,7 @@ A quiet check returns early on `Available`, and that state has no check button. 
 
 ### 187. No test holds a manifest's version and size rules
 
-P3, small, open.
+P3, small, fixed.
 
 `Harness::publish` derives the manifest's version from the tag and gives the asset and manifest one size. With both checks removed, all 5 `app_update` tests still passed.
 
