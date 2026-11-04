@@ -71,7 +71,7 @@ pub(super) async fn page_attempt(
 ) -> Result<MediaDone, PageError> {
     let tools = job.tools.as_ref().ok_or_else(describe::addon_missing)?;
     let work = wirecatch_media::work_dir(&job.output);
-    tokio::fs::create_dir_all(&work)
+    workdir::claim_for_link(&work, &job.url)
         .await
         .map_err(|e| disk(&e, &job.output))?;
     if let Some((downloaded, bytes)) = Downloaded::read(&work).await {
