@@ -402,6 +402,13 @@ impl Fetcher {
         let (response, mut skip) = self
             .open(client, url, from, position.end, position.first.as_ref())
             .await?;
+        let unprovable = position
+            .first
+            .as_ref()
+            .is_some_and(|first| first.total.is_none() && !first.validators.can_compare());
+        if position.written > 0 && unprovable && response.status() == StatusCode::OK {
+            return Err(Error::RemoteChanged.into());
+        }
         let total = known_end(&response, from, skip);
         if let Some(total) = total
             && total < from

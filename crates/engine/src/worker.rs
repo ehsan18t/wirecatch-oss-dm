@@ -187,8 +187,9 @@ async fn run_assignment(
 
 /// Streams a response body into the segment until it is fully claimed, the body
 /// ends, or the download is cancelled. Whatever arrived is written before returning.
-/// `request_end` is where the request for the body ended; a body that ends there
-/// before the segment does is complete ([`Ended::RequestDone`]), not cut short.
+/// `request_end` is where the request for the body ended; a body that ends there,
+/// or where its own headers say, before the segment does is complete
+/// ([`Ended::RequestDone`]), not cut short.
 async fn stream(
     shared: &Shared,
     writer: &mut Writer,
@@ -201,6 +202,10 @@ async fn stream(
     let _connection = shared.progress.connection_opened();
     let _receiving = shared.receiving.start();
     writer.start(index, from);
+    // A server may answer with less than was asked (RFC 9110, section 15.3.7): its own headers say.
+    let request_end = body
+        .answer_end()
+        .map_or(request_end, |end| end.min(request_end));
     let stall = shared.request.stall_timeout;
     // Whether receiving failed (rather than, say, writing to disk).
     let mut body_failed = false;

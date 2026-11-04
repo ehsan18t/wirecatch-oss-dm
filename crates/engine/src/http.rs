@@ -101,6 +101,11 @@ impl Validators {
     /// sound. So entity tags are compared weakly (`W/"x"` matches `"x"`), two
     /// answers with the same weak tag count as not contradicted rather than
     /// proven the same, and a validator only one answer carries proves nothing.
+    /// Whether anything here could ever contradict another answer.
+    pub(crate) fn can_compare(&self) -> bool {
+        self.etag.is_some() || self.strong_modified.is_some()
+    }
+
     pub(crate) fn contradicts(&self, answer: &Validators) -> bool {
         if let (Some(known), Some(now)) = (&self.etag, &answer.etag) {
             return opaque_tag(known) != opaque_tag(now);
@@ -555,6 +560,10 @@ async fn fetch_from(
             got: None,
         }
         .into());
+    }
+    // Asked for inside the file the first answer described, so the file is shorter now.
+    if response.status() == StatusCode::RANGE_NOT_SATISFIABLE {
+        return Err(Error::RemoteChanged.into());
     }
     check_status(&response, StatusCode::PARTIAL_CONTENT)?;
     check_partial(response.headers(), from, request.total, &request.validators)?;
