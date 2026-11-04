@@ -977,6 +977,51 @@ async fn a_removal_keeps_the_path_until_its_files_are_deleted() {
     manager.lock().assert_consistent();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shutdown_waits_for_a_removal_to_delete_its_files() {
+    let (manager, _dir) = manager_with(deaf, Duration::from_secs(1), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/f.bin"))
+        .await
+        .unwrap();
+    let [part, _] = naming::partial_files(manager.lock().downloads[&id].path());
+    std::fs::create_dir_all(part.parent().unwrap()).unwrap();
+    std::fs::write(&part, b"kept").unwrap();
+    let entered = Arc::new(Notify::new());
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    let told = entered.clone();
+    manager.use_before_deleting(Arc::new(move || {
+        told.notify_one();
+        assert!(
+            held.lock().unwrap().recv().is_err(),
+            "ends when the sender is dropped"
+        );
+    }));
+    let removing = {
+        let manager = manager.clone();
+        tokio::spawn(async move { manager.remove(&[id], RemoveFiles::Keep).await })
+    };
+    tokio::time::timeout(PATIENCE, entered.notified())
+        .await
+        .expect("the deletion never began");
+    let mut quit = {
+        let manager = manager.clone();
+        tokio::spawn(async move { manager.shutdown().await })
+    };
+    assert!(
+        tokio::time::timeout(QUIET, &mut quit).await.is_err(),
+        "shutdown returned while the deletion was held"
+    );
+    drop(release);
+    tokio::time::timeout(PATIENCE, quit)
+        .await
+        .expect("shutdown never ended")
+        .unwrap();
+    assert!(!part.exists(), "the part file was left behind");
+    removing.await.unwrap().unwrap();
+}
+
 /// Opens a download's move to `chosen` with the mover held, quits, lets the mover go, then reopens the
 /// list. Returns the path the reopened list names.
 async fn path_after_a_quit_during_a_move(
@@ -1170,6 +1215,176 @@ async fn record_is_on_disk_first(
         .unwrap();
     assert!(writing, "the record is not on disk");
     assert!(manager.lock().downloads[&id].naming.writing);
+}
+
+/// The record names what moves before anything has: a kill during the move leaves it to read.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_move_is_on_disk_before_its_first_file_moves() {
+    let (manager, dir) =
+        manager_with(obedient, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/f.bin"))
+        .await
+        .unwrap();
+    let [part, _] = naming::partial_files(manager.lock().downloads[&id].path());
+    std::fs::create_dir_all(part.parent().unwrap()).unwrap();
+    std::fs::write(&part, b"kept").unwrap();
+    let database = dir.path().join("data").join(crate::DATABASE_FILE);
+    let saw = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = saw.clone();
+    manager.use_fake_mover(Arc::new(move |from, to| {
+        let other = rusqlite::Connection::open(&database).unwrap();
+        let files: String = other
+            .query_row("SELECT files FROM downloads", [], |row| row.get(0))
+            .unwrap();
+        seen.lock().unwrap().push(files);
+        std::fs::rename(from, to)
+    }));
+    let elsewhere = dir.path().join("elsewhere");
+    manager
+        .set_download_folder(id, &elsewhere.to_string_lossy())
+        .await
+        .unwrap();
+
+    let saw = saw.lock().unwrap();
+    let [files] = &saw[..] else {
+        panic!("{saw:?}");
+    };
+    assert!(
+        files.contains("elsewhere"),
+        "no record of the move: {files}"
+    );
+    assert_eq!(manager.lock().downloads[&id].files.moving, None);
+}
+
+/// A finished video with the subtitle file `subtitle` beside it, and a run holding `held` meanwhile.
+async fn video_beside_a_held_name(
+    subtitle: &str,
+    held_folder: &Path,
+    held: &str,
+) -> (Manager, tempfile::TempDir, DownloadId, PathBuf, PathBuf) {
+    let (manager, dir) = manager_with(deaf, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/a.mp4"))
+        .await
+        .unwrap();
+    let holder = manager
+        .add_download(AddRequest {
+            folder: Some(held_folder.to_string_lossy().into_owned()),
+            file_name: Some(held.into()),
+            ..add_request("https://example.com/other")
+        })
+        .await
+        .unwrap();
+    let held_path = manager.lock().downloads[&holder].path().to_path_buf();
+    assert_eq!(naming::file_name_of(&held_path), held);
+    let (video, sidecar) = {
+        let mut guard = manager.lock();
+        let state = &mut *guard;
+        let entry = state.downloads.get_mut(&id).unwrap();
+        let video = entry.path().to_path_buf();
+        let sidecar = video.with_file_name(subtitle);
+        std::fs::create_dir_all(video.parent().unwrap()).unwrap();
+        std::fs::write(&video, b"video").unwrap();
+        std::fs::write(&sidecar, b"words").unwrap();
+        entry.files.sidecars = vec![sidecar.clone()];
+        entry.run = None;
+        super::run::mark_completed(entry, 5, wirecatch_protocol::UnixMillis(1));
+        state.running.remove(&id);
+        state.claimed.remove(&video, id);
+        (video, sidecar)
+    };
+    (manager, dir, id, video, sidecar)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_subtitle_file_another_download_holds_is_not_deleted() {
+    let folder = tempfile::tempdir().unwrap();
+    let (manager, _dir, id, video, sidecar) =
+        video_beside_a_held_name("placeholder.srt", folder.path(), "a.en.srt").await;
+    // Listed at the name the other download holds.
+    let held = folder.path().join("a.en.srt");
+    std::fs::rename(&sidecar, &held).unwrap();
+    manager
+        .lock()
+        .downloads
+        .get_mut(&id)
+        .unwrap()
+        .files
+        .sidecars = vec![held.clone()];
+
+    manager.remove(&[id], RemoveFiles::Delete).await.unwrap();
+
+    assert!(!video.exists());
+    assert_eq!(std::fs::read(&held).unwrap(), b"words");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_deleted_subtitle_file_keeps_its_name_until_it_is_gone() {
+    let folder = tempfile::tempdir().unwrap();
+    let (manager, _dir, id, _, sidecar) =
+        video_beside_a_held_name("a.en.srt", folder.path(), "b.bin").await;
+    let (watcher, seen) = (manager.clone(), Arc::new(AtomicUsize::new(0)));
+    let (path, count) = (sidecar.clone(), seen.clone());
+    manager.use_before_deleting(Arc::new(move || {
+        if watcher.lock().claimed.contains(&path) {
+            count.fetch_add(1, Ordering::SeqCst);
+        }
+    }));
+
+    manager.remove(&[id], RemoveFiles::Delete).await.unwrap();
+
+    assert_eq!(seen.load(Ordering::SeqCst), 1, "the name was free too soon");
+    assert!(!sidecar.exists());
+    assert!(!manager.lock().claimed.contains(&sidecar));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_moved_subtitle_file_never_lands_on_a_name_another_download_holds() {
+    let target = tempfile::tempdir().unwrap();
+    let (manager, _dir, id, _, sidecar) =
+        video_beside_a_held_name("a.en.srt", target.path(), "a.en.srt").await;
+
+    manager
+        .set_download_folder(id, &target.path().to_string_lossy())
+        .await
+        .unwrap();
+
+    let landed = target.path().join("a.en (1).srt");
+    assert_eq!(std::fs::read(&landed).unwrap(), b"words");
+    assert!(!sidecar.exists());
+    let state = manager.lock();
+    assert_eq!(
+        state.downloads[&id].files.sidecars,
+        std::slice::from_ref(&landed)
+    );
+    assert!(!state.claimed.contains(&landed), "the reservation stayed");
+    assert!(state.claimed.contains(&target.path().join("a.en.srt")));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_listed_subtitle_file_that_is_now_another_downloads_stays_when_the_video_moves() {
+    let folder = tempfile::tempdir().unwrap();
+    let target = tempfile::tempdir().unwrap();
+    let (manager, _dir, id, _, sidecar) =
+        video_beside_a_held_name("placeholder.srt", folder.path(), "a.en.srt").await;
+    let held = folder.path().join("a.en.srt");
+    std::fs::rename(&sidecar, &held).unwrap();
+    manager
+        .lock()
+        .downloads
+        .get_mut(&id)
+        .unwrap()
+        .files
+        .sidecars = vec![held.clone()];
+
+    manager
+        .set_download_folder(id, &target.path().to_string_lossy())
+        .await
+        .unwrap();
+
+    assert_eq!(std::fs::read(&held).unwrap(), b"words");
+    assert!(!target.path().join("a.en.srt").exists());
 }
 
 async fn running_for_record(url: &str) -> (Manager, tempfile::TempDir, DownloadId, u64) {

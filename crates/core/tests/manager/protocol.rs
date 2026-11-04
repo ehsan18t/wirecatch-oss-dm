@@ -1281,10 +1281,13 @@ async fn a_page_on_the_network_may_lead_to_it() -> TestResult {
         .await;
 
     let intranet = || -> TestResult<NewDownload> {
-        Ok(capture_from(
-            "https://wiki.corp.example.com/files",
-            by_name(server.url("other.pdf"))?,
-        ))
+        Ok(NewDownload {
+            suggested_name: Some("other.pdf".into()),
+            ..capture_from(
+                "https://wiki.corp.example.com/files",
+                by_name(server.url("other.pdf"))?,
+            )
+        })
     };
     left_to_the_browser(&h, intranet()?).await?;
     tune(&h.manager, |s| {

@@ -1,15 +1,16 @@
 //! Rebuilding the manager's state from the database at startup.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::NaiveDateTime;
-use wirecatch_protocol::QueueId;
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{AppSettings, DownloadStatus, Queue, Setting};
 use wirecatch_protocol::proxy::ProxyUse;
 use wirecatch_protocol::rules::QueueReason;
+use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_records::files::MovedFile;
 use wirecatch_settings::DEFAULT_QUEUE_ID;
 use wirecatch_settings::proxy::{ComputerProxy, SavedProxyServer};
 use wirecatch_sites::local_network::ChosenBy;
@@ -19,6 +20,7 @@ use wirecatch_store::{Snapshot, StoredDownload};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::questions;
+use super::relocate::{files_that_arrived, finish_interrupted_move};
 use super::run::mark_completed;
 use super::state::{Counters, Entry, Hold, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
@@ -76,17 +78,13 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
             .fold(snapshot.last_ids.queue, i64::max),
         ..Counters::default()
     };
-    let mut downloads = Vec::with_capacity(snapshot.downloads.len());
-    let mut changed = Vec::new();
-    for stored in snapshot.downloads {
-        let (entry, fixed) = restore_entry(stored, &mut queues, default_queue, around);
-        ids.download = ids.download.max(entry.row.id.0);
-        ids.position = ids.position.max(entry.position);
-        if fixed {
-            changed.push(entry.stored());
-        }
-        downloads.push(entry);
-    }
+    let (downloads, changed) = restore_downloads(
+        snapshot.downloads,
+        &mut queues,
+        default_queue,
+        &mut ids,
+        around,
+    );
 
     let mut settings = settings;
     let profiles = snapshot.proxy_servers;
@@ -117,6 +115,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         suffix_check: SuffixCheck::default(),
         handovers: Handovers::default(),
         dirty: BTreeSet::default(),
+        removals: Vec::new(),
         batches: Batches::default(),
         proxy_logins,
         proxy_servers: profiles,
@@ -132,6 +131,78 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         state,
         changed,
         settings_changed,
+    }
+}
+
+/// The stored downloads as they continue, and the rows that need saving again.
+fn restore_downloads(
+    stored_rows: Vec<StoredDownload>,
+    queues: &mut [QueueSlot],
+    default_queue: QueueId,
+    ids: &mut Counters,
+    around: &Surroundings<'_>,
+) -> (Vec<Entry>, Vec<StoredDownload>) {
+    let mut downloads = Vec::with_capacity(stored_rows.len());
+    let mut changed = Vec::new();
+    let mut moved_files = Vec::new();
+    for stored in stored_rows {
+        let moved_file = moved_file_of(&stored);
+        let (entry, fixed) = restore_entry(stored, queues, default_queue, around);
+        moved_files.extend(moved_file.filter(|file| file.ended_at(&entry)));
+        ids.download = ids.download.max(entry.row.id.0);
+        ids.position = ids.position.max(entry.position);
+        if fixed {
+            changed.push(entry.stored());
+        }
+        downloads.push(entry);
+    }
+    for file in &moved_files {
+        changed.extend(file.move_other_rows(&mut downloads));
+    }
+    (downloads, changed)
+}
+
+/// A finished file with a move on record, as a row saved it.
+struct FileMoved {
+    id: DownloadId,
+    old_path: String,
+    files: Vec<MovedFile>,
+    new_path: PathBuf,
+}
+
+fn moved_file_of(stored: &StoredDownload) -> Option<FileMoved> {
+    let record = stored.files.moving.as_ref()?;
+    Some(FileMoved {
+        id: stored.summary.id,
+        old_path: stored.summary.path.clone(),
+        files: record.files.clone(),
+        new_path: record.path.clone(),
+    })
+}
+
+impl FileMoved {
+    /// Whether the move finished at this start, with the file now at its new path.
+    fn ended_at(&self, entry: &Entry) -> bool {
+        entry.row.status == DownloadStatus::Completed && entry.path() == self.new_path
+    }
+
+    /// The other finished rows of the file go with it (D118); returns them as saved.
+    fn move_other_rows(&self, downloads: &mut [Entry]) -> Vec<StoredDownload> {
+        let arrived = files_that_arrived(&self.files);
+        downloads
+            .iter_mut()
+            .filter(|e| {
+                e.row.id != self.id
+                    && e.row.status == DownloadStatus::Completed
+                    && e.row.path == self.old_path
+            })
+            .map(|e| {
+                e.row.path = self.new_path.to_string_lossy().into_owned();
+                e.row.file_name = crate::naming::file_name_of(&self.new_path);
+                e.files.follow(&arrived);
+                e.stored()
+            })
+            .collect()
     }
 }
 
@@ -202,10 +273,19 @@ fn restore_entry(
         cleanup: None,
         hold: Hold::Free,
         on_existing: stored.answers.on_existing,
+        plain_name: stored.answers.plain_name,
         offered_file: false,
         stranded: stored.stranded,
+        files: stored.files,
     };
+    if let Some(plain) = &entry.plain_name {
+        entry.row.file_name.clone_from(plain);
+    }
     let mut fixed = false;
+    if let Some(record) = entry.files.moving.take() {
+        finish_interrupted_move(&mut entry, &record);
+        fixed = true;
+    }
     if !queues.iter().any(|s| s.queue.id == entry.row.queue) {
         entry.row.queue = default_queue;
         entry.row.queue_reason = QueueReason::DefaultQueue;
@@ -217,6 +297,7 @@ fn restore_entry(
     );
     // Until a run began writing, whatever is at the path is someone else's. One of another size than the server's is not this download's either.
     if !done_with
+        && entry.stranded.is_none()
         && entry.naming.writing
         && let Some(size) = (around.finished_size)(entry.path())
         && entry.row.total.is_none_or(|total| total == size)
@@ -255,7 +336,7 @@ mod tests {
     use super::*;
     use crate::headers::Origin;
     use wirecatch_protocol::app::{DownloadSummary, Setting};
-    use wirecatch_protocol::{DownloadId, QueueId};
+    use wirecatch_records::files::{DownloadFiles, MoveUnderWay};
     use wirecatch_sites::local_network::ChosenBy;
     use wirecatch_store::{LastIds, NameChoice};
 
@@ -373,7 +454,190 @@ mod tests {
             media: None,
             stranded: None,
             answers: wirecatch_records::answers::Answers::default(),
+            files: DownloadFiles::default(),
         }
+    }
+
+    /// The row `id`, with a record of a move of `files` to `to`.
+    fn moving(
+        status: DownloadStatus,
+        from: &Path,
+        to: &Path,
+        files: Vec<MovedFile>,
+    ) -> StoredDownload {
+        let mut row = stored(1, 1, status);
+        row.summary.path = from.to_string_lossy().into_owned();
+        row.naming.writing = true;
+        row.summary.total = None;
+        row.files.moving = Some(MoveUnderWay {
+            path: to.to_path_buf(),
+            files,
+        });
+        row
+    }
+
+    fn pair(from: &Path, to: &Path) -> MovedFile {
+        MovedFile {
+            from: from.to_path_buf(),
+            to: to.to_path_buf(),
+        }
+    }
+
+    fn restored_with(rows: Vec<StoredDownload>) -> Restored {
+        let snapshot = Snapshot {
+            downloads: rows,
+            ..Snapshot::default()
+        };
+        restore(snapshot, &nowhere(&crate::naming::finished_size))
+    }
+
+    /// Killed with the part file moved and the resume file not: another program's file at the old path must not pass for the finished download.
+    #[test]
+    fn a_kill_during_a_move_finishes_it_and_never_completes_on_a_file_left_at_the_old_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let (from, to) = (dir.path().join("a.bin"), dir.path().join("a (1).bin"));
+        std::fs::write(&from, b"another program's").unwrap();
+        let [old_part, old_state] = crate::naming::partial_files(&from);
+        let [new_part, new_state] = crate::naming::partial_files(&to);
+        std::fs::write(&new_part, b"part").unwrap();
+        std::fs::write(&old_state, b"state").unwrap();
+
+        let restored = restored_with(vec![moving(
+            DownloadStatus::Downloading,
+            &from,
+            &to,
+            vec![pair(&old_part, &new_part), pair(&old_state, &new_state)],
+        )]);
+
+        let entry = &restored.state.downloads[&DownloadId(1)];
+        assert_eq!(Path::new(&entry.row.path), to);
+        assert_eq!(entry.row.status, DownloadStatus::Queued);
+        assert_eq!(std::fs::read(&new_state).unwrap(), b"state");
+        assert!(!old_state.exists());
+        assert_eq!(std::fs::read(&from).unwrap(), b"another program's");
+        assert_eq!(entry.files.moving, None);
+        assert_eq!(restored.changed.len(), 1);
+        assert_eq!(restored.changed[0].files.moving, None);
+    }
+
+    #[test]
+    fn a_kill_during_a_copy_keeps_the_download_and_deletes_the_copy() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let from = source.path().join("a.bin");
+        let to = target.path().join("a.bin");
+        std::fs::write(&from, b"whole").unwrap();
+        let staged = target.path().join(".wirecatch-move-0");
+        std::fs::write(&staged, b"wh").unwrap();
+
+        let restored = restored_with(vec![moving(
+            DownloadStatus::Completed,
+            &from,
+            &to,
+            vec![pair(&from, &to)],
+        )]);
+
+        assert!(!staged.exists(), "the copy was left behind");
+        assert_eq!(std::fs::read(&from).unwrap(), b"whole");
+        let entry = &restored.state.downloads[&DownloadId(1)];
+        assert_eq!(Path::new(&entry.row.path), from);
+        assert_eq!(entry.files.moving, None);
+    }
+
+    /// Killed after the copy took its final name and before the original went, with the subtitles still to move.
+    #[test]
+    fn a_kill_after_a_copy_finishes_the_move_for_every_row_of_the_file() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (from, to) = (source.path().join("a.mp4"), target.path().join("a.mp4"));
+        let (old_srt, new_srt) = (
+            source.path().join("a.en.srt"),
+            target.path().join("a.en.srt"),
+        );
+        std::fs::write(&from, b"video").unwrap();
+        std::fs::write(&to, b"video").unwrap();
+        std::fs::write(&old_srt, b"words").unwrap();
+        let mut row = moving(
+            DownloadStatus::Completed,
+            &from,
+            &to,
+            vec![pair(&from, &to), pair(&old_srt, &new_srt)],
+        );
+        row.files.sidecars = vec![old_srt.clone()];
+        let mut other = stored(2, 1, DownloadStatus::Completed);
+        other.summary.path.clone_from(&row.summary.path);
+
+        let restored = restored_with(vec![row, other]);
+
+        assert!(!from.exists() && !old_srt.exists());
+        assert_eq!(std::fs::read(&new_srt).unwrap(), b"words");
+        let entry = &restored.state.downloads[&DownloadId(1)];
+        assert_eq!(Path::new(&entry.row.path), to);
+        assert_eq!(entry.files.sidecars, [new_srt]);
+        assert_eq!(
+            Path::new(&restored.state.downloads[&DownloadId(2)].row.path),
+            to
+        );
+        assert_eq!(restored.changed.len(), 2);
+    }
+
+    /// Another program took the subtitle file's new name: "Remove and delete" must never reach that file through the list.
+    #[test]
+    fn a_subtitle_file_that_cannot_follow_stays_listed_where_it_is() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (from, to) = (source.path().join("a.mp4"), target.path().join("a.mp4"));
+        let (old_srt, new_srt) = (
+            source.path().join("a.en.srt"),
+            target.path().join("a.en.srt"),
+        );
+        std::fs::write(&to, b"video").unwrap();
+        std::fs::write(&old_srt, b"words").unwrap();
+        std::fs::write(&new_srt, b"another program's").unwrap();
+        let mut row = moving(
+            DownloadStatus::Completed,
+            &from,
+            &to,
+            vec![pair(&from, &to), pair(&old_srt, &new_srt)],
+        );
+        row.files.sidecars = vec![old_srt.clone()];
+        let mut other = stored(2, 1, DownloadStatus::Completed);
+        other.summary.path.clone_from(&row.summary.path);
+        other.files.sidecars = vec![old_srt.clone()];
+
+        let restored = restored_with(vec![row, other]);
+
+        for id in [1, 2] {
+            let entry = &restored.state.downloads[&DownloadId(id)];
+            assert_eq!(Path::new(&entry.row.path), to);
+            assert_eq!(entry.files.sidecars, std::slice::from_ref(&old_srt));
+        }
+        assert_eq!(std::fs::read(&old_srt).unwrap(), b"words");
+        assert_eq!(std::fs::read(&new_srt).unwrap(), b"another program's");
+    }
+
+    /// Another program took the resume file's new name during the outage: the download's files stay split and it says so.
+    #[test]
+    fn a_move_that_cannot_be_finished_leaves_the_download_failed_and_stranded() {
+        let dir = tempfile::tempdir().unwrap();
+        let (from, to) = (dir.path().join("a.bin"), dir.path().join("a (1).bin"));
+        std::fs::write(&from, b"another program's").unwrap();
+        let [old_part, old_state] = crate::naming::partial_files(&from);
+        let [new_part, new_state] = crate::naming::partial_files(&to);
+        std::fs::write(&new_part, b"part").unwrap();
+        std::fs::write(&old_state, b"state").unwrap();
+        std::fs::write(&new_state, b"not this download's").unwrap();
+
+        let restored = restored_with(vec![moving(
+            DownloadStatus::Downloading,
+            &from,
+            &to,
+            vec![pair(&old_part, &new_part), pair(&old_state, &new_state)],
+        )]);
+
+        let entry = &restored.state.downloads[&DownloadId(1)];
+        assert_eq!(entry.row.status, DownloadStatus::Failed);
+        assert_eq!(entry.stranded.as_deref(), Some(to.as_path()));
+        assert_eq!(Path::new(&entry.row.path), from);
+        assert!(old_state.exists());
+        assert_eq!(std::fs::read(&new_state).unwrap(), b"not this download's");
     }
 
     #[test]

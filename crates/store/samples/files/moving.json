@@ -1,0 +1,10 @@
+{
+  "sidecars": ["/home/me/Videos/talk.en.srt"],
+  "moving": {
+    "path": "/mnt/big/talk.mp4",
+    "files": [
+      { "from": "/home/me/Videos/talk.mp4", "to": "/mnt/big/talk.mp4" },
+      { "from": "/home/me/Videos/talk.en.srt", "to": "/mnt/big/talk.en.srt" }
+    ]
+  }
+}
