@@ -1225,3 +1225,7 @@ Decided on 2026-11-04. It amends D110.1.
 1. The app and the bridge are linked with an `RPATH` of `$ORIGIN/../lib`, and `AppRun` only starts the app. `LD_LIBRARY_PATH` is never set, since every program the app starts would inherit it and load the build machine's keyboard libraries instead of the system's.
 2. It is an `RPATH`, not the newer `RUNPATH`: a `RUNPATH` does not reach what a library loads, and `libxkbcommon-x11` loads `libxcb-xkb`. The same binaries go in the `.deb` and `.rpm`, where the folder is `/usr/lib`, which holds nothing of the app's.
 3. The release workflow's check reads with `ldd` that the app in the AppImage resolves each carried library to its own copy.
+
+### D145. A captured download leaves the browser once the app has it
+
+Decided on 2026-11-05. The extension removes the browser's copy for every `AddAction`: `started`, `queued` and `awaiting_confirmation`. Waiting for `started` would leave a download paused in the browser for as long as a queue waits or a confirmation stays open. The risk that stays is a link that works only once or needs the browser's POST request: it can fail in the app after the browser's copy is gone, and the app then shows the error with a retry.

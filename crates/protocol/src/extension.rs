@@ -289,8 +289,8 @@ pub enum CaptureSource {
 pub struct AddedDownload {
     /// Absent when the app is waiting for the user to confirm (`ask_before_download`).
     pub id: Option<DownloadId>,
-    /// What the app did with it, which tells the extension whether it may erase the
-    /// browser's copy yet.
+    /// What the app did with it. Every action means the app has it, so the extension removes
+    /// the browser's copy (D145).
     pub action: AddAction,
 }
 
@@ -299,8 +299,7 @@ pub struct AddedDownload {
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum AddAction {
-    /// The server answered the app with the file (a 2xx response) and data is
-    /// flowing. Only now may the extension erase the browser's copy.
+    /// The server answered the app with the file (a 2xx response) and data is flowing.
     Started,
     /// Accepted into a queue that is not running right now; the link has not been
     /// tried yet.
