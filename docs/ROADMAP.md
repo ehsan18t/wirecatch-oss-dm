@@ -103,7 +103,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 42. The network guard's local-address rule is written twice (fixed)
 43. The local network rule does not apply to FTP (fixed)
 44. "This host is under that site" is written four times, and the copies differ (fixed)
-45. ftps and ftpes hosts are read raw by every check (open)
+45. ftps and ftpes hosts are read raw by every check (fixed)
 46. An apostrophe in a link leaves its password or signed query in the log (fixed)
 47. A link's password reaches the browser extension, and a crash's partial file is not picked up (open)
 48. A finished file with a leftover resume file is downloaded again (open)
