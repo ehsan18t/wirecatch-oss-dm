@@ -134,12 +134,12 @@ pub enum Error {
 
     /// The decryption key could not be used.
     #[error(
-        "The decryption key at {url} is not usable: {}. The link may have expired; open the video page again to get a fresh one.",
+        "The decryption key from {host} is not usable: {}. The link may have expired; open the video page again to get a fresh one.",
         Chain(problem)
     )]
     Key {
-        /// Where the key came from.
-        url: String,
+        /// The host the key came from: its address can carry a signature.
+        host: String,
         /// What is wrong with it.
         problem: KeyProblem,
     },
@@ -535,7 +535,7 @@ mod tests {
             },
         };
         let key = Error::Key {
-            url: "https://cdn.example/key".into(),
+            host: "cdn.example".into(),
             problem: KeyProblem::Fetch(wirecatch_engine::Error::Io {
                 action: wirecatch_engine::IoAction::Write,
                 path: PathBuf::from("key"),
