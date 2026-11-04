@@ -1172,6 +1172,46 @@ async fn record_is_on_disk_first(
     assert!(manager.lock().downloads[&id].naming.writing);
 }
 
+/// The record names what moves before anything has: a kill during the move leaves it to read.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_move_is_on_disk_before_its_first_file_moves() {
+    let (manager, dir) =
+        manager_with(obedient, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/f.bin"))
+        .await
+        .unwrap();
+    let [part, _] = naming::partial_files(manager.lock().downloads[&id].path());
+    std::fs::create_dir_all(part.parent().unwrap()).unwrap();
+    std::fs::write(&part, b"kept").unwrap();
+    let database = dir.path().join("data").join(crate::DATABASE_FILE);
+    let saw = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = saw.clone();
+    manager.use_fake_mover(Arc::new(move |from, to| {
+        let other = rusqlite::Connection::open(&database).unwrap();
+        let files: String = other
+            .query_row("SELECT files FROM downloads", [], |row| row.get(0))
+            .unwrap();
+        seen.lock().unwrap().push(files);
+        std::fs::rename(from, to)
+    }));
+    let elsewhere = dir.path().join("elsewhere");
+    manager
+        .set_download_folder(id, &elsewhere.to_string_lossy())
+        .await
+        .unwrap();
+
+    let saw = saw.lock().unwrap();
+    let [files] = &saw[..] else {
+        panic!("{saw:?}");
+    };
+    assert!(
+        files.contains("elsewhere"),
+        "no record of the move: {files}"
+    );
+    assert_eq!(manager.lock().downloads[&id].files.moving, None);
+}
+
 async fn running_for_record(url: &str) -> (Manager, tempfile::TempDir, DownloadId, u64) {
     let (manager, dir) = manager_with(deaf, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
     let id = manager.add_download(add_request(url)).await.unwrap();

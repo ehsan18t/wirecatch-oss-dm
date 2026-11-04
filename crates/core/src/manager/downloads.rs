@@ -12,6 +12,7 @@ use wirecatch_protocol::app::{
 use wirecatch_protocol::extension::{AddAction, AddedDownload};
 use wirecatch_protocol::rules::QueueReason;
 use wirecatch_protocol::{DownloadId, QueueId};
+use wirecatch_records::files::DownloadFiles;
 use wirecatch_sites::local_network::ChosenBy;
 use wirecatch_store::NameChoice;
 
@@ -216,9 +217,7 @@ impl Manager {
         Ok(())
     }
 
-    /// Removes downloads from the list, stopping them first. The partial files of an
-    /// unfinished download are always deleted; the file of a completed download only
-    /// with [`RemoveFiles::Delete`]. Ids that no longer exist are ignored.
+    /// Removes downloads from the list, stopping them first. The partial files of an unfinished download are always deleted; the file of a completed download, with its subtitle files, only with [`RemoveFiles::Delete`]. Ids that no longer exist are ignored.
     ///
     /// # Errors
     ///
@@ -285,6 +284,7 @@ impl Manager {
         self.wait_until_stopped(ids).await;
 
         let mut finished_files = Vec::new();
+        let mut subtitles = Vec::new();
         let mut partials = Vec::new();
         let mut removed = Vec::new();
         let mut leaving = Vec::new();
@@ -306,6 +306,7 @@ impl Manager {
                 if entry.row.status == DownloadStatus::Completed {
                     if completed == RemoveFiles::Delete {
                         finished_files.push(entry.path().to_path_buf());
+                        subtitles.push((entry.path().to_path_buf(), entry.files.sidecars.clone()));
                     }
                 } else {
                     // An unfinished download has no file of its own at its final
@@ -318,6 +319,12 @@ impl Manager {
                 return Ok(());
             }
             finished_files = files_no_row_lists(&state, finished_files);
+            // Only with the file itself: another row may keep it.
+            for (file, beside) in subtitles {
+                if finished_files.contains(&file) {
+                    finished_files.extend(beside);
+                }
+            }
             // After that check, which reads a claim as another download's. A new download's name must not meet files about to be deleted.
             leaving.retain(|(path, id)| state.claimed.reserve(path, *id));
             self.emit(UiEvent::DownloadsRemoved(removed));
@@ -712,6 +719,7 @@ impl Manager {
             plain_name: None,
             offered_file: false,
             stranded: None,
+            files: DownloadFiles::default(),
             media_job,
             video_check,
         });

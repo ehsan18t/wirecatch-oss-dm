@@ -335,6 +335,42 @@ async fn audio_saved_as_mp3_gets_tags_a_cover_and_subtitle_files() -> TestResult
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn subtitle_files_go_with_a_moved_or_deleted_file() -> TestResult {
+    let server = FileServer::start().await;
+    let h = ready(&server).await?;
+    let choice = choice_for(&h, &server, 3).await?;
+    let audio = choice.options.iter().find(|o| o.audio_only).unwrap();
+    let mut pick = selection(&audio.id, OutputFormat::Mp3);
+    pick.subtitles = vec!["sub:en".into()];
+    let id = h.manager.choose_media(choice.id, pick).await.unwrap();
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+    let subtitles =
+        |path: &str| wirecatch_streams::extension::with_extension(Path::new(path), "en.srt");
+    let first = subtitles(&done.path);
+    assert!(first.is_file(), "{}", first.display());
+
+    let elsewhere = h.root.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere)?;
+    // A name taken there changes the file's name, and its subtitles' with it.
+    std::fs::write(elsewhere.join(&done.file_name), b"someone else's")?;
+    h.manager
+        .set_download_folder(id, &elsewhere.to_string_lossy())
+        .await?;
+    let moved = h.row(id);
+    assert_ne!(moved.file_name, done.file_name);
+    let second = subtitles(&moved.path);
+    assert!(!first.exists(), "the subtitles stayed behind");
+    assert!(second.is_file(), "{}", second.display());
+
+    h.manager
+        .remove(&[id], wirecatch_core::RemoveFiles::Delete)
+        .await?;
+    assert!(!Path::new(&moved.path).exists());
+    assert!(!second.exists(), "the subtitles outlived the file");
+    Ok(())
+}
+
 /// A conversion that fails keeps the download: Try again converts again
 /// without reading the page or downloading anything, and works.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
