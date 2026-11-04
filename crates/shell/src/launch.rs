@@ -112,14 +112,54 @@ fn is_launch_link(arg: &str) -> bool {
 }
 
 /// `text`, known to be one link, written so it reads whole: what would end a link in running text
-/// (a space, `<`, a quote) is percent-encoded. `None` when it is not such a link.
+/// (a space, `<`, a quote) or be read as the sentence's punctuation is percent-encoded. `None` when
+/// it is not such a link.
 #[must_use]
 pub fn one_link(text: &str) -> Option<String> {
     let text = text.trim();
-    is_launch_link(text)
-        .then(|| Url::parse(text).ok())
-        .flatten()
-        .map(String::from)
+    if !is_launch_link(text) {
+        return None;
+    }
+    let mut url = Url::parse(text).ok()?;
+    // Encoded, a bare `?` would turn from the start of an empty query into part of the path.
+    if url.query() == Some("") {
+        url.set_query(None);
+    }
+    let url = String::from(url);
+    let kept = without_punctuation(&url);
+    let tail: Vec<String> = url[kept.len()..]
+        .bytes()
+        .map(|byte| format!("%{byte:02X}"))
+        .collect();
+    Some(format!("{kept}{}", tail.concat()))
+}
+
+/// `raw` without the punctuation after it. A closing bracket stays when its opener is inside.
+#[must_use]
+pub fn without_punctuation(raw: &str) -> &str {
+    let count = |bracket| raw.bytes().filter(|byte| *byte == bracket).count();
+    let (round_open, square_open) = (count(b'('), count(b'['));
+    let (mut round_close, mut square_close) = (count(b')'), count(b']'));
+    let mut link = raw;
+    while let Some(last) = link.chars().last() {
+        let ends = match last {
+            ',' | '.' | ';' | ':' | '!' | '?' | '\'' => true,
+            ')' if round_close > round_open => {
+                round_close -= 1;
+                true
+            }
+            ']' if square_close > square_open => {
+                square_close -= 1;
+                true
+            }
+            _ => false,
+        };
+        if !ends {
+            break;
+        }
+        link = &link[..link.len() - last.len_utf8()];
+    }
+    link
 }
 
 /// Web and FTP links on a command line (program name first), in order, for the Add dialog.
@@ -430,6 +470,15 @@ mod tests {
                 "ftpes://example.com/a b.zip",
                 "ftpes://example.com/a%20b.zip",
             ),
+        ] {
+            assert_eq!(one_link(text).as_deref(), Some(whole));
+        }
+        for (text, whole) in [
+            ("https://example.com/a.", "https://example.com/a%2E"),
+            ("https://example.com/a),", "https://example.com/a%29%2C"),
+            ("https://example.com/a]!", "https://example.com/a%5D%21"),
+            ("https://example.com/(a)", "https://example.com/(a)"),
+            ("https://example.com/a?", "https://example.com/a"),
         ] {
             assert_eq!(one_link(text).as_deref(), Some(whole));
         }

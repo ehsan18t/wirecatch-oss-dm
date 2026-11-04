@@ -277,8 +277,10 @@ impl AddForm {
     }
 
     /// Under Automatic: where the links go.
-    fn automatic_hint(&self) -> String {
-        match self.routes.as_slice() {
+    fn automatic_hint(&self, cx: &App) -> String {
+        let tried = self.routes.as_slice();
+        let all_tried = self.found(cx).urls.len() <= MAX_TRIED;
+        match if all_tried { tried } else { &[] } {
             [] => "Each link goes to the queue whose rules it matches, or the default queue."
                 .to_owned(),
             [only] => match &only.rule {
@@ -460,7 +462,7 @@ impl Render for AddForm {
         let urls = &found.urls;
         let hint = links_hint(&found);
         let queue_hint = if self.picked_queue(cx).is_none() {
-            self.automatic_hint()
+            self.automatic_hint(cx)
         } else {
             "For this add only.".to_owned()
         };

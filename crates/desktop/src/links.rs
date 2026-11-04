@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use url::Url;
 use wirecatch_engine::url::{FTP_SCHEMES, WEB_SCHEMES};
-use wirecatch_shell::launch::one_link;
+use wirecatch_shell::launch::{one_link, without_punctuation};
 
 /// A link in any scheme the engine takes, up to the first character no link holds.
 static LINK: LazyLock<Option<Regex>> = LazyLock::new(|| {
@@ -54,33 +54,6 @@ fn between_closing_quotes(text: &str) -> Vec<&str> {
     pieces
 }
 
-/// `raw` without the punctuation after it. A closing bracket stays when its opener is inside.
-fn without_punctuation(raw: &str) -> &str {
-    let count = |bracket| raw.bytes().filter(|byte| *byte == bracket).count();
-    let (round_open, square_open) = (count(b'('), count(b'['));
-    let (mut round_close, mut square_close) = (count(b')'), count(b']'));
-    let mut link = raw;
-    while let Some(last) = link.chars().last() {
-        let ends = match last {
-            ',' | '.' | ';' | ':' | '!' | '?' | '\'' => true,
-            ')' if round_close > round_open => {
-                round_close -= 1;
-                true
-            }
-            ']' if square_close > square_open => {
-                square_close -= 1;
-                true
-            }
-            _ => false,
-        };
-        if !ends {
-            break;
-        }
-        link = &link[..link.len() - last.len_utf8()];
-    }
-    link
-}
-
 /// The links of a field's text and its lines without one, worked out again only when the text
 /// changes.
 #[derive(Default)]
@@ -102,14 +75,15 @@ impl Kept {
         if let Some((_, found)) = kept.as_ref().filter(|(read, _)| read == text) {
             return found.clone();
         }
+        let urls = extract(text);
         let found = Rc::new(Found {
-            urls: extract(text),
+            whole: if urls.len() > 1 { None } else { one_link(text) },
+            urls,
             lines_without_links: lines_without_links(text),
             lines_with_text_after: text
                 .lines()
                 .filter(|line| has_text_after_link(line))
                 .count(),
-            whole: one_link(text),
         });
         *kept = Some((text.to_owned(), found.clone()));
         found
@@ -155,7 +129,7 @@ fn has_text_after_link(text: &str) -> bool {
         let until = matches
             .get(place + 1)
             .map_or(text.len(), regex::Match::start);
-        !text[found.end()..until].trim().is_empty()
+        text[found.end()..until].chars().any(char::is_alphanumeric)
     })
 }
 
@@ -219,6 +193,11 @@ mod tests {
             0
         );
         assert_eq!(count("See https://example.com/a."), 0);
+        assert_eq!(count("\"https://example.com/a.zip\""), 0);
+        assert_eq!(
+            count("[\"https://example.com/a\", \"https://example.com/b\"]"),
+            0
+        );
     }
 
     #[test]
@@ -228,6 +207,9 @@ mod tests {
             .whole
             .clone();
         assert_eq!(whole.as_deref(), Some("https://example.com/a%20b.zip"));
+        let two = Kept::default().of("https://example.com/a https://example.com/b");
+        assert_eq!(two.whole, None);
+        assert_eq!(two.urls.len(), 2);
     }
 
     #[test]
