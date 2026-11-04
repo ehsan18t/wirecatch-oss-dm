@@ -177,7 +177,7 @@ impl Launch {
 /// # Errors
 ///
 /// The running copy could not be reached, refused the hello, or did not answer within
-/// [`HAND_OVER_PATIENCE`]; the message says which.
+/// a minute; the message says which.
 pub async fn hand_over(launch: &Launch) -> Result<(), HandOverError> {
     let endpoint = crate::host::endpoint()?;
     hand_over_patiently(launch, || wirecatch_ipc::connect(&endpoint)).await
