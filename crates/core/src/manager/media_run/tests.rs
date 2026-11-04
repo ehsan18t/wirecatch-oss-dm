@@ -235,6 +235,7 @@ fn a_stream_downloads_under_the_rule_of_whoever_chose_it() {
             refresh_delays: Arc::new([]),
             clock: Arc::new(crate::clock::SystemClock),
             work_owner: String::new(),
+            quality: String::new(),
             reserve: Arc::new(|_: &Path, _| true),
             placing: Arc::new(|| {}),
             file_work: FileWork::new(),
@@ -263,6 +264,7 @@ fn a_format_downloads_under_its_network_rule() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         work_owner: String::new(),
+        quality: String::new(),
         reserve: Arc::new(|_: &Path, _| true),
         placing: Arc::new(|| {}),
         file_work: FileWork::new(),
@@ -297,6 +299,7 @@ async fn a_job_that_cannot_be_read_never_runs() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         work_owner: String::new(),
+        quality: String::new(),
         reserve: Arc::new(|_: &Path, _| true),
         placing: Arc::new(|| {}),
         file_work: FileWork::new(),
@@ -350,6 +353,7 @@ async fn a_finished_stream_is_marked_before_it_is_put_in_place() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         work_owner: String::new(),
+        quality: String::new(),
         reserve: Arc::new(|_: &Path, _| true),
         placing: Arc::new(|| {}),
         file_work: FileWork::new(),
@@ -398,6 +402,7 @@ async fn a_finished_video_is_marked_before_it_is_put_in_place() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         work_owner: String::new(),
+        quality: String::new(),
         reserve: Arc::new(|_: &Path, _| true),
         placing: Arc::new(|| {}),
         file_work: FileWork::new(),
@@ -590,6 +595,7 @@ async fn a_small_file_past_its_limit_is_never_written() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         work_owner: String::new(),
+        quality: String::new(),
         reserve: Arc::new(|_: &Path, _| true),
         placing: Arc::new(|| {}),
         file_work: FileWork::new(),
@@ -652,6 +658,7 @@ fn job_at(dir: &Path, output: &Path, url: &str, taken: Taken) -> Job {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         work_owner: String::new(),
+        quality: String::new(),
         reserve: Arc::new(|_: &Path, _| true),
         placing: Arc::new(|| {}),
         file_work: FileWork::new(),
@@ -771,4 +778,38 @@ fn a_stream_request_names_the_jobs_owner() {
     job.work_owner = "https://example.com:443".to_owned();
     let request = stream_request(&job, &output, Pick::Auto, Pick::Auto);
     assert_eq!(request.work_owner, "https://example.com:443");
+}
+
+/// A part says only its role, so what one set of formats finished is never taken for another's, whichever way the page changes back.
+#[tokio::test]
+async fn parts_are_kept_only_for_the_formats_that_wrote_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let work = dir.path().join("Clip.mp4.wcmedia");
+    let part = work.join(workdir::marker("video"));
+    let link = Url::parse("https://example.com/v").unwrap();
+    workdir::claim_for_link(&work, &link).await.unwrap();
+    std::fs::write(&part, "video.mp4").unwrap();
+
+    // The saved formats stay listed: the attempt goes on with its parts.
+    workdir::claim_for_formats(&work, &link, None)
+        .await
+        .unwrap();
+    assert!(part.exists());
+
+    workdir::claim_for_formats(&work, &link, Some("299+140"))
+        .await
+        .unwrap();
+    assert!(!part.exists());
+    std::fs::write(&part, "video.mp4").unwrap();
+    workdir::claim_for_formats(&work, &link, Some("299+140"))
+        .await
+        .unwrap();
+    assert!(part.exists());
+
+    // The page lists the saved formats again: the replacement's part is not theirs.
+    workdir::claim_for_formats(&work, &link, None)
+        .await
+        .unwrap();
+    assert!(!part.exists());
+    assert!(work.is_dir());
 }

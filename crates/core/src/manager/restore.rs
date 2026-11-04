@@ -117,6 +117,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         suffix_check: SuffixCheck::default(),
         handovers: Handovers::default(),
         dirty: BTreeSet::default(),
+        removals: Vec::new(),
         batches: Batches::default(),
         proxy_logins,
         proxy_servers: profiles,
@@ -202,9 +203,13 @@ fn restore_entry(
         cleanup: None,
         hold: Hold::Free,
         on_existing: stored.answers.on_existing,
+        plain_name: stored.answers.plain_name,
         offered_file: false,
         stranded: stored.stranded,
     };
+    if let Some(plain) = &entry.plain_name {
+        entry.row.file_name.clone_from(plain);
+    }
     let mut fixed = false;
     if !queues.iter().any(|s| s.queue.id == entry.row.queue) {
         entry.row.queue = default_queue;

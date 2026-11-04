@@ -17,6 +17,7 @@ use wirecatch_store::NameChoice;
 
 use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
+use super::file_exists::give_up_the_name;
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, QueueRequest};
 use super::run::mark_cancelled;
@@ -208,6 +209,7 @@ impl Manager {
         if entry.row.status != DownloadStatus::Cancelled {
             mark_cancelled(entry);
             self.discard_partial(entry);
+            give_up_the_name(&mut state, id);
             self.save(&mut state, id);
             self.reconcile(&mut state);
         }
@@ -227,16 +229,20 @@ impl Manager {
     pub async fn remove(&self, ids: &[DownloadId], completed: RemoveFiles) -> Result<()> {
         // From here on nothing can resume, move or start them, so once their runs
         // have stopped they stay stopped.
-        {
+        let under_way = {
             let mut state = self.lock_open()?;
             self.begin_removing(&mut state, ids);
-        }
+            removal_under_way(&mut state)
+        };
         let (manager, ids) = (self.clone(), ids.to_vec());
-        self.to_the_end(async move { manager.finish_removing(&ids, completed).await })
-            .await
+        self.to_the_end(async move {
+            let _under_way = under_way;
+            manager.finish_removing(&ids, completed).await
+        })
+        .await
     }
 
-    /// Marks downloads as being removed and takes them off the saved list, so a quit before the removal ends cannot bring them back. Their files stay until [`finish_removing`](Self::finish_removing): a crash before then leaves files with no download.
+    /// Marks downloads as being removed and takes them off the saved list, so a quit before the removal ends cannot bring them back. Their files stay until [`finish_removing`](Self::finish_removing), which a quit waits for: a crash before then leaves files with no download.
     pub(super) fn begin_removing(&self, state: &mut State, ids: &[DownloadId]) {
         let mut begun = Vec::new();
         for id in ids {
@@ -350,9 +356,14 @@ impl Manager {
     /// Hides downloads at once, as [`remove`](Self::remove) does, and finishes
     /// removing them in the background.
     pub(super) fn remove_in_background(&self, ids: Vec<DownloadId>) {
-        self.begin_removing(&mut self.lock(), &ids);
+        let under_way = {
+            let mut state = self.lock();
+            self.begin_removing(&mut state, &ids);
+            removal_under_way(&mut state)
+        };
         let manager = self.clone();
         self.spawn(async move {
+            let _under_way = under_way;
             if let Err(e) = manager.finish_removing(&ids, RemoveFiles::Keep).await {
                 warn!(error = %e, "could not finish removing a download");
             }
@@ -572,28 +583,20 @@ impl Manager {
         }
     }
 
-    /// Adds a download: picks its file name, category and a free path, then lets
-    /// it start if its queue has room. Returns the new row, or `None` for a capture
-    /// whose handover is already known (a retry from the extension, or two copies
-    /// racing), which adds nothing.
+    /// Adds a download: picks its file name, category and a path no other download holds, then lets it start if its queue has room. Returns the new row, or `None` for a capture whose handover is already known (a retry from the extension, or two copies racing), which adds nothing.
     pub(super) async fn insert(&self, new: NewEntry) -> Result<Option<DownloadSummary>> {
         let (dir, name, category) = self.destination(&new)?;
-        // A stream or page settles a taken name when it puts its file in place (D96).
-        let placed_later = matches!(new.kind, Kind::Media(_));
-        // Checking the disk blocks, so it happens off the lock and off async threads;
-        // if another add claimed the same path meanwhile, look again.
+        // If another add claimed the same path meanwhile, look again.
         loop {
             // Asked of the live set, under a short lock per name tried: a copy of the set for
             // each add makes a bulk add quadratic (CORE-10).
             let (dir, name, manager) = (dir.clone(), name.clone(), self.clone());
             let path = self
                 .blocking(move || {
-                    let claimed = |path: &Path| manager.lock().claimed.contains(path);
-                    Ok(if placed_later {
-                        naming::unclaimed_path(&dir, &name, claimed)
-                    } else {
-                        naming::unique_path(&dir, &name, claimed)
-                    })
+                    // Not `unique_path`: a file on disk is for the setting to judge once the name is final (D96), and a name changed for it here would hide it from that.
+                    Ok(naming::unclaimed_path(&dir, &name, |path: &Path| {
+                        manager.lock().claimed.contains(path)
+                    }))
                 })
                 .await?;
 
@@ -640,8 +643,7 @@ impl Manager {
         Ok((dir, name, category))
     }
 
-    /// Puts `new` in the list at the free `path`, lets it start if its queue has
-    /// room, and remembers its handover; returns its row.
+    /// Puts `new` in the list at `path`, lets it start if its queue has room, and remembers its handover; returns its row.
     fn add_entry(
         &self,
         state: &mut State,
@@ -716,6 +718,7 @@ impl Manager {
             cleanup: None,
             hold: Hold::Free,
             on_existing: None,
+            plain_name: None,
             offered_file: false,
             stranded: None,
             media_job,
@@ -751,6 +754,14 @@ pub(super) fn parse_web_url(raw: &str) -> Result<Url> {
         .ok()
         .filter(|url| matches!(url.scheme(), "http" | "https"))
         .ok_or_else(|| CoreError::InvalidUrl(raw.trim().to_string()))
+}
+
+/// Keeps a quit waiting until what it returns is dropped.
+fn removal_under_way(state: &mut State) -> impl Send + use<> {
+    state.removals.retain(|done| !done.is_cancelled());
+    let done = CancellationToken::new();
+    state.removals.push(done.clone());
+    done.drop_guard()
 }
 
 /// `files` of removed finished downloads, each once, without those another finished row lists or another download holds (D118).

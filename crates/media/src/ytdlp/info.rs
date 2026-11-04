@@ -225,6 +225,9 @@ pub struct Format {
     /// Video bit rate in kbps.
     #[serde(default, deserialize_with = "lenient")]
     pub vbr: Option<f64>,
+    /// How yt-dlp ranks the track's language: higher is nearer the video's own.
+    #[serde(default, deserialize_with = "lenient")]
+    pub language_preference: Option<i64>,
     #[serde(default, deserialize_with = "whole_number")]
     pub filesize: Option<u64>,
     #[serde(default, deserialize_with = "lenient")]
@@ -312,6 +315,12 @@ impl Format {
                 .map(|f| f64_to_u64(f).unwrap_or(u64::MAX))
         })?;
         (bytes >= MIN_REQUEST_LIMIT).then(|| bytes.min(MAX_REQUEST_LIMIT))
+    }
+
+    pub(crate) fn language_rank(&self) -> i64 {
+        // yt-dlp's own default for a format that does not say.
+        const UNRANKED: i64 = -1;
+        self.language_preference.unwrap_or(UNRANKED)
     }
 
     /// Whether Wirecatch downloads this format itself: plain web addresses with
