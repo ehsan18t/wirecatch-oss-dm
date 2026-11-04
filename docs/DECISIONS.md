@@ -1267,3 +1267,15 @@ Decided on 2026-11-05.
 ### D133. An add-on says whether it works apart from what is being done to it
 
 Decided on 2026-11-05. `AddonInfo.usable` says the programs on this machine work now; `state` says what is being done. An update under way or failed leaves the add-on usable, so the quality form does not ask to install it, About gives its version, and the card keeps Remove, and Check for updates after a failure. Try again with nothing left to install ends the failure.
+
+### D136. A run of yt-dlp reaches the internet through a guard of its own
+
+Decided on 2026-11-05. It amends D34.10.
+
+A run of yt-dlp is another process, out of reach of the engine's `Block`, and yt-dlp has no rule of its own for the local network, so a website's page could lead it there on a redirect, before the person answers anything.
+
+1. Every run for a page not on the person's network, reading the page or downloading by itself, goes through a proxy on the loopback address, one per run, given as yt-dlp's proxy in its environment, which ffmpeg started by yt-dlp reads too. It resolves each host itself, refuses a host with any local address (with the table D34.5 names) and connects only to the addresses it looked up, so a redirect hop and a name that answers otherwise later are both covered. Asking first was rejected: a read would still escape once the person agreed, and the answer tells them nothing about where the page leads.
+2. A run that goes through a proxy the person set, or the computer's, has no guard: yt-dlp takes one proxy, and what that proxy reaches is its own network's to decide, not this computer's.
+3. A run that failed having had a request refused shows the private network message for a link sent on from the internet. A run that succeeded with one refused, such as a picture, stays a success.
+4. The guard needs no login: any program on the computer that reaches it gets only what it could reach by itself, less the local network.
+5. An address `Url::parse` rejects, such as `http://[fe80::1%25eth0]/`, never reaches yt-dlp as a page or format, since each is parsed first; named by a redirect, it does not parse as an address and fails to resolve at the guard.
