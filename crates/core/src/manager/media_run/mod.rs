@@ -119,13 +119,10 @@ impl Manager {
                 Arc::new(move |path: &Path, take: bool| {
                     Manager::from_weak(&manager).is_some_and(|m| {
                         let mut state = m.lock();
-                        if !take {
-                            state.claimed.release(path);
-                            true
-                        } else if state.claimed.contains(path) {
-                            false
+                        if take {
+                            state.claimed.reserve(path, id)
                         } else {
-                            state.claimed.reserve(path);
+                            state.claimed.release(path, id);
                             true
                         }
                     })

@@ -4,6 +4,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -12,7 +13,7 @@ use url::Url;
 use crate::codec::Codec;
 use crate::error::{DrmSystem, Feature, Located, ManifestError, excerpt};
 use crate::plan::{
-    AddressBudget, Encryption, ManifestBudget, Piece, Refusal, check_room_for, check_web_address,
+    AddressBudget, Encryption, MAX_TRACKS, Piece, Refusal, check_room_for, check_web_address,
 };
 
 /// The longest a segment may say it lasts (`#EXTINF`): a day. No real segment comes near it; a larger value comes from a broken or hostile playlist and counts as unknown, so it never shows a video billions of years long or skews the size estimate.
@@ -30,12 +31,26 @@ pub(crate) enum Playlist {
 pub(crate) struct Master {
     pub variants: Vec<Variant>,
     pub renditions: Vec<Rendition>,
+    /// The audio rendition each audio group pairs with its qualities.
+    pub paired_audio: HashMap<String, usize>,
+}
+
+impl Master {
+    fn check_room_for_a_track(&self) -> Result<(), ManifestError> {
+        if self.variants.len() + self.renditions.len() >= MAX_TRACKS {
+            Err(ManifestError::TooManyTracks)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 /// One `EXT-X-STREAM-INF` entry.
 #[derive(Debug, Clone)]
 pub(crate) struct Variant {
     pub url: Url,
+    /// Judged once as the playlist is read: selection asks for every quality, and the codecs can be long.
+    audio_only: bool,
     pub bandwidth: Option<u64>,
     pub codecs: Option<String>,
     pub resolution: Option<(u32, u32)>,
@@ -46,7 +61,7 @@ pub(crate) struct Variant {
 impl Variant {
     /// Whether the variant carries only audio, judging by its codecs.
     pub fn audio_only(&self) -> bool {
-        self.resolution.is_none() && self.codecs.as_deref().is_some_and(Codec::all_audio)
+        self.audio_only
     }
 }
 
@@ -111,11 +126,35 @@ fn parse_master(lines: &[(usize, &str)], base: &Url) -> Result<Master, Located> 
     for &(number, line) in lines {
         reader.line(line, base).map_err(|cause| cause.at(number))?;
     }
-    let master = reader.master;
+    let mut master = reader.master;
     if master.variants.is_empty() {
         return Err(ManifestError::NoVariants.into());
     }
+    master.paired_audio = paired_audio(&master.renditions);
     Ok(master)
+}
+
+/// Each audio group's rendition to pair with a quality: its default one, else the one to select automatically, else the first.
+fn paired_audio(renditions: &[Rendition]) -> HashMap<String, usize> {
+    let rank = |r: &Rendition| if r.default { 2 } else { u8::from(r.autoselect) };
+    let mut paired: HashMap<String, usize> = HashMap::new();
+    for (i, rendition) in renditions.iter().enumerate() {
+        if rendition.kind != RenditionKind::Audio || rendition.url.is_none() {
+            continue;
+        }
+        paired
+            .entry(rendition.group.clone())
+            .and_modify(|best| {
+                if renditions
+                    .get(*best)
+                    .is_some_and(|b| rank(rendition) > rank(b))
+                {
+                    *best = i;
+                }
+            })
+            .or_insert(i);
+    }
+    paired
 }
 
 /// A master playlist being read, line by line.
@@ -124,26 +163,17 @@ struct MasterReader {
     master: Master,
     /// The attributes of a quality whose address line comes next.
     pending: Option<Vec<(String, String)>>,
-    budget: ManifestBudget,
 }
 
 impl MasterReader {
-    /// Reads one line, counting each quality and rendition against the playlist's budget.
     fn line(&mut self, line: &str, base: &Url) -> Result<(), ManifestError> {
-        let Self {
-            master,
-            pending,
-            budget,
-        } = self;
+        let Self { master, pending } = self;
         if let Some((name, value)) = tag(line) {
             match name {
                 "#EXT-X-STREAM-INF" => *pending = Some(attributes(value)),
                 "#EXT-X-MEDIA" => {
                     if let Some(rendition) = rendition(&attributes(value), base)? {
-                        match &rendition.url {
-                            Some(url) => budget.spend(url)?,
-                            None => budget.count(1)?,
-                        }
+                        master.check_room_for_a_track()?;
                         master.renditions.push(rendition);
                     }
                 }
@@ -152,16 +182,19 @@ impl MasterReader {
         } else if !line.starts_with('#')
             && let Some(attrs) = pending.take()
         {
+            master.check_room_for_a_track()?;
             let url = join(base, line)?;
-            budget.spend(&url)?;
+            let codecs = attr(&attrs, "CODECS").map(str::to_string);
+            let resolution = attr(&attrs, "RESOLUTION").and_then(|r| {
+                let (w, h) = r.split_once(['x', 'X'])?;
+                Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
+            });
             master.variants.push(Variant {
                 url,
+                audio_only: resolution.is_none() && codecs.as_deref().is_some_and(Codec::all_audio),
                 bandwidth: number(&attrs, "BANDWIDTH"),
-                codecs: attr(&attrs, "CODECS").map(str::to_string),
-                resolution: attr(&attrs, "RESOLUTION").and_then(|r| {
-                    let (w, h) = r.split_once(['x', 'X'])?;
-                    Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
-                }),
+                codecs,
+                resolution,
                 frame_rate: attr(&attrs, "FRAME-RATE")
                     .and_then(|f| f.parse().ok())
                     .filter(|f: &f64| f.is_finite() && *f > 0.0),
@@ -992,29 +1025,44 @@ a.ts
         assert_eq!(error, Some(ManifestError::AddressesTooLong));
     }
 
-    /// A master playlist served from a long address makes every short quality line a long address.
     #[test]
-    fn a_master_playlist_whose_addresses_are_too_long_together_is_refused() {
-        let folder = "f".repeat(crate::plan::MAX_URL_LEN - 100);
-        let base = Url::parse(&format!("https://cdn.example/{folder}/master.m3u8")).unwrap();
-        let len = u64::try_from(base.join("a").unwrap().as_str().len()).unwrap();
-        let count = crate::plan::MAX_MANIFEST_URL_BYTES / len + 1;
-        let mut text = String::from("#EXTM3U\n");
-        for _ in 0..count {
-            text.push_str("#EXT-X-STREAM-INF:BANDWIDTH=1\na\n");
-        }
-        let error = parse(&text, &base).err().map(|e| e.cause);
-        assert_eq!(error, Some(ManifestError::AddressesTooLong));
+    fn a_groups_paired_audio_is_its_first_default_else_autoselect_else_first() {
+        const PLAIN: &str = "NAME=\"p\"";
+        const AUTO: &str = "AUTOSELECT=YES";
+        const DEFAULT: &str = "DEFAULT=YES";
+        const BOTH: &str = "DEFAULT=YES,AUTOSELECT=YES";
+        let paired = |renditions: &[&str]| {
+            let mut text = String::from("#EXTM3U\n");
+            for rendition in renditions {
+                text.push_str("#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"g\",URI=\"a\",");
+                text.push_str(rendition);
+                text.push('\n');
+            }
+            text.push_str("#EXT-X-STREAM-INF:AUDIO=\"g\"\nv\n");
+            let Ok(Playlist::Master(master)) = parse(&text, &base()) else {
+                panic!("not a master playlist");
+            };
+            master.paired_audio.get("g").copied()
+        };
+        assert_eq!(paired(&[PLAIN, PLAIN]), Some(0));
+        assert_eq!(paired(&[PLAIN, AUTO, AUTO]), Some(1));
+        assert_eq!(paired(&[AUTO, DEFAULT]), Some(1));
+        assert_eq!(paired(&[DEFAULT, BOTH]), Some(0));
     }
 
     #[test]
-    fn a_master_playlist_holds_a_bounded_number_of_qualities() {
-        let mut text = String::from("#EXTM3U\n");
-        for _ in 0..=crate::plan::MAX_MANIFEST_ENTRIES {
-            text.push_str("#EXT-X-STREAM-INF:\na\n");
-        }
-        let error = parse(&text, &base()).err().map(|e| e.cause);
-        assert_eq!(error, Some(ManifestError::TooManyEntries));
+    fn a_master_playlist_holds_a_bounded_number_of_tracks() {
+        let playlist = |qualities: usize, renditions: usize| {
+            let quality = "#EXT-X-STREAM-INF:\na\n".repeat(qualities);
+            let rendition = "#EXT-X-MEDIA:TYPE=AUDIO,URI=\"a\"\n".repeat(renditions);
+            format!("#EXTM3U\n{rendition}{quality}")
+        };
+        let read = |text: String| parse(&text, &base()).err().map(|e| e.cause);
+        assert_eq!(read(playlist(MAX_TRACKS, 0)), None);
+        assert_eq!(read(playlist(MAX_TRACKS / 2, MAX_TRACKS / 2)), None);
+        let too_many = Some(ManifestError::TooManyTracks);
+        assert_eq!(read(playlist(MAX_TRACKS + 1, 0)), too_many);
+        assert_eq!(read(playlist(1, MAX_TRACKS)), too_many);
     }
 
     /// A new init section at the limit takes a place too, so it and its segment both have to fit.

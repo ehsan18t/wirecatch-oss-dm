@@ -1175,3 +1175,11 @@ Decided on 2026-11-04. Every installer and the extension ship `THIRD-PARTY-NOTIC
 6. The AppImage also carries system libraries (D110) and the AppImage runtime, so it appends each library's Debian copyright file and `config/licenses/appimage-runtime.txt`, the licences of what the pinned runtime statically links, to its copy. Update that file when the runtime's pin changes what it links. The Public Suffix List snapshot, MPL-2.0 data no package covers, is listed in every file.
 7. About opens the installed file with the system, so it works offline. A build with no file, as in development, does not show the row.
 8. The media add-on's programs are not covered: an installer does not carry them, and they are downloaded later (D20).
+
+### D118. Each path has one holder, and finished rows on one file share it
+
+Decided on 2026-11-04. It amends D88.3 and D96.
+
+1. Every claim on a path names the download holding it (`Claimed`). Only the holder can give the path up, and a path another download holds is never taken over, so no two downloads ever write one file.
+2. An open "already in the folder" question reserves the path it asks about until it closes. Another download that wants that name meanwhile takes the next free name, without a question of its own, as it does for any name another download holds. The same goes for a download whose setting or answer would act on a path another download took first.
+3. Two finished rows can still list one file: Keep the existing file, or Replace over a finished download. A file has one place, so moving it through either row moves both rows. Removing a row with its file deletes the file only when no other finished row lists it and no other download holds its path; otherwise the file stays.
