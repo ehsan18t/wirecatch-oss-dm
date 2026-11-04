@@ -27,12 +27,11 @@ fn remove_socket_folder(endpoint: &wirecatch_ipc::Endpoint) -> std::io::Result<(
     let folder = Path::new(endpoint.as_os_str())
         .parent()
         .ok_or(std::io::ErrorKind::InvalidInput)?;
-    std::fs::remove_dir_all(folder)
+    wirecatch_test_support::remove_test_folder(folder)
 }
 
-// A client that sees other folders than the app (a browser from an app store, or a snap or
-// flatpak one) used to make a key of its own, which the app never read, so the two never
-// met again (W4I review M2).
+// A client may see other folders than the app (a browser from an app store, or a snap or
+// flatpak one), and a key of its own would never meet the app's.
 #[test]
 fn a_client_never_creates_the_key() {
     let dir = private_dir("ipc-keyed-client").unwrap();
@@ -60,7 +59,7 @@ async fn a_listener_writes_the_key_its_clients_read() {
 
 // The lock, not the name, keeps a second copy out: a copy that cannot see the first one's
 // pipe (one running with other rights) or that would write a new key still finds the lock
-// taken (W4I review M1).
+// taken.
 #[tokio::test]
 async fn a_second_listener_is_refused_by_the_lock() {
     let dir = private_dir("ipc-keyed-second").unwrap();
@@ -76,9 +75,8 @@ async fn a_second_listener_is_refused_by_the_lock() {
     remove_socket_folder(&endpoint).unwrap();
 }
 
-// The keyed tests all listened in the session's runtime folder on Linux, whatever key folder
-// they named, so tests running at once took one socket and reset each other's connections, and
-// a developer's tests reached their running Wirecatch Dev (W4 milestone review M1).
+// On Linux, tests in the session's runtime folder would take one socket, reset each other's
+// connections and reach a developer's running Wirecatch Dev.
 #[tokio::test]
 async fn listeners_in_their_own_folders_never_meet() {
     let one = private_dir("ipc-keyed-one").unwrap();
