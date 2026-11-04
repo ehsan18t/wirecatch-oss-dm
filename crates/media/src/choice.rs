@@ -508,12 +508,11 @@ fn video_offer(
         Some(h) => format!("{h}p"),
         None => "Best quality".to_string(),
     };
-    let (video, audio) = match pair {
-        Some((v, a)) => (v, Some(a)),
-        None => {
-            let unreadable = || output::best_by_rate(at.iter().copied());
-            (together.or(video_only).or_else(unreadable)?, None)
-        }
+    let (video, audio) = if let Some((v, a)) = pair {
+        (v, Some(a))
+    } else {
+        let unreadable = || output::best_by_rate(at.iter().copied());
+        (together.or(video_only).or_else(unreadable)?, None)
     };
     let (id, ext, needs_ffmpeg, size) = if let Some(a) = audio {
         (
