@@ -128,7 +128,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 67. A finished media file is not flushed before its sources are deleted (open)
 68. Leftover proxy code from the earlier form has no caller (open)
 69. yt-dlp ignores proxy exceptions and the page's scheme (open)
-70. Choosing a path blocks an async thread on the disk, so a dead share stalls every command (open)
+70. Choosing a path blocks an async thread on the disk, so a dead share stalls every command (fixed)
 71. A passing read error or a failed rename deletes a download's data (open)
 72. The app quits before the Windows setup has asked for approval, so a refusal reaches no one (open)
 73. An AppImage restart can be lost while the old copy exits (fixed)
