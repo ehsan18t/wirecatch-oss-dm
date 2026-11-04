@@ -276,7 +276,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 249 | The timing check misses a throttled server racing an action                                       | found while fixing                                                                                 | P3       | medium | Found by review of PR-01 and PR-47.                                                                              | open                                          |
 | 250 | The capture reply's doc contradicts the extension                                                 | found while fixing                                                                                 | P3       | small  | Found by review of PR-70.                                                                                        | fixed                                         |
 | 251 | The layout test can fail on a font that did not load                                              | found while fixing                                                                                 | P3       | small  | Seen once on CI, on a change with no extension code.                                                             | fixed                                         |
-| 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | open                                          |
+| 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | fixed                                         |
 
 ## Items
 
@@ -4469,7 +4469,7 @@ P3, small, fixed.
 
 ### 252. A quit during a removal can leave part files behind
 
-P3, small, open.
+P3, small, fixed.
 
 `shutdown` does not wait for a removal's file deletion, so a quit or crash during it leaves part files with no row. The record of the removal is kept until it ends, so no row comes back.
 
