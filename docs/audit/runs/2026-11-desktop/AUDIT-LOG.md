@@ -137,15 +137,15 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 110 | One bad yt-dlp release stops the check, and a failed check forgets its offers                     | `Xsecurity-addon-unpacking-3`                                                                      | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 111 | Cancel on a selection stops at a finished download                                                | `25-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 112 | The drawer stays open over a page opened from its foot                                            | `25-7`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 113 | Change queue inside the details opens the same details again                                      | `25-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 113 | Change queue inside the details opens the same details again                                      | `25-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 114 | A page address that is not a web address counts as on the person's network                        | `10-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 115 | A Windows socks= proxy fails on sites whose first address is IPv6                                 | `09-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 116 | The proxy form says a saved password is kept, then forgets it                                     | `27-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 116 | The proxy form says a saved password is kept, then forgets it                                     | `27-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 117 | A download that fails to start leaves its slot empty                                              | `04-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 118 | A closing queue's slots are given away at once, exceeding the limit                               | `18-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 119 | Regular expressions differing only in case count as one rule                                      | `18-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 120 | Enter in the delete-queue field closes the question and deletes nothing                           | `27-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 121 | Saving a queue changes its speed limit                                                            | `27-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 120 | Enter in the delete-queue field closes the question and deletes nothing                           | `27-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
+| 121 | Saving a queue changes its speed limit                                                            | `27-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 122 | Confirming a file unedited stops the server from naming it                                        | `24-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 123 | A failure notice in the browser loses its buttons after 32 later notices                          | `26-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 124 | A tray action that fails tells the person nothing                                                 | `26-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
@@ -187,10 +187,10 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 160 | Tray ticks flip on a repeat click, and & in a name shows wrongly                                  | `26-2` `26-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 161 | Messages name the product with a literal                                                          | `26-9` `B17-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 162 | A navigation item left behind keeps its hover colour until the mouse moves                        | `U-1` `B18-2`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
-| 163 | Empty pages offer Pause all or Resume all                                                         | `U-3` `B13-2`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
+| 163 | Empty pages offer Pause all or Resume all                                                         | `U-3` `B13-2`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 164 | A failed video or conversion shows the program's raw output                                       | `U-9` `B18-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
-| 165 | New queue and New proxy do not put the cursor in the Name field                                   | `U-13` `B16-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
-| 166 | The row, the menu and the details decide offers and words on their own                            | `25-11` `U-10`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
+| 165 | New queue and New proxy do not put the cursor in the Name field                                   | `U-13` `B16-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
+| 166 | The row, the menu and the details decide offers and words on their own                            | `25-11` `U-10`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 167 | Two test files depend on an order only timing decides                                             | `05-14` `21-3`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 168 | The same small pieces of logic are written many times in the forms                                | `27-12` `B19-3`                                                                                    | P3       | medium | P3, 2 findings, medium                                                                                           | none                                          | open   |
 | 169 | Dying between placing a video and deleting its work folder gives a second copy                    | `Xcrash-and-resume-3` `Xsecond-review-resume-8`                                                    | P3       | medium | P3, 2 findings, medium; after item 4                                                                             | none                                          | fixed  |
@@ -245,7 +245,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 218 | A proxy test cancelled by quitting is saved as its last result                                    | `19-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 219 | A test named for keeping the last result does not check it                                        | `19-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 220 | Copy from system turns a SOCKS4 server into a SOCKS5 profile                                      | `B15-2`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 221 | An impossible port is saved as the usual port without a word                                      | `27-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 221 | An impossible port is saved as the usual port without a word                                      | `27-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 222 | A file name or host holding a secret word loses the rest of its log line                          | `20-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 223 | The rules help says the highest queue wins, but for sites the most specific does                  | `27-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 224 | A dotted file type is accepted in a category rule and never matches                               | `Xrepeated-logic-5`                                                                                | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -2214,7 +2214,7 @@ P2, small, fixed.
 
 ### 113. Change queue inside the details opens the same details again
 
-P2, small, open.
+P2, small, fixed.
 
 `failure` offers every fix except `Retry`, `fixes::run` answers `ChangeQueue` with `details::open`, and `open_dialog` adds another dialog. So the fix inside the details opens the same details.
 
@@ -2262,7 +2262,7 @@ P2, small, fixed.
 
 ### 116. The proxy form says a saved password is kept, then forgets it
 
-P2, small, open.
+P2, small, fixed.
 
 The placeholder is fixed in `ProxyForm::new`, while `merge_password` answers `None` when `same_proxy` is false and removes the login with no message. D71.2's rule is deliberate and stays: the form promises the opposite.
 
@@ -2326,7 +2326,7 @@ P2, small, fixed.
 
 ### 120. Enter in the delete-queue field closes the question and deletes nothing
 
-P2, small, open.
+P2, small, fixed.
 
 `ask` installs no `on_ok`, the input propagates Enter, and the dialog's default handler closes. So Enter closes the question and deletes nothing; only the typed name is lost.
 
@@ -2342,7 +2342,7 @@ P2, small, open.
 
 ### 121. Saving a queue changes its speed limit
 
-P2, small, open.
+P2, small, fixed.
 
 `read` always sends the field's text through `speed_limit`, and `in_unit` rounds to a tenth of the unit. 1075 KB/s shows "1" and saves 1,048,576 bytes. The drift is at most 0.05 MB/s and does not grow on later saves.
 
@@ -3061,7 +3061,7 @@ P3, small, open.
 
 ### 163. Empty pages offer Pause all or Resume all
 
-P3, small, open.
+P3, small, fixed.
 
 `group_command` does not look at the page's rows, so empty pages offer Pause all beside "Nothing downloading", and Resume all beside "Nothing paused".
 
@@ -3097,7 +3097,7 @@ P3, small, open.
 
 ### 165. New queue and New proxy do not put the cursor in the Name field
 
-P3, small, open.
+P3, small, fixed.
 
 `queue_dialog::open` and the proxy dialog never call `focus_after_opening`, which `add_dialog`, `refresh_dialog` and `queue_delete` do. Typing at once puts nothing in the field. `B16-1` is read, not run.
 
@@ -3114,7 +3114,7 @@ P3, small, open.
 
 ### 166. The row, the menu and the details decide offers and words on their own
 
-P3, small, open.
+P3, small, fixed.
 
 `cancellable` leaves out Failed while `can_cancel` allows it, `RowAction::offered` matches on status itself, and a cancelled row says Try again in the menu and Start over in the details.
 
@@ -4005,7 +4005,7 @@ P3, small, fixed.
 
 ### 221. An impossible port is saved as the usual port without a word
 
-P3, small, open.
+P3, small, fixed.
 
 The port's input sets `min` and `max` but no number mask, so `70000`, `80a` and an empty field all become the usual port. `queue_dialog.rs` `whole` refuses the same input.
 
