@@ -1117,8 +1117,8 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 2     | Batch B17                               | done        |
 | 2     | Batch B18                               | done        |
 | 2     | Batch B19                               | done        |
-| 2     | Mutation survivors                      | pending     |
-| 2     | New findings batch                      | pending     |
+| 2     | Mutation survivors                      | done        |
+| 2     | New findings batch                      | done        |
 | 3     | Stage 3 (`AUDIT-LOG.md`)                | pending     |
 
 ## Approvals
