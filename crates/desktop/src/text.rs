@@ -99,7 +99,7 @@ pub fn per_mille(row: &DownloadSummary) -> Option<u16> {
 /// downloaded while the file is still written, and 100% would say it is done.
 pub fn percent(row: &DownloadSummary) -> Option<String> {
     let total = row.total.filter(|total| *total > 0)?;
-    if row.status == DownloadStatus::Completed || row.done >= total {
+    if row.status == DownloadStatus::Completed {
         return Some(format!("{PERCENT_MAX}%"));
     }
     Some(format!(
@@ -143,7 +143,15 @@ pub fn status_label(status: DownloadStatus) -> &'static str {
         DownloadStatus::Completed => "Finished",
         DownloadStatus::Failed => "Needs attention",
         DownloadStatus::Cancelled => "Cancelled",
-        DownloadStatus::Processing => "Merging video and audio",
+        DownloadStatus::Processing => "Processing",
+    }
+}
+
+/// What a row is doing, with the step of a download being processed.
+pub fn status_name(row: &DownloadSummary) -> &'static str {
+    match (row.status, &row.processing) {
+        (DownloadStatus::Processing, Some(processing)) => processing_label(processing.step),
+        _ => status_label(row.status),
     }
 }
 
@@ -493,22 +501,6 @@ fn split_seconds(time: &str) -> (String, String) {
     (time[..at].to_owned(), time[at..].to_owned())
 }
 
-/// A link as it may be shown or copied: a password in it becomes `***`, and a user name without
-/// one too, since some sites put a token there.
-pub fn link_for_display(url: &str) -> String {
-    let Some((scheme, rest)) = url.split_once("://") else {
-        return url.to_owned();
-    };
-    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let Some(at) = rest[..end].rfind('@') else {
-        return url.to_owned();
-    };
-    let masked = rest[..at]
-        .split_once(':')
-        .map_or_else(|| "***".to_owned(), |(name, _)| format!("{name}:***"));
-    format!("{scheme}://{masked}{}", &rest[at..])
-}
-
 /// The host of a link, for the line under a running download's name.
 pub fn host(url: &str) -> &str {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
@@ -596,6 +588,53 @@ fn ordinal(n: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unfinished_download_never_reads_100() {
+        let row = |status, done| DownloadSummary {
+            status,
+            done,
+            total: Some(100),
+            ..wirecatch_test_support::downloads::download(1)
+        };
+        assert_eq!(
+            percent(&row(DownloadStatus::Processing, 100)).as_deref(),
+            Some("99%")
+        );
+        assert_eq!(
+            percent(&row(DownloadStatus::Downloading, 150)).as_deref(),
+            Some("99%")
+        );
+        assert_eq!(
+            percent(&row(DownloadStatus::Downloading, 50)).as_deref(),
+            Some("50%")
+        );
+        assert_eq!(
+            percent(&row(DownloadStatus::Completed, 100)).as_deref(),
+            Some("100%")
+        );
+    }
+
+    #[test]
+    fn the_status_names_the_processing_step() {
+        let row = |step| DownloadSummary {
+            status: DownloadStatus::Processing,
+            processing: Some(wirecatch_protocol::app::ProcessingProgress {
+                step,
+                per_mille: None,
+            }),
+            ..wirecatch_test_support::downloads::download(1)
+        };
+        assert_eq!(
+            status_name(&row(ProcessingStep::Joining)),
+            "Merging video and audio"
+        );
+        assert_eq!(
+            status_name(&row(ProcessingStep::Finishing)),
+            "Finishing the file"
+        );
+        assert_eq!(status_name(&row(ProcessingStep::Converting)), "Converting");
+    }
 
     #[test]
     fn a_day_reads_by_its_name_near_today() {
@@ -737,22 +776,6 @@ mod tests {
             [
                 "1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "101st"
             ]
-        );
-    }
-
-    #[test]
-    fn a_password_in_a_link_is_never_shown() {
-        assert_eq!(
-            link_for_display("https://ada:secret@example.com/a"),
-            "https://ada:***@example.com/a"
-        );
-        assert_eq!(
-            link_for_display("https://token@example.com/a@b"),
-            "https://***@example.com/a@b"
-        );
-        assert_eq!(
-            link_for_display("https://example.com/a"),
-            "https://example.com/a"
         );
     }
 

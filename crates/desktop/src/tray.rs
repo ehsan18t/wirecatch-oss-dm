@@ -7,8 +7,11 @@ use tray_icon::menu::{
     CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu,
 };
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use wirecatch_core::Manager;
+use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
 use wirecatch_shell::activity::tooltip;
-use wirecatch_shell::tray::{Shell, TrayAction, perform, problem_tooltip};
+use wirecatch_shell::api;
+use wirecatch_shell::tray::{Shell, TrayAction, perform, problem_tooltip, still_starting};
 use wirecatch_shell::tray_proxy::{self, ProxyItem};
 use wirecatch_shell::tray_queues::{self, QueueItem};
 use wirecatch_shell::tray_speed::{self, SpeedItem};
@@ -16,13 +19,16 @@ use wirecatch_shell::tray_speed::{self, SpeedItem};
 use crate::backend::Backend;
 use crate::library::{Asked, Library, Loaded, Revisions};
 use crate::main_window::Group;
-use crate::{lifecycle, links, main_window};
+use crate::{lifecycle, links, main_window, notices};
 
 const ICON_PNG: &[u8] = include_bytes!("../assets/icons/32x32.png");
+const NO_DEFAULT_FOLDER: &str =
+    "Your download folder cannot be found. Choose another in Settings > Files.";
 
 /// The icon in the tray, with what it shows now, so it is changed only when that changes.
 struct Tray {
     icon: TrayIcon,
+    library: Entity<Library>,
     tooltip: String,
     choices: Choices,
     /// What `choices` were read from.
@@ -71,6 +77,7 @@ pub fn start(library: &Entity<Library>, cx: &mut App) {
     }));
     cx.set_global(Tray {
         icon,
+        library: library.clone(),
         tooltip: String::new(),
         choices: Choices::default(),
         read_from: None,
@@ -125,13 +132,20 @@ fn icon() -> Result<Icon, String> {
     Icon::from_rgba(rgba, frame.width, frame.height).map_err(|e| e.to_string())
 }
 
+/// A name as the menu shows it: a lone `&` would mark the next letter as the item's access key.
+fn menu_text(name: &str) -> String {
+    name.replace('&', "&&")
+}
+
 /// The tray's menu, with `choices` in its submenus.
 fn menu(choices: &Choices) -> tray_icon::menu::Result<Menu> {
     let item = |a: TrayAction| MenuItem::with_id(a.id(), a.label(), true, None);
     let checks = |items: Vec<(&str, &str, bool)>| -> Vec<CheckMenuItem> {
         items
             .into_iter()
-            .map(|(id, label, checked)| CheckMenuItem::with_id(id, label, true, checked, None))
+            .map(|(id, label, checked)| {
+                CheckMenuItem::with_id(id, menu_text(label), true, checked, None)
+            })
             .collect()
     };
     let submenu = |title: &str, items: &[CheckMenuItem]| {
@@ -248,10 +262,12 @@ impl Shell for AppShell<'_> {
             .background_executor()
             .spawn(async move { folder.is_dir().then_some(folder) });
         self.0
-            .spawn(async move |cx| match checked.await {
-                Some(folder) => cx.update(|cx| cx.open_with_system(&folder)),
-                None => {
+            .spawn(async move |cx| {
+                if let Some(folder) = checked.await {
+                    cx.update(|cx| cx.open_with_system(&folder));
+                } else {
                     tracing::warn!("the default download folder is not a folder on this computer");
+                    cx.update(|cx| notices::could_not(api::failed(NO_DEFAULT_FOLDER), cx));
                 }
             })
             .detach();
@@ -266,34 +282,74 @@ fn on_click(click: Clicked, cx: &mut App) {
     let (manager, runtime) = Backend::now(cx);
     // Pausing and resuming start and stop downloads, which run on the manager's runtime.
     let _inside = runtime.enter();
-    if let Some(proxy) = tray_proxy::proxy_of(&id) {
-        if let Some(manager) = &manager
-            && let Err(e) = tray_proxy::switch(manager, proxy)
-        {
-            tracing::warn!("the tray could not switch the proxy: {e}");
-        }
-        return;
-    }
-    if let Some(limit) = tray_speed::limit_of(&id) {
-        if let Some(manager) = &manager
-            && let Err(e) = tray_speed::switch(manager, limit)
-        {
-            tracing::warn!("the tray could not change the speed limit: {e}");
-        }
-        return;
-    }
-    if let Some(queue) = tray_queues::queue_of(&id) {
-        if let Some(manager) = &manager
-            && let Err(e) = tray_queues::toggle(manager, queue)
-        {
-            tracing::warn!("the tray could not pause or resume a queue: {e}");
+    if let Some(answer) = choose(&id, manager.as_ref()) {
+        // The menu flips a ticked item itself before it tells the app.
+        put_ticks_back(cx);
+        if let Err(refused) = answer {
+            tell(refused, cx);
         }
         return;
     }
     let Some(action) = TrayAction::from_id(&id) else {
         return;
     };
-    if let Err(e) = perform(action, manager.as_ref(), &mut AppShell(cx)) {
-        tracing::warn!("tray action {} failed: {e}", action.id());
+    if let Err(refused) = perform(action, manager.as_ref(), &mut AppShell(cx)) {
+        tell(refused, cx);
+    }
+}
+
+/// Carries out menu item `id` if it is one of the submenus' choices.
+fn choose(id: &str, manager: Option<&Manager>) -> Option<Result<(), ProtocolError>> {
+    let ready = || manager.ok_or_else(still_starting);
+    if let Some(proxy) = tray_proxy::proxy_of(id) {
+        return Some(ready().and_then(|manager| tray_proxy::switch(manager, proxy)));
+    }
+    if let Some(limit) = tray_speed::limit_of(id) {
+        return Some(ready().and_then(|manager| tray_speed::switch(manager, limit)));
+    }
+    let queue = tray_queues::queue_of(id)?;
+    Some(ready().and_then(|manager| tray_queues::toggle(manager, queue)))
+}
+
+fn put_ticks_back(cx: &mut App) {
+    let Some(tray) = cx.try_global::<Tray>() else {
+        return;
+    };
+    match menu(&tray.choices) {
+        Ok(menu) => cx.global_mut::<Tray>().icon.set_menu(Some(Box::new(menu))),
+        Err(e) => tracing::debug!("could not change the tray menu: {e}"),
+    }
+}
+
+/// Tells the person what failed. While no manager opened, why it did not is the answer: it is not
+/// still starting then.
+fn tell(refused: ProtocolError, cx: &mut App) {
+    tracing::warn!("a tray action failed: {refused}");
+    let failed = cx
+        .try_global::<Tray>()
+        .and_then(|tray| match &tray.library.read(cx).loaded {
+            Loaded::Failed(reason) if refused.code == ErrorCode::AppUnavailable => {
+                Some(reason.clone())
+            }
+            _ => None,
+        });
+    notices::could_not(failed.unwrap_or(refused), cx);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_name_shows_its_ampersand() {
+        assert_eq!(menu_text("Work & play"), "Work && play");
+        assert_eq!(menu_text("Plain"), "Plain");
+    }
+
+    #[test]
+    fn a_choice_before_the_manager_opens_is_refused_and_other_items_are_not_choices() {
+        assert!(choose("open", None).is_none());
+        assert!(matches!(choose("queue:1", None), Some(Err(_))));
+        assert!(matches!(choose("proxy:direct", None), Some(Err(_))));
     }
 }
