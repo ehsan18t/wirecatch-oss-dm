@@ -198,7 +198,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 137. Reading a website's page with yt-dlp escapes the local network rule (open)
 138. A queue's run ends while its last download only waits (open)
 139. Nothing opens a download's window again after Hide (open)
-140. A file too large for the disk is not noticed until it is full (open)
+140. A file too large for the disk is not noticed until it is full (fixed)
 141. A crash at the end of a move leaves the list and the disk disagreeing (open)
 142. Commands and items left from the removed web interface are dead (open)
 143. Tests give waits a fixed short limit, and the timing check cannot see them (open)
