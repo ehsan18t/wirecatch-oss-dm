@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use tracing::warn;
 use wirecatch_engine::Url;
-use wirecatch_protocol::app::{AddRequest, PortablePath};
+use wirecatch_protocol::app::{AddRequest, PortablePath, UiEvent};
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::{DownloadId, QuestionId};
 
@@ -29,6 +29,8 @@ pub(super) struct AnsweredPage {
     pub placed: Placed,
     /// The folder the person chose for it, if any.
     pub folder: Option<PathBuf>,
+    /// The name the person chose for it, if any.
+    pub file_name: Option<String>,
 }
 
 impl AnsweredPage {
@@ -45,6 +47,7 @@ impl AnsweredPage {
                 reason: entry.row.queue_reason.clone(),
             },
             folder: entry.naming.folder.as_ref().map(PathBuf::from),
+            file_name: entry.naming.name.clone(),
         })
     }
 }
@@ -53,9 +56,8 @@ impl Manager {
     /// Reads a video page added in the app (paste, the Add dialog) for its
     /// qualities, as a page sent from the browser is: its quality window opens,
     /// or it downloads with the saved choices (D50), paused when `request.start`
-    /// is false. The window names the file from the video's title, so
-    /// `request.file_name` is not used. Returns the question's id; the same page
-    /// added again while it waits gets the same id.
+    /// is false. `request.file_name` goes before the video's title. Returns the
+    /// question's id; the same page added again while it waits gets the same id.
     ///
     /// # Errors
     ///
@@ -89,25 +91,45 @@ impl Manager {
             folder,
             later: !request.start,
             page_otherwise: false,
+            file_name: request.file_name,
+            replaces: Vec::new(),
             request: request_queue,
         };
         Ok(self.hold_media(&mut state, source, placed, held))
     }
 
-    /// Removes download `id`, stopped because its server answered with a web
-    /// page, and reads that page for its video instead; with no video on it, it
-    /// downloads as the page it is ([`add_page_as_file`](Self::add_page_as_file)).
+    /// Takes download `id`, stopped because its server answered with a web page,
+    /// out of the list, and reads that page for its video instead; with no video on
+    /// it, it downloads as the page it is ([`add_page_as_file`](Self::add_page_as_file)).
+    /// Its saved row stays until the video is decided, as the question lives only in memory: after a quit the download runs again and asks again.
     pub(super) fn read_answered_page(&self, id: DownloadId, page: AnsweredPage) {
-        self.remove_in_background(vec![id]);
         let Ok(mut state) = self.lock_open() else {
             return;
         };
+        let Some(entry) = state.remove_entry(id) else {
+            return;
+        };
+        self.emit(UiEvent::DownloadsRemoved(vec![id]));
+        self.inner.rows_changed.notify_one();
+        let partial = entry.partial();
+        let manager = self.clone();
+        self.spawn(async move {
+            let deleted = manager.blocking(move || {
+                partial.delete();
+                Ok(())
+            });
+            if let Err(e) = deleted.await {
+                warn!(error = %e, "could not delete what a page's download left behind");
+            }
+        });
         let source = MediaSource::page(page.fetch);
         let held = Held {
             handovers: Vec::new(),
             folder: page.folder,
             later: false,
             page_otherwise: true,
+            file_name: page.file_name,
+            replaces: vec![id],
             request: page.placed.request(),
         };
         self.hold_media(&mut state, source, page.placed, held);
@@ -116,21 +138,22 @@ impl Manager {
     /// Downloads a page on which no video was found as the page it is, without
     /// reading it for a video again.
     pub(super) async fn add_page_as_file(&self, pending: MediaPending) {
-        let source = pending.source;
         let added = self
             .insert(NewEntry {
-                fetch: source.fetch,
+                fetch: pending.source.fetch.clone(),
                 wanted: Wanted {
-                    folder: pending.folder,
+                    file_name: pending.file_name.clone(),
+                    folder: pending.folder.clone(),
                     ..Wanted::default()
                 },
-                placed: pending.placed,
+                placed: pending.placed.clone(),
                 start: !pending.later,
                 kind: Kind::File { video_check: false },
             })
             .await;
-        if let Err(e) = added {
-            warn!(error = %e, "could not download a page without a video as a file");
+        match added {
+            Ok(_) => self.gave_way(&pending),
+            Err(e) => warn!(error = %e, "could not download a page without a video as a file"),
         }
     }
 }
