@@ -82,7 +82,7 @@ pub(super) async fn page_attempt(
     let (video, audio) = (&page.video, &page.audio);
     let format = &ytdlp::selection(video.as_ref(), audio.as_ref());
     let cookies = cookie_header(&job.origin);
-    let proxy = wirecatch_settings::proxy::ytdlp_proxy(&job.options.proxy);
+    let proxy = wirecatch_settings::proxy::ytdlp_proxy(&job.options.proxy, &job.url);
     let ctx = ytdlp::Context {
         tools,
         page: &job.url,

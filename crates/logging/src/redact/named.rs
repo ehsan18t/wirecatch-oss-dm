@@ -16,6 +16,17 @@ const LINK_FIELD_NAMES: [&str; 3] = ["username", "query", "fragment"];
 /// Command-line flags, matched without their dashes and with `-` removed, whose value is a secret besides those with a secret name: yt-dlp's `-p` (`--password`) and `--add-header`, ffmpeg's `-headers`.
 const SECRET_FLAGS: [&str; 4] = ["p", "addheader", "addheaders", "headers"];
 
+/// Last parts of a dotted name that mean the secret's own value, unlike a file's extension or a host's domain: `session.id`, `cookie.value`, `token.hash`.
+const NAMED_VALUE_PARTS: [&str; 3] = ["id", "value", "hash"];
+
+/// Extensions that make a dotted name a file's. `key` and `pem` included: in a path they are a key file, and bare `enc.key: x` stays hidden by its secret last part.
+const FILE_EXTENSIONS: [&str; 45] = [
+    "7z", "aac", "ass", "avi", "bin", "cfg", "conf", "crt", "csv", "dat", "db", "dll", "exe",
+    "flac", "gz", "html", "ini", "jpg", "js", "json", "key", "log", "m3u8", "m4a", "m4s", "m4v",
+    "mkv", "mov", "mp3", "mp4", "mpd", "ogg", "opus", "part", "pdf", "pem", "png", "rs", "srt",
+    "toml", "ts", "txt", "vtt", "wav", "webm",
+];
+
 /// The key of a header object's value, `{"name": "Cookie", "value": ".."}`.
 const VALUE_KEY: &[u8] = b"value";
 
@@ -100,6 +111,7 @@ pub(super) fn hide_named_secrets(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut copied = 0;
     let mut i = 0;
+    let mut windows_path_end = 0;
     while let Some(&b) = bytes.get(i) {
         let before = i.checked_sub(1).and_then(|before| bytes.get(before));
         if !is_name_byte(b) || before.is_some_and(|before| is_name_byte(*before)) {
@@ -109,12 +121,17 @@ pub(super) fn hide_named_secrets(text: &str) -> String {
         }
         let name_end = scan_until(bytes, i, |b| !is_name_byte(b));
         let name = bytes.get(i..name_end).unwrap_or_default();
+        // Past the last path only, so a line of drive prefixes is scanned once.
+        if i >= windows_path_end && starts_a_windows_path(bytes, i, name_end) {
+            windows_path_end = scan_until(bytes, name_end, |b| b.is_ascii_whitespace());
+        }
+        let in_windows_path = i < windows_path_end && before == Some(&b'\\');
         // A segment of a module path (`wirecatch_core::cookies: ...`) names no value.
         let in_path = i >= 2 && bytes.get(i - 2..i) == Some(b"::");
         let value = if in_path {
             None
         } else if let Some(kind) = kind_of(name) {
-            secret_value(bytes, i, name_end, kind)
+            secret_value(bytes, i, name_end, kind, in_windows_path)
         } else if name.eq_ignore_ascii_case(VALUE_KEY) {
             value_named_after(bytes, name_end)
         } else {
@@ -270,12 +287,65 @@ fn value_named_after(bytes: &[u8], key_end: usize) -> Option<(usize, usize)> {
     (kind != Kind::LinkField && close > inside).then_some((inside, close))
 }
 
+/// Whether a drive's path starts at the one-letter name from `start` to `end`: `C:\`. Not `C:\\`, how `Debug` writes it, where a later `\n` is an escape and no folder.
+fn starts_a_windows_path(bytes: &[u8], start: usize, end: usize) -> bool {
+    end == start + 1
+        && bytes.get(start).is_some_and(u8::is_ascii_alphabetic)
+        && bytes.get(end..end + 2) == Some(b":\\")
+        && bytes.get(end + 2) != Some(&b'\\')
+}
+
+/// Whether a port follows the `:` at `colon`: digits up to the end of a link's host.
+fn port_follows(bytes: &[u8], colon: usize) -> bool {
+    if bytes.get(colon) != Some(&b':') {
+        return false;
+    }
+    let end = scan_until(bytes, colon + 1, |b| !b.is_ascii_digit());
+    end > colon + 1
+        && bytes
+            .get(end)
+            .is_none_or(|b| b.is_ascii_whitespace() || matches!(b, b'/' | b'?' | b'#'))
+}
+
+/// Whether the name before a `:` is a file or a host whose name only holds a secret's word, so what follows is a `path: reason` line's reason or a port (D40.10). A link's host before its port (`https://auth:8443`), a file with a known extension in a path (`/enc.key`, `C:\a\enc.key`), or a dotted name ending in no secret's part whose first part names no secret either, unless that last part is a known extension (`session-01.mp4`, and not `token.raw`, `auth.token` or `session.id`).
+fn names_a_place(bytes: &[u8], name_start: usize, name_end: usize, in_windows_path: bool) -> bool {
+    let Some(name) = bytes
+        .get(name_start..name_end)
+        .and_then(|name| std::str::from_utf8(name).ok())
+    else {
+        return false;
+    };
+    let before = |back: usize| {
+        name_start
+            .checked_sub(back)
+            .and_then(|at| bytes.get(at..name_start))
+    };
+    // User information reads `***@` by now.
+    if (before(3) == Some(b"://") || before(4) == Some(b"***@")) && port_follows(bytes, name_end) {
+        return true;
+    }
+    let Some((first, _)) = name.split_once('.') else {
+        return false;
+    };
+    let last = name.rsplit('.').next().unwrap_or_default();
+    let is_one_of = |parts: &[&str]| parts.iter().any(|part| last.eq_ignore_ascii_case(part));
+    let is_a_file = is_one_of(&FILE_EXTENSIONS);
+    if is_a_file && (before(1) == Some(b"/") || in_windows_path) {
+        return true;
+    }
+    !last.is_empty()
+        && !is_secret_name(last)
+        && !is_one_of(&NAMED_VALUE_PARTS)
+        && (is_a_file || !is_secret_name(first))
+}
+
 /// Where the value after the secret name ending at `name_end` starts and ends: past a closing quote of the name, blanks (newlines too after a quoted name, as pretty-printed JSON has them), the separator (or a header object's `value` key, `"Cookie", "value": ..`), blanks, and `Debug` wrappers such as `Some(`; then inside its quotes, to its closing bracket, or else to the end of its field (after `:`, and for a [`Kind::WholeField`] name) or of its word. `None` when no value follows, or it is `None`.
 fn secret_value(
     bytes: &[u8],
     name_start: usize,
     name_end: usize,
     kind: Kind,
+    in_windows_path: bool,
 ) -> Option<(usize, usize)> {
     // `<password>value</password>`.
     let tagged = name_start
@@ -307,6 +377,13 @@ fn secret_value(
         },
     };
     if kind == Kind::LinkField && separator != Separator::Colon {
+        return None;
+    }
+    if separator == Separator::Colon
+        && !quoted_name
+        && matches!(kind, Kind::Value | Kind::Password)
+        && names_a_place(bytes, name_start, name_end, in_windows_path)
+    {
         return None;
     }
     // Not `https://`: a link is no name and value.

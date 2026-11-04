@@ -1440,3 +1440,180 @@ async fn a_repair_finds_a_file_changed_in_place() -> TestResult {
     assert_eq!(std::fs::read(&ytdlp).unwrap(), releases.ytdlp);
     Ok(())
 }
+
+/// A repair fetches only what is damaged, and keeps a yt-dlp newer than the pinned one (D21.1).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_repair_replaces_only_the_damaged_part() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("rp").await?;
+    serve_release(
+        &server,
+        "2026.09.30",
+        &new_ytdlp,
+        new_ytdlp.len() as u64,
+        &sha256(&new_ytdlp),
+        None,
+        OLD,
+    )?;
+    let updated = check(&h).await?;
+    assert!(updated.installed_version.unwrap().contains("2026.09.30"));
+    assert!(
+        h.manager.list_addons()[0]
+            .latest_version
+            .as_deref()
+            .unwrap()
+            .contains("2026.09.30"),
+        "the add-on names a yt-dlp older than the one installed"
+    );
+    let before = server.seen().len();
+
+    std::fs::remove_file(addon_dir(&h).join("deno").join(exe("deno")))?;
+    let mut ui = h.manager.subscribe();
+    h.manager.install_addon(AddonId::Media).await?;
+    let info = wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
+
+    assert!(info.installed_version.unwrap().contains("2026.09.30"));
+    assert_eq!(installed_ytdlp(&h)?, new_ytdlp);
+    let fetched = server.seen().len() - before;
+    assert_eq!(fetched, 1, "the repair fetched more than the damaged part");
+    Ok(())
+}
+
+/// A damaged yt-dlp is repaired too, whatever version it has.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_repair_replaces_a_damaged_ytdlp() -> TestResult {
+    let (_server, h, _) = updatable("ry").await?;
+    let ytdlp = addon_dir(&h).join("yt-dlp").join(exe("yt-dlp"));
+    std::fs::remove_file(&ytdlp)?;
+    let mut ui = h.manager.subscribe();
+    h.manager.install_addon(AddonId::Media).await?;
+    wait_addon(&mut ui, "repaired", |a| a.state == AddonState::Installed).await;
+    assert!(ytdlp.is_file());
+    Ok(())
+}
+
+/// The check acts on the add-on as it is once the list has arrived.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_add_on_removed_during_a_check_stays_removed() -> TestResult {
+    let (server, h, _) = updatable("rm").await?;
+    // Valid JSON, long enough to be on its way while the add-on is removed.
+    server.put("api/releases", format!("[]{}", " ".repeat(64 * KIB_USIZE)));
+    server.throttle("api/releases", Some(64 * KIB));
+    let checking = {
+        let manager = h.manager.clone();
+        tokio::spawn(async move { manager.check_addon_updates().await })
+    };
+    crate::common::wait_until("the check's request", || {
+        (server.requests("api/releases") > 0).then_some(())
+    })
+    .await;
+    h.manager.remove_addon(AddonId::Media).await?;
+    checking.await??;
+    assert_eq!(h.manager.list_addons()[0].state, AddonState::NotInstalled);
+    assert!(!path_exists(
+        addon_dir(&h).join(wirecatch_addons::RECORD_FILE)
+    ));
+    Ok(())
+}
+
+/// One bad newest release does not hide an older good one, and the person who asked hears of it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_bad_release_does_not_hide_an_older_good_one() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("bd").await?;
+    let good = put_release(
+        &server,
+        &Release {
+            tag: "2026.09.30",
+            program: &new_ytdlp,
+            listed_size: new_ytdlp.len() as u64,
+            listed_hash: &sha256(&new_ytdlp),
+            program_url: None,
+            published: OLD,
+            sig: Sig::Good,
+        },
+    )?;
+    let bad = put_release(
+        &server,
+        &Release {
+            tag: "2026.10.01",
+            program: &new_ytdlp,
+            listed_size: new_ytdlp.len() as u64,
+            listed_hash: &sha256(&new_ytdlp),
+            program_url: None,
+            published: OLD,
+            sig: Sig::Missing,
+        },
+    )?;
+    server.put("api/releases", serde_json::json!([bad, good]).to_string());
+    let mut settings = h.manager.get_settings();
+    settings.auto_update_addons = false;
+    h.manager.update_settings(settings)?;
+
+    let error = h.manager.check_addon_updates().await.unwrap_err();
+    assert!(error.to_string().contains("2026.10.01"), "{error}");
+    let info = h.manager.list_addons().remove(0);
+    assert_eq!(info.state, AddonState::UpdateAvailable);
+    assert!(info.latest_version.unwrap().contains("2026.09.30"));
+    Ok(())
+}
+
+/// One offline check does not take back what the last one offered.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_check_keeps_the_offer() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("kp").await?;
+    let mut settings = h.manager.get_settings();
+    settings.auto_update_addons = false;
+    h.manager.update_settings(settings)?;
+    serve_release(
+        &server,
+        "2026.09.30",
+        &new_ytdlp,
+        new_ytdlp.len() as u64,
+        &sha256(&new_ytdlp),
+        None,
+        OLD,
+    )?;
+    h.manager.check_addon_updates().await?;
+    assert_eq!(
+        h.manager.list_addons()[0].state,
+        AddonState::UpdateAvailable
+    );
+
+    server.fail("api/releases", 100, 500);
+    assert!(h.manager.check_addon_updates().await.is_err());
+    assert_eq!(
+        h.manager.list_addons()[0].state,
+        AddonState::UpdateAvailable
+    );
+
+    // The list arrives, but the network goes before the release's checksums do.
+    server.fail("api/releases", 0, 500);
+    server.fail("rel/2026.09.30/SHA2-256SUMS", 100, 500);
+    assert!(h.manager.check_addon_updates().await.is_err());
+    assert_eq!(
+        h.manager.list_addons()[0].state,
+        AddonState::UpdateAvailable
+    );
+    Ok(())
+}
+
+/// A release file of a version never installed does not stay behind.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_update_clears_release_files_of_skipped_versions() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("sk").await?;
+    let work = addon_dir(&h).join(wirecatch_addons::WORK_FOLDER);
+    std::fs::create_dir_all(&work)?;
+    let skipped = work.join("yt-dlp-2026.09.01.download");
+    std::fs::write(&skipped, b"an abandoned download")?;
+    serve_release(
+        &server,
+        "2026.09.30",
+        &new_ytdlp,
+        new_ytdlp.len() as u64,
+        &sha256(&new_ytdlp),
+        None,
+        OLD,
+    )?;
+    check(&h).await?;
+    assert!(!path_exists(&skipped));
+    Ok(())
+}

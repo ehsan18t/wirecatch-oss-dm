@@ -21,7 +21,7 @@ mod tray;
 mod ui;
 
 use gpui_kit::component::TitleBar;
-use gpui_kit::{QuitMode, WindowOptions};
+use gpui_kit::{QuitMode, TitlebarOptions, WindowOptions};
 use wirecatch_ipc::{IpcError, Listener};
 use wirecatch_shell::launch::{self, Launch};
 use wirecatch_shell::message_box::{self, Tone};
@@ -34,12 +34,17 @@ pub fn say_before_exit(text: &str) {
     message_box::show(Tone::Warning, host::CHANNEL.name(), text);
 }
 
-/// What every window opens with: the app's own title bar, and the app id that Linux desktops
-/// match to its `.desktop` file for the icon and the taskbar entry.
+/// What every window opens with: the app's own title bar, the name Alt+Tab and screen readers give
+/// it, and the app id that Linux desktops match to its `.desktop` file for the icon and the taskbar
+/// entry.
 #[must_use]
 pub fn window_options() -> WindowOptions {
     WindowOptions {
         app_id: Some(host::CHANNEL.identifier().to_owned()),
+        titlebar: Some(TitlebarOptions {
+            title: Some(host::CHANNEL.name().into()),
+            ..TitleBar::title_bar_options()
+        }),
         ..TitleBar::window_options()
     }
 }
@@ -146,4 +151,17 @@ fn main() {
                 main_window::bring_up(&asked, cx);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_window_has_a_name_for_the_system_to_show() {
+        let title = window_options()
+            .titlebar
+            .and_then(|titlebar| titlebar.title);
+        assert_eq!(title.as_deref(), Some(host::CHANNEL.name()));
+    }
 }

@@ -13,7 +13,7 @@ use wirecatch_streams::{InputFormat, Role};
 use super::ffmpeg::{self, FfmpegError, Finished};
 use crate::MediaTools;
 
-/// The format ffmpeg may read the downloaded `role` as, recognized from its first bytes. A file that is none of the expected formats is refused before ffmpeg starts.
+/// The format ffmpeg may read the downloaded `role` as, recognized from its first bytes. A file that is none of the expected formats is refused before ffmpeg starts, and deleted.
 pub(crate) async fn input_format(path: &Path, role: Role) -> Result<InputFormat, FfmpegError> {
     let owned = path.to_path_buf();
     let detected = tokio::task::spawn_blocking(move || InputFormat::detect(&owned))
@@ -21,7 +21,13 @@ pub(crate) async fn input_format(path: &Path, role: Role) -> Result<InputFormat,
         .map_err(|error| FfmpegError::Task { role, error })?;
     match detected {
         Ok(Some(format)) => Ok(format),
-        Ok(None) => Err(FfmpegError::UnknownFormat { role }),
+        Ok(None) => {
+            // Kept, a finished part is never fetched again, so the next try would refuse the same bytes.
+            if let Err(error) = tokio::fs::remove_file(path).await {
+                tracing::warn!(%error, "could not delete a downloaded part in no known format");
+            }
+            Err(FfmpegError::UnknownFormat { role })
+        }
         Err(source) => Err(FfmpegError::Unreadable { role, source }),
     }
 }
@@ -88,6 +94,8 @@ mod tests {
             "{error}"
         );
         assert!(!output.exists());
+        // Kept, it would be read back and refused on every try, whatever the link.
+        assert!(!video.exists());
     }
 
     /// A DASH manifest that starts like MP4 (a comment puts `free` at bytes 4

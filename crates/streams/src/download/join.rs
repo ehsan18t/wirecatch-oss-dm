@@ -90,6 +90,12 @@ async fn mux(
     let mut inputs = Vec::with_capacity(tracks.len());
     for (path, role, format) in &tracks {
         let Some(format) = format else {
+            // Kept, a joined track is never fetched again, so the next try would refuse the same bytes.
+            let doomed = path.clone();
+            let deleted = file_work
+                .spawn_blocking(move || fs::remove_file(doomed))
+                .await;
+            discarded(path, deleted.unwrap_or_else(|e| Err(io::Error::other(e))));
             return Err(Error::UnknownFormat { role: *role });
         };
         inputs.push(CopyInput::new(path, *role, *format));

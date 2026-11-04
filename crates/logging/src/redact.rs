@@ -3,7 +3,7 @@
 //! - For display ([`url_for_display`], [`text_for_display`]): a person sees their own links, so only the password in a link (`https://user:secret@host/`) is hidden, in every link of the text, links inside links included. The code keeps and uses the real link.
 //! - For logs ([`text_for_log`]): a log file is read by support and attached to bug reports, so it never holds a secret (docs/ENGINEERING.md section 6). Besides passwords in links, it hides every query value and fragment of a link or of a request's path (a signed link carries its token there), the word after an authorization scheme (`Bearer abc`), every JWT and service key, and the value of every name that marks a secret (a cookie, an authorization header, a password, token, key, signature or session, as `wirecatch_protocol::secrets` decides it for this redaction and the extension's), however the value is written: `name: value`, `name=value`, quoted (also with the quotes escaped, as `Debug` writes a string, or URL-encoded), a list or object to its closing bracket, a header line over the lines that continue it, a header object name first or value first (`{"name": "Cookie", "value": ..}`), as a `Debug` tuple or struct field (`Some("..")` included, and the user name, query and fragment of `url::Url`'s), or after a command-line flag (`--password value`).
 //!
-//! What cannot be recognized in text, such as a token in the middle of a link's path, is not hidden: code still never logs a secret on purpose, and this is the net under it. Each pass looks at every byte a bounded number of times, so a long line costs a few plain copies of it, whatever it holds.
+//! A file or host whose name only holds a secret word keeps what follows its `:` (`/enc.key: Forbidden`, `https://auth.example.com:8443`). What cannot be recognized in text, such as a token in the middle of a link's path, is not hidden: code still never logs a secret on purpose, and this is the net under it. Each pass looks at every byte a bounded number of times, so a long line costs a few plain copies of it, whatever it holds.
 
 /// What a hidden secret reads as.
 pub const HIDDEN: &str = wirecatch_protocol::secrets::HIDDEN;
@@ -51,6 +51,18 @@ fn ends_a_link(b: u8) -> bool {
     b.is_ascii_whitespace() || matches!(b, b'"' | b'\'' | b'<' | b'>' | b'`' | b'\\')
 }
 
+/// The end of the link whose rest from `from` is being read. An apostrophe ends it only when the link ends there anyway, as a closing quote does (`'https://..' for`): a link holds one raw (`bob's.mp4`, `pa'ss@`), and a query or password after it is still the link's.
+fn link_end(bytes: &[u8], from: usize) -> usize {
+    let mut at = from;
+    loop {
+        at = scan_until(bytes, at, ends_a_link);
+        if bytes.get(at) != Some(&b'\'') || bytes.get(at + 1).is_none_or(|b| ends_a_link(*b)) {
+            return at;
+        }
+        at += 1;
+    }
+}
+
 /// `text` with the user information of every link hidden: the password (`user:***@`), or the user name alone when there is no password. A password may hold `/`, `?` or `#`, as people paste them: a link whose host part has a `:` followed by no port takes its user information up to the first `@` before the link ends. After each link's host the scan goes on, so a link inside another's path or query is seen too.
 fn hide_link_credentials(text: &str) -> String {
     let bytes = text.as_bytes();
@@ -58,11 +70,11 @@ fn hide_link_credentials(text: &str) -> String {
     // Everything before `copied` is in `out`.
     let mut copied = 0;
     let mut from = 0;
-    let mut link_end = NextAt::default();
+    let mut known_end = NextAt::default();
     let mut next_at_sign = NextAt::default();
     while let Some(found) = find(bytes, from, b"://") {
         let start = found + 3;
-        let end = link_end.from(start, |at| scan_until(bytes, at, ends_a_link));
+        let end = known_end.from(start, |at| link_end(bytes, at));
         let host_end = scan_until(bytes.get(..end).unwrap_or(bytes), start, |b| {
             matches!(b, b'/' | b'?' | b'#')
         });
@@ -115,14 +127,19 @@ fn hide_queries(text: &str) -> String {
             i += 1;
             continue;
         }
-        let end = scan_until(bytes, i, ends_a_link);
-        let word = bytes.get(i..end).unwrap_or_default();
-        let query = match find(word, 0, b"://") {
-            Some(scheme) => Some(scan_until(word, scheme + 3, |b| b == b'?' || b == b'#')),
-            None if b == b'/' => Some(scan_until(word, 0, |b| b == b'?' || b == b'#')),
+        let word_end = scan_until(bytes, i, ends_a_link);
+        let word = bytes.get(i..word_end).unwrap_or_default();
+        let path = match find(word, 0, b"://") {
+            Some(scheme) => Some(scheme + 3),
+            None if b == b'/' => Some(0),
             None => None,
-        }
-        .filter(|query| *query < word.len());
+        };
+        // Only a link reads past an apostrophe: in `path='/a?b=c'` the word before it hides the link after it.
+        let end = path.map_or(word_end, |_| link_end(bytes, word_end));
+        let word = bytes.get(i..end).unwrap_or_default();
+        let query = path
+            .map(|path| scan_until(word, path, |b| b == b'?' || b == b'#'))
+            .filter(|query| *query < word.len());
         if let Some(query) = query {
             out.push_str(&text[copied..i + query]);
             push_query_hidden(&mut out, &text[i + query..end]);

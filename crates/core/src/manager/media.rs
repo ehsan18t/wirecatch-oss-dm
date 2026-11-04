@@ -891,7 +891,7 @@ impl Manager {
         token: &CancellationToken,
     ) -> std::result::Result<Found, UserError> {
         let cookies = cookie_header(&source.fetch.origin);
-        let proxy = wirecatch_settings::proxy::ytdlp_proxy(&proxy);
+        let proxy = wirecatch_settings::proxy::ytdlp_proxy(&proxy, &source.fetch.url);
         let ctx = ytdlp::Context {
             tools,
             page: &source.fetch.url,

@@ -220,6 +220,73 @@ async fn a_stream_whose_name_is_taken_asks_and_then_replaces() -> TestResult {
     Ok(())
 }
 
+/// Replace on a name whose extension differs from the planned one places the finished file that waits, without fetching anything again or leaving its work folder behind.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn replace_with_another_extension_places_the_waiting_file() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    let capture = media_capture(
+        server.url("hls/master.m3u8"),
+        MediaKind::Hls,
+        Some("Holiday clip"),
+    );
+    h.manager
+        .add_capture(NewDownload {
+            handover_id: "first".into(),
+            ..capture.clone()
+        })
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    h.manager
+        .choose_media(choice.id, select(&choice.options[0].id))
+        .await?;
+    let first = h.manager.list_downloads().remove(0);
+    let first = h.wait_status(first.id, DownloadStatus::Completed).await;
+    let finished = Path::new(&first.path);
+    let folder = finished.parent().ok_or("no folder")?.to_path_buf();
+    let finished_ext = finished
+        .extension()
+        .ok_or("no extension")?
+        .to_string_lossy()
+        .into_owned();
+    let taken = folder.join(format!("clip.{finished_ext}"));
+    std::fs::write(&taken, b"older")?;
+
+    h.manager
+        .add_capture(NewDownload {
+            handover_id: "second".into(),
+            ..capture.clone()
+        })
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    let mut typed = select(&choice.options[0].id);
+    typed.file_name = Some("clip".into());
+    h.manager.choose_media(choice.id, typed).await?;
+    let question = next_event(&mut ui, "the name is asked about", |e| match e {
+        UiEvent::FileExistsRequested(question) => Some(question.clone()),
+        _ => None,
+    })
+    .await;
+    let fetched = server.seen_at("hls/720/seg0.ts").len();
+    h.manager.answer_file_exists(
+        question.id,
+        FileExistsAnswer {
+            choice: FileExistsChoice::Replace,
+            remember: false,
+        },
+    )?;
+    let done = h
+        .wait_status(question.download, DownloadStatus::Completed)
+        .await;
+    assert_eq!(server.seen_at("hls/720/seg0.ts").len(), fetched);
+    assert_eq!(Path::new(&done.path), taken);
+    assert_ne!(std::fs::read(&taken)?, b"older");
+    assert!(!folder.join("clip.wcmedia").exists());
+    Ok(())
+}
+
 /// A video waiting for its quality whose queue is deleted goes to the default queue, as a waiting download does, rather than failing once it is chosen.
 /// Clicked again while it is read or waits for its quality, a video joins that question and its
 /// window comes to the front (D89); a second click never reads it a second time.

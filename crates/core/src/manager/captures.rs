@@ -227,6 +227,16 @@ impl Manager {
         }
     }
 
+    /// At a quit, gives back captures still waiting for the server: each is answered `NotStarted`, so the browser keeps its copy, and must not come back at the next start (D27).
+    pub(super) fn give_back_undecided_captures(&self, state: &mut State) {
+        let undecided: Vec<DownloadId> = state
+            .handovers
+            .undecided_downloads()
+            .filter(|id| state.entry(*id).is_ok_and(|e| !e.server_answered()))
+            .collect();
+        self.begin_removing(state, &undecided);
+    }
+
     /// Undoes a handover the extension gave up waiting for. A capture the app has
     /// not yet replied `Started` to, or that was queued and has not reached the
     /// server, is dropped completely, leaving no download and no files behind.
