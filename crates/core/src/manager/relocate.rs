@@ -50,11 +50,16 @@ impl Manager {
                 ));
             }
             if entry.path().parent() == Some(dir.as_path()) {
+                if !entry.naming.settled {
+                    entry.naming.folder = Some(dir.to_string_lossy().into_owned());
+                    self.save(&mut state, id);
+                }
                 return Ok(());
             }
             entry.hold.begin_move();
             let exited = entry.run.as_ref().map(|run| run.exited.clone());
             self.stop_run(entry, Stop::Requeue);
+            self.close_file_exists(&mut state, id);
             exited
         };
         let manager = self.clone();

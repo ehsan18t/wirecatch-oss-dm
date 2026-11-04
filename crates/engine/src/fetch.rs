@@ -302,9 +302,10 @@ impl Fetcher {
     /// with the number of new bytes each time some arrive; bytes are never
     /// counted twice, even when a retry has to ask for the resource again.
     ///
-    /// Cancelling (by the token or by dropping this future) keeps what arrived
-    /// in the file; once the future has been polled, the file may already have
-    /// been created or truncated even if no byte arrived.
+    /// Cancelling by the token keeps what arrived in the file. Dropping this
+    /// future loses what was still buffered, up to 256 KiB, and the rest is
+    /// kept. Once the future has been polled, the file may already have been
+    /// created or truncated even if no byte arrived.
     ///
     /// # Errors
     ///
@@ -448,6 +449,13 @@ impl Fetcher {
                 Received::Cancelled => return Err(Error::Cancelled.into()),
             };
             let mut data = skip_start(&chunk, &mut skip);
+            let skipped = (chunk.len() - data.len()) as u64;
+            if skipped > 0
+                && pace(&self.inner.rate_limiters, skipped, &self.inner.cancel).await
+                    == Paced::Cancelled
+            {
+                return Err(Error::Cancelled.into());
+            }
             if let Some(end) = position.end {
                 data = &data[..clamp_to_len(end.saturating_sub(at), data.len())];
             }

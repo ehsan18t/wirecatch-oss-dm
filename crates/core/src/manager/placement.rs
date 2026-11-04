@@ -196,6 +196,7 @@ mod tests {
 
     const OTHER: QueueId = QueueId(7);
     const VIDEOS: QueueId = QueueId(8);
+    const LOCAL: QueueId = QueueId(9);
     const GONE: QueueId = QueueId(99);
 
     fn queue(id: QueueId, name: &str, add_downloads: AddDownloads) -> QueueSlot {
@@ -270,6 +271,37 @@ mod tests {
             matched
         );
         assert_eq!(place(&state, QueueRequest::App, RULEED).unwrap(), matched);
+    }
+
+    #[test]
+    fn the_local_rule_asks_the_real_network_check() {
+        let mut state = state_with(OTHER, true);
+        let rules = QueueRules {
+            enabled: true,
+            sites: vec!["<local>".into()],
+            ..QueueRules::default()
+        };
+        state
+            .queues
+            .push(queue(LOCAL, "Local", AddDownloads::Auto(rules)));
+        state.settings.local_sites = vec!["corp.example.net".into()];
+        let queue_of =
+            |link: &str| place(&state, QueueRequest::App, link).map(|placed| placed.queue);
+        for local in [
+            "http://192.168.1.5/a.bin",
+            "http://nas/a.bin",
+            "http://printer.home.arpa/a.bin",
+            "https://wiki.corp.example.net/a.bin",
+        ] {
+            assert_eq!(queue_of(local).unwrap(), LOCAL, "{local}");
+        }
+        for public in [
+            "https://93.184.215.14/a.bin",
+            "https://files.example.org/a.bin",
+            "https://badcorp.example.net/a.bin",
+        ] {
+            assert_eq!(queue_of(public).unwrap(), DEFAULT_QUEUE_ID, "{public}");
+        }
     }
 
     #[test]
