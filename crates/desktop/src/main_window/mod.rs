@@ -312,6 +312,8 @@ pub struct MainWindow {
     folded: HashSet<Group>,
     /// The title bar's search, which narrows the list to names and links holding it.
     search: Entity<InputState>,
+    /// The links typed or pasted into the search.
+    typed: links::Kept,
     /// Every queue shows in the navigation, not only the first few.
     all_queues: bool,
     /// Each running queue's speeds, for its graph.
@@ -470,6 +472,7 @@ impl MainWindow {
             queue_speeds: HashMap::new(),
             focus,
             search,
+            typed: links::Kept::default(),
             _subscriptions: vec![follow_system, redraw, searched, updates],
         }
     }
@@ -631,11 +634,11 @@ impl MainWindow {
             .read_from_clipboard()
             .and_then(|item| item.text())
             .unwrap_or_default();
-        let urls = links::extract(&copied);
-        if urls.is_empty() {
+        let pasted = links::pasted(&copied);
+        if pasted.is_empty() {
             window.push_notification(NO_LINK_PASTED, cx);
         } else {
-            self.new_download(&urls, window, cx);
+            self.new_download(&pasted, window, cx);
         }
     }
 
