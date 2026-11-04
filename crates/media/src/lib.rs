@@ -172,11 +172,11 @@ impl MediaProgress {
                 }
                 Part::Done(bytes) => (*bytes, Some(*bytes), 0, true, false),
             };
-            reading.done += done;
+            reading.done = reading.done.saturating_add(done);
             reading.connections += connections;
             reading.answered |= answered;
             stream_joining |= joining;
-            total = total.zip(part_total).map(|(a, b)| a + b);
+            total = total.zip(part_total).map(|(a, b)| a.saturating_add(b));
         }
         if stream_joining && reading.processing.is_none() {
             reading.processing = Some(ProcessingProgress {
@@ -189,11 +189,11 @@ impl MediaProgress {
         }
         if let Some((own_done, own_total)) = state.own {
             reading.answered = true;
-            reading.done += own_done;
+            reading.done = reading.done.saturating_add(own_done);
             total = match (parts.is_empty(), own_total) {
                 (_, None) => None,
                 (true, own) => own,
-                (false, Some(own)) => total.map(|t| t + own),
+                (false, Some(own)) => total.map(|t| t.saturating_add(own)),
             };
         }
         reading.total = total.filter(|t| *t >= reading.done || reading.processing.is_some());

@@ -159,7 +159,7 @@ pub(crate) fn rate(format: &Format) -> f64 {
 fn bytes_for(kbps: u32, duration_ms: Option<u64>) -> Option<u64> {
     duration_ms
         .filter(|d| *d > 0)
-        .map(|d| u64::from(kbps) * d / 8)
+        .map(|d| u64::from(kbps).saturating_mul(d) / 8)
 }
 
 /// The best of `formats` for a row whose video runs at `fps`: the same frame rate first, then the highest bit rate.
@@ -319,7 +319,7 @@ fn variant(
             audio_codec: audio_codec.map(|c| c.label().to_string()),
             audio_kbps: audio_source.and_then(audio_rate),
             lossless_source: audio_codec.is_some_and(AudioCodec::lossless),
-            size: video_size.zip(audio_size).map(|(v, a)| v + a),
+            size: video_size.zip(audio_size).map(|(v, a)| v.saturating_add(a)),
             embeds_subtitles: known.is_some_and(|c| c.subtitle_codec().is_some()),
             chapters: known.is_some_and(Container::chapters),
         },

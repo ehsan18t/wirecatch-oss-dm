@@ -381,7 +381,10 @@ fn audio_only_stream(
 /// Bytes for `seconds` at the sum of `bandwidths` (bits per second).
 fn estimate(seconds: Option<f64>, bandwidths: [Option<u64>; 2]) -> Option<u64> {
     let seconds = seconds.filter(|s| s.is_finite() && *s > 0.0)?;
-    let bits: u64 = bandwidths.iter().flatten().sum();
+    let bits = bandwidths
+        .iter()
+        .flatten()
+        .fold(0_u64, |sum, bits| sum.saturating_add(*bits));
     if bits == 0 {
         return None;
     }
@@ -395,11 +398,13 @@ pub fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
     }
     let all = info.all_formats();
     let usable = usable_formats(&all)?;
-    let audios: Vec<&Format> = usable
-        .iter()
-        .copied()
-        .filter(|f| f.has_audio() && !f.has_video())
-        .collect();
+    let audios = in_original_language(
+        usable
+            .iter()
+            .copied()
+            .filter(|f| f.has_audio() && !f.has_video())
+            .collect(),
+    );
     let videos: Vec<&Format> = usable.iter().copied().filter(|f| f.has_video()).collect();
     let duration_ms = duration_ms(info);
     let joinable: Vec<&Format> = audios
@@ -456,6 +461,18 @@ fn heights(videos: &[&Format]) -> Vec<Option<u32>> {
     heights
 }
 
+/// The audio tracks yt-dlp ranks first by language, which puts the video's own before a dubbed or described one at any bit rate. A person is not asked which language, so the others are not offered.
+fn in_original_language(audios: Vec<&Format>) -> Vec<&Format> {
+    let first = audios.iter().map(|a| a.language_rank()).max();
+    audios
+        .into_iter()
+        .filter(|a| Some(a.language_rank()) == first)
+        .collect()
+}
+
+/// From this frame rate on, a row names its rate, and a format below it is not taken while one at it is there.
+const HIGH_FRAME_RATE: f64 = 50.0;
+
 /// The best of `audios`, in the `prefer`red extension when there is one.
 fn best_audio<'a>(audios: &[&'a Format], prefer: Option<&str>) -> Option<&'a Format> {
     let preferred: Vec<&Format> = audios
@@ -481,11 +498,15 @@ fn video_offer(
         .copied()
         .filter(|f| f.height == height)
         .collect();
-    let separate: Vec<&Format> = at
+    let mut separate: Vec<&Format> = at
         .iter()
         .copied()
         .filter(|f| !f.has_audio() && output::ffmpeg_may_read(f))
         .collect();
+    let is_high = |f: &&Format| f.fps.is_some_and(|fps| fps >= HIGH_FRAME_RATE);
+    if separate.iter().any(is_high) {
+        separate.retain(is_high);
+    }
     let mp4: Vec<&Format> = separate
         .iter()
         .copied()
@@ -502,24 +523,23 @@ fn video_offer(
         };
         best_audio(audios, prefer).map(|a| (v, a))
     });
-    let fps = at.iter().filter_map(|f| f.fps).fold(0.0, f64::max);
-    let quality = match height {
-        Some(h) if fps >= 50.0 => format!("{h}p, {} fps", fps.round()),
-        Some(h) => format!("{h}p"),
-        None => "Best quality".to_string(),
-    };
     let (video, audio) = if let Some((v, a)) = pair {
         (v, Some(a))
     } else {
         let unreadable = || output::best_by_rate(at.iter().copied());
         (together.or(video_only).or_else(unreadable)?, None)
     };
+    let quality = match (height, video.fps) {
+        (Some(h), Some(fps)) if fps >= HIGH_FRAME_RATE => format!("{h}p, {} fps", fps.round()),
+        (Some(h), _) => format!("{h}p"),
+        (None, _) => "Best quality".to_string(),
+    };
     let (id, ext, needs_ffmpeg, size) = if let Some(a) = audio {
         (
             ids(Some(&video.id), Some(&a.id)),
             output::kept_ext(Some(video), Some(a)),
             true,
-            video.size().zip(a.size()).map(|(x, y)| x + y),
+            video.size().zip(a.size()).map(|(x, y)| x.saturating_add(y)),
         )
     } else {
         let content = if video.has_video() {
@@ -618,6 +638,67 @@ fn nothing() -> UserError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn page_offers(json: &str) -> Vec<Offer> {
+        from_page(&serde_json::from_str::<Info>(json).unwrap()).unwrap()
+    }
+
+    /// The row's frame rate is the one it downloads.
+    #[test]
+    fn a_row_labelled_60_fps_downloads_60_fps() {
+        let offers = page_offers(
+            r#"{"title":"T","formats":[
+            {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"fps":30,"tbr":4000,"url":"u"},
+            {"format_id":"303","ext":"webm","vcodec":"vp9","acodec":"none","height":1080,"fps":60,"tbr":3000,"url":"u"},
+            {"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a","abr":128,"url":"u"}
+        ]}"#,
+        );
+        let (option, _) = &offers[0];
+        assert_eq!(option.quality, "1080p, 60 fps");
+        assert_eq!(option.id, "303+140");
+    }
+
+    /// A format with its own audio at 60 fps is not taken over the separate pair, so the row does not claim it.
+    #[test]
+    fn a_row_says_the_frame_rate_of_the_format_it_takes() {
+        let offers = page_offers(
+            r#"{"title":"T","formats":[
+            {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"fps":30,"tbr":4000,"url":"u"},
+            {"format_id":"96","ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":1080,"fps":60,"tbr":3000,"url":"u"},
+            {"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a","abr":128,"url":"u"}
+        ]}"#,
+        );
+        let (option, _) = &offers[0];
+        assert_eq!(
+            (option.id.as_str(), option.quality.as_str()),
+            ("137+140", "1080p")
+        );
+    }
+
+    /// The track in the video's own language, against a dubbed one at a higher rate.
+    #[test]
+    fn best_audio_prefers_the_original_language() {
+        let offers = page_offers(
+            r#"{"title":"T","formats":[
+            {"format_id":"140-0","ext":"m4a","vcodec":"none","acodec":"mp4a","abr":129,"language":"en","language_preference":10,"url":"u"},
+            {"format_id":"140-1","ext":"m4a","vcodec":"none","acodec":"mp4a","abr":130,"language":"hi","language_preference":-1,"url":"u"}
+        ]}"#,
+        );
+        assert_eq!(offers[0].0.id, "140-0");
+    }
+
+    /// Sizes a page chooses add up without overflowing.
+    #[test]
+    fn huge_sizes_do_not_overflow() {
+        let huge = u64::MAX;
+        let offers = page_offers(&format!(
+            r#"{{"title":"T","duration":100000,"formats":[
+            {{"format_id":"v","ext":"mp4","vcodec":"avc1","acodec":"none","height":720,"filesize":{huge},"tbr":4000000000,"url":"u"}},
+            {{"format_id":"a","ext":"m4a","vcodec":"none","acodec":"mp4a","filesize":{huge},"abr":4000000000,"url":"u"}}
+        ]}}"#
+        ));
+        assert_eq!(offers[0].0.size, Some(u64::MAX));
+    }
 
     fn info(json: &str) -> Info {
         serde_json::from_str(json).unwrap()
