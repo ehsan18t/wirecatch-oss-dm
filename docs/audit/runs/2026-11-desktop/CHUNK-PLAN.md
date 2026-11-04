@@ -1096,7 +1096,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Flow `repeated-logic`                   | done        |
 | 1     | Flow `second-review-resume`             | done        |
 | 1     | Flow `second-review-disk-writes`        | done        |
-| 1     | UI review (`ui.md`)                     | pending     |
+| 1     | UI review (`ui.md`)                     | done        |
 | 2     | Grouping (`GROUPS.md`)                  | pending     |
 | 3     | Stage 3 (`AUDIT-LOG.md`)                | pending     |
 
