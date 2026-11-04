@@ -288,17 +288,17 @@ pub(crate) async fn download_with(
     clients: Clients,
 ) -> Result<Outcome> {
     request.options.validate()?;
-    let guard = match request.url.scheme() {
-        "http" | "https" => {
-            private_guard(
-                &request.url,
-                request.options.private_network,
-                request.options.stall_timeout,
-                clients.proxies(),
-            )
-            .await
-        }
-        _ => None,
+    // Only for links that will be sent: `Auto` looks the host up, and another scheme is refused without one.
+    let guard = if crate::url::is_supported(&request.url) {
+        private_guard(
+            &request.url,
+            request.options.private_network,
+            request.options.stall_timeout,
+            clients.proxies(),
+        )
+        .await
+    } else {
+        None
     };
     // A child, so a failed flush can stop this run without cancelling the caller's token.
     download_guarded(request, progress, cancel.child_token(), clients, guard).await

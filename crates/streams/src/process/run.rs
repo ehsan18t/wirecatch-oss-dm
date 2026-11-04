@@ -157,7 +157,7 @@ impl Ran {
         self.error_line()
             .filter(|line| !line.is_empty())
             .unwrap_or_else(|| match self.status {
-                Some(status) => format!("it gave no reason ({status})"),
+                Some(status) => format!("{} ({status})", super::NO_REASON),
                 None => super::NO_REASON.into(),
             })
     }
@@ -262,7 +262,7 @@ pub async fn run(
             }
             () = wait(&mut grace), if grace.is_some() => {
                 tracing::warn!(program = %program.display(), "a program's outputs stayed open after it ended, held by a program it started outside its group; no longer reading them");
-                readers.abort();
+                readers.stop();
                 break None;
             }
             () = cancel.cancelled() => break Some(RunError::Cancelled),
@@ -277,13 +277,34 @@ pub async fn run(
     if let Some(why) = stopped {
         tree.kill();
         kill(&mut child).await;
-        readers.abort();
+        readers.stop();
         if let RunError::TimedOut { stderr, .. } | RunError::Stalled { stderr, .. } = &why {
             tracing::warn!(program = %program.display(), %stderr, "stopped a program: {why}");
         }
         return Err(why);
     }
-    Ok(finish(program, &mut child, &mut tree, readers, tail).await)
+    let ran = finish(program, &mut child, &mut tree, readers, tail).await;
+    if ran.status.is_some_and(never_ran) {
+        return Err(start(io::Error::other(
+            "the system could not load it or a library it needs",
+        )));
+    }
+    Ok(ran)
+}
+
+/// Whether `status` says the system could not load the program or a library it needs, so it never ran.
+fn never_ran(status: ExitStatus) -> bool {
+    #[cfg(windows)]
+    const LOADER_FAILURES: [i32; 4] = [
+        0xC000_0135_u32.cast_signed(), // STATUS_DLL_NOT_FOUND
+        0xC000_0139_u32.cast_signed(), // STATUS_ENTRYPOINT_NOT_FOUND
+        0xC000_007B_u32.cast_signed(), // STATUS_INVALID_IMAGE_FORMAT
+        0xC000_0142_u32.cast_signed(), // STATUS_DLL_INIT_FAILED
+    ];
+    // ld.so's exit code when a library is missing.
+    #[cfg(not(windows))]
+    const LOADER_FAILURES: [i32; 1] = [127];
+    status.code().is_some_and(|c| LOADER_FAILURES.contains(&c))
 }
 
 /// How a program that ran to its end ended: waits for it, takes what it wrote, and logs a failure.
@@ -470,14 +491,16 @@ struct Readers {
     collected: JoinHandle<(Vec<u8>, bool)>,
     /// Standard error's reader.
     stderr: Option<JoinHandle<()>>,
+    /// Tells standard output's reader to end with what it has.
+    stop: CancellationToken,
     /// The lines read; closed once both outputs have ended.
     lines: mpsc::Receiver<(Output, String)>,
 }
 
 impl Readers {
-    /// Stops reading, for outputs held open by something outside the program's group.
-    fn abort(&self) {
-        self.collected.abort();
+    /// Stops reading, for outputs held open by something outside the program's group; what was collected is kept.
+    fn stop(&self) {
+        self.stop.cancel();
         if let Some(stderr) = &self.stderr {
             stderr.abort();
         }
@@ -489,13 +512,18 @@ fn read_outputs(child: &mut Child, mode: StdoutMode) -> Readers {
     let (tx, lines) = mpsc::channel::<(Output, String)>(LINE_QUEUE);
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
+    let stop = CancellationToken::new();
     let collected = tokio::spawn({
         let tx = tx.clone();
+        let stop = stop.clone();
         async move {
             match stdout {
-                Some(out) if mode == StdoutMode::Collect => collect(out, MAX_STDOUT).await,
+                Some(out) if mode == StdoutMode::Collect => collect(out, MAX_STDOUT, &stop).await,
                 Some(out) => {
-                    forward(BufReader::new(out), Output::Stdout, &tx).await;
+                    tokio::select! {
+                        () = forward(BufReader::new(out), Output::Stdout, &tx) => {}
+                        () = stop.cancelled() => {}
+                    }
                     (Vec::new(), false)
                 }
                 None => (Vec::new(), false),
@@ -508,20 +536,35 @@ fn read_outputs(child: &mut Child, mode: StdoutMode) -> Readers {
     Readers {
         collected,
         stderr,
+        stop,
         lines,
     }
 }
 
-/// Reads `out` to its end, keeping at most `limit` bytes and telling whether there was more. Everything is read, so the program never blocks on a full pipe.
-async fn collect(out: impl AsyncRead + Unpin, limit: u64) -> (Vec<u8>, bool) {
+/// Reads `out` to its end or until `stop`, keeping at most `limit` bytes and telling whether there was more. Everything is read, so the program never blocks on a full pipe.
+async fn collect(
+    out: impl AsyncRead + Unpin,
+    limit: u64,
+    stop: &CancellationToken,
+) -> (Vec<u8>, bool) {
     let mut out = out;
     let mut bytes = Vec::new();
+    let mut kept = (&mut out).take(limit);
+    let read = tokio::select! {
+        read = kept.read_to_end(&mut bytes) => read,
+        () = stop.cancelled() => return (bytes, false),
+    };
     // What arrived before a failed read is kept; the failure is logged, so a cut-off answer is not taken for a malformed one.
-    if let Err(e) = (&mut out).take(limit).read_to_end(&mut bytes).await {
+    if let Err(e) = read {
         tracing::warn!(error = %e, "could not read a program's output");
         return (bytes, false);
     }
-    match tokio::io::copy(&mut out, &mut tokio::io::sink()).await {
+    let mut sink = tokio::io::sink();
+    let rest = tokio::select! {
+        rest = tokio::io::copy(&mut out, &mut sink) => rest,
+        () = stop.cancelled() => return (bytes, true),
+    };
+    match rest {
         Ok(0) => (bytes, false),
         Ok(_) => (bytes, true),
         Err(e) => {
@@ -559,7 +602,10 @@ async fn forward(
                 return;
             }
         }
-        let text = cut(String::from_utf8_lossy(&line).trim_end_matches(['\r', '\n']));
+        let text = tail::cut_bytes(
+            String::from_utf8_lossy(&line).trim_end_matches(['\r', '\n']),
+            MAX_LINE,
+        );
         if tx.send((from, text)).await.is_err() {
             return;
         }
@@ -591,15 +637,6 @@ async fn read_line(
     }
 }
 
-/// `line`, cut to at most [`MAX_LINE`] bytes at a character boundary.
-fn cut(line: &str) -> String {
-    let mut end = line.len().min(MAX_LINE);
-    while !line.is_char_boundary(end) {
-        end -= 1;
-    }
-    line[..end].to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -626,10 +663,10 @@ mod tests {
     fn long_lines_are_cut_at_a_character_boundary() {
         // A three-byte character straddles the limit.
         let line = format!("{}€tail", "a".repeat(MAX_LINE - 1));
-        let cut = cut(&line);
+        let cut = tail::cut_bytes(&line, MAX_LINE);
         assert_eq!(cut.len(), MAX_LINE - 1);
         assert!(cut.bytes().all(|b| b == b'a'));
-        assert_eq!(super::cut("short"), "short");
+        assert_eq!(tail::cut_bytes("short", MAX_LINE), "short");
     }
 
     #[tokio::test]
@@ -645,9 +682,46 @@ mod tests {
 
     #[tokio::test]
     async fn output_past_the_limit_is_reported_and_read_to_its_end() {
-        let (bytes, truncated) = collect(&b"0123456789"[..], 4).await;
+        let stop = CancellationToken::new();
+        let (bytes, truncated) = collect(&b"0123456789"[..], 4, &stop).await;
         assert_eq!((bytes.as_slice(), truncated), (&b"0123"[..], true));
-        let (bytes, truncated) = collect(&b"0123"[..], 4).await;
+        let (bytes, truncated) = collect(&b"0123"[..], 4, &stop).await;
         assert_eq!((bytes.as_slice(), truncated), (&b"0123"[..], false));
+    }
+
+    /// Stopped at the limit, it cannot be told whether more was coming: a cut answer is never taken for a whole one.
+    #[tokio::test]
+    async fn output_stopped_at_the_limit_counts_as_cut_short() {
+        use tokio::io::AsyncWriteExt as _;
+        let (mut held, out) = tokio::io::duplex(64);
+        held.write_all(b"0123456789").await.unwrap();
+        let stop = CancellationToken::new();
+        let collecting = tokio::spawn({
+            let stop = stop.clone();
+            async move { collect(out, 4, &stop).await }
+        });
+        tokio::task::yield_now().await;
+        stop.cancel();
+        let (bytes, truncated) = collecting.await.unwrap();
+        assert_eq!((bytes.as_slice(), truncated), (&b"0123"[..], true));
+        drop(held);
+    }
+
+    /// An output something else holds open never ends; what it wrote is still the program's answer.
+    #[tokio::test]
+    async fn what_was_collected_survives_an_output_held_open() {
+        use tokio::io::AsyncWriteExt as _;
+        let (mut held, out) = tokio::io::duplex(64);
+        held.write_all(b"the answer").await.unwrap();
+        let stop = CancellationToken::new();
+        let collecting = tokio::spawn({
+            let stop = stop.clone();
+            async move { collect(out, 1024, &stop).await }
+        });
+        tokio::task::yield_now().await;
+        stop.cancel();
+        let (bytes, truncated) = collecting.await.unwrap();
+        assert_eq!((bytes.as_slice(), truncated), (&b"the answer"[..], false));
+        drop(held);
     }
 }

@@ -142,6 +142,16 @@ impl Body {
         }
     }
 
+    /// Where the bytes of this answer end, when its headers say. HTTP/3 and FTP bodies do not.
+    pub fn answer_end(&self) -> Option<u64> {
+        match self {
+            Body::Http { response, .. } => http::content_range(response.headers())?.end,
+            Body::Ftp(_) => None,
+            #[cfg(feature = "http3")]
+            Body::Http3(_) => None,
+        }
+    }
+
     /// For a body arriving over HTTP/3: gives up HTTP/3 for the rest of the
     /// download because of `why`, and returns true, so the caller carries on
     /// over TCP. False for any other body.
@@ -220,7 +230,7 @@ pub(crate) async fn open(
                 .proxies()
                 .ftp_route(host)
                 .map_err(|setting| Error::FtpProxyUnsupported { setting })?;
-            let target = ftp::Target::new(url, opts, clients.tls(), via)?;
+            let target = ftp::Target::new(url, opts, clients.tls(), via, guard)?;
             let retries = Retries::for_link(opts, clients.proxies(), url);
             let probe = with_retries(retries, cancel, || ftp::probe(&target, cancel)).await?;
             Ok(Opened {

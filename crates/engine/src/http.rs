@@ -88,6 +88,11 @@ impl Validators {
         }
     }
 
+    /// Whether anything here could ever contradict another answer.
+    pub(crate) fn can_compare(&self) -> bool {
+        self.etag.is_some() || self.strong_modified.is_some()
+    }
+
     /// Whether an answer carrying `answer` is about another version of the
     /// file than the one these validators came from. When both carry an
     /// `ETag`, it alone decides (RFC 9110, section 13.2.2 gives it precedence);
@@ -555,6 +560,10 @@ async fn fetch_from(
             got: None,
         }
         .into());
+    }
+    // Asked for inside the file the first answer described, so the file is shorter now.
+    if response.status() == StatusCode::RANGE_NOT_SATISFIABLE {
+        return Err(Error::RemoteChanged.into());
     }
     check_status(&response, StatusCode::PARTIAL_CONTENT)?;
     check_partial(response.headers(), from, request.total, &request.validators)?;
