@@ -112,7 +112,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-102 | fix(desktop): show startup notices only once       | `fix/startup-notices-once`       | 150, 214                     | P3       | medium | none         | merged |
 | PR-103 | fix(core): let a person's stop win                 | `fix/person-stop-wins`           | 152, 172                     | P3       | small  | none         | merged |
 | PR-104 | fix(engine): tighten network guard edge cases      | `fix/net-guard-edges`            | 154, 155, 216, 217           | P3       | medium | none         | merged |
-| PR-105 | fix(media): word program failures plainly          | `fix/word-program-failures`      | 164                          | P3       | small  | none         | open   |
+| PR-105 | fix(media): word program failures plainly          | `fix/word-program-failures`      | 164                          | P3       | small  | none         | merged |
 | PR-106 | refactor(desktop): share repeated form logic       | `refactor/share-form-logic`      | 168                          | P3       | medium | none         | open   |
 | PR-107 | fix: write kept files whole before replacing       | `fix/write-kept-files-whole`     | 170, 171                     | P3       | small  | none         | merged |
 | PR-108 | refactor(engine): remove code with no effect       | `refactor/engine-no-op-code`     | 179, 181                     | P3       | small  | none         | merged |
@@ -1424,7 +1424,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/media`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-media`, `cargo clippy -p wirecatch-media`
-- **Status:** open
+- **Status:** merged
 
 ### PR-106 refactor(desktop): share repeated form logic
 
