@@ -71,7 +71,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-61  | fix(core): move path checks off async threads      | `fix/path-checks-off-async`      | 70                           | P2       | medium | none         | merged |
 | PR-62  | fix(engine): handle resume files more safely       | `fix/safer-resume-files`         | 71, 88, 89, 158              | P2       | medium | none         | open   |
 | PR-63  | fix(desktop): make an AppImage restart reliable    | `fix/appimage-restart`           | 73, 184                      | P2       | medium | none         | merged |
-| PR-64  | fix(core): read the page again after a refusal     | `fix/reread-refused-page`        | 75, 134, 145                 | P2       | medium | none         | open   |
+| PR-64  | fix(core): read the page again after a refusal     | `fix/reread-refused-page`        | 75, 134, 145                 | P2       | medium | none         | merged |
 | PR-65  | fix(desktop): show all an import will change       | `fix/full-import-preview`        | 76, 148, 207                 | P2       | medium | none         | open   |
 | PR-66  | fix(desktop): show moved downloads in their place  | `fix/moved-row-position`         | 78                           | P2       | medium | none         | open   |
 | PR-67  | fix(queues): save whether a queue is in a run      | `fix/saved-queue-run`            | 79, 138                      | P2       | medium | none         | open   |
@@ -925,7 +925,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`, `crates/media`
 - **Proof:** `B07-p2-tests.patch` holds 10 tests for several PRs: take `audit_a_refused_hls_address_reads_the_page_again`.
 - **Checks:** `cargo test -p wirecatch-core -p wirecatch-media`, `cargo clippy -p wirecatch-core -p wirecatch-media`
-- **Status:** open
+- **Status:** merged
 
 ### PR-65 fix(desktop): show all an import will change
 
