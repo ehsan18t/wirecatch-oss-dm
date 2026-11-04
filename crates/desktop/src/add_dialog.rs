@@ -2,6 +2,8 @@
 //! link, where they are saved, in which queue (Automatic, where the rules send each, unless one is
 //! picked), and whether they start now. A link to a video page is read for its qualities (D51).
 
+use std::rc::Rc;
+
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::component::select::{Select, SelectItem, SelectState};
@@ -65,6 +67,7 @@ pub struct AddForm {
     busy: bool,
     /// Where Automatic sends the links, once the rules were tried on them.
     routes: Vec<Route>,
+    read_links: links::Kept,
     /// Bumped on each change of the links, so an older trial's answer is dropped.
     tried: u64,
     _subscriptions: Vec<Subscription>,
@@ -203,6 +206,7 @@ impl AddForm {
             problem: None,
             busy: false,
             routes: Vec::new(),
+            read_links: links::Kept::default(),
             tried: 0,
             _subscriptions: vec![edited, redraw],
         };
@@ -303,11 +307,15 @@ impl AddForm {
     }
 
     fn urls(&self, cx: &App) -> Vec<String> {
-        links::extract(&self.links.read(cx).value())
+        self.found(cx).urls.clone()
+    }
+
+    fn found(&self, cx: &App) -> Rc<links::Found> {
+        self.read_links.of(&self.links.read(cx).value())
     }
 
     fn link_count(&self, cx: &App) -> usize {
-        self.urls(cx).len()
+        self.found(cx).urls.len()
     }
 
     fn picked_queue(&self, cx: &App) -> Option<QueueId> {
@@ -454,9 +462,9 @@ impl AddForm {
 impl Render for AddForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let folder_row = self.folder_row(cx);
-        let raw = self.links.read(cx).value();
-        let urls = links::extract(&raw);
-        let ignored = links::lines_without_links(&raw);
+        let found = self.found(cx);
+        let urls = &found.urls;
+        let ignored = found.lines_without_links;
         let hint = match ignored {
             0 => "One link per line, or paste several at once.".to_owned(),
             1 => "One line has no link in it and is left out.".to_owned(),

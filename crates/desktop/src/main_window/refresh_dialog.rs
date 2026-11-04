@@ -27,6 +27,7 @@ pub struct RefreshForm {
     library: Entity<Library>,
     id: DownloadId,
     link: Entity<InputState>,
+    read_link: links::Kept,
     busy: bool,
     problem: Option<String>,
     _edited: Subscription,
@@ -91,6 +92,7 @@ impl RefreshForm {
             library,
             id,
             link,
+            read_link: links::Kept::default(),
             busy: false,
             problem: None,
             _edited: edited,
@@ -99,9 +101,8 @@ impl RefreshForm {
 
     /// The link in the field, if it holds one.
     fn found(&self, cx: &App) -> Option<String> {
-        links::extract(&self.link.read(cx).value())
-            .into_iter()
-            .next()
+        let found = self.read_link.of(&self.link.read(cx).value());
+        found.urls.first().cloned()
     }
 
     fn save(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {

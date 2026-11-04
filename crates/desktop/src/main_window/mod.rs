@@ -296,6 +296,8 @@ pub struct MainWindow {
     folded: HashSet<Group>,
     /// The title bar's search, which narrows the list to names and links holding it.
     search: Entity<InputState>,
+    /// The links typed or pasted into the search.
+    typed: links::Kept,
     /// Every queue shows in the navigation, not only the first few.
     all_queues: bool,
     /// Each running queue's speeds, for its graph.
@@ -452,6 +454,7 @@ impl MainWindow {
             queue_speeds: HashMap::new(),
             focus,
             search,
+            typed: links::Kept::default(),
             _subscriptions: vec![follow_system, redraw, searched, updates],
         }
     }

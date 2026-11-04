@@ -1,5 +1,8 @@
 //! Links in pasted or typed text.
 
+use std::cell::RefCell;
+use std::collections::HashSet;
+use std::rc::Rc;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -14,41 +17,59 @@ static LINK: LazyLock<Option<Regex>> = LazyLock::new(|| {
 });
 
 /// Every link in `text`, each once, in order. Punctuation that ends a sentence after a link is
-/// not part of it.
+/// not part of it. One pass over `text`: it may be a paste of any size, and a window reads it on
+/// every redraw, through [`Kept`].
 pub fn extract(text: &str) -> Vec<String> {
     let Some(link) = LINK.as_ref() else {
         return Vec::new();
     };
-    let mut found: Vec<String> = Vec::new();
-    let mut from = 0;
-    while let Some(matched) = link.find_at(text, from) {
-        let raw = up_to_closing_quote(matched.as_str()).unwrap_or(matched.as_str());
-        from = matched.start() + raw.len();
-        if let Ok(url) = Url::parse(without_punctuation(raw)) {
-            let url = String::from(url);
-            if !found.contains(&url) {
-                found.push(url);
+    let mut seen = HashSet::new();
+    let mut found = Vec::new();
+    for piece in between_closing_quotes(text) {
+        for raw in link.find_iter(piece) {
+            if let Ok(url) = Url::parse(without_punctuation(raw.as_str())) {
+                let url = String::from(url);
+                if seen.insert(url.clone()) {
+                    found.push(url);
+                }
             }
         }
     }
     found
 }
 
-/// `raw` up to a quote that closes around it: a list of quoted links reads as one match.
-fn up_to_closing_quote(raw: &str) -> Option<&str> {
-    raw.match_indices('\'')
-        .find(|(at, _)| raw[at + 1..].starts_with([',', ';', ')', ']']))
-        .map(|(at, _)| &raw[..at])
+/// `text` cut at each quote that closes around something: a list of quoted links would otherwise
+/// read as one link.
+fn between_closing_quotes(text: &str) -> Vec<&str> {
+    let mut pieces = Vec::new();
+    let mut start = 0;
+    for (at, _) in text.match_indices('\'') {
+        if text[at + 1..].starts_with([',', ';', ')', ']']) {
+            pieces.push(&text[start..at]);
+            start = at + 1;
+        }
+    }
+    pieces.push(&text[start..]);
+    pieces
 }
 
 /// `raw` without the punctuation after it. A closing bracket stays when its opener is inside.
 fn without_punctuation(raw: &str) -> &str {
+    let count = |bracket| raw.bytes().filter(|byte| *byte == bracket).count();
+    let (round_open, square_open) = (count(b'('), count(b'['));
+    let (mut round_close, mut square_close) = (count(b')'), count(b']'));
     let mut link = raw;
     while let Some(last) = link.chars().last() {
         let ends = match last {
             ',' | '.' | ';' | ':' | '!' | '?' | '\'' => true,
-            ')' => link.matches(')').count() > link.matches('(').count(),
-            ']' => link.matches(']').count() > link.matches('[').count(),
+            ')' if round_close > round_open => {
+                round_close -= 1;
+                true
+            }
+            ']' if square_close > square_open => {
+                square_close -= 1;
+                true
+            }
             _ => false,
         };
         if !ends {
@@ -59,8 +80,34 @@ fn without_punctuation(raw: &str) -> &str {
     link
 }
 
+/// The links of a field's text and its lines without one, worked out again only when the text
+/// changes.
+#[derive(Default)]
+pub struct Kept(RefCell<Option<(String, Rc<Found>)>>);
+
+/// What a text holds.
+pub struct Found {
+    pub urls: Vec<String>,
+    pub lines_without_links: usize,
+}
+
+impl Kept {
+    pub fn of(&self, text: &str) -> Rc<Found> {
+        let mut kept = self.0.borrow_mut();
+        if let Some((_, found)) = kept.as_ref().filter(|(read, _)| read == text) {
+            return found.clone();
+        }
+        let found = Rc::new(Found {
+            urls: extract(text),
+            lines_without_links: lines_without_links(text),
+        });
+        *kept = Some((text.to_owned(), found.clone()));
+        found
+    }
+}
+
 /// Lines with text but no link, which the Add dialog leaves out.
-pub fn lines_without_links(text: &str) -> usize {
+fn lines_without_links(text: &str) -> usize {
     text.lines()
         .filter(|line| !line.trim().is_empty() && extract(line).is_empty())
         .count()
@@ -105,6 +152,33 @@ mod tests {
         assert_eq!(
             extract("'https://example.com/a','https://example.com/b'"),
             ["https://example.com/a", "https://example.com/b"]
+        );
+    }
+
+    #[test]
+    fn a_huge_paste_is_read_in_one_pass() {
+        const SIZE: usize = 1_000_000;
+        let brackets = format!("https://example.com/a{}", ")".repeat(SIZE));
+        assert_eq!(extract(&brackets), ["https://example.com/a"]);
+        let squares = format!("https://example.com/a{}", "]".repeat(SIZE));
+        assert_eq!(extract(&squares), ["https://example.com/a"]);
+        let quoted: Vec<String> = (0..SIZE / 10)
+            .map(|id| format!("'https://example.com/{id}',"))
+            .collect();
+        let quoted = quoted.concat();
+        assert_eq!(extract(&quoted).len(), SIZE / 10);
+    }
+
+    #[test]
+    fn a_text_is_read_again_only_when_it_changes() {
+        let kept = Kept::default();
+        let first = kept.of("https://example.com/a\nnotes");
+        assert_eq!(first.urls, ["https://example.com/a"]);
+        assert_eq!(first.lines_without_links, 1);
+        assert!(Rc::ptr_eq(&first, &kept.of("https://example.com/a\nnotes")));
+        assert_eq!(
+            kept.of("https://example.com/b").urls,
+            ["https://example.com/b"]
         );
     }
 
