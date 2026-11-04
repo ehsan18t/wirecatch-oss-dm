@@ -61,6 +61,63 @@ Filename: "{app}\{#AppExe}.exe"; Description: "Start {#AppName}"; Flags: nowait 
 Filename: "{app}\{#AppExe}.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [Code]
+const
+  EVENT_MODIFY_STATE = $0002;
+  SYNCHRONIZE = $00100000;
+  // Longer than QUIT_PATIENCE in crates/shell/src/quit.rs, the most the app takes to quit.
+  APP_QUIT_WAIT_MS = 20000;
+
+var
+  // Set while this setup replaces the app that started it (D111).
+  UpdatingFromApp: Boolean;
+  Installed: Boolean;
+
+function OpenEvent(Access: DWORD; Inherit: BOOL; Name: String): THandle;
+  external 'OpenEventW@kernel32.dll stdcall';
+function SetEvent(Handle: THandle): BOOL;
+  external 'SetEvent@kernel32.dll stdcall';
+function OpenProcess(Access: DWORD; Inherit: BOOL; ProcessId: DWORD): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(Handle: THandle; Milliseconds: DWORD): DWORD;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(Handle: THandle): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+// This setup has its approval: tells the app, which waits until now to quit, and gives it time,
+// since Restart Manager would otherwise end it while its downloads stop.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Pid: Longint;
+  Handle: THandle;
+begin
+  Result := '';
+  Pid := StrToIntDef(ExpandConstant('{param:UPDATEFROM|0}'), 0);
+  if Pid = 0 then
+    exit;
+  UpdatingFromApp := True;
+  Handle := OpenEvent(EVENT_MODIFY_STATE, False, 'Local\AppUpdateApproved-' + IntToStr(Pid));
+  if Handle <> 0 then
+  begin
+    SetEvent(Handle);
+    CloseHandle(Handle);
+  end;
+  Handle := OpenProcess(SYNCHRONIZE, False, Pid);
+  if Handle <> 0 then
+  begin
+    WaitForSingleObject(Handle, APP_QUIT_WAIT_MS);
+    CloseHandle(Handle);
+  end;
+end;
+
+// The app quit for an update that failed: Setup has rolled back, so the old version starts again.
+procedure DeinitializeSetup();
+var
+  Code: Integer;
+begin
+  if UpdatingFromApp and not Installed then
+    ExecAsOriginalUser(ExpandConstant('{app}\{#AppExe}.exe'), '', '', SW_SHOWNORMAL, ewNoWait, Code);
+end;
+
 function RunProgram(Exe: String; Params: String): Integer;
 var
   Code: Integer;
@@ -81,6 +138,7 @@ var
 begin
   if CurStep <> ssPostInstall then
     exit;
+  Installed := True;
   // Every user's browsers reach the bridge in Program Files, which only administrators can change (D25.2).
   Code := RunBridge('install --all-users');
   if Code <> 0 then

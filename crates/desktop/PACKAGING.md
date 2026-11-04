@@ -36,7 +36,7 @@ A version tag (`v1.2.3`, or `v1.2.3-beta.1` for a pre-release) starts `.github/w
 - `update.json` lists each installer with its system, architecture, kind, size and SHA-256 (`scripts/release/manifest.mjs`; `crates/updates/samples/update.json` shows the shape).
 - `update.json.sig` is its Ed25519 signature, made with the repository secret `UPDATER_PRIVATE_KEY`.
 
-The app looks at the repository's releases a minute after it starts and once a day, and offers the newest release newer than itself, pre-releases only with "Get pre-release versions" on. It trusts a release only through a manifest whose signature matches the public key in `config/product.toml`, and installs a file only when its size and SHA-256 match the manifest. On Windows it runs the setup silently and quits; the setup starts the new version. An AppImage takes the place of the one running. A `.deb` or `.rpm` install opens the release page, since the system's package manager installs those.
+The app looks at the repository's releases a minute after it starts and once a day, and offers the newest release newer than itself, pre-releases only with "Get pre-release versions" on. It trusts a release only through a manifest whose signature matches the public key in `config/product.toml`, and installs a file only when its size and SHA-256 match the manifest. On Windows it runs the setup silently and quits once the administrator's prompt is approved; the setup starts the new version, or the old one again if it fails. An AppImage takes the place of the one running. A `.deb` or `.rpm` install opens the release page, since the system's package manager installs those.
 
 To make the key pair once:
 

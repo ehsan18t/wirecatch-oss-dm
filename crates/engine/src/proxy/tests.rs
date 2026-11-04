@@ -167,6 +167,12 @@ fn proxy_host_names_come_from_the_settings() {
     );
 }
 
+fn socks_only_uses_socks4() -> bool {
+    from_system("socks=s.corp:1080", "").may_use_socks4()
+        && !from_system("proxy.corp:8080", "").may_use_socks4()
+        && !from_env(&[("ALL_PROXY", "socks5://s.corp:1080")]).may_use_socks4()
+}
+
 /// The system's proxy counts only while no proxy variable is set, for every
 /// protocol or per protocol, and its exceptions apply unless `NO_PROXY` is set.
 #[test]
@@ -193,6 +199,16 @@ fn the_system_proxy_counts_when_no_variable_sets_one() {
         Some("http://secure.corp:443/")
     );
     assert_eq!(setting(&per_protocol, Scheme::Ftp, "files.example"), None);
+
+    assert!(socks_only_uses_socks4());
+
+    let brackets = from_system("proxy.corp:8080", "[::1];[fd00::1]");
+    assert_eq!(setting(&brackets, Scheme::Https, "[::1]"), None);
+    assert_eq!(setting(&brackets, Scheme::Https, "[fd00::1]"), None);
+    assert_eq!(
+        setting(&brackets, Scheme::Https, "[fd00::2]"),
+        Some(ProxySetting::System)
+    );
 
     // A SOCKS entry serves every protocol without its own, as in the system,
     // so FTP is refused rather than going around it.

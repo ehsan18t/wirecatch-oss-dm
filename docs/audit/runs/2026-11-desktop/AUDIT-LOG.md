@@ -29,15 +29,15 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 2   | Removing a finished download can delete a whole folder                                            | `Xsecurity-path-handling-1` `04-8`                                                                 | P0       | small  | P0, permanent loss from one click; depends on nothing                                                            | `Xsecurity-path-handling-1`                   | fixed  |
 | 3   | A cut-off download of unknown size is reported as complete                                        | `Xsecond-review-disk-writes-2`                                                                     | P0       | small  | P0, silent cut file on ordinary conditions; depends on nothing                                                   | `Xsecond-review-disk-writes-2`                | fixed  |
 | 4   | A restart can mark a download finished on a file it never downloaded                              | `04-1` `Xcrash-and-resume-1` `Xsecond-review-resume-1` `B02-2`                                     | P1       | medium | P1 that reshapes what a saved row records, which several later items use                                         | `04-1`                                        | fixed  |
-| 5   | A browser download that meets Ask is dropped and goes back to the browser                         | `05-3` `07-1` `Xconcurrency-3` `Xpath-normal-download-2`                                           | P1       | small  | P1, 4 findings; must land before item 11, whose fix makes this path common                                       | `05-3` `Xconcurrency-3-and-6`                 | open   |
+| 5   | A browser download that meets Ask is dropped and goes back to the browser                         | `05-3` `07-1` `Xconcurrency-3` `Xpath-normal-download-2`                                           | P1       | small  | P1, 4 findings; must land before item 11, whose fix makes this path common                                       | `05-3` `Xconcurrency-3-and-6`                 | fixed  |
 | 6   | An inherited APPIMAGE variable can make the app overwrite or start another program                | `12-1` `Xpath-app-update-4` `Xsecurity-update-signatures-2` `B05-1`                                | P1       | small  | P1, 4 findings; must land before item 7 switches updates on                                                      | `12-1`                                        | fixed  |
 | 7   | The app never looks for updates, and every proxy test fails                                       | `Xfeature-behaviour-1` `Xpath-app-update-1` `Xsecurity-update-signatures-1` `Xfeature-behaviour-2` | P1       | small  | P1, 4 findings; right after the item that makes updates safe to switch on                                        | `Xfeature-behaviour-1` `Xfeature-behaviour-2` | fixed  |
 | 8   | A move across drives can leave a cut-off file under the final name                                | `Xsecond-review-disk-writes-7` `Xcrash-and-resume-4`                                               | P2       | medium | P2 placed early: ending the process at the quit limit would make this cut-off file reachable on an ordinary quit | none                                          | fixed  |
 | 9   | Quitting during a move leaves the list pointing at the wrong place                                | `Xshutdown-1` `Xconcurrency-4`                                                                     | P1       | medium | P1; needs the staged copy, and shapes what the quit limit waits for                                              | `Xshutdown-1`                                 | open   |
 | 10  | The quit time limit does not end the process                                                      | `Xshutdown-3` `22-1` `B10-2` `22-7`                                                                | P1       | medium | P1, 4 findings; its two blockers sit just above it                                                               | `Xshutdown-3`                                 | open   |
 | 11  | "If the file is already in the folder" is skipped for names from the link or browser              | `05-2` `Xpath-normal-download-1` `B01-1`                                                           | P1       | medium | P1, 3 findings; after the items its fix would otherwise make common                                              | `05-2`                                        | open   |
-| 12  | A settings file can send downloads into folders whose programs the app runs                       | `Xsecurity-path-handling-2` `Xsecurity-addon-unpacking-1` `B12-1`                                  | P1       | medium | P1, 3 findings, medium                                                                                           | `Xsecurity-path-handling-2`                   | open   |
-| 13  | Replace on a file with another extension downloads everything again and strands the old folder    | `17-2` `Xpath-media-download-5`                                                                    | P2       | medium | P2 placed early: it strands the folders that the next item trusts                                                | `17-2`                                        | open   |
+| 12  | A settings file can send downloads into folders whose programs the app runs                       | `Xsecurity-path-handling-2` `Xsecurity-addon-unpacking-1` `B12-1`                                  | P1       | medium | P1, 3 findings, medium                                                                                           | `Xsecurity-path-handling-2`                   | fixed  |
+| 13  | Replace on a file with another extension downloads everything again and strands the old folder    | `17-2` `Xpath-media-download-5`                                                                    | P2       | medium | P2 placed early: it strands the folders that the next item trusts                                                | `17-2`                                        | fixed  |
 | 14  | A new media download can save another download's video                                            | `17-1` `Xsecond-review-resume-2` `Xpath-media-download-6`                                          | P1       | medium | P1, 3 findings, medium; after item 13                                                                            | `17-1`                                        | open   |
 | 15  | Typing a space in search pauses downloads, and Enter can open a file                              | `25-1` `B13-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `25-1`                                        | open   |
 | 16  | A very large HLS playlist freezes inspection for minutes to hours                                 | `14-2` `B08-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `14-2`                                        | fixed  |
@@ -51,7 +51,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 24  | A video format that needs cookies always fails when the engine fetches it                         | `Xpath-media-download-2`                                                                           | P1       | medium | P1, 1 finding, medium                                                                                            | `Xpath-media-download-2`                      | fixed  |
 | 25  | The could-not-save banner is wrong both ways, and its Try again saves nothing                     | `03-4` `23-10` `25-2` `Xfeature-behaviour-3` `03-8`                                                | P2       | medium | P2, 5 findings, medium                                                                                           | `25-2`                                        | open   |
 | 26  | Settings, queues and proxies that cannot be read are silently replaced                            | `03-2` `04-6` `B09-1` `B09-2`                                                                      | P2       | medium | P2, 4 findings, medium                                                                                           | none                                          | open   |
-| 27  | A removal under way at quit comes back, and a capture is downloaded twice                         | `04-5` `Xconcurrency-2` `Xshutdown-2` `B02-3`                                                      | P2       | medium | P2, 4 findings, medium                                                                                           | `Xconcurrency-2` `Xshutdown-2`                | open   |
+| 27  | A removal under way at quit comes back, and a capture is downloaded twice                         | `04-5` `Xconcurrency-2` `Xshutdown-2` `B02-3`                                                      | P2       | medium | P2, 4 findings, medium                                                                                           | `Xconcurrency-2` `Xshutdown-2`                | fixed  |
 | 28  | Nothing knows whether a download can continue, so messages promise what will not happen           | `01-6` `32-1` `28-1` `B03-1`                                                                       | P2       | medium | P2, 4 findings, medium                                                                                           | none                                          | open   |
 | 29  | The Public Suffix List's date and Check now were never put in Settings                            | `23-5` `30-3` `Xfeature-behaviour-4` `B19-4`                                                       | P2       | medium | P2, 4 findings, medium                                                                                           | none                                          | open   |
 | 30  | The window redoes whole-list work on every frame and progress tick                                | `25-6` `26-7` `27-8` `B13-3`                                                                       | P2       | large  | P2, 4 findings, large                                                                                            | none                                          | open   |
@@ -60,20 +60,20 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 33  | Failing to delete a temporary file turns a saved video into a failure                             | `15-2` `Xsecond-review-disk-writes-6` `B06-2`                                                      | P2       | small  | P2, 3 findings, small                                                                                            | none                                          | fixed  |
 | 34  | A damaged or squatted key does not lead the bridge to start the app and renew it                  | `06-1` `08-3` `B04-2`                                                                              | P2       | small  | P2, 3 findings, small                                                                                            | `B04-p2-checks`                               | open   |
 | 35  | An open file-exists question outlives the download state it asked about                           | `04-4` `05-7` `Xconcurrency-8`                                                                     | P2       | medium | P2, 3 findings, medium                                                                                           | `04-4`                                        | open   |
-| 36  | Proxy exceptions are accepted that can never match                                                | `09-3` `19-3` `19-5`                                                                               | P2       | medium | P2, 3 findings, medium                                                                                           | none                                          | open   |
+| 36  | Proxy exceptions are accepted that can never match                                                | `09-3` `19-3` `19-5`                                                                               | P2       | medium | P2, 3 findings, medium                                                                                           | none                                          | fixed  |
 | 37  | A typed file name is dropped when the download turns out to be a page                             | `17-7` `Xpath-normal-download-5` `Xfeature-behaviour-6`                                            | P2       | medium | P2, 3 findings, medium                                                                                           | `B07-p2-tests`                                | fixed  |
-| 38  | Pages yt-dlp describes at the top level, or with several videos, are misread                      | `Xpath-media-download-3` `Xpath-media-download-4` `B07-1`                                          | P2       | medium | P2, 3 findings, medium                                                                                           | `B07-p2-tests`                                | open   |
+| 38  | Pages yt-dlp describes at the top level, or with several videos, are misread                      | `Xpath-media-download-3` `Xpath-media-download-4` `B07-1`                                          | P2       | medium | P2, 3 findings, medium                                                                                           | `B07-p2-tests`                                | fixed  |
 | 39  | The CLI strands files under another name when a resume file is damaged or the name is numbered    | `01-1` `F-1` `M-2`                                                                                 | P2       | medium | P2, 3 findings, medium                                                                                           | `FT-kill`                                     | fixed  |
 | 40  | The add-on's state mixes an operation with whether the tools work                                 | `24-3` `27-4` `B12-2`                                                                              | P2       | medium | P2, 3 findings, medium; clears the way for item 53                                                               | none                                          | open   |
 | 41  | A download retried or removed just after it ended is still told as ended                          | `26-5` `26-8` `B17-2`                                                                              | P2       | medium | P2, 3 findings, medium                                                                                           | none                                          | open   |
 | 42  | The network guard's local-address rule is written twice                                           | `09-8`                                                                                             | P3       | small  | P3 placed here: merging the copies comes before the FTP fix that needs the rule                                  | none                                          | open   |
 | 43  | The local network rule does not apply to FTP                                                      | `09-1` `21-1` `Xsecurity-bridge-and-pipe-input-1`                                                  | P2       | medium | P2, 3 findings, medium; after item 42                                                                            | none                                          | open   |
-| 44  | "This host is under that site" is written four times, and the copies differ                       | `10-4` `Xrepeated-logic-3`                                                                         | P3       | medium | P3 placed here: merging the copies comes before the host fix in the next item                                    | none                                          | open   |
+| 44  | "This host is under that site" is written four times, and the copies differ                       | `10-4` `Xrepeated-logic-3`                                                                         | P3       | medium | P3 placed here: merging the copies comes before the host fix in the next item                                    | none                                          | fixed  |
 | 45  | ftps and ftpes hosts are read raw by every check                                                  | `21-1` `Xsecurity-bridge-and-pipe-input-1` `Xrepeated-logic-3` `B14-1`                             | P2       | small  | P2, 4 findings, small; after item 44                                                                             | none                                          | open   |
-| 46  | An apostrophe in a link leaves its password or signed query in the log                            | `20-1`                                                                                             | P2       | small  | P2; must land before item 47 removes the mask that hides this today                                              | none                                          | open   |
+| 46  | An apostrophe in a link leaves its password or signed query in the log                            | `20-1`                                                                                             | P2       | small  | P2; must land before item 47 removes the mask that hides this today                                              | none                                          | fixed  |
 | 47  | A link's password reaches the browser extension, and a crash's partial file is not picked up      | `05-5` `05-10` `Xrepeated-logic-8`                                                                 | P2       | medium | P2, 3 findings, medium; after item 46                                                                            | none                                          | open   |
 | 48  | A finished file with a leftover resume file is downloaded again                                   | `Xcrash-and-resume-2` `Xpath-normal-download-6`                                                    | P2       | small  | P2, 2 findings, small; after item 4; clears the way for item 174                                                 | `Xcrash-and-resume-2`                         | open   |
-| 49  | A title holding % or $ sends yt-dlp's file to another folder or stops it                          | `16-1` `Xsecurity-path-handling-3`                                                                 | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
+| 49  | A title holding % or $ sends yt-dlp's file to another folder or stops it                          | `16-1` `Xsecurity-path-handling-3`                                                                 | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 50  | Path parameters such as ;type=i or ;jsessionid end up in the file name                            | `21-2` `B11-2`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | `21-2` `B11-2`                                | fixed  |
 | 51  | Add-on installs and app updates get advice about links and folders they do not have               | `28-3` `B11-3`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
 | 52  | A damaged list set aside can be deleted at the next start                                         | `03-5` `Xdatabase-migrations-1`                                                                    | P2       | small  | P2, 2 findings, small                                                                                            | `03-5`                                        | open   |
@@ -83,22 +83,22 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 56  | A pasted link is cut at an apostrophe, a space or a bracket, so another address is downloaded     | `23-2` `Xpath-normal-download-4`                                                                   | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
 | 57  | Choosing a file or folder without a file chooser portal does nothing and says nothing             | `23-6` `B18-1`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
 | 58  | A typed file name with a dot loses the words after it                                             | `17-3` `Xrepeated-logic-2`                                                                         | P2       | small  | P2, 2 findings, small                                                                                            | `17-3`                                        | open   |
-| 59  | Downloaded installers are never removed                                                           | `12-2` `Xpath-app-update-5`                                                                        | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
+| 59  | Downloaded installers are never removed                                                           | `12-2` `Xpath-app-update-5`                                                                        | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 60  | An update with no usable file is shown as a package manager update or opens the release page      | `Xpath-app-update-6` `Xsecurity-update-signatures-3`                                               | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
-| 61  | A conversion demands audio or video that a format did not describe                                | `Xpath-media-download-10` `B07-4`                                                                  | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
-| 62  | A torn last line of a stream's log can truncate its joined track                                  | `Xsecond-review-disk-writes-4` `Xsecond-review-resume-3`                                           | P2       | small  | P2, 2 findings, small                                                                                            | `Xsecond-review-disk-writes-4`                | open   |
+| 61  | A conversion demands audio or video that a format did not describe                                | `Xpath-media-download-10` `B07-4`                                                                  | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
+| 62  | A torn last line of a stream's log can truncate its joined track                                  | `Xsecond-review-disk-writes-4` `Xsecond-review-resume-3`                                           | P2       | small  | P2, 2 findings, small                                                                                            | `Xsecond-review-disk-writes-4`                | fixed  |
 | 63  | Blank lines hide a program's failure reason and grow memory without limit                         | `13-1` `13-5`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | `13-1`                                        | open   |
 | 64  | No test covers control characters in names or a part file that cannot be created                  | `M-1` `M-3`                                                                                        | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 65  | Ctrl+C in the CLI can exit with the wrong code or abort                                           | `32-2` `32-3`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 66  | Keep existing, Replace and captures leave the wrong category on the row                           | `05-11` `07-4`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
 | 67  | A finished media file is not flushed before its sources are deleted                               | `Xsecond-review-disk-writes-3` `Xsecond-review-resume-7`                                           | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
-| 68  | Leftover proxy code from the earlier form has no caller                                           | `19-8` `Xrepeated-logic-7` `B05-2`                                                                 | P3       | small  | P3 placed here: removing the third copy comes before the fix to the live one                                     | none                                          | open   |
-| 69  | yt-dlp ignores proxy exceptions and the page's scheme                                             | `19-4` `B15-1`                                                                                     | P2       | small  | P2, 2 findings, small; after item 68                                                                             | none                                          | open   |
+| 68  | Leftover proxy code from the earlier form has no caller                                           | `19-8` `Xrepeated-logic-7` `B05-2`                                                                 | P3       | small  | P3 placed here: removing the third copy comes before the fix to the live one                                     | none                                          | fixed  |
+| 69  | yt-dlp ignores proxy exceptions and the page's scheme                                             | `19-4` `B15-1`                                                                                     | P2       | small  | P2, 2 findings, small; after item 68                                                                             | none                                          | fixed  |
 | 70  | Choosing a path blocks an async thread on the disk, so a dead share stalls every command          | `05-9` `Xconcurrency-5`                                                                            | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 71  | A passing read error or a failed rename deletes a download's data                                 | `Xsecond-review-resume-4` `Xsecond-review-disk-writes-5`                                           | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
-| 72  | The app quits before the Windows setup has asked for approval, so a refusal reaches no one        | `Xpath-app-update-2` `Xsecurity-update-signatures-5`                                               | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
+| 72  | The app quits before the Windows setup has asked for approval, so a refusal reaches no one        | `Xpath-app-update-2` `Xsecurity-update-signatures-5`                                               | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 73  | An AppImage restart can be lost while the old copy exits                                          | `12-3` `Xpath-app-update-3`                                                                        | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
-| 74  | A stored bad part can never be thrown away, so Refresh link cannot help                           | `15-3` `Xpath-media-download-6`                                                                    | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
+| 74  | A stored bad part can never be thrown away, so Refresh link cannot help                           | `15-3` `Xpath-media-download-6`                                                                    | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 75  | A refused HLS or yt-dlp address fails instead of reading the page again                           | `17-5` `B07-3`                                                                                     | P2       | medium | P2, 2 findings, medium                                                                                           | `B07-p2-tests`                                | open   |
 | 76  | The import preview hides proxy and local site changes                                             | `19-1` `27-2`                                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
 | 77  | A missing library is not seen as a broken add-on, and can raise a system dialog                   | `Xsecurity-addon-unpacking-2` `B12-3`                                                              | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
@@ -119,7 +119,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 92  | A command-line argument that is not valid Unicode aborts the app                                  | `22-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 93  | Uninstalling while the app runs leaves its program behind                                         | `29-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 94  | The AppImage's library folder leaks into programs the app starts                                  | `29-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 95  | A video's title is cut at its last slash                                                          | `16-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | open   |
+| 95  | A video's title is cut at its last slash                                                          | `16-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | fixed  |
 | 96  | yt-dlp progress goes backwards for a video with separate audio                                    | `16-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 97  | A quality says 60 fps but may download 30 fps                                                     | `16-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | open   |
 | 98  | Speed limits do not reach yt-dlp                                                                  | `17-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
@@ -132,18 +132,18 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 105 | Replacing a file another program has open blames the folder                                       | `28-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `28-2`                                        | open   |
 | 106 | A stream manifest over the limit offers a retry that cannot help                                  | `28-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 107 | A suffix list that could not be saved blames the internet connection                              | `10-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 108 | An add-on repair downloads everything and puts yt-dlp back to the pinned version                  | `11-1`                                                                                             | P2       | small  | P2, small; the next item's damaged-record route needs it                                                         | none                                          | open   |
-| 109 | The add-on check acts on what it read before its wait, so a removed add-on comes back             | `11-2`                                                                                             | P2       | small  | P2, 1 finding, small; after item 108                                                                             | none                                          | open   |
-| 110 | One bad yt-dlp release stops the check, and a failed check forgets its offers                     | `Xsecurity-addon-unpacking-3`                                                                      | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 108 | An add-on repair downloads everything and puts yt-dlp back to the pinned version                  | `11-1`                                                                                             | P2       | small  | P2, small; the next item's damaged-record route needs it                                                         | none                                          | fixed  |
+| 109 | The add-on check acts on what it read before its wait, so a removed add-on comes back             | `11-2`                                                                                             | P2       | small  | P2, 1 finding, small; after item 108                                                                             | none                                          | fixed  |
+| 110 | One bad yt-dlp release stops the check, and a failed check forgets its offers                     | `Xsecurity-addon-unpacking-3`                                                                      | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 111 | Cancel on a selection stops at a finished download                                                | `25-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 112 | The drawer stays open over a page opened from its foot                                            | `25-7`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 113 | Change queue inside the details opens the same details again                                      | `25-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 114 | A page address that is not a web address counts as on the person's network                        | `10-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 115 | A Windows socks= proxy fails on sites whose first address is IPv6                                 | `09-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 115 | A Windows socks= proxy fails on sites whose first address is IPv6                                 | `09-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 116 | The proxy form says a saved password is kept, then forgets it                                     | `27-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 117 | A download that fails to start leaves its slot empty                                              | `04-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 118 | A closing queue's slots are given away at once, exceeding the limit                               | `18-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 119 | Regular expressions differing only in case count as one rule                                      | `18-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 117 | A download that fails to start leaves its slot empty                                              | `04-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
+| 118 | A closing queue's slots are given away at once, exceeding the limit                               | `18-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
+| 119 | Regular expressions differing only in case count as one rule                                      | `18-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 120 | Enter in the delete-queue field closes the question and deletes nothing                           | `27-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 121 | Saving a queue changes its speed limit                                                            | `27-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 122 | Confirming a file unedited stops the server from naming it                                        | `24-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
@@ -183,7 +183,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 156 | Tests do not cover the stored forms of enums and old settings                                     | `03-6` `Xdatabase-migrations-5`                                                                    | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 157 | A held-open output loses a program's collected output, and its test cannot fail                   | `13-2` `13-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 158 | A resume file's temporary file can stay for good                                                  | `01-8` `Xsecond-review-disk-writes-8`                                                              | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
-| 159 | Add-on release files of skipped versions stay in the work folder                                  | `11-4` `Xsecurity-addon-unpacking-4`                                                               | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
+| 159 | Add-on release files of skipped versions stay in the work folder                                  | `11-4` `Xsecurity-addon-unpacking-4`                                                               | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 160 | Tray ticks flip on a repeat click, and & in a name shows wrongly                                  | `26-2` `26-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 161 | Messages name the product with a literal                                                          | `26-9` `B17-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 162 | A navigation item left behind keeps its hover colour until the mouse moves                        | `U-1` `B18-2`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
@@ -200,7 +200,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 173 | The same link with another #fragment opens a second question                                      | `07-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 174 | A file beside a leftover part or resume file is never asked about                                 | `B02-1`                                                                                            | P3       | small  | P3, 1 finding, small; after item 48                                                                              | none                                          | open   |
 | 175 | A saved download that gives way to its page loses its link if the app stops first                 | `Xcrash-and-resume-6`                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 176 | A removal gives up the path before it deletes the files                                           | `Xconcurrency-10`                                                                                  | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 176 | A removal gives up the path before it deletes the files                                           | `Xconcurrency-10`                                                                                  | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 177 | A failed write takes too much back from the progress count                                        | `01-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 178 | A range past the end of a shrunken file is reported as a server error                             | `02-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 179 | The step-back rule's long-wait test is true only because of jitter                                | `02-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -229,11 +229,11 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 202 | A failed browser registration logs no reason                                                      | `22-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 203 | The autostart Exec line escapes reserved characters once                                          | `22-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 204 | The autostart Launcher trait has one implementation and no test                                   | `22-8`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 205 | Every window has an empty native title                                                            | `U-2`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 205 | Every window has an empty native title                                                            | `U-2`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 206 | invalid_link ignores its argument, and its doc and test claim otherwise                           | `28-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 207 | An import can leave two queues with the same name                                                 | `19-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | `19-2`                                        | open   |
-| 208 | An update offer names a yt-dlp older than the one installed                                       | `11-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 209 | swap_in spells out the release file's name                                                        | `11-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 208 | An update offer names a yt-dlp older than the one installed                                       | `11-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 209 | swap_in spells out the release file's name                                                        | `11-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 210 | Ticking the first row pushes the list down under the pointer                                      | `U-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 211 | The empty queue's Add button opens the dialog past the window's record                            | `25-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 212 | `let _theme = cx.theme()` does nothing                                                            | `25-12`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -242,13 +242,13 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 215 | A top-level domain held only through a wildcard counts as a local name                            | `10-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 216 | direct_uses_no_proxy passes whatever Direct does                                                  | `09-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 217 | Module docs describe proxy behaviour that has changed                                             | `09-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 218 | A proxy test cancelled by quitting is saved as its last result                                    | `19-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 219 | A test named for keeping the last result does not check it                                        | `19-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 220 | Copy from system turns a SOCKS4 server into a SOCKS5 profile                                      | `B15-2`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 218 | A proxy test cancelled by quitting is saved as its last result                                    | `19-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 219 | A test named for keeping the last result does not check it                                        | `19-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 220 | Copy from system turns a SOCKS4 server into a SOCKS5 profile                                      | `B15-2`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 221 | An impossible port is saved as the usual port without a word                                      | `27-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 222 | A file name or host holding a secret word loses the rest of its log line                          | `20-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 223 | The rules help says the highest queue wins, but for sites the most specific does                  | `27-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 224 | A dotted file type is accepted in a category rule and never matches                               | `Xrepeated-logic-5`                                                                                | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 222 | A file name or host holding a secret word loses the rest of its log line                          | `20-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 223 | The rules help says the highest queue wins, but for sites the most specific does                  | `27-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 224 | A dotted file type is accepted in a category rule and never matches                               | `Xrepeated-logic-5`                                                                                | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 225 | Queue page numbers start at 2 and number failed rows                                              | `U-5`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 226 | A queue using a proxy with no name reads "via" and nothing after it                               | `U-11`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 227 | The queue page's facts line is cut off with no way to read the end                                | `U-12`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -348,7 +348,7 @@ The saved row does not record that its own run placed a file, so `restore_entry`
 
 ### 5. A browser download that meets Ask is dropped and goes back to the browser
 
-P1, small, open.
+P1, small, fixed.
 
 `ask` leaves `naming.settled` false, and `Entry::server_answered` reads that as "no answer yet". So a capture that meets Ask with no confirmation window is removed: the question opens and closes at once and the browser keeps its copy. It happens every time with `ask_before_download` off. Nothing is lost.
 
@@ -478,7 +478,7 @@ P1, medium, open.
 
 ### 12. A settings file can send downloads into folders whose programs the app runs
 
-P1, medium, open.
+P1, medium, fixed.
 
 On Windows `protected_folders` does not know the app's data folder, and `is_outside_user_folders` is false inside `{Home}`, so a settings file can point a download folder at the add-on's ffmpeg folder with no mark in the preview. A site can then land a DLL beside `ffmpeg.exe`, and the loader was shown to prefer a file in that folder. The same rule lets in `.ssh`, `AppData\Local\Programs` and `WindowsPowerShell` (`B12-1`).
 
@@ -496,7 +496,7 @@ On Windows `protected_folders` does not know the app's data folder, and `is_outs
 
 ### 13. Replace on a file with another extension downloads everything again and strands the old folder
 
-P2, medium, open.
+P2, medium, fixed.
 
 `replace_at` moves the row's path while the work folder is derived from that path. So when the finished file's extension differs from the plan (mp4 planned, mkv finished), Replace fetches the segments again and leaves `clip.wcmedia` on disk.
 
@@ -736,7 +736,7 @@ P2, medium, open.
 
 ### 27. A removal under way at quit comes back, and a capture is downloaded twice
 
-P2, medium, open.
+P2, medium, fixed.
 
 `Hold::Removing` is memory only, and `finish_removing` fails on `lock_open` once `shutdown` set `closed`. So a removal stopping when the app quits never reaches the store: the download returns at the next start. A capture the browser was told to keep is then downloaded by both, against D27, and a withdrawal has the same third way in (`B02-3`).
 
@@ -906,7 +906,7 @@ Only `requeue`, `cancel` and `finish_removing` close a file-exists question, and
 
 ### 36. Proxy exceptions are accepted that can never match
 
-P2, medium, open.
+P2, medium, fixed.
 
 `clean_hosts` accepts anything the matcher then ignores: `https://intranet.example/`, `host:8443` and `bücher.example` never match, and a bracketed IPv6 never matches either, also when it comes from the Windows bypass list. The count limit comes after a quadratic scan under the manager's lock, 76 seconds for a 1 MB file.
 
@@ -942,7 +942,7 @@ P2, medium, fixed.
 
 ### 38. Pages yt-dlp describes at the top level, or with several videos, are misread
 
-P2, medium, open.
+P2, medium, fixed.
 
 `Info` does not read the top-level `protocol`, `http_headers`, `vcodec` or `acodec`, nor `_type` and `entries`. So a top-level HLS page reads as a plain file, top-level audio is offered as a video in the video folder (`B07-1`), and a page with two `<video>` tags is reported as having none. Real yt-dlp prints all of these.
 
@@ -1048,7 +1048,7 @@ P2, medium, open.
 
 ### 44. "This host is under that site" is written four times, and the copies differ
 
-P3, medium, open.
+P3, medium, fixed.
 
 Whether a host is covered by a site is written separately in `on_site`, `local_network::is_under`, `queues` and `SitePattern::covers`. They differ on trailing dots, case and addresses, so `example.com.` misses a queue rule and `youtube.com.` misses video detection.
 
@@ -1084,7 +1084,7 @@ P2, small, open.
 
 ### 46. An apostrophe in a link leaves its password or signed query in the log
 
-P2, small, open.
+P2, small, fixed.
 
 `ends_a_link` stops at an apostrophe, so a password or signed query after one stays in the log. `redaction.json` has no such sample. The desktop's `link_for_display` happens to hide it on screen today, which is why the next item needs this first.
 
@@ -1137,7 +1137,7 @@ P2, small, open.
 
 ### 49. A title holding % or $ sends yt-dlp's file to another folder or stops it
 
-P2, small, open.
+P2, small, fixed.
 
 A file name holding `%(`, `%%`, `$NAME` or `%NAME%` reaches yt-dlp's `-o` template unescaped. `a%(ext)s` gives `amp4.mp4.wcmedia`, `%TEMP%` moves the folder, and `grow (5%(approx))` is an option error. A download folder holding such text fails the same way. No way out of the download folder was found, so it is not a hole.
 
@@ -1311,7 +1311,7 @@ P2, small, open.
 
 ### 59. Downloaded installers are never removed
 
-P2, small, open.
+P2, small, fixed.
 
 `fetch_app_update` writes into `updates` and nothing removes it. Only a file failing its check is deleted, so every installer stays for good.
 
@@ -1345,7 +1345,7 @@ P2, small, open.
 
 ### 61. A conversion demands audio or video that a format did not describe
 
-P2, small, open.
+P2, small, fixed.
 
 `has_audio` and `has_video` read an unknown codec as present, and `add_maps` writes `{v}:a:0` with no `?`. A silent MP4 stops ffmpeg with "Invalid argument", and an audio format with no `vcodec` is listed as a video and mapped from a file with no video (`B07-4`). Keep the original is offered.
 
@@ -1362,7 +1362,7 @@ P2, small, open.
 
 ### 62. A torn last line of a stream's log can truncate its joined track
 
-P2, small, open.
+P2, small, fixed.
 
 `Log::read` counts a torn last line, and a torn `A 0 5 12` wins over `A 3 1000000`, so the track is truncated and its segments silently dropped. The parse is proven; the short write itself was not produced.
 
@@ -1464,7 +1464,7 @@ No `sync_all` appears in the path after `ffmpeg::run`, `merge::join` or yt-dlp, 
 
 ### 68. Leftover proxy code from the earlier form has no caller
 
-P3, small, open.
+P3, small, fixed.
 
 `updater_proxy` and `UpdaterProxy` have no caller; updates take their proxy from `update_options` through `app_proxy`, so a reader changes the wrong one. `test`'s handling of several proxies and of no proxy is unreachable, kept alive only by its own test, and its doc still describes D71.5's form.
 
@@ -1482,7 +1482,7 @@ P3, small, open.
 
 ### 69. yt-dlp ignores proxy exceptions and the page's scheme
 
-P2, small, open.
+P2, small, fixed.
 
 `ytdlp_proxy` reads only the proxies, and the callers pass no page. So yt-dlp goes through the proxy for a host on the exceptions while the row says "No proxy", and takes the HTTP proxy for an HTTPS page the engine reaches directly (`B15-1`).
 
@@ -1533,7 +1533,7 @@ P2, medium, open.
 
 ### 72. The app quits before the Windows setup has asked for approval, so a refusal reaches no one
 
-P2, medium, open.
+P2, medium, fixed.
 
 D111.4, the comment on `run_setup` and PACKAGING.md say the shell asks for approval, but the built setup is `asInvoker`, so `ShellExecuteW` starts it and returns success. `install` quits at once and `/SUPPRESSMSGBOXES` hides errors, so a refused prompt or a failed setup leaves the app closed with no message. Nothing is lost, and reopening works. A real prompt was not answered.
 
@@ -1567,7 +1567,7 @@ P2, medium, fixed.
 
 ### 74. A stored bad part can never be thrown away, so Refresh link cannot help
 
-P2, medium, open.
+P2, medium, fixed.
 
 A kept `J` track with the same fingerprint skips every fetch, `track_formats` detects the same bytes and `mux` returns `UnknownFormat`, whose fix is `RefreshLink`. `refresh_link` touches only the row and keeps the folder, so the fix cannot work and the failure loops.
 
@@ -1914,7 +1914,7 @@ P2, small, open.
 
 ### 95. A video's title is cut at its last slash
 
-P2, small, open.
+P2, small, fixed.
 
 The title reaches `sanitize`, which treats it as a server's path and cuts at the last slash, so a title loses what comes before it. `clean` is right for a server's name.
 
@@ -2122,7 +2122,7 @@ P2, small, open.
 
 ### 108. An add-on repair downloads everything and puts yt-dlp back to the pinned version
 
-P2, small, open.
+P2, small, fixed.
 
 `addon_plan` returns every part when `tools` is `None`, and `wanted_components` gives the pin. `swap_in` replaces with no version check, so a repair goes back to the pinned yt-dlp, against D21.1, and the next check is up to 24 hours off.
 
@@ -2138,7 +2138,7 @@ P2, small, open.
 
 ### 109. The add-on check acts on what it read before its wait, so a removed add-on comes back
 
-P2, small, open.
+P2, small, fixed.
 
 `record` is cloned before `new_ytdlp_releases().await`, and `save` runs `create_dir_all` afterwards. So a removed add-on comes back through a quiet install, and a finished update's record is overwritten. The window is short.
 
@@ -2154,7 +2154,7 @@ P2, small, open.
 
 ### 110. One bad yt-dlp release stops the check, and a failed check forgets its offers
 
-P2, small, open.
+P2, small, fixed.
 
 `?` leaves the loop at the first candidate that fails, and every `Err` arm gives `Vec::new()`, which replaces `ytdlp_releases`. So one bad newest release holds updates up, and one offline check makes the offer disappear. No downgrade follows.
 
@@ -2234,7 +2234,7 @@ P2, small, open.
 
 ### 115. A Windows socks= proxy fails on sites whose first address is IPv6
 
-P2, small, open.
+P2, small, fixed.
 
 `adopt` writes `socks4://`, reqwest takes the first resolved address, and an IPv6 one returns `SocksV4Error::IpV6` with no fallback. Getting IPv6 first depends on the machine and was not run.
 
@@ -2266,7 +2266,7 @@ The placeholder is fixed in `ProxyForm::new`, while `merge_password` answers `No
 
 ### 117. A download that fails to start leaves its slot empty
 
-P2, small, open.
+P2, small, fixed.
 
 `reconcile` computes `plan.start` once, and `fail_to_start` only saves. So a download that fails to start leaves its slot empty and an unscheduled queue stays stopped until an unrelated command.
 
@@ -2282,7 +2282,7 @@ P2, small, open.
 
 ### 118. A closing queue's slots are given away at once, exceeding the limit
 
-P2, small, open.
+P2, small, fixed.
 
 A `Running` download found `over` is pushed to `stop` without counting, so the fill loop sees the room free, against `plan`'s doc. It lasts until the stops finish, at most 5 s. It also holds for a lowered queue limit, which the finding says it does not.
 
@@ -2298,7 +2298,7 @@ A `Running` download found `over` is pushed to `stop` without counting, so the f
 
 ### 119. Regular expressions differing only in case count as one rule
 
-P2, small, open.
+P2, small, fixed.
 
 `cleaned` uses `seen.insert(read.to_lowercase())` for every kind of rule, so `\d+\.mkv` and `\D+\.mkv` have one key and the second is dropped with no message.
 
@@ -2977,7 +2977,7 @@ The temporary name is a private detail of `save`, removed only there, so a kill 
 
 ### 159. Add-on release files of skipped versions stay in the work folder
 
-P3, small, open.
+P3, small, fixed.
 
 `swap_in` deletes only the installed version's file, and files are named by version, so skipped ones stay in `.work`.
 
@@ -3267,7 +3267,7 @@ P3, small, fixed.
 
 ### 176. A removal gives up the path before it deletes the files
 
-P3, small, open.
+P3, small, fixed.
 
 `finish_removing` calls `remove_entry` under the lock and `delete_files` after it, with no `cleanup` token, and `unclaimed_path` does not look at the disk. A new video can start in a folder being deleted. A retry recovers.
 
@@ -3733,7 +3733,7 @@ P3, small, fixed.
 
 ### 205. Every window has an empty native title
 
-P3, small, open.
+P3, small, fixed.
 
 `title_bar_options` gives `title: None` and nothing calls `set_window_title`. Alt+Tab and screen readers have no name for the window.
 
@@ -3781,7 +3781,7 @@ P3, small, open.
 
 ### 208. An update offer names a yt-dlp older than the one installed
 
-P3, small, open.
+P3, small, fixed.
 
 `latest_version` describes `wanted` without the record, and `status` prints it for `UpdateAvailable`, so an offer can name an older yt-dlp.
 
@@ -3797,7 +3797,7 @@ P3, small, open.
 
 ### 209. swap_in spells out the release file's name
 
-P3, small, open.
+P3, small, fixed.
 
 `swap_in` spells out what `release_file` gives, in the same file.
 
@@ -3941,7 +3941,7 @@ The `proxy.rs` header says FTP is refused while `ftp_route` carries it, and the 
 
 ### 218. A proxy test cancelled by quitting is saved as its last result
 
-P3, small, open.
+P3, small, fixed.
 
 `test_one` turns `Cancelled` into `Unreachable`, and `keep_test` saves it with no check of `closed`. It is a race with the store closing.
 
@@ -3957,7 +3957,7 @@ P3, small, open.
 
 ### 219. A test named for keeping the last result does not check it
 
-P3, small, open.
+P3, small, fixed.
 
 The last assertion reads only the return of `test_proxy_server`, so removing that `keep_test` call leaves every test passing.
 
@@ -3973,7 +3973,7 @@ The last assertion reads only the return of `test_proxy_server`, so removing tha
 
 ### 220. Copy from system turns a SOCKS4 server into a SOCKS5 profile
 
-P3, small, open.
+P3, small, fixed.
 
 `parse_server` maps `socks4` to `ProxyKind::Socks5`, and a test pins it. A server speaking only SOCKS4 then fails every request. `ProxyKind` has no SOCKS4 (D73.1), and D73.9 does not say what a copy becomes.
 
@@ -4005,7 +4005,7 @@ The port's input sets `min` and `max` but no number mask, so `70000`, `80a` and 
 
 ### 222. A file name or host holding a secret word loses the rest of its log line
 
-P3, small, open.
+P3, small, fixed.
 
 `is_name_byte` takes `.` and `-`, so `key` or `session` inside a file name or host followed by a colon hides the rest of the line. D40.10 says the log keeps hosts and paths.
 
@@ -4021,7 +4021,7 @@ P3, small, open.
 
 ### 223. The rules help says the highest queue wins, but for sites the most specific does
 
-P3, small, open.
+P3, small, fixed.
 
 `HELP` says the highest in the sidebar wins, and `best_site` keeps the most specific.
 
@@ -4037,7 +4037,7 @@ P3, small, open.
 
 ### 224. A dotted file type is accepted in a category rule and never matches
 
-P3, small, open.
+P3, small, fixed.
 
 `clean_extensions` keeps `tar.gz`, and `category_of` looks only after the last dot, so it never matches. `file_type_rule` honours the same entry.
 
