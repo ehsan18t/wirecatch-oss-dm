@@ -328,6 +328,20 @@ pub(crate) fn guard_from(url: &Url, timeout: Duration, proxies: &Proxies) -> Pri
     guard_with(NetworkGuard::new(url, timeout), proxies)
 }
 
+/// The protection for requests starting at `url`, whose host a check already found public.
+#[cfg(test)]
+pub(crate) fn guard_with_host_checked(
+    url: &Url,
+    timeout: Duration,
+    proxies: &Proxies,
+) -> PrivateGuard {
+    let check = NetworkGuard::new(url, timeout);
+    if let Some(Host::Domain(name)) = url.host() {
+        check.names().insert(name.to_string(), false);
+    }
+    guard_with(check, proxies)
+}
+
 fn guard_with(check: NetworkGuard, proxies: &Proxies) -> PrivateGuard {
     let check = Arc::new(check);
     PrivateGuard {
@@ -775,9 +789,7 @@ mod tests {
         );
         accepted.store(0, Ordering::SeqCst);
 
-        let check = NetworkGuard::new(&url, Duration::from_secs(5));
-        check.names().insert("localhost".to_string(), false);
-        let guard = guard_with(check, clients().proxies());
+        let guard = guard_with_host_checked(&url, Duration::from_secs(5), clients().proxies());
         let result = run(Some(guard)).await;
         assert!(
             matches!(result, Err(Error::PrivateNetwork { .. })),
