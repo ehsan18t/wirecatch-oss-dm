@@ -101,7 +101,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-91  | fix(desktop): correct wording of app messages      | `fix/app-message-wording`        | 126, 161                     | P2       | small  | none         | open   |
 | PR-92  | fix: repair the repo's check scripts               | `fix/check-scripts`              | 129, 191, 238, 239, 240, 241 | P2       | medium | none         | merged |
 | PR-93  | fix(engine): lock the part file during a run       | `fix/part-file-lock`             | 130                          | P2       | medium | none         | merged |
-| PR-94  | fix(core): keep a video's work until it is placed  | `fix/work-until-placed`          | 133, 169                     | P2       | medium | PR-04        | open   |
+| PR-94  | fix(core): keep a video's work until it is placed  | `fix/work-until-placed`          | 133, 169                     | P2       | medium | PR-04        | merged |
 | PR-95  | fix(core): apply the local rule to yt-dlp reads    | `fix/ytdlp-local-rule`           | 137                          | P2       | medium | none         | open   |
 | PR-96  | fix(engine): check free space before a download    | `fix/free-space-check`           | 140                          | P2       | medium | none         | merged |
 | PR-97  | fix(core): record every file of a move up front    | `fix/record-moves`               | 141, 201, 246                | P2       | medium | PR-04, PR-08 | merged |
@@ -1286,7 +1286,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`, `crates/streams`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core -p wirecatch-streams`, `cargo clippy -p wirecatch-core -p wirecatch-streams`
-- **Status:** open
+- **Status:** merged
 
 ### PR-95 fix(core): apply the local rule to yt-dlp reads
 

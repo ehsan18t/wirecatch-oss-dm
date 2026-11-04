@@ -35,6 +35,8 @@ tracing.workspace = true
 
 # Stands in for the media add-on's programs in this crate's tests, which take its path from
 # `CARGO_BIN_EXE_fake_media_tool`, so cargo builds it for every test run.
+# Whether a file left in a work folder is the one already linked at its name: Windows' file ids are not in stable std.
+same-file = "1.0.6"
 sha2 = "0.10.9"
 [[bin]]
 name = "fake_media_tool"
