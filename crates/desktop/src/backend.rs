@@ -101,10 +101,15 @@ impl Backend {
         let backend = cx.global::<Self>();
         let core = Arc::clone(&backend.core);
         backend.runtime.spawn(async move {
-            let manager = core.opened().await.map_err(Unopened::clone)?.clone();
+            let manager = core.opened().await?.clone();
             Ok(work(manager).await)
         })
     }
+}
+
+/// Lets the next use of the manager open it again, after an open failed.
+pub fn try_opening_again(cx: &App) {
+    cx.global::<Backend>().core.try_again();
 }
 
 /// Runs a command on the manager; a refusal shows as a notification in `window`.

@@ -7,7 +7,7 @@ use gpui_kit::{AnyElement, Context, IntoElement, ParentElement as _, Styled as _
 use wirecatch_protocol::QueueId;
 
 use super::{Group, MainWindow, View};
-use crate::add_dialog;
+use crate::backend::try_opening_again;
 use crate::library::{Library, Loaded};
 use crate::ui::{Role, Typed as _};
 
@@ -26,7 +26,9 @@ impl MainWindow {
         let needle = self.search.read(cx).value().trim().to_owned();
         let library = self.library.read(cx);
         let empty = if let Loaded::Failed(reason) = &library.loaded {
-            unreachable_engine(reason.message.clone(), cx)
+            could_not_open(reason.message.clone(), cx)
+        } else if matches!(library.loaded, Loaded::Loading) {
+            opening()
         } else if library.downloads.is_empty() {
             first_run(cx)
         } else if !needle.is_empty() {
@@ -115,8 +117,8 @@ impl MainWindow {
                     .primary()
                     .icon(IconName::Plus)
                     .label(format!("Add to {name}"))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        add_dialog::open(this.library.clone(), &[], Some(queue), window, cx);
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.new_download(&[], window, cx);
                     }))
                     .into_any_element(),
             ],
@@ -149,21 +151,36 @@ impl MainWindow {
     }
 }
 
-fn unreachable_engine(reason: String, cx: &mut Context<'_, MainWindow>) -> Empty {
+fn could_not_open(reason: String, cx: &mut Context<'_, MainWindow>) -> Empty {
     let app = wirecatch_shell::host::CHANNEL.name();
     Empty {
         icon: IconName::CircleX,
-        title: format!("{app} cannot reach its download engine"),
+        title: format!("{app} could not open your download list"),
         note: reason,
         actions: vec![
             Button::new("reload")
                 .primary()
                 .label("Try again")
                 .on_click(cx.listener(|this, _, _, cx| {
-                    this.library.update(cx, |_, cx| Library::load(cx));
+                    try_opening_again(cx);
+                    this.library.update(cx, |library, cx| {
+                        library.loaded = Loaded::Loading;
+                        cx.notify();
+                        Library::load(cx);
+                    });
                 }))
                 .into_any_element(),
         ],
+    }
+}
+
+/// The list is still opening: it may be checking itself, waiting for a lock or moving its folder.
+fn opening() -> Empty {
+    Empty {
+        icon: IconName::Inbox,
+        title: "Opening your downloads".to_owned(),
+        note: "This can take a moment with a long list or a slow disk.".to_owned(),
+        actions: Vec::new(),
     }
 }
 
