@@ -3,7 +3,7 @@
 use std::io;
 use std::path::Path;
 
-use wirecatch_engine::{Error as EngineError, ProxySetting};
+use wirecatch_engine::{Error as EngineError, IoAction, ProxySetting};
 use wirecatch_protocol::app::{FixAction, UserError};
 use wirecatch_sites::local_network::ChosenBy;
 
@@ -95,7 +95,7 @@ pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError
             action,
             path,
             source,
-        } => disk_failure(source, folder, &format!("{action} ({})", path.display())),
+        } => io_failure(*action, path, source, folder),
         EngineError::Cancelled => fix(
             "The download stopped before it began. Try again.",
             FixAction::Retry,
@@ -112,6 +112,7 @@ pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError
         EngineError::FtpProxyUnsupported { setting, .. } => ftp_proxy_unsupported(setting),
         EngineError::ProxyLoginRefused => proxy_login_refused(),
         EngineError::InvalidOption(option) => invalid_option(option),
+        EngineError::TooLarge { .. } => too_large(),
         // A kind of error added to the engine after this was written.
         other => fix(
             format!("The download failed ({other}). Try again."),
@@ -120,14 +121,68 @@ pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError
     }
 }
 
-/// A download's saved link that no longer parses, `reason` being the parser's: the same words a link refused when it was added gets.
+/// The same answer would come again, so only another link can help.
+fn too_large() -> UserError {
+    fix(
+        "The server sent far more than expected for this address, so Wirecatch stopped reading it. Refresh the link with one copied from the page.",
+        FixAction::RefreshLink,
+    )
+}
+
+/// What `action` on `path` failing with `source` comes to, while saving into `folder`.
+fn io_failure(action: IoAction, path: &Path, source: &io::Error, folder: &Path) -> UserError {
+    let existing = matches!(
+        action,
+        IoAction::OpenFile
+            | IoAction::Write
+            | IoAction::Resize
+            | IoAction::Flush
+            | IoAction::Finish
+    )
+    .then_some(path);
+    let what = format!("{action} ({})", path.display());
+    disk_failure(source, folder, &what, existing)
+}
+
+/// A download's saved link that no longer parses.
 #[must_use]
-pub fn invalid_link(reason: &str) -> UserError {
+pub fn invalid_link() -> UserError {
     describe(
-        &EngineError::InvalidUrl(reason.to_owned()),
+        &EngineError::InvalidUrl(String::new()),
         Path::new(""),
         Worked::Never,
     )
+}
+
+/// Why a file the app fetches for itself (an add-on, an update) failed. No row shows it, so nothing here points at a link to refresh, a folder to choose or a queue to change.
+#[must_use]
+pub fn describe_app_file(error: &EngineError, folder: &Path) -> String {
+    const CANNOT_SEND: &str = "Try again later, and please report it if it keeps happening.";
+    match error {
+        EngineError::HttpStatus { status, .. } if !matches!(status, 408 | 425 | 429 | 500..=599) => {
+            format!("The server refused to send this file (error {status}). {CANNOT_SEND}")
+        }
+        EngineError::InvalidUrl(_)
+        | EngineError::TooManyRedirects { .. }
+        | EngineError::RedirectWithoutLocation { .. }
+        | EngineError::InsecureRedirect { .. }
+        | EngineError::TooLarge { .. } => {
+            format!("The server did not send this file properly. {CANNOT_SEND}")
+        }
+        EngineError::TargetRejected(reason) => reason.message().to_owned(),
+        EngineError::ProxyLoginRefused => "The proxy asked for a user name and password, or did not accept the ones it was given. Check them in Settings > Network.".to_owned(),
+        other => {
+            let told = describe(other, folder, Worked::Never);
+            if told.fix == Some(FixAction::ChooseFolder) {
+                format!(
+                    "Wirecatch cannot save files in {}. Check that you may write there and that its drive is connected, then try again.",
+                    folder.display()
+                )
+            } else {
+                told.message
+            }
+        }
+    }
 }
 
 /// Why a link was refused for leading to a device on the person's own network,
@@ -360,12 +415,19 @@ pub fn disk(error: &io::Error, folder: &Path) -> UserError {
         error,
         folder,
         &format!("write the file to {}", folder.display()),
+        None,
     )
 }
 
 /// Describes a file operation that failed while saving into `folder`; `what`
-/// says what could not be done, as in `create the folder (/x)`.
-fn disk_failure(error: &io::Error, folder: &Path, what: &str) -> UserError {
+/// says what could not be done, as in `create the folder (/x)`, and `existing` is
+/// the file already there that it was done to, if any: being refused one says nothing about the folder.
+fn disk_failure(
+    error: &io::Error,
+    folder: &Path,
+    what: &str,
+    existing: Option<&Path>,
+) -> UserError {
     let folder = folder.display();
     let disk_full = matches!(
         error.kind(),
@@ -379,6 +441,17 @@ fn disk_failure(error: &io::Error, folder: &Path, what: &str) -> UserError {
                 "The disk is full. Free up space on the drive that holds {folder}, then try again."
             ),
             FixAction::FreeDiskSpace,
+        );
+    }
+    if error.kind() == io::ErrorKind::PermissionDenied
+        && let Some(file) = existing
+    {
+        return fix(
+            format!(
+                "Wirecatch could not use {}. Another program may have it open, or it may be read-only. Close that program, then try again.",
+                file.display()
+            ),
+            FixAction::Retry,
         );
     }
     match error.kind() {
@@ -413,16 +486,114 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_saved_link_that_no_longer_parses_reads_as_one_refused_when_added() {
-        let given = invalid_link("relative URL without a base");
+    fn a_saved_link_that_no_longer_parses_asks_for_a_new_one() {
+        let given = invalid_link();
+        assert_eq!(given.fix, Some(FixAction::RefreshLink));
+        assert!(given.message.contains("not a valid web address"));
+    }
+
+    #[test]
+    fn a_file_the_app_fetches_for_itself_is_told_nothing_about_links_folders_or_queues() {
+        let errors = [
+            status(401),
+            status(403),
+            status(404),
+            status(410),
+            status(400),
+            EngineError::InvalidUrl("x".into()),
+            EngineError::TooManyRedirects { url: "u".into() },
+            EngineError::RedirectWithoutLocation {
+                status: 302,
+                url: "u".into(),
+            },
+            insecure(),
+            EngineError::TooLarge {
+                url: "u".into(),
+                limit: 1,
+            },
+            EngineError::ProxyLoginRefused,
+            EngineError::Io {
+                action: wirecatch_engine::IoAction::CreateFile,
+                path: "/d/f".into(),
+                source: io::ErrorKind::PermissionDenied.into(),
+            },
+            EngineError::Io {
+                action: wirecatch_engine::IoAction::CreateFolder,
+                path: "/d".into(),
+                source: io::ErrorKind::NotADirectory.into(),
+            },
+        ];
+        for error in &errors {
+            let told = describe_app_file(error, Path::new("/d")).to_lowercase();
+            for advice in ["link", "another folder", "queue"] {
+                assert!(!told.contains(advice), "{advice} in {told}");
+            }
+            assert!(told.ends_with('.'), "{told}");
+        }
+        let full = describe_app_file(&io(io::ErrorKind::StorageFull.into()), Path::new("/d"));
+        assert!(full.contains("disk is full"), "{full}");
+        let rejected = EngineError::TargetRejected(wirecatch_engine::PathRejected::new(
+            "The installer is wrong.",
+        ));
         assert_eq!(
-            given,
-            describe(
-                &EngineError::InvalidUrl("relative URL without a base".into()),
-                Path::new(""),
-                Worked::Never,
-            )
+            describe_app_file(&rejected, Path::new("/d")),
+            "The installer is wrong."
         );
+    }
+
+    #[test]
+    fn a_file_held_by_another_program_is_not_blamed_on_the_folder() {
+        for action in [
+            wirecatch_engine::IoAction::Finish,
+            wirecatch_engine::IoAction::OpenFile,
+        ] {
+            let error = EngineError::Io {
+                action,
+                path: "/d/f.bin".into(),
+                source: io::ErrorKind::PermissionDenied.into(),
+            };
+            let told = describe(&error, Path::new("/d"), Worked::Before);
+            assert_eq!(told.fix, Some(FixAction::Retry), "{}", told.message);
+            assert!(told.message.contains("/d/f.bin"), "{}", told.message);
+            assert!(told.message.contains("Another program"), "{}", told.message);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn replacing_a_file_another_program_holds_is_not_blamed_on_the_folder() {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        const FILE_SHARE_READ: u32 = 1;
+
+        let dir = wirecatch_test_support::private_dir("messages-held").unwrap();
+        let (part, target) = (dir.join("f.bin.wcpart"), dir.join("f.bin"));
+        std::fs::write(&part, b"new").unwrap();
+        std::fs::write(&target, b"old").unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(&target)
+            .unwrap();
+        let source = std::fs::rename(&part, &target).unwrap_err();
+        drop(held);
+        let error = EngineError::Io {
+            action: wirecatch_engine::IoAction::Finish,
+            path: target,
+            source,
+        };
+        let told = describe(&error, &dir, Worked::Before);
+        assert_ne!(told.fix, Some(FixAction::ChooseFolder), "{}", told.message);
+    }
+
+    #[test]
+    fn an_answer_over_its_limit_is_not_offered_a_retry() {
+        let error = EngineError::TooLarge {
+            url: "u".into(),
+            limit: 1,
+        };
+        let told = describe(&error, Path::new("/d"), Worked::Never);
+        assert_eq!(told.fix, Some(FixAction::RefreshLink));
+        assert!(!told.message.contains("Try again"), "{}", told.message);
     }
 
     fn status(code: u16) -> EngineError {
@@ -611,7 +782,11 @@ mod tests {
     #[test]
     fn forbidden_folder_asks_for_another() {
         let e = describe(
-            &io(io::ErrorKind::PermissionDenied.into()),
+            &EngineError::Io {
+                action: wirecatch_engine::IoAction::CreateFile,
+                path: "/locked/f.bin.wcpart".into(),
+                source: io::ErrorKind::PermissionDenied.into(),
+            },
             Path::new("/locked"),
             Worked::Never,
         );
