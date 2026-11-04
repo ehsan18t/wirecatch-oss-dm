@@ -1079,7 +1079,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Chunk 29: packaging-and-release         | pending     |
 | 1     | Chunk 30: protocol-types                | pending     |
 | 1     | Chunk 31: test-servers                  | pending     |
-| 1     | Chunk 32: cli                           | pending     |
+| 1     | Chunk 32: cli                           | done        |
 | 1     | Chunk 33: repo-checks                   | pending     |
 | 1     | Flow `path-normal-download`             | pending     |
 | 1     | Flow `path-media-download`              | pending     |
