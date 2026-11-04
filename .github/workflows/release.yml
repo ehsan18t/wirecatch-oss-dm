@@ -92,22 +92,24 @@ jobs:
           name: desktop-Linux-X64
           path: packages
 
-      - name: Read the app's name
+      - name: Read the names the check needs
         id: names
-        run: echo "app=$(sed -n 's/^app = "\(.*\)"/\1/p' config/product.toml)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "app=$(sed -n 's/^app = "\(.*\)"/\1/p' config/product.toml)" >> "$GITHUB_OUTPUT"
+          echo "notices=$(sed -n 's/^notices = "\(.*\)"/\1/p' config/product.toml)" >> "$GITHUB_OUTPUT"
 
       - name: Check the package
         if: matrix.kind != 'appimage'
         run: >-
           docker run --rm -v "$PWD:/work" -w /work ${{ matrix.image }}
-          bash scripts/ci/linux-package-check.sh ${{ matrix.kind }} packages/*.${{ matrix.kind }} ${{ steps.names.outputs.app }}
+          bash scripts/ci/linux-package-check.sh ${{ matrix.kind }} packages/*.${{ matrix.kind }} ${{ steps.names.outputs.app }} ${{ steps.names.outputs.notices }}
 
       - name: Check the AppImage
         if: matrix.kind == 'appimage'
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q xvfb xauth mesa-vulkan-drivers >/dev/null
-          sudo bash scripts/ci/linux-package-check.sh appimage packages/*.AppImage ${{ steps.names.outputs.app }}
+          sudo bash scripts/ci/linux-package-check.sh appimage packages/*.AppImage ${{ steps.names.outputs.app }} ${{ steps.names.outputs.notices }}
 
   extension:
     name: Extension

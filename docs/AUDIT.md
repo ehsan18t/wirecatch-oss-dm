@@ -265,7 +265,7 @@ Parts of W0 findings carried into later workstreams:
 
 - XC-23: every workspace package is linted and format-checked (`packages/eslint-config` lints itself, its rules without type information; `packages/protocol` lints its scripts and index and type-checks the generated types), and the `js-policy` check keeps it so. `scripts/` is linted and format-checked by the root `lint` script with the same configuration, now that the gate is split into modules in `scripts/gate/` that fit the size limits. Done.
 - XC-25: every first-party crate is on `windows-sys` 0.61; GPUI's dependencies still bring 0.48 and 0.52, which only their updates remove.
-- XC-29: installers and the extension do not yet ship a third-party notices file (W6, with the release workflow of XC-20).
+- XC-29: every installer and the extension ship a generated third-party notices file, and the `notices` check fails when it cannot be generated (D117). Done.
 - XC-30: `authors`, `repository` and `homepage` come from `config/product.toml`, and the `product` check requires every crate to inherit them. Done (W2).
 - XC-32: `SECURITY.md` is generated from `config/product.toml` with its security contact address, a placeholder until it is decided. Done (W2).
 

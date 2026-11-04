@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Installs a Linux package on a fresh system and checks it works, for the release workflow (D106).
 #
-# Usage: bash scripts/ci/linux-package-check.sh deb|rpm|appimage FILE APP
+# Usage: bash scripts/ci/linux-package-check.sh deb|rpm|appimage FILE APP NOTICES
 #
-# Runs as root, in a container of the system the format is for (Ubuntu for deb, Fedora for rpm), or on the runner for an AppImage. The package's dependencies must cover every library the app loads; the app must start under a virtual display and stay up, registering the browser bridge for its user; and removing a deb or rpm must take that registration away again.
+# Runs as root, in a container of the system the format is for (Ubuntu for deb, Fedora for rpm), or on the runner for an AppImage. The package must install its third-party notices (D117); its dependencies must cover every library the app loads; the app must start under a virtual display and stay up, registering the browser bridge for its user; and removing a deb or rpm must take that registration away again.
 set -euo pipefail
 
 KIND=$1
 FILE=$(realpath "$2")
 APP=$3
+NOTICES=$4
 USER_NAME=wirecatch-check
 # Long enough to start, register the bridge and draw; the app runs until stopped.
 RUN_SECONDS=15
@@ -30,6 +31,22 @@ case "$KIND" in
     exit 2
     ;;
 esac
+
+if [ "$KIND" = appimage ]; then
+  EXTRACTED=$(mktemp -d)
+  (cd "$EXTRACTED" && "$FILE" --appimage-extract >/dev/null)
+  NOTICES_ROOT=$EXTRACTED/squashfs-root
+else
+  NOTICES_ROOT=
+fi
+if ! compgen -G "$NOTICES_ROOT/usr/share/licenses/*/$NOTICES" >/dev/null; then
+  echo "The package does not install $NOTICES under /usr/share/licenses." >&2
+  exit 1
+fi
+if [ "$KIND" = appimage ] && ! grep -q 'Applies to: libxkbcommon' "$NOTICES_ROOT"/usr/share/licenses/*/"$NOTICES"; then
+  echo "The AppImage's notices leave out the libraries it carries." >&2
+  exit 1
+fi
 
 id "$USER_NAME" >/dev/null 2>&1 || useradd -m -u 1500 "$USER_NAME"
 HOME_DIR=$(getent passwd "$USER_NAME" | cut -d: -f6)

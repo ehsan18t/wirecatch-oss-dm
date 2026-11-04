@@ -47,6 +47,7 @@ Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
 Source: "{#Stage}\{#AppExe}.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Stage}\{#BridgeExe}.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Stage}\LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Stage}\{#NoticesFile}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}.exe"

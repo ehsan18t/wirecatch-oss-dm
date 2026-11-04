@@ -1,7 +1,9 @@
+import { join } from 'node:path';
 import {
   CHROMIUM_PUBLIC_KEY,
   EXTENSION_DESCRIPTION,
   FIREFOX_EXTENSION_ID,
+  NOTICES_FILE,
   PRODUCT_NAME,
   WEBSITE_URL,
 } from '@wirecatch/product';
@@ -9,6 +11,7 @@ import tailwindcss from '@tailwindcss/vite';
 import Icons from 'unplugin-icons/vite';
 import { defineConfig } from 'wxt';
 import { buildDefines } from './build-values';
+import { bundledPackages } from './bundled-packages';
 import { SITE_ORIGINS } from './src/lib/site-access';
 
 /**
@@ -17,6 +20,8 @@ import { SITE_ORIGINS } from './src/lib/site-access';
  */
 export const STORE_MODE = 'store';
 
+const bundled = bundledPackages();
+
 export default defineConfig({
   modules: ['@wxt-dev/module-svelte'],
   srcDir: 'src',
@@ -24,9 +29,18 @@ export default defineConfig({
   // Everything is imported explicitly, so the code reads the same in tests and in editors.
   imports: false,
   vite: () => ({
-    plugins: [tailwindcss(), Icons({ compiler: 'svelte', autoInstall: false })],
+    plugins: [tailwindcss(), Icons({ compiler: 'svelte', autoInstall: false }), bundled.plugin],
     define: buildDefines(),
   }),
+  hooks: {
+    'build:done': (wxt) => {
+      if (wxt.config.command !== 'build') return;
+      bundled.writeNotices(
+        join(wxt.config.outDir, NOTICES_FILE),
+        `Third-party notices for the ${PRODUCT_NAME} browser extension`,
+      );
+    },
+  },
   manifest: ({ browser, mode }) => {
     const isFirefox = browser === 'firefox';
     // The public key gives every unpacked Chromium build the one id every bridge trusts (D22).

@@ -79,6 +79,7 @@ const CONSTANTS = [
     RUST,
   ],
   ['DATABASE_FILE', 'The download list, in the data folder.', (p) => p.files.database, RUST],
+  ['NOTICES_FILE', 'The third-party notices a build ships.', (p) => p.files.notices, BOTH],
   [
     'LOG_FILTER_VARIABLE',
     'The environment variable that chooses which lines every binary logs, in `tracing` filter syntax (`debug`, `wirecatch_core=trace`).',

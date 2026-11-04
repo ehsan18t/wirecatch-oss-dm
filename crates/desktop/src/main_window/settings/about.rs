@@ -1,6 +1,8 @@
 //! About: the app, its version, its update and the media add-on's, and where its licence, source and help
 //! live, all from `config/product.toml`.
 
+use std::path::PathBuf;
+
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, SettingPage};
 use gpui_kit::component::{
@@ -99,25 +101,28 @@ fn product(library: &Entity<Library>) -> SettingGroup {
 }
 
 fn project() -> SettingGroup {
-    SettingGroup::new()
-        .title("Project")
-        .item(
-            SettingItem::new(
-                "Licence",
-                SettingField::render(|_, _, cx| {
-                    h_flex()
-                        .gap_2()
-                        .child(value(PRODUCT_LICENSE, cx))
-                        .child(link(
-                            "open-licence",
-                            "Open",
-                            format!("{REPOSITORY_URL}/blob/main/LICENSE"),
-                        ))
-                }),
-            )
-            .description("Free software: you may use, study, share and change it.")
-            .keywords(["license", "gpl", "open source"]),
+    let group = SettingGroup::new().title("Project").item(
+        SettingItem::new(
+            "Licence",
+            SettingField::render(|_, _, cx| {
+                h_flex()
+                    .gap_2()
+                    .child(value(PRODUCT_LICENSE, cx))
+                    .child(link(
+                        "open-licence",
+                        "Open",
+                        format!("{REPOSITORY_URL}/blob/main/LICENSE"),
+                    ))
+            }),
         )
+        .description("Free software: you may use, study, share and change it.")
+        .keywords(["license", "gpl", "open source"]),
+    );
+    let group = match host::third_party_notices() {
+        Some(notices) => group.item(notices_item(notices)),
+        None => group,
+    };
+    group
         .item(
             SettingItem::new(
                 "Publisher",
@@ -141,6 +146,24 @@ fn project() -> SettingGroup {
             .description(REPOSITORY_URL)
             .keywords(["github", "repository", "code"]),
         )
+}
+
+/// The notices file the installer put on this computer (D117), so it opens offline.
+fn notices_item(notices: PathBuf) -> SettingItem {
+    SettingItem::new(
+        "Third-party licences",
+        SettingField::render(move |_, _, _| {
+            let notices = notices.clone();
+            Button::new("open-notices")
+                .small()
+                .outline()
+                .icon(IconName::ExternalLink)
+                .label("Open")
+                .on_click(move |_, _, cx| cx.open_with_system(&notices))
+        }),
+    )
+    .description("The open-source software built into this app, with its licences.")
+    .keywords(["notices", "attribution", "open source", "dependencies"])
 }
 
 fn help() -> SettingGroup {

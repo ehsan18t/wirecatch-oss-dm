@@ -46,6 +46,8 @@ cli = "wirecatch"
 [files]
 # The download list, in the data folder.
 database = "wirecatch.db"
+# The third-party notices every installer and the extension ship (D117).
+notices = "THIRD-PARTY-NOTICES.txt"
 
 [updates]
 # The Ed25519 public key the app checks its update manifests against (D111), as 43 characters of unpadded base64url. `node scripts/release/updater-key.mjs` makes a key pair: this half goes here, the private half into the repository secret `UPDATER_PRIVATE_KEY`, and nowhere else.
