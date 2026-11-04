@@ -220,6 +220,7 @@ fn a_stream_downloads_under_the_rule_of_whoever_chose_it() {
             refresh_delays: Arc::new([]),
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
+            placing: Arc::new(|| {}),
             file_work: FileWork::new(),
             taken: Taken::KeepBoth,
         };
@@ -246,6 +247,7 @@ fn a_format_downloads_under_its_network_rule() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -278,6 +280,7 @@ async fn a_job_that_cannot_be_read_never_runs() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -329,6 +332,7 @@ async fn a_finished_stream_is_marked_before_it_is_put_in_place() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -375,6 +379,7 @@ async fn a_finished_video_is_marked_before_it_is_put_in_place() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -440,6 +445,26 @@ fn keeping_both_never_replaces_a_file_or_takes_a_reserved_name() {
     let reserve: Reserve = Arc::new(move |p: &Path, _| p != held);
     let placed = place(&file, &planned, &reserve, Taken::KeepBoth).unwrap();
     assert_eq!(placed, Placed::At(dir.path().join("out (1).webm")));
+}
+
+/// A video that finds itself in another format may land on a name another download holds, which neither replaces nor keeps.
+#[test]
+fn replacing_or_keeping_skips_a_name_another_download_holds() {
+    for taken in [Taken::Replace, Taken::KeepExisting] {
+        let dir = tempfile::tempdir().unwrap();
+        let planned = dir.path().join("out.mp4");
+        let held = dir.path().join("out.webm");
+        std::fs::write(&held, b"someone else's").unwrap();
+        let file = dir.path().join("video.webm");
+        std::fs::write(&file, b"webm").unwrap();
+        let refused = held.clone();
+        let reserve: Reserve = Arc::new(move |p: &Path, _| p != refused);
+        let placed = place(&file, &planned, &reserve, taken).unwrap();
+        let next = dir.path().join("out (1).webm");
+        assert_eq!(placed, Placed::At(next.clone()));
+        assert_eq!(std::fs::read(&held).unwrap(), b"someone else's");
+        assert_eq!(std::fs::read(&next).unwrap(), b"webm");
+    }
 }
 
 /// A taken name does what the setting says, as a file download does (D96).
@@ -545,6 +570,7 @@ async fn a_small_file_past_its_limit_is_never_written() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };

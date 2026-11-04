@@ -526,7 +526,7 @@ fn reading_a_manifest_looks_at_each_node_a_bounded_number_of_times() {
 
 #[test]
 fn a_manifest_offering_more_representations_than_any_video_is_refused() {
-    let max = crate::plan::MAX_REPRESENTATIONS;
+    let max = crate::plan::MAX_TRACKS;
     let manifest = |reps: usize| {
         let set = |reps: usize| {
             format!(
@@ -543,5 +543,5 @@ fn a_manifest_offering_more_representations_than_any_video_is_refused() {
     let read = parse(&manifest(max), &base()).map(|mpd| mpd.reps.len());
     assert_eq!(read, Ok(max));
     let error = parse(&manifest(max + 1), &base()).err().map(|e| e.cause);
-    assert_eq!(error, Some(ManifestError::TooManyRepresentations));
+    assert_eq!(error, Some(ManifestError::TooManyTracks));
 }

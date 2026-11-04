@@ -69,6 +69,7 @@ pub(super) async fn finish(
         headers::referrer(&job.origin.headers).map(str::to_string),
     );
     let reserve = job.reserve.clone();
+    let placing = job.placing.clone();
     let sidecars = sidecars.to_vec();
     let taken = job.taken;
     let moved = job
@@ -76,6 +77,7 @@ pub(super) async fn finish(
         .spawn_blocking(move || -> std::io::Result<MediaDone> {
             // Marked before it is put in place, so it is never there unmarked.
             wirecatch_files::zone::mark(&file, &url, referrer.as_deref());
+            placing();
             let (target, bytes) = match place(&file, &planned, &reserve, taken)? {
                 Placed::At(target) => {
                     let bytes = std::fs::metadata(&target)?.len();
@@ -224,11 +226,19 @@ pub(super) fn place(
         .filter(std::fs::Metadata::is_file)
         .map(|m| m.len())
     {
+        // Only the planned path is this download's own: another name, from the file's real type, may be another download's.
+        let other_name = wanted != planned;
         match taken {
             Taken::KeepBoth => {}
+            Taken::Replace | Taken::KeepExisting if other_name && !reserve(&wanted, true) => {}
             // Rename replaces a file at the target on both systems.
             Taken::Replace => {
-                std::fs::rename(file, &wanted)?;
+                if let Err(e) = std::fs::rename(file, &wanted) {
+                    if other_name {
+                        reserve(&wanted, false);
+                    }
+                    return Err(e);
+                }
                 return Ok(Placed::At(wanted));
             }
             Taken::KeepExisting => {
