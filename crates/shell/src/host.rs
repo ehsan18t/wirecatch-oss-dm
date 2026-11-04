@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tokio::sync::{Mutex, OnceCell};
+use tokio::sync::{Mutex, OnceCell, watch};
 use wirecatch_core::{
     CoreError, DATABASE_FILE, DATABASE_SIDE_FILES, KnownFolders, Manager, ManagerConfig, StoreError,
 };
@@ -46,6 +46,8 @@ pub struct Core {
     failed: Mutex<Option<Unopened>>,
     /// The next call opens again instead of answering with `failed`.
     try_again: AtomicBool,
+    /// Moves once, when the manager opens.
+    now_open: watch::Sender<bool>,
 }
 
 /// Why the manager did not open.
@@ -83,6 +85,7 @@ impl Core {
             manager: OnceCell::new(),
             failed: Mutex::new(None),
             try_again: AtomicBool::new(false),
+            now_open: watch::Sender::new(false),
         }
     }
 
@@ -117,10 +120,27 @@ impl Core {
             return Err(unopened.clone());
         }
         match self.open().await {
-            Ok(manager) => Ok(self.manager.get_or_init(|| async { manager }).await),
+            Ok(manager) => {
+                let manager = self.manager.get_or_init(|| async { manager }).await;
+                self.now_open.send_replace(true);
+                Ok(manager)
+            }
             Err(unopened) => {
                 *failed = Some(unopened.clone());
                 Err(unopened)
+            }
+        }
+    }
+
+    /// Waits for the manager to open, however late that is; this alone does not open it.
+    pub async fn when_opened(&self) -> &Manager {
+        let mut told = self.now_open.subscribe();
+        loop {
+            if let Some(manager) = self.manager.get() {
+                return manager;
+            }
+            if told.changed().await.is_err() {
+                std::future::pending::<()>().await;
             }
         }
     }
@@ -560,12 +580,21 @@ mod tests {
         config.addon_sources.ytdlp_releases = None;
         let first = Core::new(config.clone());
         let holder = first.opened().await.expect("the first copy opens the list");
-        let second = Core::new(config);
+        let second = Arc::new(Core::new(config));
         assert!(second.opened().await.is_err());
         holder.shutdown().await;
         assert!(second.opened().await.is_err(), "only Try again opens again");
         second.try_again();
+        let waiting = {
+            let second = Arc::clone(&second);
+            tokio::spawn(async move { second.when_opened().await.clone() })
+        };
         let manager = second.opened().await.expect("the list is free now");
+        let told = tokio::time::timeout(wirecatch_test_support::PATIENCE, waiting)
+            .await
+            .expect("whoever waits hears of the open")
+            .expect("the wait ran");
+        told.shutdown().await;
         manager.shutdown().await;
     }
 
