@@ -23,7 +23,7 @@ use crate::{lifecycle, links, main_window, notices};
 
 const ICON_PNG: &[u8] = include_bytes!("../assets/icons/32x32.png");
 const NO_DEFAULT_FOLDER: &str =
-    "Your default download folder cannot be found. Choose another in Settings.";
+    "Your download folder cannot be found. Choose another in Settings > Files.";
 
 /// The icon in the tray, with what it shows now, so it is changed only when that changes.
 struct Tray {
@@ -294,7 +294,6 @@ fn on_click(click: Clicked, cx: &mut App) {
         return;
     };
     if let Err(refused) = perform(action, manager.as_ref(), &mut AppShell(cx)) {
-        tracing::warn!("tray action {} failed: {refused}", action.id());
         tell(refused, cx);
     }
 }
@@ -325,6 +324,7 @@ fn put_ticks_back(cx: &mut App) {
 /// Tells the person what failed. While no manager opened, why it did not is the answer: it is not
 /// still starting then.
 fn tell(refused: ProtocolError, cx: &mut App) {
+    tracing::warn!("a tray action failed: {refused}");
     let failed = cx
         .try_global::<Tray>()
         .and_then(|tray| match &tray.library.read(cx).loaded {
