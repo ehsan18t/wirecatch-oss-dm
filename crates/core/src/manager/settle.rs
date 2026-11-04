@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use tracing::warn;
 use wirecatch_engine::{CancellationToken, PathRejected, PathResolver, RemoteFile, Url};
@@ -130,6 +131,8 @@ impl Manager {
                     entry.naming.writing = true;
                 }
                 self.save(state, id);
+                drop(guard);
+                self.wait_for_record(id);
             }
             // The engine meets the same trouble and reports it; the record stays off.
             Err(error) => warn!(id = id.0, %error, "could not create a download's part file"),
@@ -238,6 +241,8 @@ impl Manager {
         entry.expect = None;
         entry.video_check = false;
         self.save(state, id);
+        drop(guard);
+        self.wait_for_record(id);
         Ok(path)
     }
 }
@@ -250,10 +255,25 @@ impl Manager {
         if let Some(entry) = state.downloads.get_mut(&id) {
             entry.naming.writing = true;
             self.save(state, id);
+            drop(guard);
+            off_async_worker(|| self.wait_for_record(id));
+        }
+    }
+
+    /// Blocks until the record that a run writes at its path has been saved. Saves are queued, and a kill that outruns this one leaves the finished file looking like another program's, so the next run saves a second copy.
+    fn wait_for_record(&self, id: DownloadId) {
+        if !self.inner.store.wait_for_writes(RECORD_WAIT) {
+            warn!(
+                id = id.0,
+                ?RECORD_WAIT,
+                "the database did not save a download's record in time"
+            );
         }
     }
 }
 
+/// Longer than the store's every retry of a busy database, and bounded so a database that hangs only delays a run.
+const RECORD_WAIT: Duration = Duration::from_secs(30);
 const REMOVED: &str = "The download was removed before the server answered.";
 /// Ends a run whose web page is read for its video instead (D51); never shown,
 /// as the download is removed.
