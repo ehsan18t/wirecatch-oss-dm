@@ -44,15 +44,8 @@ fn killed_at_half(scratch: &Scratch, server: &FaultServer, seed: u64) -> Vec<(u6
     kept
 }
 
-fn ended(running: Running) -> Ran {
-    match running.wait(BOUND) {
-        Ok(ran) => ran,
-        Err(e) => panic!("the run hung: {e}"),
-    }
-}
-
 fn finish(scratch: &Scratch, server: &FaultServer, seed: u64) -> Ran {
-    let ran = ended(start(scratch, server));
+    let ran = start(scratch, server).ended(BOUND);
     assert_eq!(
         safe_end(&ran, scratch, NAME, seed, LEN),
         Ended::Exact,
@@ -101,7 +94,7 @@ fn killed_again_and_again_while_data_flows() {
         }
     }
     assert!(most > 0, "no kill came after a save");
-    let ran = ended(start(&scratch, &server));
+    let ran = start(&scratch, &server).ended(BOUND);
     assert_eq!(
         safe_end(&ran, &scratch, NAME, 2, LARGE),
         Ended::Exact,
@@ -198,7 +191,7 @@ fn a_temporary_resume_file_left_by_a_kill_is_cleaned_up() {
 
 /// Runs to the end after the resume file was damaged: the file must come out at its own name and nothing of the earlier run may stay behind.
 fn starts_over_at_the_same_name(scratch: &Scratch, server: &FaultServer, seed: u64) {
-    let ran = ended(start(scratch, server));
+    let ran = start(scratch, server).ended(BOUND);
     assert_eq!(ran.code, Some(0), "{}", ran.stderr);
     assert!(!ran.stdout.contains("resumed"), "{}", ran.stdout);
     assert_eq!(
@@ -240,7 +233,7 @@ fn killed_then_the_file_changes_size_the_next_run_saves_the_new_version() {
         killed_at_half(&scratch, &server, 13);
         let new = Generated::new(14, len);
         server.set_handler(move |req| new.ranged(req));
-        let ran = ended(start(&scratch, &server));
+        let ran = start(&scratch, &server).ended(BOUND);
         assert_eq!(
             safe_end(&ran, &scratch, NAME, 14, len),
             Ended::Exact,
@@ -268,7 +261,7 @@ fn a_failed_run_after_a_kill_keeps_what_was_kept() {
         pace: None,
         cut_off: false,
     });
-    let failed = ended(start(&scratch, &server));
+    let failed = start(&scratch, &server).ended(BOUND);
     assert_ne!(failed.code, Some(0));
     let still = kept_now(&state(&scratch), LEN).expect("the resume file is gone");
     assert!(

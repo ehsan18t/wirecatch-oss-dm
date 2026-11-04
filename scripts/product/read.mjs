@@ -16,7 +16,7 @@ const FIRST_ID_LETTER = 'a'.charCodeAt(0);
 
 const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Z.-]+)?$/i;
 const SLUG = /^[a-z][a-z0-9-]*$/;
-/** Reverse-DNS identifiers, as Tauri and the operating systems accept them. */
+/** Reverse-DNS identifiers, as the operating systems accept them. */
 const IDENTIFIER = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/;
 /** Chromium's rule for host names: lowercase letters, digits, `_` and `.`, no dot at either end and never two in a row. */
 const HOST_NAME = /^[a-z0-9_]+(\.[a-z0-9_]+)*$/;
@@ -42,7 +42,7 @@ const FILE_NAME = {
 };
 const PIPE_PREFIX = /^[A-Z0-9-]+-$/i;
 const SOCKET = /^[a-z0-9-]+\.sock$/;
-/** Characters that would end or expand a quoted string in the generated shell and NSIS scripts or Rust and TypeScript sources; no identity value needs them. */
+/** Characters that would end or expand a quoted string in the generated shell scripts or Rust and TypeScript sources; no identity value needs them. */
 const UNQUOTABLE = /["$`\\]/;
 /** Printable text on one line. */
 const TEXT = /^(?!\s*$)\P{Cc}+$/u;

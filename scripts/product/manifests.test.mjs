@@ -6,7 +6,6 @@ import {
   ManifestError,
   setPathDependencyVersions,
   setTomlKey,
-  withNote,
 } from './manifests.mjs';
 
 const CARGO = `[workspace.package]
@@ -53,12 +52,6 @@ test('a template takes values by name and refuses one that does not exist', () =
   const product = { executables: { bridge: 'bridge' } };
   assert.equal(fillTemplate('run {{executables.bridge}} now', product, 't'), 'run bridge now');
   assert.throws(() => fillTemplate('{{executables.app}}', product, 't'), /executables\.app/);
-});
-
-test('the generated note never displaces a #! line', () => {
-  assert.equal(withNote('#!/bin/sh\nexit 0\n', 'note', 'a.sh'), '#!/bin/sh\n# note\nexit 0\n');
-  assert.equal(withNote('Name\n', 'note', 'a.nsh'), '; note\nName\n');
-  assert.equal(withNote('# Title\n', 'note', 'a.md'), '<!-- note -->\n# Title\n');
 });
 
 test('an indented Cargo setting is replaced, never added a second time', () => {

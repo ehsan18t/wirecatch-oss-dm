@@ -25,8 +25,8 @@ const UNC_PATH = /\\\\[\w.$-]+\\[^\s"'<>]*/g;
 const UNIX_PATH = /(^|[\s("'=])(?:~\/|\/[^\s/"'<>]+\/)[^\s"'<>]*/g;
 /** Addresses that are their own contents: a `data:` URL is the file, a `javascript:` URL is code. */
 const INLINE_URL = /\b(data|javascript):[^\s"'<>]+/gi;
-/** Any address with an authority, `scheme://...`, up to the next space or quote. */
-const URL_WITH_AUTHORITY = /\b[a-z][a-z\d+.-]*:\/\/[^\s"'<>]+/gi;
+/** Any address with an authority, `scheme://...`, up to the next space or quote. An apostrophe with more of the address after it belongs to the address (`bob's.mp4?st=..`). */
+const URL_WITH_AUTHORITY = /\b[a-z][a-z\d+.-]*:\/\/(?:[^\s"'<>]|'(?=[^\s"'<>]))+/gi;
 /** An address without a scheme: protocol-relative `//host/...`, or a `www.` host. */
 const RELATIVE_URL = /(^|[\s("'=])\/\/([^\s/?#"'<>]+)([^\s"'<>]*)/g;
 const WWW_URL = /\b(www\.[^\s/?#"'<>]+)([^\s"'<>]*)/gi;

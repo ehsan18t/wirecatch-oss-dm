@@ -63,6 +63,8 @@ pub(crate) struct ContentRange {
     /// The offset of the first byte sent; `None` for `bytes */N`, which sends
     /// no bytes of the file and only says its size.
     pub start: Option<u64>,
+    /// One past the last byte sent, when `start` is known.
+    pub end: Option<u64>,
     /// The size of the whole file, if the server says.
     pub total: Option<u64>,
 }
@@ -88,7 +90,11 @@ pub(crate) fn parse_content_range(value: &str) -> Option<ContentRange> {
         t => Some(digits(t).filter(|&total| total != UNKNOWN_END)?),
     };
     if span.trim() == "*" {
-        return Some(ContentRange { start: None, total });
+        return Some(ContentRange {
+            start: None,
+            end: None,
+            total,
+        });
     }
     let (start, end) = span.split_once('-')?;
     let start = digits(start.trim())?;
@@ -96,6 +102,7 @@ pub(crate) fn parse_content_range(value: &str) -> Option<ContentRange> {
     let inside = total.is_none_or(|total| end_inclusive < total);
     (start <= end_inclusive && inside).then_some(ContentRange {
         start: Some(start),
+        end: end_inclusive.checked_add(1),
         total,
     })
 }
@@ -140,7 +147,11 @@ pub(crate) fn check_partial(
     }
     let total = got.and_then(|c| c.total);
     check_same_file(headers, total, expected_total, expected)?;
-    Ok(ContentRange { start, total })
+    Ok(ContentRange {
+        start,
+        end: got.and_then(|c| c.end),
+        total,
+    })
 }
 
 /// Checks that a whole answer (`200`) to a request that continues a transfer,
@@ -187,6 +198,7 @@ mod tests {
             parse_content_range("bytes 0-99/1000"),
             Some(ContentRange {
                 start: Some(0),
+                end: Some(100),
                 total: Some(1000)
             })
         );
@@ -194,6 +206,7 @@ mod tests {
             parse_content_range("bytes */1000"),
             Some(ContentRange {
                 start: None,
+                end: None,
                 total: Some(1000)
             })
         );
@@ -385,6 +398,7 @@ mod tests {
             parse_content_range("BYTES 1-2/10"),
             Some(ContentRange {
                 start: Some(1),
+                end: Some(3),
                 total: Some(10)
             })
         );
