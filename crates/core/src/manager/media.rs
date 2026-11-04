@@ -16,12 +16,14 @@
 //! installed first, or when the download cannot be added as chosen.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use std::time::Duration;
 use tracing::warn;
 use wirecatch_addons::Check;
-use wirecatch_engine::{CancellationToken, DownloadOptions, PrivateNetwork, ProxyChoice, Url};
+use wirecatch_engine::{
+    CancellationToken, DownloadOptions, PrivateNetwork, ProxyChoice, Url, naming,
+};
 use wirecatch_media::MediaTools;
 use wirecatch_media::choice::{self, Offer, Plan, Resolved};
 use wirecatch_media::{MediaJob, Pick, StoredMedia, describe, output, ytdlp};
@@ -31,7 +33,7 @@ use wirecatch_protocol::app::{
     MediaSummary, OutputFormat, PortablePath, Repeated, UiEvent, UserError, VideoQuality,
 };
 use wirecatch_protocol::extension::{AddAction, AddedDownload, MediaKind, NewDownload};
-use wirecatch_protocol::{QuestionId, QueueId};
+use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use wirecatch_sites::local_network::ChosenBy;
 
 use super::Manager;
@@ -84,6 +86,10 @@ pub(super) struct MediaPending {
     /// A link added in the app whose server answered with a web page (D51):
     /// when no video is found on it, the page downloads as it is.
     pub page_otherwise: bool,
+    /// The name typed when adding the link in the app, which goes before the video's title.
+    pub file_name: Option<String>,
+    /// Saved downloads that gave way to this one, whose rows go only once it is decided.
+    pub replaces: Vec<DownloadId>,
 }
 
 /// How a capture or a link added in the app waits for its quality to be chosen.
@@ -96,6 +102,10 @@ pub(super) struct Held {
     pub later: bool,
     /// See [`MediaPending::page_otherwise`].
     pub page_otherwise: bool,
+    /// See [`MediaPending::file_name`].
+    pub file_name: Option<String>,
+    /// See [`MediaPending::replaces`].
+    pub replaces: Vec<DownloadId>,
     pub request: QueueRequest,
 }
 
@@ -107,6 +117,8 @@ impl Held {
             folder: None,
             later: false,
             page_otherwise: false,
+            file_name: None,
+            replaces: Vec::new(),
             request: QueueRequest::Browser(queue),
         }
     }
@@ -292,6 +304,8 @@ impl Manager {
                 folder: held.folder,
                 later: held.later,
                 page_otherwise: held.page_otherwise,
+                file_name: held.file_name,
+                replaces: held.replaces,
             },
         );
         if needs_addon {
@@ -523,6 +537,7 @@ impl Manager {
                         state.handovers.retarget(handover, Target::Confirmed(row));
                     }
                 }
+                self.gave_way(&pending);
                 self.emit(UiEvent::ConfirmationClosed { id });
                 if matches!(picker, Picker::Person) {
                     self.remember_media_choice(&choice, &selection);
@@ -561,8 +576,16 @@ impl Manager {
         for handover in &pending.handovers {
             state.handovers.retarget(handover, Target::Dismissed);
         }
+        self.gave_way(&pending);
         self.emit(UiEvent::ConfirmationClosed { id });
         Ok(())
+    }
+
+    /// The video `pending` was waiting to be decided is: the saved rows of the downloads that gave way to it go.
+    pub(super) fn gave_way(&self, pending: &MediaPending) {
+        if !pending.replaces.is_empty() {
+            self.inner.store.delete_downloads(pending.replaces.clone());
+        }
     }
 
     /// The browser took back one capture of media `id`; when none is left, the
@@ -754,10 +777,7 @@ impl Manager {
                     return None;
                 }
                 let pending = state.media.get(&id)?;
-                let title = title
-                    .or_else(|| pending.source.title.clone())
-                    .filter(|t| !t.trim().is_empty())
-                    .unwrap_or_else(|| title_from_url(&pending.source.fetch.url));
+                let title = title_of(pending, title);
                 let category = if offers.iter().all(|(o, _)| o.audio_only) {
                     Category::Audio
                 } else {
@@ -927,6 +947,7 @@ impl Manager {
         }
         if let Some(existing) = state.media.get_mut(&other) {
             existing.handovers.extend(pending.handovers);
+            existing.replaces.extend(pending.replaces);
         }
         self.emit(UiEvent::ConfirmationClosed { id });
         true
@@ -964,10 +985,7 @@ impl Manager {
     /// in the list with a Retry button (which downloads the best quality).
     async fn record_media_failure(&self, pending: MediaPending, error: UserError) {
         let source = &pending.source;
-        let title = source
-            .title
-            .clone()
-            .unwrap_or_else(|| title_from_url(&source.fetch.url));
+        let title = title_of(&pending, None);
         let job = match source.kind {
             MediaKind::Page => MediaJob::Page {
                 video: None,
@@ -1022,6 +1040,7 @@ impl Manager {
         }
         self.save(&mut state, row.id);
         self.reconcile(&mut state);
+        self.gave_way(&pending);
     }
 
     async fn insert_chosen(
@@ -1228,12 +1247,22 @@ pub(super) fn cookie_header(origin: &Origin) -> Option<String> {
     headers::find(&origin.headers, "cookie").map(str::to_owned)
 }
 
+/// What a video is called: the name typed for it without its extension, else the title `read` from it or its source, else its address.
+fn title_of(pending: &MediaPending, read: Option<String>) -> String {
+    pending
+        .file_name
+        .as_deref()
+        .and_then(|typed| Path::new(typed).file_stem())
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .or(read)
+        .or_else(|| pending.source.title.clone())
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| title_from_url(&pending.source.fetch.url))
+}
+
 /// A title for media whose source gave none: the last part of its address.
 fn title_from_url(url: &Url) -> String {
-    let last = url
-        .path_segments()
-        .and_then(|mut s| s.next_back().map(str::to_string))
-        .unwrap_or_default();
+    let last = naming::from_url(url).unwrap_or_default();
     let stem = last.rsplit_once('.').map_or(last.as_str(), |(s, _)| s);
     if stem.is_empty() {
         url.host_str().unwrap_or("video").to_string()
