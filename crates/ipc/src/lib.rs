@@ -179,6 +179,15 @@ pub enum IpcError {
         /// The owner that was found.
         actual: String,
     },
+    /// (Windows) Every instance of the pipe stayed busy, which the app's own pipe never does
+    /// for long: it keeps one waiting. Nothing was sent. A new try may pass.
+    #[error(
+        "The connection point {endpoint} stayed busy, so nothing was sent to it. Open Wirecatch, then try again."
+    )]
+    EndpointBusy {
+        /// The endpoint that was tried.
+        endpoint: String,
+    },
     /// (Windows) The server at the endpoint is the user's own, but a program with fewer
     /// rights than the app made it (D130). Nothing was sent to it.
     #[error(
@@ -512,8 +521,9 @@ impl Listener {
 /// # Errors
 ///
 /// [`IpcError::NotRunning`] when nothing is listening, [`IpcError::WrongOwner`]
-/// when the server belongs to someone else and [`IpcError::LowerRightsServer`] when a
-/// program with fewer rights made it (nothing was sent to either), and
+/// when the server belongs to someone else or shuts the user out,
+/// [`IpcError::LowerRightsServer`] when a program with fewer rights made it and
+/// [`IpcError::EndpointBusy`] when every instance stays busy (nothing was sent to any), and
 /// [`IpcError::Io`] when the connection cannot be opened or its owner read.
 pub async fn connect(endpoint: &Endpoint) -> Result<Connection, IpcError> {
     #[cfg(windows)]
