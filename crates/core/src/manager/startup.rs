@@ -37,12 +37,9 @@ pub(super) fn not_private(folder: &Path, reason: &str) -> StartupNotice {
 /// The notice for one repair.
 fn recovered(recovery: &Recovery) -> StartupNotice {
     match recovery {
-        Recovery::Damaged { kept_at } => StartupNotice {
+        Recovery::Damaged { .. } => StartupNotice {
             title: "Wirecatch started a new download list".to_owned(),
-            message: format!(
-                "The download list was damaged, so Wirecatch set it aside and started an empty one. Files you already downloaded are still in their folders. The damaged list is kept at {}.",
-                kept_at.display()
-            ),
+            message: "The download list was damaged, so Wirecatch set it aside and started an empty one. Files you already downloaded are still in their folders.".to_owned(),
             set_aside: true,
         },
         Recovery::UnreadableKept(count) => StartupNotice {

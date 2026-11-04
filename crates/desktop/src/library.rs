@@ -38,6 +38,7 @@ pub struct Library {
     pub storage_problem: Option<String>,
     /// What the person must know about this start, such as a damaged list set aside.
     pub startup_notices: Vec<StartupNotice>,
+    notices_kept: bool,
     /// The questions the core asks about browser downloads, oldest first.
     pub open_questions: Vec<QuestionId>,
 }
@@ -131,7 +132,15 @@ impl Library {
             order: OrderReading::default(),
             storage_problem: None,
             startup_notices: Vec::new(),
+            notices_kept: false,
             open_questions: Vec::new(),
+        }
+    }
+
+    /// Keeps what this start must tell, once: a reload after missed events reads the same notices.
+    fn keep_startup_notices(&mut self, notices: Vec<StartupNotice>) {
+        if !std::mem::replace(&mut self.notices_kept, true) {
+            self.startup_notices = notices;
         }
     }
 
@@ -179,7 +188,7 @@ impl Library {
                         library.addons = addons;
                         crate::text::set_clock(settings.clock);
                         library.settings = Some(settings);
-                        library.startup_notices = startup_notices;
+                        library.keep_startup_notices(startup_notices);
                         library.loaded = Loaded::Ready;
                         cx.emit(SettingsChanged);
                         cx.notify();
@@ -324,6 +333,21 @@ fn asked_question(event: &UiEvent) -> Option<QuestionId> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reload_does_not_bring_back_a_notice_already_told() {
+        let notice = || StartupNotice {
+            title: "Title".to_owned(),
+            message: "Message".to_owned(),
+            set_aside: false,
+        };
+        let mut library = Library::empty();
+        library.keep_startup_notices(vec![notice()]);
+        assert_eq!(library.startup_notices.len(), 1);
+        library.startup_notices.clear();
+        library.keep_startup_notices(vec![notice()]);
+        assert_eq!(library.startup_notices.len(), 0);
+    }
 
     #[test]
     fn only_one_order_read_runs_and_a_second_ask_voids_its_answer() {

@@ -72,6 +72,10 @@ pub fn follow(event: &UiEvent, cx: &mut App) {
 pub fn restore(open: &[QuestionId], cx: &mut App) {
     let steps = update(cx, |registry| registry.restore(open));
     run(steps, cx);
+    // Their question may have moved on during the events that were missed.
+    for id in open {
+        refresh(Shows::Question(*id), cx);
+    }
 }
 
 /// Brings every open question's window up, opening the closed ones again.
