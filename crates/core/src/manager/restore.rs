@@ -12,6 +12,7 @@ use wirecatch_protocol::proxy::ProxyUse;
 use wirecatch_protocol::rules::QueueReason;
 use wirecatch_settings::DEFAULT_QUEUE_ID;
 use wirecatch_settings::proxy::{ComputerProxy, SavedProxyServer};
+use wirecatch_sites::local_network::ChosenBy;
 use wirecatch_sites::public_suffix::SuffixList;
 use wirecatch_store::{Snapshot, StoredDownload};
 
@@ -182,9 +183,13 @@ fn restore_entry(
     default_queue: QueueId,
     around: &Surroundings<'_>,
 ) -> (Entry, bool) {
+    let media_job = stored.media.and_then(|m| m.job);
     let mut entry = Entry {
-        media_job: stored.media.and_then(|m| m.job),
-        video_check: false,
+        // D51: a link the person added is still read for its video if its server has not answered with a file.
+        video_check: media_job.is_none()
+            && !stored.naming.settled
+            && stored.chosen_by == ChosenBy::Person,
+        media_job,
         row: stored.summary,
         position: stored.position,
         origin: stored.origin,
