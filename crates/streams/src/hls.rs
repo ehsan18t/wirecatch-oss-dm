@@ -4,6 +4,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -30,6 +31,8 @@ pub(crate) enum Playlist {
 pub(crate) struct Master {
     pub variants: Vec<Variant>,
     pub renditions: Vec<Rendition>,
+    /// The audio rendition each audio group pairs with its qualities.
+    pub paired_audio: HashMap<String, usize>,
 }
 
 impl Master {
@@ -46,6 +49,8 @@ impl Master {
 #[derive(Debug, Clone)]
 pub(crate) struct Variant {
     pub url: Url,
+    /// Judged once as the playlist is read: selection asks for every quality, and the codecs can be long.
+    audio_only: bool,
     pub bandwidth: Option<u64>,
     pub codecs: Option<String>,
     pub resolution: Option<(u32, u32)>,
@@ -56,7 +61,7 @@ pub(crate) struct Variant {
 impl Variant {
     /// Whether the variant carries only audio, judging by its codecs.
     pub fn audio_only(&self) -> bool {
-        self.resolution.is_none() && self.codecs.as_deref().is_some_and(Codec::all_audio)
+        self.audio_only
     }
 }
 
@@ -121,11 +126,35 @@ fn parse_master(lines: &[(usize, &str)], base: &Url) -> Result<Master, Located> 
     for &(number, line) in lines {
         reader.line(line, base).map_err(|cause| cause.at(number))?;
     }
-    let master = reader.master;
+    let mut master = reader.master;
     if master.variants.is_empty() {
         return Err(ManifestError::NoVariants.into());
     }
+    master.paired_audio = paired_audio(&master.renditions);
     Ok(master)
+}
+
+/// Each audio group's rendition to pair with a quality: its default one, else the one to select automatically, else the first.
+fn paired_audio(renditions: &[Rendition]) -> HashMap<String, usize> {
+    let rank = |r: &Rendition| u8::from(r.autoselect) + 2 * u8::from(r.default);
+    let mut paired: HashMap<String, usize> = HashMap::new();
+    for (i, rendition) in renditions.iter().enumerate() {
+        if rendition.kind != RenditionKind::Audio || rendition.url.is_none() {
+            continue;
+        }
+        paired
+            .entry(rendition.group.clone())
+            .and_modify(|best| {
+                if renditions
+                    .get(*best)
+                    .is_some_and(|b| rank(rendition) > rank(b))
+                {
+                    *best = i;
+                }
+            })
+            .or_insert(i);
+    }
+    paired
 }
 
 /// A master playlist being read, line by line.
@@ -155,14 +184,17 @@ impl MasterReader {
         {
             master.check_room_for_a_track()?;
             let url = join(base, line)?;
+            let codecs = attr(&attrs, "CODECS").map(str::to_string);
+            let resolution = attr(&attrs, "RESOLUTION").and_then(|r| {
+                let (w, h) = r.split_once(['x', 'X'])?;
+                Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
+            });
             master.variants.push(Variant {
                 url,
+                audio_only: resolution.is_none() && codecs.as_deref().is_some_and(Codec::all_audio),
                 bandwidth: number(&attrs, "BANDWIDTH"),
-                codecs: attr(&attrs, "CODECS").map(str::to_string),
-                resolution: attr(&attrs, "RESOLUTION").and_then(|r| {
-                    let (w, h) = r.split_once(['x', 'X'])?;
-                    Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
-                }),
+                codecs,
+                resolution,
                 frame_rate: attr(&attrs, "FRAME-RATE")
                     .and_then(|f| f.parse().ok())
                     .filter(|f: &f64| f.is_finite() && *f > 0.0),

@@ -3,8 +3,10 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use tokio::sync::Mutex;
+
 use wirecatch_engine::{CancellationToken, DownloadOptions};
-use wirecatch_streams::{Error, PrivateNetwork, inspect};
+use wirecatch_streams::{Error, PrivateNetwork, StreamInfo, inspect};
 use wirecatch_test_support::TestResult;
 use wirecatch_test_support::files::FileServer;
 
@@ -29,18 +31,21 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static COUNTING: Counting = Counting;
 
+/// Far above what reading one quality takes, far below comparing it with every other.
+const WORK_PER_QUALITY: u64 = 200;
+
 const MEDIA: &str = "#EXTM3U\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n";
 
-#[tokio::test]
-async fn a_master_with_more_qualities_than_any_video_is_refused_without_comparing_them()
--> TestResult {
-    const QUALITIES: u64 = 8_000;
+/// One test at a time: the count is the whole process's.
+static ALONE: Mutex<()> = Mutex::const_new(());
+
+/// Inspects a master of `qualities` qualities, each of which allocates to tell whether it is audio only: what it gave, and the allocations it took.
+async fn inspect_master(qualities: u64) -> TestResult<(Result<StreamInfo, Error>, u64)> {
     let server = FileServer::start().await;
     let line = "#EXT-X-STREAM-INF:CODECS=\"x\"\na\n";
-    let text = format!("#EXTM3U\n{}", line.repeat(usize::try_from(QUALITIES)?));
+    let text = format!("#EXTM3U\n{}", line.repeat(usize::try_from(qualities)?));
     server.put_typed("m.m3u8", text, "application/vnd.apple.mpegurl");
     server.put_typed("a", MEDIA, "application/vnd.apple.mpegurl");
-
     let before = ALLOCATIONS.load(Ordering::Relaxed);
     let inspected = inspect(
         &server.url("m.m3u8"),
@@ -49,12 +54,32 @@ async fn a_master_with_more_qualities_than_any_video_is_refused_without_comparin
         CancellationToken::new(),
     )
     .await;
-    let spent = ALLOCATIONS.load(Ordering::Relaxed) - before;
+    Ok((inspected, ALLOCATIONS.load(Ordering::Relaxed) - before))
+}
 
+#[tokio::test]
+async fn a_master_with_more_qualities_than_any_video_is_refused_without_comparing_them()
+-> TestResult {
+    const QUALITIES: u64 = 8_000;
+    let _alone = ALONE.lock().await;
+    let (inspected, spent) = inspect_master(QUALITIES).await?;
     assert!(
-        spent <= 200 * QUALITIES,
+        spent <= WORK_PER_QUALITY * QUALITIES,
         "{spent} allocations to inspect {QUALITIES} qualities"
     );
     assert!(matches!(inspected, Err(Error::TooLarge)), "{inspected:?}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_master_at_the_limit_costs_work_in_proportion_to_its_qualities() -> TestResult {
+    const QUALITIES: u64 = 4_096;
+    let _alone = ALONE.lock().await;
+    let (inspected, spent) = inspect_master(QUALITIES).await?;
+    assert!(
+        spent <= WORK_PER_QUALITY * QUALITIES,
+        "{spent} allocations to inspect {QUALITIES} qualities"
+    );
+    assert_eq!(inspected?.video.len(), 4_096);
     Ok(())
 }
