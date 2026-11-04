@@ -168,6 +168,31 @@ fn write_mark(file: &std::fs::File, host_url: &str, referrer: Option<&str>) -> s
 #[cfg(not(windows))]
 pub fn mark(_path: &Path, _host_url: &str, _referrer: Option<&str>) {}
 
+/// Gives the file `to` the mark of the file `from`, which a copy of its bytes does not carry. Best effort, as marking is. Blocks on the disk.
+#[cfg(windows)]
+pub fn copy_mark(from: &Path, to: &Path) {
+    let stream = |path: &Path| {
+        let mut name = path.as_os_str().to_os_string();
+        name.push(":Zone.Identifier");
+        name
+    };
+    let mark = match std::fs::read(stream(from)) {
+        Ok(mark) => mark,
+        // No mark, or a drive that cannot carry one.
+        Err(e) => {
+            tracing::debug!(path = %from.display(), error = %e, "no mark to carry over");
+            return;
+        }
+    };
+    if let Err(e) = std::fs::write(stream(to), mark) {
+        tracing::info!(path = %to.display(), error = %e, "could not carry over the mark of a file downloaded from the internet");
+    }
+}
+
+/// Does nothing: only Windows marks files downloaded from the internet.
+#[cfg(not(windows))]
+pub fn copy_mark(_from: &Path, _to: &Path) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
