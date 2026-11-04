@@ -1048,7 +1048,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 0     | Tool: `jscpd`                           | done        |
 | 0     | Tool: `cargo-mutants`                   | in progress |
 | 0     | Fault tests (`fault-tests.md`)          | in progress |
-| 1     | Chunk 01: engine-disk-resume (pilot)    | pending     |
+| 1     | Chunk 01: engine-disk-resume (pilot)    | done        |
 | 1     | Chunk 02: engine-http                   | pending     |
 | 1     | Chunk 03: saved-state                   | done        |
 | 1     | Chunk 04: core-run-lifecycle            | done        |
