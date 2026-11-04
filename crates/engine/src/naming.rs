@@ -106,10 +106,18 @@ pub fn from_url(url: &Url) -> Option<String> {
     let segment = url
         .path_segments()?
         .rev()
-        .map(|segment| segment.split(';').next().unwrap_or(segment))
+        .map(without_path_parameters)
         .find(|s| !s.is_empty())?;
     let decoded = percent_decode_str(segment).decode_utf8_lossy();
     (!decoded.trim().is_empty()).then(|| decoded.into_owned())
+}
+
+/// A `;` starts parameters only when `=` follows: `Artist;Live.mp3` is a name.
+fn without_path_parameters(segment: &str) -> &str {
+    match segment.split_once(';') {
+        Some((name, parameters)) if parameters.contains('=') => name,
+        _ => segment,
+    }
 }
 
 /// Makes a name safe on both Windows and Linux, and at most 200 bytes long,
@@ -401,6 +409,18 @@ impl Candidates<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_semicolon_in_a_link_starts_parameters_only_before_an_equals_sign() {
+        let name = |path: &str| {
+            from_url(&Url::parse(&format!("https://example.com/{path}")).unwrap()).unwrap()
+        };
+        assert_eq!(name("Artist;Live.mp3"), "Artist;Live.mp3");
+        assert_eq!(name("Artist%3BLive.mp3"), "Artist;Live.mp3");
+        assert_eq!(name("a%3Bb=c.zip"), "a;b=c.zip");
+        assert_eq!(name("a.zip;jsessionid=ABC123"), "a.zip");
+        assert_eq!(name("a.zip;type=i"), "a.zip");
+    }
 
     #[test]
     fn a_control_character_never_reaches_a_name() {
