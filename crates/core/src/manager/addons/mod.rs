@@ -13,6 +13,7 @@ mod install;
 mod tests;
 mod updates;
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::Duration;
 
@@ -144,6 +145,8 @@ pub(super) struct AddonSlot {
     pub record: Record,
     /// The programs, when the add-on is installed and intact.
     pub tools: Option<MediaTools>,
+    /// The parts of `record` whose files were last found missing or changed.
+    pub damaged: BTreeSet<ComponentId>,
     pub op: Option<AddonOp>,
     /// Why the last install the user started failed.
     pub failure: Option<String>,
@@ -189,14 +192,20 @@ pub(super) enum OpKind {
 }
 
 impl AddonSlot {
+    /// Whether `wanted` must be downloaded.
+    fn needs(&self, wanted: &AddonComponent) -> bool {
+        self.damaged.contains(&wanted.id()) || addons::outdated(&self.record, wanted)
+    }
+
     /// Loads the record and checks the files. Blocks on the disk.
     pub fn load(dir: &Path) -> Self {
         match Record::load(dir) {
             Ok(record) => {
-                let tools = addons::tools(dir, &record, Check::Sizes).map(MediaTools::from);
+                let scan = addons::scan(dir, &record, Check::Sizes);
                 Self {
                     record,
-                    tools,
+                    tools: scan.tools.map(MediaTools::from),
+                    damaged: scan.damaged,
                     ..Self::default()
                 }
             }
@@ -348,11 +357,11 @@ impl Manager {
                 let record = Record::load(&dir).map_err(|source| {
                     CoreError::File(FileError::new(&dir.join(addons::RECORD_FILE), source))
                 })?;
-                let tools = addons::tools(&dir, &record, check).map(MediaTools::from);
-                Ok((record, tools))
+                let scan = addons::scan(&dir, &record, check);
+                Ok((record, scan.tools.map(MediaTools::from), scan.damaged))
             })
             .await;
-        let (record, tools) = match scanned {
+        let (record, tools, damaged) = match scanned {
             Ok(scanned) => scanned,
             // A record that cannot be read now (held by an antivirus, say) keeps what was known.
             Err(e) => {
@@ -368,6 +377,7 @@ impl Manager {
             state.addon.record != record || state.addon.tools != tools || state.addon.unreadable;
         state.addon.record = record;
         state.addon.tools = tools;
+        state.addon.damaged = damaged;
         state.addon.unreadable = false;
         if changed {
             info!("the media add-on's files changed on disk");
@@ -423,11 +433,12 @@ impl Manager {
                         .map(|(id, c)| (*id, c.version.as_str())),
                 )
             }),
-            latest_version: Some(describe(
-                wanted
-                    .iter()
-                    .map(|p| (p.component.id(), p.component.version())),
-            )),
+            // A part staying as it is, such as a yt-dlp newer than the pinned one, is named as it is.
+            latest_version: Some(describe(wanted.iter().map(|p| {
+                let id = p.component.id();
+                let installed = slot.record.version(id).filter(|_| !slot.needs(&p.component));
+                (id, installed.unwrap_or_else(|| p.component.version()))
+            }))),
             size: (!plan.is_empty())
                 .then(|| plan.iter().map(|p| p.component.release().size()).sum()),
             note: self.addon_notice(slot),
@@ -498,16 +509,11 @@ impl Manager {
         vec![ytdlp, pinned(&sources.ffmpeg), pinned(&sources.deno)]
     }
 
-    /// What must be downloaded: every part for a missing or damaged add-on,
-    /// otherwise the parts that are out of date.
+    /// What must be downloaded: the parts that are damaged, missing or out of date.
     fn addon_plan(&self, slot: &AddonSlot) -> Vec<Part> {
-        let wanted = self.wanted_components(slot);
-        if slot.tools.is_none() {
-            return wanted;
-        }
-        wanted
+        self.wanted_components(slot)
             .into_iter()
-            .filter(|p| addons::outdated(&slot.record, &p.component))
+            .filter(|p| slot.needs(&p.component))
             .collect()
     }
 
@@ -551,6 +557,7 @@ impl Manager {
             Ok((record, tools)) => {
                 state.addon.record = record;
                 state.addon.tools = tools;
+                state.addon.damaged.clear();
                 state.addon.unreadable = false;
                 state.addon.failure = None;
                 // Releases no newer than what is now installed are done with.

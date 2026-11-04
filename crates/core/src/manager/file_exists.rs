@@ -254,11 +254,15 @@ fn replace_at(state: &mut State, id: DownloadId, path: &Path) {
     let Some(entry) = state.downloads.get_mut(&id) else {
         return;
     };
+    entry.on_existing = Some(OnExisting::Replace);
+    entry.row.status = DownloadStatus::Queued;
+    // A media download's work folder is named after its path, and holds the file that waits: moving the path would leave both behind. Placing that file replaces the one found.
+    if entry.media_job.is_some() {
+        return;
+    }
     let provisional = entry.path().to_path_buf();
     settle_at(entry, path);
     entry.row.category = category;
-    entry.on_existing = Some(OnExisting::Replace);
-    entry.row.status = DownloadStatus::Queued;
     if !naming::same_path(&provisional, path) {
         state.claimed.remove(&provisional, id);
         state.claimed.insert(path, id);

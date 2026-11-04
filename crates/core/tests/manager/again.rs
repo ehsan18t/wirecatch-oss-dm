@@ -2,7 +2,9 @@
 //! it, and its window comes to the front, instead of a second question or download (D89).
 
 use wirecatch_engine::units::{KIB, KIB_USIZE};
-use wirecatch_protocol::app::{Repeated, UiEvent};
+use wirecatch_protocol::app::{
+    DownloadStatus, FileExistsAnswer, FileExistsChoice, Repeated, UiEvent,
+};
 use wirecatch_protocol::extension::{AddAction, CaptureSource, NewDownload};
 
 use crate::common::{Config, Harness, PATIENCE, TestResult, TestServer, test_data, tune};
@@ -205,5 +207,43 @@ async fn another_fragment_joins_the_open_question() -> TestResult {
         .add_capture(click("https://example.com/report.pdf#page=2", 2))
         .await?;
     assert_eq!(h.manager.pending_confirmations().len(), 1);
+    Ok(())
+}
+
+/// With no confirmation window, a captured file already in the folder is asked about; the attempt stays and the browser's copy is not needed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_finished_file_captured_again_keeps_its_question() -> TestResult {
+    let server = TestServer::start(
+        test_data(16 * KIB_USIZE),
+        Config {
+            ranges: true,
+            content_disposition: Some("attachment; filename=\"report.pdf\"".into()),
+            ..Config::default()
+        },
+    )
+    .await;
+    let h = Harness::new().await?;
+    let url = server.url("get").to_string();
+    let first = h.manager.add_capture(click(&url, 1)).await?;
+    let first = h
+        .wait_status(first.id.ok_or("no id")?, DownloadStatus::Completed)
+        .await;
+
+    let again = h.manager.add_capture(click(&url, 2)).await?;
+
+    let [question] = &h.manager.pending_file_exists()[..] else {
+        return Err("the question closed itself".into());
+    };
+    let id = again.id.ok_or("no id")?;
+    assert_eq!(question.download, id);
+    h.manager.answer_file_exists(
+        question.id,
+        FileExistsAnswer {
+            choice: FileExistsChoice::KeepBoth,
+            remember: false,
+        },
+    )?;
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+    assert_ne!(done.path, first.path);
     Ok(())
 }

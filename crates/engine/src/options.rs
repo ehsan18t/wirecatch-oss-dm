@@ -119,7 +119,8 @@ pub struct DownloadOptions {
     /// never hands out a local address, so a name that changes its address
     /// later (DNS rebinding) cannot reach one either (see [`PrivateNetwork`]
     /// on the starting URL). HTTP/3 is not used then, as QUIC connections do not go
-    /// through that filter. `ftp` links are not covered.
+    /// through that filter. FTP links follow the same rule (see
+    /// [`PrivateNetwork`]).
     pub private_network: PrivateNetwork,
     /// The most bytes one HTTP request may ask for (default `None`: no limit).
     ///

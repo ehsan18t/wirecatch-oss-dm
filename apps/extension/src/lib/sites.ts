@@ -5,7 +5,7 @@
  * (`www.example.com`, `cdn.example.com`), but not look-alikes such as `badexample.com`.
  * The app keeps each entry the way `normalizeSite` from `@wirecatch/protocol` does.
  */
-import { normalizeSite } from '@wirecatch/protocol';
+import { hostOnSite, normalizeSite } from '@wirecatch/protocol';
 import { hostOf, parseWebUrl } from './url';
 
 /** The site to ignore when the person clicks "Ignore this site" on a page: its host without `www.`. */
@@ -15,11 +15,6 @@ export function siteForPage(url: string | null): string | null {
   return host.replace(/^www\./, '');
 }
 
-/** True when `host` is `site` or one of its subdomains. */
-export function hostMatchesSite(host: string, site: string): boolean {
-  return host === site || host.endsWith(`.${site}`);
-}
-
 /** The ignored-site entry that covers `url`, if any. */
 export function matchingSite(url: string | null, sites: readonly string[]): string | null {
   if (url === null) return null;
@@ -27,7 +22,7 @@ export function matchingSite(url: string | null, sites: readonly string[]): stri
   if (host === null) return null;
   for (const entry of sites) {
     const site = normalizeSite(entry);
-    if (site !== null && hostMatchesSite(host, site)) return entry;
+    if (site !== null && hostOnSite(host, site)) return entry;
   }
   return null;
 }
