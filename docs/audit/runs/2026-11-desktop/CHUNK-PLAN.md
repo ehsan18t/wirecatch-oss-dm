@@ -1111,4 +1111,4 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 ## Bar corrections
 
 - All stages are approved: run through to the finished audit log without stopping for approval.
-- Stage 1 runs at most 8 chunk reviewers at once, using Opus 5.5 at medium effort.
+- Stage 1 runs at most 12 chunk reviewers at once, using Opus 5.5 at medium effort.
