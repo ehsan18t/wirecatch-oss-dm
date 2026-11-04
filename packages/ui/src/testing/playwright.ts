@@ -12,6 +12,10 @@ export const test = base.extend<{ pageFaults: undefined }>({
       const warnings: string[] = [];
       const lost: string[] = [];
       const errors: string[] = [];
+      // Fetched by Playwright, not the browser: on a Windows runner Edge's own sockets lose a request now and then (net::ERR_NO_BUFFER_SPACE), so a page misses a stylesheet with nothing wrong in it.
+      await page.route('http://*/**', async (route) => {
+        await route.fulfill({ response: await route.fetch() });
+      });
       page.on('console', (message) => {
         const text = message.text();
         if (text.includes('svelte.dev/e/')) warnings.push(text);
