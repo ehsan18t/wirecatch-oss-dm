@@ -291,7 +291,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 226. A queue using a proxy with no name reads "via" and nothing after it (fixed)
 227. The queue page's facts line is cut off with no way to read the end (fixed)
 228. The details panel says Merging for every processing step (fixed)
-229. The system accent breaks the promised contrast (open)
+229. The system accent breaks the promised contrast (fixed)
 230. Check for updates and Copy from system give no answer when there is nothing to do (fixed)
 231. A download waiting on the question reads Paused at Size unknown (open)
 232. The complete window stays open and blank once its rows are removed (open)
