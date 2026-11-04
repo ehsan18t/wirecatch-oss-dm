@@ -31,6 +31,10 @@ pub struct StderrTail {
 impl StderrTail {
     /// Keeps `line` as the newest, dropping the oldest lines that no longer fit.
     pub(crate) fn push(&mut self, line: &str) {
+        // A blank line says nothing, and would take no room against the limit.
+        if line.trim().is_empty() {
+            return;
+        }
         let line = cut_bytes(&redact::text_for_log(line), STDERR_TAIL_BYTES);
         self.bytes += line.len();
         self.lines.push_back(line);
@@ -109,7 +113,7 @@ pub fn for_a_person(text: &str) -> String {
 }
 
 /// `text` cut to at most `limit` bytes at a character boundary.
-fn cut_bytes(text: &str, limit: usize) -> String {
+pub(super) fn cut_bytes(text: &str, limit: usize) -> String {
     let mut end = text.len().min(limit);
     while !text.is_char_boundary(end) {
         end -= 1;
@@ -133,6 +137,24 @@ mod tests {
         let last = "ERROR: the last word".len();
         assert_eq!(tail.lines().len(), (STDERR_TAIL_BYTES - last) / 1000 + 1);
         assert_eq!(tail.error_line(), Some("ERROR: the last word"));
+    }
+
+    #[test]
+    fn blank_lines_take_no_room() {
+        let mut tail = StderrTail::default();
+        for _ in 0..100_000 {
+            tail.push("");
+        }
+        assert_eq!(tail.lines().len(), 0);
+    }
+
+    #[test]
+    fn a_blank_last_line_does_not_hide_the_reason() {
+        let mut tail = StderrTail::default();
+        tail.push("Conversion failed!");
+        tail.push("");
+        tail.push("  ");
+        assert_eq!(tail.error_line(), Some("Conversion failed!"));
     }
 
     #[test]

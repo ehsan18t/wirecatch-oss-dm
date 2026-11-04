@@ -23,7 +23,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-15  | fix(desktop): let text fields keep their own keys  | `fix/field-keys-first`           | 15                           | P1       | small  | none         | open   |
 | PR-16  | fix(streams): limit the qualities of HLS playlists | `fix/limit-hls-qualities`        | 16                           | P1       | small  | none         | merged |
 | PR-17  | fix(streams): refuse segments that are not media   | `fix/check-segment-bodies`       | 17                           | P1       | medium | none         | merged |
-| PR-18  | fix(ipc): refuse a lower-integrity stand-in pipe   | `fix/pipe-integrity-check`       | 18                           | P1       | medium | none         | open   |
+| PR-18  | fix(ipc): refuse a lower-integrity stand-in pipe   | `fix/pipe-integrity-check`       | 18                           | P1       | medium | none         | merged |
 | PR-19  | fix(streams): limit DASH addresses while building  | `fix/dash-address-limit`         | 19                           | P1       | small  | none         | merged |
 | PR-20  | fix(engine): fail a run when a flush fails         | `fix/keep-failed-flush`          | 20                           | P1       | small  | none         | merged |
 | PR-21  | fix(engine): renew an expired redirect target      | `fix/expired-redirect-target`    | 21                           | P1       | small  | none         | merged |
@@ -47,7 +47,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-39  | fix(engine): reuse part files under other names    | `fix/find-own-part-file`         | 39                           | P2       | medium | none         | merged |
 | PR-40  | fix(core): report whether the add-on works         | `fix/addon-usable`               | 40, 53                       | P2       | medium | none         | open   |
 | PR-41  | fix(desktop): keep notices in step with downloads  | `fix/notices-follow-downloads`   | 41, 123, 232                 | P2       | medium | none         | open   |
-| PR-42  | fix(engine): hold FTP to the local network rule    | `fix/ftp-local-network`          | 42, 43                       | P2       | medium | none         | open   |
+| PR-42  | fix(engine): hold FTP to the local network rule    | `fix/ftp-local-network`          | 42, 43                       | P2       | medium | none         | merged |
 | PR-43  | refactor(sites): merge the host-under-site checks  | `refactor/one-host-under-site`   | 44                           | P3       | medium | none         | merged |
 | PR-44  | fix(engine): normalise ftps hosts when parsing     | `fix/normal-ftps-hosts`          | 45                           | P2       | small  | PR-43        | open   |
 | PR-45  | fix: hide only what is secret in a log line        | `fix/log-redaction-edges`        | 46, 222                      | P2       | small  | none         | merged |
@@ -63,7 +63,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-55  | fix(desktop): follow an installer through setup    | `fix/installer-lifecycle`        | 59, 72                       | P2       | medium | none         | merged |
 | PR-56  | fix(core): offer updates only when they can work   | `fix/honest-update-offers`       | 60, 185, 186, 187            | P2       | medium | none         | open   |
 | PR-57  | fix(streams): stop trusting bad work folder data   | `fix/work-folder-trust`          | 62, 74                       | P2       | medium | none         | merged |
-| PR-58  | fix(streams): report how a program really ended    | `fix/program-end-report`         | 63, 77, 157                  | P2       | medium | none         | open   |
+| PR-58  | fix(streams): report how a program really ended    | `fix/program-end-report`         | 63, 77, 157                  | P2       | medium | none         | merged |
 | PR-59  | fix(cli): report stops, speed, errors correctly    | `fix/cli-reports`                | 65, 91, 182                  | P2       | medium | none         | merged |
 | PR-60  | fix(core): apply proxy exceptions to yt-dlp        | `fix/ytdlp-proxy-exceptions`     | 68, 69                       | P2       | small  | none         | merged |
 | PR-61  | fix(core): move path checks off async threads      | `fix/path-checks-off-async`      | 70                           | P2       | medium | none         | merged |
@@ -77,7 +77,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-69  | fix(core): keep a row's answers after a restart    | `fix/answers-survive-restart`    | 82, 83                       | P2       | medium | PR-04        | open   |
 | PR-70  | fix(core): answer a repeated capture once          | `fix/repeated-capture`           | 86, 151, 173                 | P2       | medium | none         | merged |
 | PR-71  | fix(engine): count transferred bytes correctly     | `fix/count-bytes`                | 87, 177, 180                 | P2       | small  | none         | open   |
-| PR-72  | fix(engine): read range answers as they are        | `fix/range-answers`              | 90, 178                      | P2       | small  | none         | open   |
+| PR-72  | fix(engine): read range answers as they are        | `fix/range-answers`              | 90, 178                      | P2       | small  | none         | merged |
 | PR-73  | fix(desktop): handle odd launches safely           | `fix/odd-launches`               | 92, 131                      | P2       | medium | none         | merged |
 | PR-74  | fix(desktop): close the app before uninstalling    | `fix/uninstall-closes-app`       | 93                           | P2       | small  | none         | merged |
 | PR-75  | fix: correct faults in the linux packages          | `fix/linux-packages`             | 94, 188, 189, 190            | P2       | medium | none         | open   |
@@ -101,7 +101,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-93  | fix(engine): lock the part file during a run       | `fix/part-file-lock`             | 130                          | P2       | medium | none         | merged |
 | PR-94  | fix(core): keep a video's work until it is placed  | `fix/work-until-placed`          | 133, 169                     | P2       | medium | PR-04        | open   |
 | PR-95  | fix(core): apply the local rule to yt-dlp reads    | `fix/ytdlp-local-rule`           | 137                          | P2       | medium | none         | open   |
-| PR-96  | fix(engine): check free space before a download    | `fix/free-space-check`           | 140                          | P2       | medium | none         | open   |
+| PR-96  | fix(engine): check free space before a download    | `fix/free-space-check`           | 140                          | P2       | medium | none         | merged |
 | PR-97  | fix(core): record every file of a move up front    | `fix/record-moves`               | 141, 201                     | P2       | medium | PR-04, PR-08 | open   |
 | PR-98  | chore: remove code nothing calls                   | `chore/remove-dead-commands`     | 142, 235, 236                | P3       | medium | none         | open   |
 | PR-99  | test: wait under PATIENCE in every test            | `test/patience-waits`            | 143, 242                     | P3       | medium | none         | open   |
@@ -364,7 +364,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/ipc`
 - **Proof:** `08-1.patch`, run at high and again at medium integrity. `B04-p2-checks.patch` holds 5 tests: only the two `audit_08_2_` ones belong here, the others are for PR-34.
 - **Checks:** `cargo test -p wirecatch-ipc`, `cargo clippy -p wirecatch-ipc`
-- **Status:** open
+- **Status:** merged
 
 ### PR-19 fix(streams): limit DASH addresses while building
 
@@ -652,7 +652,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/engine`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo clippy -p wirecatch-engine`
-- **Status:** open
+- **Status:** merged
 
 ### PR-43 refactor(sites): merge the host-under-site checks
 
@@ -845,7 +845,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/streams/src/process`, `crates/streams/tests`, `crates/media`
 - **Proof:** `13-1.patch`, 2 tests, for item 63. The others have none.
 - **Checks:** `cargo test -p wirecatch-streams -p wirecatch-media`, `cargo clippy -p wirecatch-streams -p wirecatch-media`
-- **Status:** open
+- **Status:** merged
 
 ### PR-59 fix(cli): report stops, speed, errors correctly
 
@@ -1013,7 +1013,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/engine`, `crates/cli`, `crates/test-support`
 - **Proof:** `FT-sizes.patch` for item 90 holds the fault harness and 15 tests. Once PR-39 is merged the harness is there, so keep only `fault_sizes.rs`. Item 178 has none.
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo test -p wirecatch-cli --test fault_sizes`, `cargo clippy -p wirecatch-engine -p wirecatch-cli`, `node scripts/gate.mjs unused-deps` if the harness comes with it.
-- **Status:** open
+- **Status:** merged
 
 ### PR-73 fix(desktop): handle odd launches safely
 
@@ -1301,7 +1301,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/engine`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo clippy -p wirecatch-engine`, `node scripts/gate.mjs clippy-linux`. A full disk through a real download is untested, so say if this could not be done.
-- **Status:** open
+- **Status:** merged
 
 ### PR-97 fix(core): record every file of a move up front
 

@@ -360,6 +360,40 @@ mod tls {
         );
     }
 
+    /// A range past the end of a file that shrank is a changed file, whichever connection meets it.
+    #[tokio::test]
+    async fn a_range_past_the_end_reads_as_a_changed_file() {
+        let server = wirecatch_test_support::http::TestServer::start(
+            wirecatch_test_support::test_data(10),
+            wirecatch_test_support::http::Config {
+                ranges: true,
+                ..wirecatch_test_support::http::Config::default()
+            },
+        )
+        .await;
+        let opts = DownloadOptions::default();
+        let url = server.url("f.bin");
+        let (session, url) = Session::new(&url, &opts, CancellationToken::new());
+        let client = Clients::new(&opts).unwrap().build().unwrap();
+        let request = RequestContext {
+            url,
+            ranged: true,
+            total: Some(100),
+            validators: Validators::default(),
+            cancel: CancellationToken::new(),
+            stall_timeout: opts.stall_timeout,
+        };
+        let fetched = fetch(&client, &request, &session, 50, 60).await;
+        assert!(
+            matches!(
+                fetched.as_ref().map_err(|f| &f.error),
+                Err(Error::RemoteChanged)
+            ),
+            "{:?}",
+            fetched.map(|(_, skip)| skip).map_err(|f| f.error)
+        );
+    }
+
     #[cfg(windows)]
     #[test]
     fn the_bundled_roots_cover_what_windows_may_not_have_fetched() {
