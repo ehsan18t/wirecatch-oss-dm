@@ -153,7 +153,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 126 | A finished download whose file is gone gets advice it cannot follow                               | `23-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 127 | Settings, Media shows an empty Resolution after a rarer quality                                   | `27-6`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 128 | The Add dialog says By file type for downloads going to a queue's folder                          | `Xpath-normal-download-7`                                                                          | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 129 | scripts/linux-test.sh can never pass                                                              | `33-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 129 | scripts/linux-test.sh can never pass                                                              | `33-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 130 | A second running copy of one CLI download takes over the first one's files                        | `01-2`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 131 | A launch handed over while the list is opening pops a box and loses links                         | `22-3`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 132 | A typed extension picks a container ffmpeg refuses, with no way out                               | `Xpath-media-download-7`                                                                           | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | open   |
@@ -215,7 +215,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 188 | The packaging example for ARM64 on x64 cannot work                                                | `29-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 189 | ARM64 Linux packages are drafted without the fresh-system check                                   | `29-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 190 | The .deb and .rpm state no C library version                                                      | `29-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 191 | The icon holds its own unchecked copy of the mark                                                 | `29-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 191 | The icon holds its own unchecked copy of the mark                                                 | `29-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 192 | Two copies of the read-until-full loop have drifted                                               | `15-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 193 | Code keeps work folders of a layout that was never released                                       | `15-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 194 | axum is a dev-dependency nothing in streams uses                                                  | `15-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -262,10 +262,10 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 235 | The comment on RecvError::Closed in the server's loop is wrong                                    | `07-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 236 | Manager::update_settings has no caller outside tests                                              | `19-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 237 | lock_path repeats with_suffix                                                                     | `03-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 238 | Product tests are pinned to today's config values                                                 | `33-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 239 | Two copies of the pnpm-workspace parser                                                           | `33-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 240 | Dead code in the product generator                                                                | `33-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 241 | Comments in the checked configuration describe things that are gone                               | `33-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 238 | Product tests are pinned to today's config values                                                 | `33-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 239 | Two copies of the pnpm-workspace parser                                                           | `33-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 240 | Dead code in the product generator                                                                | `33-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 241 | Comments in the checked configuration describe things that are gone                               | `33-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 242 | Two test helpers wait for progress with no deadline                                               | `01-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 243 | A roaming data folder that could not be deleted keeps the list with its cookies                   | `Xdatabase-migrations-4`                                                                           | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 244 | The `<local>` queue rule is never tested against the real network check                           | `M-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -2458,7 +2458,7 @@ P2, small, open.
 
 ### 129. scripts/linux-test.sh can never pass
 
-P2, small, open.
+P2, small, fixed.
 
 `linux-test.sh` excludes `.git`, and the gate's `cfg-allow` runs `git grep`, which exits 128 outside a repository. So the script stops at that check every time. CI runs the same group on Linux.
 
@@ -3507,7 +3507,7 @@ Neither list names a C library or version, and nfpm computes none, so a package 
 
 ### 191. The icon holds its own unchecked copy of the mark
 
-P3, small, open.
+P3, small, fixed.
 
 `icon.svg` repeats the points and widths of `mark.json` by hand. They match today, and only `mark.rs` and `AppMark.svelte` read the data.
 
@@ -4261,7 +4261,7 @@ P3, small, open.
 
 ### 238. Product tests are pinned to today's config values
 
-P3, small, open.
+P3, small, fixed.
 
 The tests assert `version = "0.1.0"` and five live placeholder values, so a version bump or filling in the identity fails them.
 
@@ -4277,7 +4277,7 @@ The tests assert `version = "0.1.0"` and five live placeholder values, so a vers
 
 ### 239. Two copies of the pnpm-workspace parser
 
-P3, small, open.
+P3, small, fixed.
 
 `workspaceParents` and `packageFolders` hold the same list regex, glob regex and `folder/*` rule.
 
@@ -4293,7 +4293,7 @@ P3, small, open.
 
 ### 240. Dead code in the product generator
 
-P3, small, open.
+P3, small, fixed.
 
 `withNote` has one product caller, the `.sh`, `.nsh` and `#!` branches run only in tests, and nothing imports `GENERATED_NOTE`.
 
@@ -4309,7 +4309,7 @@ P3, small, open.
 
 ### 241. Comments in the checked configuration describe things that are gone
 
-P3, small, open.
+P3, small, fixed.
 
 Comments in `config/product.toml`, `Cargo.toml`, `browser.mjs` and `.githooks/commit-msg` describe things that are gone.
 

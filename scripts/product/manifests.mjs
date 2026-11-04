@@ -103,24 +103,3 @@ export function fillTemplate(template, product, name) {
   }
   return template.replaceAll(placeholder, (_, path) => valueAt(product, path, name));
 }
-
-/** How each kind of file writes a comment line, and whether a first line (a `#!`) must stay first. */
-const COMMENT_STYLES = {
-  '.sh': { line: (text) => `# ${text}`, keepFirstLine: true },
-  '.nsh': { line: (text) => `; ${text}`, keepFirstLine: false },
-  '.md': { line: (text) => `<!-- ${text} -->`, keepFirstLine: false },
-};
-
-/** `text` with the comment `note` at the top, after a `#!` line where the format needs one first. */
-export function withNote(text, note, path) {
-  const extension = Object.keys(COMMENT_STYLES).find((ext) => path.endsWith(ext));
-  if (!extension)
-    throw new ManifestError(`No comment style for ${path}; add one to COMMENT_STYLES.`);
-  const style = COMMENT_STYLES[extension];
-  const comment = `${style.line(note)}\n`;
-  if (style.keepFirstLine && text.startsWith('#!')) {
-    const firstLineEnd = text.indexOf('\n') + 1;
-    return text.slice(0, firstLineEnd) + comment + text.slice(firstLineEnd);
-  }
-  return comment + text;
-}

@@ -97,7 +97,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-89  | fix(desktop): make tray actions answer correctly   | `fix/tray-actions`               | 124, 160                     | P2       | small  | none         | open   |
 | PR-90  | fix(desktop): show a processing step as it is      | `fix/processing-step`            | 125, 228                     | P2       | small  | none         | open   |
 | PR-91  | fix(desktop): correct wording of app messages      | `fix/app-message-wording`        | 126, 161                     | P2       | small  | none         | open   |
-| PR-92  | fix: repair the repo's check scripts               | `fix/check-scripts`              | 129, 191, 238, 239, 240, 241 | P2       | medium | none         | open   |
+| PR-92  | fix: repair the repo's check scripts               | `fix/check-scripts`              | 129, 191, 238, 239, 240, 241 | P2       | medium | none         | merged |
 | PR-93  | fix(engine): lock the part file during a run       | `fix/part-file-lock`             | 130                          | P2       | medium | none         | merged |
 | PR-94  | fix(core): keep a video's work until it is placed  | `fix/work-until-placed`          | 133, 169                     | P2       | medium | PR-04        | open   |
 | PR-95  | fix(core): apply the local rule to yt-dlp reads    | `fix/ytdlp-local-rule`           | 137                          | P2       | medium | none         | open   |
@@ -1253,7 +1253,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `scripts`, `config`, `Cargo.toml`, `.githooks`, `crates/desktop/assets/icons`
 - **Proof:** none
 - **Checks:** `node --test "scripts/**/*.test.mjs"`, `node scripts/gate.mjs repo`, `pnpm product:generate` if `config/product.toml` changes, `pnpm gate` once on the final tree, since gate scripts are a wide change.
-- **Status:** open
+- **Status:** merged
 
 ### PR-93 fix(engine): lock the part file during a run
 
