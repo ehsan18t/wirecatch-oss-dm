@@ -367,6 +367,8 @@ Decided by the orchestrator for W4 (review of CORE-3), 2026-10-13. D34.5 said ev
 5. Accepted residual, as browsers accept it for private-to-private navigation: a local page that shows links others posted (an intranet wiki) gets `Auto` for them, so a posted link to a name that answers local is followed. The browser-observed address of the page was rejected as a signal: behind a proxy it is the proxy's address, often private, which would make every page look local.
 6. The wording of a refusal follows who chose the link (`user_error::private_network`): for a website's link, that giving the download a new link in the main window and pasting the same one makes it the person's own (the row's fix, labelled "Get a fresh link" or "New link"); a new link given in the download's own window keeps the website's rule (D43.5), and that window still offers its own form for the fix, so the message names the main window. For the person's or a local page's link, it says that it was sent on from the internet into the local network, with no fix, since pasting it again changes nothing.
 
+7. FTP links are held to the same rule. A download with `Block`, or `Auto` on a host on the internet, looks a name up once leaving out local addresses, is refused when none is left, and keeps every connection on the address that answered; through a SOCKS5 proxy that resolves names, the name is checked here first, as for HTTP. A host written as an address stays the caller's to vouch for (D34.4).
+
 ### D40. Every binary logs to a capped file through one crate, and no log line carries a secret
 
 Decided for the quality audit's W5 (XC-15, DRS-3, CMD-14) on 2026-10-13, after a release build of the app on Windows, which has no console, was found to log nowhere.

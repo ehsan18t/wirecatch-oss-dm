@@ -47,7 +47,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-39  | fix(engine): reuse part files under other names    | `fix/find-own-part-file`         | 39                           | P2       | medium | none         | merged |
 | PR-40  | fix(core): report whether the add-on works         | `fix/addon-usable`               | 40, 53                       | P2       | medium | none         | open   |
 | PR-41  | fix(desktop): keep notices in step with downloads  | `fix/notices-follow-downloads`   | 41, 123, 232                 | P2       | medium | none         | open   |
-| PR-42  | fix(engine): hold FTP to the local network rule    | `fix/ftp-local-network`          | 42, 43                       | P2       | medium | none         | open   |
+| PR-42  | fix(engine): hold FTP to the local network rule    | `fix/ftp-local-network`          | 42, 43                       | P2       | medium | none         | merged |
 | PR-43  | refactor(sites): merge the host-under-site checks  | `refactor/one-host-under-site`   | 44                           | P3       | medium | none         | merged |
 | PR-44  | fix(engine): normalise ftps hosts when parsing     | `fix/normal-ftps-hosts`          | 45                           | P2       | small  | PR-43        | open   |
 | PR-45  | fix: hide only what is secret in a log line        | `fix/log-redaction-edges`        | 46, 222                      | P2       | small  | none         | merged |
@@ -652,7 +652,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/engine`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo clippy -p wirecatch-engine`
-- **Status:** open
+- **Status:** merged
 
 ### PR-43 refactor(sites): merge the host-under-site checks
 
