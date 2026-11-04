@@ -365,10 +365,18 @@ async function appImage(product, root, arch) {
   );
   copyFileSync(join(ICONS, '128x128@2x.png'), join(appDir, `${id}.png`));
   symlinkSync(`${id}.png`, join(appDir, '.DirIcon'));
+  const notices = join(appDir, 'usr', 'share', 'licenses', slug, product.files.notices);
   bundleLibraries(
     join(appDir, 'usr', 'bin', product.executables.app),
     join(appDir, 'usr', 'lib'),
-    join(appDir, 'usr', 'share', 'licenses', slug, product.files.notices),
+    notices,
+  );
+  appendFileSync(
+    notices,
+    noticeSection(
+      `the AppImage runtime ${LINUX_TOOLS.runtime.version}`,
+      readFileSync(join(ROOT, 'config', 'licenses', 'appimage-runtime.txt'), 'utf8'),
+    ),
   );
   writeFileSync(join(appDir, 'AppRun'), appRun(product.executables.app), { mode: 0o755 });
   const appimagetool = await tool('appimagetool', arch);

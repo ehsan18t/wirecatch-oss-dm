@@ -117,6 +117,51 @@ describe('textsOf', () => {
     assert.ok(texts.includes('Some other terms.'));
   });
 
+  it('leaves out the text of a licence offered but not allowed', () => {
+    const pkg = crate('offered', 'Apache-2.0 OR GPL-2.0-only', {
+      'LICENSE-APACHE': standard('Apache-2.0'),
+      'LICENSE-GPLv2': 'GNU GENERAL PUBLIC LICENSE\nVersion 2, June 1991\nThe terms.',
+    });
+    assert.deepEqual(textsOf(pkg, ['Apache-2.0']), [{ text: standard('Apache-2.0') }]);
+  });
+
+  it('keeps a third party named file even when it reads as the licence not chosen', () => {
+    const pkg = crate('third-party', 'MIT OR Apache-2.0', {
+      'LICENSE-APACHE': standard('Apache-2.0'),
+      'LICENSE-THIRD-PARTY': standard('MIT'),
+    });
+    const texts = textsOf(pkg, ['Apache-2.0']).map(({ text }) => text);
+    assert.equal(texts.length, 2);
+  });
+
+  it('keeps vendored terms, without letting them stand in for the package licence', () => {
+    const pkg = crate('vendoring', 'MIT');
+    mkdirSync(join(pkg.dir, 'src', 'tables'), { recursive: true });
+    writeFileSync(join(pkg.dir, 'src', 'tables', 'LICENSE-UNICODE'), standard('MIT'));
+    mkdirSync(join(pkg.dir, 'tests'));
+    writeFileSync(join(pkg.dir, 'tests', 'LICENSE'), 'Only a test uses this.');
+    const texts = textsOf(pkg, allowed);
+    assert.deepEqual(
+      texts.map(({ standardFor }) => standardFor),
+      [undefined, 'MIT'],
+    );
+  });
+
+  it('prefers MIT between licences it ships equally', () => {
+    assert.deepEqual(
+      chooseLicences('Apache-2.0 OR MIT', ['MIT', 'Apache-2.0'], ['MIT', 'Apache-2.0']),
+      ['MIT'],
+    );
+  });
+
+  it('takes a text kept outside the package', () => {
+    const pkg = crate('icons', 'ISC');
+    pkg.textFiles = [join(ROOT, 'config', 'licenses', 'lucide.txt')];
+    const texts = textsOf(pkg, ['ISC']);
+    assert.equal(texts.length, 1);
+    assert.match(texts[0].text, /Cole Bemis/);
+  });
+
   it('finds texts in a licences folder', () => {
     const pkg = crate('foldered', 'MIT');
     mkdirSync(join(pkg.dir, '.licenses'));
@@ -180,6 +225,7 @@ describe('npmPackage', () => {
       repository: 'https://example.com/thing',
       authors: ['A Person'],
       dir,
+      textFiles: [],
     });
   });
 });

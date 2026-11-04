@@ -5,7 +5,7 @@ import { GateError, ROOT } from '../gate/process.mjs';
 
 /** A TOML string array in deny.toml, read by hand: CI's supply-chain job has no `pnpm install`, so no TOML parser. */
 function denyList(section, key) {
-  const toml = readFileSync(join(ROOT, 'deny.toml'), 'utf8');
+  const toml = readFileSync(join(ROOT, 'deny.toml'), 'utf8').replaceAll(/^\s*#.*$/gm, '');
   const body = toml.split(/^\[/m).find((part) => part.startsWith(`${section}]`));
   const list = body && new RegExp(String.raw`^${key} = \[(.*?)^\]`, 'ms').exec(body)?.[1];
   if (!list) throw new GateError(`deny.toml has no \`${key}\` list in [${section}].`);
@@ -125,6 +125,8 @@ export function chooseLicences(expression, shipped, allowed, packageName) {
       `${packageName} is under "${expression}", which deny.toml's [licenses] allow list does not cover. Replace the package, or check that the licence is compatible with GPL-3.0-only and allow it there.`,
     );
   }
-  const missing = (way) => way.filter((id) => !shipped.includes(id)).length;
-  return ways.reduce((best, way) => (missing(way) < missing(best) ? way : best));
+  // Between equals, MIT: its text names the holder, where Apache-2.0's usually leaves it blank.
+  const cost = (way) =>
+    2 * way.filter((id) => !shipped.includes(id)).length + (way.includes('MIT') ? 0 : 1);
+  return ways.reduce((best, way) => (cost(way) < cost(best) ? way : best));
 }

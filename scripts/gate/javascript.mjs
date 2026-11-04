@@ -2,6 +2,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { jsPolicy, lintTargets } from './js-policy.mjs';
+import { extensionNoticesBuilt } from './notices.mjs';
 import { capture, GateError, pnpm, ROOT, run } from './process.mjs';
 
 const GENERATED_TYPES = 'packages/protocol/src';
@@ -83,7 +84,10 @@ export const JS_CHECKS = {
     pnpm('-r', '--if-present', 'test');
     run('node', ['--test', 'scripts/**/*.test.mjs']);
   },
-  'js-build': () => pnpm('-r', '--if-present', 'build'),
+  'js-build': () => {
+    pnpm('-r', '--if-present', 'build');
+    extensionNoticesBuilt();
+  },
   // Ignored advisories, each with its reason, live in `auditConfig` in pnpm-workspace.yaml.
   'npm-audit': () => pnpm('audit'),
 };

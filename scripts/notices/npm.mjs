@@ -3,8 +3,13 @@
 // Usage: node scripts/notices/npm.mjs OUTPUT_FILE TITLE PACKAGE_FOLDER...
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { GateError } from '../gate/process.mjs';
+import { GateError, ROOT } from '../gate/process.mjs';
 import { renderNotices } from './render.mjs';
+
+/** The icon sets as npm packages ship no licence text, and Lucide's names its holders and the Feather icons it derives from. */
+const LICENCE_KEPT_ELSEWHERE = {
+  '@iconify-json/lucide': [join(ROOT, 'config', 'licenses', 'lucide.txt')],
+};
 
 /** npm allows a bare name, `{ name, email }` or `Name <email> (url)`. */
 const personName = (person) => (typeof person === 'string' ? person : person?.name);
@@ -30,6 +35,7 @@ export function npmPackage(dir) {
     repository: repositoryUrl(manifest.repository),
     authors: [manifest.author, ...(manifest.contributors ?? [])].map(personName).filter(Boolean),
     dir,
+    textFiles: LICENCE_KEPT_ELSEWHERE[manifest.name] ?? [],
   };
 }
 
