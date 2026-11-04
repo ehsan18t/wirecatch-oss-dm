@@ -10,6 +10,7 @@ mod drag;
 mod empty;
 mod fixes;
 mod keymap;
+mod laid;
 mod link_trial;
 mod list;
 mod notices_bar;
@@ -137,6 +138,18 @@ impl Group {
             DownloadStatus::Paused => Self::Paused,
             DownloadStatus::Completed => Self::Finished,
             DownloadStatus::Cancelled => Self::Cancelled,
+        }
+    }
+
+    /// Its place in [`Self::ALL`].
+    pub const fn place(self) -> usize {
+        match self {
+            Self::Attention => 0,
+            Self::Downloading => 1,
+            Self::UpNext => 2,
+            Self::Paused => 3,
+            Self::Finished => 4,
+            Self::Cancelled => 5,
         }
     }
 
@@ -275,7 +288,7 @@ pub struct MainWindow {
     library: Entity<Library>,
     screen: Screen,
     view: View,
-    selected: HashSet<DownloadId>,
+    selected: selection::Selected,
     /// Where a Shift range starts.
     anchor: Option<DownloadId>,
     /// The row the arrow keys move from.
@@ -284,6 +297,9 @@ pub struct MainWindow {
     picked: bool,
     sort: sort::Sort,
     frozen: std::cell::RefCell<sort::Frozen>,
+    /// The list's last lines, for as long as they hold.
+    laid: std::cell::RefCell<laid::Kept>,
+    selection_facts: std::cell::RefCell<Option<Rc<selection::Facts>>>,
     nav: rail::Nav,
     /// The full navigation is open over the list, from the rail of a narrow window.
     drawer: bool,
@@ -378,7 +394,7 @@ impl MainWindow {
         for group in groups {
             self.folded.remove(&group);
         }
-        self.selected = reveal.ids.iter().copied().collect();
+        *self.selected = reveal.ids.iter().copied().collect();
         self.anchor = reveal.ids.first().copied();
         self.cursor = self.anchor;
         self.picked = reveal.ids.len() > 1;
@@ -433,7 +449,7 @@ impl MainWindow {
             library,
             screen: Screen::Downloads,
             view: View::All,
-            selected: HashSet::new(),
+            selected: selection::Selected::default(),
             anchor: None,
             cursor: None,
             picked: false,
@@ -443,6 +459,8 @@ impl MainWindow {
             drawer: false,
             sort: sort::Sort::default(),
             frozen: std::cell::RefCell::default(),
+            laid: std::cell::RefCell::default(),
+            selection_facts: std::cell::RefCell::default(),
             cursor_bounds: Rc::default(),
             folded: HashSet::new(),
             hovered: None,
@@ -458,18 +476,16 @@ impl MainWindow {
 
     /// Samples each running queue's speed, and forgets the speeds of a queue that stopped.
     fn keep_queue_speeds(&mut self, cx: &App) {
-        let mut speeds: HashMap<QueueId, (u64, bool)> = HashMap::new();
-        for row in &self.library.read(cx).downloads {
-            let (speed, running) = speeds.entry(row.queue).or_default();
-            *speed += row.speed;
-            *running |= Group::of(row.status) == Group::Downloading;
-        }
+        let rows = &self.library.read(cx).downloads;
         let now = Instant::now();
         self.queue_speeds
-            .retain(|queue, _| speeds.get(queue).is_some_and(|(_, running)| *running));
-        for (queue, (speed, running)) in speeds {
-            if running {
-                self.queue_speeds.entry(queue).or_default().keep(speed, now);
+            .retain(|queue, _| !rows.tally_of(*queue).running.is_empty());
+        for (queue, tally) in rows.queue_tallies() {
+            if !tally.running.is_empty() {
+                self.queue_speeds
+                    .entry(queue)
+                    .or_default()
+                    .keep(tally.speed, now);
             }
         }
     }

@@ -504,7 +504,7 @@ impl MediaForm {
     fn earlier_note(&self, cx: &App) -> Option<AnyElement> {
         let earlier = self.earlier?;
         let library = self.library.read(cx);
-        let row = library.downloads.iter().find(|row| row.id == earlier)?;
+        let row = library.downloads.find(earlier)?;
         Some(earlier_chip(row, cx))
     }
 

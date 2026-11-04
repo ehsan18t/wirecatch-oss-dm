@@ -62,8 +62,7 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
                 let row = library
                     .read(cx)
                     .downloads
-                    .iter()
-                    .find(|row| row.id == details.id)
+                    .find(details.id)
                     .map(|row| (row.status, row.speed));
                 match row {
                     Some((status, speed)) => {
@@ -91,12 +90,7 @@ pub(super) fn open(library: Entity<Library>, id: DownloadId, window: &mut Window
 impl Render for Details {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let library = self.library.read(cx);
-        let Some(row) = library
-            .downloads
-            .iter()
-            .find(|row| row.id == self.id)
-            .cloned()
-        else {
+        let Some(row) = library.downloads.find(self.id).cloned() else {
             return div().into_any_element();
         };
         let queue = library
