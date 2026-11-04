@@ -67,7 +67,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 6. An inherited APPIMAGE variable can make the app overwrite or start another program (fixed)
 7. The app never looks for updates, and every proxy test fails (fixed)
 8. A move across drives can leave a cut-off file under the final name (open)
-9. Quitting during a move leaves the list pointing at the wrong place (open)
+9. Quitting during a move leaves the list pointing at the wrong place (fixed)
 10. The quit time limit does not end the process (open)
 11. "If the file is already in the folder" is skipped for names from the link or browser (open)
 12. A settings file can send downloads into folders whose programs the app runs (open)
