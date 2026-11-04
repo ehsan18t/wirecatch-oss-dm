@@ -28,6 +28,66 @@ pub(super) const MAX_METADATA: u64 = 4 * MIB;
 /// Largest signature file read (yt-dlp's is under 1 KB).
 pub(super) const MAX_SIGNATURE: u64 = 64 * KIB;
 
+/// The releases of `releases` that may be installed, with when each came out, newest version first.
+fn candidates(releases: Vec<addons::Release>, pinned: &str) -> Vec<(addons::Release, UnixMillis)> {
+    let mut candidates: Vec<(addons::Release, UnixMillis)> = releases
+        .into_iter()
+        .take(RELEASES_LOOKED_AT)
+        .filter(|r| !r.draft && !r.prerelease)
+        // `newer` only reads plain dotted numbers, so the tag is safe in a path.
+        .filter(|r| addons::newer(r.tag_name.trim(), pinned))
+        .filter_map(|r| {
+            let published = r
+                .published_at
+                .as_deref()
+                .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())?
+                .timestamp_millis();
+            Some((r, UnixMillis(published)))
+        })
+        .collect();
+    // Newest version first, whatever order the list came in.
+    candidates.sort_by(|(a, _), (b, _)| {
+        if addons::newer(a.tag_name.trim(), b.tag_name.trim()) {
+            std::cmp::Ordering::Less
+        } else if addons::newer(b.tag_name.trim(), a.tag_name.trim()) {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Equal
+        }
+    });
+    candidates
+}
+
+/// What a look at yt-dlp's list of releases found.
+pub(super) struct Looked {
+    /// `None` when the look was cut short, which says nothing about the releases it did not reach.
+    pub found: Option<Vec<NewRelease>>,
+    /// Why a release was passed over, the newest first.
+    pub problem: Option<Lookup>,
+}
+
+/// What the person who asked for the check is told about `lookup`, if anything. A release that does not meet the rules is not offered; there is nothing to report.
+fn problem_for(lookup: Lookup) -> Option<String> {
+    match lookup {
+        Lookup::Refused(reason) => {
+            warn!(%reason, "a newer yt-dlp was refused");
+            None
+        }
+        Lookup::Unsigned { version, why } => {
+            warn!(%version, reason = %why, "a newer yt-dlp was refused");
+            Some(format!(
+                "yt-dlp {version} was not installed because its checksum list does not carry a valid signature from yt-dlp's developers ({why}). The installed version keeps working; if this keeps happening, please report it."
+            ))
+        }
+        Lookup::Unreachable(reason) => {
+            warn!(%reason, "could not check for a newer yt-dlp");
+            Some(format!(
+                "Wirecatch could not check for a newer media add-on ({reason}). Check your internet connection, then try again."
+            ))
+        }
+    }
+}
+
 impl Manager {
     /// Looks for a newer yt-dlp now (sites change often, and an old yt-dlp stops
     /// working with them). With `auto_update_addons` on, anything out of date is
@@ -45,47 +105,39 @@ impl Manager {
     /// by yt-dlp's developers; and [`CoreError::Closed`] once the manager has shut
     /// down.
     pub async fn check_addon_updates(&self) -> Result<()> {
-        let (installed, record) = {
-            let state = self.lock_open()?;
-            (state.addon.tools.is_some(), state.addon.record.clone())
-        };
-        if !installed {
+        if self.lock_open()?.addon.tools.is_none() {
             return Ok(());
         }
-        let mut problem = None;
-        let found = match self.new_ytdlp_releases().await {
-            Ok(found) => found,
-            // A release that does not meet the rules is not offered; nothing to report.
-            Err(Lookup::Refused(reason)) => {
-                warn!(%reason, "a newer yt-dlp was refused");
-                Vec::new()
-            }
-            // Refused too, but a person who asked should know why nothing came.
-            Err(Lookup::Unsigned { version, why }) => {
-                warn!(%version, reason = %why, "a newer yt-dlp was refused");
-                problem = Some(format!(
-                    "yt-dlp {version} was not installed because its checksum list does not carry a valid signature from yt-dlp's developers ({why}). The installed version keeps working; if this keeps happening, please report it."
-                ));
-                Vec::new()
-            }
-            Err(Lookup::Unreachable(reason)) => {
-                warn!(%reason, "could not check for a newer yt-dlp");
-                problem = Some(format!(
-                    "Wirecatch could not check for a newer media add-on ({reason}). Check your internet connection, then try again."
-                ));
-                Vec::new()
-            }
+        let (found, problem) = match self.new_ytdlp_releases().await {
+            Ok(looked) => (looked.found, looked.problem.and_then(problem_for)),
+            Err(lookup) => (None, problem_for(lookup)),
         };
+        // Read only now: the add-on may have been removed or updated during the wait.
         let now = self.inner.clock.unix_millis();
-        let mut saved = record;
-        saved.last_update_check = Some(now.0);
-        let dir = self.inner.addon_dir.clone();
-        let to_save = saved.clone();
-        if let Err(e) = self.blocking(move || Ok(to_save.save(&dir))).await? {
-            warn!(error = %e, "could not record the add-on update check");
+        let to_save = {
+            let mut state = self.lock_open()?;
+            state.addon.record.last_update_check = Some(now.0);
+            if state.addon.tools.is_none() {
+                return Ok(());
+            }
+            // An install under way saves its own record.
+            state.addon.op.is_none().then(|| state.addon.record.clone())
+        };
+        if let Some(to_save) = to_save {
+            let dir = self.inner.addon_dir.clone();
+            // Saving creates the folder, and a removal may have taken it since the lock.
+            let saved = self
+                .blocking(move || Ok(dir.is_dir().then(|| to_save.save(&dir))))
+                .await?;
+            if let Some(Err(e)) = saved {
+                warn!(error = %e, "could not record the add-on update check");
+            }
         }
         let mut state = self.lock_open()?;
-        state.addon.record.last_update_check = saved.last_update_check;
+        // Removed during the save: every part would read as missing and be installed again.
+        if state.addon.tools.is_none() {
+            return Ok(());
+        }
         let installed = state
             .addon
             .record
@@ -97,16 +149,19 @@ impl Manager {
             .iter()
             .map(|r| r.version.clone())
             .collect();
-        state.addon.ytdlp_releases = found
-            .into_iter()
-            .filter(|r| {
-                installed
-                    .as_deref()
-                    .is_none_or(|have| addons::newer(r.component.version(), have))
-                    // Refused for not being what it claims: never downloaded or run again while the app runs.
-                    && !refused.iter().any(|v| v == r.component.version())
-            })
-            .collect();
+        // A check that failed says nothing about what the last one found.
+        if let Some(found) = found {
+            state.addon.ytdlp_releases = found
+                .into_iter()
+                .filter(|r| {
+                    installed
+                        .as_deref()
+                        .is_none_or(|have| addons::newer(r.component.version(), have))
+                        // Refused for not being what it claims: never downloaded or run again while the app runs.
+                        && !refused.iter().any(|v| v == r.component.version())
+                })
+                .collect();
+        }
         // A release younger than two days is not installed yet, by any path.
         let plan = self.addon_plan(&state.addon);
         if state.settings.auto_update_addons && !plan.is_empty() && state.addon.op.is_none() {
@@ -126,15 +181,19 @@ impl Manager {
     /// than two days, the newest older than that, so the add-on can move to it
     /// meanwhile (D21.1). Read from yt-dlp's list of releases; drafts,
     /// pre-releases, tags that are not plain versions and releases that do not
-    /// say when they came out are skipped.
-    pub(super) async fn new_ytdlp_releases(&self) -> std::result::Result<Vec<NewRelease>, Lookup> {
+    /// say when they came out are skipped. A release that fails its checks is passed over for an older one and reported in [`Looked::problem`].
+    pub(super) async fn new_ytdlp_releases(&self) -> std::result::Result<Looked, Lookup> {
         let sources = self.inner.addon_sources.clone();
         let Some(api) = &sources.ytdlp_releases else {
-            return Ok(Vec::new());
+            return Ok(Looked {
+                found: Some(Vec::new()),
+                problem: None,
+            });
         };
         let cancel = self.inner.stopped.child_token();
         let proxy = self.lock().app_proxy();
         let mut options = crate::headers::download_options(ADDON_NETWORK, proxy);
+        options.retry_backoff = self.inner.retry_backoff;
         options.headers.insert(
             ACCEPT,
             HeaderValue::from_static("application/vnd.github+json"),
@@ -150,39 +209,28 @@ impl Manager {
         let releases: Vec<addons::Release> = serde_json::from_slice(&body)
             .map_err(|e| Lookup::Refused(format!("unreadable list of releases ({e})")))?;
         let now = self.inner.clock.unix_millis();
-        let mut candidates: Vec<(addons::Release, UnixMillis)> = releases
-            .into_iter()
-            .take(RELEASES_LOOKED_AT)
-            .filter(|r| !r.draft && !r.prerelease)
-            // `newer` only reads plain dotted numbers, so the tag is safe in a path.
-            .filter(|r| addons::newer(r.tag_name.trim(), sources.ytdlp.version()))
-            .filter_map(|r| {
-                let published = r
-                    .published_at
-                    .as_deref()
-                    .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())?
-                    .timestamp_millis();
-                Some((r, UnixMillis(published)))
-            })
-            .collect();
-        // Newest version first, whatever order the list came in.
-        candidates.sort_by(|(a, _), (b, _)| {
-            if addons::newer(a.tag_name.trim(), b.tag_name.trim()) {
-                std::cmp::Ordering::Less
-            } else if addons::newer(b.tag_name.trim(), a.tag_name.trim()) {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        });
+        let candidates = candidates(releases, sources.ytdlp.version());
         let mut found = Vec::new();
+        let mut problem = None;
         for (release, published) in candidates {
             let mature = now.since(published) >= MATURE_AGE;
             // Past the newest, only a release old enough to install is of use.
             if !found.is_empty() && !mature {
                 continue;
             }
-            let component = self.checked_release(&fetcher, &sources, &release).await?;
+            let component = match self.checked_release(&fetcher, &sources, &release).await {
+                Ok(component) => component,
+                Err(lookup) => {
+                    if matches!(lookup, Lookup::Unreachable(_)) {
+                        return Ok(Looked {
+                            found: None,
+                            problem: Some(lookup),
+                        });
+                    }
+                    problem.get_or_insert(lookup);
+                    continue;
+                }
+            };
             found.push(NewRelease {
                 component,
                 published,
@@ -191,7 +239,10 @@ impl Manager {
                 break;
             }
         }
-        Ok(found)
+        Ok(Looked {
+            found: Some(found),
+            problem,
+        })
     }
 
     /// `release` as a component checked against its own checksum list.

@@ -32,7 +32,10 @@ const MAX_BEATS: u32 = 1200;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     if let [flag, heartbeat] = args.as_slice()
         && flag == "--fake-sleeper"
     {
