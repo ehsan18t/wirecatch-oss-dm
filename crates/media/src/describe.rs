@@ -71,7 +71,9 @@ pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
 fn ytdlp_refusal(reason: &str) -> &'static str {
     let reason = reason.to_ascii_lowercase();
     let says = |words: &[&str]| words.iter().any(|w| reason.contains(w));
-    if says(&["http error 404", "http error 410"]) {
+    if says(&["http error 5"]) {
+        "The site is having trouble right now. Wait a while, then try again."
+    } else if says(&["http error 404", "http error 410"]) {
         "This page could not be found. Check the link in your browser, then try again."
     } else if says(&["http error 401", "http error 403"]) {
         "The site refused the request for this video. Check that the video plays in your browser, then try again."
@@ -79,7 +81,14 @@ fn ytdlp_refusal(reason: &str) -> &'static str {
         "The site has received too many requests from this computer. Wait a while, then try again."
     } else if needs_sign_in(Some(&reason)) {
         "This video asks you to sign in. Sign in on the site in your browser, then try again."
-    } else if says(&["unavailable", "has been removed", "no longer available"]) {
+    } else if says(&["in your country", "in your region", "from your location"]) {
+        "This video is not offered where you are."
+    } else if says(&[
+        "video unavailable",
+        "is unavailable",
+        "has been removed",
+        "no longer available",
+    ]) {
         "This video is no longer available on the site."
     } else if says(&["unsupported url", "no video formats"]) {
         "The media add-on found no video on this page. Check that the video plays in your browser; if it does, update the media add-on in Settings > Media, then try again."
@@ -333,6 +342,15 @@ mod tests {
                 "sign in",
             ),
             ("[youtube] x: Video unavailable", "no longer available"),
+            ("HTTP Error 503: Service Unavailable", "having trouble"),
+            (
+                "[site] x: This video is not available in your country",
+                "where you are",
+            ),
+            (
+                "[youtube] x: Video unavailable. It is not available in your country",
+                "where you are",
+            ),
             (
                 "Unsupported URL: https://example.com/page",
                 "found no video",
@@ -369,6 +387,64 @@ mod tests {
             }
             assert!(shown.ends_with('.'), "{shown}");
         }
+    }
+
+    /// ffmpeg's last line is rarely the cause: the table reads all it kept.
+    #[test]
+    fn the_cause_is_found_anywhere_in_what_ffmpeg_wrote() {
+        let tools = tools();
+        let error = FfmpegError::Failed {
+            reason: [
+                "[mp4 @ 0x1] Could not find tag for codec rawvideo in stream #0, codec not currently supported in container",
+                "[out#0/mp4 @ 0x2] Could not write header (incorrect codec parameters ?): Invalid argument",
+                "Error opening output file a.mp4",
+                "Conversion failed!",
+                "Error while filtering",
+                "Nothing was written into output file, because at least one of its streams received no packets.",
+            ]
+            .join(" / "),
+        };
+        let shown = join(&error, &tools).message;
+        assert!(shown.contains("cannot hold"), "{shown}");
+    }
+
+    #[test]
+    fn a_stream_join_and_a_conversion_show_no_raw_output() {
+        let tools = tools();
+        let said = "[mp4 @ 0x1] Error writing trailer: No space left on device";
+        let joined = stream(
+            &StreamError::Ffmpeg(said.into()),
+            Path::new("folder"),
+            Some(&tools),
+            ChosenBy::Website,
+        );
+        assert!(!joined.message.contains("@ 0x"), "{}", joined.message);
+        assert!(
+            joined.message.contains("disk is full"),
+            "{}",
+            joined.message
+        );
+        let job = OutputJob {
+            container: crate::output::Container::Mp4,
+            video: VideoAction::Copy,
+            audio: crate::output::AudioAction::Copy,
+            subtitles: Vec::new(),
+            subtitle_files: false,
+            extras: crate::output::Extras::default(),
+            duration_ms: None,
+            original_ext: "mkv".into(),
+            original: false,
+        };
+        let failed = FfmpegError::Failed {
+            reason: said.into(),
+        };
+        let converted = conversion(&failed, &job, &tools);
+        assert!(!converted.message.contains("@ 0x"), "{}", converted.message);
+        assert!(
+            converted.message.contains("disk is full"),
+            "{}",
+            converted.message
+        );
     }
 
     #[test]
