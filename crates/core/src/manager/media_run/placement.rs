@@ -75,21 +75,25 @@ pub(super) async fn finish(
     let moved = job
         .file_work
         .spawn_blocking(move || -> std::io::Result<MediaDone> {
-            // On disk before the work folder goes, so a power cut cannot lose both it and its sources.
-            wirecatch_files::whole_file::flush(&file)?;
-            // Marked before it is put in place, so it is never there unmarked.
-            wirecatch_files::zone::mark(&file, &url, referrer.as_deref());
-            placing();
-            let (target, bytes) = match place(&file, &planned, &reserve, taken)? {
-                Placed::At(target) => {
-                    let bytes = std::fs::metadata(&target)?.len();
-                    (target, bytes)
-                }
-                Placed::Kept { path, size } => (path, size),
-                // The work folder stays, with the file in it, for the answer.
-                Placed::Asks(found) => {
-                    remember_placing(&work, &url, &file, &sidecars)?;
-                    return Ok(MediaDone::FileExists(found));
+            let (target, bytes) = if let Some(target) = placed_before(&file, &work) {
+                let bytes = std::fs::metadata(&target)?.len();
+                (target, bytes)
+            } else {
+                // On disk before the work folder goes, so a power cut cannot lose both it and its sources.
+                wirecatch_files::whole_file::flush(&file)?;
+                // Marked before it is put in place, so it is never there unmarked.
+                wirecatch_files::zone::mark(&file, &url, referrer.as_deref());
+                placing();
+                remember_placing(&work, &url, &file, &sidecars)?;
+                let note = |how: Moving, to: &Path| note_move(&work, how, to);
+                match place_noting(&file, &planned, &reserve, taken, &note)? {
+                    Placed::At(target) => {
+                        let bytes = std::fs::metadata(&target)?.len();
+                        (target, bytes)
+                    }
+                    Placed::Kept { path, size } => (path, size),
+                    // The work folder stays, with the file in it, for the answer.
+                    Placed::Asks(found) => return Ok(MediaDone::FileExists(found)),
                 }
             };
             let anywhere: Reserve = Arc::new(|_: &Path, _| true);
@@ -138,8 +142,52 @@ pub(super) fn remember_placing(
     std::fs::write(work.join(workdir::PLACING), lines.join("\n"))
 }
 
+/// How a finished file is about to reach its name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Moving {
+    /// Onto a free name: a file there afterwards is this one.
+    ToFreeName,
+    /// Over the file at that name, or keeping it and discarding this one: a file there says nothing until this one is gone.
+    OntoTakenName,
+}
+
+impl Moving {
+    const FREE: &str = "free";
+    const TAKEN: &str = "taken";
+}
+
+pub(super) fn note_move(work: &Path, how: Moving, to: &Path) -> std::io::Result<()> {
+    let how = match how {
+        Moving::ToFreeName => Moving::FREE,
+        Moving::OntoTakenName => Moving::TAKEN,
+    };
+    let name = crate::naming::file_name_of(to);
+    std::fs::write(work.join(workdir::PLACING_TO), format!("{how}\n{name}"))
+}
+
+/// How the last move was noted and the file now at its name, when there is one.
+fn noted_move(work: &Path) -> Option<(String, PathBuf)> {
+    let note = std::fs::read_to_string(work.join(workdir::PLACING_TO)).ok()?;
+    let (how, name) = note.split_once('\n')?;
+    let target = work.parent()?.join(name);
+    (workdir::plain_name(name) && target.is_file()).then(|| (how.to_owned(), target))
+}
+
+/// Where an earlier run put `file`, when it died between that and removing `work`. A file still in `work` was linked to its free name and not yet discarded only if the two are one file: a note stays after a move that failed, and another file can take the name later.
+fn placed_before(file: &Path, work: &Path) -> Option<PathBuf> {
+    let (how, target) = noted_move(work)?;
+    if !file.exists() {
+        return Some(target);
+    }
+    let linked = how == Moving::FREE && same_file::is_same_file(file, &target).unwrap_or(false);
+    linked.then(|| {
+        wirecatch_files::discard::file(file);
+        target
+    })
+}
+
 /// The file, and its subtitles, an earlier run of the download of `url` left in `work` to be put
-/// in place. Only plain names inside `work` are taken.
+/// in place, or put there and died before tidying up. Only plain names inside `work` are taken.
 pub(super) async fn waiting_to_place(
     work: &Path,
     url: &Url,
@@ -155,7 +203,11 @@ pub(super) async fn waiting_to_place(
         let path = work.join(name);
         (path.parent() == Some(work) && path.is_file()).then_some(path)
     };
-    let file = inside(lines.next()?.trim())?;
+    let name = lines.next()?.trim();
+    let file = inside(name).or_else(|| {
+        let file = work.join(name);
+        (file.parent() == Some(work) && noted_move(work).is_some()).then_some(file)
+    })?;
     let sidecars = lines
         .filter_map(|line| line.split_once('\t'))
         .filter_map(|(name, language)| Some((inside(name)?, language.to_string())))
@@ -206,18 +258,47 @@ pub(super) fn final_path(file: &Path, planned: &Path) -> PathBuf {
     }
 }
 
+/// Moves `file` to the free name `candidate`; `false` when another file took it first.
+fn move_to_free_name(file: &Path, candidate: &Path) -> std::io::Result<bool> {
+    // A hard link first, not a rename: a scanner holding the file on Windows refuses a rename, not a link. Neither replaces a file that appeared since the check.
+    match std::fs::hard_link(file, candidate) {
+        Ok(()) => {
+            wirecatch_files::discard::file(file);
+            Ok(true)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        // A drive without hard links (FAT, exFAT).
+        Err(_) => match wirecatch_engine::naming::rename_no_replace(file, candidate) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+            Err(e) => Err(e),
+        },
+    }
+}
+
+/// Free names tried for a finished file before placing it fails.
+pub(super) const MAX_NAME_ATTEMPTS: u64 = 10_000;
+
 /// Moves the finished `file` to `planned` (with the file's own media
 /// extension, see [`final_path`]). When a file in the folder has that name, `taken` says what
 /// happens; keeping both, or a name another download holds, goes on to `name (1).ext` and so on,
 /// and never replaces a file. Blocks on the disk.
-/// Free names tried for a finished file before placing it fails.
-pub(super) const MAX_NAME_ATTEMPTS: u64 = 10_000;
-
 pub(super) fn place(
     file: &Path,
     planned: &Path,
     reserve: &Reserve,
     taken: Taken,
+) -> std::io::Result<Placed> {
+    place_noting(file, planned, reserve, taken, &|_, _| Ok(()))
+}
+
+/// [`place`], calling `note` before each move of the file.
+pub(super) fn place_noting(
+    file: &Path,
+    planned: &Path,
+    reserve: &Reserve,
+    taken: Taken,
+    note: &dyn Fn(Moving, &Path) -> std::io::Result<()>,
 ) -> std::io::Result<Placed> {
     let wanted = final_path(file, planned);
     let dir = wanted.parent().unwrap_or(Path::new(""));
@@ -235,7 +316,8 @@ pub(super) fn place(
             Taken::Replace | Taken::KeepExisting if other_name && !reserve(&wanted, true) => {}
             // Rename replaces a file at the target on both systems.
             Taken::Replace => {
-                if let Err(e) = std::fs::rename(file, &wanted) {
+                let noted = note(Moving::OntoTakenName, &wanted);
+                if let Err(e) = noted.and_then(|()| std::fs::rename(file, &wanted)) {
                     if other_name {
                         reserve(&wanted, false);
                     }
@@ -244,6 +326,12 @@ pub(super) fn place(
                 return Ok(Placed::At(wanted));
             }
             Taken::KeepExisting => {
+                if let Err(e) = note(Moving::OntoTakenName, &wanted) {
+                    if other_name {
+                        reserve(&wanted, false);
+                    }
+                    return Err(e);
+                }
                 wirecatch_files::discard::file(file);
                 return Ok(Placed::Kept { path: wanted, size });
             }
@@ -270,20 +358,13 @@ pub(super) fn place(
         if reserved && !reserve(&candidate, true) {
             continue;
         }
-        // A hard link first, not a rename: a scanner holding the file on Windows refuses a rename, not a link. Neither replaces a file that appeared since the check.
-        let moved = match std::fs::hard_link(file, &candidate) {
-            Ok(()) => {
-                wirecatch_files::discard::file(file);
-                Ok(true)
+        if let Err(e) = note(Moving::ToFreeName, &candidate) {
+            if reserved {
+                reserve(&candidate, false);
             }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
-            // A drive without hard links (FAT, exFAT).
-            Err(_) => match wirecatch_engine::naming::rename_no_replace(file, &candidate) {
-                Ok(()) => Ok(true),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
-                Err(e) => Err(e),
-            },
-        };
+            return Err(e);
+        }
+        let moved = move_to_free_name(file, &candidate);
         match moved {
             Ok(true) => return Ok(Placed::At(candidate)),
             Ok(false) | Err(_) if reserved => {
