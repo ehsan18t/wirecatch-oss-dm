@@ -460,6 +460,15 @@ impl Manager {
             let Ok(entry) = state.entry_mut(id) else {
                 continue;
             };
+            // Not a choice about this download: one it is already stopping by stays.
+            if entry
+                .run
+                .as_ref()
+                .and_then(|run| run.stop)
+                .is_some_and(Stop::is_users_choice)
+            {
+                continue;
+            }
             if !self.stop_run(entry, Stop::Pause) && entry.row.status == DownloadStatus::Queued {
                 entry.row.status = DownloadStatus::Paused;
                 self.save(&mut state, id);

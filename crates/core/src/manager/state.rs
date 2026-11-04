@@ -406,7 +406,7 @@ impl Hold {
 }
 
 impl Stop {
-    fn is_users_choice(self) -> bool {
+    pub fn is_users_choice(self) -> bool {
         matches!(
             self,
             Stop::Pause | Stop::Cancel | Stop::Restart | Stop::Remove

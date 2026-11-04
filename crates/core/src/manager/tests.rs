@@ -721,3 +721,105 @@ async fn a_repeated_handover_never_joins_its_own_download() {
     );
     adding.abort();
 }
+
+/// A run that stops only when `leave` lets it, however soon it is asked to.
+fn leaves_on_cue(leave: Arc<Notify>) -> impl Fn(FakeRun) -> EngineFuture {
+    move |_run: FakeRun| {
+        let leave = leave.clone();
+        Box::pin(async move {
+            leave.notified().await;
+            Err(EngineError::Cancelled)
+        })
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pause_all_never_keeps_a_download_being_cancelled() {
+    let leave = Arc::new(Notify::new());
+    let (manager, _dir) = manager_with(
+        leaves_on_cue(leave.clone()),
+        PATIENCE,
+        DEFAULT_CAPTURE_TIMEOUT,
+    )
+    .await;
+    let id = manager
+        .add_download(add_request("https://example.com/big.iso"))
+        .await
+        .unwrap();
+
+    manager.cancel(id).unwrap();
+    manager.pause_all().unwrap();
+    leave.notify_one();
+
+    wait_until("the run's end", || {
+        !manager.lock().downloads[&id].is_running()
+    })
+    .await;
+    assert_eq!(
+        manager.get_download(id).unwrap().status,
+        DownloadStatus::Cancelled
+    );
+}
+
+/// A run whose server answers with `report.pdf` when `gate` lets it, ends when `leave` lets it, and says so on `answered`.
+fn offers_a_file_on_cue(
+    gate: Arc<Notify>,
+    answered: Arc<Notify>,
+    leave: Arc<Notify>,
+) -> impl Fn(FakeRun) -> EngineFuture {
+    move |run: FakeRun| {
+        let (gate, answered, leave) = (gate.clone(), answered.clone(), leave.clone());
+        Box::pin(async move {
+            gate.notified().await;
+            let settle = run.settle.expect("the path is not settled yet");
+            let refused = settle(&answer("report.pdf")).unwrap_err();
+            answered.notify_one();
+            leave.notified().await;
+            Err(EngineError::TargetRejected(PathRejected::new(refused)))
+        })
+    }
+}
+
+/// A person's stop in the moment after the duplicate was found decides, not the setting.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_found_duplicate_does_not_override_a_stop_the_person_chose() {
+    for (stop, ended) in [
+        (
+            Manager::pause as fn(&Manager, DownloadId) -> crate::error::Result<()>,
+            DownloadStatus::Paused,
+        ),
+        (Manager::cancel, DownloadStatus::Cancelled),
+    ] {
+        let (gate, answered, leave) = (
+            Arc::new(Notify::new()),
+            Arc::new(Notify::new()),
+            Arc::new(Notify::new()),
+        );
+        let (manager, dir) = manager_with(
+            offers_a_file_on_cue(gate.clone(), answered.clone(), leave.clone()),
+            PATIENCE,
+            DEFAULT_CAPTURE_TIMEOUT,
+        )
+        .await;
+        let folder = dir.path().join("saved");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("report.pdf"), b"older").unwrap();
+        let mut request = add_request("https://example.com/get?id=1");
+        request.folder = Some(folder.to_string_lossy().into_owned());
+        let id = manager.add_download(request).await.unwrap();
+
+        gate.notify_one();
+        tokio::time::timeout(PATIENCE, answered.notified())
+            .await
+            .expect("the server never answered");
+        stop(&manager, id).unwrap();
+        leave.notify_one();
+
+        wait_until("the run's end", || {
+            !manager.lock().downloads[&id].is_running()
+        })
+        .await;
+        assert_eq!(manager.get_download(id).unwrap().status, ended);
+        assert_eq!(manager.pending_file_exists(), vec![]);
+    }
+}
