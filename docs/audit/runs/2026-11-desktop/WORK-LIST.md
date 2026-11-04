@@ -22,7 +22,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-12  | fix(settings): protect app folders on Windows      | `fix/protect-run-folders`        | 12                           | P1       | medium | none         | merged |
 | PR-13  | fix(core): tie a media work folder to its run      | `fix/work-folder-follows-run`    | 13                           | P2       | medium | none         | merged |
 | PR-14  | fix(core): stop reusing another link's media parts | `fix/media-work-identity`        | 14                           | P1       | medium | PR-13        | merged |
-| PR-15  | fix(desktop): let text fields keep their own keys  | `fix/field-keys-first`           | 15                           | P1       | small  | none         | open   |
+| PR-15  | fix(desktop): let text fields keep their own keys  | `fix/field-keys-first`           | 15                           | P1       | small  | none         | merged |
 | PR-16  | fix(streams): limit the qualities of HLS playlists | `fix/limit-hls-qualities`        | 16                           | P1       | small  | none         | merged |
 | PR-17  | fix(streams): refuse segments that are not media   | `fix/check-segment-bodies`       | 17                           | P1       | medium | none         | merged |
 | PR-18  | fix(ipc): refuse a lower-integrity stand-in pipe   | `fix/pipe-integrity-check`       | 18                           | P1       | medium | none         | merged |
@@ -336,7 +336,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/main_window`
 - **Proof:** `25-1.patch`, 3 tests in `keymap.rs`.
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-16 fix(streams): limit the qualities of HLS playlists
 

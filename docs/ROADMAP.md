@@ -77,7 +77,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 12. A settings file can send downloads into folders whose programs the app runs (fixed)
 13. Replace on a file with another extension downloads everything again and strands the old folder (fixed)
 14. A new media download can save another download's video, partly fixed, streams still rely on the fingerprint (open)
-15. Typing a space in search pauses downloads, and Enter can open a file (open)
+15. Typing a space in search pauses downloads, and Enter can open a file (fixed)
 16. A very large HLS playlist freezes inspection for minutes to hours (fixed)
 17. A video with a web page or nothing in place of a segment is reported as complete (fixed)
 18. A lower-integrity program can stand in for the app and receive downloads' cookies (fixed)
