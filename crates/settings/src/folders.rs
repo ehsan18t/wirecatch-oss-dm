@@ -39,8 +39,8 @@ pub enum PathError {
         "\"{0}\" is a network folder. Folders from a settings file must be on this computer; choose the network folder in Wirecatch if you want to use it."
     )]
     Network(String),
-    /// A startup, Start menu or system folder (or, on Linux, a hidden folder in
-    /// home) from a settings file: a file downloaded there could run by itself.
+    /// A folder of [`KnownFolders::protected`] or a hidden folder in home, from a
+    /// settings file: a file downloaded there could run by itself or be trusted.
     #[error(
         "\"{0}\" is a system or startup folder, or one that holds apps' programs and settings, where a downloaded file could run by itself. Folders from a settings file cannot be there; choose another folder."
     )]
@@ -207,14 +207,14 @@ impl KnownFolders {
 
     /// The folder `path` names on this machine, for a folder from a settings file
     /// rather than the user's own choice: network folders are refused too, and
-    /// so are startup and system folders (see [`is_protected`](Self::is_protected)).
+    /// so are protected folders (see [`is_protected`](Self::is_protected)).
     /// Blocks on the disk.
     ///
     /// # Errors
     ///
     /// The errors of [`resolve`](Self::resolve), and [`PathError::Network`] for a
-    /// network folder written as a plain path or [`PathError::Protected`] for a startup
-    /// or system folder.
+    /// network folder written as a plain path or [`PathError::Protected`] for a
+    /// protected folder.
     pub fn resolve_local(&self, path: &PortablePath) -> Result<PathBuf, PathError> {
         let resolved = self.resolve(path)?;
         // A placeholder names this user's own folder, wherever the system keeps it
