@@ -18,7 +18,7 @@ use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, QueueRequest};
-use super::run::{delete_files, mark_cancelled};
+use super::run::mark_cancelled;
 use super::state::{AfterCancel, Entry, Hold, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::headers;
@@ -268,7 +268,8 @@ impl Manager {
             }
         }
 
-        let mut files = Vec::new();
+        let mut finished_files = Vec::new();
+        let mut partials = Vec::new();
         let mut removed = Vec::new();
         {
             let mut state = self.lock_open()?;
@@ -286,12 +287,12 @@ impl Manager {
                 };
                 if entry.row.status == DownloadStatus::Completed {
                     if completed == RemoveFiles::Delete {
-                        files.push(entry.path().to_path_buf());
+                        finished_files.push(entry.path().to_path_buf());
                     }
                 } else {
                     // An unfinished download has no file of its own at its final
                     // path yet; whatever is there belongs to someone else.
-                    files.extend(entry.partial_paths());
+                    partials.push(entry.partial());
                 }
                 removed.push(*id);
             }
@@ -305,7 +306,13 @@ impl Manager {
             self.reconcile(&mut state);
         }
         self.blocking(move || {
-            delete_files(&files);
+            // Never as a folder: by now a folder may have taken the finished file's name.
+            for file in &finished_files {
+                wirecatch_files::discard::file(file);
+            }
+            for partial in &partials {
+                partial.delete();
+            }
             Ok(())
         })
         .await
