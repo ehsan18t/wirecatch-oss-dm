@@ -46,6 +46,15 @@ pub(crate) fn skip_start<'a>(data: &'a [u8], skip: &mut u64) -> &'a [u8] {
     &data[n..]
 }
 
+/// A body that ended with `skip` bytes still to drop stopped short of `from`,
+/// the byte its request was to continue at: never the resource's real end.
+pub(crate) fn ended_while_skipping(from: u64, skip: u64) -> Error {
+    Error::PrematureEof {
+        at: from.saturating_sub(skip),
+        end: from,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
