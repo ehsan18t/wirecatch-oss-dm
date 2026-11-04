@@ -346,6 +346,8 @@ struct Inner {
     /// Moves files in unit tests, so a move can be made to fail.
     #[cfg(test)]
     fake_mover: Mutex<Option<fake::FakeMover>>,
+    #[cfg(test)]
+    before_deleting: Mutex<Option<fake::BeforeDeleting>>,
 }
 
 impl Drop for Inner {
@@ -459,6 +461,8 @@ impl Manager {
             fake_engine: Mutex::new(None),
             #[cfg(test)]
             fake_mover: Mutex::new(None),
+            #[cfg(test)]
+            before_deleting: Mutex::new(None),
         });
         let manager = Manager { inner };
         manager.spawn_background_tasks();
@@ -546,6 +550,7 @@ impl Manager {
         let exits: Vec<CancellationToken> = {
             let mut state = self.lock();
             state.closed = true;
+            self.give_back_undecided_captures(&mut state);
             state
                 .downloads
                 .values_mut()
@@ -690,7 +695,8 @@ impl Manager {
 
     /// Saves one download and queues its row for the next event.
     fn save(&self, state: &mut State, id: DownloadId) {
-        if let Some(entry) = state.downloads.get(&id) {
+        // One being removed is already off the saved list and must stay off it.
+        if let Some(entry) = state.downloads.get(&id).filter(|e| !e.hold.is_removing()) {
             self.inner.store.save_downloads(vec![entry.stored()]);
             state.touch(id);
             self.inner.rows_changed.notify_one();
