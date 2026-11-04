@@ -1,6 +1,7 @@
 //! Adding downloads and moving them through their life: pause, resume, cancel,
 //! retry, refresh link, remove, and their place in queues.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use tracing::warn;
@@ -18,7 +19,7 @@ use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, QueueRequest};
-use super::run::{delete_files, mark_cancelled};
+use super::run::mark_cancelled;
 use super::state::{AfterCancel, Entry, Hold, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::headers;
@@ -268,7 +269,8 @@ impl Manager {
             }
         }
 
-        let mut files = Vec::new();
+        let mut finished_files = Vec::new();
+        let mut partials = Vec::new();
         let mut removed = Vec::new();
         {
             let mut state = self.lock_open()?;
@@ -286,18 +288,19 @@ impl Manager {
                 };
                 if entry.row.status == DownloadStatus::Completed {
                     if completed == RemoveFiles::Delete {
-                        files.push(entry.path().to_path_buf());
+                        finished_files.push(entry.path().to_path_buf());
                     }
                 } else {
                     // An unfinished download has no file of its own at its final
                     // path yet; whatever is there belongs to someone else.
-                    files.extend(entry.partial_paths());
+                    partials.push(entry.partial());
                 }
                 removed.push(*id);
             }
             if removed.is_empty() {
                 return Ok(());
             }
+            finished_files = files_no_row_lists(&state, finished_files);
             self.inner.store.delete_downloads(removed.clone());
             self.emit(UiEvent::DownloadsRemoved(removed));
             // Their queue may be done now; the ticker says so.
@@ -305,7 +308,13 @@ impl Manager {
             self.reconcile(&mut state);
         }
         self.blocking(move || {
-            delete_files(&files);
+            // Never as a folder: by now a folder may have taken the finished file's name.
+            for file in &finished_files {
+                wirecatch_files::discard::file(file);
+            }
+            for partial in &partials {
+                partial.delete();
+            }
             Ok(())
         })
         .await
@@ -696,6 +705,21 @@ pub(super) fn parse_web_url(raw: &str) -> Result<Url> {
         .ok()
         .filter(|url| matches!(url.scheme(), "http" | "https"))
         .ok_or_else(|| CoreError::InvalidUrl(raw.trim().to_string()))
+}
+
+/// `files` of removed finished downloads, each once, without those another finished row lists or another download holds (D118).
+fn files_no_row_lists(state: &State, mut files: Vec<PathBuf>) -> Vec<PathBuf> {
+    if files.is_empty() {
+        return files;
+    }
+    let mut seen: HashSet<String> = state
+        .downloads
+        .values()
+        .filter(|e| e.row.status == DownloadStatus::Completed)
+        .map(|e| naming::key(e.path()))
+        .collect();
+    files.retain(|file| !state.claimed.contains(file) && seen.insert(naming::key(file)));
+    files
 }
 
 #[cfg(test)]

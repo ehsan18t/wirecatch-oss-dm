@@ -6,7 +6,7 @@ use std::io;
 use std::path::PathBuf;
 
 use crate::model::Role;
-use crate::plan::{MAX_REPRESENTATIONS, MAX_SEGMENTS};
+use crate::plan::{MAX_SEGMENTS, MAX_TRACKS};
 
 /// Errors from [`inspect`](crate::inspect) and [`download`](crate::download).
 ///
@@ -231,8 +231,7 @@ impl Error {
         match located.cause {
             ManifestError::TooManySegments => Error::TooManySegments,
             ManifestError::AddressesTooLong
-            | ManifestError::TooManyEntries
-            | ManifestError::TooManyRepresentations
+            | ManifestError::TooManyTracks
             | ManifestError::NamesTooLong => Error::TooLarge,
             cause => Error::Manifest {
                 host: url.host_str().map(str::to_string),
@@ -450,12 +449,9 @@ pub enum ManifestError {
     /// A track's addresses are, together, longer than any real stream's.
     #[error("its addresses are far longer than any video's")]
     AddressesTooLong,
-    /// It holds more pieces, qualities and renditions, together, than any real stream's.
-    #[error("it lists far more than any video's")]
-    TooManyEntries,
-    /// A DASH manifest offers more representations than any real stream's.
-    #[error("it offers more than {MAX_REPRESENTATIONS} tracks, far more than any video's")]
-    TooManyRepresentations,
+    /// A DASH manifest or an HLS master playlist offers more tracks than any real stream's.
+    #[error("it offers more than {MAX_TRACKS} tracks, far more than any video's")]
+    TooManyTracks,
     /// The names, languages and codecs of a DASH manifest's representations, as each keeps them, are together longer than any real stream's: a long name on an adaptation set is repeated for every representation in it.
     #[error("its track names are far longer than any video's")]
     NamesTooLong,
