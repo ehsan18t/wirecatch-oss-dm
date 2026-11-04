@@ -325,6 +325,7 @@ pub(crate) fn guard_from(url: &Url, timeout: Duration, proxies: &Proxies) -> Pri
         })),
         resolver: Arc::new(FilteringResolver {
             proxies: proxies.host_names(),
+            ipv4_first: proxies.may_use_socks4(),
         }),
     }
 }
@@ -398,14 +399,17 @@ pub(crate) struct FilteringResolver {
     /// filter: the connection to a proxy is the user's choice, and a request
     /// that names one as its target is still checked by the [`NetworkGuard`].
     proxies: Vec<String>,
+    /// See [`ipv4_first`].
+    ipv4_first: bool,
 }
 
 impl Resolve for FilteringResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let host = name.as_str().to_string();
         let trusted = self.proxies.iter().any(|p| p.eq_ignore_ascii_case(&host));
+        let in_ipv4_order = self.ipv4_first;
         Box::pin(async move {
-            let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), LOOKUP_PORT))
+            let mut addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), LOOKUP_PORT))
                 .await?
                 .filter(|a| trusted || !is_private(a.ip()))
                 .collect();
@@ -415,15 +419,60 @@ impl Resolve for FilteringResolver {
                 )
                 .into());
             }
+            if in_ipv4_order {
+                ipv4_first(&mut addrs);
+            }
             Ok(Box::new(addrs.into_iter()) as Addrs)
         })
     }
+}
+
+/// Resolves names like the system does, in [`ipv4_first`] order.
+pub(crate) struct Ipv4FirstResolver;
+
+impl Resolve for Ipv4FirstResolver {
+    fn resolve(&self, name: Name) -> Resolving {
+        let host = name.as_str().to_string();
+        Box::pin(async move {
+            let mut addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), LOOKUP_PORT))
+                .await?
+                .collect();
+            ipv4_first(&mut addrs);
+            Ok(Box::new(addrs.into_iter()) as Addrs)
+        })
+    }
+}
+
+/// reqwest gives a SOCKS4 proxy only the first address of a name, and SOCKS4 cannot carry an IPv6 one. Reordered, not filtered: a direct connection from the same client may need the IPv6 address.
+fn ipv4_first(addrs: &mut [SocketAddr]) {
+    addrs.sort_by_key(SocketAddr::is_ipv6);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn ipv4_addresses_come_first_in_the_order_they_had() {
+        let addr = |text: &str| text.parse::<SocketAddr>().unwrap();
+        let mut addrs = [
+            addr("[2001:db8::1]:0"),
+            addr("192.0.2.1:0"),
+            addr("[2001:db8::2]:0"),
+            addr("192.0.2.2:0"),
+        ];
+        ipv4_first(&mut addrs);
+        assert_eq!(
+            addrs,
+            [
+                addr("192.0.2.1:0"),
+                addr("192.0.2.2:0"),
+                addr("[2001:db8::1]:0"),
+                addr("[2001:db8::2]:0"),
+            ]
+        );
+    }
 
     /// Addresses at the edges of each range and inside the IPv6 forms that
     /// carry an IPv4 address, with their kinds.
@@ -622,6 +671,7 @@ mod tests {
         use std::str::FromStr;
         let resolver = FilteringResolver {
             proxies: Vec::new(),
+            ipv4_first: false,
         };
         // `localhost` resolves only to loopback addresses, all filtered out.
         let error = match resolver.resolve(Name::from_str("localhost").unwrap()).await {
@@ -714,6 +764,7 @@ mod tests {
         use std::str::FromStr;
         let resolver = FilteringResolver {
             proxies: vec!["localhost".into()],
+            ipv4_first: false,
         };
         let addrs: Vec<_> = resolver
             .resolve(Name::from_str("localhost").unwrap())

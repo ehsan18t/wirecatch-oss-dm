@@ -117,6 +117,72 @@ fn exceptions_are_cleaned_and_bounded() {
         panic!("a queue's own exceptions stay its own");
     };
     assert_eq!(kept.hosts, ["a.example"]);
+
+    let mut proxy = ProxySettings::default();
+    proxy.exceptions.hosts = vec!["http://x.example/".into(); MAX_PROXY_EXCEPTIONS + 1];
+    assert_eq!(validate(proxy).unwrap().exceptions.hosts, ["x.example"]);
+}
+
+#[test]
+fn an_exception_is_kept_in_the_form_the_matcher_reads() {
+    let mut proxy = ProxySettings::default();
+    proxy.exceptions.hosts = [
+        "https://Intranet.Example/page",
+        "host.example:8443",
+        "bücher.example",
+        "[::1]",
+        "[fd00::1]:8080",
+        "http://10.0.0.1:8080/",
+        ".dotted.example",
+        "*.corp.example",
+        "10.*",
+        "192.168.*.*",
+        "10.0.0.0/8",
+        "FD00::/8",
+        "<LOCAL>",
+        "*",
+    ]
+    .map(String::from)
+    .to_vec();
+    assert_eq!(
+        validate(proxy).unwrap().exceptions.hosts,
+        [
+            "intranet.example",
+            "host.example",
+            "xn--bcher-kva.example",
+            "::1",
+            "fd00::1",
+            "10.0.0.1",
+            "dotted.example",
+            "*.corp.example",
+            "10.*",
+            "192.168.*.*",
+            "10.0.0.0/8",
+            "fd00::/8",
+            "<local>",
+            "*",
+        ]
+    );
+}
+
+#[test]
+fn an_exception_that_names_no_host_is_refused() {
+    for bad in ["10.*.1", "10.0.0.0/33", "fd00::/129", "*.", "a,b", "a;b"] {
+        let mut proxy = ProxySettings::default();
+        proxy.exceptions.hosts = vec![bad.into()];
+        assert!(validate(proxy).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn the_exception_limit_stops_the_scan_of_a_long_list() {
+    let mut proxy = ProxySettings::default();
+    proxy.exceptions.hosts = (0..=MAX_PROXY_EXCEPTIONS)
+        .map(|n| format!("h{n}.example"))
+        .chain(std::iter::once("a b".to_owned()))
+        .collect();
+    let refused = validate(proxy).unwrap_err().to_string();
+    assert!(refused.contains("at most"), "{refused}");
 }
 
 #[test]
@@ -347,8 +413,32 @@ fn a_given_computers_proxy_is_used_in_place_of_reading_it() {
         choice(ProxyUse::Server(ProxyServerId(9)), &plain, &nothing),
         ProxyChoice::Direct
     );
-    assert_eq!(from_system(&nothing), Vec::new());
-    assert_eq!(from_system(&given).len(), 1);
+    assert_eq!(from_system(&nothing).unwrap(), Vec::new());
+    assert_eq!(from_system(&given).unwrap().len(), 1);
+}
+
+#[test]
+fn a_socks4_server_is_not_copied_as_a_profile() {
+    let computer = |all: &str, https: Option<&str>| {
+        let mut manual = ManualProxies::default();
+        manual.all = Some(all.into());
+        manual.https = https.map(str::to_owned);
+        ComputerProxy::Given(Some(manual))
+    };
+    for server in ["socks4://user:secret@s.corp:1080", "socks4a://s.corp:1080"] {
+        let refused = from_system(&computer(server, None))
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("SOCKS4"), "{refused}");
+        assert!(refused.contains("s.corp:1080"), "{refused}");
+        assert!(!refused.contains("secret"), "{refused}");
+    }
+    let others = from_system(&computer(
+        "socks4://s.corp:1080",
+        Some("http://web.corp:3128"),
+    ))
+    .unwrap();
+    assert_eq!(others, [profile(ProxyKind::Http, "web.corp", 3128)]);
 }
 
 #[test]
@@ -386,10 +476,6 @@ fn a_proxy_the_computer_sets_reads_as_a_profile_without_its_password() {
         }
     );
     assert_eq!(parse_server("proxy:8080").unwrap().kind, ProxyKind::Http);
-    assert_eq!(
-        parse_server("socks4://s:1080").unwrap().kind,
-        ProxyKind::Socks5
-    );
     assert_eq!(
         parse_server("socks5://[::1]").unwrap(),
         profile(ProxyKind::Socks5, "::1", 1080)

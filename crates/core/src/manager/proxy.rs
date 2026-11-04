@@ -199,7 +199,7 @@ impl Manager {
     pub async fn copy_system_proxy(&self) -> Result<Vec<ProxyServerId>> {
         let computer = self.lock_open()?.computer_proxy.clone();
         let found = self
-            .blocking(move || Ok(wirecatch_settings::proxy::from_system(&computer)))
+            .blocking(move || Ok(wirecatch_settings::proxy::from_system(&computer)?))
             .await?;
         let mut state = self.lock_open()?;
         let copies = wirecatch_settings::proxy::copies(found.clone(), &state.proxy_servers)?;
