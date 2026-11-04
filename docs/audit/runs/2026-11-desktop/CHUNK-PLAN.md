@@ -1041,85 +1041,85 @@ For a 2-hour `cargo-mutants` run: 15 files in 4 crates, chosen because a wrong a
 
 Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` lists them. A flow too large for one reader is split when it starts.
 
-| Stage | Unit                                    | Status      |
-| ----- | --------------------------------------- | ----------- |
-| 0     | Feature map (`FEATURES.md`)             | done        |
-| 0     | Tool: `cargo llvm-cov`                  | done        |
-| 0     | Tool: `jscpd`                           | done        |
-| 0     | Tool: `cargo-mutants`                   | done        |
-| 0     | Fault tests (`fault-tests.md`)          | done        |
-| 1     | Chunk 01: engine-disk-resume (pilot)    | done        |
-| 1     | Chunk 02: engine-http                   | done        |
-| 1     | Chunk 03: saved-state                   | done        |
-| 1     | Chunk 04: core-run-lifecycle            | done        |
-| 1     | Chunk 05: core-final-path               | done        |
-| 1     | Chunk 06: bridge-and-frames             | done        |
-| 1     | Chunk 07: browser-handover              | done        |
-| 1     | Chunk 08: local-endpoint                | done        |
-| 1     | Chunk 09: request-routing               | done        |
-| 1     | Chunk 10: site-rules                    | done        |
-| 1     | Chunk 11: media-addon                   | done        |
-| 1     | Chunk 12: app-updates                   | done        |
-| 1     | Chunk 13: program-running               | done        |
-| 1     | Chunk 14: stream-manifests              | done        |
-| 1     | Chunk 15: stream-download               | done        |
-| 1     | Chunk 16: media-layer                   | done        |
-| 1     | Chunk 17: core-media-runs               | done        |
-| 1     | Chunk 18: queues-and-scheduling         | done        |
-| 1     | Chunk 19: settings-and-proxies          | done        |
-| 1     | Chunk 20: logging-and-secrets           | done        |
-| 1     | Chunk 21: engine-ftp                    | done        |
-| 1     | Chunk 22: app-start-and-quit            | done        |
-| 1     | Chunk 23: interface-commands-and-ui-kit | done        |
-| 1     | Chunk 24: download-windows              | done        |
-| 1     | Chunk 25: main-window                   | done        |
-| 1     | Chunk 26: notifications-and-tray        | done        |
-| 1     | Chunk 27: settings-and-queue-forms      | done        |
-| 1     | Chunk 28: failure-messages              | done        |
-| 1     | Chunk 29: packaging-and-release         | done        |
-| 1     | Chunk 30: protocol-types                | done        |
-| 1     | Chunk 31: test-servers                  | done        |
-| 1     | Chunk 32: cli                           | done        |
-| 1     | Chunk 33: repo-checks                   | done        |
-| 1     | Flow `path-normal-download`             | done        |
-| 1     | Flow `path-media-download`              | done        |
-| 1     | Flow `path-app-update`                  | done        |
-| 1     | Flow `feature-behaviour`                | done        |
-| 1     | Flow `crash-and-resume`                 | done        |
-| 1     | Flow `shutdown`                         | done        |
-| 1     | Flow `concurrency`                      | done        |
-| 1     | Flow `database-migrations`              | done        |
-| 1     | Flow `security-bridge-and-pipe-input`   | done        |
-| 1     | Flow `security-path-handling`           | done        |
-| 1     | Flow `security-update-signatures`       | done        |
-| 1     | Flow `security-addon-unpacking`         | done        |
-| 1     | Flow `repeated-logic`                   | done        |
-| 1     | Flow `second-review-resume`             | done        |
-| 1     | Flow `second-review-disk-writes`        | done        |
-| 1     | UI review (`ui.md`)                     | done        |
-| 2     | Grouping (`GROUPS.md`)                  | done        |
-| 2     | Batch B01                               | done        |
-| 2     | Batch B02                               | done        |
-| 2     | Batch B03                               | done        |
-| 2     | Batch B04                               | done        |
-| 2     | Batch B05                               | done        |
-| 2     | Batch B06                               | done        |
-| 2     | Batch B07                               | done        |
-| 2     | Batch B08                               | done        |
-| 2     | Batch B09                               | done        |
-| 2     | Batch B10                               | done        |
-| 2     | Batch B11                               | done        |
-| 2     | Batch B12                               | done        |
-| 2     | Batch B13                               | done        |
-| 2     | Batch B14                               | done        |
-| 2     | Batch B15                               | done        |
-| 2     | Batch B16                               | done        |
-| 2     | Batch B17                               | done        |
-| 2     | Batch B18                               | done        |
-| 2     | Batch B19                               | done        |
-| 2     | Mutation survivors                      | done        |
-| 2     | New findings batch                      | done        |
-| 3     | Stage 3 (`AUDIT-LOG.md`)                | pending     |
+| Stage | Unit                                    | Status |
+| ----- | --------------------------------------- | ------ |
+| 0     | Feature map (`FEATURES.md`)             | done   |
+| 0     | Tool: `cargo llvm-cov`                  | done   |
+| 0     | Tool: `jscpd`                           | done   |
+| 0     | Tool: `cargo-mutants`                   | done   |
+| 0     | Fault tests (`fault-tests.md`)          | done   |
+| 1     | Chunk 01: engine-disk-resume (pilot)    | done   |
+| 1     | Chunk 02: engine-http                   | done   |
+| 1     | Chunk 03: saved-state                   | done   |
+| 1     | Chunk 04: core-run-lifecycle            | done   |
+| 1     | Chunk 05: core-final-path               | done   |
+| 1     | Chunk 06: bridge-and-frames             | done   |
+| 1     | Chunk 07: browser-handover              | done   |
+| 1     | Chunk 08: local-endpoint                | done   |
+| 1     | Chunk 09: request-routing               | done   |
+| 1     | Chunk 10: site-rules                    | done   |
+| 1     | Chunk 11: media-addon                   | done   |
+| 1     | Chunk 12: app-updates                   | done   |
+| 1     | Chunk 13: program-running               | done   |
+| 1     | Chunk 14: stream-manifests              | done   |
+| 1     | Chunk 15: stream-download               | done   |
+| 1     | Chunk 16: media-layer                   | done   |
+| 1     | Chunk 17: core-media-runs               | done   |
+| 1     | Chunk 18: queues-and-scheduling         | done   |
+| 1     | Chunk 19: settings-and-proxies          | done   |
+| 1     | Chunk 20: logging-and-secrets           | done   |
+| 1     | Chunk 21: engine-ftp                    | done   |
+| 1     | Chunk 22: app-start-and-quit            | done   |
+| 1     | Chunk 23: interface-commands-and-ui-kit | done   |
+| 1     | Chunk 24: download-windows              | done   |
+| 1     | Chunk 25: main-window                   | done   |
+| 1     | Chunk 26: notifications-and-tray        | done   |
+| 1     | Chunk 27: settings-and-queue-forms      | done   |
+| 1     | Chunk 28: failure-messages              | done   |
+| 1     | Chunk 29: packaging-and-release         | done   |
+| 1     | Chunk 30: protocol-types                | done   |
+| 1     | Chunk 31: test-servers                  | done   |
+| 1     | Chunk 32: cli                           | done   |
+| 1     | Chunk 33: repo-checks                   | done   |
+| 1     | Flow `path-normal-download`             | done   |
+| 1     | Flow `path-media-download`              | done   |
+| 1     | Flow `path-app-update`                  | done   |
+| 1     | Flow `feature-behaviour`                | done   |
+| 1     | Flow `crash-and-resume`                 | done   |
+| 1     | Flow `shutdown`                         | done   |
+| 1     | Flow `concurrency`                      | done   |
+| 1     | Flow `database-migrations`              | done   |
+| 1     | Flow `security-bridge-and-pipe-input`   | done   |
+| 1     | Flow `security-path-handling`           | done   |
+| 1     | Flow `security-update-signatures`       | done   |
+| 1     | Flow `security-addon-unpacking`         | done   |
+| 1     | Flow `repeated-logic`                   | done   |
+| 1     | Flow `second-review-resume`             | done   |
+| 1     | Flow `second-review-disk-writes`        | done   |
+| 1     | UI review (`ui.md`)                     | done   |
+| 2     | Grouping (`GROUPS.md`)                  | done   |
+| 2     | Batch B01                               | done   |
+| 2     | Batch B02                               | done   |
+| 2     | Batch B03                               | done   |
+| 2     | Batch B04                               | done   |
+| 2     | Batch B05                               | done   |
+| 2     | Batch B06                               | done   |
+| 2     | Batch B07                               | done   |
+| 2     | Batch B08                               | done   |
+| 2     | Batch B09                               | done   |
+| 2     | Batch B10                               | done   |
+| 2     | Batch B11                               | done   |
+| 2     | Batch B12                               | done   |
+| 2     | Batch B13                               | done   |
+| 2     | Batch B14                               | done   |
+| 2     | Batch B15                               | done   |
+| 2     | Batch B16                               | done   |
+| 2     | Batch B17                               | done   |
+| 2     | Batch B18                               | done   |
+| 2     | Batch B19                               | done   |
+| 2     | Mutation survivors                      | done   |
+| 2     | New findings batch                      | done   |
+| 3     | Stage 3 (`AUDIT-LOG.md`)                | done   |
 
 ## Approvals
 

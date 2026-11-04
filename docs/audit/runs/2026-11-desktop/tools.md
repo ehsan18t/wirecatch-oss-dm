@@ -64,12 +64,12 @@ This finds copied text only, not the same logic written differently.
 
 Run on the 15 files named in `## Mutation targets` of `CHUNK-PLAN.md`, with a 2-hour cap.
 
-| Crate | Missed | Timed out |
-| --- | --- | --- |
-| addons | 15 | 0 |
-| updates | 5 | 0 |
-| sites | 22 | 0 |
-| engine | 35 | 18 |
+| Crate   | Missed | Timed out |
+| ------- | ------ | --------- |
+| addons  | 15     | 0         |
+| updates | 5      | 0         |
+| sites   | 22     | 0         |
+| engine  | 35     | 18        |
 
 A missed mutant is a change to the code that no test noticed. Each is a lead, not a finding. Line numbers are from commit `37603b330`.
 
