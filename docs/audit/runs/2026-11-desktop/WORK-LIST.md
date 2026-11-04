@@ -125,7 +125,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-117 | fix(desktop): keep a system accent readable        | `fix/system-accent-contrast`     | 229                          | P3       | small  | none         | open   |
 | PR-118 | fix(protocol): correct two language names          | `fix/language-names`             | 234                          | P3       | small  | none         | open   |
 | PR-119 | fix(desktop): retry deleting a roaming data folder | `fix/roaming-folder-retry`       | 243                          | P3       | small  | none         | merged |
-| PR-120 | test(engine): keep the download fault tests        | `test/keep-fault-tests`          | none                         | none     | medium | PR-39        | open   |
+| PR-120 | test(engine): keep the download fault tests        | `test/keep-fault-tests`          | none                         | none     | medium | PR-39        | merged |
 
 ## Lanes
 
@@ -1589,4 +1589,4 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/engine`, `crates/core`, `crates/test-support`
 - **Proof:** `FT-ranges.patch`, `FT-change.patch`, `FT-large.patch` and `FT-manager-kill.patch`. Each carries its own copy of the harness, so take the tests and reuse the one from PR-39.
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-engine -p wirecatch-core -p wirecatch-test-support`
-- **Status:** open
+- **Status:** merged
