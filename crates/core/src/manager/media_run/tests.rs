@@ -631,6 +631,7 @@ fn job_at(dir: &Path, output: &Path, url: &str, taken: Taken) -> Job {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken,
     }
