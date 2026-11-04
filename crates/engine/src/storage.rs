@@ -49,7 +49,7 @@ pub fn open_for_write(path: &Path) -> io::Result<File> {
 }
 
 /// A run's hold on its part file, for as long as this lives: another run of this process or another sees it and leaves the file alone, and the system lets go of it when the process dies, however it dies. Where the file system has no such locks (some network drives) it holds nothing.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub(crate) struct PartLock(Option<File>);
 
 impl PartLock {

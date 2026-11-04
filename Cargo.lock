@@ -10286,6 +10286,7 @@ dependencies = [
  "url",
  "windows-sys 0.61.2",
  "wirecatch-engine",
+ "wirecatch-files",
  "wirecatch-logging",
  "wirecatch-test-support",
 ]
