@@ -56,7 +56,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-46  | fix(core): keep link passwords out of questions    | `fix/question-link-password`     | 47                           | P2       | medium | PR-45        | open   |
 | PR-47  | fix(core): see finished files beside resume files  | `fix/finished-beside-resume`     | 48, 174                      | P2       | small  | PR-04        | merged |
 | PR-48  | fix(media): make any video title safe as a name    | `fix/safe-video-titles`          | 49, 95                       | P2       | small  | none         | merged |
-| PR-49  | fix(messages): give advice that fits the failure   | `fix/advice-fits-failure`        | 51, 105, 106, 206            | P2       | medium | none         | open   |
+| PR-49  | fix(messages): give advice that fits the failure   | `fix/advice-fits-failure`        | 51, 105, 106, 206            | P2       | medium | none         | merged |
 | PR-50  | fix(store): keep a set-aside list for a full month | `fix/set-aside-month`            | 52, 156, 237                 | P2       | small  | none         | open   |
 | PR-51  | fix(desktop): correct what download questions say  | `fix/download-questions`         | 54, 122, 231                 | P2       | medium | none         | open   |
 | PR-52  | fix(desktop): give download windows the right fix  | `fix/window-fix-buttons`         | 55, 81                       | P2       | medium | none         | open   |
@@ -750,7 +750,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/messages`, `crates/core`
 - **Proof:** `28-2.patch`, Windows only, for item 105.
 - **Checks:** `cargo test -p wirecatch-messages -p wirecatch-core`, `cargo clippy -p wirecatch-messages -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-50 fix(store): keep a set-aside list for a full month
 

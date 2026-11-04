@@ -75,7 +75,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 48  | A finished file with a leftover resume file is downloaded again                                   | `Xcrash-and-resume-2` `Xpath-normal-download-6`                                                    | P2       | small  | P2, 2 findings, small; after item 4; clears the way for item 174                                                 | `Xcrash-and-resume-2`                         | fixed  |
 | 49  | A title holding % or $ sends yt-dlp's file to another folder or stops it                          | `16-1` `Xsecurity-path-handling-3`                                                                 | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 50  | Path parameters such as ;type=i or ;jsessionid end up in the file name                            | `21-2` `B11-2`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | `21-2` `B11-2`                                | fixed  |
-| 51  | Add-on installs and app updates get advice about links and folders they do not have               | `28-3` `B11-3`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
+| 51  | Add-on installs and app updates get advice about links and folders they do not have               | `28-3` `B11-3`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 52  | A damaged list set aside can be deleted at the next start                                         | `03-5` `Xdatabase-migrations-1`                                                                    | P2       | small  | P2, 2 findings, small                                                                                            | `03-5`                                        | open   |
 | 53  | The quality form loses the person's choice or says nothing around an add-on install               | `24-1` `24-2`                                                                                      | P2       | small  | P2, 2 findings, small; after item 40                                                                             | none                                          | open   |
 | 54  | The file-exists question never says whether it is the same file                                   | `24-4` `30-1`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
@@ -129,8 +129,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 102 | A subtitle codec turns an MP4-ready video into MKV                                                | `14-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `14-4-and-14-5`                               | fixed  |
 | 103 | While the list loads, the window says nothing was ever downloaded                                 | `25-9`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 104 | Moving a file to another drive drops its Mark of the Web                                          | `05-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `05-4`                                        | fixed  |
-| 105 | Replacing a file another program has open blames the folder                                       | `28-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `28-2`                                        | open   |
-| 106 | A stream manifest over the limit offers a retry that cannot help                                  | `28-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 105 | Replacing a file another program has open blames the folder                                       | `28-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `28-2`                                        | fixed  |
+| 106 | A stream manifest over the limit offers a retry that cannot help                                  | `28-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 107 | A suffix list that could not be saved blames the internet connection                              | `10-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 108 | An add-on repair downloads everything and puts yt-dlp back to the pinned version                  | `11-1`                                                                                             | P2       | small  | P2, small; the next item's damaged-record route needs it                                                         | none                                          | fixed  |
 | 109 | The add-on check acts on what it read before its wait, so a removed add-on comes back             | `11-2`                                                                                             | P2       | small  | P2, 1 finding, small; after item 108                                                                             | none                                          | fixed  |
@@ -230,7 +230,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 203 | The autostart Exec line escapes reserved characters once                                          | `22-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 204 | The autostart Launcher trait has one implementation and no test                                   | `22-8`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 205 | Every window has an empty native title                                                            | `U-2`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 206 | invalid_link ignores its argument, and its doc and test claim otherwise                           | `28-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 206 | invalid_link ignores its argument, and its doc and test claim otherwise                           | `28-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 207 | An import can leave two queues with the same name                                                 | `19-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | `19-2`                                        | open   |
 | 208 | An update offer names a yt-dlp older than the one installed                                       | `11-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 209 | swap_in spells out the release file's name                                                        | `11-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -1183,7 +1183,7 @@ P2, small, fixed.
 
 ### 51. Add-on installs and app updates get advice about links and folders they do not have
 
-P2, small, open.
+P2, small, fixed.
 
 `describe` writes advice for a row with a Get a new link button. Add-on installs and app updates keep only `.message`, so a 404 tells them to refresh a link, and a folder they cannot write says "Choose another folder" (`B11-3`).
 
@@ -2086,7 +2086,7 @@ P2, small, fixed.
 
 ### 105. Replacing a file another program has open blames the folder
 
-P2, small, open.
+P2, small, fixed.
 
 `disk_failure` decides from the error kind alone. A rename over a file held open gives `PermissionDenied`, so the person reads "Wirecatch is not allowed to save files in <folder>. Choose another folder." with `ChooseFolder`. Any held file reaches the same arm.
 
@@ -2102,7 +2102,7 @@ P2, small, open.
 
 ### 106. A stream manifest over the limit offers a retry that cannot help
 
-P2, small, open.
+P2, small, fixed.
 
 `Source::load` and `media_playlist` reach `describe`'s catch-all through `map_engine`, so a manifest over the limit offers a retry that cannot help.
 
@@ -3763,7 +3763,7 @@ P3, small, fixed.
 
 ### 206. invalid_link ignores its argument, and its doc and test claim otherwise
 
-P3, small, open.
+P3, small, fixed.
 
 The `InvalidUrl` arm drops the text callers format, the test compares the function with its own body, and the doc is untrue.
 
