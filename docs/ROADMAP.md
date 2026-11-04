@@ -313,7 +313,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 248. Nothing stops new code deleting a whole folder (fixed)
 249. The timing check misses a throttled server racing an action (open)
 250. The capture reply's doc contradicts the extension (open)
-251. The layout test can fail on a font that did not load (open)
+251. The layout test can fail on a font that did not load (fixed)
 252. A quit during a removal can leave part files behind (open)
 
 Done before the release:
