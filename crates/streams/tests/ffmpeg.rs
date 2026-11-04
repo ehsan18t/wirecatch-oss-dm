@@ -361,7 +361,13 @@ async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
     );
     // The fake ffmpeg would have written the output had it been started.
     assert!(!output.exists());
-    assert!(dir.join("clip.mp4.wcstream").join("track0").is_file());
+    // Kept, the same bad track would fail every try, whatever the link.
+    assert!(!dir.join("clip.mp4.wcstream").join("track0").exists());
+    let mut again = common::request(server.url("index.m3u8"), &output);
+    again.ffmpeg = Some(fake_ffmpeg().unwrap());
+    one_segment(&server, ts_segment(1, 1500));
+    assert!(matches!(run(again).await, Ok(Outcome::Completed { .. })));
+    assert_eq!(server.requests("0.m4s"), 2);
     dir.remove().unwrap();
 }
 
