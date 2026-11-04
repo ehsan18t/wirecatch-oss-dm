@@ -25,17 +25,20 @@ use windows_sys::Win32::Security::Authorization::{
     SDDL_REVISION_1, SE_KERNEL_OBJECT,
 };
 use windows_sys::Win32::Security::{
-    CopySid, GetLengthSid, GetTokenInformation, IsTokenRestricted, IsValidSid,
-    OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, RevertToSelf, SECURITY_ATTRIBUTES,
-    SID_AND_ATTRIBUTES, TOKEN_ELEVATION, TOKEN_ELEVATION_TYPE, TOKEN_INFORMATION_CLASS,
-    TOKEN_QUERY, TokenElevation, TokenElevationType, TokenElevationTypeDefault as SINGLE_TOKEN,
-    TokenElevationTypeFull as FULL_TOKEN, TokenElevationTypeLimited as LIMITED_TOKEN,
-    TokenIntegrityLevel, TokenIsAppContainer, TokenUser,
+    ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, ACL_SIZE_INFORMATION, AclSizeInformation, CopySid, GetAce,
+    GetAclInformation, GetLengthSid, GetTokenInformation, IsTokenRestricted, IsValidSid,
+    LABEL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID,
+    RevertToSelf, SECURITY_ATTRIBUTES, SID_AND_ATTRIBUTES, TOKEN_ELEVATION, TOKEN_ELEVATION_TYPE,
+    TOKEN_INFORMATION_CLASS, TOKEN_QUERY, TokenElevation, TokenElevationType,
+    TokenElevationTypeDefault as SINGLE_TOKEN, TokenElevationTypeFull as FULL_TOKEN,
+    TokenElevationTypeLimited as LIMITED_TOKEN, TokenIntegrityLevel, TokenIsAppContainer,
+    TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CREATE_NEW, CreateFileW, FILE_ATTRIBUTE_NORMAL, SECURITY_IDENTIFICATION,
 };
 use windows_sys::Win32::System::Pipes::ImpersonateNamedPipeClient;
+use windows_sys::Win32::System::SystemServices::SYSTEM_MANDATORY_LABEL_ACE_TYPE;
 use windows_sys::Win32::System::Threading::{
     GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken,
 };
@@ -56,6 +59,9 @@ const BUSY_RETRY: Duration = Duration::from_millis(10);
 /// authority of at most 15 characters, and up to 15 sub-authorities of up to 10
 /// digits each, every one after a dash.
 const MAX_SID_STRING_UNITS: usize = 4 + 15 + 15 * 11;
+
+/// The integrity level of a normal, unelevated program: also what Windows takes an object with no label to be.
+const MEDIUM_INTEGRITY: u32 = 8192;
 
 /// The size of `T` as the `u32` that Win32 structures and calls take. A type of 4 GiB
 /// or more does not compile, so the conversion below never falls back.
@@ -679,15 +685,12 @@ fn classify_taken(endpoint: &Endpoint, user: &Sid, probe: io::Result<Sid>) -> Ip
         Err(e) if is_os_error(&e, ERROR_ACCESS_DENIED) => {
             taken_by("an account that does not let you in".into())
         }
-        // Every instance is busy serving a client: our own app under load is the
-        // likely case, and either way the name is not ours to take.
+        // Every instance is busy serving a client: without the key's lock, our own app under
+        // load is the likely case, and either way the name is not ours to take.
         Err(e) if is_os_error(&e, ERROR_PIPE_BUSY) => IpcError::AlreadyInUse {
             endpoint: endpoint.to_string(),
         },
-        Err(e) => IpcError::io(
-            format!("{endpoint} is already in use and could not be checked"),
-            e,
-        ),
+        Err(e) => taken_by(format!("an account that could not be checked ({e})")),
     }
 }
 
@@ -737,10 +740,10 @@ impl PipeListener {
     ) -> Result<Self, IpcError> {
         let next = match create_instance(endpoint, &descriptor, true) {
             Ok(next) => next,
-            // FILE_FLAG_FIRST_PIPE_INSTANCE fails this way when the name already
-            // exists, whoever created it. Find out who, so the user gets the
-            // right advice.
-            Err(e) if is_os_error(&e, ERROR_ACCESS_DENIED) => {
+            // FILE_FLAG_FIRST_PIPE_INSTANCE fails with access denied when the name already
+            // exists, whoever created it, and with pipe busy when its instance limit is
+            // reached. Find out who, so the user gets the right advice.
+            Err(e) if is_os_error(&e, ERROR_ACCESS_DENIED) || is_os_error(&e, ERROR_PIPE_BUSY) => {
                 return Err(classify_taken(endpoint, &user, probe_owner(endpoint)));
             }
             Err(e) => return Err(IpcError::io(format!("Could not listen at {endpoint}"), e)),
@@ -819,6 +822,9 @@ pub(crate) async fn connect(endpoint: &Endpoint, expected: &Sid) -> Result<Conne
     let owner = handle_owner(client.as_raw_handle())
         .map_err(|e| IpcError::io("Could not check who owns the connection", e))?;
     verify_owner(endpoint, expected, &owner)?;
+    let server_level = handle_integrity(client.as_raw_handle())
+        .map_err(|e| IpcError::io("Could not check who made the connection", e))?;
+    verify_server_rights(endpoint, server_level, ProcessAccount::current()?.integrity)?;
     Ok(Connection {
         inner: Inner::PipeClient(client),
     })
@@ -841,6 +847,18 @@ pub(crate) fn verify_owner(
     }
 }
 
+/// Refuses a server below the client's own level or medium, whichever is lower (D130): an elevated bridge still reaches the unelevated app, whose pipe is medium, and a program kept out of the app's pipe cannot stand in for it.
+fn verify_server_rights(endpoint: &Endpoint, server: u32, client: u32) -> Result<(), IpcError> {
+    if server >= client.min(MEDIUM_INTEGRITY) {
+        Ok(())
+    } else {
+        Err(IpcError::LowerRightsServer {
+            endpoint: endpoint.to_string(),
+            level: server,
+        })
+    }
+}
+
 /// The owner of an open file.
 pub(crate) fn file_owner(file: &std::fs::File) -> io::Result<Sid> {
     handle_owner(file.as_raw_handle())
@@ -851,14 +869,18 @@ pub(crate) fn may_own_users_file(owner: &Sid, user: &Sid) -> bool {
     owner == user || *owner == Sid::administrators() || *owner == Sid::local_system()
 }
 
-/// Creates a new file at `path`, open for writing, that is the user's alone: owned by the user and open to nobody else ([`private_sddl`]). Without an owner of its own the file would get the program's default owner, Administrators in an elevated program.
+/// Creates a new file at `path`, open for writing, that is the user's alone: owned by the user, open to nobody else, and closed to the user's programs with fewer rights. Without an owner of its own the file would get the program's default owner, Administrators in an elevated program. Labelled medium at most, or a normal start could not read what an elevated one wrote; no higher than the program's own level, which Windows refuses (D130).
 ///
 /// # Errors
 ///
 /// The file exists already (`AlreadyExists`), or Windows refuses to create it.
 pub(crate) fn create_private_file(path: &Path) -> io::Result<File> {
-    let user = process_token().and_then(|token| token_sid(&token, TokenUser))?;
-    let descriptor = OwnerOnlyDescriptor::from_sddl(&private_sddl(&user.to_string_form()?))?;
+    let account = process_token().and_then(|token| ProcessAccount::from_token(&token))?;
+    let level = account.integrity.min(MEDIUM_INTEGRITY);
+    let descriptor = OwnerOnlyDescriptor::from_sddl(&owner_only_sddl(
+        &account.user.to_string_form()?,
+        &format!("S-1-16-{level}"),
+    ))?;
     let attributes = SECURITY_ATTRIBUTES {
         nLength: win32_size_of::<SECURITY_ATTRIBUTES>(),
         lpSecurityDescriptor: descriptor.0,
@@ -911,6 +933,92 @@ fn handle_owner(handle: RawHandle) -> io::Result<Sid> {
     // SAFETY: `owner` points into `descriptor`, which is alive until the guard
     // drops after this copy.
     unsafe { Sid::copy_from(owner) }
+}
+
+/// The integrity level of a kernel object from its handle (needs `READ_CONTROL`, as [`handle_owner`] does): the lowest its label names. A program below medium cannot leave its objects unlabelled, whatever its descriptor says, or label them above its own level; no label means a program at medium or above made it.
+fn handle_integrity(handle: RawHandle) -> io::Result<u32> {
+    let mut sacl: *mut ACL = ptr::null_mut();
+    let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
+    // SAFETY: `handle` is open for the duration of the call; on success `descriptor` is a LocalAlloc block that the guard frees, and `sacl` points inside it or is null.
+    let status = unsafe {
+        GetSecurityInfo(
+            handle as HANDLE,
+            SE_KERNEL_OBJECT,
+            LABEL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &raw mut sacl,
+            &raw mut descriptor,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return Err(os_error(status));
+    }
+    let _guard = LocalBox(descriptor);
+    if sacl.is_null() {
+        return Ok(MEDIUM_INTEGRITY);
+    }
+    // SAFETY: `sacl` points into `descriptor`, which is alive until the guard drops.
+    let labels = unsafe { read_acl(sacl, &[SYSTEM_MANDATORY_LABEL_ACE_TYPE]) }?;
+    Ok(labels
+        .iter()
+        .map(|label| label.sid.integrity_level().unwrap_or(0))
+        .min()
+        .unwrap_or(MEDIUM_INTEGRITY))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct AceInfo {
+    ace_type: u32,
+    mask: u32,
+    sid: Sid,
+}
+
+/// Reads the entries of an ACL whose entries all share the `ACCESS_ALLOWED_ACE` layout (allowed, denied and mandatory label entries). An entry of a type not in `expected` is an error.
+///
+/// # Safety
+///
+/// `acl` must point at a valid ACL that stays alive during the call.
+unsafe fn read_acl(acl: *const ACL, expected: &[u32]) -> io::Result<Vec<AceInfo>> {
+    // SAFETY: zeroed is a valid ACL_SIZE_INFORMATION (plain integers).
+    let mut info: ACL_SIZE_INFORMATION = unsafe { mem::zeroed() };
+    // SAFETY: `acl` is valid (caller); `info` matches the requested class.
+    if unsafe {
+        GetAclInformation(
+            acl,
+            (&raw mut info).cast(),
+            win32_size_of::<ACL_SIZE_INFORMATION>(),
+            AclSizeInformation,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let mut aces = Vec::new();
+    for index in 0..info.AceCount {
+        let mut ace: *mut c_void = ptr::null_mut();
+        // SAFETY: `index` is below the ACE count reported above.
+        if unsafe { GetAce(acl, index, &raw mut ace) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: every ACE starts with an ACE_HEADER.
+        let header = unsafe { &*(ace as *const ACE_HEADER) };
+        let ace_type = u32::from(header.AceType);
+        if !expected.contains(&ace_type) {
+            return Err(io::Error::other(format!("unexpected ACE type {ace_type}")));
+        }
+        // SAFETY: the expected types share the ACCESS_ALLOWED_ACE layout, with the SID starting at `SidStart`.
+        let body = unsafe { &*(ace as *const ACCESS_ALLOWED_ACE) };
+        // SAFETY: as above.
+        let sid = unsafe { Sid::copy_from(ptr::addr_of!(body.SidStart) as PSID) }?;
+        aces.push(AceInfo {
+            ace_type,
+            mask: body.Mask,
+            sid,
+        });
+    }
+    Ok(aces)
 }
 
 /// Runs `work` on a thread of its own whose token makes Administrators the owner of what it creates, as an elevated program's token does unless the computer is set otherwise. `None` when this program's token cannot do that (it is not elevated), for the caller to say that it checked nothing.
@@ -986,20 +1094,17 @@ mod tests {
         CloseHandle, GENERIC_READ, GENERIC_WRITE, GetLastError, INVALID_HANDLE_VALUE,
     };
     use windows_sys::Win32::Security::{
-        ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, ACL_SIZE_INFORMATION, AclSizeInformation,
-        DACL_SECURITY_INFORMATION, DuplicateTokenEx, GetAce, GetAclInformation,
-        GetSecurityDescriptorControl, ImpersonateAnonymousToken, LABEL_SECURITY_INFORMATION,
-        RevertToSelf, SE_DACL_PROTECTED, SID_AND_ATTRIBUTES, SecurityImpersonation,
-        SetTokenInformation, TOKEN_ADJUST_DEFAULT, TOKEN_DUPLICATE, TOKEN_IMPERSONATE,
-        TOKEN_MANDATORY_LABEL, TokenImpersonation, TokenIntegrityLevel,
+        DACL_SECURITY_INFORMATION, DuplicateTokenEx, GetSecurityDescriptorControl,
+        ImpersonateAnonymousToken, RevertToSelf, SE_DACL_PROTECTED, SID_AND_ATTRIBUTES,
+        SecurityImpersonation, SetTokenInformation, TOKEN_ADJUST_DEFAULT, TOKEN_DUPLICATE,
+        TOKEN_IMPERSONATE, TOKEN_MANDATORY_LABEL, TokenImpersonation, TokenIntegrityLevel,
     };
     use windows_sys::Win32::Storage::FileSystem::{
         CreateFileW, FILE_ALL_ACCESS, OPEN_EXISTING, SECURITY_SQOS_PRESENT,
     };
     use windows_sys::Win32::System::SystemServices::{
         ACCESS_ALLOWED_ACE_TYPE, ACCESS_DENIED_ACE_TYPE, SE_GROUP_INTEGRITY,
-        SYSTEM_MANDATORY_LABEL_ACE_TYPE, SYSTEM_MANDATORY_LABEL_NO_READ_UP,
-        SYSTEM_MANDATORY_LABEL_NO_WRITE_UP,
+        SYSTEM_MANDATORY_LABEL_NO_READ_UP, SYSTEM_MANDATORY_LABEL_NO_WRITE_UP,
     };
     use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadToken};
 
@@ -1012,13 +1117,6 @@ mod tests {
         )
     }
 
-    #[derive(Debug, PartialEq, Eq)]
-    struct AceInfo {
-        ace_type: u32,
-        mask: u32,
-        sid: Sid,
-    }
-
     #[derive(Debug)]
     struct Security {
         owner: Sid,
@@ -1027,54 +1125,6 @@ mod tests {
         aces: Option<Vec<AceInfo>>,
         /// Mandatory label entries from the SACL.
         label: Vec<AceInfo>,
-    }
-
-    /// Reads the entries of an ACL whose entries all share the
-    /// `ACCESS_ALLOWED_ACE` layout (allowed, denied and mandatory label entries).
-    ///
-    /// # Safety
-    ///
-    /// `acl` must point at a valid ACL that stays alive during the call.
-    unsafe fn read_acl(acl: *const ACL, expected: &[u32]) -> io::Result<Vec<AceInfo>> {
-        // SAFETY: zeroed is a valid ACL_SIZE_INFORMATION (plain integers).
-        let mut info: ACL_SIZE_INFORMATION = unsafe { mem::zeroed() };
-        // SAFETY: `acl` is valid (caller); `info` matches the requested class.
-        if unsafe {
-            GetAclInformation(
-                acl,
-                (&raw mut info).cast(),
-                win32_size_of::<ACL_SIZE_INFORMATION>(),
-                AclSizeInformation,
-            )
-        } == 0
-        {
-            return Err(io::Error::last_os_error());
-        }
-        let mut aces = Vec::new();
-        for index in 0..info.AceCount {
-            let mut ace: *mut c_void = ptr::null_mut();
-            // SAFETY: `index` is below the ACE count reported above.
-            if unsafe { GetAce(acl, index, &raw mut ace) } == 0 {
-                return Err(io::Error::last_os_error());
-            }
-            // SAFETY: every ACE starts with an ACE_HEADER.
-            let header = unsafe { &*(ace as *const ACE_HEADER) };
-            let ace_type = u32::from(header.AceType);
-            if !expected.contains(&ace_type) {
-                return Err(io::Error::other(format!("unexpected ACE type {ace_type}")));
-            }
-            // SAFETY: the expected types share the ACCESS_ALLOWED_ACE layout, with
-            // the SID starting at `SidStart`.
-            let body = unsafe { &*(ace as *const ACCESS_ALLOWED_ACE) };
-            // SAFETY: as above.
-            let sid = unsafe { Sid::copy_from(ptr::addr_of!(body.SidStart) as PSID) }?;
-            aces.push(AceInfo {
-                ace_type,
-                mask: body.Mask,
-                sid,
-            });
-        }
-        Ok(aces)
     }
 
     /// Reads the owner, DACL and mandatory label of an object back from
@@ -1297,6 +1347,15 @@ mod tests {
             ),
             "the only entry must grant the current user, and nobody else"
         );
+        assert_eq!(
+            security.label,
+            [AceInfo {
+                ace_type: SYSTEM_MANDATORY_LABEL_ACE_TYPE,
+                mask: SYSTEM_MANDATORY_LABEL_NO_WRITE_UP | SYSTEM_MANDATORY_LABEL_NO_READ_UP,
+                sid: Sid::parse("S-1-16-8192").unwrap(),
+            }],
+            "closed to lower levels, and open to a normal start after an elevated one"
+        );
     }
 
     // The key took the folder's entries and the program's default owner, which an elevated program sets to Administrators (W4I review R2-H1).
@@ -1392,54 +1451,73 @@ mod tests {
 
     /// Opens the pipe from a thread running as the current user but at low
     /// integrity, like a sandboxed browser process, and returns the open client end.
+    /// Runs `work` on a thread of its own as the current user at low integrity.
+    fn at_low_integrity<T: Send>(work: impl FnOnce() -> T + Send) -> T {
+        std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    let low = Sid::parse("S-1-16-4096").unwrap();
+                    let mut raw: HANDLE = ptr::null_mut();
+                    // SAFETY: the pseudo handle of the current process needs no closing; on success `raw` is a new token handle that we own.
+                    let opened = unsafe {
+                        OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE, &raw mut raw)
+                    };
+                    assert_ne!(opened, 0, "{}", io::Error::last_os_error());
+                    // SAFETY: `raw` is the open token handle from above, owned only here.
+                    let process = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
+                    let mut raw: HANDLE = ptr::null_mut();
+                    // SAFETY: `process` is open with TOKEN_DUPLICATE; on success `raw` is a new impersonation token that we own.
+                    let duplicated = unsafe {
+                        DuplicateTokenEx(
+                            process.as_raw_handle() as HANDLE,
+                            TOKEN_IMPERSONATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT,
+                            ptr::null(),
+                            SecurityImpersonation,
+                            TokenImpersonation,
+                            &raw mut raw,
+                        )
+                    };
+                    assert_ne!(duplicated, 0, "{}", io::Error::last_os_error());
+                    // SAFETY: `raw` is the new token handle from above, owned only here.
+                    let token = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
+                    let label = TOKEN_MANDATORY_LABEL {
+                        Label: SID_AND_ATTRIBUTES {
+                            Sid: low.as_psid(),
+                            Attributes: SE_GROUP_INTEGRITY as u32,
+                        },
+                    };
+                    // SAFETY: `low` is a valid SID.
+                    let size = win32_size_of::<TOKEN_MANDATORY_LABEL>()
+                        + unsafe { GetLengthSid(low.as_psid()) };
+                    // SAFETY: `token` is open with TOKEN_ADJUST_DEFAULT; `label` is a TOKEN_MANDATORY_LABEL, and the SID it points at outlives the call.
+                    let set = unsafe {
+                        SetTokenInformation(
+                            token.as_raw_handle() as HANDLE,
+                            TokenIntegrityLevel,
+                            (&raw const label).cast(),
+                            size,
+                        )
+                    };
+                    assert_ne!(set, 0, "{}", io::Error::last_os_error());
+                    // SAFETY: a null thread means this thread, and `token` is an impersonation token; the guard below reverts it before the thread ends.
+                    let impersonating =
+                        unsafe { SetThreadToken(ptr::null(), token.as_raw_handle() as HANDLE) };
+                    assert_ne!(impersonating, 0, "{}", io::Error::last_os_error());
+                    let _revert = Impersonating;
+                    work()
+                })
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        })
+    }
+
     /// Opens at the identification level, as the connector does.
     fn open_at_low_integrity(endpoint: &Endpoint, access: u32) -> Result<OwnedHandle, u32> {
         let name = wide(endpoint.as_os_str());
-        std::thread::spawn(move || {
-            let low = Sid::parse("S-1-16-4096").unwrap();
-            let mut process_token: HANDLE = ptr::null_mut();
-            let mut token: HANDLE = ptr::null_mut();
-            // SAFETY: plain Win32 calls on handles opened and closed here; the
-            // impersonation only affects this thread and is reverted.
-            unsafe {
-                assert_ne!(
-                    OpenProcessToken(
-                        GetCurrentProcess(),
-                        TOKEN_DUPLICATE | TOKEN_QUERY,
-                        &raw mut process_token
-                    ),
-                    0
-                );
-                assert_ne!(
-                    DuplicateTokenEx(
-                        process_token,
-                        TOKEN_IMPERSONATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT,
-                        ptr::null(),
-                        SecurityImpersonation,
-                        TokenImpersonation,
-                        &raw mut token,
-                    ),
-                    0
-                );
-                CloseHandle(process_token);
-                let label = TOKEN_MANDATORY_LABEL {
-                    Label: SID_AND_ATTRIBUTES {
-                        Sid: low.as_psid(),
-                        Attributes: SE_GROUP_INTEGRITY as u32,
-                    },
-                };
-                let size = win32_size_of::<TOKEN_MANDATORY_LABEL>() + GetLengthSid(low.as_psid());
-                assert_ne!(
-                    SetTokenInformation(
-                        token,
-                        TokenIntegrityLevel,
-                        (&raw const label).cast(),
-                        size,
-                    ),
-                    0
-                );
-                assert_ne!(SetThreadToken(ptr::null(), token), 0);
-                let handle = CreateFileW(
+        at_low_integrity(|| {
+            // SAFETY: `name` is NUL-terminated and there is no template file; on success the handle is new and ours.
+            let handle = unsafe {
+                CreateFileW(
                     name.as_ptr(),
                     access,
                     0,
@@ -1447,19 +1525,16 @@ mod tests {
                     OPEN_EXISTING,
                     SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
                     ptr::null_mut(),
-                );
-                let error = GetLastError();
-                RevertToSelf();
-                CloseHandle(token);
-                if handle == INVALID_HANDLE_VALUE {
-                    Err(error)
-                } else {
-                    Ok(OwnedHandle::from_raw_handle(handle as RawHandle))
-                }
+                )
+            };
+            if handle == INVALID_HANDLE_VALUE {
+                // SAFETY: a plain call with no arguments, made right after the failure it reports.
+                Err(unsafe { GetLastError() })
+            } else {
+                // SAFETY: `handle` is a valid handle that nothing else owns or closes.
+                Ok(unsafe { OwnedHandle::from_raw_handle(handle as RawHandle) })
             }
         })
-        .join()
-        .unwrap()
     }
 
     #[tokio::test]
@@ -1525,11 +1600,12 @@ mod tests {
             "names the anonymous logon: {peer}"
         );
 
-        // The refusal concerns that client only: the listener still serves the user.
-        let user = Sid::current_user().unwrap();
-        let (client, server) = tokio::join!(connect(&endpoint, &user), listener.accept());
-        client.unwrap();
-        server.unwrap();
+        // The refusal concerns that client only: the listener still serves the user. Opened by hand, since the connector refuses a pipe labelled this low.
+        let _client = ClientOptions::new()
+            .security_qos_flags(SECURITY_IDENTIFICATION)
+            .open(endpoint.as_os_str())
+            .unwrap();
+        listener.accept().await.unwrap();
     }
 
     #[tokio::test]
@@ -1758,6 +1834,10 @@ mod tests {
             classify_taken(&endpoint, &user, Err(os_error(ERROR_ACCESS_DENIED))),
             IpcError::EndpointTaken { .. }
         ));
+        assert!(matches!(
+            classify_taken(&endpoint, &user, Err(os_error(ERROR_FILE_NOT_FOUND))),
+            IpcError::EndpointTaken { .. }
+        ));
     }
 
     #[tokio::test]
@@ -1811,6 +1891,170 @@ mod tests {
                 Err(IpcError::WrongOwner { .. })
             ));
         }
+    }
+
+    /// What a low-integrity program of the user gets when it makes a first instance at `endpoint`, with `label_part` in its descriptor.
+    fn make_pipe_at_low_integrity(
+        endpoint: &Endpoint,
+        label_part: &str,
+    ) -> io::Result<NamedPipeServer> {
+        let user = Sid::current_user().unwrap().to_string_form().unwrap();
+        let sddl = format!("{}{label_part}", private_sddl(&user));
+        let runtime = tokio::runtime::Handle::current();
+        at_low_integrity(|| {
+            let _enter = runtime.enter();
+            let descriptor = OwnerOnlyDescriptor::from_sddl(&sddl).unwrap();
+            create_instance(endpoint, &descriptor, true)
+        })
+    }
+
+    /// A low-integrity program of the user makes the keyed pipe (any program can list the name). The connector must send it nothing, and the real listener must move to a new name.
+    async fn assert_stand_in_is_refused_and_replaced(label_part: &str) {
+        let dir = wirecatch_test_support::private_dir("ipc-stand-in").unwrap();
+        let (folders, seen) = folders_and_seen_name(&dir);
+        let _fake = make_pipe_at_low_integrity(&seen, label_part).unwrap();
+
+        let err = connect(&seen, &Sid::current_user().unwrap())
+            .await
+            .expect_err("the connector served a pipe a low-integrity program made");
+        match err {
+            IpcError::LowerRightsServer { level, .. } => assert_eq!(level, 4096),
+            other => panic!("expected LowerRightsServer, got {other:?}"),
+        }
+
+        let listener = crate::Listener::bind_keyed(Channel::Dev, &folders).unwrap();
+        assert_ne!(listener.endpoint(), &seen, "moved to a new name");
+    }
+
+    #[tokio::test]
+    async fn a_program_with_fewer_rights_cannot_stand_in_for_the_app() {
+        assert_stand_in_is_refused_and_replaced("").await;
+    }
+
+    #[tokio::test]
+    async fn a_program_with_fewer_rights_cannot_stand_in_behind_a_label_with_no_entries() {
+        assert_stand_in_is_refused_and_replaced("S:").await;
+    }
+
+    #[tokio::test]
+    async fn a_program_with_fewer_rights_cannot_label_its_pipe_as_a_normal_one() {
+        let made = make_pipe_at_low_integrity(&unique_endpoint(), "S:(ML;;NW;;;S-1-16-8192)");
+        assert!(made.is_err(), "Windows let it claim more than its level");
+    }
+
+    #[tokio::test]
+    async fn the_connector_serves_an_unlabelled_pipe_of_the_user() {
+        let endpoint = unique_endpoint();
+        let user = Sid::current_user().unwrap();
+        let descriptor =
+            OwnerOnlyDescriptor::from_sddl(&private_sddl(&user.to_string_form().unwrap())).unwrap();
+        let _pipe = create_instance(&endpoint, &descriptor, true).unwrap();
+        connect(&endpoint, &user).await.unwrap();
+    }
+
+    #[test]
+    fn a_server_needs_the_clients_level_or_medium_whichever_is_lower() {
+        const LOW: u32 = 4096;
+        const HIGH: u32 = 12288;
+        let endpoint = unique_endpoint();
+        for (server, client, served) in [
+            (MEDIUM_INTEGRITY, MEDIUM_INTEGRITY, true),
+            (HIGH, MEDIUM_INTEGRITY, true),
+            (MEDIUM_INTEGRITY, HIGH, true),
+            (HIGH, HIGH, true),
+            (LOW, LOW, true),
+            (LOW, MEDIUM_INTEGRITY, false),
+            (LOW, HIGH, false),
+            (0, LOW, false),
+        ] {
+            assert_eq!(
+                verify_server_rights(&endpoint, server, client).is_ok(),
+                served,
+                "server {server}, client {client}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_program_with_fewer_rights_cannot_read_the_endpoint_key() {
+        let dir = wirecatch_test_support::private_dir("ipc-key-low").unwrap();
+        let lock = crate::key::KeyLock::take(dir.path()).unwrap();
+        lock.current().unwrap();
+        let path = dir.path().join(crate::key::KEY_FILE);
+        let read = at_low_integrity(|| std::fs::read_to_string(&path));
+        assert_eq!(
+            read.map_err(|e| e.kind()),
+            Err(io::ErrorKind::PermissionDenied)
+        );
+        std::fs::read_to_string(&path).expect("the user's own programs read it");
+    }
+
+    /// A first pipe instance at `endpoint`, the user's, with at most `limit` instances.
+    fn limited_pipe(endpoint: &Endpoint, limit: usize) -> NamedPipeServer {
+        let user = Sid::current_user().unwrap().to_string_form().unwrap();
+        let descriptor = OwnerOnlyDescriptor::from_sddl(&private_sddl(&user)).unwrap();
+        let mut attributes = SECURITY_ATTRIBUTES {
+            nLength: win32_size_of::<SECURITY_ATTRIBUTES>(),
+            lpSecurityDescriptor: descriptor.0,
+            bInheritHandle: 0,
+        };
+        let mut options = ServerOptions::new();
+        options.first_pipe_instance(true).max_instances(limit);
+        // SAFETY: `attributes` is a valid SECURITY_ATTRIBUTES whose descriptor is alive for the whole call.
+        unsafe {
+            options
+                .create_with_security_attributes_raw(
+                    endpoint.as_os_str(),
+                    (&raw mut attributes).cast(),
+                )
+                .unwrap()
+        }
+    }
+
+    /// A keyed listener that ran once and closed: its folders and the name it had.
+    fn folders_and_seen_name(
+        dir: &wirecatch_test_support::PrivateDir,
+    ) -> (crate::Folders, Endpoint) {
+        let folders = crate::Folders {
+            key: dir.path().to_path_buf(),
+            runtime: None,
+        };
+        let seen = crate::Listener::bind_keyed(Channel::Dev, &folders)
+            .unwrap()
+            .endpoint()
+            .clone();
+        (folders, seen)
+    }
+
+    #[tokio::test]
+    async fn a_keyed_name_held_at_its_only_instance_is_renewed() {
+        let dir = wirecatch_test_support::private_dir("ipc-held-one").unwrap();
+        let (folders, seen) = folders_and_seen_name(&dir);
+        let _squatter = limited_pipe(&seen, 1);
+        let listener = crate::Listener::bind_keyed(Channel::Dev, &folders).unwrap();
+        assert_ne!(listener.endpoint(), &seen);
+    }
+
+    #[tokio::test]
+    async fn a_keyed_name_held_with_every_instance_busy_is_renewed() {
+        let dir = wirecatch_test_support::private_dir("ipc-held-busy").unwrap();
+        let (folders, seen) = folders_and_seen_name(&dir);
+        let _squatter = limited_pipe(&seen, 2);
+        let _client = ClientOptions::new()
+            .security_qos_flags(SECURITY_IDENTIFICATION)
+            .open(seen.as_os_str())
+            .unwrap();
+        let listener = crate::Listener::bind_keyed(Channel::Dev, &folders).unwrap();
+        assert_ne!(listener.endpoint(), &seen);
+    }
+
+    #[tokio::test]
+    async fn a_keyed_name_held_by_a_pipe_of_the_user_is_renewed() {
+        let dir = wirecatch_test_support::private_dir("ipc-held-user").unwrap();
+        let (folders, seen) = folders_and_seen_name(&dir);
+        let _holder = PipeListener::bind(&seen).unwrap();
+        let listener = crate::Listener::bind_keyed(Channel::Dev, &folders).unwrap();
+        assert_ne!(listener.endpoint(), &seen);
     }
 
     #[tokio::test]
