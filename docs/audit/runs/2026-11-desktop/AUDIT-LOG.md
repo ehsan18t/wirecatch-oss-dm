@@ -124,9 +124,9 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 97  | A quality says 60 fps but may download 30 fps                                                     | `16-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | fixed  |
 | 98  | Speed limits do not reach yt-dlp                                                                  | `17-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 99  | The best audio is picked by rate alone, so a dubbed track can replace the original                | `B07-2`                                                                                            | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | fixed  |
-| 100 | HLS key addresses count against no memory budget                                                  | `14-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 101 | Automatic audio picks another language when the default is inside the video                       | `14-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `14-4-and-14-5`                               | open   |
-| 102 | A subtitle codec turns an MP4-ready video into MKV                                                | `14-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `14-4-and-14-5`                               | open   |
+| 100 | HLS key addresses count against no memory budget                                                  | `14-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
+| 101 | Automatic audio picks another language when the default is inside the video                       | `14-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `14-4-and-14-5`                               | fixed  |
+| 102 | A subtitle codec turns an MP4-ready video into MKV                                                | `14-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `14-4-and-14-5`                               | fixed  |
 | 103 | While the list loads, the window says nothing was ever downloaded                                 | `25-9`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 104 | Moving a file to another drive drops its Mark of the Web                                          | `05-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `05-4`                                        | fixed  |
 | 105 | Replacing a file another program has open blames the folder                                       | `28-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `28-2`                                        | open   |
@@ -2006,7 +2006,7 @@ P2, small, fixed.
 
 ### 100. HLS key addresses count against no memory budget
 
-P2, small, open.
+P2, small, fixed.
 
 `update_keys` joins with no budget, and each line makes a new `Arc<Url>` kept by each piece. 8 MiB of playlist can hold about 1.5 GiB. Read only; the sizes follow from the constants.
 
@@ -2022,7 +2022,7 @@ P2, small, open.
 
 ### 101. Automatic audio picks another language when the default is inside the video
 
-P2, small, open.
+P2, small, fixed.
 
 `paired_audio` filters on `r.url.is_some()` before looking for `default`, so an English `DEFAULT=YES` rendition with no `URI`, which RFC 8216 says is in the variant, is never seen and French is picked. A download without ffmpeg then fails with `NeedsFfmpeg`.
 
@@ -2038,7 +2038,7 @@ P2, small, open.
 
 ### 102. A subtitle codec turns an MP4-ready video into MKV
 
-P2, small, open.
+P2, small, fixed.
 
 `Codec::from_name("wvtt")` is `None`, read as Matroska only, so `avc1,mp4a,wvtt` gives `mkv` and `mp4a,wvtt` with no resolution is listed as a video. The file still plays.
 
@@ -3644,6 +3644,8 @@ P3, small, open.
 **Findings:**
 
 - `14-6`: confirmed, P3. The key error prints the whole signed address to the person and into what is saved. Full text in `chunks/14.md`, verdict in `verdicts/B08.md`.
+
+**Left to do:** Query values are hidden, but a token in a key's path still shows on a refused key.
 
 ### 199. On Linux, media programs may outlive an app ended by a signal
 
