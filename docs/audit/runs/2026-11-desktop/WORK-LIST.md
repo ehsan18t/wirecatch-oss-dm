@@ -60,7 +60,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-52  | fix(desktop): give download windows the right fix  | `fix/window-fix-buttons`         | 55, 81                       | P2       | medium | none         | open   |
 | PR-53  | fix(desktop): make settings actions answer back    | `fix/settings-answers`           | 57, 127, 230                 | P2       | medium | none         | open   |
 | PR-54  | fix(core): handle typed names in media downloads   | `fix/typed-media-names`          | 58, 132                      | P2       | medium | none         | open   |
-| PR-55  | fix(desktop): follow an installer through setup    | `fix/installer-lifecycle`        | 59, 72                       | P2       | medium | none         | open   |
+| PR-55  | fix(desktop): follow an installer through setup    | `fix/installer-lifecycle`        | 59, 72                       | P2       | medium | none         | merged |
 | PR-56  | fix(core): offer updates only when they can work   | `fix/honest-update-offers`       | 60, 185, 186, 187            | P2       | medium | none         | open   |
 | PR-57  | fix(streams): stop trusting bad work folder data   | `fix/work-folder-trust`          | 62, 74                       | P2       | medium | none         | open   |
 | PR-58  | fix(streams): report how a program really ended    | `fix/program-end-report`         | 63, 77, 157                  | P2       | medium | none         | open   |
@@ -809,7 +809,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`, `crates/shell/src/updates.rs`, `crates/desktop/src/app_update.rs`, `crates/desktop/packaging/windows`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core -p wirecatch-shell -p wirecatch-desktop`, `cargo clippy -p wirecatch-core -p wirecatch-shell -p wirecatch-desktop`. A real update has never run, so say what could not be tested.
-- **Status:** open
+- **Status:** merged
 
 ### PR-56 fix(core): offer updates only when they can work
 
