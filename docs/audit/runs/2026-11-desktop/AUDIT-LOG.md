@@ -92,8 +92,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 65  | Ctrl+C in the CLI can exit with the wrong code or abort                                           | `32-2` `32-3`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 66  | Keep existing, Replace and captures leave the wrong category on the row                           | `05-11` `07-4`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
 | 67  | A finished media file is not flushed before its sources are deleted                               | `Xsecond-review-disk-writes-3` `Xsecond-review-resume-7`                                           | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
-| 68  | Leftover proxy code from the earlier form has no caller                                           | `19-8` `Xrepeated-logic-7` `B05-2`                                                                 | P3       | small  | P3 placed here: removing the third copy comes before the fix to the live one                                     | none                                          | open   |
-| 69  | yt-dlp ignores proxy exceptions and the page's scheme                                             | `19-4` `B15-1`                                                                                     | P2       | small  | P2, 2 findings, small; after item 68                                                                             | none                                          | open   |
+| 68  | Leftover proxy code from the earlier form has no caller                                           | `19-8` `Xrepeated-logic-7` `B05-2`                                                                 | P3       | small  | P3 placed here: removing the third copy comes before the fix to the live one                                     | none                                          | fixed  |
+| 69  | yt-dlp ignores proxy exceptions and the page's scheme                                             | `19-4` `B15-1`                                                                                     | P2       | small  | P2, 2 findings, small; after item 68                                                                             | none                                          | fixed  |
 | 70  | Choosing a path blocks an async thread on the disk, so a dead share stalls every command          | `05-9` `Xconcurrency-5`                                                                            | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 71  | A passing read error or a failed rename deletes a download's data                                 | `Xsecond-review-resume-4` `Xsecond-review-disk-writes-5`                                           | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
 | 72  | The app quits before the Windows setup has asked for approval, so a refusal reaches no one        | `Xpath-app-update-2` `Xsecurity-update-signatures-5`                                               | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
@@ -1464,7 +1464,7 @@ No `sync_all` appears in the path after `ffmpeg::run`, `merge::join` or yt-dlp, 
 
 ### 68. Leftover proxy code from the earlier form has no caller
 
-P3, small, open.
+P3, small, fixed.
 
 `updater_proxy` and `UpdaterProxy` have no caller; updates take their proxy from `update_options` through `app_proxy`, so a reader changes the wrong one. `test`'s handling of several proxies and of no proxy is unreachable, kept alive only by its own test, and its doc still describes D71.5's form.
 
@@ -1482,7 +1482,7 @@ P3, small, open.
 
 ### 69. yt-dlp ignores proxy exceptions and the page's scheme
 
-P2, small, open.
+P2, small, fixed.
 
 `ytdlp_proxy` reads only the proxies, and the callers pass no page. So yt-dlp goes through the proxy for a host on the exceptions while the row says "No proxy", and takes the HTTP proxy for an HTTPS page the engine reaches directly (`B15-1`).
 
