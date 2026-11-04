@@ -109,7 +109,13 @@ impl Writer {
             end: self.offset + full.len() as u64,
         };
         self.offset = range.end;
+        #[cfg(test)]
+        let fails = self.file_work.write_fails();
         self.in_flight = Some(self.file_work.spawn_blocking(move || {
+            #[cfg(test)]
+            if fails {
+                return Err(std::io::Error::other("disk full"));
+            }
             storage::write_all_at(&file, &full, range.start)?;
             full.clear();
             Ok(Written {
@@ -162,6 +168,37 @@ impl Writer {
 mod tests {
     use super::*;
     use crate::segment::SegmentTable;
+
+    /// Counted bytes must match what is on disk once a connection failed: a connection that gave up takes back only what it had counted.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_failed_write_takes_back_only_what_was_counted() {
+        const BUFFER: usize = 16 * crate::units::KIB_USIZE;
+        let server = wirecatch_test_support::http::TestServer::start(
+            wirecatch_test_support::test_data(crate::units::MIB_USIZE),
+            wirecatch_test_support::http::Config::default(),
+        )
+        .await;
+        let dir = wirecatch_test_support::private_dir("failed-write-count").unwrap();
+        let mut request =
+            crate::download::DownloadRequest::new(server.url("f.bin"), dir.to_path_buf());
+        request.options.connections = 1;
+        request.options.buffer_size = BUFFER;
+        request.file_work.fail_write_after(1);
+        let progress = Arc::new(crate::progress::Progress::default());
+        let ended = crate::download::download(
+            request,
+            progress.clone(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
+        assert!(ended.is_err(), "{ended:?}");
+        assert_eq!(
+            progress.done(),
+            BUFFER as u64,
+            "only the first buffer was written"
+        );
+        dir.remove().unwrap();
+    }
 
     /// A write fails while the next buffer is already full. That buffer must not be written on the way out: landing above the hole, it would count the hole as flushed, and a resumed or finished download would keep a range of zeros.
     #[tokio::test]

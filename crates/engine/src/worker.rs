@@ -207,7 +207,17 @@ async fn stream(
 
     let outcome: Result<Ended> = loop {
         let data = match receive(&shared.request.cancel, stall, body.next()).await {
-            Ok(Received::Data(data)) => skip_start(data, &mut skip),
+            Ok(Received::Data(data)) => {
+                let kept = skip_start(data, &mut skip);
+                let skipped = (data.len() - kept.len()) as u64;
+                if skipped > 0
+                    && pace(&shared.opts.rate_limiters, skipped, &shared.request.cancel).await
+                        == Paced::Cancelled
+                {
+                    break Ok(Ended::Cancelled);
+                }
+                kept
+            }
             Ok(Received::End) if skip > 0 => break Err(ended_while_skipping(from, skip)),
             Ok(Received::End) => break Ok(Ended::Eof),
             Ok(Received::Cancelled) => break Ok(Ended::Cancelled),
@@ -223,10 +233,11 @@ async fn stream(
         let (allowed, done) = shared.table.lock().claim(index, data.len() as u64);
         if allowed > 0 {
             let allowed_len = clamp_to_len(allowed, data.len());
+            // Counted first: a failed push is taken back with all it dropped, these bytes too.
+            shared.progress.add(allowed);
             if let Err(e) = writer.push(&data[..allowed_len], &shared.table).await {
                 break Err(e);
             }
-            shared.progress.add(allowed);
             if pace(&shared.opts.rate_limiters, allowed, &shared.request.cancel).await
                 == Paced::Cancelled
             {
