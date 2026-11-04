@@ -336,7 +336,7 @@ mod tls {
     #[cfg(windows)]
     #[test]
     fn the_bundled_roots_cover_what_windows_may_not_have_fetched() {
-        let bundled = super::super::client::roots_not_disallowed(&[]);
+        let bundled = webpki_root_certs::TLS_SERVER_ROOT_CERTS;
         for name in [
             "ISRG Root X2",
             "Amazon Root CA 3",
@@ -352,14 +352,14 @@ mod tls {
 
     #[cfg(windows)]
     #[test]
-    fn a_root_windows_disallows_is_not_trusted_from_the_bundle() {
+    fn a_root_windows_disallows_is_not_trusted_from_either_source() {
         use super::super::client::roots_not_disallowed;
 
-        let all = roots_not_disallowed(&[]);
-        let refused = all[0].to_vec();
-        let kept = roots_not_disallowed(std::slice::from_ref(&refused));
-        assert_eq!(kept.len(), all.len() - 1);
-        assert!(!kept.iter().any(|root| root.as_ref() == refused.as_slice()));
+        let bundled = webpki_root_certs::TLS_SERVER_ROOT_CERTS;
+        let system = vec![bundled[0].clone(), bundled[1].clone()];
+        let refused = [bundled[0].to_vec(), bundled[2].to_vec()];
+        let kept = roots_not_disallowed(system, &bundled[2..4], &refused);
+        assert_eq!(kept, vec![bundled[1].clone(), bundled[3].clone()]);
     }
 
     #[test]

@@ -189,14 +189,12 @@ fn trusted_roots() -> rustls::RootCertStore {
         // Its message already includes its source.
         debug!(%error, "skipped part of the system certificate store");
     }
-    let mut roots = rustls::RootCertStore::empty();
-    roots.add_parsable_certificates(loaded.certs);
-    if !names_certificates(
+    let named_files = names_certificates(
         std::env::var_os("SSL_CERT_FILE").as_deref(),
         std::env::var_os("SSL_CERT_DIR").as_deref(),
-    ) {
-        roots.add_parsable_certificates(bundled_roots());
-    }
+    );
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add_parsable_certificates(usable_roots(loaded.certs, named_files));
     if roots.is_empty() {
         warn!("no usable root certificates found; HTTPS downloads will fail");
     }
@@ -212,42 +210,65 @@ pub(super) fn names_certificates(file: Option<&OsStr>, folders: Option<&OsStr>) 
         })
 }
 
+/// The system's roots and, unless certificate files were named, the bundled ones, without what
+/// Windows disallows. With the Disallowed stores unreadable, no bundled root can be judged.
 #[cfg(windows)]
-fn bundled_roots() -> Vec<rustls::pki_types::CertificateDer<'static>> {
-    roots_not_disallowed(&disallowed_certificates())
+fn usable_roots(
+    system: Vec<rustls::pki_types::CertificateDer<'static>>,
+    named_files: bool,
+) -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    match disallowed_certificates() {
+        Ok(disallowed) => {
+            let bundled: &[_] = if named_files {
+                &[]
+            } else {
+                webpki_root_certs::TLS_SERVER_ROOT_CERTS
+            };
+            roots_not_disallowed(system, bundled, &disallowed)
+        }
+        Err(error) => {
+            warn!(
+                ?error,
+                "could not read Windows' disallowed certificates; the bundled roots stay out"
+            );
+            system
+        }
+    }
 }
 
 /// Only Windows fetches roots on demand; elsewhere the system's store is the whole answer.
 #[cfg(not(windows))]
-fn bundled_roots() -> Vec<rustls::pki_types::CertificateDer<'static>> {
-    Vec::new()
+fn usable_roots(
+    system: Vec<rustls::pki_types::CertificateDer<'static>>,
+    _named_files: bool,
+) -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    system
 }
 
 #[cfg(windows)]
 pub(super) fn roots_not_disallowed(
+    system: Vec<rustls::pki_types::CertificateDer<'static>>,
+    bundled: &[rustls::pki_types::CertificateDer<'static>],
     disallowed: &[Vec<u8>],
 ) -> Vec<rustls::pki_types::CertificateDer<'static>> {
-    webpki_root_certs::TLS_SERVER_ROOT_CERTS
-        .iter()
+    system
+        .into_iter()
+        .chain(bundled.iter().cloned())
         .filter(|root| !disallowed.iter().any(|der| der.as_slice() == root.as_ref()))
-        .cloned()
         .collect()
 }
 
 /// What Microsoft or an administrator told Windows never to trust.
 #[cfg(windows)]
-fn disallowed_certificates() -> Vec<Vec<u8>> {
+fn disallowed_certificates() -> std::io::Result<Vec<Vec<u8>>> {
     use schannel::cert_store::CertStore;
 
     let mut found = Vec::new();
     for store in [
-        CertStore::open_current_user("Disallowed"),
-        CertStore::open_local_machine("Disallowed"),
+        CertStore::open_current_user("Disallowed")?,
+        CertStore::open_local_machine("Disallowed")?,
     ] {
-        match store {
-            Ok(store) => found.extend(store.certs().map(|cert| cert.to_der().to_vec())),
-            Err(error) => debug!(?error, "could not read the Disallowed certificate store"),
-        }
+        found.extend(store.certs().map(|cert| cert.to_der().to_vec()));
     }
-    found
+    Ok(found)
 }
