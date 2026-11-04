@@ -287,7 +287,6 @@ async fn replace_with_another_extension_places_the_waiting_file() -> TestResult 
     Ok(())
 }
 
-/// A video waiting for its quality whose queue is deleted goes to the default queue, as a waiting download does, rather than failing once it is chosen.
 /// Clicked again while it is read or waits for its quality, a video joins that question and its
 /// window comes to the front (D89); a second click never reads it a second time.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
