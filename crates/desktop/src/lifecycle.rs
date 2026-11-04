@@ -46,6 +46,12 @@ pub fn window_closing(close_to_tray: Option<bool>, cx: &mut App) {
     }
 }
 
+/// Quits, and starts the program again once this copy has exited: an AppImage just replaced.
+pub fn quit_and_start_again(cx: &mut App) {
+    self::quit(cx);
+    cx.global_mut::<Quitting>().again.get_or_insert_default();
+}
+
 /// Quits: the windows and the tray icon go at once, every download stops so it continues next
 /// time (within [`quit::QUIT_PATIENCE`]), then the process exits. Safe to call repeatedly.
 pub fn quit(cx: &mut App) {
@@ -62,9 +68,11 @@ pub fn quit(cx: &mut App) {
         if let Err(e) = stopped.await {
             tracing::error!("stopping the downloads failed: {e}");
         }
+        // Endpoint first, whether or not a start is due: a launch answered after `again` is read
+        // would be lost, with the program that sent it gone too.
+        cx.update(Backend::free_endpoint).await;
         let again = cx.update(|cx| cx.global_mut::<Quitting>().again.take());
         if let Some(args) = again {
-            cx.update(Backend::free_endpoint).await;
             start_again(&args);
         }
         cx.update(|cx| cx.quit());
@@ -74,7 +82,7 @@ pub fn quit(cx: &mut App) {
 
 /// Starts a new copy of the app with `args`, after this one freed its endpoint.
 fn start_again(args: &[String]) {
-    tracing::info!("a launch arrived while quitting; starting again");
+    tracing::info!("starting again after quitting");
     let started = autostart::program()
         .and_then(|program| std::process::Command::new(program).args(args).spawn());
     if let Err(e) = started {
