@@ -274,7 +274,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 247 | Test comments carry history and review labels                                                     | found while fixing                                                                                 | P3       | small  | Found while fixing PR-18.                                                                                        | fixed                                         |
 | 248 | Nothing stops new code deleting a whole folder                                                    | found while fixing                                                                                 | P3       | medium | Left out of PR-02.                                                                                               | fixed                                         |
 | 249 | The timing check misses a throttled server racing an action                                       | found while fixing                                                                                 | P3       | medium | Found by review of PR-01 and PR-47.                                                                              | open                                          |
-| 250 | The capture reply's doc contradicts the extension                                                 | found while fixing                                                                                 | P3       | small  | Found by review of PR-70.                                                                                        | open                                          |
+| 250 | The capture reply's doc contradicts the extension                                                 | found while fixing                                                                                 | P3       | small  | Found by review of PR-70.                                                                                        | fixed                                         |
 | 251 | The layout test can fail on a font that did not load                                              | found while fixing                                                                                 | P3       | small  | Seen once on CI, on a change with no extension code.                                                             | fixed                                         |
 | 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | open                                          |
 
@@ -4445,7 +4445,7 @@ A test that lets a throttled server finish while it waits to act fails on correc
 
 ### 250. The capture reply's doc contradicts the extension
 
-P3, small, open.
+P3, small, fixed.
 
 The `Started` doc says only then may the extension erase its copy, but `apps/extension/src/lib/capture/handover.ts` erases it on `queued` as well.
 
