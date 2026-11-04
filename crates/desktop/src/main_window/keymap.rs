@@ -35,14 +35,20 @@ const REGION: &str = "Move between the search and the list";
 
 /// Every shortcut, in the order the page lists them.
 fn shortcuts() -> [Shortcut; 26] {
-    let on = |keys, action: fn() -> Box<dyn Action>, help| Shortcut {
+    let anywhere = |keys, action: fn() -> Box<dyn Action>, help| Shortcut {
         keys,
         action,
         context: KEY_CONTEXT,
         help,
     };
+    let on = |keys, action: fn() -> Box<dyn Action>, help| Shortcut {
+        keys,
+        action,
+        context: OUTSIDE_FIELDS,
+        help,
+    };
     [
-        on(
+        anywhere(
             "ctrl-shift-p",
             || Box::new(OpenPalette),
             Some("Find any action or setting"),
@@ -52,9 +58,9 @@ fn shortcuts() -> [Shortcut; 26] {
             || Box::new(PasteLinks),
             Some("Download the link you copied"),
         ),
-        on("ctrl-n", || Box::new(NewDownload), Some("New download")),
-        on("ctrl-k", || Box::new(FocusSearch), Some("Search the list")),
-        on("ctrl-,", || Box::new(ToggleSettings), Some("Open settings")),
+        anywhere("ctrl-n", || Box::new(NewDownload), Some("New download")),
+        anywhere("ctrl-k", || Box::new(FocusSearch), Some("Search the list")),
+        anywhere("ctrl-,", || Box::new(ToggleSettings), Some("Open settings")),
         on("up", || Box::new(CursorUp), Some(MOVE)),
         on("down", || Box::new(CursorDown), Some(MOVE)),
         on("shift-up", || Box::new(ExtendUp), Some(EXTEND)),
@@ -92,18 +98,18 @@ fn shortcuts() -> [Shortcut; 26] {
         on("alt-down", || Box::new(NudgeDown), Some(NUDGE)),
         on("menu", || Box::new(OpenMenu), Some(MENU)),
         on("shift-f10", || Box::new(OpenMenu), Some(MENU)),
-        on(
+        anywhere(
             "escape",
             || Box::new(Dismiss),
             Some("Close a dialog, go back to the downloads, or clear the selection"),
         ),
-        on(
+        anywhere(
             "f1",
             || Box::new(ShowShortcuts),
             Some("Show keyboard shortcuts"),
         ),
-        on("f6", || Box::new(NextRegion), Some(REGION)),
-        on("shift-f6", || Box::new(PreviousRegion), Some(REGION)),
+        anywhere("f6", || Box::new(NextRegion), Some(REGION)),
+        anywhere("shift-f6", || Box::new(PreviousRegion), Some(REGION)),
     ]
 }
 
@@ -117,6 +123,10 @@ fn quiet() -> [Shortcut; 1] {
         help: None,
     }]
 }
+
+/// The list's keys, in the window but not while a text field has the keyboard: a field passes on
+/// keys it does not use, such as Enter. GPUI's `!` reads the whole context path, not one level.
+const OUTSIDE_FIELDS: &str = "MainWindow && !Input";
 
 /// The search field's input, inside the search's own context.
 const SEARCH_INPUT: &str = "MainSearch > Input";
@@ -203,6 +213,109 @@ pub(super) fn page() -> SettingPage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui_kit::component::input::{Input, InputState};
+    use gpui_kit::component::v_flex;
+    use gpui_kit::{
+        AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
+        Render, TestAppContext, Window,
+    };
+
+    /// The tree `MainWindow::render` and `command_bar` build around the search field.
+    struct SearchInWindow {
+        search: Entity<InputState>,
+        focus: FocusHandle,
+        pauses: usize,
+        opens: usize,
+        helps: usize,
+    }
+
+    impl Render for SearchInWindow {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+            v_flex()
+                .id("main-window")
+                .key_context(KEY_CONTEXT)
+                .track_focus(&self.focus)
+                .on_action(cx.listener(|this, _: &PauseOrResume, _, _| this.pauses += 1))
+                .on_action(cx.listener(|this, _: &OpenSelected, _, _| this.opens += 1))
+                .on_action(cx.listener(|this, _: &ShowShortcuts, _, _| this.helps += 1))
+                .child(
+                    h_flex()
+                        .key_context(super::super::SEARCH_CONTEXT)
+                        .child(Input::new(&self.search)),
+                )
+        }
+    }
+
+    /// What the keys did: the search field's text, then Space's, Enter's and F1's commands.
+    fn press(
+        bound: bool,
+        in_field: bool,
+        keys: &str,
+        cx: &mut TestAppContext,
+    ) -> (String, usize, usize, usize) {
+        cx.update(|cx| {
+            gpui_kit::component::init(cx);
+            if bound {
+                bind(cx);
+            }
+        });
+        let (root, cx) = cx.add_window_view(|window, cx| SearchInWindow {
+            search: cx.new(|cx| InputState::new(window, cx)),
+            focus: cx.focus_handle(),
+            pauses: 0,
+            opens: 0,
+            helps: 0,
+        });
+        cx.run_until_parked();
+        let (search, focus) =
+            root.read_with(cx, |root, _| (root.search.clone(), root.focus.clone()));
+        let focusing = search.clone();
+        cx.update(|window, cx| {
+            if in_field {
+                focusing.update(cx, |search, cx| search.focus(window, cx));
+            } else {
+                focus.focus(window, cx);
+            }
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes(keys);
+        let value = search.read_with(cx, |search, _| search.value().to_string());
+        root.read_with(cx, |root, _| (value, root.pauses, root.opens, root.helps))
+    }
+
+    #[gpui_kit::test]
+    fn without_the_window_keys_a_space_reaches_the_search_field(cx: &mut TestAppContext) {
+        assert_eq!(
+            press(false, true, "a space b", cx),
+            ("a b".to_owned(), 0, 0, 0)
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_space_typed_in_the_search_field_is_text_and_not_a_command(cx: &mut TestAppContext) {
+        assert_eq!(
+            press(true, true, "a space b", cx),
+            ("a b".to_owned(), 0, 0, 0)
+        );
+    }
+
+    #[gpui_kit::test]
+    fn enter_in_the_search_field_does_not_open_the_selected_file(cx: &mut TestAppContext) {
+        assert_eq!(press(true, true, "a enter", cx), ("a".to_owned(), 0, 0, 0));
+    }
+
+    #[gpui_kit::test]
+    fn the_list_keys_still_work_outside_a_field(cx: &mut TestAppContext) {
+        assert_eq!(
+            press(true, false, "space enter", cx),
+            (String::new(), 1, 1, 0)
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_window_key_still_works_from_a_field(cx: &mut TestAppContext) {
+        assert_eq!(press(true, true, "f1", cx), (String::new(), 0, 0, 1));
+    }
 
     #[test]
     fn down_leaves_the_search_field_of_the_main_search() {

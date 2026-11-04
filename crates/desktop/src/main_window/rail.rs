@@ -125,18 +125,18 @@ impl MainWindow {
     /// The rail's buttons: one per view, then one per queue.
     fn rail_items(&self, cx: &mut Context<'_, Self>) -> (Vec<AnyElement>, Vec<AnyElement>) {
         let library = self.library.read(cx);
-        let count = |view: View| library.downloads.iter().filter(|r| view.shows(r)).count();
+        let tally = library.downloads.tally();
         let mut views = vec![(
             "rail-all".to_owned(),
             Icon::new(Lucide::Layers),
-            format!("All downloads, {}", count(View::All)),
+            format!("All downloads, {}", tally.count),
             View::All,
         )];
         views.extend(Group::ALL.map(|group| {
             (
                 format!("rail-{group:?}"),
                 sidebar::group_icon(group),
-                format!("{}, {}", group.label(), count(View::Group(group))),
+                format!("{}, {}", group.label(), tally.in_group(group)),
                 View::Group(group),
             )
         }));
