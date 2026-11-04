@@ -61,7 +61,7 @@ The [API documentation](https://docs.rs/wirecatch-engine) covers speed limits, r
 
 - A Tokio runtime with the time and I/O drivers enabled (`#[tokio::main]` has both).
 - Rust 1.88 or newer.
-- TLS uses rustls with the operating system's root certificates.
+- TLS uses rustls with the operating system's root certificates, and on Windows Mozilla's too, since Windows fetches most of its roots only when its own check needs them.
 
 ## Status
 

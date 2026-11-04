@@ -1,5 +1,6 @@
 //! The HTTP clients of a download: one per connection, sharing one TLS setup.
 
+use std::ffi::OsStr;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -35,12 +36,12 @@ pub(crate) struct Clients {
     apply_proxies: bool,
 }
 
-/// The process-wide TLS configuration: the system's root certificates are read
+/// The process-wide TLS configuration: the trusted root certificates are read
 /// once, and sessions resume across downloads from the same host too.
 static SHARED_TLS: OnceLock<rustls::ClientConfig> = OnceLock::new();
 
 impl Clients {
-    /// Uses the operating system's root certificates, read once per process,
+    /// Uses the operating system's root certificates (and more on Windows, D116), read once per process,
     /// and the proxy settings `opts` asks for, as they are now. The first call reads the
     /// certificate store, so it must not run on an async thread; see
     /// [`Clients::shared_ready`]. The proxy settings come from the environment
@@ -51,7 +52,7 @@ impl Clients {
         let tls = if let Some(tls) = SHARED_TLS.get() {
             tls
         } else {
-            let config = tls_config(native_roots())?;
+            let config = tls_config(trusted_roots())?;
             SHARED_TLS.get_or_init(|| config)
         };
         Ok(Self::with_config(
@@ -180,21 +181,97 @@ fn tls_config(roots: rustls::RootCertStore) -> Result<rustls::ClientConfig> {
     Ok(config)
 }
 
-/// The operating system's trusted root certificates. Unreadable entries are
-/// skipped; with none at all, HTTPS requests fail with a certificate error.
-fn native_roots() -> rustls::RootCertStore {
+/// The operating system's trusted roots and, on Windows, the bundled ones (D116). Unreadable
+/// entries are skipped; with none at all, HTTPS requests fail with a certificate error.
+fn trusted_roots() -> rustls::RootCertStore {
     let loaded = rustls_native_certs::load_native_certs();
     for error in &loaded.errors {
         // Its message already includes its source.
         debug!(%error, "skipped part of the system certificate store");
     }
+    let named_files = names_certificates(
+        std::env::var_os("SSL_CERT_FILE").as_deref(),
+        std::env::var_os("SSL_CERT_DIR").as_deref(),
+    );
     let mut roots = rustls::RootCertStore::empty();
-    let (added, ignored) = roots.add_parsable_certificates(loaded.certs);
-    if added == 0 {
-        warn!(
-            ignored,
-            "no usable root certificates found; HTTPS downloads will fail"
-        );
+    roots.add_parsable_certificates(usable_roots(loaded.certs, named_files));
+    if roots.is_empty() {
+        warn!("no usable root certificates found; HTTPS downloads will fail");
     }
     roots
+}
+
+/// Whether these variables make `load_native_certs` read named files instead of the system's
+/// store, as the bundled roots then do not apply either. It ignores empty entries of the folder list.
+pub(super) fn names_certificates(file: Option<&OsStr>, folders: Option<&OsStr>) -> bool {
+    file.is_some()
+        || folders.is_some_and(|folders| {
+            std::env::split_paths(folders).any(|folder| !folder.as_os_str().is_empty())
+        })
+}
+
+/// The system's roots and, unless certificate files were named, the bundled ones, without what
+/// Windows disallows. With the Disallowed stores unreadable, no bundled root can be judged.
+#[cfg(windows)]
+fn usable_roots(
+    system: Vec<rustls::pki_types::CertificateDer<'static>>,
+    named_files: bool,
+) -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    match disallowed_certificates() {
+        Ok(disallowed) => {
+            let bundled: &[_] = if named_files {
+                &[]
+            } else {
+                webpki_root_certs::TLS_SERVER_ROOT_CERTS
+            };
+            roots_not_disallowed(system, bundled, &disallowed)
+        }
+        Err(error) => {
+            warn!(
+                %error,
+                "could not read Windows' disallowed certificates; the bundled roots stay out"
+            );
+            system
+        }
+    }
+}
+
+/// Only Windows fetches roots on demand; elsewhere the system's store is the whole answer.
+#[cfg(not(windows))]
+fn usable_roots(
+    system: Vec<rustls::pki_types::CertificateDer<'static>>,
+    _named_files: bool,
+) -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    system
+}
+
+#[cfg(windows)]
+pub(super) fn roots_not_disallowed(
+    system: Vec<rustls::pki_types::CertificateDer<'static>>,
+    bundled: &[rustls::pki_types::CertificateDer<'static>],
+    disallowed: &[Vec<u8>],
+) -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    system
+        .into_iter()
+        .chain(bundled.iter().cloned())
+        .filter(|root| !disallowed.iter().any(|der| der.as_slice() == root.as_ref()))
+        .collect()
+}
+
+/// What Microsoft or an administrator told Windows never to trust.
+#[cfg(windows)]
+pub(super) fn disallowed_certificates() -> std::io::Result<Vec<Vec<u8>>> {
+    use schannel::cert_store::CertStoreBuilder;
+
+    // Read-only: the machine's store refuses anything more without administrator rights.
+    let mut options = CertStoreBuilder::new();
+    options.read_only();
+    let mut found = Vec::new();
+    for store in [
+        options.open_current_user("Disallowed")?,
+        options.open_local_machine("Disallowed")?,
+    ] {
+        found.extend(store.certs().map(|cert| cert.to_der().to_vec()));
+    }
+    Ok(found)
 }

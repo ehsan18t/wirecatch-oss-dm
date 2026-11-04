@@ -333,6 +333,55 @@ mod tls {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn the_bundled_roots_cover_what_windows_may_not_have_fetched() {
+        let bundled = webpki_root_certs::TLS_SERVER_ROOT_CERTS;
+        for name in [
+            "ISRG Root X2",
+            "Amazon Root CA 3",
+            "SSL.com TLS ECC Root CA 2022",
+        ] {
+            let named = |der: &rustls::pki_types::CertificateDer<'_>| {
+                der.windows(name.len())
+                    .any(|bytes| bytes == name.as_bytes())
+            };
+            assert!(bundled.iter().any(named), "{name}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_disallowed_stores_open_without_administrator_rights() {
+        super::super::client::disallowed_certificates().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_root_windows_disallows_is_not_trusted_from_either_source() {
+        use super::super::client::roots_not_disallowed;
+
+        let bundled = webpki_root_certs::TLS_SERVER_ROOT_CERTS;
+        let system = vec![bundled[0].clone(), bundled[1].clone()];
+        let refused = [bundled[0].to_vec(), bundled[2].to_vec()];
+        let kept = roots_not_disallowed(system, &bundled[2..4], &refused);
+        assert_eq!(kept, vec![bundled[1].clone(), bundled[3].clone()]);
+    }
+
+    #[test]
+    fn named_certificate_files_are_told_as_the_certificate_loader_tells_them() {
+        use super::super::client::names_certificates;
+        use std::ffi::OsStr;
+
+        assert!(!names_certificates(None, None));
+        assert!(names_certificates(Some(OsStr::new("roots.pem")), None));
+        // Empty: the loader finds no certificates in it, rather than reading the system's.
+        assert!(names_certificates(Some(OsStr::new("")), None));
+        assert!(names_certificates(None, Some(OsStr::new("certs"))));
+        // Empty: the loader ignores it and reads the system's store.
+        assert!(!names_certificates(None, Some(OsStr::new(""))));
+    }
+
     #[tokio::test]
     async fn an_untrusted_certificate_is_its_own_error_and_not_retried() {
         let server = start_tls_server().await;

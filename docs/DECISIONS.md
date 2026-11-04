@@ -1153,3 +1153,12 @@ Decided with the maintainer on 2026-10-31.
 2. A View menu beside the sort chooses which lines rows show, saved in `list_lines`; a row with neither is one compact line. Rows therefore differ in height, so the list draws with GPUI's variable-height list and keeps its scroll position across changes.
 3. Circles beside each heading and in the selection bar tick a whole day, group or list.
 4. A queue with rules has a Rules on or Rules off button in its one-line header and the same choice in the sidebar's menu, so its rules can be switched without opening the editor. A queue with no rules shows neither.
+
+### D116. HTTPS on Windows trusts the system's roots and a bundled set
+
+Decided on 2026-11-04. Certificates are checked by rustls. On Linux it uses the system's roots alone. On Windows it also uses the Mozilla roots in `webpki-root-certs`: Windows ships few roots and fetches the rest when its own check needs one, so its store alone refuses valid sites the browser opens, on a new computer most of all.
+
+1. Asking the system to check instead (`rustls-platform-verifier`) was tried and dropped: on Windows it fetches addresses named in the server's certificate during the handshake, outside the proxy setting and the private-network rule (D39, D44), and blocks the thread while it does.
+2. Certificates a company installs in the system still count, and a root in Windows' Disallowed stores is left out, whichever source has it; with those stores unreadable, the bundled roots stay out. A root merely removed from the system's trusted store stays trusted if the bundled set has it. Entries match by exact certificate and only roots are compared: a Disallowed intermediate, a reissued root under the same key and Windows' disallowed list outside these stores are not covered.
+3. `SSL_CERT_FILE` and `SSL_CERT_DIR` replace the system's and the bundled roots, as they replaced the system's. The Disallowed stores still apply to them.
+4. The bundled set ages with each release, so a dependency update before a release refreshes it.
