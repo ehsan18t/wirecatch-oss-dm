@@ -53,6 +53,7 @@ pub(super) struct Tree {
 pub(super) async fn spawn(mut command: Command) -> io::Result<(Child, Tree)> {
     #[cfg(unix)]
     {
+        on_signal::watch();
         // Leader of a new process group whose id is its own.
         command.process_group(0);
         let child = while_text_file_busy(|| command.spawn()).await?;
@@ -60,6 +61,7 @@ pub(super) async fn spawn(mut command: Command) -> io::Result<(Child, Tree)> {
             .id()
             .and_then(|id| libc::pid_t::try_from(id).ok())
             .ok_or_else(|| io::Error::other("the started program has no process id"))?;
+        on_signal::add(group);
         let exit = tokio::task::spawn_blocking(move || exit_without_reaping(group));
         Ok((
             child,
@@ -132,6 +134,7 @@ impl Tree {
     pub(super) fn kill(&mut self) {
         #[cfg(unix)]
         if let Some(group) = self.group.take() {
+            on_signal::remove(group);
             // SAFETY: `killpg` takes plain integers and has no memory effects. `group` is the leader's id, and the leader is not reaped yet (see `Tree`), so the id still names this group and no other: ESRCH at worst, never another group.
             if unsafe { libc::killpg(group, libc::SIGKILL) } != 0 {
                 let e = io::Error::last_os_error();
@@ -149,8 +152,8 @@ impl Tree {
     /// Forgets the group once the leader is reaped, so nothing is ever sent to its id again.
     pub(super) fn disarm(&mut self) {
         #[cfg(unix)]
-        {
-            self.group = None;
+        if let Some(group) = self.group.take() {
+            on_signal::remove(group);
         }
         #[cfg(windows)]
         {
@@ -163,6 +166,66 @@ impl Tree {
 impl Drop for Tree {
     fn drop(&mut self) {
         self.kill();
+    }
+}
+
+/// Stops every running program when the app is ended by a signal, which would otherwise leave them running: only a live app kills their groups (D137).
+#[cfg(unix)]
+mod on_signal {
+    use std::collections::BTreeSet;
+    use std::sync::{Mutex, MutexGuard, Once, PoisonError};
+
+    use signal_hook::consts::{SIGHUP, SIGTERM};
+    use signal_hook::iterator::Signals;
+    use signal_hook::low_level::emulate_default_handler;
+
+    /// The groups whose leader is not reaped yet: an entry goes before [`Tree::kill`](super::Tree::kill) kills it, and the leader is reaped only after that, so an id here names this group and no other.
+    static LIVE: Mutex<BTreeSet<libc::pid_t>> = Mutex::new(BTreeSet::new());
+    static WATCHING: Once = Once::new();
+
+    fn live() -> MutexGuard<'static, BTreeSet<libc::pid_t>> {
+        LIVE.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub(super) fn add(group: libc::pid_t) {
+        live().insert(group);
+    }
+
+    pub(super) fn remove(group: libc::pid_t) {
+        live().remove(&group);
+    }
+
+    /// Starts the watcher once. Its thread lasts as long as the process, which it ends itself.
+    pub(super) fn watch() {
+        WATCHING.call_once(|| {
+            let started = Signals::new([SIGTERM, SIGHUP]).and_then(|mut signals| {
+                std::thread::Builder::new()
+                    .name("program-signals".into())
+                    .spawn(move || {
+                        for signal in signals.forever() {
+                            stop_all();
+                            if let Err(e) = emulate_default_handler(signal) {
+                                tracing::warn!(error = %e, signal, "could not end on a signal");
+                            }
+                        }
+                    })
+            });
+            if let Err(e) = started {
+                tracing::warn!(error = %e, "programs will outlive a signal that ends the app");
+            }
+        });
+    }
+
+    fn stop_all() {
+        for group in live().iter() {
+            // SAFETY: `killpg` takes plain integers and has no memory effects. `LIVE` is held, so `group` is not yet killed by its `Tree` nor its leader reaped (see `LIVE`): ESRCH at worst, never another group.
+            if unsafe { libc::killpg(*group, libc::SIGKILL) } != 0 {
+                let e = std::io::Error::last_os_error();
+                if e.raw_os_error() != Some(libc::ESRCH) {
+                    tracing::warn!(error = %e, "could not stop a program on a signal");
+                }
+            }
+        }
     }
 }
 
