@@ -72,6 +72,7 @@ pub(super) async fn spawn(mut command: Command) -> io::Result<(Child, Tree)> {
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
+        job::no_error_boxes();
         // No console window flashing up from a desktop app.
         command.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
         let mut child = while_text_file_busy(|| command.spawn()).await?;
@@ -208,6 +209,17 @@ mod job {
         SetInformationJobObject, TerminateJobObject,
     };
     use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+
+    /// Keeps the system from showing a box on the person's screen when a program it starts lacks a library: the box would hold the run, and programs inherit this mode. A program then dies with a code `never_ran` knows.
+    pub(super) fn no_error_boxes() {
+        use windows_sys::Win32::System::Diagnostics::Debug::{
+            GetErrorMode, SEM_FAILCRITICALERRORS, SEM_NOOPENFILEERRORBOX, SetErrorMode,
+        };
+        // SAFETY: both only read or set this process's error mode, take no pointers and cannot fail.
+        unsafe {
+            SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
+        }
+    }
 
     /// The exit code the processes of a terminated job get.
     const TERMINATED: u32 = 1;
