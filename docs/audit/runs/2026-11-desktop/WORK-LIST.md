@@ -50,7 +50,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-42  | fix(engine): hold FTP to the local network rule    | `fix/ftp-local-network`          | 42, 43                       | P2       | medium | none         | open   |
 | PR-43  | refactor(sites): merge the host-under-site checks  | `refactor/one-host-under-site`   | 44                           | P3       | medium | none         | merged |
 | PR-44  | fix(engine): normalise ftps hosts when parsing     | `fix/normal-ftps-hosts`          | 45                           | P2       | small  | PR-43        | open   |
-| PR-45  | fix: hide only what is secret in a log line        | `fix/log-redaction-edges`        | 46, 222                      | P2       | small  | none         | open   |
+| PR-45  | fix: hide only what is secret in a log line        | `fix/log-redaction-edges`        | 46, 222                      | P2       | small  | none         | merged |
 | PR-46  | fix(core): keep link passwords out of questions    | `fix/question-link-password`     | 47                           | P2       | medium | PR-45        | open   |
 | PR-47  | fix(core): see finished files beside resume files  | `fix/finished-beside-resume`     | 48, 174                      | P2       | small  | PR-04        | open   |
 | PR-48  | fix(media): make any video title safe as a name    | `fix/safe-video-titles`          | 49, 95                       | P2       | small  | none         | merged |
@@ -689,7 +689,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/logging`, `crates/test-support/data/redaction.json`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-logging -p wirecatch-test-support`, `cargo clippy -p wirecatch-logging`, `npx vitest run apps/extension/tests/redact.test.ts`, since the extension loads the same samples. The log proposes adding apostrophe samples to `redaction.json`.
-- **Status:** open
+- **Status:** merged
 
 ### PR-46 fix(core): keep link passwords out of questions
 
