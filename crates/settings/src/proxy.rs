@@ -367,28 +367,28 @@ pub fn profile_url(profile: &ProxyServerSettings, password: Option<&Secret>) -> 
 }
 
 /// The proxy yt-dlp is given to read `page` under `choice` (a URL, or `""` for none), `None` to
-/// leave it to read the computer's proxy itself. yt-dlp takes one proxy for everything and has no
-/// exceptions, so the page decides: the proxy the engine would use for it, or none when the engine
-/// would go directly.
+/// leave it to read the computer's proxy itself. yt-dlp takes one proxy for its whole run and has
+/// no exceptions, so what it fetches from other hosts follows the page: through the proxy for the
+/// page's protocol, or any other that is set, since its later requests may need one the page does
+/// not; and directly for a page on the exceptions, whose hosts then all go directly (D73.6).
 #[must_use]
 pub fn ytdlp_proxy(choice: &ProxyChoice, page: &Url) -> Option<String> {
-    match (choice, choice.route(page)) {
-        (ProxyChoice::Manual(manual), ProxyRoute::Through(_)) => {
+    let route = choice.route(page);
+    match choice {
+        _ if route == ProxyRoute::Excepted => Some(String::new()),
+        ProxyChoice::Manual(manual) => {
             let own = match page.scheme() {
                 "http" => &manual.http,
                 "https" => &manual.https,
                 _ => &manual.ftp,
             };
-            Some(
-                own.clone()
-                    .filter(|proxy| !proxy.trim().is_empty())
-                    .or_else(|| manual.all.clone())
-                    .unwrap_or_default(),
-            )
+            let set = [own, &manual.https, &manual.all, &manual.http]
+                .into_iter()
+                .flatten()
+                .find(|proxy| !proxy.trim().is_empty());
+            Some(set.cloned().unwrap_or_default())
         }
-        (ProxyChoice::Manual(_) | ProxyChoice::Direct, _) | (_, ProxyRoute::Excepted) => {
-            Some(String::new())
-        }
+        ProxyChoice::Direct => Some(String::new()),
         _ => None,
     }
 }

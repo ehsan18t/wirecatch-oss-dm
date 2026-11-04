@@ -381,7 +381,7 @@ fn yt_dlp_takes_the_proxy_for_the_pages_protocol() {
 }
 
 #[test]
-fn yt_dlp_goes_directly_for_a_page_on_the_exceptions_or_without_a_proxy() {
+fn yt_dlp_goes_directly_only_for_a_page_on_the_exceptions_or_with_no_proxy_set() {
     let page = Url::parse("https://video.example/watch").unwrap();
 
     let mut excepted = ManualProxies::default();
@@ -396,7 +396,7 @@ fn yt_dlp_goes_directly_for_a_page_on_the_exceptions_or_without_a_proxy() {
     only_http.http = Some("http://web:80".into());
     assert_eq!(
         ytdlp_proxy(&ProxyChoice::Manual(only_http), &page).as_deref(),
-        Some("")
+        Some("http://web:80")
     );
 }
 
