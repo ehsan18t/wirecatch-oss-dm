@@ -579,7 +579,7 @@ impl Scratch {
 
 impl Drop for Scratch {
     fn drop(&mut self) {
-        best_effort(&std::fs::remove_dir_all(&self.root));
+        best_effort(&crate::remove_test_folder(&self.root));
     }
 }
 

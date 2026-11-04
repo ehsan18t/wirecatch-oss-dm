@@ -25,9 +25,9 @@ use wirecatch_engine::numeric::{approx_f64, saturating_cast};
 use wirecatch_engine::units::{MIB, MIB_USIZE};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, download};
 use wirecatch_test_support::http::{Config, TestServer};
-use wirecatch_test_support::{ftp, test_data};
+use wirecatch_test_support::{ftp, private_dir, test_data};
 
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 /// The file the benchmark downloads.
 const BENCH_SIZE: usize = 256 * MIB_USIZE;
 /// Each connection's speed on the capped server.
@@ -200,13 +200,8 @@ async fn timed_download(
     connections: usize,
     max_request: Option<u64>,
 ) -> Result<f64> {
-    let dir = std::env::temp_dir().join(format!("wirecatch-bench-{}", std::process::id()));
-    // Left over from an interrupted run, if it exists at all.
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir)?;
-    }
-    std::fs::create_dir_all(&dir)?;
-    let mut request = DownloadRequest::new(server.url("bench.bin"), &dir);
+    let dir = private_dir("bench")?;
+    let mut request = DownloadRequest::new(server.url("bench.bin"), dir.path());
     request.options.connections = connections;
     request.options.max_request_bytes = max_request;
 
@@ -226,7 +221,7 @@ async fn timed_download(
     {
         return Err("downloaded bytes differ from the source".into());
     }
-    std::fs::remove_dir_all(&dir)?;
+    dir.remove()?;
     Ok(secs)
 }
 

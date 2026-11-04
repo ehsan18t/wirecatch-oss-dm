@@ -7,6 +7,8 @@ import { rustLintAttributes } from './rust-attributes.mjs';
  * The only places a lint is switched off, each with its reason beside it. An entry is one attribute or comment, named by its file and exactly the lints it switches off, so it may move within its file; a new one, another lint, or a second one in the same file fails the `exceptions` check until it is reasoned about and listed here.
  */
 const LINT_EXCEPTIONS = [
+  { id: 'E16', file: 'crates/files/src/lib.rs', lints: ['clippy::disallowed_methods'] },
+  { id: 'E17', file: 'crates/test-support/src/lib.rs', lints: ['clippy::disallowed_methods'] },
   { id: 'E3', file: 'crates/engine/src/transport.rs', lints: ['clippy::large_enum_variant'] },
   { id: 'E4', file: 'crates/protocol/src/app.rs', lints: ['clippy::struct_excessive_bools'] },
   {
