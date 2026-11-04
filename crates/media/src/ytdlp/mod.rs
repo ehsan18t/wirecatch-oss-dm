@@ -38,6 +38,8 @@ pub struct Context<'a> {
     /// The proxy yt-dlp goes through (D71.3): a proxy URL, `""` for none, or `None` to let it
     /// read the computer's proxy itself.
     pub proxy: Option<&'a str>,
+    /// The speed limit of yt-dlp's own download, in bytes per second (D135).
+    pub rate_limit: Option<u64>,
 }
 
 /// Whether the browser's cookies go to yt-dlp from the first try for `page`.
@@ -425,6 +427,7 @@ mod tests {
             temp_dir: Path::new("temp"),
             timeout: Duration::from_secs(1),
             proxy: None,
+            rate_limit: None,
         };
         let args = common_args(&ctx, None);
         let at = args.iter().position(|a| a == "--cache-dir");
@@ -451,6 +454,7 @@ mod tests {
                 temp_dir: Path::new("temp"),
                 timeout: Duration::from_secs(1),
                 proxy,
+                rate_limit: None,
             };
             let args = common_args(&ctx, None);
             args.iter()
@@ -477,6 +481,7 @@ mod tests {
                 temp_dir: Path::new("temp"),
                 timeout: Duration::from_secs(1),
                 proxy,
+                rate_limit: None,
             })
         };
         assert_eq!(environment(None), Vec::new());
@@ -511,6 +516,7 @@ mod tests {
             temp_dir: Path::new("temp"),
             timeout: Duration::from_secs(1),
             proxy: None,
+            rate_limit: None,
         };
         for args in [common_args(&ctx, None), version_args()] {
             for flag in ["--ignore-config", "--no-plugin-dirs"] {

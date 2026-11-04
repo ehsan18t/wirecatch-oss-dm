@@ -18,7 +18,7 @@ use url::Url;
 use crate::error::{Chain, Error, IoAction, IoContext, Result};
 use crate::http::{self, Clients, Failure, RequestRange, Session, Validators};
 use crate::limiter::{Paced, RateLimiter, pace};
-use crate::net_guard::{PrivateNetwork, private_guard};
+use crate::net_guard::{PrivateGuard, PrivateNetwork, private_guard};
 use crate::numeric::clamp_to_len;
 use crate::options::DownloadOptions;
 use crate::proxy::Proxies;
@@ -188,14 +188,27 @@ impl Fetcher {
                 .await
                 .map_err(|e| Error::task(&e))??
         };
+        let protection = cancel
+            .run_until_cancelled(private_guard(
+                url,
+                private_network,
+                options.stall_timeout,
+                clients.proxies(),
+            ))
+            .await
+            .ok_or(Error::Cancelled)?;
+        Self::protected_by(url, options, cancel, &clients, protection)
+    }
+
+    /// A fetcher whose clients and requests go through `protection`, when there is one.
+    fn protected_by(
+        url: &Url,
+        options: &DownloadOptions,
+        cancel: CancellationToken,
+        clients: &Clients,
+        protection: Option<PrivateGuard>,
+    ) -> Result<Self> {
         let (mut session, url) = Session::new(url, options, cancel.clone());
-        let protection = private_guard(
-            &url,
-            private_network,
-            options.stall_timeout,
-            clients.proxies(),
-        )
-        .await;
         let blocking_private = protection.is_some();
         let proxies = clients.proxies().clone();
         let resolver = protection.map(|p| {
@@ -684,6 +697,41 @@ fn clean_url(url: &Url) -> Result<Url> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The name was checked as public, and turns local only when the fetcher connects, as a
+    /// rebinding name server would make it: only the resolver stands in its way.
+    #[tokio::test]
+    async fn a_name_that_turns_local_after_its_check_is_refused_when_connecting() {
+        use wirecatch_test_support::http::{Config, TestServer};
+
+        let site =
+            TestServer::start(wirecatch_test_support::test_data(100), Config::default()).await;
+        let port = site.url("x").port().unwrap();
+        let url = Url::parse(&format!("http://localhost:{port}/index.m3u8")).unwrap();
+        let options = DownloadOptions {
+            max_retries: 0,
+            ..DownloadOptions::default()
+        };
+        let clients = Clients::with_roots(&options, rustls::RootCertStore::empty());
+        let protection = crate::net_guard::guard_with_host_checked(
+            &url,
+            options.stall_timeout,
+            clients.proxies(),
+        );
+        let fetcher = Fetcher::protected_by(
+            &url,
+            &options,
+            CancellationToken::new(),
+            &clients,
+            Some(protection),
+        )
+        .unwrap();
+        let Err(error) = fetcher.get(fetcher.url(), None, 1000).await else {
+            panic!("the local address was reached");
+        };
+        assert!(matches!(error, Error::PrivateNetwork { .. }), "{error}");
+        assert!(site.stats.seen().is_empty(), "the site was contacted");
+    }
 
     #[test]
     fn only_http_and_https_are_fetched() {

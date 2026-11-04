@@ -977,6 +977,51 @@ async fn a_removal_keeps_the_path_until_its_files_are_deleted() {
     manager.lock().assert_consistent();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shutdown_waits_for_a_removal_to_delete_its_files() {
+    let (manager, _dir) = manager_with(deaf, Duration::from_secs(1), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/f.bin"))
+        .await
+        .unwrap();
+    let [part, _] = naming::partial_files(manager.lock().downloads[&id].path());
+    std::fs::create_dir_all(part.parent().unwrap()).unwrap();
+    std::fs::write(&part, b"kept").unwrap();
+    let entered = Arc::new(Notify::new());
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    let told = entered.clone();
+    manager.use_before_deleting(Arc::new(move || {
+        told.notify_one();
+        assert!(
+            held.lock().unwrap().recv().is_err(),
+            "ends when the sender is dropped"
+        );
+    }));
+    let removing = {
+        let manager = manager.clone();
+        tokio::spawn(async move { manager.remove(&[id], RemoveFiles::Keep).await })
+    };
+    tokio::time::timeout(PATIENCE, entered.notified())
+        .await
+        .expect("the deletion never began");
+    let mut quit = {
+        let manager = manager.clone();
+        tokio::spawn(async move { manager.shutdown().await })
+    };
+    assert!(
+        tokio::time::timeout(QUIET, &mut quit).await.is_err(),
+        "shutdown returned while the deletion was held"
+    );
+    drop(release);
+    tokio::time::timeout(PATIENCE, quit)
+        .await
+        .expect("shutdown never ended")
+        .unwrap();
+    assert!(!part.exists(), "the part file was left behind");
+    removing.await.unwrap().unwrap();
+}
+
 /// Opens a download's move to `chosen` with the mover held, quits, lets the mover go, then reopens the
 /// list. Returns the path the reopened list names.
 async fn path_after_a_quit_during_a_move(

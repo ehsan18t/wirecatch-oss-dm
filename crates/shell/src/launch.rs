@@ -5,7 +5,9 @@ use std::ffi::OsString;
 use std::future::Future;
 use std::time::Duration;
 
+use url::Url;
 use wirecatch_engine::units::KIB_USIZE;
+use wirecatch_engine::url::{FTP_SCHEMES, WEB_SCHEMES};
 use wirecatch_ipc::IpcError;
 use wirecatch_protocol::frame::{self, FrameError};
 use wirecatch_protocol::version::VersionRange;
@@ -63,9 +65,6 @@ pub const MAX_LAUNCH_LINKS: usize = MAX_OPEN_LINKS;
 /// Longest link taken from a command line, in bytes.
 pub const MAX_LINK_LEN: usize = 8 * KIB_USIZE;
 
-/// Schemes a command-line link may use.
-const LINK_SCHEMES: [&str; 5] = ["http://", "https://", "ftp://", "ftps://", "ftpes://"];
-
 /// How long a launch waits for a running copy to answer. Opening a long list, or repairing one,
 /// takes this copy no window and the person no action, so it may wait.
 const HAND_OVER_PATIENCE: Duration = Duration::from_mins(1);
@@ -104,9 +103,63 @@ fn is_launch_link(arg: &str) -> bool {
         return false;
     }
     let lower = arg.to_ascii_lowercase();
-    LINK_SCHEMES
-        .iter()
-        .any(|scheme| lower.starts_with(scheme) && lower.len() > scheme.len())
+    WEB_SCHEMES.iter().chain(&FTP_SCHEMES).any(|scheme| {
+        lower
+            .strip_prefix(scheme)
+            .and_then(|rest| rest.strip_prefix("://"))
+            .is_some_and(|rest| !rest.is_empty())
+    })
+}
+
+/// `text`, known to be one link, written so it reads whole: what would end a link in running text
+/// (a space, `<`, a quote) or be read as the sentence's punctuation is percent-encoded. `None` when
+/// it is not such a link.
+#[must_use]
+pub fn one_link(text: &str) -> Option<String> {
+    let text = text.trim();
+    if !is_launch_link(text) {
+        return None;
+    }
+    let mut url = Url::parse(text).ok()?;
+    // Encoded, a bare `?` would turn from the start of an empty query into part of the path.
+    if url.query() == Some("") {
+        url.set_query(None);
+    }
+    let url = String::from(url);
+    let kept = without_punctuation(&url);
+    let tail: Vec<String> = url[kept.len()..]
+        .bytes()
+        .map(|byte| format!("%{byte:02X}"))
+        .collect();
+    Some(format!("{kept}{}", tail.concat()))
+}
+
+/// `raw` without the punctuation after it. A closing bracket stays when its opener is inside.
+#[must_use]
+pub fn without_punctuation(raw: &str) -> &str {
+    let count = |bracket| raw.bytes().filter(|byte| *byte == bracket).count();
+    let (round_open, square_open) = (count(b'('), count(b'['));
+    let (mut round_close, mut square_close) = (count(b')'), count(b']'));
+    let mut link = raw;
+    while let Some(last) = link.chars().last() {
+        let ends = match last {
+            ',' | '.' | ';' | ':' | '!' | '?' | '\'' => true,
+            ')' if round_close > round_open => {
+                round_close -= 1;
+                true
+            }
+            ']' if square_close > square_open => {
+                square_close -= 1;
+                true
+            }
+            _ => false,
+        };
+        if !ends {
+            break;
+        }
+        link = &link[..link.len() - last.len_utf8()];
+    }
+    link
 }
 
 /// Web and FTP links on a command line (program name first), in order, for the Add dialog.
@@ -118,8 +171,7 @@ where
 {
     args.into_iter()
         .skip(1)
-        .map(|a| a.as_ref().trim().to_owned())
-        .filter(|a| is_launch_link(a))
+        .filter_map(|a| one_link(a.as_ref()))
         .take(MAX_LAUNCH_LINKS)
         .collect()
 }
@@ -377,7 +429,7 @@ mod tests {
             "https://example.com/a.zip",
             "--background",
             "notes.txt",
-            "HTTP://EXAMPLE.COM/B",
+            "http://example.com/B",
             "ftp://files.example.com/c.iso",
             "https://",
         ]);
@@ -385,7 +437,7 @@ mod tests {
             found,
             [
                 "https://example.com/a.zip",
-                "HTTP://EXAMPLE.COM/B",
+                "http://example.com/B",
                 "ftp://files.example.com/c.iso"
             ]
         );
@@ -393,6 +445,45 @@ mod tests {
             links_from_args(["https://not-the-program-name.example"]),
             [] as [String; 0]
         );
+    }
+
+    #[test]
+    fn one_link_encodes_what_would_end_it_in_text() {
+        for (text, whole) in [
+            (
+                "https://example.com/a b.zip",
+                "https://example.com/a%20b.zip",
+            ),
+            (
+                "https://example.com/a<b>.zip",
+                "https://example.com/a%3Cb%3E.zip",
+            ),
+            (
+                "https://example.com/a\"b.zip",
+                "https://example.com/a%22b.zip",
+            ),
+            (
+                "https://example.com/a\u{3000}b.zip",
+                "https://example.com/a%E3%80%80b.zip",
+            ),
+            (
+                "ftpes://example.com/a b.zip",
+                "ftpes://example.com/a%20b.zip",
+            ),
+        ] {
+            assert_eq!(one_link(text).as_deref(), Some(whole));
+        }
+        for (text, whole) in [
+            ("https://example.com/a.", "https://example.com/a%2E"),
+            ("https://example.com/a),", "https://example.com/a%29%2C"),
+            ("https://example.com/a]!", "https://example.com/a%5D%21"),
+            ("https://example.com/(a)", "https://example.com/(a)"),
+            ("https://example.com/a?", "https://example.com/a"),
+        ] {
+            assert_eq!(one_link(text).as_deref(), Some(whole));
+        }
+        assert_eq!(one_link("not a link"), None);
+        assert_eq!(one_link("file:///C:/a.exe"), None);
     }
 
     #[test]

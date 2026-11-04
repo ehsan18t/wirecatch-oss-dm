@@ -1423,6 +1423,37 @@ async fn left_to_yt_dlp(vcodec: &str, page: &str) -> TestResult<Vec<String>> {
     args(&download_call)
 }
 
+/// A speed limit reaches yt-dlp's own download: the tighter of the app's and the queue's when it starts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn yt_dlps_own_download_takes_the_tightest_speed_limit() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tune(&h.manager, |s| s.global_speed_limit = Some(9 * KIB))?;
+    let info = serde_json::json!({
+        "title": "Dash only",
+        "formats": [{"format_id": "dash", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 720,
+            "protocol": "http_dash_segments", "url": server.url("x.mpd").as_str()}],
+    });
+    tell_tool(&h, "info.json", &info.to_string())?;
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(server.url("watch/96"), MediaKind::Page, None))
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    let id = h.manager.choose_media(choice.id, select("dash")).await?;
+    h.wait_status(id, DownloadStatus::Completed).await;
+    let call = ytdlp_calls(&h)?.pop().ok_or("yt-dlp was not run")?;
+    let argv = args(&call)?;
+    let limit = (9 * KIB).to_string();
+    assert!(
+        argv.windows(2)
+            .any(|w| w[0] == "--limit-rate" && w[1] == limit),
+        "{argv:?}"
+    );
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn formats_wirecatch_cannot_fetch_are_left_to_yt_dlp() -> TestResult {
     let argv = left_to_yt_dlp("avc1", "watch/4").await?;
