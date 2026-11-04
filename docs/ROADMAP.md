@@ -172,7 +172,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 111. Cancel on a selection stops at a finished download (open)
 112. The drawer stays open over a page opened from its foot (open)
 113. Change queue inside the details opens the same details again (open)
-114. A page address that is not a web address counts as on the person's network (open)
+114. A page address that is not a web address counts as on the person's network (fixed)
 115. A Windows socks= proxy fails on sites whose first address is IPv6 (fixed)
 116. The proxy form says a saved password is kept, then forgets it (open)
 117. A download that fails to start leaves its slot empty (fixed)
@@ -273,7 +273,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 212. `let _theme = cx.theme()` does nothing (open)
 213. The link's hover popover covers the row's menu (open)
 214. The damaged-list notice squeezes its text and breaks the path (open)
-215. A top-level domain held only through a wildcard counts as a local name (open)
+215. A top-level domain held only through a wildcard counts as a local name (fixed)
 216. direct_uses_no_proxy passes whatever Direct does (open)
 217. Module docs describe proxy behaviour that has changed (open)
 218. A proxy test cancelled by quitting is saved as its last result (fixed)
@@ -302,7 +302,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 241. Comments in the checked configuration describe things that are gone (fixed)
 242. Two test helpers wait for progress with no deadline (open)
 243. A roaming data folder that could not be deleted keeps the list with its cookies (fixed)
-244. The `<local>` queue rule is never tested against the real network check (open)
+244. The `<local>` queue rule is never tested against the real network check (fixed)
 
 Done before the release:
 
