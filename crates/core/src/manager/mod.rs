@@ -399,7 +399,7 @@ impl Manager {
         // Restoring checks the disk for finished files, so it runs off async threads too.
         let notices_dir = dir.clone();
         let computer = config.computer_proxy.clone();
-        let (store, restored, recoveries, not_private) = blocking(&runtime, move || {
+        let (store, mut restored, recoveries, not_private) = blocking(&runtime, move || {
             let (store, mut snapshot) = Store::open(&dir, on_failure)?;
             let recoveries = std::mem::take(&mut snapshot.recoveries);
             let not_private = snapshot.not_private.take();
@@ -417,13 +417,7 @@ impl Manager {
             Ok((store, restored, recoveries, not_private))
         })
         .await?;
-        // Written back only when restoring changed them, so what another build saved and this one
-        // cannot read (an accent added later, say) survives this build opening them.
-        if restored.settings_changed {
-            store.save_settings(restored.state.settings.clone());
-        }
-        store.save_queues(restored.state.queue_list());
-        store.save_downloads(restored.changed);
+        restored.save_changes(&store);
 
         let global_limiter = Arc::new(RateLimiter::new(restored.state.settings.global_speed_limit));
         let inner = Arc::new(Inner {
@@ -544,7 +538,7 @@ impl Manager {
         self.emit(UiEvent::BrowserSettingsRequested);
     }
 
-    /// Stops every download so it can continue on the next start, waits for moves to other folders and removals under way (as long as the disk takes), saves everything,
+    /// Stops every download so it can continue on the next start, waits for moves to other folders, removals and deletions after a cancel under way (as long as the disk takes), saves everything,
     /// closes the database and stops the background work. Once it returns, the data
     /// folder can be deleted or moved (the database file is closed). Later operations
     /// fail with [`CoreError::Closed`].
@@ -580,6 +574,15 @@ impl Manager {
         let removals = self.lock().removals.clone();
         for removal in removals {
             removal.cancelled().await;
+        }
+        let cleanups: Vec<CancellationToken> = self
+            .lock()
+            .downloads
+            .values()
+            .filter_map(|entry| entry.cleanup.clone())
+            .collect();
+        for cleanup in cleanups {
+            cleanup.cancelled().await;
         }
         self.save_batches_at_shutdown();
         self.inner.store.close(DATABASE_CLOSE_TIMEOUT).await;
