@@ -721,3 +721,118 @@ async fn a_repeated_handover_never_joins_its_own_download() {
     );
     adding.abort();
 }
+
+/// Opens a download's move to `chosen` with the mover held, quits, lets the mover go, then reopens the
+/// list. Returns the path the reopened list names.
+async fn path_after_a_quit_during_a_move(
+    manager: Manager,
+    id: DownloadId,
+    data: &Path,
+    home: &Path,
+    chosen: &Path,
+) -> PathBuf {
+    let entered = Arc::new(Notify::new());
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    let told = entered.clone();
+    manager.use_fake_mover(Arc::new(move |from, to| {
+        told.notify_one();
+        assert!(
+            held.lock().unwrap().recv().is_err(),
+            "ends when the sender is dropped"
+        );
+        std::fs::rename(from, to)
+    }));
+    let moving = {
+        let (manager, chosen) = (manager.clone(), chosen.to_string_lossy().into_owned());
+        tokio::spawn(async move { manager.set_download_folder(id, &chosen).await })
+    };
+    tokio::time::timeout(PATIENCE, entered.notified())
+        .await
+        .expect("the move never began");
+    let mut quit = {
+        let manager = manager.clone();
+        tokio::spawn(async move { manager.shutdown().await })
+    };
+    let returned_first = tokio::time::timeout(QUIET, &mut quit).await.is_ok();
+    assert!(!returned_first, "shutdown returned while the move was held");
+    drop(release);
+    tokio::time::timeout(PATIENCE, moving)
+        .await
+        .expect("the move never ended")
+        .unwrap()
+        .unwrap();
+    quit.await.unwrap();
+    drop(manager);
+    let reopened = Manager::open(ManagerConfig::for_tests(
+        data.to_path_buf(),
+        KnownFolders::under_home(home.to_path_buf()),
+    ))
+    .await
+    .unwrap();
+    let path = PathBuf::from(&reopened.lock().downloads[&id].row.path);
+    reopened.shutdown().await;
+    path
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_quit_during_a_move_of_a_finished_file_keeps_it_listed() {
+    let (manager, dir) =
+        manager_with(obedient, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let mut request = add_request("https://example.com/big.iso");
+    request.start = false;
+    let id = manager.add_download(request).await.unwrap();
+    let old_path = PathBuf::from(&manager.lock().downloads[&id].row.path);
+    std::fs::create_dir_all(old_path.parent().unwrap()).unwrap();
+    std::fs::write(&old_path, b"finished").unwrap();
+    {
+        let mut state = manager.lock();
+        let entry = state.downloads.get_mut(&id).unwrap();
+        super::run::mark_completed(entry, 8, wirecatch_protocol::UnixMillis(1));
+        manager.save(&mut state, id);
+    }
+    let chosen = dir.path().join("chosen");
+    let path = path_after_a_quit_during_a_move(
+        manager,
+        id,
+        &dir.path().join("data"),
+        &dir.path().join("home"),
+        &chosen,
+    )
+    .await;
+    assert!(
+        path.is_file(),
+        "the finished row names {}, where no file is; the file is at {}",
+        path.display(),
+        chosen.join(old_path.file_name().unwrap()).display()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_quit_during_a_move_of_a_partial_download_keeps_its_progress() {
+    let (manager, dir) =
+        manager_with(obedient, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let mut request = add_request("https://example.com/big.iso");
+    request.start = false;
+    let id = manager.add_download(request).await.unwrap();
+    let old_path = PathBuf::from(&manager.lock().downloads[&id].row.path);
+    std::fs::create_dir_all(old_path.parent().unwrap()).unwrap();
+    for file in naming::partial_files(&old_path) {
+        std::fs::write(file, b"partial").unwrap();
+    }
+    let chosen = dir.path().join("chosen");
+    let path = path_after_a_quit_during_a_move(
+        manager,
+        id,
+        &dir.path().join("data"),
+        &dir.path().join("home"),
+        &chosen,
+    )
+    .await;
+    assert!(
+        naming::partial_files(&path)[0].is_file(),
+        "the row names {}, with no part file; the part file is at {}",
+        path.display(),
+        naming::partial_files(&chosen.join(old_path.file_name().unwrap()))[0].display()
+    );
+}

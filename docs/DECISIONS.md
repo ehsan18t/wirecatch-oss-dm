@@ -1175,3 +1175,7 @@ Decided on 2026-11-04. Every installer and the extension ship `THIRD-PARTY-NOTIC
 6. The AppImage also carries system libraries (D110) and the AppImage runtime, so it appends each library's Debian copyright file and `config/licenses/appimage-runtime.txt`, the licences of what the pinned runtime statically links, to its copy. Update that file when the runtime's pin changes what it links. The Public Suffix List snapshot, MPL-2.0 data no package covers, is listed in every file.
 7. About opens the installed file with the system, so it works offline. A build with no file, as in development, does not show the row.
 8. The media add-on's programs are not covered: an installer does not carry them, and they are downloaded later (D20).
+
+### D119. Quitting waits for moves to other folders
+
+Decided on 2026-11-04. `Manager::shutdown` waits for every move under way, however long the disk takes, so the list and the disk agree on the next start. It sets no limit of its own: a limit on quitting belongs to the program around it, which ends the process. A kill during a copy to another drive is safe because the copy reaches its final name only when whole: the original stays, and the list still names it.
