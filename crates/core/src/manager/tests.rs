@@ -1140,3 +1140,77 @@ async fn a_replace_that_failed_at_its_start_is_not_completed_by_a_restart() {
     );
     reopened.shutdown().await;
 }
+
+/// Runs `about_to_write` with the database held by someone else and proves it waits for the record that the run writes at its path: a kill can land any time after it returns.
+async fn record_is_on_disk_first(
+    manager: &Manager,
+    dir: &Path,
+    id: DownloadId,
+    about_to_write: impl FnOnce() + Send + 'static,
+) {
+    let mut other =
+        rusqlite::Connection::open(dir.join("data").join(crate::DATABASE_FILE)).unwrap();
+    other.busy_timeout(PATIENCE).unwrap();
+    let held = other
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .unwrap();
+    let mut work = tokio::task::spawn_blocking(about_to_write);
+    assert!(
+        tokio::time::timeout(QUIET, &mut work).await.is_err(),
+        "the run may write before its record is on disk"
+    );
+    held.rollback().unwrap();
+    work.await.unwrap();
+    let writing: bool = other
+        .query_row(
+            "SELECT writing FROM downloads WHERE id = ?1",
+            [id.0],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(writing, "the record is not on disk");
+    assert!(manager.lock().downloads[&id].naming.writing);
+}
+
+async fn running_for_record(url: &str) -> (Manager, tempfile::TempDir, DownloadId, u64) {
+    let (manager, dir) = manager_with(deaf, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager.add_download(add_request(url)).await.unwrap();
+    let run_id = manager.lock().downloads[&id].run.as_ref().unwrap().id;
+    (manager, dir, id, run_id)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_new_path_reaches_the_disk_before_the_run_writes() {
+    let (manager, dir, id, run_id) = running_for_record("https://example.com/get?id=1").await;
+    let settling = manager.clone();
+    record_is_on_disk_first(&manager, dir.path(), id, move || {
+        settling
+            .settle_path_checking(id, run_id, &answer("report.pdf"), &|_| true)
+            .unwrap();
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_settled_path_reaches_the_disk_before_the_run_writes() {
+    let (manager, dir, id, run_id) = running_for_record("https://example.com/get?id=1").await;
+    manager
+        .lock()
+        .downloads
+        .get_mut(&id)
+        .unwrap()
+        .naming
+        .settled = true;
+    let settle = manager.settler(id, run_id, wirecatch_engine::CancellationToken::new());
+    record_is_on_disk_first(&manager, dir.path(), id, move || {
+        settle(&answer("report.pdf")).unwrap();
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_placed_video_is_on_record_before_it_moves() {
+    let (manager, dir, id, _) = running_for_record("https://example.com/get?id=1").await;
+    let placing = manager.clone();
+    record_is_on_disk_first(&manager, dir.path(), id, move || placing.begin_placing(id)).await;
+}

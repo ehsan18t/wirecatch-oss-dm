@@ -7,7 +7,6 @@ use gpui_kit::{
     Context, InteractiveElement as _, IntoElement, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, div, px,
 };
-use wirecatch_protocol::app::{DownloadStatus, ProcessingStep};
 
 use super::{Group, MainWindow};
 use crate::text;
@@ -61,36 +60,21 @@ impl MainWindow {
     /// How fast everything moves right now; in its tooltip, what is going on. Hidden while
     /// nothing runs.
     fn readout(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let downloads = &self.library.read(cx).downloads;
-        let active: Vec<_> = downloads
-            .iter()
-            .filter(|row| Group::of(row.status) == Group::Downloading)
-            .collect();
-        let waiting = downloads
-            .iter()
-            .filter(|row| row.status == DownloadStatus::Queued)
-            .count();
-        let joining = active
-            .iter()
-            .filter(|row| {
-                row.status == DownloadStatus::Processing
-                    || row
-                        .processing
-                        .as_ref()
-                        .is_some_and(|p| p.step == ProcessingStep::Joining)
-            })
-            .count();
-        let speed: u64 = active.iter().map(|row| row.speed).sum();
+        let tally = self.library.read(cx).downloads.tally();
+        let active = tally.in_group(Group::Downloading);
+        let waiting = tally.in_group(Group::UpNext);
+        let joining = tally.joining;
+        let speed = tally.speed;
         let said = if speed > 0 {
             text::speed(speed)
-        } else if active.is_empty() {
+        } else if active == 0 {
             String::new()
-        } else if joining == active.len() {
+        } else if joining == active {
             "Finishing videos".to_owned()
         } else {
             "Starting".to_owned()
         };
-        let downloading = active.len() - joining;
+        let downloading = active - joining;
         let summary: Vec<String> = [
             (downloading > 0 || joining == 0).then(|| format!("{downloading} downloading")),
             (joining > 0).then(|| format!("{joining} being merged or converted")),
@@ -99,7 +83,7 @@ impl MainWindow {
         .into_iter()
         .flatten()
         .collect();
-        let summary = if active.is_empty() && waiting == 0 {
+        let summary = if active == 0 && waiting == 0 {
             "Nothing running".to_owned()
         } else {
             summary.join(", ")

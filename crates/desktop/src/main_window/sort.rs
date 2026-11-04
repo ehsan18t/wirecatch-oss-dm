@@ -1,6 +1,7 @@
 //! The order of the downloads in each group. Up next always runs in queue order, and a queue's
 //! line keeps the order it runs in. A sort by progress, speed or time left is taken when it is
-//! chosen and whenever the list's downloads change, so rows never jump on a progress tick.
+//! chosen and whenever the list's downloads change, so rows never jump on a progress tick. A sort
+//! by size places a running row by its size at the last layout, as a stream's size is an estimate.
 
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};

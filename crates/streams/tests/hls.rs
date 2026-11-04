@@ -475,6 +475,35 @@ async fn resuming_with_a_refreshed_link_keeps_the_segments() {
     dir.remove().unwrap();
 }
 
+/// Another site can serve the same paths at the same counts: what a paused download left is not joined into this one.
+#[tokio::test]
+async fn a_stream_from_another_site_never_takes_the_segments_left_at_its_name() {
+    let (left, wanted) = (FileServer::start().await, FileServer::start().await);
+    media_playlist(&left, "s", 4, 5).unwrap();
+    let segments = media_playlist(&wanted, "s", 4, 6).unwrap();
+    left.hang("s/seg3.ts", true);
+    let dir = private_dir("hls-other-site").unwrap();
+    let output = dir.join("v.ts");
+    let progress = Arc::new(StreamProgress::default());
+    let cancel = CancellationToken::new();
+    let task = tokio::spawn(download(
+        request(left.url("s/index.m3u8"), &output),
+        progress.clone(),
+        cancel.clone(),
+    ));
+    segments_done(&progress, &task, 3).await;
+    cancel.cancel();
+    task.await.unwrap().unwrap();
+
+    let (path, _) = completed(
+        run(request(wanted.url("s/index.m3u8"), &output))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(std::fs::read(path).unwrap(), segments.concat());
+    dir.remove().unwrap();
+}
+
 #[tokio::test]
 async fn resuming_checks_segment_sizes() {
     let server = FileServer::start().await;

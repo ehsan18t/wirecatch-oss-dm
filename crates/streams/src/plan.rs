@@ -190,6 +190,15 @@ pub(crate) fn is_signing_parameter(name: &str) -> bool {
 }
 
 impl Plan {
+    /// What a work folder's segments must match to be reused: the plan's [`fingerprint`](Self::fingerprint), and `owner`, which tells apart two sites serving the same paths.
+    pub fn work_identity(&self, owner: &str) -> u64 {
+        let mut hash = Fnv::default();
+        hash.write(owner.as_bytes());
+        hash.write(&[0xFF]);
+        hash.write(&self.fingerprint().to_le_bytes());
+        hash.0
+    }
+
     /// Identifies the plan across runs, to tell whether segments on disk belong to it. Paths count, and so do queries, ranges, keys and the number of pieces. Of a query, every parameter counts except the values of [`SIGNING_PARAMETERS`]: refreshing a signed link must keep the segments already downloaded, while two videos told apart only by a query value (`?video=1`, `?video=2`) must never share them. Hosts are left out, because one video is often served by whichever CDN host is closest at the time. A token carried in the path itself (some Akamai set-ups) still makes a refreshed link start over.
     pub fn fingerprint(&self) -> u64 {
         let mut hash = Fnv::default();

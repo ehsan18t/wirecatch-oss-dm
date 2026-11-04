@@ -18,7 +18,7 @@ use wirecatch_protocol::app::Setting;
 use wirecatch_protocol::proxy::{ProxySettings, ProxyUse, QueueExceptions};
 
 use super::proxy_dialog;
-use crate::library::Library;
+use crate::library::{Library, Revisions};
 use crate::ui::{Field, Role, Typed as _, choice};
 
 /// How the hosts that skip the proxy are typed, in Settings and in a queue's proxy.
@@ -49,6 +49,8 @@ pub struct ProxyForm {
     exceptions: Setting<QueueExceptions>,
     choices: Entity<SelectState<Vec<ProxyChoice>>>,
     hosts: Entity<TextareaState>,
+    /// What the proxy list was last read from.
+    listed: Revisions,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -60,6 +62,7 @@ impl ProxyForm {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) -> Self {
+        let listed = library.read(cx).revisions;
         let items = proxy_choices(&library, cx);
         let picked = items.iter().position(|item| item.proxy == proxy);
         let choices = cx.new(|cx| {
@@ -92,6 +95,11 @@ impl ProxyForm {
         );
         // A proxy added or renamed while the editor is open shows in the list.
         let listing = cx.observe_in(&library, window, |form: &mut Self, library, window, cx| {
+            let read = library.read(cx).revisions;
+            if (form.listed.proxies, form.listed.settings) == (read.proxies, read.settings) {
+                return;
+            }
+            form.listed = read;
             let items = proxy_choices(&library, cx);
             let proxy = form.proxy;
             form.choices.update(cx, |state, cx| {
@@ -110,6 +118,7 @@ impl ProxyForm {
             exceptions,
             choices,
             hosts,
+            listed,
             _subscriptions: vec![picking, listing, typing],
         }
     }
