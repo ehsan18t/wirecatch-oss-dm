@@ -1,0 +1,56 @@
+--- a/crates/core/tests/manager/again.rs
++++ b/crates/core/tests/manager/again.rs
+@@ -149,3 +149,53 @@
+     assert_eq!(h.manager.list_downloads().len(), 1);
+     Ok(())
+ }
++
++/// Xconcurrency: a finished file captured again, with the default Ask.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn a_finished_file_captured_again_keeps_its_question() -> TestResult {
++    let server = TestServer::start(
++        test_data(16 * KIB_USIZE),
++        Config {
++            ranges: true,
++            content_disposition: Some("attachment; filename=\"report.pdf\"".into()),
++            ..Config::default()
++        },
++    )
++    .await;
++    let h = Harness::new().await?;
++    let url = server.url("get").to_string();
++    let first = h.manager.add_capture(click(&url, 1)).await?;
++    h.wait_status(first.id.ok_or("no id")?, wirecatch_protocol::app::DownloadStatus::Completed).await;
++    let mut events = h.manager.subscribe();
++    let again = h.manager.add_capture(click(&url, 2)).await;
++    println!("AGAIN {again:?}");
++    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
++    while let Ok(event) = events.try_recv() {
++        match event {
++            UiEvent::FileExistsRequested(q) => println!("EVENT asked {:?}", q.id),
++            UiEvent::ConfirmationClosed { id } => println!("EVENT closed {id:?}"),
++            UiEvent::DownloadsRemoved(ids) => println!("EVENT removed {ids:?}"),
++            _ => {}
++        }
++    }
++    println!("OPEN {:?} ROWS {}", h.manager.pending_file_exists().len(), h.manager.list_downloads().len());
++    assert_eq!(h.manager.pending_file_exists().len(), 1);
++    Ok(())
++}
++
++/// Xconcurrency: two clicks of one link at the same moment.
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn two_clicks_at_once_make_one_download() -> TestResult {
++    let server = slow_server().await;
++    let mut most = 0;
++    for round in 0..20 {
++        let h = Harness::new().await?;
++        let url = format!("{}?round={round}", server.url("report.pdf"));
++        let _ = tokio::join!(h.manager.add_capture(click(&url, 1)), h.manager.add_capture(click(&url, 2)));
++        most = most.max(h.manager.list_downloads().len());
++        h.manager.shutdown().await;
++    }
++    println!("MOST ROWS {most}");
++    assert_eq!(most, 1);
++    Ok(())
++}
