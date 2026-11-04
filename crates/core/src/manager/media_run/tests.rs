@@ -220,6 +220,7 @@ fn a_stream_downloads_under_the_rule_of_whoever_chose_it() {
             refresh_delays: Arc::new([]),
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
+            placing: Arc::new(|| {}),
             file_work: FileWork::new(),
             taken: Taken::KeepBoth,
         };
@@ -246,6 +247,7 @@ fn a_format_downloads_under_its_network_rule() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -278,6 +280,7 @@ async fn a_job_that_cannot_be_read_never_runs() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -329,6 +332,7 @@ async fn a_finished_stream_is_marked_before_it_is_put_in_place() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -375,6 +379,7 @@ async fn a_finished_video_is_marked_before_it_is_put_in_place() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -565,6 +570,7 @@ async fn a_small_file_past_its_limit_is_never_written() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -580,4 +586,27 @@ async fn a_small_file_past_its_limit_is_never_written() {
     .await;
     assert!(matches!(fetched, super::extras::Fetch::Failed(_)));
     assert!(!path.exists(), "the file past its limit was written");
+}
+
+/// A scanner often holds a finished file without sharing its deletion or its writing. The video still reaches its place; what stays behind goes with the work folder.
+#[cfg(windows)]
+#[test]
+fn a_video_a_scanner_holds_is_still_put_in_place() {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_SHARE_READ: u32 = 1;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("media.mp4");
+    std::fs::write(&file, b"video").unwrap();
+    let _scanner = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .open(&file)
+        .unwrap();
+    let planned = dir.path().join("out").join("video.mp4");
+    std::fs::create_dir_all(planned.parent().unwrap()).unwrap();
+    let reserve: super::placement::Reserve = Arc::new(|_: &Path, _| true);
+    wirecatch_files::whole_file::flush(&file).unwrap();
+    let placed = place(&file, &planned, &reserve, super::placement::Taken::KeepBoth).unwrap();
+    assert_eq!(placed, Placed::At(planned.clone()));
+    assert_eq!(std::fs::read(&planned).unwrap(), b"video");
 }

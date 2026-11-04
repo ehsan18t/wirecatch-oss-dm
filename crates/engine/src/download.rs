@@ -251,8 +251,9 @@ impl Shared {
 ///
 /// `progress` is updated live and can be read from any task or thread.
 /// Cancelling `cancel` stops all connections, writes what has arrived, saves the
-/// resume file and returns [`Outcome::Paused`]. Running the same request again
-/// later resumes it. See the [crate documentation](crate) for an example.
+/// resume file and returns [`Outcome::Paused`], or the error when the part file
+/// could not be flushed to the disk. Running the same request again later
+/// resumes it. See the [crate documentation](crate) for an example.
 ///
 /// # Errors
 ///
@@ -299,7 +300,8 @@ pub(crate) async fn download_with(
         }
         _ => None,
     };
-    download_guarded(request, progress, cancel, clients, guard).await
+    // A child, so a failed flush can stop this run without cancelling the caller's token.
+    download_guarded(request, progress, cancel.child_token(), clients, guard).await
 }
 
 /// [`download_with`] with the local network protection already decided (tests
@@ -387,7 +389,7 @@ pub(crate) async fn download_guarded(
     ));
     {
         let saver = saver.clone();
-        storage::blocking(&shared.file_work, move || saver.save()).await?;
+        storage::blocking(&shared.file_work, move || saver.save_or_fail()).await?;
     }
 
     let first = first_work(&shared, resumed, &mut connection, body).await;
@@ -540,10 +542,11 @@ fn finish(
             saver.save()?;
         }
         // Closing waits for a checkpoint still flushing, during which the owner may drop the download and start another run on the same files.
-        saver.close();
+        let closed = saver.close();
         #[cfg(test)]
         abandoned.slow_step_done();
         abandoned.check()?;
+        closed?;
         let path = storage::finalize(
             &target.part,
             &target.file,
@@ -562,7 +565,7 @@ fn finish(
     }
 
     saver.save()?;
-    saver.close();
+    saver.close()?;
     if shared.request.cancel.is_cancelled() {
         return Ok(Outcome::Paused {
             path: target.file,

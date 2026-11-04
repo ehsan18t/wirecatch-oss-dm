@@ -174,6 +174,10 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE downloads ADD COLUMN proxy_label TEXT;
 ",
+    // Whether a run has begun writing to a download's path (`NameChoice::writing`). Downloads stored before it was kept count as not: at worst one is fetched again.
+    r"
+    ALTER TABLE downloads ADD COLUMN writing INTEGER NOT NULL DEFAULT 0;
+",
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -214,6 +218,8 @@ pub struct NameChoice {
     /// The final path is fixed: the server has answered with the file. Until then
     /// the download's path is a provisional guess made when it was added.
     pub settled: bool,
+    /// A run has begun writing to the path, so a file there with no partial files beside it is this download's own. Settled alone does not say so: a Replace or a video settles on a file that is someone else's.
+    pub writing: bool,
     /// A name the user or the browser chose; it wins over the server's suggestion.
     pub name: Option<String>,
     /// A folder the user chose; otherwise the category rule decides.
@@ -226,6 +232,7 @@ impl NameChoice {
     pub fn settled() -> Self {
         Self {
             settled: true,
+            writing: false,
             name: None,
             folder: None,
         }
@@ -1157,7 +1164,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     let mut stmt = conn.prepare(
         "SELECT id, url, path, queue_id, position, category, status, total, done, error,
                 added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-                stranded, chosen_by, queue_reason, proxy_label
+                stranded, chosen_by, queue_reason, proxy_label, writing
          FROM downloads ORDER BY position",
     )?;
     let mut downloads = Vec::new();
@@ -1297,9 +1304,9 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         "INSERT OR REPLACE INTO downloads
             (id, url, path, queue_id, position, category, status, total, done, error,
              added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-             stranded, chosen_by, queue_reason, proxy_label)
+             stranded, chosen_by, queue_reason, proxy_label, writing)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                 ?18, ?19, ?20, ?21)",
+                 ?18, ?19, ?20, ?21, ?22)",
     )?
     .execute(params![
         d.id.0,
@@ -1325,6 +1332,7 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         enum_text(&row.chosen_by),
         to_json(&d.queue_reason),
         d.proxy,
+        row.naming.writing,
     ])?;
     Ok(())
 }
@@ -1430,6 +1438,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
             chosen_by: from_text(&row.get::<_, String>(18)?).unwrap_or(ChosenBy::Website),
             naming: NameChoice {
                 settled: row.get(13)?,
+                writing: row.get(21)?,
                 name: row.get(14)?,
                 folder: row.get(15)?,
             },
@@ -1599,6 +1608,7 @@ mod tests {
             chosen_by: ChosenBy::Person,
             naming: NameChoice {
                 settled: false,
+                writing: false,
                 name: Some("chosen.zip".into()),
                 folder: None,
             },

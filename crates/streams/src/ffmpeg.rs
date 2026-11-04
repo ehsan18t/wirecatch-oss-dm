@@ -27,6 +27,15 @@ const PROGRESS: [&str; 3] = ["-progress", "pipe:1", "-nostats"];
 /// Bytes read from the start of a downloaded file to recognize its format.
 const DETECT_HEAD_BYTES: usize = 512;
 
+/// The first byte of an MPEG-TS packet.
+const MPEG_TS_SYNC: u8 = 0x47;
+
+/// Where the first sync byte of a Blu-ray `.m2ts` file is: each packet follows 4 bytes of timestamp.
+const M2TS_FIRST_SYNC: usize = 4;
+
+/// How long a packet of a Blu-ray `.m2ts` file is, timestamp included.
+const M2TS_PACKET_BYTES: usize = 192;
+
 /// What every ffmpeg run starts with: no banner, never reading the keyboard, only errors on standard error, and replacing the output (always a file of Wirecatch's own).
 #[must_use]
 pub fn preamble() -> Vec<OsString> {
@@ -61,6 +70,16 @@ pub enum InputFormat {
     Ac3,
     /// Raw Dolby Digital Plus audio (`.eac3`).
     Eac3,
+    /// FLAC audio (`.flac`).
+    Flac,
+    /// Ogg, as Vorbis or Opus audio (`.ogg`, `.opus`).
+    Ogg,
+    /// WAV audio (`.wav`).
+    Wav,
+    /// Flash video (`.flv`).
+    Flv,
+    /// AVI video (`.avi`).
+    Avi,
 }
 
 impl InputFormat {
@@ -91,13 +110,29 @@ impl InputFormat {
 
     /// The format whose signature `head` starts with, without looking past an ID3 tag.
     fn from_head(head: &[u8]) -> Option<InputFormat> {
-        if head.first() == Some(&0x47) {
+        if head.first() == Some(&MPEG_TS_SYNC) {
             Some(InputFormat::MpegTs)
-        } else if head
-            .get(4..8)
-            .is_some_and(|b| matches!(b, b"ftyp" | b"styp" | b"moov" | b"moof" | b"sidx" | b"free"))
-        {
+        } else if head.get(4..8).is_some_and(|b| {
+            matches!(
+                b,
+                b"ftyp" | b"styp" | b"moov" | b"moof" | b"sidx" | b"free" | b"wide" | b"mdat"
+            )
+        }) {
             Some(InputFormat::Mp4)
+        } else if head.get(M2TS_FIRST_SYNC) == Some(&MPEG_TS_SYNC)
+            && head.get(M2TS_FIRST_SYNC + M2TS_PACKET_BYTES) == Some(&MPEG_TS_SYNC)
+        {
+            Some(InputFormat::MpegTs)
+        } else if head.starts_with(b"OggS") {
+            Some(InputFormat::Ogg)
+        } else if head.starts_with(b"FLV\x01") {
+            Some(InputFormat::Flv)
+        } else if head.starts_with(b"RIFF") {
+            match head.get(8..12) {
+                Some(b"WAVE") => Some(InputFormat::Wav),
+                Some(b"AVI ") => Some(InputFormat::Avi),
+                _ => None,
+            }
         } else if head.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
             if head.windows(4).any(|w| w == b"webm") {
                 Some(InputFormat::WebM)
@@ -120,6 +155,11 @@ impl InputFormat {
             InputFormat::Mp3 => "mp3",
             InputFormat::Ac3 => "ac3",
             InputFormat::Eac3 => "eac3",
+            InputFormat::Flac => "flac",
+            InputFormat::Ogg => "ogg",
+            InputFormat::Wav => "wav",
+            InputFormat::Flv => "flv",
+            InputFormat::Avi => "avi",
         }
     }
 
@@ -135,6 +175,11 @@ impl InputFormat {
             InputFormat::Mp3 => "mp3",
             InputFormat::Ac3 => "ac3",
             InputFormat::Eac3 => "eac3",
+            InputFormat::Flac => "flac",
+            InputFormat::Ogg => "ogg",
+            InputFormat::Wav => "wav",
+            InputFormat::Flv => "flv",
+            InputFormat::Avi => "avi",
         }
     }
 }
@@ -323,9 +368,10 @@ fn id3_len(head: &[u8]) -> Option<u64> {
     Some(10 + size + footer)
 }
 
-/// The raw audio format whose frame `head` starts with.
+/// The audio format whose frame `head` starts with, as it may after an ID3 tag.
 fn audio_frame(head: &[u8]) -> Option<InputFormat> {
     match head {
+        [b'f', b'L', b'a', b'C', ..] => Some(InputFormat::Flac),
         // ADTS: 12-bit sync, layer 0.
         [0xFF, b, ..] if b & 0xF6 == 0xF0 => Some(InputFormat::Aac),
         // MPEG audio: 11-bit sync, then a version and a layer that are not the reserved values.
@@ -589,6 +635,9 @@ mod tests {
             bytes.extend_from_slice(frame);
             bytes
         };
+        let mut m2ts = vec![0x10; M2TS_FIRST_SYNC + M2TS_PACKET_BYTES + 1];
+        m2ts[M2TS_FIRST_SYNC] = MPEG_TS_SYNC;
+        m2ts[M2TS_FIRST_SYNC + M2TS_PACKET_BYTES] = MPEG_TS_SYNC;
         let cases: Vec<(Vec<u8>, Option<InputFormat>)> = vec![
             (vec![0x47, 0x40, 0x11], Some(InputFormat::MpegTs)),
             (b"\0\0\0\x18ftypisom".to_vec(), Some(InputFormat::Mp4)),
@@ -607,6 +656,15 @@ mod tests {
             (vec![0xFF, 0xFB, 0x90], Some(InputFormat::Mp3)),
             (vec![0x0B, 0x77, 0, 0, 0, 0x40], Some(InputFormat::Ac3)),
             (vec![0x0B, 0x77, 0, 0, 0, 0x80], Some(InputFormat::Eac3)),
+            (b"fLaC\0\0\0\x22".to_vec(), Some(InputFormat::Flac)),
+            (id3(b"fLaC\0\0"), Some(InputFormat::Flac)),
+            (b"OggS\0\x02".to_vec(), Some(InputFormat::Ogg)),
+            (b"RIFF\0\0\0\0WAVEfmt ".to_vec(), Some(InputFormat::Wav)),
+            (b"RIFF\0\0\0\0AVI LIST".to_vec(), Some(InputFormat::Avi)),
+            (b"RIFF\0\0\0\0WEBPVP8 ".to_vec(), None),
+            (b"FLV\x01\x05".to_vec(), Some(InputFormat::Flv)),
+            (b"\0\0\0\x08wide".to_vec(), Some(InputFormat::Mp4)),
+            (m2ts, Some(InputFormat::MpegTs)),
             (id3(&[0xFF, 0xF1, 0x50]), Some(InputFormat::Aac)),
             (id3(&[0xFF, 0xFB, 0x90]), Some(InputFormat::Mp3)),
             (id3(&[0x0B, 0x77, 0, 0, 0, 0x80]), Some(InputFormat::Eac3)),

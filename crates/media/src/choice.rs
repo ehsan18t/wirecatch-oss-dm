@@ -402,9 +402,14 @@ pub fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
         .collect();
     let videos: Vec<&Format> = usable.iter().copied().filter(|f| f.has_video()).collect();
     let duration_ms = duration_ms(info);
+    let joinable: Vec<&Format> = audios
+        .iter()
+        .copied()
+        .filter(|a| output::ffmpeg_may_read(a))
+        .collect();
     let offers: Vec<Offer> = heights(&videos)
         .into_iter()
-        .filter_map(|height| video_offer(&videos, &audios, height, duration_ms))
+        .filter_map(|height| video_offer(&videos, &joinable, height, duration_ms))
         .collect();
     let offers = with_audio_last(offers, audio_offer(&audios, duration_ms));
     if offers.is_empty() {
@@ -462,8 +467,8 @@ fn best_audio<'a>(audios: &[&'a Format], prefer: Option<&str>) -> Option<&'a For
         .or_else(|| output::best_by_rate(audios.iter().copied()))
 }
 
-/// The option for the videos of `height`: the best video-only format joined
-/// with the best audio in a matching container, or else the best format with
+/// The option for the videos of `height`: the best video-only format ffmpeg may read joined
+/// with the best of `audios` in a matching container, or else the best format with
 /// both; `None` when there is neither.
 fn video_offer(
     videos: &[&Format],
@@ -476,7 +481,11 @@ fn video_offer(
         .copied()
         .filter(|f| f.height == height)
         .collect();
-    let separate: Vec<&Format> = at.iter().copied().filter(|f| !f.has_audio()).collect();
+    let separate: Vec<&Format> = at
+        .iter()
+        .copied()
+        .filter(|f| !f.has_audio() && output::ffmpeg_may_read(f))
+        .collect();
     let mp4: Vec<&Format> = separate
         .iter()
         .copied()
@@ -499,9 +508,11 @@ fn video_offer(
         Some(h) => format!("{h}p"),
         None => "Best quality".to_string(),
     };
-    let (video, audio) = match pair {
-        Some((v, a)) => (v, Some(a)),
-        None => (together.or(video_only)?, None),
+    let (video, audio) = if let Some((v, a)) = pair {
+        (v, Some(a))
+    } else {
+        let unreadable = || output::best_by_rate(at.iter().copied());
+        (together.or(video_only).or_else(unreadable)?, None)
     };
     let (id, ext, needs_ffmpeg, size) = if let Some(a) = audio {
         (
@@ -547,7 +558,12 @@ fn video_offer(
 /// The audio-only option: the best audio, preferably M4A, as it comes or
 /// converted.
 fn audio_offer(audios: &[&Format], duration_ms: Option<u64>) -> Option<Offer> {
-    let audio = best_audio(audios, Some("m4a"))?;
+    let readable: Vec<&Format> = audios
+        .iter()
+        .copied()
+        .filter(|a| output::ffmpeg_may_read(a))
+        .collect();
+    let audio = best_audio(&readable, Some("m4a")).or_else(|| best_audio(audios, Some("m4a")))?;
     let ext = safe_ext(audio.ext.as_deref(), Content::Audio);
     let variants = output::audio_variants(audios, audio, &ext, duration_ms);
     Some(offer(
@@ -615,6 +631,58 @@ mod tests {
         assert_eq!(estimate(Some(10.0), [None, None]), None);
         assert_eq!(estimate(None, [Some(8_000), None]), None);
         assert_eq!(estimate(Some(1e300), [Some(8_000), None]), None);
+    }
+
+    /// A source ffmpeg may not read is kept as it came, never offered for joining or converting: such a run could only fail once the whole file is on disk.
+    #[test]
+    fn a_source_ffmpeg_may_not_read_is_offered_only_as_it_comes() {
+        let saved_as = |offer: &Offer| -> Vec<OutputFormat> {
+            offer.0.outputs.iter().map(|f| f.format).collect()
+        };
+        let audio_only = from_page(&info(
+            r#"{"title":"T","formats":[{"format_id":"a","ext":"wma","vcodec":"none","acodec":"wmav2","url":"u"}]}"#,
+        ))
+        .unwrap();
+        assert_eq!(saved_as(&audio_only[0]), [OutputFormat::Original]);
+        assert!(!audio_only[0].0.needs_ffmpeg);
+
+        let joined = from_page(&info(
+            r#"{"title":"T","formats":[
+            {"format_id":"v","ext":"mp4","vcodec":"avc1","acodec":"none","height":720,"url":"u"},
+            {"format_id":"a","ext":"wma","vcodec":"none","acodec":"wmav2","abr":320,"url":"u"},
+            {"format_id":"m","ext":"m4a","vcodec":"none","acodec":"mp4a","abr":64,"url":"u"}
+        ]}"#,
+        ))
+        .unwrap();
+        assert_eq!(joined[0].0.id, "v+m");
+        assert_eq!(joined[1].0.id, "m");
+        for variant in joined.iter().flat_map(|(_, plan)| &plan.variants) {
+            let audio = variant.audio.as_ref().map(ToString::to_string);
+            assert_ne!(audio.as_deref(), Some("a"), "{variant:?}");
+        }
+
+        let together = from_page(&info(
+            r#"{"title":"T","formats":[{"format_id":"w","ext":"wmv","vcodec":"wmv3","acodec":"wmav2","height":480,"url":"u"}]}"#,
+        ))
+        .unwrap();
+        assert_eq!(saved_as(&together[0]), [OutputFormat::Original]);
+    }
+
+    /// Formats a page may offer that need ffmpeg to read them for "Save as".
+    #[test]
+    fn flac_ogg_wav_and_flv_sources_can_be_converted() {
+        for (ext, kind) in [
+            ("flac", "none"),
+            ("ogg", "none"),
+            ("wav", "none"),
+            ("flv", "h263"),
+        ] {
+            let offers = from_page(&info(&format!(
+                r#"{{"title":"T","formats":[{{"format_id":"f","ext":"{ext}","vcodec":"{kind}","acodec":"mp3","height":240,"url":"u"}}]}}"#,
+            )))
+            .unwrap();
+            assert!(offers[0].0.outputs.len() > 1, "{ext}");
+        }
     }
 
     #[test]
@@ -700,7 +768,7 @@ mod tests {
             .iter()
             .find(|(o, _)| o.height == Some(480))
             .map(|(_, p)| p.ext.clone());
-        assert_eq!(paired.as_deref(), Some("mkv"));
+        assert_eq!(paired.as_deref(), Some("mp4"));
         assert_eq!(ext("4"), "mp4");
         assert!(offers.iter().any(|(o, p)| o.audio_only && p.ext == "m4a"));
     }
