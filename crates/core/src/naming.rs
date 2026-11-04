@@ -1,67 +1,90 @@
 //! Choosing the final path of a new download. The manager owns naming and runs the
 //! engine with `exact_path`, so two downloads never share a file.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use wirecatch_engine::{PART_EXT, STATE_EXT, Url, naming};
 use wirecatch_media::{stream_dir, work_dir};
+use wirecatch_protocol::DownloadId;
 
 use crate::error::{CoreError, Result};
 
-/// Paths already promised to unfinished downloads, compared the way the file
-/// system compares them.
+/// Which download holds each path, compared the way the file system compares them. Only the holder can give a path up, and a path another download holds is never taken over.
 ///
-/// Besides each unfinished download's own path, a path may be reserved for a
-/// moment while its new owner checks the disk: a move to another folder, the
-/// server's answer choosing a name, a finished video being put in place. Those
-/// are counted apart, so the consistency check can still demand that every
-/// other claim is an unfinished download's path.
+/// Besides each unfinished download's own path, a download may reserve one: a question about the file there, a move to another folder, the server's answer choosing a name, a finished video being put in place. Those are counted apart, so the consistency check can still demand that every other claim is an unfinished download's path.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct Claimed {
-    paths: HashSet<String>,
-    reserved: HashSet<String>,
+    holders: HashMap<String, Claim>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Claim {
+    holder: DownloadId,
+    reserved: bool,
 }
 
 impl Claimed {
-    /// Marks `path` as taken by a download.
-    pub fn insert(&mut self, path: &Path) {
-        self.paths.insert(key(path));
+    /// Makes `path` `id`'s own, also when it had reserved it; a path another download holds stays with that download.
+    pub fn insert(&mut self, path: &Path, id: DownloadId) {
+        let claim = self.holders.entry(key(path)).or_insert(Claim {
+            holder: id,
+            reserved: false,
+        });
+        if claim.holder == id {
+            claim.reserved = false;
+        }
     }
 
-    /// Marks `path` as free again.
-    pub fn remove(&mut self, path: &Path) {
+    /// Gives up `path`, own or reserved, if `id` holds it.
+    pub fn remove(&mut self, path: &Path, id: DownloadId) {
         let key = key(path);
-        self.paths.remove(&key);
-        self.reserved.remove(&key);
+        if self.holders.get(&key).is_some_and(|c| c.holder == id) {
+            self.holders.remove(&key);
+        }
     }
 
-    /// Takes `path` for a moment, before it becomes a download's path.
-    pub fn reserve(&mut self, path: &Path) {
+    /// Reserves `path` for `id`, unless another download holds it. A path already `id`'s own stays its own.
+    #[must_use]
+    pub fn reserve(&mut self, path: &Path, id: DownloadId) -> bool {
+        self.holders
+            .entry(key(path))
+            .or_insert(Claim {
+                holder: id,
+                reserved: true,
+            })
+            .holder
+            == id
+    }
+
+    /// Gives back `path` if `id` holds it as a reservation; a path that is `id`'s own stays.
+    pub fn release(&mut self, path: &Path, id: DownloadId) {
         let key = key(path);
-        self.paths.insert(key.clone());
-        self.reserved.insert(key);
+        if self
+            .holders
+            .get(&key)
+            .is_some_and(|c| c.holder == id && c.reserved)
+        {
+            self.holders.remove(&key);
+        }
     }
 
-    /// Gives back a path taken with [`reserve`](Self::reserve).
-    pub fn release(&mut self, path: &Path) {
-        self.remove(path);
+    pub fn holder(&self, path: &Path) -> Option<DownloadId> {
+        self.holders.get(&key(path)).map(|c| c.holder)
     }
 
-    /// A path taken with [`reserve`](Self::reserve) is now a download's own.
-    pub fn settle(&mut self, path: &Path) {
-        self.reserved.remove(&key(path));
+    pub fn held_by_another(&self, path: &Path, id: DownloadId) -> bool {
+        self.holder(path).is_some_and(|holder| holder != id)
     }
 
     /// How many paths are taken by downloads, not counting reservations.
     #[cfg(debug_assertions)]
     pub fn len(&self) -> usize {
-        self.paths.len() - self.reserved.len()
+        self.holders.values().filter(|c| !c.reserved).count()
     }
 
-    /// Whether `path` is taken.
     pub fn contains(&self, path: &Path) -> bool {
-        self.paths.contains(&key(path))
+        self.holders.contains_key(&key(path))
     }
 }
 
@@ -228,7 +251,7 @@ pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
 }
 
 /// Windows file names are case-insensitive; Linux ones are not.
-fn key(path: &Path) -> String {
+pub(crate) fn key(path: &Path) -> String {
     let s = path.to_string_lossy();
     if cfg!(windows) {
         s.to_lowercase()
@@ -240,6 +263,42 @@ fn key(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_holder_gives_up_a_path() {
+        let (path, one, two) = (Path::new("a.zip"), DownloadId(1), DownloadId(2));
+        let mut claimed = Claimed::default();
+        claimed.insert(path, one);
+        claimed.insert(path, two);
+        assert!(!claimed.reserve(path, two));
+        claimed.remove(path, two);
+        claimed.release(path, two);
+        assert_eq!(claimed.holder(path), Some(one));
+        assert!(claimed.held_by_another(path, two));
+        assert!(!claimed.held_by_another(path, one));
+        claimed.remove(path, one);
+        assert_eq!(claimed.holder(path), None);
+    }
+
+    #[test]
+    fn a_reservation_never_costs_a_download_its_own_path() {
+        let (path, one) = (Path::new("a.zip"), DownloadId(1));
+        let mut claimed = Claimed::default();
+        claimed.insert(path, one);
+        assert!(claimed.reserve(path, one));
+        claimed.release(path, one);
+        assert_eq!(claimed.holder(path), Some(one));
+    }
+
+    #[test]
+    fn a_reservation_becomes_the_downloads_own_path() {
+        let (path, one) = (Path::new("a.zip"), DownloadId(1));
+        let mut claimed = Claimed::default();
+        assert!(claimed.reserve(path, one));
+        claimed.insert(path, one);
+        claimed.release(path, one);
+        assert_eq!(claimed.holder(path), Some(one));
+    }
 
     #[test]
     fn name_prefers_the_given_one_then_the_link() {
@@ -298,7 +357,7 @@ mod tests {
         std::fs::write(dir.path().join("a.zip"), b"x").unwrap();
         std::fs::write(dir.path().join("a (1).zip.wcpart"), b"x").unwrap();
         let mut claimed = Claimed::default();
-        claimed.insert(&dir.path().join("a (2).zip"));
+        claimed.insert(&dir.path().join("a (2).zip"), DownloadId(1));
         assert_eq!(
             unique_path(dir.path(), "a.zip", |p| claimed.contains(p)),
             dir.path().join("a (3).zip")
@@ -333,7 +392,7 @@ mod tests {
     #[test]
     fn claims_ignore_case_on_windows() {
         let mut claimed = Claimed::default();
-        claimed.insert(Path::new(r"C:\D\File.ZIP"));
+        claimed.insert(Path::new(r"C:\D\File.ZIP"), DownloadId(1));
         assert!(claimed.contains(Path::new(r"c:\d\file.zip")));
     }
 }

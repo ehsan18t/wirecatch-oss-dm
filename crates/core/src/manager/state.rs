@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use tracing::warn;
+
 use chrono::NaiveDateTime;
 use tokio::task::AbortHandle;
 use wirecatch_engine::{
@@ -43,7 +45,7 @@ pub(super) struct State {
     /// In sidebar order.
     pub queues: Vec<QueueSlot>,
     pub downloads: BTreeMap<DownloadId, Entry>,
-    /// Final paths of unfinished downloads, so a new one never picks the same.
+    /// Final paths of unfinished downloads and what they reserved, each with its holder, so no two ever write one file.
     /// Kept up to date by [`State::insert_entry`], [`State::remove_entry`] and by
     /// completion, which hands the name to the finished file.
     pub claimed: Claimed,
@@ -209,6 +211,8 @@ pub(super) struct Entry {
     /// What the person chose for the file already in its folder (D88), for its next run. Not
     /// saved: after a restart a duplicate is judged again.
     pub on_existing: Option<OnExisting>,
+    /// A server answered with the file, and the run stopped there for the one already in the folder, before a path was settled.
+    pub offered_file: bool,
     /// Added in the app itself: if the server first answers with a web page while
     /// the media add-on is installed, that page is read for its video instead
     /// (D51). Not saved, so a download restored after a restart is not checked.
@@ -406,7 +410,7 @@ impl Hold {
 }
 
 impl Stop {
-    fn is_users_choice(self) -> bool {
+    pub fn is_users_choice(self) -> bool {
         matches!(
             self,
             Stop::Pause | Stop::Cancel | Stop::Restart | Stop::Remove
@@ -592,11 +596,16 @@ impl State {
     /// Adds a download, claiming its path unless it has already finished.
     pub fn insert_entry(&mut self, entry: Entry) {
         if entry.row.status != DownloadStatus::Completed {
-            self.claimed.insert(entry.path());
+            self.claimed.insert(entry.path(), entry.row.id);
             self.unfinished.insert(entry.row.id);
         }
-        if let Some(stranded) = &entry.stranded {
-            self.claimed.reserve(stranded);
+        if let Some(stranded) = &entry.stranded
+            && !self.claimed.reserve(stranded, entry.row.id)
+        {
+            warn!(
+                id = entry.row.id.0,
+                "another download holds the path a failed move left files at"
+            );
         }
         self.downloads.insert(entry.row.id, entry);
     }
@@ -609,16 +618,16 @@ impl State {
             .get_mut(&id)
             .and_then(|entry| entry.stranded.take())
         {
-            self.claimed.release(&stranded);
+            self.claimed.release(&stranded, id);
         }
     }
 
     /// Takes a download out, giving up its path.
     pub fn remove_entry(&mut self, id: DownloadId) -> Option<Entry> {
         let entry = self.downloads.remove(&id)?;
-        self.claimed.remove(entry.path());
+        self.claimed.remove(entry.path(), id);
         if let Some(stranded) = &entry.stranded {
-            self.claimed.release(stranded);
+            self.claimed.release(stranded, id);
         }
         self.running.remove(&id);
         self.unfinished.remove(&id);
@@ -670,8 +679,8 @@ impl State {
         assert!(
             unfinished
                 .into_iter()
-                .all(|e| self.claimed.contains(e.path())),
-            "an unfinished download's path is not claimed"
+                .all(|e| self.claimed.holder(e.path()) == Some(e.row.id)),
+            "an unfinished download does not hold its path"
         );
         assert!(
             self.downloads
@@ -730,7 +739,7 @@ impl Entry {
     /// Whether a server has answered the app with this file at some point, so the
     /// browser's copy is no longer needed.
     pub fn server_answered(&self) -> bool {
-        self.naming.settled || self.row.status == DownloadStatus::Completed
+        self.naming.settled || self.offered_file || self.row.status == DownloadStatus::Completed
     }
 
     pub fn stored(&self) -> StoredDownload {
@@ -827,6 +836,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         cleanup: None,
         hold: Hold::Free,
         on_existing: None,
+        offered_file: false,
         stranded: None,
         media_job: None,
         video_check: false,
@@ -865,6 +875,7 @@ mod tests {
             cleanup: None,
             hold: Hold::Free,
             on_existing: None,
+            offered_file: false,
             stranded: None,
             media_job: None,
             video_check: false,

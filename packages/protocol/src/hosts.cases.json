@@ -1,0 +1,24 @@
+{
+  "on_site": [
+    { "host": "example.com", "site": "example.com" },
+    { "host": "cdn.example.com", "site": "example.com" },
+    { "host": "Example.COM", "site": "example.com" },
+    { "host": "example.com.", "site": "example.com" },
+    { "host": "example.com", "site": "EXAMPLE.com." },
+    { "host": "CDN.example.com.", "site": "example.com" },
+    { "host": "10.0.0.1", "site": "10.0.0.1" },
+    { "host": "[::1]", "site": "[::1]" }
+  ],
+  "not_on_site": [
+    { "host": "badexample.com", "site": "example.com" },
+    { "host": "example.com.evil.test", "site": "example.com" },
+    { "host": "com", "site": "example.com" },
+    { "host": ".example.com", "site": "example.com" },
+    { "host": "127.0.0.1", "site": "0.0.1" },
+    { "host": "a.10.0.0.1", "site": "10.0.0.1" },
+    { "host": "bücher.example", "site": "xcher.example" },
+    { "host": "example.com", "site": "" },
+    { "host": "example.com.", "site": "." },
+    { "host": "", "site": "" }
+  ]
+}

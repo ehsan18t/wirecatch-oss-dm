@@ -442,27 +442,71 @@ fn a_socks4_server_is_not_copied_as_a_profile() {
 }
 
 #[test]
-fn yt_dlp_and_the_updater_take_the_proxy_for_https() {
+fn yt_dlp_takes_the_proxy_for_the_pages_protocol() {
     let mut manual = ManualProxies::default();
     manual.http = Some("http://web:80".into());
     manual.all = Some("socks5h://socks:1080".into());
+    let https_page = Url::parse("https://video.example/watch").unwrap();
+    let plain_page = Url::parse("http://video.example/watch").unwrap();
     let choice = ProxyChoice::Manual(manual.clone());
     assert_eq!(
-        ytdlp_proxy(&choice).as_deref(),
+        ytdlp_proxy(&choice, &https_page).as_deref(),
         Some("socks5h://socks:1080")
     );
     assert_eq!(
-        updater_proxy(&choice),
-        UpdaterProxy::Url(Url::parse("socks5h://socks:1080").unwrap())
+        ytdlp_proxy(&choice, &plain_page).as_deref(),
+        Some("http://web:80")
     );
-    manual.https = Some("http://secure:3128".into());
+    manual.https = Some("http://user:secret@secure:3128".into());
     let choice = ProxyChoice::Manual(manual);
-    assert_eq!(ytdlp_proxy(&choice).as_deref(), Some("http://secure:3128"));
+    assert_eq!(
+        ytdlp_proxy(&choice, &https_page).as_deref(),
+        Some("http://user:secret@secure:3128")
+    );
 
-    assert_eq!(ytdlp_proxy(&ProxyChoice::Direct).as_deref(), Some(""));
-    assert_eq!(ytdlp_proxy(&ProxyChoice::System), None);
-    assert_eq!(updater_proxy(&ProxyChoice::Direct), UpdaterProxy::Direct);
-    assert_eq!(updater_proxy(&ProxyChoice::System), UpdaterProxy::System);
+    assert_eq!(
+        ytdlp_proxy(&ProxyChoice::Direct, &https_page).as_deref(),
+        Some("")
+    );
+}
+
+#[test]
+fn yt_dlp_goes_directly_only_for_a_page_on_the_exceptions_or_with_no_proxy_set() {
+    let page = Url::parse("https://video.example/watch").unwrap();
+
+    let mut excepted = ManualProxies::default();
+    excepted.all = Some("http://proxy:3128".into());
+    excepted.exceptions = "video.example".into();
+    assert_eq!(
+        ytdlp_proxy(&ProxyChoice::Manual(excepted), &page).as_deref(),
+        Some("")
+    );
+
+    let mut only_http = ManualProxies::default();
+    only_http.http = Some("http://web:80".into());
+    assert_eq!(
+        ytdlp_proxy(&ProxyChoice::Manual(only_http.clone()), &page).as_deref(),
+        Some("http://web:80")
+    );
+
+    // The exception holds for the proxy picked, though none is set for the page's protocol.
+    only_http.exceptions = "video.example".into();
+    assert_eq!(
+        ytdlp_proxy(&ProxyChoice::Manual(only_http), &page).as_deref(),
+        Some("")
+    );
+}
+
+#[test]
+fn yt_dlp_takes_the_proxy_for_every_protocol_before_one_for_another() {
+    let page = Url::parse("http://video.example/watch").unwrap();
+    let mut manual = ManualProxies::default();
+    manual.all = Some("socks5h://socks:1080".into());
+    manual.https = Some("http://secure:3128".into());
+    assert_eq!(
+        ytdlp_proxy(&ProxyChoice::Manual(manual), &page).as_deref(),
+        Some("socks5h://socks:1080")
+    );
 }
 
 #[test]

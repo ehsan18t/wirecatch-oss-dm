@@ -3,7 +3,7 @@
 
 use std::net::IpAddr;
 
-use wirecatch_engine::{ManualProxies, ProxyChoice, Url};
+use wirecatch_engine::{ManualProxies, ProxyChoice, ProxyRoute, Url};
 use wirecatch_protocol::Secret;
 use wirecatch_protocol::app::{Setting, Update};
 use wirecatch_protocol::proxy::{
@@ -382,48 +382,37 @@ pub fn profile_url(profile: &ProxyServerSettings, password: Option<&Secret>) -> 
     Some(url.into())
 }
 
-/// The proxy yt-dlp is given for `choice` (a URL, or `""` for none), `None` to leave it to read
-/// the computer's proxy itself. yt-dlp takes one proxy for everything and has no exceptions, so a manual
-/// setting gives it the proxy for `https`, which video sites use.
+/// The proxy yt-dlp is given to read `page` under `choice` (a URL, or `""` for none), `None` to
+/// leave it to read the computer's proxy itself. yt-dlp takes one proxy for its whole run and has
+/// no exceptions, so what it fetches from other hosts follows the page: through the proxy for the
+/// page's protocol, or any other that is set, since its later requests may need one the page does
+/// not; and directly for a page on the exceptions, whose hosts then all go directly (D73.6).
 #[must_use]
-pub fn ytdlp_proxy(choice: &ProxyChoice) -> Option<String> {
+pub fn ytdlp_proxy(choice: &ProxyChoice, page: &Url) -> Option<String> {
     match choice {
-        ProxyChoice::Manual(manual) => Some(
-            manual
-                .https
-                .clone()
-                .or_else(|| manual.all.clone())
-                .or_else(|| manual.http.clone())
-                .unwrap_or_default(),
-        ),
+        ProxyChoice::Manual(manual) => {
+            let own = match page.scheme() {
+                "http" => &manual.http,
+                "https" => &manual.https,
+                _ => &manual.ftp,
+            };
+            let set = [own, &manual.all, &manual.https, &manual.http]
+                .into_iter()
+                .flatten()
+                .find(|proxy| !proxy.trim().is_empty());
+            let Some(set) = set else {
+                return Some(String::new());
+            };
+            // Asked of the proxy picked: the route of `manual` says `Direct`, not `Excepted`, when none is set for the page's protocol.
+            let mut picked = ManualProxies::default();
+            picked.all = Some(set.clone());
+            picked.exceptions.clone_from(&manual.exceptions);
+            let excepted = ProxyChoice::Manual(picked).route(page) == ProxyRoute::Excepted;
+            Some(if excepted { String::new() } else { set.clone() })
+        }
         ProxyChoice::Direct => Some(String::new()),
+        _ if choice.route(page) == ProxyRoute::Excepted => Some(String::new()),
         _ => None,
-    }
-}
-
-/// The proxy the app updater uses for `choice`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UpdaterProxy {
-    /// The computer's proxy, read by the updater.
-    System,
-    /// No proxy.
-    Direct,
-    /// This proxy.
-    Url(Url),
-}
-
-/// The proxy the app updater uses: the one for `https`.
-#[must_use]
-pub fn updater_proxy(choice: &ProxyChoice) -> UpdaterProxy {
-    match choice {
-        ProxyChoice::Manual(manual) => manual
-            .https
-            .as_ref()
-            .or(manual.all.as_ref())
-            .and_then(|proxy| Url::parse(proxy).ok())
-            .map_or(UpdaterProxy::Direct, UpdaterProxy::Url),
-        ProxyChoice::Direct => UpdaterProxy::Direct,
-        _ => UpdaterProxy::System,
     }
 }
 

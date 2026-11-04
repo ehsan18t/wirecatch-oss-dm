@@ -5,6 +5,10 @@
       "name": "YouTube"
     },
     {
+      "url": "https://www.youtube.com./watch?v=abc",
+      "name": "YouTube"
+    },
+    {
       "url": "https://m.youtube.com/shorts/abc",
       "name": "YouTube"
     },

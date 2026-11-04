@@ -78,6 +78,9 @@ impl Manager {
         run_id: u64,
         remote: &ServerAnswer,
     ) -> Result<PathBuf, String> {
+        if let Some(path) = self.begin_writing_at_settled_path(id, run_id)? {
+            return Ok(path);
+        }
         let url = self
             .lock()
             .downloads
@@ -91,9 +94,39 @@ impl Manager {
         self.settle_path_checking(id, run_id, remote, &usable)
     }
 
+    /// Records that run `run_id` of download `id` is about to write, if its path was already final, and returns that path.
+    fn begin_writing_at_settled_path(
+        &self,
+        id: DownloadId,
+        run_id: u64,
+    ) -> Result<Option<PathBuf>, String> {
+        let mut guard = self.lock();
+        let state = &mut *guard;
+        if !current_run(state, id, run_id)?.naming.settled {
+            return Ok(None);
+        }
+        let Some(entry) = state.downloads.get_mut(&id) else {
+            return Err(REMOVED.into());
+        };
+        entry.naming.writing = true;
+        let path = entry.path().to_path_buf();
+        self.save(state, id);
+        Ok(Some(path))
+    }
+
     /// [`settle_path`](Self::settle_path), asking `free_on_disk` whether a path is
     /// free on disk.
     pub(super) fn settle_path_checking(
+        &self,
+        id: DownloadId,
+        run_id: u64,
+        remote: &ServerAnswer,
+        free_on_disk: &dyn Fn(&Path) -> bool,
+    ) -> Result<PathBuf, String> {
+        off_async_worker(|| self.settle_on_disk(id, run_id, remote, free_on_disk))
+    }
+
+    fn settle_on_disk(
         &self,
         id: DownloadId,
         run_id: u64,
@@ -132,7 +165,7 @@ impl Manager {
         };
 
         let first = naming::candidate(&dir, &name, 0);
-        self.stop_for_duplicate(id, run_id, remote, &first, &provisional)?;
+        self.stop_for_duplicate(id, run_id, remote, &first)?;
 
         // The disk is checked without the lock, which a folder that is slow to
         // answer (an unreachable network share) would otherwise keep from every
@@ -148,18 +181,17 @@ impl Manager {
                 // The download's own provisional path is its to keep.
                 if naming::same_path(&candidate, &provisional) {
                     false
-                } else if state.claimed.contains(&candidate) {
-                    continue;
-                } else {
-                    state.claimed.reserve(&candidate);
+                } else if state.claimed.reserve(&candidate, id) {
                     true
+                } else {
+                    continue;
                 }
             };
             if free_on_disk(&candidate) {
                 break (candidate, claimed_here);
             }
             if claimed_here {
-                self.lock().claimed.release(&candidate);
+                self.lock().claimed.release(&candidate, id);
             }
         };
 
@@ -168,26 +200,39 @@ impl Manager {
         // The run may have been stopped while the disk was checked.
         if let Err(reason) = current_run(state, id, run_id) {
             if claimed_here {
-                state.claimed.release(&path);
+                state.claimed.release(&path, id);
             }
             return Err(reason);
         }
         if !naming::same_path(&path, &provisional) {
-            state.claimed.remove(&provisional);
+            state.claimed.remove(&provisional, id);
         }
         let Some(entry) = state.downloads.get_mut(&id) else {
-            state.claimed.release(&path);
+            state.claimed.release(&path, id);
             return Err(REMOVED.into());
         };
-        state.claimed.settle(&path);
+        state.claimed.insert(&path, id);
         entry.row.path = path.to_string_lossy().into_owned();
         entry.row.file_name = naming::file_name_of(&path);
         entry.row.category = category;
         entry.naming.settled = true;
+        entry.naming.writing = true;
         entry.expect = None;
         entry.video_check = false;
         self.save(state, id);
         Ok(path)
+    }
+}
+
+impl Manager {
+    /// A media run of download `id` is about to put its finished file in place.
+    pub(super) fn begin_placing(&self, id: DownloadId) {
+        let mut guard = self.lock();
+        let state = &mut *guard;
+        if let Some(entry) = state.downloads.get_mut(&id) {
+            entry.naming.writing = true;
+            self.save(state, id);
+        }
     }
 }
 
@@ -208,16 +253,18 @@ impl Manager {
         run_id: u64,
         remote: &ServerAnswer,
         path: &Path,
-        provisional: &Path,
     ) -> Result<(), String> {
-        let Some(found) = self.found_existing(id, remote, path, provisional) else {
+        let Some(found) = self.found_existing(id, remote, path) else {
             return Ok(());
         };
         let mut state = self.lock();
         current_run(&state, id, run_id)?;
-        if let Some(run) = state.downloads.get_mut(&id).and_then(|e| e.run.as_mut()) {
-            run.stop = Some(Stop::FileExists);
-            run.found = Some(found);
+        if let Some(entry) = state.downloads.get_mut(&id) {
+            entry.offered_file = true;
+            if let Some(run) = entry.run.as_mut() {
+                run.stop = Some(Stop::FileExists);
+                run.found = Some(found);
+            }
         }
         Err(FILE_EXISTS.into())
     }
@@ -245,6 +292,14 @@ impl Manager {
             run.stop = Some(Stop::ReadAsVideo);
         }
         Ok(true)
+    }
+}
+
+/// Runs `work`, which blocks on the disk, where a folder that does not answer (an unreachable share) stalls only the caller. The engine calls its resolver on the download's task and waits for the path, so `spawn_blocking` would not free the task; `block_in_place` frees the worker's other tasks. It panics on a current-thread runtime, which has no other worker to hand them to.
+fn off_async_worker<T>(work: impl FnOnce() -> T) -> T {
+    match tokio::runtime::Handle::try_current().map(|handle| handle.runtime_flavor()) {
+        Ok(tokio::runtime::RuntimeFlavor::MultiThread) => tokio::task::block_in_place(work),
+        _ => work(),
     }
 }
 

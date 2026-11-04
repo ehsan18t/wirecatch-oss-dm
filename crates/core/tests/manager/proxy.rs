@@ -369,12 +369,16 @@ async fn a_test_uses_the_draft_and_the_saved_password_and_is_kept_when_saved() -
     assert_eq!(tested.result, ProxyTestResult::Works);
 
     // A saved profile's draft keeps its password, and its result is kept as its last test.
+    h.clock.advance(chrono::TimeDelta::hours(1));
     assert_eq!(
         h.manager
             .test_proxy_server(Some(id), draft(settings, None))
             .await?,
         ProxyTestResult::Works
     );
+    let kept = h.manager.list_proxy_servers()[0].last_test.clone().unwrap();
+    assert_eq!(kept.result, ProxyTestResult::Works);
+    assert_ne!(kept.at, tested.at, "the second test's result was not kept");
     Ok(())
 }
 
