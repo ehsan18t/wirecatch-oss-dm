@@ -21,6 +21,7 @@ use wirecatch_shell::api;
 use wirecatch_core::Manager;
 
 use crate::backend::Backend;
+use crate::files;
 use crate::library::Library;
 use crate::ui::{Callout, Role, Typed as _};
 
@@ -141,7 +142,7 @@ impl BackupForm {
         let picked =
             cx.prompt_for_new_path(&folder, Some(&format!("{PRODUCT_SLUG}-settings.json")));
         self.run(window, cx, move |manager| async move {
-            let Ok(Ok(Some(path))) = picked.await else {
+            let Some(path) = files::chooser_answer(picked.await)? else {
                 return Ok(None);
             };
             let path = api::path_text(&path)?;
@@ -158,7 +159,7 @@ impl BackupForm {
             prompt: Some("Import".into()),
         });
         self.run(window, cx, move |manager| async move {
-            let Ok(Ok(Some(paths))) = picked.await else {
+            let Some(paths) = files::chooser_answer(picked.await)? else {
                 return Ok(None);
             };
             let Some(path) = paths.first() else {

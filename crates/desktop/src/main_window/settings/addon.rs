@@ -13,7 +13,7 @@ use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState};
 use wirecatch_shell::activity::format_bytes;
 use wirecatch_shell::api;
 
-use crate::backend::command;
+use crate::backend::{command, command_saying};
 use crate::library::Library;
 use crate::ui::{Role, Typed as _};
 
@@ -124,6 +124,15 @@ fn standing(addon: &AddonInfo, cx: &App) -> impl IntoElement {
 }
 
 /// The add-on's buttons, its main one first and Remove last.
+/// What Check for updates says when add-on `id` has none; a new version shows on its own row.
+fn nothing_to_update(addons: &[AddonInfo], id: AddonId) -> Option<String> {
+    addons
+        .iter()
+        .find(|addon| addon.id == id)
+        .filter(|addon| addon.state == AddonState::Installed)
+        .map(|addon| format!("{} is up to date.", addon.name))
+}
+
 fn buttons(addon: &AddonInfo, cx: &App) -> Vec<Button> {
     let id = addon.id;
     let mut buttons: Vec<Button> = main_button(addon).into_iter().collect();
@@ -133,10 +142,13 @@ fn buttons(addon: &AddonInfo, cx: &App) -> Vec<Button> {
                 .small()
                 .outline()
                 .label("Check for updates")
-                .on_click(|_, window, cx| {
-                    command(window.window_handle(), cx, |manager| async move {
-                        api::check_addon_updates(&manager).await.map(|_| ())
-                    });
+                .on_click(move |_, window, cx| {
+                    command_saying(
+                        window.window_handle(),
+                        cx,
+                        |manager| async move { api::check_addon_updates(&manager).await },
+                        move |addons| nothing_to_update(&addons, id),
+                    );
                 }),
         );
     }
