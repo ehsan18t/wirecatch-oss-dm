@@ -130,6 +130,15 @@ pub struct Applicable {
 }
 
 impl Applicable {
+    /// Retrying `named`, in the words of [`Self::retry_word`].
+    pub fn retry_phrase(&self, named: &str) -> String {
+        if self.retry_word == START_OVER {
+            format!("Start {named} over")
+        } else {
+            format!("Try {named} again")
+        }
+    }
+
     pub fn to(rows: &[&DownloadSummary]) -> Self {
         Self {
             pause: rows.iter().any(|r| can_pause(r)),
@@ -148,6 +157,67 @@ impl Applicable {
 mod tests {
     use super::*;
     use wirecatch_test_support::downloads::download;
+
+    #[test]
+    fn a_row_offers_exactly_what_the_rules_allow() {
+        for status in [
+            DownloadStatus::Queued,
+            DownloadStatus::Connecting,
+            DownloadStatus::Downloading,
+            DownloadStatus::Processing,
+            DownloadStatus::Paused,
+            DownloadStatus::Completed,
+            DownloadStatus::Failed,
+            DownloadStatus::Cancelled,
+        ] {
+            let row = DownloadSummary {
+                status,
+                ..download(1)
+            };
+            let offers = |wanted: fn(&RowAction) -> bool| {
+                RowAction::offered(status)
+                    .iter()
+                    .any(|(action, ..)| wanted(action))
+            };
+            assert_eq!(
+                offers(|a| matches!(a, RowAction::Pause)),
+                can_pause(&row),
+                "{status:?}"
+            );
+            assert_eq!(
+                offers(|a| matches!(a, RowAction::Resume)),
+                can_resume(&row),
+                "{status:?}"
+            );
+            assert_eq!(
+                offers(|a| matches!(a, RowAction::Retry)),
+                can_retry(&row),
+                "{status:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn retrying_a_named_download_uses_the_same_words() {
+        let (failed, cancelled) = (
+            DownloadSummary {
+                status: DownloadStatus::Failed,
+                ..download(1)
+            },
+            DownloadSummary {
+                status: DownloadStatus::Cancelled,
+                ..download(2)
+            },
+        );
+        assert_eq!(
+            Applicable::to(&[&failed]).retry_phrase("it"),
+            "Try it again"
+        );
+        assert_eq!(
+            Applicable::to(&[&cancelled]).retry_phrase("it"),
+            "Start it over"
+        );
+    }
 
     #[test]
     fn every_place_calls_retrying_a_cancelled_download_the_same() {
