@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use wirecatch_streams::{Error, Outcome, Role};
+use wirecatch_streams::{Error, InputFormat, Outcome, Role, extension, ffmpeg_input_args};
 use wirecatch_test_support::files::FileServer;
 use wirecatch_test_support::{PrivateDir, TestResult, private_dir, real_ffmpeg, ts_segment};
 
@@ -471,6 +471,64 @@ async fn real_ffmpeg_never_sees_a_page_in_place_of_a_segment() -> TestResult {
             matches!(got, Err(Error::NotMedia { .. })),
             "{segment}: {got:?}"
         );
+/// Every extension a saved file may have is recognised as the format the list names, and a real ffmpeg reads such a file with that format's demuxer, the only one it is allowed.
+#[test]
+fn real_ffmpeg_reads_every_media_extension_as_the_format_listed() -> TestResult {
+    const VIDEO: &[&str] = &["-f", "lavfi", "-i", "testsrc=duration=1:size=64x48:rate=5"];
+    const AUDIO: &[&str] = &["-f", "lavfi", "-i", "sine=duration=1"];
+    let Some(ffmpeg) = real_ffmpeg() else {
+        return Ok(());
+    };
+    let samples: [(&str, &[&str], &[&str]); 18] = [
+        ("mp4", VIDEO, &["-c:v", "mpeg4"]),
+        ("m4v", VIDEO, &["-c:v", "mpeg4", "-f", "mp4"]),
+        ("mkv", VIDEO, &["-c:v", "mpeg4"]),
+        ("mka", AUDIO, &["-c:a", "aac"]),
+        ("webm", VIDEO, &["-c:v", "libvpx", "-b:v", "100k"]),
+        ("mov", VIDEO, &["-c:v", "mpeg4"]),
+        ("ts", VIDEO, &["-c:v", "mpeg4"]),
+        (
+            "m2ts",
+            VIDEO,
+            &["-c:v", "mpeg4", "-f", "mpegts", "-mpegts_m2ts_mode", "1"],
+        ),
+        ("mp3", AUDIO, &["-c:a", "libmp3lame"]),
+        ("m4a", AUDIO, &["-c:a", "aac"]),
+        ("aac", AUDIO, &["-c:a", "aac", "-f", "adts"]),
+        ("opus", AUDIO, &["-c:a", "libopus"]),
+        ("ogg", AUDIO, &["-c:a", "libvorbis"]),
+        ("flac", AUDIO, &["-c:a", "flac"]),
+        ("wav", AUDIO, &["-c:a", "pcm_s16le"]),
+        (
+            "3gp",
+            VIDEO,
+            &["-c:v", "h263", "-s", "176x144", "-f", "3gp"],
+        ),
+        ("flv", VIDEO, &["-c:v", "flv1"]),
+        ("avi", VIDEO, &["-c:v", "mpeg4"]),
+    ];
+    let dir = private_dir("every-media-extension")?;
+    for (ext, input, output) in samples {
+        let listed = extension::read_as(ext).ok_or(format!("{ext} is not listed"))?;
+        let file = dir.join(format!("sample.{ext}"));
+        let made = Command::new(&ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error", "-y"])
+            .args(input)
+            .args(output)
+            .arg(&file)
+            .status()?;
+        // Some builds of ffmpeg leave out an encoder; the sample then says nothing.
+        if !made.success() {
+            eprintln!("skipped {ext}: this ffmpeg could not make a sample");
+            continue;
+        }
+        assert_eq!(InputFormat::detect(&file)?, Some(listed), "{ext}");
+        let read = Command::new(&ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error"])
+            .args(ffmpeg_input_args(listed, &file)?)
+            .args(["-c", "copy", "-f", "null", "-"])
+            .status()?;
+        assert!(read.success(), "{ext}");
     }
     Ok(())
 }
