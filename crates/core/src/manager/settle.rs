@@ -100,6 +100,16 @@ impl Manager {
         remote: &ServerAnswer,
         free_on_disk: &dyn Fn(&Path) -> bool,
     ) -> Result<PathBuf, String> {
+        off_async_worker(|| self.settle_on_disk(id, run_id, remote, free_on_disk))
+    }
+
+    fn settle_on_disk(
+        &self,
+        id: DownloadId,
+        run_id: u64,
+        remote: &ServerAnswer,
+        free_on_disk: &dyn Fn(&Path) -> bool,
+    ) -> Result<PathBuf, String> {
         if self.read_as_video(id, run_id, remote)? {
             return Err(READ_AS_VIDEO.into());
         }
@@ -243,6 +253,14 @@ impl Manager {
             run.stop = Some(Stop::ReadAsVideo);
         }
         Ok(true)
+    }
+}
+
+/// Runs `work`, which blocks on the disk, where a folder that does not answer (an unreachable share) stalls only the caller. The engine calls its resolver on the download's task and waits for the path, so `spawn_blocking` would not free the task; `block_in_place` frees the worker's other tasks. It panics on a current-thread runtime, which has no other worker to hand them to.
+fn off_async_worker<T>(work: impl FnOnce() -> T) -> T {
+    match tokio::runtime::Handle::try_current().map(|handle| handle.runtime_flavor()) {
+        Ok(tokio::runtime::RuntimeFlavor::MultiThread) => tokio::task::block_in_place(work),
+        _ => work(),
     }
 }
 
