@@ -640,7 +640,7 @@ fn status_line(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement
 /// The full link, its host brighter; a click copies it, and hovering shows it whole.
 fn link_line(row: &DownloadSummary, cx: &App) -> AnyElement {
     let theme = cx.theme();
-    let link = text::link_for_display(&row.url);
+    let link = row.url.clone();
     let (scheme, rest) = link
         .split_once("://")
         .map_or(("", link.as_str()), |(scheme, rest)| (scheme, rest));

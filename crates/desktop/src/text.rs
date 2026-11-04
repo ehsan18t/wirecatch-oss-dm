@@ -493,22 +493,6 @@ fn split_seconds(time: &str) -> (String, String) {
     (time[..at].to_owned(), time[at..].to_owned())
 }
 
-/// A link as it may be shown or copied: a password in it becomes `***`, and a user name without
-/// one too, since some sites put a token there.
-pub fn link_for_display(url: &str) -> String {
-    let Some((scheme, rest)) = url.split_once("://") else {
-        return url.to_owned();
-    };
-    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let Some(at) = rest[..end].rfind('@') else {
-        return url.to_owned();
-    };
-    let masked = rest[..at]
-        .split_once(':')
-        .map_or_else(|| "***".to_owned(), |(name, _)| format!("{name}:***"));
-    format!("{scheme}://{masked}{}", &rest[at..])
-}
-
 /// The host of a link, for the line under a running download's name.
 pub fn host(url: &str) -> &str {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
@@ -737,22 +721,6 @@ mod tests {
             [
                 "1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "101st"
             ]
-        );
-    }
-
-    #[test]
-    fn a_password_in_a_link_is_never_shown() {
-        assert_eq!(
-            link_for_display("https://ada:secret@example.com/a"),
-            "https://ada:***@example.com/a"
-        );
-        assert_eq!(
-            link_for_display("https://token@example.com/a@b"),
-            "https://***@example.com/a@b"
-        );
-        assert_eq!(
-            link_for_display("https://example.com/a"),
-            "https://example.com/a"
         );
     }
 
