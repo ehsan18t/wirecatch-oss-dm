@@ -38,7 +38,7 @@ function onSite(host: string, site: string): boolean {
 export function videoSiteFor(url: string | null, added: readonly string[] = []): string | null {
   const page = webPage(url);
   if (page === null) return null;
-  const host = page.hostname.toLowerCase();
+  const host = page.hostname.toLowerCase().replace(/\.+$/u, '');
   const path = page.pathname;
   const listed = VIDEO_SITES.find(
     (site) =>

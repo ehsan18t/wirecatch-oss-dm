@@ -7,6 +7,7 @@ use regex::Regex;
 use serde::Deserialize;
 use url::Url;
 use wirecatch_protocol::extension::normalize_site;
+use wirecatch_protocol::hosts::host_on_site;
 
 const LIST: &str = include_str!("../../../packages/protocol/src/video-sites.json");
 
@@ -68,10 +69,10 @@ pub fn video_site_for(url: &str, added: &[String]) -> Option<String> {
     let page = Url::parse(url)
         .ok()
         .filter(|page| matches!(page.scheme(), "http" | "https"))?;
-    let host = page.host_str()?.to_ascii_lowercase();
+    let host = page.host_str()?;
     let path = page.path();
     let listed = SITES.iter().find(|site| {
-        site.hosts.iter().any(|on| on_site(&host, on))
+        site.hosts.iter().any(|on| host_on_site(host, on))
             && site
                 .path
                 .as_ref()
@@ -86,13 +87,7 @@ pub fn video_site_for(url: &str, added: &[String]) -> Option<String> {
     added
         .iter()
         .filter_map(|site| normalize_site(site))
-        .find(|site| on_site(&host, site))
-}
-
-/// Whether `host` is `site` or one of its subdomains.
-fn on_site(host: &str, site: &str) -> bool {
-    host.strip_suffix(site)
-        .is_some_and(|rest| rest.is_empty() || rest.ends_with('.'))
+        .find(|site| host_on_site(host, site))
 }
 
 #[cfg(test)]
