@@ -79,7 +79,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 18. A lower-integrity program can stand in for the app and receive downloads' cookies (open)
 19. A DASH template can ask for an address of hundreds of gigabytes and abort the app (open)
 20. A failed flush while saving progress is forgotten (open)
-21. An expired redirect target fails a download whose link still works (open)
+21. An expired redirect target fails a download whose link still works (fixed)
 22. One unreadable value in the list stops the app opening at every start (open)
 23. Sources are offered that ffmpeg then refuses after the whole download (open)
 24. A video format that needs cookies always fails when the engine fetches it (open)
