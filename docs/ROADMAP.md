@@ -62,7 +62,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 1. Two downloads can end up writing the same file (fixed)
 2. Removing a finished download can delete a whole folder (fixed)
 3. A cut-off download of unknown size is reported as complete (fixed)
-4. A restart can mark a download finished on a file it never downloaded (open)
+4. A restart can mark a download finished on a file it never downloaded (fixed)
 5. A browser download that meets Ask is dropped and goes back to the browser (open)
 6. An inherited APPIMAGE variable can make the app overwrite or start another program (fixed)
 7. The app never looks for updates, and every proxy test fails (fixed)
