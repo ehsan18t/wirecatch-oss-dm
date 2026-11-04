@@ -307,7 +307,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 242. Two test helpers wait for progress with no deadline (open)
 243. A roaming data folder that could not be deleted keeps the list with its cookies (fixed)
 244. The `<local>` queue rule is never tested against the real network check (fixed)
-245. A crash can save a download twice under a second name (open)
+245. A crash can save a download twice under a second name (fixed)
 246. A killed copy leaves its temporary file behind (open)
 247. Test comments carry history and review labels (fixed)
 248. Nothing stops new code deleting a whole folder (fixed)
