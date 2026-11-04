@@ -326,22 +326,7 @@ fn queue_facts(queue: &Queue) -> Vec<String> {
     if settings.notify == QueueNotify::WhenDone {
         facts.push("Notifies you when the queue is done".to_owned());
     }
-    let own = [
-        settings
-            .max_concurrent
-            .own()
-            .map(|n| format!("{n} at once")),
-        settings
-            .speed_limit
-            .own()
-            .map(|bytes| format!("Up to {}", text::speed(bytes))),
-        settings.connections.own().map(|n| {
-            format!(
-                "{n} {} each",
-                if n == 1 { "connection" } else { "connections" }
-            )
-        }),
-    ];
+    let own = text::own_limits(settings);
     let follows = own.iter().any(Option::is_none);
     let own: Vec<String> = own.into_iter().flatten().collect();
     if own.is_empty() {

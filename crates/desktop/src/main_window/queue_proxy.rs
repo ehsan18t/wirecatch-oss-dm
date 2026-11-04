@@ -19,6 +19,7 @@ use wirecatch_protocol::proxy::{ProxySettings, ProxyUse, QueueExceptions};
 
 use super::proxy_dialog;
 use crate::library::{Library, Revisions};
+use crate::text;
 use crate::ui::{Field, Role, Typed as _, choice};
 
 /// How the hosts that skip the proxy are typed, in Settings and in a queue's proxy.
@@ -132,15 +133,7 @@ impl ProxyForm {
         match &self.exceptions {
             Setting::Global => Setting::Global,
             Setting::Own(own) => Setting::Own(QueueExceptions {
-                hosts: self
-                    .hosts
-                    .read(cx)
-                    .value()
-                    .lines()
-                    .map(str::trim)
-                    .filter(|line| !line.is_empty())
-                    .map(str::to_owned)
-                    .collect(),
+                hosts: text::filled_lines(&self.hosts.read(cx).value()),
                 ..own.clone()
             }),
         }

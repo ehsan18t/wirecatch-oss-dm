@@ -40,7 +40,7 @@ use wirecatch_shell::download_windows::{Shows, fitted_height};
 
 use super::media_form::{MediaAnswer, MediaForm};
 use super::run_record::{Look, RunRecord};
-use crate::backend::{Backend, act};
+use crate::backend::{Backend, act, said};
 use crate::library::Library;
 use crate::ui::small_title_bar::small_title_bar;
 use crate::ui::speed_graph::run_graph;
@@ -238,10 +238,8 @@ impl DownloadWindow {
         cx.notify();
         let done = Backend::run(cx, work);
         cx.spawn(async move |view, cx| {
-            let answer = match done.await {
-                Ok(Ok(answer)) => answer.map_err(|e| e.message),
-                Ok(Err(unopened)) => Err(unopened.reason.message),
-                Err(_) => return,
+            let Some(answer) = said(done.await) else {
+                return;
             };
             _ = view.update(cx, |view, cx| {
                 view.busy = false;
@@ -1365,11 +1363,10 @@ impl DownloadWindow {
             move |m| async move { api::install_addon(&m, addon).await },
         );
         cx.spawn(async move |view, cx| {
-            let refused = match started.await {
-                Ok(Ok(Ok(()))) => return,
-                Ok(Ok(Err(error))) => error.message,
-                Ok(Err(unopened)) => unopened.reason.message,
-                Err(e) => format!("The install stopped unexpectedly ({e})."),
+            let refused = match said(started.await) {
+                Some(Ok(())) => return,
+                Some(Err(message)) => message,
+                None => "The install stopped unexpectedly.".to_owned(),
             };
             _ = view.update(cx, |view: &mut Self, cx| {
                 view.addon_asked = None;

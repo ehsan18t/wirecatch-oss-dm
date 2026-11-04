@@ -15,12 +15,12 @@ use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::activity::Activity;
 use wirecatch_shell::api::{self, Reveal, ToOpen};
 use wirecatch_shell::browser_notices::{self, BrowserNotices};
-use wirecatch_shell::host::{self, Unopened};
+use wirecatch_shell::host;
 use wirecatch_shell::notifications::{self, Act, Notification};
 use wirecatch_shell::system_notifications::{Identity, Notifier};
 use wirecatch_shell::teller::{self, Tell, Teller, Telling};
 
-use crate::backend::Backend;
+use crate::backend::{Backend, answer};
 use crate::files;
 use crate::library::Asked;
 use crate::main_window;
@@ -298,20 +298,6 @@ fn carry_out(act: Act, cx: &mut App) {
                 }
             })
             .detach();
-        }
-    }
-}
-
-/// What the manager answered; `None` when the work stopped before it could.
-fn answer<T>(
-    done: Result<Result<Result<T, ProtocolError>, Unopened>, tokio::task::JoinError>,
-) -> Option<Result<T, ProtocolError>> {
-    match done {
-        Ok(Ok(answered)) => Some(answered),
-        Ok(Err(unopened)) => Some(Err(unopened.reason)),
-        Err(e) => {
-            tracing::error!("a notification's button stopped unexpectedly: {e}");
-            None
         }
     }
 }

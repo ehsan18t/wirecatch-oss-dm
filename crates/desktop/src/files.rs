@@ -12,7 +12,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::api::{self, ProgramWarning, Reveal, ToOpen};
 
-use crate::backend::Backend;
+use crate::backend::{Backend, answer};
 
 const CHOOSER_FAILED: &str = if cfg!(target_os = "linux") {
     "The file chooser could not open. Install xdg-desktop-portal with the portal for your desktop, then try again."
@@ -74,10 +74,8 @@ pub fn open(id: DownloadId, window: &mut Window, cx: &mut App) {
     });
     window
         .spawn(cx, async move |cx| {
-            let opened = match found.await {
-                Ok(Ok(opened)) => opened,
-                Ok(Err(unopened)) => Err(unopened.reason),
-                Err(_) => return,
+            let Some(opened) = answer(found.await) else {
+                return;
             };
             _ = cx.update(|window, cx| match opened {
                 Ok(ToOpen::File(path)) => cx.open_with_system(&path),
@@ -114,10 +112,8 @@ pub fn show_in_folder(id: DownloadId, window: &mut Window, cx: &mut App) {
     });
     window
         .spawn(cx, async move |cx| {
-            let shown = match found.await {
-                Ok(Ok(shown)) => shown,
-                Ok(Err(unopened)) => Err(unopened.reason),
-                Err(_) => return,
+            let Some(shown) = answer(found.await) else {
+                return;
             };
             _ = cx.update(|window, cx| match shown {
                 Ok(Reveal::File(path)) => cx.reveal_path(&path),
