@@ -1449,8 +1449,6 @@ mod tests {
         );
     }
 
-    /// Opens the pipe from a thread running as the current user but at low
-    /// integrity, like a sandboxed browser process, and returns the open client end.
     /// Runs `work` on a thread of its own as the current user at low integrity.
     fn at_low_integrity<T: Send>(work: impl FnOnce() -> T + Send) -> T {
         std::thread::scope(|scope| {
@@ -1511,7 +1509,7 @@ mod tests {
         })
     }
 
-    /// Opens at the identification level, as the connector does.
+    /// Opens the pipe from a thread running as the current user but at low integrity, like a sandboxed browser process, and returns the open client end. Opens at the identification level, as the connector does.
     fn open_at_low_integrity(endpoint: &Endpoint, access: u32) -> Result<OwnedHandle, u32> {
         let name = wide(endpoint.as_os_str());
         at_low_integrity(|| {
