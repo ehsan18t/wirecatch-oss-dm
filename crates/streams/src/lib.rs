@@ -105,7 +105,7 @@ mod workdir;
 
 pub use download::download;
 pub use error::{DrmSystem, Error, Feature, KeyProblem, ManifestError, Result};
-pub use ffmpeg::{InputFormat, ffmpeg_input_args};
+pub use ffmpeg::{InputFormat, ffmpeg_input_args, holds_no_media};
 pub use model::{
     AudioTrack, Choice, Outcome, Role, Stage, StreamInfo, StreamKind, StreamProgress,
     StreamRequest, SubtitleTrack, VideoTrack,

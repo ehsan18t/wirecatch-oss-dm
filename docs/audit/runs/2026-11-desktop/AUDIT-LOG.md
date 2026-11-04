@@ -25,7 +25,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 
 | #   | Item                                                                                              | Findings                                                                                           | Severity | Effort | Why here                                                                                                         | Proof                                         | Status |
 | --- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ------ |
-| 1   | Two downloads can end up writing the same file                                                    | `05-1` `Xconcurrency-1` `05-13` `Xconcurrency-9` `B01-3`                                           | P0       | large  | P0 with the most findings; reshapes the path claims that later file-exists fixes sit on                          | `05-1` `Xconcurrency-1`                       | open   |
+| 1   | Two downloads can end up writing the same file                                                    | `05-1` `Xconcurrency-1` `05-13` `Xconcurrency-9` `B01-3`                                           | P0       | large  | P0 with the most findings; reshapes the path claims that later file-exists fixes sit on                          | `05-1` `Xconcurrency-1`                       | fixed  |
 | 2   | Removing a finished download can delete a whole folder                                            | `Xsecurity-path-handling-1` `04-8`                                                                 | P0       | small  | P0, permanent loss from one click; depends on nothing                                                            | `Xsecurity-path-handling-1`                   | fixed  |
 | 3   | A cut-off download of unknown size is reported as complete                                        | `Xsecond-review-disk-writes-2`                                                                     | P0       | small  | P0, silent cut file on ordinary conditions; depends on nothing                                                   | `Xsecond-review-disk-writes-2`                | fixed  |
 | 4   | A restart can mark a download finished on a file it never downloaded                              | `04-1` `Xcrash-and-resume-1` `Xsecond-review-resume-1` `B02-2`                                     | P1       | medium | P1 that reshapes what a saved row records, which several later items use                                         | `04-1`                                        | open   |
@@ -40,15 +40,15 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 13  | Replace on a file with another extension downloads everything again and strands the old folder    | `17-2` `Xpath-media-download-5`                                                                    | P2       | medium | P2 placed early: it strands the folders that the next item trusts                                                | `17-2`                                        | open   |
 | 14  | A new media download can save another download's video                                            | `17-1` `Xsecond-review-resume-2` `Xpath-media-download-6`                                          | P1       | medium | P1, 3 findings, medium; after item 13                                                                            | `17-1`                                        | open   |
 | 15  | Typing a space in search pauses downloads, and Enter can open a file                              | `25-1` `B13-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `25-1`                                        | open   |
-| 16  | A very large HLS playlist freezes inspection for minutes to hours                                 | `14-2` `B08-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `14-2`                                        | open   |
-| 17  | A video with a web page or nothing in place of a segment is reported as complete                  | `15-1` `B06-1`                                                                                     | P1       | medium | P1, 2 findings, medium                                                                                           | `15-1`                                        | open   |
+| 16  | A very large HLS playlist freezes inspection for minutes to hours                                 | `14-2` `B08-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `14-2`                                        | fixed  |
+| 17  | A video with a web page or nothing in place of a segment is reported as complete                  | `15-1` `B06-1`                                                                                     | P1       | medium | P1, 2 findings, medium                                                                                           | `15-1`                                        | fixed  |
 | 18  | A lower-integrity program can stand in for the app and receive downloads' cookies                 | `08-1` `08-2`                                                                                      | P1       | medium | P1, 2 findings, medium                                                                                           | `08-1` `B04-p2-checks`                        | open   |
-| 19  | A DASH template can ask for an address of hundreds of gigabytes and abort the app                 | `14-1`                                                                                             | P1       | small  | P1, 1 finding, small                                                                                             | `14-1`                                        | open   |
+| 19  | A DASH template can ask for an address of hundreds of gigabytes and abort the app                 | `14-1`                                                                                             | P1       | small  | P1, 1 finding, small                                                                                             | `14-1`                                        | fixed  |
 | 20  | A failed flush while saving progress is forgotten                                                 | `Xsecond-review-disk-writes-1`                                                                     | P1       | small  | P1, 1 finding, small                                                                                             | `Xsecond-review-disk-writes-1`                | open   |
-| 21  | An expired redirect target fails a download whose link still works                                | `02-1`                                                                                             | P1       | small  | P1, 1 finding, small                                                                                             | `02-1`                                        | open   |
+| 21  | An expired redirect target fails a download whose link still works                                | `02-1`                                                                                             | P1       | small  | P1, 1 finding, small                                                                                             | `02-1`                                        | fixed  |
 | 22  | One unreadable value in the list stops the app opening at every start                             | `03-1`                                                                                             | P1       | medium | P1, 1 finding, medium                                                                                            | `03-1`                                        | open   |
 | 23  | Sources are offered that ffmpeg then refuses after the whole download                             | `Xpath-media-download-1`                                                                           | P1       | medium | P1, 1 finding, medium                                                                                            | `Xpath-media-download-1`                      | open   |
-| 24  | A video format that needs cookies always fails when the engine fetches it                         | `Xpath-media-download-2`                                                                           | P1       | medium | P1, 1 finding, medium                                                                                            | `Xpath-media-download-2`                      | open   |
+| 24  | A video format that needs cookies always fails when the engine fetches it                         | `Xpath-media-download-2`                                                                           | P1       | medium | P1, 1 finding, medium                                                                                            | `Xpath-media-download-2`                      | fixed  |
 | 25  | The could-not-save banner is wrong both ways, and its Try again saves nothing                     | `03-4` `23-10` `25-2` `Xfeature-behaviour-3` `03-8`                                                | P2       | medium | P2, 5 findings, medium                                                                                           | `25-2`                                        | open   |
 | 26  | Settings, queues and proxies that cannot be read are silently replaced                            | `03-2` `04-6` `B09-1` `B09-2`                                                                      | P2       | medium | P2, 4 findings, medium                                                                                           | none                                          | open   |
 | 27  | A removal under way at quit comes back, and a capture is downloaded twice                         | `04-5` `Xconcurrency-2` `Xshutdown-2` `B02-3`                                                      | P2       | medium | P2, 4 findings, medium                                                                                           | `Xconcurrency-2` `Xshutdown-2`                | open   |
@@ -116,7 +116,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 89  | A resume file is rewritten every second even when nothing changed                                 | `01-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 90  | A valid short partial answer is waited out as a failed connection                                 | `F-2`                                                                                              | P2       | small  | P2, 1 finding, small                                                                                             | `FT-sizes`                                    | open   |
 | 91  | CLI speed and ETA are wrong for half a minute after a resume                                      | `32-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 92  | A command-line argument that is not valid Unicode aborts the app                                  | `22-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 92  | A command-line argument that is not valid Unicode aborts the app                                  | `22-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 93  | Uninstalling while the app runs leaves its program behind                                         | `29-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 94  | The AppImage's library folder leaks into programs the app starts                                  | `29-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 95  | A video's title is cut at its last slash                                                          | `16-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | open   |
@@ -154,8 +154,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 127 | Settings, Media shows an empty Resolution after a rarer quality                                   | `27-6`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 128 | The Add dialog says By file type for downloads going to a queue's folder                          | `Xpath-normal-download-7`                                                                          | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 129 | scripts/linux-test.sh can never pass                                                              | `33-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 130 | A second running copy of one CLI download takes over the first one's files                        | `01-2`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | open   |
-| 131 | A launch handed over while the list is opening pops a box and loses links                         | `22-3`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | open   |
+| 130 | A second running copy of one CLI download takes over the first one's files                        | `01-2`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
+| 131 | A launch handed over while the list is opening pops a box and loses links                         | `22-3`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 132 | A typed extension picks a container ffmpeg refuses, with no way out                               | `Xpath-media-download-7`                                                                           | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | open   |
 | 133 | A stream whose placing fails is downloaded again                                                  | `Xpath-media-download-11`                                                                          | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | open   |
 | 134 | A saved format the page no longer lists can never succeed                                         | `Xpath-media-download-9`                                                                           | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | open   |
@@ -274,7 +274,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 
 ### 1. Two downloads can end up writing the same file
 
-P0, large, open.
+P0, large, fixed.
 
 `Claimed` is a set of paths with no owner: an open question holds no claim on the path it asks about, and `replace_at` inserts without looking. So two same-named links, a file already there and Replace on both put two downloads on one part file. The first row then reads Completed with none of its own bytes in the file, and the second fails with a misleading folder error. The same missing owner lets a finished row give up a claim another download holds, and leaves two finished rows on one path, where moving or deleting through one strands the other.
 
@@ -548,7 +548,7 @@ The `space` and `enter` bindings sit on the window root, so they reach a focused
 
 ### 16. A very large HLS playlist freezes inspection for minutes to hours
 
-P1, small, open.
+P1, small, fixed.
 
 `auto_picks` has no await and calls `select` for each quality, and its lookups are linear, so the work is quadratic with no limit on HLS qualities. A 2 MiB playlist took 375 s, and the largest size projects to at least 100 minutes on a runtime thread the cancel token cannot reach. Listing the qualities afterwards repeats the cost (`B08-1`), and that many offers go on to the window.
 
@@ -565,7 +565,7 @@ P1, small, open.
 
 ### 17. A video with a web page or nothing in place of a segment is reported as complete
 
-P1, medium, open.
+P1, medium, fixed.
 
 `fetch_piece` saves any 200 answer as a finished segment, and `ffmpeg::run` takes exit 0 as success. A web page in place of the middle of three 2-second segments gave Completed, with a 2-second MP4 or a 6-second MPEG-TS holding a hole. A page's single-format part goes the same way with no ffmpeg at all (`B06-1`).
 
@@ -599,7 +599,7 @@ P1, medium, open.
 
 ### 19. A DASH template can ask for an address of hundreds of gigabytes and abort the app
 
-P1, small, open.
+P1, small, fixed.
 
 `substitute_into` pushes the id for each `$RepresentationID$` with no limit, and `MAX_URL_LEN` is checked only on the finished text. A 1 MiB manifest held 258 MiB at reduced size, and the full form asks for about 977 GiB, past any machine's memory. The abort itself was not run and is inferred.
 
@@ -631,7 +631,7 @@ P1, small, open.
 
 ### 21. An expired redirect target fails a download whose link still works
 
-P1, small, open.
+P1, small, fixed.
 
 `RequestContext.url` is set once from `final_url` and kept for the whole run. When a signed redirect target expires mid-download, every retry asks that dead address and the download fails with 403, although the link the person gave would still give a working one. The part file stays, and a new run recovers.
 
@@ -681,7 +681,7 @@ The offer layer lists sources `InputFormat` refuses. A FLAC offered as MP3 downl
 
 ### 24. A video format that needs cookies always fails when the engine fetches it
 
-P1, medium, open.
+P1, medium, fixed.
 
 `Info` and `Format` do not read a format's `cookies`, which real yt-dlp returns outside `http_headers`, and `part_options` keeps the page's cookies off the engine on purpose. So a cookie-gated format gets four refused requests and the row ends "kept refusing", though yt-dlp itself saved the file.
 
@@ -1864,7 +1864,7 @@ indicatif's estimator ignores a position of 0, so the first non-zero `set_positi
 
 ### 92. A command-line argument that is not valid Unicode aborts the app
 
-P2, small, open.
+P2, small, fixed.
 
 `std::env::args()` in `main` panics on an argument that is not valid Unicode, and the release profile aborts. The Linux entry's `Exec=... %U` does pass outside arguments. A running copy is not affected.
 
@@ -2474,7 +2474,7 @@ P2, small, open.
 
 ### 130. A second running copy of one CLI download takes over the first one's files
 
-P2, medium, open.
+P2, medium, fixed.
 
 `plan_in_folder` has no way to know a part file is in use, `discard` succeeds on an open file, and `finalize` opens by path. So two identical commands at once end with one renaming the other's file. Not run. `Xconcurrency-S1` suggests holding the part file exclusively.
 
@@ -2490,7 +2490,7 @@ P2, medium, open.
 
 ### 131. A launch handed over while the list is opening pops a box and loses links
 
-P2, medium, open.
+P2, medium, fixed.
 
 `Backend::start` serves only after `core.opened()` while the pipe already exists, so the hello waits out `ANSWER_WAIT`, and `main` shows its box on any error. A background start pops a modal box and links are lost. D103.4 did not consider a launch with nothing to hand over. Not run.
 
