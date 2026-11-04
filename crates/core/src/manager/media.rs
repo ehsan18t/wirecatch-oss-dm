@@ -1277,3 +1277,25 @@ fn title_from_url(url: &Url) -> String {
         stem.to_string()
     }
 }
+
+#[cfg(test)]
+mod title_tests {
+    use super::*;
+
+    #[test]
+    fn a_title_from_an_address_is_its_last_named_part_in_plain_words() {
+        let title = |url: &str| title_from_url(&Url::parse(url).unwrap());
+        assert_eq!(title("https://example.com/v/My%20clip.mp4"), "My clip");
+        assert_eq!(title("https://example.com/watch/live/"), "live");
+        assert_eq!(title("https://example.com/"), "example.com");
+    }
+
+    #[test]
+    fn only_a_media_extension_leaves_a_typed_name() {
+        assert_eq!(without_media_extension("holiday.mp4"), "holiday");
+        assert_eq!(without_media_extension("Vol. 2"), "Vol. 2");
+        assert_eq!(without_media_extension("Dr. Who"), "Dr. Who");
+        assert_eq!(without_media_extension("report.html"), "report.html");
+        assert_eq!(without_media_extension(".mp4"), ".mp4");
+    }
+}
