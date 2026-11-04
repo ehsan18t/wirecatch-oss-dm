@@ -31,6 +31,7 @@ use wirecatch_shell::api;
 use super::{MainWindow, Screen, sidebar};
 use crate::backend::act;
 use crate::library::Library;
+use crate::text;
 use crate::ui::{Role, Typed as _, tokens};
 
 impl MainWindow {
@@ -314,17 +315,8 @@ impl Typing {
 
     fn read(self, typed: &str) -> Vec<String> {
         match self {
-            Self::Lines => typed
-                .lines()
-                .map(str::trim)
-                .filter(|line| !line.is_empty())
-                .map(str::to_owned)
-                .collect(),
-            Self::Extensions => typed
-                .split([',', ';', ' ', '\n'])
-                .map(|typed| typed.trim().trim_start_matches('.').to_lowercase())
-                .filter(|extension| !extension.is_empty())
-                .collect(),
+            Self::Lines => text::filled_lines(typed),
+            Self::Extensions => text::typed_extensions(typed),
         }
     }
 }

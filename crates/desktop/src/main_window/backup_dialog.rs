@@ -20,7 +20,7 @@ use wirecatch_shell::api;
 
 use wirecatch_core::Manager;
 
-use crate::backend::Backend;
+use crate::backend::{Backend, said};
 use crate::files;
 use crate::library::Library;
 use crate::ui::{Callout, Role, Typed as _};
@@ -192,10 +192,8 @@ impl BackupForm {
         cx.notify();
         let done = Backend::run(cx, work);
         cx.spawn_in(window, async move |form, cx| {
-            let outcome = match done.await {
-                Ok(Ok(result)) => result.map_err(|error| error.message),
-                Ok(Err(unopened)) => Err(unopened.reason.message),
-                Err(_) => return,
+            let Some(outcome) = said(done.await) else {
+                return;
             };
             _ = form.update(cx, |form, cx| {
                 form.busy = false;

@@ -22,7 +22,7 @@ use wirecatch_shell::api;
 use super::queue_proxy::ProxyForm;
 use super::queue_rules::RulesForm;
 use super::{MainWindow, View};
-use crate::backend::Backend;
+use crate::backend::{Backend, said};
 use crate::library::Library;
 use crate::ui::switch_row::group;
 use crate::ui::{Field, FolderRow, Role, SwitchRow, Typed as _, choice};
@@ -214,8 +214,9 @@ impl QueueForm {
         let opened = opened.unwrap_or_else(|| QueueSettings::new(""));
         let app = library.read(cx).settings.clone();
 
-        let name = text_field(&opened.name, "For example: Overnight", window, cx);
-        let description = text_field(
+        let name =
+            crate::ui::dialog::text_field(&opened.name, "For example: Overnight", window, cx);
+        let description = crate::ui::dialog::text_field(
             &opened.description,
             "For example: Large files, overnight",
             window,
@@ -386,10 +387,8 @@ impl QueueForm {
         });
         let main = self.main.clone();
         cx.spawn_in(window, async move |form, cx| {
-            let outcome = match saved.await {
-                Ok(Ok(result)) => result.map_err(|error| error.message),
-                Ok(Err(unopened)) => Err(unopened.reason.message),
-                Err(_) => return,
+            let Some(outcome) = said(saved.await) else {
+                return;
             };
             _ = form.update_in(cx, |form, window, cx| {
                 form.stage = Stage::Editing;
@@ -718,20 +717,6 @@ fn forget_problem_on_edit(
 
 fn narrow(field: impl IntoElement) -> Div {
     div().w(px(132.)).child(field)
-}
-
-fn text_field(
-    value: &str,
-    placeholder: &'static str,
-    window: &mut Window,
-    cx: &mut Context<'_, QueueForm>,
-) -> Entity<InputState> {
-    let value = value.to_owned();
-    cx.new(|cx| {
-        let mut state = InputState::new(window, cx).placeholder(placeholder);
-        state.set_value(value, window, cx);
-        state
-    })
 }
 
 fn number_field(

@@ -127,6 +127,26 @@ pub fn try_opening_again(cx: &App) {
     cx.global::<Backend>().core.try_again();
 }
 
+/// What a [`Backend::run`] of a command comes to.
+pub type Done<T> = Result<Result<Result<T, ProtocolError>, Unopened>, tokio::task::JoinError>;
+
+/// What the manager answered, or why it could not; `None` when the work stopped before it could.
+pub fn answer<T>(done: Done<T>) -> Option<Result<T, ProtocolError>> {
+    match done {
+        Ok(Ok(answered)) => Some(answered),
+        Ok(Err(unopened)) => Some(Err(unopened.reason)),
+        Err(e) => {
+            tracing::error!("work on the manager stopped unexpectedly: {e}");
+            None
+        }
+    }
+}
+
+/// [`answer`], with a refusal in the words to show.
+pub fn said<T>(done: Done<T>) -> Option<Result<T, String>> {
+    answer(done).map(|answered| answered.map_err(|refused| refused.message))
+}
+
 /// Runs a command on the manager; a refusal shows as a notification in `window`.
 pub fn command<F, Fut>(window: AnyWindowHandle, cx: &mut App, work: F)
 where
@@ -149,17 +169,13 @@ pub fn command_saying<T, F, Fut>(
 {
     let done = Backend::run(cx, work);
     cx.spawn(async move |cx| {
-        let refused = match done.await {
-            Ok(Ok(Ok(answer))) => match say(answer) {
-                Some(said) => said,
-                None => return,
-            },
-            Ok(Ok(Err(error))) => error.message,
-            Ok(Err(unopened)) => unopened.reason.message,
-            Err(e) => {
-                tracing::error!("a command stopped unexpectedly: {e}");
-                return;
-            }
+        let told = match said(done.await) {
+            Some(Ok(answered)) => say(answered),
+            Some(Err(refused)) => Some(refused),
+            None => None,
+        };
+        let Some(refused) = told else {
+            return;
         };
         _ = window.update(cx, |_, window, cx| window.push_notification(refused, cx));
     })
