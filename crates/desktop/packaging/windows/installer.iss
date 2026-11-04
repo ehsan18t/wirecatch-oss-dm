@@ -44,8 +44,9 @@ OutputBaseFilename={#OutputName}
 Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Files]
-Source: "{#Stage}\{#AppExe}.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#Stage}\{#BridgeExe}.exe"; DestDir: "{app}"; Flags: ignoreversion
+; If one still cannot be closed at uninstall, it goes at the next restart.
+Source: "{#Stage}\{#AppExe}.exe"; DestDir: "{app}"; Flags: ignoreversion uninsrestartdelete
+Source: "{#Stage}\{#BridgeExe}.exe"; DestDir: "{app}"; Flags: ignoreversion uninsrestartdelete
 Source: "{#Stage}\LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Stage}\{#NoticesFile}"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -89,6 +90,26 @@ begin
   end;
 end;
 
+// CloseApplications covers Setup only. By path, not by name: a copy run from elsewhere is not this install.
+// The bridge first, since a bridge left running starts the app again.
+procedure StopInstalledPrograms();
+var
+  Folder: String;
+  Code: Integer;
+begin
+  Folder := ExpandConstant('{app}\');
+  StringChangeEx(Folder, '''', '''''', True);
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' +
+    'foreach ($name in ''{#BridgeExe}'', ''{#AppExe}'') { ' +
+    '$found = Get-Process -Name $name -ErrorAction SilentlyContinue | ' +
+    'Where-Object { $_.Path -and $_.Path.StartsWith(''' + Folder + ''', [StringComparison]::OrdinalIgnoreCase) }; ' +
+    'if ($found) { $found | Stop-Process -Force -ErrorAction SilentlyContinue; ' +
+    '$found | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue } }"',
+    '', SW_HIDE, ewWaitUntilTerminated, Code) then
+    Log('PowerShell could not be started to close the running programs');
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep <> usUninstall then
@@ -99,4 +120,5 @@ begin
   RunBridge('uninstall');
   // The app owns where its start-at-sign-in entry is kept.
   RunProgram('{#AppExe}', '--remove-start-entry');
+  StopInstalledPrograms();
 end;
