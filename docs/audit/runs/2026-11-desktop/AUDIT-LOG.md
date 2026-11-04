@@ -216,9 +216,9 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 189 | ARM64 Linux packages are drafted without the fresh-system check                                   | `29-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 190 | The .deb and .rpm state no C library version                                                      | `29-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 191 | The icon holds its own unchecked copy of the mark                                                 | `29-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 192 | Two copies of the read-until-full loop have drifted                                               | `15-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 193 | Code keeps work folders of a layout that was never released                                       | `15-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 194 | axum is a dev-dependency nothing in streams uses                                                  | `15-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 192 | Two copies of the read-until-full loop have drifted                                               | `15-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 193 | Code keeps work folders of a layout that was never released                                       | `15-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 194 | axum is a dev-dependency nothing in streams uses                                                  | `15-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 195 | The path-escape half of a media test cannot fail                                                  | `17-8`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 196 | Doc comments on media runs sit on the wrong items                                                 | `17-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 197 | Sizes and bit rates a page chooses are added without a check                                      | `16-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | `B07-p2-tests`                                | fixed  |
@@ -3537,7 +3537,7 @@ P3, small, fixed.
 
 ### 192. Two copies of the read-until-full loop have drifted
 
-P3, small, open.
+P3, small, fixed.
 
 `fill` retries `Interrupted` and `read_up_to` does not. A regular file does not return it in practice, so the cost is the copy.
 
@@ -3553,7 +3553,7 @@ P3, small, open.
 
 ### 193. Code keeps work folders of a layout that was never released
 
-P3, small, open.
+P3, small, fixed.
 
 The header, a branch and a test keep work folders of layout 1, and no release ever shipped: `git tag` is empty.
 
@@ -3569,7 +3569,7 @@ The header, a branch and a test keep work folders of layout 1, and no release ev
 
 ### 194. axum is a dev-dependency nothing in streams uses
 
-P3, small, open.
+P3, small, fixed.
 
 Nothing under `crates/streams` names `axum`, and `cargo check` passes with the line removed.
 
