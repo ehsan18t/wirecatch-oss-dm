@@ -8,12 +8,13 @@
 
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use tokio_util::sync::CancellationToken;
 
 use crate::codec::Container;
+use crate::crypto::fill;
 use crate::error::{Error, Result};
 use crate::model::Role;
 use crate::process::{self, RunError, RunOptions, STALL_TIMEOUT};
@@ -93,7 +94,7 @@ impl InputFormat {
     pub fn detect(path: &Path) -> io::Result<Option<InputFormat>> {
         let mut file = File::open(path)?;
         let mut head = [0u8; DETECT_HEAD_BYTES];
-        let len = read_up_to(&mut file, &mut head)?;
+        let len = fill(&mut file, &mut head)?;
         let head = &head[..len];
         if let Some(format) = Self::from_head(head) {
             return Ok(Some(format));
@@ -104,7 +105,7 @@ impl InputFormat {
         };
         file.seek(SeekFrom::Start(skip))?;
         let mut frame = [0u8; 6];
-        let len = read_up_to(&mut file, &mut frame)?;
+        let len = fill(&mut file, &mut frame)?;
         Ok(audio_frame(&frame[..len]))
     }
 
@@ -193,7 +194,7 @@ impl InputFormat {
 /// When the file cannot be opened or read.
 pub fn holds_no_media(path: &Path) -> io::Result<bool> {
     let mut head = [0u8; DETECT_HEAD_BYTES];
-    let len = read_up_to(&mut File::open(path)?, &mut head)?;
+    let len = fill(&mut File::open(path)?, &mut head)?;
     Ok(head.get(..len).is_none_or(is_empty_or_text))
 }
 
@@ -341,18 +342,6 @@ pub fn copy_arguments(
     args.extend(["-f", container.muxer()].map(OsString::from));
     args.push(file_argument(output)?);
     Ok(args)
-}
-
-/// Reads until `buf` is full or the file ends; returns how much was read.
-fn read_up_to(file: &mut File, buf: &mut [u8]) -> io::Result<usize> {
-    let mut len = 0;
-    while len < buf.len() {
-        match file.read(&mut buf[len..])? {
-            0 => break,
-            n => len += n,
-        }
-    }
-    Ok(len)
 }
 
 /// The full length of the ID3v2 tag `head` starts with, if it starts with one.

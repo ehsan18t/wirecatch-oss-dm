@@ -44,7 +44,6 @@ windows-sys = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
-axum.workspace = true
 bytes.workspace = true
 cbc = { version = "0.1.2", features = ["alloc"] }
 tempfile.workspace = true
