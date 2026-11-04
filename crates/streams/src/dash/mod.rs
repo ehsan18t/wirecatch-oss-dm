@@ -20,7 +20,7 @@ use url::Url;
 
 use crate::codec::Codec;
 use crate::error::{DrmSystem, Located, ManifestError, excerpt};
-use crate::plan::{MAX_REPRESENTATIONS, ManifestBudget};
+use crate::plan::{MAX_TRACKS, NameBudget};
 use template::Template;
 
 /// What a manifest offers, from its first period.
@@ -105,16 +105,16 @@ fn read(doc: &Document<'_>, base: &Url) -> Result<Mpd, ManifestError> {
     let period_segments = Inherited::default().within(period)?;
 
     let mut reps = Vec::new();
-    let mut manifest = ManifestBudget::default();
+    let mut names = NameBudget::default();
     for set in children(period, "AdaptationSet") {
         let Some(set) = SetLevel::read(set, &period_base, &period_segments)? else {
             continue;
         };
         for rep in children(set.node, "Representation") {
-            if reps.len() == MAX_REPRESENTATIONS {
-                return Err(ManifestError::TooManyRepresentations);
+            if reps.len() == MAX_TRACKS {
+                return Err(ManifestError::TooManyTracks);
             }
-            reps.push(representation(rep, &set, period_length, &mut manifest)?);
+            reps.push(representation(rep, &set, period_length, &mut names)?);
         }
     }
     Ok(Mpd {
@@ -173,12 +173,12 @@ impl<'a, 'input> SetLevel<'a, 'input> {
     }
 }
 
-/// The representation `rep` of the adaptation set `set`, in a period of `period` seconds, counting what it keeps against the whole manifest's `manifest`.
+/// The representation `rep` of the adaptation set `set`, in a period of `period` seconds, counting its names against `name_budget`.
 fn representation(
     rep: Node<'_, '_>,
     set: &SetLevel<'_, '_>,
     period: Option<f64>,
-    manifest: &mut ManifestBudget,
+    name_budget: &mut NameBudget,
 ) -> Result<Rep, ManifestError> {
     let get = |name| rep.attribute(name).or_else(|| set.node.attribute(name));
     let own_or = |name, inherited: &Option<Arc<str>>| {
@@ -223,7 +223,7 @@ fn representation(
     .flatten()
     .map(|name| name.len())
     .sum::<usize>();
-    manifest.names(rep.id.len().saturating_add(names))?;
+    name_budget.spend(rep.id.len().saturating_add(names))?;
     Ok(rep)
 }
 

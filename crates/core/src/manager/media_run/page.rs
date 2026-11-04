@@ -118,6 +118,14 @@ pub(super) async fn page_attempt(
         // A format Wirecatch cannot fetch itself, or the page changed: yt-dlp
         // downloads the same selection. Its own requests are not covered by the
         // local network rule below (see `network_rule`); yt-dlp makes them.
+        // The engine would have taken a format with cookies but for them, so its address gets that rule's early check.
+        for url in found
+            .iter()
+            .filter(|f| f.cookies.is_some())
+            .filter_map(|f| Url::parse(f.url.as_deref()?).ok())
+        {
+            network_rule(job.chosen_by, &job.url, &url).await?;
+        }
         // yt-dlp joins two formats into the container its own table picks (AV1 with AAC into MP4); the offer named the shared policy's.
         let merge_into = (video.is_some() && audio.is_some())
             .then(|| joined_container(stored_kept_ext(page), job));
@@ -242,7 +250,12 @@ pub(super) async fn fetch_part(
         let file = Arc::new(Progress::default());
         progress.add_file(file.clone(), format.size());
         match Box::pin(wirecatch_engine::download(request, file, cancel.clone())).await {
-            Ok(Outcome::Completed { .. }) => path,
+            Ok(Outcome::Completed { .. }) => {
+                if holds_no_media(job, &path).await? {
+                    return Err(PageError::Refused { status: None });
+                }
+                path
+            }
             Ok(_) | Err(EngineError::Cancelled) => return Ok(None),
             Err(EngineError::PrivateNetwork { .. }) => {
                 return Err(wirecatch_messages::private_network(job.chosen_by).into());
@@ -267,6 +280,23 @@ pub(super) async fn fetch_part(
         .await
         .map_err(|e| disk(&e, &job.output))?;
     Ok(Some(file))
+}
+
+/// Whether the format saved at `path` is nothing or a web page, as an address that stopped working can answer; such a file is removed, so a fresh address starts over. Refusing the other formats here would turn away what ffmpeg is never asked to read.
+async fn holds_no_media(job: &Job, path: &Path) -> Result<bool, PageError> {
+    let file = path.to_path_buf();
+    let checked = job
+        .file_work
+        .spawn_blocking(move || {
+            let empty = wirecatch_streams::holds_no_media(&file)?;
+            if empty {
+                std::fs::remove_file(&file)?;
+            }
+            Ok::<bool, std::io::Error>(empty)
+        })
+        .await
+        .unwrap_or_else(|e| Err(std::io::Error::other(e)));
+    checked.map_err(|e| disk(&e, &job.output).into())
 }
 
 /// A format address the server refused, or one that no longer leads to the file: a fresh one

@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::HashMap;
+
 use crate::dash::{Kind, Mpd};
 use crate::error::{Error, Result};
 use crate::hls::{self, Master, RenditionKind};
@@ -31,14 +33,18 @@ pub(crate) struct Selected {
 /// The track ids of a source, by kind, in list order (see [`track_id`]).
 pub(crate) struct Ids {
     pub variants: Vec<String>,
+    /// Where each id of `variants` is, since one is looked up for every quality.
+    variant_places: HashMap<String, usize>,
     pub renditions: Vec<String>,
     pub representations: Vec<String>,
 }
 
 impl Ids {
     pub fn of_master(master: &Master) -> Self {
+        let variants = track_id::variants(&master.variants);
         Self {
-            variants: track_id::variants(&master.variants),
+            variant_places: variants.iter().cloned().zip(0..).collect(),
+            variants,
             renditions: track_id::renditions(&master.renditions),
             representations: Vec::new(),
         }
@@ -47,6 +53,7 @@ impl Ids {
     pub fn of_mpd(mpd: &Mpd) -> Self {
         Self {
             variants: Vec::new(),
+            variant_places: HashMap::new(),
             renditions: Vec::new(),
             representations: track_id::representations(&mpd.reps),
         }
@@ -55,6 +62,7 @@ impl Ids {
     pub fn single() -> Self {
         Self {
             variants: Vec::new(),
+            variant_places: HashMap::new(),
             renditions: Vec::new(),
             representations: Vec::new(),
         }
@@ -106,16 +114,20 @@ pub(crate) fn from_master(
                 .or_else(|| best_variant(master, |_| true))
                 .ok_or(Error::NothingChosen)?,
         ),
-        Choice::Track(id) => Some(
-            variant_named(master, &ids.variants, id, false)
-                .ok_or_else(|| no_such(Role::Video, id))?,
-        ),
+        Choice::Track(id) => {
+            Some(variant_named(master, ids, id, false).ok_or_else(|| no_such(Role::Video, id))?)
+        }
     };
     let audio = match audio {
         Choice::Skip => None,
         Choice::Track(id) => Some(audio_named(master, ids, id)?),
         Choice::Auto => match variant {
-            Some(v) => paired_audio(master, v),
+            Some(v) => master
+                .variants
+                .get(v)
+                .and_then(|v| v.audio_group.as_ref())
+                .and_then(|group| master.paired_audio.get(group))
+                .map(|&i| Pick::Rendition(i)),
             None => audio_alone(master),
         },
     };
@@ -135,27 +147,10 @@ fn audio_named(master: &Master, ids: &Ids, id: &str) -> Result<Pick> {
     match rendition {
         Some(r) if master.renditions[r].url.is_some() => Ok(Pick::Rendition(r)),
         Some(_) => Err(no_such(Role::Audio, id)),
-        None => variant_named(master, &ids.variants, id, true)
+        None => variant_named(master, ids, id, true)
             .map(Pick::Variant)
             .ok_or_else(|| no_such(Role::Audio, id)),
     }
-}
-
-/// The audio variant `v` is paired with, if it comes separately: the default rendition of its audio group, else the one to select automatically, else the first.
-fn paired_audio(master: &Master, v: usize) -> Option<Pick> {
-    let group = master.variants.get(v)?.audio_group.as_ref()?;
-    let in_group: Vec<usize> = (0..master.renditions.len())
-        .filter(|&i| {
-            let r = &master.renditions[i];
-            r.kind == RenditionKind::Audio && &r.group == group && r.url.is_some()
-        })
-        .collect();
-    in_group
-        .iter()
-        .find(|&&i| master.renditions[i].default)
-        .or_else(|| in_group.iter().find(|&&i| master.renditions[i].autoselect))
-        .or_else(|| in_group.first())
-        .map(|&i| Pick::Rendition(i))
 }
 
 /// Audio without video: the default rendition, else the best audio-only variant.
@@ -191,10 +186,13 @@ pub(crate) fn best_variant(master: &Master, keep: impl Fn(&hls::Variant) -> bool
         .map(|(i, _)| i)
 }
 
-/// The index of the variant with id `id` among the variants with video, or with `audio_only` among the audio-only ones. `ids` are the variants' ids.
-fn variant_named(master: &Master, ids: &[String], id: &str, audio_only: bool) -> Option<usize> {
-    (0..master.variants.len()).find(|&i| {
-        master.variants[i].audio_only() == audio_only && ids.get(i).is_some_and(|v| v == id)
+/// The index of the variant with id `id` among the variants with video, or with `audio_only` among the audio-only ones.
+fn variant_named(master: &Master, ids: &Ids, id: &str, audio_only: bool) -> Option<usize> {
+    ids.variant_places.get(id).copied().filter(|&i| {
+        master
+            .variants
+            .get(i)
+            .is_some_and(|v| v.audio_only() == audio_only)
     })
 }
 

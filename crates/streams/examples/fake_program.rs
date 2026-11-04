@@ -30,7 +30,10 @@ const STEP_TIME: Duration = Duration::from_secs(1);
 const CHUNK: [u8; 1024] = [0; 1024];
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     let number = |i: usize| args.get(i).and_then(|n| n.parse::<u64>().ok()).unwrap_or(0);
     let mut out = std::io::stdout();
     let done = match args.first().map(String::as_str) {
