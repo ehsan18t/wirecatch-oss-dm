@@ -6,6 +6,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use wirecatch_engine::units::KIB_USIZE;
+use wirecatch_engine::url::{FTP_SCHEMES, WEB_SCHEMES};
 use wirecatch_ipc::IpcError;
 use wirecatch_protocol::frame::{self, FrameError};
 use wirecatch_protocol::version::VersionRange;
@@ -63,9 +64,6 @@ pub const MAX_LAUNCH_LINKS: usize = MAX_OPEN_LINKS;
 /// Longest link taken from a command line, in bytes.
 pub const MAX_LINK_LEN: usize = 8 * KIB_USIZE;
 
-/// Schemes a command-line link may use.
-const LINK_SCHEMES: [&str; 5] = ["http://", "https://", "ftp://", "ftps://", "ftpes://"];
-
 /// How long a launch waits for a running copy to answer. Opening a long list, or repairing one,
 /// takes this copy no window and the person no action, so it may wait.
 const HAND_OVER_PATIENCE: Duration = Duration::from_mins(1);
@@ -104,13 +102,17 @@ fn is_launch_link(arg: &str) -> bool {
         return false;
     }
     let lower = arg.to_ascii_lowercase();
-    LINK_SCHEMES
-        .iter()
-        .any(|scheme| lower.starts_with(scheme) && lower.len() > scheme.len())
+    WEB_SCHEMES.iter().chain(&FTP_SCHEMES).any(|scheme| {
+        lower
+            .strip_prefix(scheme)
+            .and_then(|rest| rest.strip_prefix("://"))
+            .is_some_and(|rest| !rest.is_empty())
+    })
 }
 
 /// Web and FTP links on a command line (program name first), in order, for the Add dialog.
-/// Anything else on the command line is ignored, and at most [`MAX_LAUNCH_LINKS`] are taken.
+/// Anything else on the command line is ignored, and at most [`MAX_LAUNCH_LINKS`] are taken. An
+/// argument is one link, so its spaces are encoded: the dialog's text would end the link there.
 pub fn links_from_args<I, S>(args: I) -> Vec<String>
 where
     I: IntoIterator<Item = S>,
@@ -120,6 +122,7 @@ where
         .skip(1)
         .map(|a| a.as_ref().trim().to_owned())
         .filter(|a| is_launch_link(a))
+        .map(|a| a.replace(' ', "%20"))
         .take(MAX_LAUNCH_LINKS)
         .collect()
 }

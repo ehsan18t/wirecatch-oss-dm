@@ -12,7 +12,7 @@ use gpui_kit::{
     Styled as _, Subscription, WeakEntity, Window, px,
 };
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{AddRequest, Setting};
+use wirecatch_protocol::app::{AddRequest, Queue, Setting};
 use wirecatch_protocol::rules::{LinkTrial, RuleMatch};
 use wirecatch_shell::api;
 use wirecatch_sites::video_sites::video_site_for;
@@ -26,7 +26,11 @@ use crate::{files, links, text};
 /// Where links go with no folder picked and no queue folder.
 const FOLDER_BY_TYPE: &str = "By file type (from Settings)";
 
-const NO_LINK: &str = "Paste at least one link that starts with https://, http:// or ftp://.";
+const NO_LINK: &str =
+    "Paste at least one link that starts with https://, http://, ftp://, ftps:// or ftpes://.";
+
+/// Said under Automatic when the links go to queues with different folders.
+const FOLDER_BY_QUEUE: &str = "Each queue's own folder";
 
 /// One entry of the queue list: Automatic, or a queue.
 #[derive(Clone)]
@@ -70,6 +74,8 @@ pub struct AddForm {
 struct Route {
     queue: String,
     rule: Option<String>,
+    /// The queue's own folder; `None` when it sorts by file type.
+    folder: Option<String>,
 }
 
 /// Links tried against the rules at most, for the hint under Automatic.
@@ -259,21 +265,16 @@ impl AddForm {
     /// The queue a rule match names, or the default queue when none matched.
     fn route_of(&self, matched: Option<RuleMatch>, cx: &App) -> Route {
         let library = self.library.read(cx);
-        let name = |id: Option<QueueId>| {
-            id.and_then(|id| library.queue(id))
-                .or_else(|| library.queues.first())
-                .map(|queue| queue.settings.name.clone())
-                .unwrap_or_default()
-        };
-        match matched {
-            Some(found) => Route {
-                queue: name(found.queue),
-                rule: Some(text::rule_phrase(&found.rule)),
-            },
-            None => Route {
-                queue: name(None),
-                rule: None,
-            },
+        let (id, rule) = matched.map_or((None, None), |found| {
+            (found.queue, Some(text::rule_phrase(&found.rule)))
+        });
+        let queue = id
+            .and_then(|id| library.queue(id))
+            .or_else(|| library.queues.first());
+        Route {
+            queue: queue.map_or_else(String::new, |queue| queue.settings.name.clone()),
+            rule,
+            folder: queue.and_then(own_folder),
         }
     }
 
@@ -493,13 +494,10 @@ impl AddForm {
     /// Where the links are saved: the folder picked, or the one the app picks, the queue's own
     /// folder or the folder by file type (D94).
     fn folder_row(&self, cx: &mut Context<'_, Self>) -> FolderRow {
-        let fallback = match self
-            .picked_queue(cx)
-            .and_then(|id| self.library.read(cx).queue(id))
-            .map(|queue| &queue.settings.folder)
-        {
-            Some(Setting::Own(folder)) => text::folder(&folder.0),
-            Some(Setting::Global) | None => FOLDER_BY_TYPE.to_owned(),
+        let library = self.library.read(cx);
+        let fallback = match self.picked_queue(cx).and_then(|id| library.queue(id)) {
+            Some(queue) => own_folder(queue).unwrap_or_else(|| FOLDER_BY_TYPE.to_owned()),
+            None => folder_of_routes(&self.routes, library.queues.first().and_then(own_folder)),
         };
         FolderRow::new(
             self.folder.clone(),
@@ -510,5 +508,70 @@ impl AddForm {
                 cx.notify();
             }),
         )
+    }
+}
+
+/// The folder `queue` keeps for itself, as shown.
+fn own_folder(queue: &Queue) -> Option<String> {
+    match &queue.settings.folder {
+        Setting::Own(folder) => Some(text::folder(&folder.0)),
+        Setting::Global => None,
+    }
+}
+
+/// Where the links under Automatic are saved; before any link is known, in the default queue's
+/// folder, `default`.
+fn folder_of_routes(routes: &[Route], default: Option<String>) -> String {
+    let Some((first, rest)) = routes.split_first() else {
+        return default.unwrap_or_else(|| FOLDER_BY_TYPE.to_owned());
+    };
+    if rest.iter().any(|route| route.folder != first.folder) {
+        return FOLDER_BY_QUEUE.to_owned();
+    }
+    first
+        .folder
+        .clone()
+        .unwrap_or_else(|| FOLDER_BY_TYPE.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn route(folder: Option<&str>) -> Route {
+        Route {
+            queue: String::new(),
+            rule: None,
+            folder: folder.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn automatic_says_the_folder_of_the_queue_the_links_go_to() {
+        let own = Some("D:\\Videos");
+        assert_eq!(folder_of_routes(&[route(own)], None), "D:\\Videos");
+        assert_eq!(folder_of_routes(&[route(None)], None), FOLDER_BY_TYPE);
+        assert_eq!(
+            folder_of_routes(&[route(own), route(own)], None),
+            "D:\\Videos"
+        );
+        assert_eq!(
+            folder_of_routes(&[route(own), route(None)], None),
+            FOLDER_BY_QUEUE
+        );
+    }
+
+    #[test]
+    fn before_any_link_automatic_says_the_default_queues_folder() {
+        assert_eq!(folder_of_routes(&[], Some("D:\\All".to_owned())), "D:\\All");
+        assert_eq!(folder_of_routes(&[], None), FOLDER_BY_TYPE);
+    }
+
+    #[test]
+    fn the_no_link_message_names_every_scheme() {
+        use wirecatch_engine::url::{FTP_SCHEMES, WEB_SCHEMES};
+        for scheme in WEB_SCHEMES.iter().chain(&FTP_SCHEMES) {
+            assert!(NO_LINK.contains(&format!("{scheme}://")), "{scheme}");
+        }
     }
 }
