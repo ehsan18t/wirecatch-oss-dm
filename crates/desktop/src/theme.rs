@@ -151,9 +151,12 @@ pub fn apply(setting: ThemeSetting, accent: Accent, cx: &mut App) {
     });
 }
 
+const MIN_CONTRAST: f32 = 4.5;
+const LIGHTNESS_STEP: f32 = 0.005;
+
 /// The accent in this scheme and the text that goes on it, each pair at 4.5:1 contrast or more.
-/// The system accent takes the hue and saturation of the colour chosen in Windows at Wirecatch's
-/// own lightness, so its text keeps that contrast; without one it is Wirecatch's cyan.
+/// The system accent takes the hue and saturation of the colour chosen in Windows, at Wirecatch's
+/// own lightness or as near as keeps that contrast; without one it is Wirecatch's cyan.
 pub fn accent_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
     let (tone, on_tone) = fixed_colors(accent, dark);
     if accent != Accent::System {
@@ -169,14 +172,45 @@ pub fn accent_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
         a: 1.,
     }
     .into();
-    (
-        Hsla {
-            h: system.h,
-            s: system.s,
-            ..tone
-        },
-        on_tone,
-    )
+    (system_tone(system, tone, on_tone), on_tone)
+}
+
+/// `system`'s hue and saturation at `tone`'s lightness, moved away from `on_tone` until text in
+/// that colour reads on it: equal lightness is not equal contrast across hues.
+fn system_tone(system: Hsla, tone: Hsla, on_tone: Hsla) -> Hsla {
+    let step = if luminance(on_tone) > luminance(tone) {
+        -LIGHTNESS_STEP
+    } else {
+        LIGHTNESS_STEP
+    };
+    let mut shade = Hsla {
+        h: system.h,
+        s: system.s,
+        ..tone
+    };
+    while contrast(shade, on_tone) < MIN_CONTRAST && (0.0..=1.0).contains(&(shade.l + step)) {
+        shade.l += step;
+    }
+    shade
+}
+
+/// WCAG relative luminance.
+fn luminance(color: Hsla) -> f32 {
+    let linear = |channel: f32| {
+        if channel <= 0.04045 {
+            channel / 12.92
+        } else {
+            ((channel + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let rgb = color.to_rgb();
+    0.2126 * linear(rgb.r) + 0.7152 * linear(rgb.g) + 0.0722 * linear(rgb.b)
+}
+
+/// WCAG contrast ratio.
+fn contrast(a: Hsla, b: Hsla) -> f32 {
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
 /// The accents Wirecatch has, the system's shown as cyan.
@@ -203,6 +237,28 @@ fn fixed_colors(accent: Accent, dark: bool) -> (Hsla, Hsla) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_system_colour_keeps_its_text_readable_in_both_schemes() {
+        for dark in [false, true] {
+            let (tone, on_tone) = fixed_colors(Accent::System, dark);
+            for hue in 0..=72_u8 {
+                let system = Hsla {
+                    h: f32::from(hue) / 72.,
+                    s: 1.,
+                    l: 0.5,
+                    a: 1.,
+                };
+                let shade = system_tone(system, tone, on_tone);
+                assert!(
+                    contrast(shade, on_tone) >= MIN_CONTRAST,
+                    "hue {hue}, dark {dark}: {}",
+                    contrast(shade, on_tone)
+                );
+                assert!((shade.h - system.h).abs() < f32::EPSILON);
+            }
+        }
+    }
 
     #[test]
     fn both_schemes_parse() {
