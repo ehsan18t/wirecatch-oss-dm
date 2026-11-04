@@ -63,8 +63,9 @@ struct Log {
 impl Log {
     fn read(text: &str) -> Self {
         let mut log = Log::default();
-        for line in text.lines() {
-            let fields: Vec<&str> = line.split(' ').collect();
+        // A last line with no newline was cut short, and may still read as a line of smaller numbers.
+        for line in text.split_inclusive('\n').filter(|l| l.ends_with('\n')) {
+            let fields: Vec<&str> = line.trim_end().split(' ').collect();
             match fields.as_slice() {
                 ["S", track, index, size] => {
                     if let (Ok(track), Ok(index), Ok(size)) =
@@ -116,7 +117,10 @@ impl WorkDir {
             fs::write(dir.join(HEADER), header)?;
         }
         let log = match fs::read_to_string(dir.join(LOG)) {
-            Ok(text) if reuse => Log::read(&text),
+            Ok(text) if reuse => {
+                cut_torn_line(&dir.join(LOG), &text)?;
+                Log::read(&text)
+            }
             Ok(_) => Log::default(),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Log::default(),
             Err(e) => return Err(e),
@@ -258,6 +262,16 @@ pub(crate) fn path_for(output: &Path) -> PathBuf {
     output.with_file_name(name)
 }
 
+/// Cuts a last line with no newline off the log, so the next line written does not join it.
+fn cut_torn_line(log: &Path, text: &str) -> io::Result<()> {
+    if text.is_empty() || text.ends_with('\n') {
+        return Ok(());
+    }
+    let whole = text.rfind('\n').map_or(0, |newline| newline + 1);
+    let whole = u64::try_from(whole).map_err(io::Error::other)?;
+    OpenOptions::new().write(true).open(log)?.set_len(whole)
+}
+
 fn remove_dir(dir: &Path) -> io::Result<()> {
     match fs::remove_dir_all(dir) {
         Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
@@ -319,6 +333,34 @@ mod tests {
         fs::write(path_for(&out).join("track0"), b"01").unwrap();
         let work = WorkDir::open(&out, 1, &[4]).unwrap();
         assert!(work.appended.is_empty());
+        work.remove().unwrap();
+        dir.remove().unwrap();
+    }
+
+    /// A last line with no newline was cut short, and may still read as a line: `A 0 5 12` for `A 0 5 1234567` would cut the track to 12 bytes.
+    #[test]
+    fn a_torn_last_line_does_not_count_and_cannot_join_the_next() {
+        let dir = wirecatch_test_support::private_dir("workdir-torn").unwrap();
+        let out = dir.path().join("video.mp4");
+        let kept = Appended {
+            next: 3,
+            size: 1_000_000,
+        };
+        let work = WorkDir::open(&out, 1, &[8]).unwrap();
+        fs::write(work.track_path(0), vec![0u8; 1_234_567]).unwrap();
+        work.record_appended(0, kept).unwrap();
+        work.append("A 0 5 12", Sync::No).unwrap();
+        drop(work);
+        let work = WorkDir::open(&out, 1, &[8]).unwrap();
+        assert_eq!(work.appended.get(&0), Some(&kept));
+        let later = Appended {
+            next: 4,
+            size: 1_100_000,
+        };
+        work.record_appended(0, later).unwrap();
+        drop(work);
+        let work = WorkDir::open(&out, 1, &[8]).unwrap();
+        assert_eq!(work.appended.get(&0), Some(&later));
         work.remove().unwrap();
         dir.remove().unwrap();
     }
