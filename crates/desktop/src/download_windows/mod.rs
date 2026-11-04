@@ -70,8 +70,15 @@ pub fn follow(event: &UiEvent, cx: &mut App) {
 
 /// Opens windows for the questions open in the core at start, oldest first.
 pub fn restore(open: &[QuestionId], cx: &mut App) {
+    for id in update(cx, |registry| registry.closed_meanwhile(open)) {
+        closed(id, cx);
+    }
     let steps = update(cx, |registry| registry.restore(open));
     run(steps, cx);
+    // Their question may have moved on during the events that were missed.
+    for id in open {
+        refresh(Shows::Question(*id), cx);
+    }
 }
 
 /// Brings every open question's window up, opening the closed ones again.

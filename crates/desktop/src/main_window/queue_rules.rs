@@ -150,12 +150,18 @@ impl RulesForm {
         };
         QueueRules {
             enabled: self.on,
-            sites: when(Kind::Sites, lines(&self.sites.read(cx).value())),
-            file_names: when(Kind::FileNames, lines(&self.file_names.read(cx).value())),
+            sites: when(
+                Kind::Sites,
+                text::filled_lines(&self.sites.read(cx).value()),
+            ),
+            file_names: when(
+                Kind::FileNames,
+                text::filled_lines(&self.file_names.read(cx).value()),
+            ),
             file_name_syntax: self.syntax,
             file_types: when(
                 Kind::FileTypes,
-                file_types(&self.file_types.read(cx).value()),
+                text::typed_extensions(&self.file_types.read(cx).value()),
             ),
             categories: if self.checked.contains(&Kind::Categories) {
                 self.categories.clone()
@@ -402,25 +408,6 @@ fn lines_field(
     })
 }
 
-/// The lines of `typed` that hold something, trimmed.
-fn lines(typed: &str) -> Vec<String> {
-    typed
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
-/// Extensions as a rule keeps them: without the dot, in lower case.
-fn file_types(typed: &str) -> Vec<String> {
-    typed
-        .split([',', ' ', ';'])
-        .map(|typed| typed.trim().trim_start_matches('.').to_lowercase())
-        .filter(|extension| !extension.is_empty())
-        .collect()
-}
-
 fn has_rules(rules: &QueueRules) -> bool {
     !(rules.sites.is_empty()
         && rules.file_names.is_empty()
@@ -435,14 +422,24 @@ mod tests {
 
     #[test]
     fn extensions_are_kept_without_the_dot_in_lower_case() {
-        assert_eq!(file_types(".ISO, tar.gz;  zip"), ["iso", "tar.gz", "zip"]);
-        assert_eq!(file_types(" , ."), Vec::<String>::new());
+        assert_eq!(
+            text::typed_extensions(".ISO, tar.gz;  zip"),
+            ["iso", "tar.gz", "zip"]
+        );
+        assert_eq!(text::typed_extensions(" , ."), Vec::<String>::new());
+        assert_eq!(
+            text::typed_extensions(
+                "iso
+zip"
+            ),
+            ["iso", "zip"]
+        );
     }
 
     #[test]
     fn blank_lines_are_left_out() {
         assert_eq!(
-            lines(" youtube.com \n\n  \n*.example.com"),
+            text::filled_lines(" youtube.com \n\n  \n*.example.com"),
             ["youtube.com", "*.example.com"]
         );
     }

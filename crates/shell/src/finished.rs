@@ -82,6 +82,18 @@ impl FinishedBook {
         }
     }
 
+    /// Brings the rows it lists up to date with `rows`, the whole list after missed events.
+    pub fn reload(&mut self, rows: &[DownloadSummary]) {
+        for group in &mut self.list.groups {
+            group.downloads = group
+                .downloads
+                .iter()
+                .filter_map(|listed| rows.iter().find(|row| row.id == listed.id).cloned())
+                .collect();
+        }
+        self.list.groups.retain(|g| !g.downloads.is_empty());
+    }
+
     /// What the window lists now.
     #[must_use]
     pub fn list(&self) -> &FinishedList {
@@ -129,6 +141,29 @@ mod tests {
 
     fn ids(group: &FinishedGroup) -> Vec<i64> {
         group.downloads.iter().map(|d| d.id.0).collect()
+    }
+
+    #[test]
+    fn a_reload_drops_removed_rows_and_takes_changed_ones() {
+        let mut book = FinishedBook::default();
+        book.add(
+            None,
+            &[
+                ended(1, DownloadStatus::Completed),
+                ended(2, DownloadStatus::Failed),
+            ],
+        );
+        book.reload(&[
+            ended(2, DownloadStatus::Completed),
+            ended(3, DownloadStatus::Queued),
+        ]);
+        assert_eq!(ids(&book.list().groups[0]), [2]);
+        assert_eq!(
+            book.list().groups[0].downloads[0].status,
+            DownloadStatus::Completed
+        );
+        book.reload(&[]);
+        assert_eq!(book.list().groups.len(), 0);
     }
 
     #[test]

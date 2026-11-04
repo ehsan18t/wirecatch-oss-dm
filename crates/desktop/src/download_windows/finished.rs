@@ -67,6 +67,14 @@ pub fn add(tell: Tell, cx: &mut App) {
     }
 }
 
+/// Brings the listed downloads up to date after missed events.
+pub fn reload(rows: &[DownloadSummary], cx: &mut App) {
+    cx.default_global::<Finished>().book.reload(rows);
+    if let Some((_, view)) = cx.global::<Finished>().window.clone() {
+        _ = view.update(cx, |_, cx| cx.notify());
+    }
+}
+
 /// Keeps the listed downloads in step with the core's events.
 pub fn follow(event: &UiEvent, cx: &mut App) {
     cx.default_global::<Finished>().book.follow(event);

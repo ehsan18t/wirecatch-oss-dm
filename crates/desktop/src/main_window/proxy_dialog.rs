@@ -23,7 +23,7 @@ use wirecatch_protocol::proxy::{
 use wirecatch_protocol::{ProxyServerId, Secret};
 use wirecatch_shell::api;
 
-use crate::backend::{Backend, act};
+use crate::backend::{Backend, act, said};
 use crate::library::Library;
 use crate::ui::{Field, Role, Typed as _, choice};
 
@@ -154,19 +154,19 @@ impl ProxyForm {
         });
         let opened = original.as_ref().map(|proxy| proxy.settings.clone());
         let kind = opened.as_ref().map_or(ProxyKind::Http, |s| s.kind);
-        let name = text_field(
+        let name = crate::ui::dialog::text_field(
             opened.as_ref().map(|s| s.name.clone()).unwrap_or_default(),
             "For example: Office",
             window,
             cx,
         );
-        let host = text_field(
+        let host = crate::ui::dialog::text_field(
             opened.as_ref().map(|s| s.host.clone()).unwrap_or_default(),
             "proxy.example.com",
             window,
             cx,
         );
-        let user = text_field(
+        let user = crate::ui::dialog::text_field(
             opened.as_ref().map(|s| s.user.clone()).unwrap_or_default(),
             "Leave empty if it needs no sign-in",
             window,
@@ -302,10 +302,8 @@ impl ProxyForm {
             api::test_proxy_server(&manager, id, draft).await
         });
         cx.spawn_in(window, async move |form, cx| {
-            let outcome = match tested.await {
-                Ok(Ok(result)) => result.map_err(|error| error.message),
-                Ok(Err(unopened)) => Err(unopened.reason.message),
-                Err(_) => return,
+            let Some(outcome) = said(tested.await) else {
+                return;
             };
             _ = form.update(cx, |form, cx| {
                 form.stage = Stage::Editing;
@@ -333,10 +331,8 @@ impl ProxyForm {
             }
         });
         cx.spawn_in(window, async move |form, cx| {
-            let outcome = match saved.await {
-                Ok(Ok(result)) => result.map_err(|error| error.message),
-                Ok(Err(unopened)) => Err(unopened.reason.message),
-                Err(_) => return,
+            let Some(outcome) = said(saved.await) else {
+                return;
             };
             _ = form.update_in(cx, |form, window, cx| {
                 form.stage = Stage::Editing;
@@ -452,19 +448,6 @@ impl Render for ProxyForm {
             )
             .children(outcome)
     }
-}
-
-fn text_field(
-    value: String,
-    placeholder: &'static str,
-    window: &mut Window,
-    cx: &mut Context<'_, ProxyForm>,
-) -> Entity<InputState> {
-    cx.new(|cx| {
-        let mut state = InputState::new(window, cx).placeholder(placeholder);
-        state.set_value(value, window, cx);
-        state
-    })
 }
 
 /// What a test found, in words, and its colour.

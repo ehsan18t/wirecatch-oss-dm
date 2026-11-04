@@ -390,7 +390,7 @@ async fn a_failed_conversion_keeps_the_download_and_try_again_only_converts() ->
     assert_eq!(error.fix, Some(FixAction::KeepOriginal));
     assert!(
         error.message.contains("could not save it as MP4")
-            && error.message.contains("the encoder broke")
+            && !error.message.contains("the encoder broke")
             && error.message.contains("(MKV)"),
         "{}",
         error.message

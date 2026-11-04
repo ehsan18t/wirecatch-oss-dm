@@ -12,7 +12,7 @@ use wirecatch_shell::{api, host, updates};
 
 use wirecatch_shell::host::Unopened;
 
-use crate::backend::Backend;
+use crate::backend::{Backend, Done, said};
 use crate::library::{Library, SettingsChanged};
 use crate::lifecycle;
 
@@ -293,17 +293,8 @@ fn fetch(
 }
 
 /// The answer of a manager call, or the message of why there is none.
-fn answered<T>(
-    done: Result<
-        Result<Result<T, wirecatch_protocol::wire::ProtocolError>, Unopened>,
-        tokio::task::JoinError,
-    >,
-) -> Result<T, String> {
-    match done {
-        Ok(Ok(answer)) => answer.map_err(|e| e.message),
-        Ok(Err(unopened)) => Err(unopened.reason.message),
-        Err(e) => Err(format!("The update stopped unexpectedly ({e}).")),
-    }
+fn answered<T>(done: Done<T>) -> Result<T, String> {
+    said(done).unwrap_or_else(|| Err("The update stopped unexpectedly.".to_owned()))
 }
 
 #[cfg(test)]

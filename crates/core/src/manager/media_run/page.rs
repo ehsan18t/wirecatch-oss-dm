@@ -15,7 +15,7 @@ use wirecatch_protocol::extension::Header;
 use wirecatch_streams::{StreamProgress, StreamRequest};
 
 use super::extras::fetch_extras;
-use super::network::network_rule;
+use super::network::{network_rule, ytdlp_off_local_network};
 use super::save::{joined_container, save, stored_kept_ext};
 use super::workdir::Downloaded;
 use super::{Job, PageError, PageJob, ROLES, disk, workdir};
@@ -81,6 +81,7 @@ pub(super) async fn page_attempt(
     let cookies = cookie_header(&job.origin);
     let proxy = wirecatch_settings::proxy::ytdlp_proxy(&job.options.proxy, &job.url);
     let ctx = ytdlp::Context {
+        off_local_network: off_local_network(job, proxy.as_deref()).await,
         tools,
         page: &job.url,
         cookies: cookies.as_deref(),
@@ -115,8 +116,7 @@ pub(super) async fn page_attempt(
         }
     } else {
         // A format Wirecatch cannot fetch itself: yt-dlp downloads the same
-        // selection. Its own requests are not covered by the
-        // local network rule below (see `network_rule`); yt-dlp makes them.
+        // selection, under the rule of its own (D136).
         if !cookie_formats_pass_the_rule(job, &found, cancel).await? {
             return Ok(MediaDone::Paused);
         }
@@ -201,6 +201,10 @@ async fn cookie_formats_pass_the_rule(
         rule?;
     }
     Ok(true)
+}
+
+async fn off_local_network(job: &Job, proxy: Option<&str>) -> bool {
+    ytdlp_off_local_network(job.chosen_by, &job.url, proxy).await
 }
 
 /// Downloads the formats `found` side by side into `work`: their files, in the

@@ -924,7 +924,7 @@ async fn youtube_is_not_read_again_with_the_sign_in_for_other_failures() -> Test
     assert!(
         row.error
             .as_ref()
-            .is_some_and(|e| e.message.contains("Video unavailable")),
+            .is_some_and(|e| e.message.contains("no longer available")),
         "{:?}",
         row.error
     );
@@ -1511,7 +1511,7 @@ async fn a_page_yt_dlp_cannot_read_explains_why_in_the_list() -> TestResult {
     assert_eq!(row.status, DownloadStatus::Failed);
     let error = row.error.unwrap();
     assert!(
-        error.message.contains("[site] 42: Video unavailable"),
+        error.message.contains("no longer available") && !error.message.contains("[site]"),
         "{}",
         error.message
     );
@@ -2304,5 +2304,81 @@ async fn a_quality_the_page_stopped_offering_fails_in_plain_words() -> TestResul
     let error = failed.error.unwrap();
     assert!(error.message.contains("1080p"), "{}", error.message);
     assert_eq!(downloads_by_ytdlp(&h)?, 0);
+    Ok(())
+}
+
+/// yt-dlp is another process, out of the engine's reach: reading a website's page goes through the guard that keeps it off the local network (D136).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reading_a_websites_page_goes_through_the_local_network_guard() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tune(&h.manager, |s| {
+        s.proxy.proxy = wirecatch_protocol::proxy::ProxyUse::Direct;
+    })?;
+    let video = mp4_data(KIB_USIZE);
+    tell_tool(&h, "info.json", &page_info(&server, &video, &video))?;
+    let mut ui = h.manager.subscribe();
+    let page = "https://videos.example.com/watch";
+    let mut capture = media_capture(page, MediaKind::Page, None);
+    capture.page_url = Some(page.into());
+    capture.referrer = Some(page.into());
+    h.manager.add_capture(capture).await?;
+    choice_requested(&mut ui).await;
+    let call = ytdlp_calls(&h)?.pop().ok_or("yt-dlp was not run")?;
+    let guard = call["all_proxy"].as_str().unwrap_or_default();
+    assert!(guard.starts_with("http://127.0.0.1:"), "{call}");
+    Ok(())
+}
+
+/// A page on the person's own network may lead anywhere there, so yt-dlp runs without the guard.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reading_a_page_on_the_local_network_goes_without_the_guard() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tune(&h.manager, |s| {
+        s.proxy.proxy = wirecatch_protocol::proxy::ProxyUse::Direct;
+    })?;
+    let video = mp4_data(KIB_USIZE);
+    tell_tool(&h, "info.json", &page_info(&server, &video, &video))?;
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(server.url("watch/97"), MediaKind::Page, None))
+        .await?;
+    choice_requested(&mut ui).await;
+    let call = ytdlp_calls(&h)?.pop().ok_or("yt-dlp was not run")?;
+    assert!(call["all_proxy"].is_null(), "{call}");
+    Ok(())
+}
+
+/// yt-dlp's own download of a website's format goes through the guard as well.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn yt_dlps_own_download_goes_through_the_local_network_guard() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tune(&h.manager, |s| {
+        s.proxy.proxy = wirecatch_protocol::proxy::ProxyUse::Direct;
+    })?;
+    let info = serde_json::json!({
+        "title": "Dash only",
+        "formats": [{"format_id": "dash", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 720,
+            "protocol": "http_dash_segments", "url": "https://cdn.example.com/x.mpd"}],
+    });
+    tell_tool(&h, "info.json", &info.to_string())?;
+    let mut ui = h.manager.subscribe();
+    let page = "https://videos.example.com/watch/98";
+    let mut capture = media_capture(page, MediaKind::Page, None);
+    capture.page_url = Some(page.into());
+    capture.referrer = Some(page.into());
+    h.manager.add_capture(capture).await?;
+    let choice = choice_requested(&mut ui).await;
+    let id = h.manager.choose_media(choice.id, select("dash")).await?;
+    h.wait_status(id, DownloadStatus::Completed).await;
+    let call = ytdlp_calls(&h)?.pop().ok_or("yt-dlp was not run")?;
+    assert!(args(&call)?.iter().any(|a| a == "-f"), "{call}");
+    let guard = call["all_proxy"].as_str().unwrap_or_default();
+    assert!(guard.starts_with("http://127.0.0.1:"), "{call}");
     Ok(())
 }

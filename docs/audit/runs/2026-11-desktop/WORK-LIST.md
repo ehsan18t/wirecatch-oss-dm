@@ -102,18 +102,18 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-92  | fix: repair the repo's check scripts               | `fix/check-scripts`              | 129, 191, 238, 239, 240, 241 | P2       | medium | none         | merged |
 | PR-93  | fix(engine): lock the part file during a run       | `fix/part-file-lock`             | 130                          | P2       | medium | none         | merged |
 | PR-94  | fix(core): keep a video's work until it is placed  | `fix/work-until-placed`          | 133, 169                     | P2       | medium | PR-04        | merged |
-| PR-95  | fix(core): apply the local rule to yt-dlp reads    | `fix/ytdlp-local-rule`           | 137                          | P2       | medium | none         | open   |
+| PR-95  | fix(core): apply the local rule to yt-dlp reads    | `fix/ytdlp-local-rule`           | 137                          | P2       | medium | none         | merged |
 | PR-96  | fix(engine): check free space before a download    | `fix/free-space-check`           | 140                          | P2       | medium | none         | merged |
 | PR-97  | fix(core): record every file of a move up front    | `fix/record-moves`               | 141, 201, 246                | P2       | medium | PR-04, PR-08 | merged |
 | PR-98  | chore: remove code nothing calls                   | `chore/remove-dead-commands`     | 142, 235, 236                | P3       | medium | none         | open   |
 | PR-99  | test: wait under PATIENCE in every test            | `test/patience-waits`            | 143, 242                     | P3       | medium | none         | open   |
 | PR-100 | test: stop racing real-clock limits in tests       | `test/no-clock-races`            | 144, 167                     | P3       | medium | none         | open   |
 | PR-101 | test: share test values through test-support       | `test/shared-test-values`        | 146, 147, 149, 183           | P3       | medium | none         | open   |
-| PR-102 | fix(desktop): show startup notices only once       | `fix/startup-notices-once`       | 150, 214                     | P3       | medium | none         | open   |
+| PR-102 | fix(desktop): show startup notices only once       | `fix/startup-notices-once`       | 150, 214                     | P3       | medium | none         | merged |
 | PR-103 | fix(core): let a person's stop win                 | `fix/person-stop-wins`           | 152, 172                     | P3       | small  | none         | merged |
 | PR-104 | fix(engine): tighten network guard edge cases      | `fix/net-guard-edges`            | 154, 155, 216, 217           | P3       | medium | none         | merged |
-| PR-105 | fix(media): word program failures plainly          | `fix/word-program-failures`      | 164                          | P3       | small  | none         | open   |
-| PR-106 | refactor(desktop): share repeated form logic       | `refactor/share-form-logic`      | 168                          | P3       | medium | none         | open   |
+| PR-105 | fix(media): word program failures plainly          | `fix/word-program-failures`      | 164                          | P3       | small  | none         | merged |
+| PR-106 | refactor(desktop): share repeated form logic       | `refactor/share-form-logic`      | 168                          | P3       | medium | none         | merged |
 | PR-107 | fix: write kept files whole before replacing       | `fix/write-kept-files-whole`     | 170, 171                     | P3       | small  | none         | merged |
 | PR-108 | refactor(engine): remove code with no effect       | `refactor/engine-no-op-code`     | 179, 181                     | P3       | small  | none         | merged |
 | PR-109 | refactor(streams): remove leftovers from the crate | `refactor/streams-leftovers`     | 192, 193, 194                | P3       | small  | none         | merged |
@@ -1304,7 +1304,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core -p wirecatch-media`, `cargo clippy -p wirecatch-core -p wirecatch-media`
 - **Note:** Also covers a public address that redirects to a local one under yt-dlp, which the engine's guard cannot reach, and check whether an address `Url::parse` rejects, such as `http://[fe80::1%25eth0]/`, reaches yt-dlp unchecked.
-- **Status:** open
+- **Status:** merged
 
 ### PR-96 fix(engine): check free space before a download
 
@@ -1388,7 +1388,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/library.rs`, `crates/desktop/src/main_window/notices_bar.rs`, `crates/desktop/src/download_windows`, `crates/shell/src/download_windows.rs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop -p wirecatch-shell`, `cargo clippy -p wirecatch-desktop -p wirecatch-shell`; look at the notice in both themes.
-- **Status:** open
+- **Status:** merged
 
 ### PR-103 fix(core): let a person's stop win
 
@@ -1424,7 +1424,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/media`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-media`, `cargo clippy -p wirecatch-media`
-- **Status:** open
+- **Status:** merged
 
 ### PR-106 refactor(desktop): share repeated form logic
 
@@ -1436,7 +1436,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-107 fix: write kept files whole before replacing
 
