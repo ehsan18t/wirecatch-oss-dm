@@ -86,7 +86,7 @@ fn claim_or_hand_over(runtime: &tokio::runtime::Runtime, launch: &Launch) -> Cla
             }
         }
     }
-    launch::say_already_running();
+    launch.say_already_running();
     Claim::Exit
 }
 
@@ -125,7 +125,7 @@ fn main() {
     let Claim::Run(listener) = claim_or_hand_over(&runtime, &launch) else {
         return;
     };
-    let backend = backend::Backend::start(runtime, listener);
+    let backend = backend::Backend::start(runtime, listener, launch.clone());
     gpui_kit::application()
         .with_assets(ui::icon::Assets)
         .with_quit_mode(QuitMode::Explicit)

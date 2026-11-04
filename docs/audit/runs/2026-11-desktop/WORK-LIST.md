@@ -39,7 +39,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-31  | fix(desktop): correct links, folder in add dialog  | `fix/add-dialog-links`           | 31, 56, 128                  | P2       | small  | none         | open   |
 | PR-32  | fix(engine): read server file names correctly      | `fix/server-file-names`          | 32, 50, 64                   | P2       | medium | none         | merged |
 | PR-33  | fix(streams): finish a joined video safely         | `fix/finish-video-safely`        | 33, 67, 200                  | P2       | medium | none         | merged |
-| PR-34  | fix(bridge): start the app on a damaged key        | `fix/bridge-damaged-key`         | 34, 153                      | P2       | small  | none         | open   |
+| PR-34  | fix(bridge): start the app on a damaged key        | `fix/bridge-damaged-key`         | 34, 153                      | P2       | small  | none         | merged |
 | PR-35  | fix(core): keep rows right through file questions  | `fix/rows-through-questions`     | 35, 66, 85                   | P2       | medium | none         | merged |
 | PR-36  | fix(settings): read proxy values so they can work  | `fix/usable-proxy-values`        | 36, 115, 220                 | P2       | medium | none         | merged |
 | PR-37  | fix(core): keep a name when a link becomes a page  | `fix/page-keeps-name`            | 37, 175                      | P2       | medium | none         | merged |
@@ -556,7 +556,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/bridge`, `crates/ipc`
 - **Proof:** `B04-p2-checks.patch` holds 5 tests: take `audit_06_1_`, `audit_08_3_` and `audit_b04_1_`. The two `audit_08_2_` ones are for PR-18, so the `windows.rs` part may clash once that is merged.
 - **Checks:** `cargo test -p wirecatch-ipc`, `cargo test -p wirecatch-bridge --features test-overrides`, `cargo clippy -p wirecatch-ipc -p wirecatch-bridge`
-- **Status:** open
+- **Status:** merged
 
 ### PR-35 fix(core): keep rows right through file questions
 
