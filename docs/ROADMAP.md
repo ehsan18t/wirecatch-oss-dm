@@ -301,7 +301,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 240. Dead code in the product generator (open)
 241. Comments in the checked configuration describe things that are gone (open)
 242. Two test helpers wait for progress with no deadline (open)
-243. A roaming data folder that could not be deleted keeps the list with its cookies (open)
+243. A roaming data folder that could not be deleted keeps the list with its cookies (fixed)
 244. The `<local>` queue rule is never tested against the real network check (open)
 
 Done before the release:
