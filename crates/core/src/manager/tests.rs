@@ -681,6 +681,29 @@ async fn every_way_a_link_arrives_runs_under_its_own_rule() {
 }
 
 #[tokio::test]
+async fn a_download_that_fails_to_start_gives_its_slot_to_the_next() {
+    let (manager, _dir) = manager_with(deaf, PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
+    let mut settings = manager.get_settings();
+    settings.max_concurrent_downloads = 1;
+    manager.update_settings(settings).unwrap();
+    manager.set_queue_paused(DEFAULT_QUEUE_ID, true).unwrap();
+    let mut ids = Vec::new();
+    for name in ["broken", "second", "third"] {
+        let link = format!("https://example.com/{name}.bin");
+        ids.push(manager.add_download(add_request(&link)).await.unwrap());
+    }
+    let (broken, second, third) = (ids[0], ids[1], ids[2]);
+    manager.lock().downloads.get_mut(&broken).unwrap().row.url = "not a link".into();
+
+    manager.set_queue_paused(DEFAULT_QUEUE_ID, false).unwrap();
+
+    let state = manager.lock();
+    assert_eq!(state.downloads[&broken].row.status, DownloadStatus::Failed);
+    assert!(state.downloads[&second].is_running());
+    assert!(!state.downloads[&third].is_running());
+}
+
+#[tokio::test]
 async fn a_download_runs_under_the_apps_limits_and_its_queues() {
     const CONNECTIONS: u8 = 3;
     const GONE: wirecatch_protocol::QueueId = wirecatch_protocol::QueueId(99);
