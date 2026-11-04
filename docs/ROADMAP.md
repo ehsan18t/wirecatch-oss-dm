@@ -310,7 +310,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 245. A crash can save a download twice under a second name (open)
 246. A killed copy leaves its temporary file behind (open)
 247. Test comments carry history and review labels (open)
-248. Nothing stops new code deleting a whole folder (open)
+248. Nothing stops new code deleting a whole folder (fixed)
 249. The timing check misses a throttled server racing an action (open)
 250. The capture reply's doc contradicts the extension (open)
 251. The layout test can fail on a font that did not load (open)
