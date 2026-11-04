@@ -18,6 +18,7 @@ use std::time::Duration;
 
 use tracing::debug;
 use wirecatch_engine::{CancellationToken, Url};
+use wirecatch_protocol::hosts::host_on_site;
 use wirecatch_streams::process::{self, Ran, RunError, RunOptions};
 
 use crate::MediaTools;
@@ -52,10 +53,9 @@ pub(crate) fn cookies_first(page: &Url) -> bool {
     let Some(host) = page.host_str() else {
         return true;
     };
-    let host = host.trim_end_matches('.').to_ascii_lowercase();
     let youtube = ["youtube.com", "youtu.be", "youtube-nocookie.com"]
         .iter()
-        .any(|site| host == *site || host.ends_with(&format!(".{site}")));
+        .any(|site| host_on_site(host, site));
     !youtube
 }
 

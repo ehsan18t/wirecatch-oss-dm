@@ -169,6 +169,31 @@ async fn a_refused_import_uses_up_no_queue_ids() -> TestResult {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_file_cannot_send_downloads_into_the_managers_data_folder() -> TestResult {
+    let here = Harness::new().await?;
+    let file = here.root.path().join("profile.json");
+    here.manager.export_settings(&file).await.unwrap();
+    let beside_programs = here
+        .root
+        .path()
+        .join("data")
+        .join("addons")
+        .join("media")
+        .join("ffmpeg");
+    let mut profile: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    profile["settings"]["default_folder"] = beside_programs.to_string_lossy().as_ref().into();
+    std::fs::write(&file, serde_json::to_vec(&profile).unwrap()).unwrap();
+
+    let preview = here.manager.preview_import(&file).await.unwrap();
+
+    let default = &preview.folders[0];
+    assert_eq!(default.used, PortablePath("{Downloads}".into()));
+    assert!(default.reason.is_some(), "{default:?}");
+    Ok(())
+}
+
 /// The import is previewed before anything changes: folders as they would
 /// resolve here (a startup folder refused and replaced, a folder outside the
 /// person's own flagged), queues added and updated, add-ons to offer.

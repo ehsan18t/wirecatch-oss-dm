@@ -55,12 +55,17 @@ impl Manager {
         self.emit(UiEvent::ConfirmationClosed { id });
         let download = question.download;
         state.claimed.release(&path, download);
-        if !state
+        let entry = state
             .downloads
             .get(&download)
-            .is_some_and(|e| !e.hold.is_removing() && e.run.is_none())
+            .filter(|e| !e.hold.is_removing())
+            .ok_or(CoreError::DownloadNotFound(download))?;
+        // What it asked about has changed: a late answer must not act on the row as it is now.
+        if !entry.hold.is_free()
+            || entry.run.is_some()
+            || entry.row.status != DownloadStatus::Paused
         {
-            return Err(CoreError::DownloadNotFound(download));
+            return Err(CoreError::ConfirmationNotFound(id));
         }
         let remembered = match answer.choice {
             FileExistsChoice::Replace => {
@@ -250,15 +255,17 @@ fn keep_both(state: &mut State, id: DownloadId) {
 
 /// Download `id` runs again at `path`, over the file there.
 fn replace_at(state: &mut State, id: DownloadId, path: &Path) {
-    let category = wirecatch_settings::category_of(&state.settings, &naming::file_name_of(path));
     let Some(entry) = state.downloads.get_mut(&id) else {
         return;
     };
-    let provisional = entry.path().to_path_buf();
-    settle_at(entry, path);
-    entry.row.category = category;
     entry.on_existing = Some(OnExisting::Replace);
     entry.row.status = DownloadStatus::Queued;
+    // A media download's work folder is named after its path, and holds the file that waits: moving the path would leave both behind. Placing that file replaces the one found.
+    if entry.media_job.is_some() {
+        return;
+    }
+    let provisional = entry.path().to_path_buf();
+    settle_at(entry, path);
     if !naming::same_path(&provisional, path) {
         state.claimed.remove(&provisional, id);
         state.claimed.insert(path, id);

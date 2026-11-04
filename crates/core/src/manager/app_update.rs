@@ -2,7 +2,7 @@
 //! only through its manifest signed with the key the build carries, and its installer
 //! downloaded and checked against that manifest before the shell may run it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tracing::info;
@@ -27,6 +27,8 @@ const UPDATE_NETWORK: PrivateNetwork = PrivateNetwork::Block;
 const MAX_METADATA: u64 = 4 * MIB;
 /// The folder in the data folder installers are downloaded to.
 const UPDATES_FOLDER: &str = "updates";
+/// The only scheme a release's page may have: it comes unsigned and goes to the system's shell.
+const HTTPS: &str = "https";
 
 /// Where the app's releases are listed, and the key their manifests are signed with.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,9 +43,10 @@ pub struct AppReleases {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppUpdate {
     pub version: String,
-    /// The release's page.
-    pub page: String,
-    /// The installer the app can install itself on this computer, when there is one.
+    /// The release's page, always https.
+    pub page: Url,
+    /// The installer to install; `None` only for a system package, whose package manager installs
+    /// the update.
     pub download: Option<UpdateDownload>,
 }
 
@@ -56,13 +59,13 @@ pub struct UpdateDownload {
 
 impl Manager {
     /// The newest release newer than `current`, with the installer of `kind` for this computer
-    /// when `kind` is given and the release has one. Pre-releases count while the setting asks
-    /// for them. `None` when this build is the newest, or has nowhere to look.
+    /// when `kind` is given. Pre-releases count while the setting asks for them. `None` when this
+    /// build is the newest, or has nowhere to look.
     ///
     /// # Errors
     ///
-    /// [`CoreError::UpdateCheckFailed`] when the releases cannot be reached or a newer one is
-    /// not signed with this build's key.
+    /// [`CoreError::UpdateCheckFailed`] when the releases cannot be reached, or a newer one is
+    /// not signed with this build's key, has no usable installer of `kind` or no https page.
     pub async fn check_app_update(
         &self,
         current: &str,
@@ -91,30 +94,28 @@ impl Manager {
                 manifest.version
             )));
         }
-        let download = match (kind, System::current(), Arch::current()) {
-            (Some(kind), Some(system), Some(arch)) => {
-                manifest.file(system, arch, kind).and_then(|file| {
-                    let asset = release.asset(&file.name)?;
-                    let url = Url::parse(&asset.browser_download_url).ok()?;
-                    (asset.size == file.size).then(|| UpdateDownload {
-                        url,
-                        file: file.clone(),
-                    })
-                })
-            }
-            _ => None,
-        };
+        let download = kind
+            .map(|kind| {
+                usable_installer(release, &manifest, kind)
+                    .ok_or_else(|| refused("it has no installer for this computer"))
+            })
+            .transpose()?;
+        let page = Url::parse(&release.html_url)
+            .ok()
+            .filter(|page| page.scheme() == HTTPS)
+            .ok_or_else(|| refused("its page is not at a secure address"))?;
         info!(%version, "a newer version of the app is out");
         Ok(Some(AppUpdate {
             version: version.to_string(),
-            page: release.html_url.clone(),
+            page,
             download,
         }))
     }
 
     /// Downloads `download` into the data folder's updates folder, reporting to `progress`, and
     /// returns its path once its size and SHA-256 match the signed manifest. A file that does not
-    /// match is deleted.
+    /// match is deleted; one already there that matches is used as it is, so trying an install
+    /// again downloads nothing.
     ///
     /// # Errors
     ///
@@ -141,6 +142,13 @@ impl Manager {
             }))
         })
         .await??;
+        let checked = target.clone();
+        if self
+            .blocking(move || Ok(installer_matches(&checked, size, &expected)))
+            .await?
+        {
+            return Ok(target);
+        }
         let mut request = DownloadRequest::new(download.url.clone(), &folder);
         let named = target.clone();
         request.resolve_path = Some(Arc::new(move |remote: &RemoteFile| {
@@ -170,10 +178,7 @@ impl Manager {
         }
         let checked = target.clone();
         let matches = self
-            .blocking(move || {
-                Ok(std::fs::metadata(&checked).is_ok_and(|m| m.len() == size)
-                    && archive::sha256_file(&checked).is_ok_and(|hash| hash == expected))
-            })
+            .blocking(move || Ok(installer_matches(&checked, size, &expected)))
             .await?;
         if !matches {
             let wrong = target.clone();
@@ -235,6 +240,33 @@ impl Manager {
     }
 }
 
+fn installer_matches(path: &Path, size: u64, expected: &Sha256Digest) -> bool {
+    std::fs::metadata(path).is_ok_and(|m| m.len() == size)
+        && archive::sha256_file(path).is_ok_and(|hash| hash == *expected)
+}
+
+/// Removes the installers of earlier runs. The setup that started this run may still hold its own
+/// file, which then goes at the next start.
+pub(super) fn discard_installers(data_dir: &Path) {
+    wirecatch_files::discard::dir(&data_dir.join(UPDATES_FOLDER));
+}
+
+/// The installer of `kind` for this computer, when the release's file is the one the signed
+/// manifest describes.
+fn usable_installer(
+    release: &Release,
+    manifest: &Manifest,
+    kind: FileKind,
+) -> Option<UpdateDownload> {
+    let file = manifest.file(System::current()?, Arch::current()?, kind)?;
+    let asset = release.asset(&file.name)?;
+    let url = Url::parse(&asset.browser_download_url).ok()?;
+    (asset.size == file.size).then(|| UpdateDownload {
+        url,
+        file: file.clone(),
+    })
+}
+
 fn unreachable_releases(reason: &str) -> CoreError {
     CoreError::UpdateCheckFailed(format!(
         "Wirecatch could not look for a newer version ({reason}). Check your connection, then try again."
@@ -260,6 +292,14 @@ mod tests {
 
     const LIST: &str = "/releases";
     const INSTALLER: &[u8] = b"a newer installer";
+
+    /// What a published release says differently from what is usual.
+    #[derive(Default)]
+    struct Odd {
+        manifest_version: Option<&'static str>,
+        asset_size: Option<usize>,
+        page: Option<&'static str>,
+    }
 
     struct Harness {
         manager: Manager,
@@ -293,6 +333,17 @@ mod tests {
 
         /// Publishes `tag`, its installer and its manifest signed by `signer`.
         fn publish(&self, tag: &str, prerelease: bool, signer: &SigningKey, installer: &[u8]) {
+            self.publish_odd(tag, prerelease, signer, installer, &Odd::default());
+        }
+
+        fn publish_odd(
+            &self,
+            tag: &str,
+            prerelease: bool,
+            signer: &SigningKey,
+            installer: &[u8],
+            odd: &Odd,
+        ) {
             let version = tag.trim_start_matches('v');
             let (system, arch) = (System::current().unwrap(), Arch::current().unwrap());
             let file = UpdateFile {
@@ -304,7 +355,7 @@ mod tests {
                 sha256: format!("{:x}", Sha256::digest(INSTALLER)),
             };
             let manifest = serde_json::to_vec(&Manifest {
-                version: version.to_owned(),
+                version: odd.manifest_version.unwrap_or(version).to_owned(),
                 files: vec![file.clone()],
             })
             .unwrap();
@@ -324,9 +375,9 @@ mod tests {
                 "tag_name": tag,
                 "draft": false,
                 "prerelease": prerelease,
-                "html_url": format!("https://example.com/{tag}"),
+                "html_url": odd.page.map_or_else(|| format!("https://example.com/{tag}"), str::to_owned),
                 "assets": [
-                    asset(&file.name, INSTALLER.len()),
+                    asset(&file.name, odd.asset_size.unwrap_or(INSTALLER.len())),
                     asset(MANIFEST_FILE, 1),
                     asset(SIGNATURE_FILE, 1),
                 ],
@@ -404,6 +455,95 @@ mod tests {
             .unwrap();
         assert_eq!(update.version, "0.2.0-beta.1");
         assert_eq!(update.download, None, "no installer was asked for");
+    }
+
+    async fn refusal(h: &Harness, kind: FileKind) -> String {
+        let found = h.manager.check_app_update("0.1.0", Some(kind)).await;
+        let Err(CoreError::UpdateCheckFailed(message)) = found else {
+            panic!("expected a refusal, got {found:?}");
+        };
+        message
+    }
+
+    #[tokio::test]
+    async fn a_manifest_naming_another_version_is_refused() {
+        let h = Harness::new().await;
+        let odd = Odd {
+            manifest_version: Some("0.3.0"),
+            ..Odd::default()
+        };
+        h.publish_odd("v0.2.0", false, &key(), INSTALLER, &odd);
+        let message = refusal(&h, FileKind::Setup).await;
+        assert!(message.contains("names version 0.3.0"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn an_asset_of_another_size_than_its_manifest_is_refused() {
+        let h = Harness::new().await;
+        let odd = Odd {
+            asset_size: Some(INSTALLER.len() + 1),
+            ..Odd::default()
+        };
+        h.publish_odd("v0.2.0", false, &key(), INSTALLER, &odd);
+        let message = refusal(&h, FileKind::Setup).await;
+        assert!(message.contains("no installer"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn a_release_with_no_installer_for_this_install_is_refused() {
+        let h = Harness::new().await;
+        h.publish("v0.2.0", false, &key(), INSTALLER);
+        let message = refusal(&h, FileKind::AppImage).await;
+        assert!(message.contains("no installer"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn a_release_page_that_is_not_https_is_refused() {
+        let h = Harness::new().await;
+        let odd = Odd {
+            page: Some("file:///C:/Windows/System32/calc.exe"),
+            ..Odd::default()
+        };
+        h.publish_odd("v0.2.0", false, &key(), INSTALLER, &odd);
+        let message = refusal(&h, FileKind::Setup).await;
+        assert!(message.contains("page"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn trying_again_uses_the_checked_installer_already_downloaded() {
+        let h = Harness::new().await;
+        h.publish("v0.2.0", false, &key(), INSTALLER);
+        let update = h
+            .manager
+            .check_app_update("0.1.0", Some(FileKind::Setup))
+            .await
+            .unwrap()
+            .unwrap();
+        let download = update.download.unwrap();
+        let fetch = || {
+            h.manager.fetch_app_update(
+                &download,
+                Arc::new(Progress::default()),
+                CancellationToken::new(),
+            )
+        };
+        let first = fetch().await.unwrap();
+        let sent = h.server.requests(download.url.path());
+        assert_eq!(fetch().await.unwrap(), first);
+        assert_eq!(h.server.requests(download.url.path()), sent);
+    }
+
+    #[tokio::test]
+    async fn installers_from_an_earlier_run_are_removed_when_the_app_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        let updates = data.join(UPDATES_FOLDER);
+        std::fs::create_dir_all(&updates).unwrap();
+        std::fs::write(updates.join("Wirecatch-0.1.0-setup.exe"), INSTALLER).unwrap();
+        let config =
+            ManagerConfig::for_tests(data, KnownFolders::under_home(dir.path().join("home")));
+        let _manager = Manager::open(config).await.unwrap();
+        assert!(!updates.exists());
     }
 
     #[tokio::test]

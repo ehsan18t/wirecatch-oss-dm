@@ -166,7 +166,7 @@ impl Destination {
                     .context(IoAction::CreateFile, &dir.join(&name))?;
                 let mut target = self::target(path, Finish::FreeName { dir, name });
                 target.lock = lock;
-                if let Err(e) = storage::size_part(&part, file.total) {
+                if let Err(e) = storage::size_part(&target.part, &part, file.total) {
                     drop(part);
                     target.lock = PartLock::default();
                     // Nothing was downloaded under the name: give it back.

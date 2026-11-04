@@ -37,6 +37,7 @@ use url::{Host, Url};
 
 use crate::error::Error;
 use crate::http::{Failure, Validators};
+use crate::net_guard::{Guard, is_private};
 use crate::options::DownloadOptions;
 use crate::request::RequestContext;
 use crate::socks::{Destination, Socks5};
@@ -98,6 +99,8 @@ pub(crate) struct Target {
     tls: Option<Tls>,
     /// The SOCKS5 proxy every connection goes through, when one is set.
     via: Option<Socks5>,
+    /// Set when the local network must not be reached. A host written as an address never meets it: the caller vouches for the link, and FTP has no redirects.
+    guard: Option<Guard>,
     connect_timeout: Duration,
     stall: Duration,
 }
@@ -111,6 +114,7 @@ impl Target {
         opts: &DownloadOptions,
         tls: &rustls::ClientConfig,
         via: Option<Socks5>,
+        guard: Option<Guard>,
     ) -> Result<Self, Error> {
         let invalid = |why: &str| Error::InvalidUrl(format!("{} {why}", without_password(url)));
         let (security, port) =
@@ -197,6 +201,7 @@ impl Target {
             display_url: without_password(url),
             tls,
             via,
+            guard,
             connect_timeout: opts.connect_timeout,
             stall: opts.stall_timeout,
         })
@@ -218,6 +223,9 @@ impl Target {
             Host::Ipv4(ip) => return Ok(vec![SocketAddr::new((*ip).into(), self.port).into()]),
             Host::Ipv6(ip) => return Ok(vec![SocketAddr::new((*ip).into(), self.port).into()]),
             Host::Domain(name) if self.via.as_ref().is_some_and(Socks5::resolves_names) => {
+                if let Some(guard) = &self.guard {
+                    (guard.0)(&self.display_url).await?;
+                }
                 return Ok(vec![Destination::Name(name.clone(), self.port)]);
             }
             Host::Domain(name) => name,
@@ -230,16 +238,30 @@ impl Target {
         .await
         {
             Ok(Ok(found)) => {
-                let found: Vec<Destination> = found.map(Destination::from).collect();
+                let found: Vec<SocketAddr> = found.collect();
                 if found.is_empty() {
-                    Err(Error::socket(what, io::ErrorKind::NotFound.into(), true).into())
-                } else {
-                    Ok(found)
+                    return Err(Error::socket(what, io::ErrorKind::NotFound.into(), true).into());
                 }
+                let allowed = self.allowed_addresses(found);
+                if allowed.is_empty() {
+                    return Err(Error::PrivateNetwork {
+                        url: self.display_url.to_string(),
+                    }
+                    .into());
+                }
+                Ok(allowed.into_iter().map(Destination::from).collect())
             }
             Ok(Err(e)) => Err(Error::socket(what, e, true).into()),
             Err(_) => Err(Error::socket(what, io::ErrorKind::TimedOut.into(), true).into()),
         }
+    }
+
+    /// `found`, without local addresses when local ones are kept away from.
+    fn allowed_addresses(&self, mut found: Vec<SocketAddr>) -> Vec<SocketAddr> {
+        if self.guard.is_some() {
+            found.retain(|address| !is_private(address.ip()));
+        }
+        found
     }
 
     /// Connects to `to`, reads the greeting and sets up TLS as the URL asks,

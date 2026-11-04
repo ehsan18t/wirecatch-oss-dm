@@ -132,7 +132,7 @@ fn update_available(update: &AppUpdate, updates: &Entity<Updates>) -> Callout {
                 .small()
                 .ghost()
                 .label("What's new")
-                .on_click(move |_, _, cx| cx.open_url(&page)),
+                .on_click(move |_, _, cx| cx.open_url(page.as_str())),
         )
     })
     .action(

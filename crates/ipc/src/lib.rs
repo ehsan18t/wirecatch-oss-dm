@@ -30,8 +30,9 @@
 //!   `AppContainer` token), or hides who it is: a client must open the pipe at the
 //!   identification level, as [`connect`] does, and one that opens it anonymously or
 //!   without naming a level is refused. The connector
-//!   reads the owner of the pipe it opened and refuses it unless it is the current
-//!   user; it opens the pipe at the identification impersonation level, so the
+//!   reads the owner and the mandatory label of the pipe it opened and refuses it unless
+//!   the current user owns it and a program with no fewer rights than the app runs at made
+//!   it (D130); it opens the pipe at the identification impersonation level, so the
 //!   listener can tell who it is but a hostile server cannot act as the client.
 //! - **Linux**: the endpoint is `$XDG_RUNTIME_DIR/wirecatch/app.sock` (`app-dev.sock`
 //!   for debug builds), or
@@ -178,6 +179,17 @@ pub enum IpcError {
         /// The owner that was found.
         actual: String,
     },
+    /// (Windows) The server at the endpoint is the user's own, but a program with fewer
+    /// rights than the app made it (D130). Nothing was sent to it.
+    #[error(
+        "Refused to connect to {endpoint} because a program running with fewer rights than Wirecatch (integrity level {level}) made it. That program may be trying to intercept your downloads. Open Wirecatch again, which moves to a new connection point."
+    )]
+    LowerRightsServer {
+        /// The endpoint that was tried.
+        endpoint: String,
+        /// The integrity level on the server's pipe.
+        level: u32,
+    },
     /// The endpoint name is held by a different user account, so the listener did
     /// not start (and nothing was exposed).
     #[error(
@@ -246,12 +258,12 @@ pub enum IpcError {
 }
 
 impl IpcError {
-    /// Whether this says another account holds the endpoint's name: the pipe (Windows), or
-    /// the socket's folder in `/tmp` (Linux).
-    fn is_taken_by_someone_else(&self) -> bool {
+    /// Whether this says something already holds the endpoint's name: the pipe (Windows), the
+    /// socket (Linux) or its folder in `/tmp`. Under the key's lock that is never a copy of ours.
+    fn means_the_name_is_held(&self) -> bool {
         matches!(
             self,
-            Self::EndpointTaken { .. } | Self::UnsafeDirectory { .. }
+            Self::AlreadyInUse { .. } | Self::EndpointTaken { .. } | Self::UnsafeDirectory { .. }
         )
     }
 
@@ -445,15 +457,15 @@ impl Listener {
     /// It first takes the key folder's lock and keeps it while it listens: that makes it
     /// the one listener of the channel for this account, even for a copy that could not
     /// see the endpoint of another (one running with other rights, say). It then listens
-    /// with the stored key, writing one if there is none or it is damaged. When another
-    /// account has taken the name the key gives (no copy of ours can hold it while we hold
-    /// the lock), it writes a new key and listens with that, so taking the name costs the
-    /// squatter a key it saw once and never stops Wirecatch. A client that reached the
-    /// squatter first got [`IpcError::WrongOwner`] and sent nothing.
+    /// with the stored key, writing one if there is none or it is damaged. When anything
+    /// already holds the name the key gives (no copy of ours can while we hold the lock),
+    /// it writes a new key and listens with that, so taking the name costs the squatter a
+    /// key it saw once and never stops Wirecatch. A client that reached the squatter first
+    /// got [`IpcError::WrongOwner`] or [`IpcError::LowerRightsServer`] and sent nothing.
     ///
     /// # Errors
     ///
-    /// [`IpcError::AlreadyInUse`] when another listener holds the lock or the endpoint,
+    /// [`IpcError::AlreadyInUse`] when another listener holds the lock,
     /// [`IpcError::BadEndpointKey`] when the key file is not private, and as
     /// [`Listener::bind`] otherwise, also when the name a new key gives is taken too.
     pub fn bind_keyed(channel: Channel, folders: &Folders) -> Result<Self, IpcError> {
@@ -462,7 +474,7 @@ impl Listener {
         let first = platform::endpoint(channel, runtime, || lock.current())
             .and_then(|endpoint| Self::bind(&endpoint));
         let listening = match first {
-            Err(taken) if taken.is_taken_by_someone_else() && platform::needs_key(runtime) => {
+            Err(taken) if taken.means_the_name_is_held() && platform::needs_key(runtime) => {
                 platform::endpoint(channel, runtime, || lock.renew())
                     .and_then(|endpoint| Self::bind(&endpoint))
             }
@@ -500,7 +512,8 @@ impl Listener {
 /// # Errors
 ///
 /// [`IpcError::NotRunning`] when nothing is listening, [`IpcError::WrongOwner`]
-/// when the server belongs to someone else (nothing was sent to it), and
+/// when the server belongs to someone else and [`IpcError::LowerRightsServer`] when a
+/// program with fewer rights made it (nothing was sent to either), and
 /// [`IpcError::Io`] when the connection cannot be opened or its owner read.
 pub async fn connect(endpoint: &Endpoint) -> Result<Connection, IpcError> {
     #[cfg(windows)]

@@ -1391,6 +1391,226 @@
       "log": "Opening 'https://example.com/live.m3u8?***' for reading"
     },
     {
+      "text": "GET https://cdn.example.com/bob's.mp4?st=s1gnedvalue&e=1 failed",
+      "secrets": [
+        "s1gnedvalue"
+      ],
+      "log": "GET https://cdn.example.com/bob's.mp4?st=***&e=*** failed"
+    },
+    {
+      "text": "https://ada:pa'ss@example.com/f",
+      "secrets": [
+        "pa'ss"
+      ],
+      "log": "https://ada:***@example.com/f",
+      "display": "https://ada:***@example.com/f"
+    },
+    {
+      "text": "https://example.com/a?q=it's&st=s1gnedvalue",
+      "secrets": [
+        "s1gnedvalue"
+      ],
+      "log": "https://example.com/a?q=***&st=***"
+    },
+    {
+      "text": "https://example.com/bob'?st=s1gnedvalue",
+      "secrets": [
+        "s1gnedvalue"
+      ],
+      "log": "https://example.com/bob'?st=***"
+    },
+    {
+      "text": "path='/live/it's.m3u8?st=s1gnedvalue' failed",
+      "secrets": [
+        "s1gnedvalue"
+      ],
+      "log": "path='/live/it's.m3u8?st=***' failed"
+    },
+    {
+      "text": "it's at path='/live.m3u8?st=s1gnedvalue'",
+      "secrets": [
+        "s1gnedvalue"
+      ],
+      "log": "it's at path='/live.m3u8?st=***'"
+    },
+    {
+      "text": "'https://a.example/?st=s1gnedvalue' 'https://b.example/?st=s2gnedvalue'",
+      "secrets": [
+        "s1gnedvalue",
+        "s2gnedvalue"
+      ],
+      "log": "'https://a.example/?st=***' 'https://b.example/?st=***'"
+    },
+    {
+      "text": "https://h.example/enc.key: Server returned 403 Forbidden",
+      "kept_by": [
+        "log",
+        "display"
+      ]
+    },
+    {
+      "text": "GET https://auth.example.com:8443/f.zip failed",
+      "kept_by": [
+        "log",
+        "display"
+      ]
+    },
+    {
+      "text": "GET http://auth:8443/f.zip failed",
+      "kept_by": [
+        "log",
+        "display"
+      ]
+    },
+    {
+      "text": "session-01.mp4: Permission denied",
+      "kept_by": [
+        "log",
+        "display"
+      ]
+    },
+    {
+      "text": "panicked at crates/media/src/ytdlp/cookies.rs:12:3: bad page",
+      "kept_by": [
+        "log",
+        "display"
+      ]
+    },
+    {
+      "text": "C:\\Videos\\password.txt: Access is denied",
+      "kept_by": [
+        "log",
+        "display"
+      ]
+    },
+    {
+      "text": "auth.token: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "auth.token: ***"
+    },
+    {
+      "text": "session.id: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "session.id: ***"
+    },
+    {
+      "text": "cookie.value: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "cookie.value: ***"
+    },
+    {
+      "text": "\"session.conf\": \"s3cretvalue\"",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "\"session.conf\": \"***\""
+    },
+    {
+      "text": "user/password: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "user/password: ***"
+    },
+    {
+      "text": "enc.key: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "enc.key: ***"
+    },
+    {
+      "text": "line one\\nauth.token: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "line one\\nauth.token: ***"
+    },
+    {
+      "text": "https://h.example/enc.key=s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "https://h.example/enc.key=***"
+    },
+    {
+      "text": "https://token:s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "https://token:***"
+    },
+    {
+      "text": "https://token:9f8e7d6c",
+      "secrets": [
+        "9f8e7d6c"
+      ],
+      "log": "https://token:***"
+    },
+    {
+      "text": "C:\\Videos\\enc.key: Access is denied",
+      "kept_by": [
+        "log",
+        "display"
+      ]
+    },
+    {
+      "text": "key.pem: Permission denied",
+      "kept_by": [
+        "log",
+        "display"
+      ]
+    },
+    {
+      "text": "password.new: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "password.new: ***"
+    },
+    {
+      "text": "api_key.prod: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "api_key.prod: ***"
+    },
+    {
+      "text": "token.raw: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "token.raw: ***"
+    },
+    {
+      "text": "config/db.password: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "config/db.password: ***"
+    },
+    {
+      "text": "C:\\\\x\\nauth.token: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "C:\\\\x\\nauth.token: ***"
+    },
+    {
+      "text": "https://ada:pw@auth.example.com:8443/f",
+      "secrets": [
+        "pw@"
+      ],
+      "log": "https://ada:***@auth.example.com:8443/f",
+      "display": "https://ada:***@auth.example.com:8443/f"
+    },
+    {
       "text": "https://example.com/a?id=7#t=10",
       "log": "https://example.com/a?id=***#***"
     },

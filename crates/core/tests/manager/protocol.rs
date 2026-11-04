@@ -1842,3 +1842,35 @@ async fn a_password_in_a_link_is_never_shown() -> TestResult {
     assert!(stored.contains("ada:s3cret@"), "{stored}");
     Ok(())
 }
+
+/// The browser keeps its copy of a capture answered `NotStarted`, so the app must not download it too (D27).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_capture_refused_at_quit_does_not_come_back() -> TestResult {
+    let silent = crate::common::SilentServer::start().await;
+    let mut h = Harness::new().await?;
+    let waiting = {
+        let manager = h.manager.clone();
+        let capture = capture(silent.url("report.pdf").to_string());
+        tokio::spawn(async move { manager.add_capture(capture).await })
+    };
+    let id = crate::common::wait_until("the capture's row", || {
+        h.manager
+            .list_downloads()
+            .first()
+            .filter(|r| r.status == DownloadStatus::Connecting)
+            .map(|r| r.id)
+    })
+    .await;
+    h.manager.shutdown().await;
+    let reply = waiting.await?;
+    assert!(matches!(
+        reply,
+        Err(wirecatch_core::CoreError::NotStarted(_))
+    ));
+    h.reopen().await?;
+    assert!(
+        h.manager.get_download(id).is_err(),
+        "the browser kept its copy and the app downloads it too"
+    );
+    Ok(())
+}

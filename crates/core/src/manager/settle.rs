@@ -149,12 +149,7 @@ impl Manager {
                 &entry.row.file_name,
             )
             .map_err(|e| e.to_string())?;
-            let mut category = wirecatch_settings::category_of(&state.settings, &name);
-            if category == Category::Other
-                && let Some(content_type) = &remote.content_type
-            {
-                category = wirecatch_settings::category_from_mime(content_type);
-            }
+            let category = settled_category(&state, entry, &name, remote);
             let dir = match &entry.naming.folder {
                 Some(folder) => PathBuf::from(folder),
                 None => state
@@ -165,7 +160,7 @@ impl Manager {
         };
 
         let first = naming::candidate(&dir, &name, 0);
-        self.stop_for_duplicate(id, run_id, remote, &first)?;
+        self.stop_for_duplicate(id, run_id, remote, &first, category)?;
 
         // The disk is checked without the lock, which a folder that is slow to
         // answer (an unreachable network share) would otherwise keep from every
@@ -246,22 +241,27 @@ const FILE_EXISTS: &str = "The file is already in the folder.";
 
 impl Manager {
     /// Stops run `run_id` of download `id` when the file at `path`, where it would save, seems to
-    /// be the one the server offers (D88); `finish` then does what the setting says.
+    /// be the one the server offers (D88); `finish` then does what the setting says, on a row of the `category` the answer gives.
     fn stop_for_duplicate(
         &self,
         id: DownloadId,
         run_id: u64,
         remote: &ServerAnswer,
         path: &Path,
+        category: Category,
     ) -> Result<(), String> {
         let Some(found) = self.found_existing(id, remote, path) else {
             return Ok(());
         };
         let mut state = self.lock();
         current_run(&state, id, run_id)?;
-        if let Some(run) = state.downloads.get_mut(&id).and_then(|e| e.run.as_mut()) {
-            run.stop = Some(Stop::FileExists);
-            run.found = Some(found);
+        if let Some(entry) = state.downloads.get_mut(&id) {
+            entry.offered_file = true;
+            entry.row.category = category;
+            if let Some(run) = entry.run.as_mut() {
+                run.stop = Some(Stop::FileExists);
+                run.found = Some(found);
+            }
         }
         Err(FILE_EXISTS.into())
     }
@@ -297,6 +297,21 @@ fn off_async_worker<T>(work: impl FnOnce() -> T) -> T {
     match tokio::runtime::Handle::try_current().map(|handle| handle.runtime_flavor()) {
         Ok(tokio::runtime::RuntimeFlavor::MultiThread) => tokio::task::block_in_place(work),
         _ => work(),
+    }
+}
+
+/// The category of the file `name` the server answered with.
+fn settled_category(state: &State, entry: &Entry, name: &str, remote: &ServerAnswer) -> Category {
+    // The browser's word for a direct file: `talk.webm` may be only sound.
+    if entry.row.media.is_some() && entry.row.category == Category::Audio {
+        return Category::Audio;
+    }
+    let category = wirecatch_settings::category_of(&state.settings, name);
+    match &remote.content_type {
+        Some(content_type) if category == Category::Other => {
+            wirecatch_settings::category_from_mime(content_type)
+        }
+        _ => category,
     }
 }
 
