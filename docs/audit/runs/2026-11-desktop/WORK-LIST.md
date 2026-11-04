@@ -136,17 +136,22 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-126 | test: catch server races in the timing check       | `test/timing-server-races`       | 249                          | P3       | medium | PR-100       | open   |
 | PR-127 | fix(protocol): correct when a capture may erase    | `fix/capture-erase-doc`          | 250                          | P3       | small  | none         | merged |
 | PR-128 | test(extension): make the layout test's font load  | `test/layout-font`               | 251                          | P3       | small  | none         | merged |
+| PR-129 | fix(core): finish removals after a crash           | `fix/removal-after-crash`        | 252, 253                     | P3       | medium | none         | open   |
+| PR-130 | fix(desktop): act on a folded group's rows         | `fix/folded-group-ticks`         | 254                          | P3       | small  | none         | open   |
+| PR-131 | fix(media): keep the bar steady on a retry row     | `fix/retry-row-bar`              | 256                          | P3       | small  | none         | open   |
+| PR-132 | fix(desktop): stop page reads at a late quit       | `fix/page-read-at-quit`          | 255                          | P3       | small  | none         | open   |
+| PR-133 | fix(streams): hide tokens in key error paths       | `fix/key-error-path`             | 198                          | P3       | small  | none         | open   |
 
 ## Lanes
 
 These are the open pull requests. A PR in one lane touches separate code from a PR in another, so the two can run side by side. Inside a lane, go one at a time, in order. Dependencies still apply across lanes.
 
-- **Core downloads** (`crates/core` outside media runs, proxies, queues and updates): PR-121, PR-11, PR-97, PR-123.
-- **Video and audio** (`crates/streams`, `crates/media`, media runs in `crates/core`): PR-122, PR-64, PR-76, PR-77, PR-78, PR-94, PR-95, PR-105, PR-109, PR-110, PR-111.
+- **Core downloads** (`crates/core` outside media runs, proxies, queues and updates): PR-121, PR-11, PR-97, PR-123, PR-129.
+- **Video and audio** (`crates/streams`, `crates/media`, media runs in `crates/core`): PR-122, PR-64, PR-76, PR-77, PR-78, PR-94, PR-95, PR-105, PR-109, PR-110, PR-111, PR-131, PR-133.
 - **Saved list** (`crates/store`): PR-22, PR-25, PR-26, PR-50.
-- **Main window** (`crates/desktop/src/main_window`, the Add dialog, the tray): PR-15, PR-30, PR-31, PR-53, PR-66, PR-79, PR-81, PR-82, PR-83, PR-85, PR-88, PR-89, PR-90, PR-102, PR-106, PR-114, PR-116, PR-117.
+- **Main window** (`crates/desktop/src/main_window`, the Add dialog, the tray): PR-15, PR-30, PR-31, PR-53, PR-66, PR-79, PR-81, PR-82, PR-83, PR-85, PR-88, PR-89, PR-90, PR-102, PR-106, PR-114, PR-116, PR-117, PR-130.
 - **Download windows** (`crates/desktop/src/download_windows`, the windows and notices in `crates/shell`): PR-41, PR-51, PR-52, PR-68.
-- **Start, quit, updates** (`crates/shell`, the app's start and update code in `crates/desktop`): PR-10.
+- **Start, quit, updates** (`crates/shell`, the app's start and update code in `crates/desktop`): PR-10, PR-132.
 - **Repo and packaging** (`scripts`, `config`, `.github`, packaging, `crates/logging`): PR-75, PR-125, PR-128.
 - **Local endpoint** (`crates/ipc`, `crates/bridge`): PR-124.
 
@@ -1696,3 +1701,63 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Proof:** none
 - **Checks:** `pnpm --filter ./apps/extension check`
 - **Status:** merged
+
+### PR-129 fix(core): finish removals after a crash
+
+- **Branch:** `fix/removal-after-crash`
+- **Items:** 252, 253 (P3). Highest: P3.
+- **Effort:** medium
+- **Why:** What PR-123 left, with the same fault after a cancel.
+- **Depends on:** none
+- **Touches:** crates/core, crates/store
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-core -p wirecatch-store`, `cargo clippy -p wirecatch-core -p wirecatch-store`
+- **Status:** open
+
+### PR-130 fix(desktop): act on a folded group's rows
+
+- **Branch:** `fix/folded-group-ticks`
+- **Items:** 254 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item, found while fixing PR-81.
+- **Depends on:** none
+- **Touches:** crates/desktop
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
+- **Status:** open
+
+### PR-131 fix(media): keep the bar steady on a retry row
+
+- **Branch:** `fix/retry-row-bar`
+- **Items:** 256 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** What PR-76 left of item 96.
+- **Depends on:** none
+- **Touches:** crates/media, crates/core
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-media -p wirecatch-core`, `cargo clippy -p wirecatch-media`
+- **Status:** open
+
+### PR-132 fix(desktop): stop page reads at a late quit
+
+- **Branch:** `fix/page-read-at-quit`
+- **Items:** 255 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item, found while reviewing PR-10.
+- **Depends on:** none
+- **Touches:** crates/shell
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-shell`, `cargo clippy -p wirecatch-shell`
+- **Status:** open
+
+### PR-133 fix(streams): hide tokens in key error paths
+
+- **Branch:** `fix/key-error-path`
+- **Items:** 198 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** What PR-78 left of item 198.
+- **Depends on:** none
+- **Touches:** crates/streams
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-streams`, `cargo clippy -p wirecatch-streams`
+- **Status:** open

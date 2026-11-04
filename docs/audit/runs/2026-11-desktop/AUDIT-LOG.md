@@ -276,7 +276,11 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 249 | The timing check misses a throttled server racing an action                                       | found while fixing                                                                                 | P3       | medium | Found by review of PR-01 and PR-47.                                                                              | open                                          |
 | 250 | The capture reply's doc contradicts the extension                                                 | found while fixing                                                                                 | P3       | small  | Found by review of PR-70.                                                                                        | fixed                                         |
 | 251 | The layout test can fail on a font that did not load                                              | found while fixing                                                                                 | P3       | small  | Seen once on CI, on a change with no extension code.                                                             | fixed                                         |
-| 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | fixed                                         |
+| 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | open                                          |
+| 253 | A quit right after a cancel can leave a part file                                                 | found while fixing                                                                                 | P3       | small  | Found while fixing PR-123.                                                                                       | open                                          |
+| 254 | Ticking a folded group does nothing the person can act on                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-81.                                                                                        | open                                          |
+| 255 | A page read can outlive the app after a quit past the limit                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10. Read from the code, not run.                                                        | open                                          |
+| 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | open                                          |
 
 ## Items
 
@@ -434,8 +438,6 @@ P2, medium, fixed.
 
 P1, medium, fixed.
 
-**Left to do:** A copy shorter than the quit limit now finishes first. A copy longer than `QUIT_PATIENCE` still ends with the row naming a file that is gone, because the timeout drops `shutdown` and `finish_move` never runs. PR-10 finishes this.
-
 `shutdown` collects only `run.exited` and does not wait for `Hold::Moving`, and `finish_move`'s save reaches a closed store. The reopened row names a path with no file (finished) or the old folder with its part file in the new one (partial). The file still exists.
 
 **Fix:** Make `shutdown` wait for moves. This needs a decision on what the quit limit does to a long copy, which is why the staged copy comes first.
@@ -524,8 +526,6 @@ P2, medium, fixed.
 ### 14. A new media download can save another download's video
 
 P1, medium, fixed.
-
-**Left to do:** A page video's work folder is now tied to its link. A stream's folder still relies on the fingerprint alone, so this is left to PR-122.
 
 `downloaded.json` and `.done` markers name no link, and `unclaimed_path` allows the name. A link never read completed by using what another download left in `Clip.mp4.wcmedia`, with no yt-dlp call or request, and overwrote the file at that name under Replace. A stream's fingerprint has the same gap, though it needs two sites with the same paths, piece count and final name.
 
@@ -3645,7 +3645,7 @@ P3, small, open.
 
 - `14-6`: confirmed, P3. The key error prints the whole signed address to the person and into what is saved. Full text in `chunks/14.md`, verdict in `verdicts/B08.md`.
 
-**Left to do:** Query values are hidden, but a token in a key's path still shows on a refused key.
+**Left to do:** Query values are hidden, but a token in a key's path still shows on a refused key. PR-133 finishes this.
 
 ### 199. On Linux, media programs may outlive an app ended by a signal
 
@@ -4471,7 +4471,9 @@ P3, small, fixed.
 
 ### 252. A quit during a removal can leave part files behind
 
-P3, small, fixed.
+P3, small, open.
+
+**Left to do:** `shutdown` now waits for a removal, so a plain quit finishes it. A kill or crash during a removal, or a quit past `QUIT_PATIENCE`, still leaves part files with no row. PR-129 finishes this.
 
 `shutdown` does not wait for a removal's file deletion, so a quit or crash during it leaves part files with no row. The record of the removal is kept until it ends, so no row comes back.
 
@@ -4480,6 +4482,54 @@ P3, small, fixed.
 **Blocks:** nothing. **Blocked by:** nothing.
 
 **Touches:** crates/core/src/manager/downloads.rs, finish_removing; manager/mod.rs, shutdown.
+
+### 253. A quit right after a cancel can leave a part file
+
+P3, small, open.
+
+`shutdown` does not wait for `entry.cleanup`, the background delete after a cancel, so a process exit can cut it short. The part file stays under the Cancelled row until a retry or a removal deletes it, so only disk space is lost.
+
+**Fix:** Have `shutdown` wait for the cleanup.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/manager/mod.rs, shutdown; manager/downloads.rs, cancel.
+
+### 254. Ticking a folded group does nothing the person can act on
+
+P3, small, open.
+
+A folded group's heading circle ticks ids that `laid.rows` leaves out. The circle shows all ticked, but no selection bar appears, and Space and Delete do nothing.
+
+**Fix:** Decide whether commands act on folded rows, then make the circle and the commands agree.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/desktop/src/main_window/list.rs, selection.rs.
+
+### 255. A page read can outlive the app after a quit past the limit
+
+P3, small, open.
+
+A yt-dlp page read still running at exit is no longer killed by dropping the runtime, because its token at `crates/shell/src/media.rs:617` does not come from `stopped`. On Linux it should end on a closed pipe or at its time limit.
+
+**Fix:** Tie the read's token to `stopped`.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/shell/src/media.rs.
+
+### 256. A retry on the best format can move the bar backwards
+
+P3, small, open.
+
+A row with no saved formats runs the best selection with nothing to seed the total, so if yt-dlp takes two formats the total grows and the bar drops when the second starts.
+
+**Fix:** Show no total until the last format has reported on such a row.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/media/src/lib.rs, crates/core/src/manager/media_run/page.rs.
 
 ## Fixed beyond the items
 
