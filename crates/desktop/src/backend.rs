@@ -11,7 +11,8 @@ use wirecatch_core::{Manager, ManagerConfig};
 use wirecatch_ipc::Listener;
 use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::host::{self, Core, Unopened};
-use wirecatch_shell::{bridge, launch, quit};
+use wirecatch_shell::launch::Launch;
+use wirecatch_shell::{bridge, quit};
 
 /// The manager this process hosts and the runtime its work runs on.
 pub struct Backend {
@@ -39,13 +40,17 @@ impl Backend {
     /// Begins opening the manager in the background, so the first window never waits on the
     /// data folder or the database, then serves the browser on `listener`; registers the bridge
     /// with the browsers.
-    pub fn start(runtime: tokio::runtime::Runtime, listener: Option<Listener>) -> Self {
+    pub fn start(
+        runtime: tokio::runtime::Runtime,
+        listener: Option<Listener>,
+        launch: Launch,
+    ) -> Self {
         let core = Arc::new(Core::preparing(|| {
             let config = config();
             bridge::register_on_start(&config.data_dir);
             config
         }));
-        let serving = runtime.spawn(serve(Arc::clone(&core), listener));
+        let serving = runtime.spawn(serve(Arc::clone(&core), listener, launch));
         Self {
             runtime,
             core,
@@ -142,7 +147,7 @@ pub fn act(
 }
 
 /// Serves the browser once the manager opens, or tells it why the manager could not open.
-async fn serve(core: Arc<Core>, listener: Option<Listener>) {
+async fn serve(core: Arc<Core>, listener: Option<Listener>, launch: Launch) {
     match core.opened().await {
         Ok(manager) => {
             if let Some(listener) = listener {
@@ -153,7 +158,7 @@ async fn serve(core: Arc<Core>, listener: Option<Listener>) {
         Err(unopened) if unopened.another_copy => {
             tracing::error!("{}; this copy exits", unopened.reason);
             drop(listener);
-            _ = tokio::task::spawn_blocking(launch::say_already_running).await;
+            _ = tokio::task::spawn_blocking(move || launch.say_already_running()).await;
             std::process::exit(0);
         }
         Err(unopened) => {

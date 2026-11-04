@@ -617,7 +617,12 @@ mod tests {
     async fn a_damaged_key_starts_the_app_that_replaces_it() {
         let dir = private_dir("bridge-damaged-key").unwrap();
         let folders = keyed_in(dir.path().to_path_buf());
-        std::fs::write(dir.path().join("endpoint-key"), "not a key").unwrap();
+        let key = dir.path().join("endpoint-key");
+        std::fs::write(&key, "not a key").unwrap();
+        // A key others can read is refused, not replaced.
+        #[cfg(unix)]
+        std::fs::set_permissions(&key, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+            .unwrap();
         let launches = Arc::new(Mutex::new(0));
         let app = DelayedKeyedApp {
             folders: folders.clone(),
