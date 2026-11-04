@@ -822,6 +822,71 @@ async fn a_download_cancelled_before_the_answer_leaves_the_name_to_the_next() ->
     Ok(())
 }
 
+/// A typed name cancelled at the question, then moved: the name it asked about goes with it.
+async fn cancelled_then_moved_to(
+    h: &Harness,
+    server: &TestServer,
+) -> TestResult<(DownloadSummary, PathBuf)> {
+    let dir = folder_with(h, &same_size())?;
+    let mut events = h.manager.subscribe();
+    let row = add_into(h, server.url("report").as_str(), &dir).await?;
+    let question = asked(&mut events).await?;
+    h.manager
+        .answer_file_exists(question.id, answer(FileExistsChoice::Cancel, false))?;
+    h.wait_status(row.id, DownloadStatus::Cancelled).await;
+    let elsewhere = h.root.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere)?;
+    Ok((row, elsewhere))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_cancelled_download_moved_to_a_free_name_saves_under_it() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let (row, elsewhere) = cancelled_then_moved_to(&h, &server).await?;
+    h.manager
+        .set_download_folder(row.id, &elsewhere.to_string_lossy())
+        .await?;
+    assert_eq!(h.row(row.id).file_name, NAME);
+    h.manager.retry(row.id)?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(Path::new(&done.path), elsewhere.join(NAME));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_cancelled_download_moved_beside_that_name_is_asked_about_it() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let (row, elsewhere) = cancelled_then_moved_to(&h, &server).await?;
+    std::fs::write(elsewhere.join(NAME), same_size())?;
+    h.manager
+        .set_download_folder(row.id, &elsewhere.to_string_lossy())
+        .await?;
+    let mut events = h.manager.subscribe();
+    h.manager.retry(row.id)?;
+    let question = asked(&mut events).await?;
+    assert_eq!(question.file_name, NAME);
+    assert_eq!(Path::new(&question.folder), elsewhere);
+    Ok(())
+}
+
+/// Moved cancelled, it still leaves the name to the next download there.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_cancelled_download_moved_leaves_the_name_to_the_next() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let (row, elsewhere) = cancelled_then_moved_to(&h, &server).await?;
+    h.manager
+        .set_download_folder(row.id, &elsewhere.to_string_lossy())
+        .await?;
+    std::fs::write(elsewhere.join(NAME), same_size())?;
+    let mut events = h.manager.subscribe();
+    let next = add_named_by_the_link(&h, &server, &elsewhere).await?;
+    assert_eq!(asked(&mut events).await?.download, next.id);
+    Ok(())
+}
+
 /// Removing a download that never got an answer leaves the file its name only points at.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn removing_a_download_before_the_answer_keeps_the_file_of_that_name() -> TestResult {
