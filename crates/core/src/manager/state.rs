@@ -156,6 +156,24 @@ impl QueueSlot {
     }
 }
 
+/// What an unfinished download keeps beside its path. Only its media work folders are deleted as folders: a folder under any other name is someone's.
+pub(super) struct Partial {
+    files: [PathBuf; 2],
+    folders: Vec<PathBuf>,
+}
+
+impl Partial {
+    /// Deletes all of it, ignoring what is already gone. Blocks on the disk.
+    pub fn delete(&self) {
+        for file in &self.files {
+            wirecatch_files::discard::file(file);
+        }
+        for folder in &self.folders {
+            wirecatch_files::discard::dir(folder);
+        }
+    }
+}
+
 /// One download.
 pub(super) struct Entry {
     pub row: DownloadSummary,
@@ -730,14 +748,20 @@ impl Entry {
         }
     }
 
-    /// The files and folders an unfinished download keeps next to its final path.
-    pub fn partial_paths(&self) -> Vec<std::path::PathBuf> {
-        let mut paths = crate::naming::partial_files(self.path()).to_vec();
-        if self.media_job.is_some() {
-            paths.push(wirecatch_media::work_dir(self.path()));
-            paths.push(wirecatch_media::stream_dir(self.path()));
+    /// What an unfinished download keeps next to its final path.
+    pub fn partial(&self) -> Partial {
+        let folders = if self.media_job.is_some() {
+            vec![
+                wirecatch_media::work_dir(self.path()),
+                wirecatch_media::stream_dir(self.path()),
+            ]
+        } else {
+            Vec::new()
+        };
+        Partial {
+            files: crate::naming::partial_files(self.path()),
+            folders,
         }
-        paths
     }
 
     /// Asks a running download to stop; the run's end decides its new status.
