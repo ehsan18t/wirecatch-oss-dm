@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { generate } from '../product/generate.mjs';
+import { UNDECIDED_VALUES } from '../product/identity-samples.mjs';
 import { setTomlKey, tomlString } from '../product/manifests.mjs';
 import { outputs } from '../product/outputs.mjs';
 import {
@@ -106,24 +107,12 @@ test('a change to product.toml makes every file that carries the value stale', a
 });
 
 test('the release check finds every placeholder until the values are decided', async () => {
-  setProductValues([
-    ['publisher', 'legal_name', 'TODO-PRODUCT-PUBLISHER-LEGAL-NAME'],
-    ['links', 'website', 'https://TODO-PRODUCT-WEBSITE.invalid/'],
-    ['contacts', 'support_email', 'TODO-PRODUCT-SUPPORT-EMAIL@placeholder.invalid'],
-    ['contacts', 'security_email', 'TODO-PRODUCT-SECURITY-EMAIL@placeholder.invalid'],
-    ['updates', 'public_key', 'TODO-PRODUCT-UPDATER-PUBLIC-KEY-00000000000'],
-  ]);
+  setProductValues(UNDECIDED_VALUES.map(([table, key, placeholder]) => [table, key, placeholder]));
   await generate(root);
   const before = await remainingPlaceholders(root);
-  assert.equal(before.values.length, 5);
+  assert.equal(before.values.length, UNDECIDED_VALUES.length);
   assert.ok(before.lines.some((line) => line.startsWith('SECURITY.md:')));
-  setProductValues([
-    ['publisher', 'legal_name', 'Example Ltd'],
-    ['links', 'website', 'https://example.com/'],
-    ['contacts', 'support_email', 'help@example.com'],
-    ['contacts', 'security_email', 'security@example.com'],
-    ['updates', 'public_key', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'],
-  ]);
+  setProductValues(UNDECIDED_VALUES.map(([table, key, , decided]) => [table, key, decided]));
   await generate(root);
   assert.deepEqual(await remainingPlaceholders(root), { values: [], lines: [] });
 });

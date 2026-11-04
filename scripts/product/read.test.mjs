@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { UNDECIDED_VALUES } from './identity-samples.mjs';
 import { setTomlKey, tomlString } from './manifests.mjs';
 import { chromiumIdOf, placeholders, ProductError, readProduct } from './read.mjs';
 
@@ -66,29 +67,7 @@ test('two channels never share a folder, endpoint or identity', () => {
 });
 
 test('a value still to decide is found as a placeholder until it is decided', () => {
-  const samples = [
-    ['publisher', 'legal_name', 'TODO-PRODUCT-PUBLISHER-LEGAL-NAME', 'Example Ltd'],
-    ['links', 'website', 'https://TODO-PRODUCT-WEBSITE.invalid/', 'https://example.com/'],
-    [
-      'contacts',
-      'support_email',
-      'TODO-PRODUCT-SUPPORT-EMAIL@placeholder.invalid',
-      'help@example.com',
-    ],
-    [
-      'contacts',
-      'security_email',
-      'TODO-PRODUCT-SECURITY-EMAIL@placeholder.invalid',
-      'security@example.com',
-    ],
-    [
-      'updates',
-      'public_key',
-      'TODO-PRODUCT-UPDATER-PUBLIC-KEY-00000000000',
-      'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-    ],
-  ];
-  for (const [table, key, placeholder, decided] of samples) {
+  for (const [table, key, placeholder, decided] of UNDECIDED_VALUES) {
     const name = `${table}.${key}`;
     assert.ok(placeholders(readProduct(withValue(table, key, placeholder))).includes(name), name);
     assert.ok(!placeholders(readProduct(withValue(table, key, decided))).includes(name), name);
