@@ -2,7 +2,8 @@
 
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::dialog::{AlertDialog, Dialog, DialogEntrance};
-use gpui_kit::{App, Window};
+use gpui_kit::component::input::InputState;
+use gpui_kit::{App, AppContext as _, Entity, Window};
 
 /// The default slides down from the window top for 250 ms; this settles in place.
 const ENTRANCE: DialogEntrance = DialogEntrance::FadeSlide;
@@ -37,4 +38,19 @@ pub fn open_alert(
     window.open_alert_dialog(cx, move |alert, window, cx| {
         build(alert.entrance(ENTRANCE), window, cx)
     });
+}
+
+/// A form's one-line field, holding `value`.
+pub fn text_field(
+    value: impl Into<String>,
+    placeholder: &'static str,
+    window: &mut Window,
+    cx: &mut App,
+) -> Entity<InputState> {
+    let value = value.into();
+    cx.new(|cx| {
+        let mut state = InputState::new(window, cx).placeholder(placeholder);
+        state.set_value(value, window, cx);
+        state
+    })
 }

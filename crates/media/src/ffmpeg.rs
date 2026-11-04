@@ -31,7 +31,7 @@ pub enum FfmpegError {
     /// The add-on's ffmpeg could not be started.
     #[error("ffmpeg could not be started")]
     Start(#[source] io::Error),
-    /// ffmpeg ran and failed; the reason is its own last error line.
+    /// ffmpeg ran and failed; the reason is all it wrote that was kept, since its last line is rarely the cause.
     #[error("{reason}")]
     Failed {
         /// What ffmpeg said.
@@ -110,7 +110,10 @@ pub(crate) async fn run(
     let result = match ran {
         Ok(ran) if ran.success() && is_file(output).await => return Ok(Finished::Done),
         Ok(ran) => Err(FfmpegError::Failed {
-            reason: ran.reason().trim_end_matches('.').to_string(),
+            reason: match ran.stderr.to_string() {
+                said if said.is_empty() => ran.reason(),
+                said => said,
+            },
         }),
         Err(RunError::Cancelled) => Ok(Finished::Cancelled),
         Err(RunError::Start { source, .. }) => Err(FfmpegError::Start(source)),

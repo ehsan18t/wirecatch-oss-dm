@@ -206,7 +206,7 @@ const SIGN_IN_MARKERS: [&str; 9] = [
 ];
 
 /// Whether yt-dlp's failure says the video needs the viewer signed in (see [`SIGN_IN_MARKERS`]).
-fn needs_sign_in(error_line: Option<&str>) -> bool {
+pub(crate) fn needs_sign_in(error_line: Option<&str>) -> bool {
     error_line.is_some_and(|line| {
         let line = line.to_ascii_lowercase();
         SIGN_IN_MARKERS.iter().any(|marker| line.contains(marker))

@@ -16,7 +16,7 @@ use wirecatch_protocol::QueueId;
 use wirecatch_protocol::rules::{DraftRules, LinkMatch, LinkTrial as Trial};
 use wirecatch_shell::api;
 
-use crate::backend::Backend;
+use crate::backend::{Backend, said};
 use crate::library::Library;
 use crate::text;
 use crate::ui::{Role, Typed as _};
@@ -99,10 +99,8 @@ impl LinkTrial {
             move |manager| async move { api::try_link(&manager, &trial) },
         );
         cx.spawn_in(window, async move |trial, cx| {
-            let found = match tried.await {
-                Ok(Ok(result)) => result.map_err(|error| error.message),
-                Ok(Err(unopened)) => Err(unopened.reason.message),
-                Err(_) => return,
+            let Some(found) = said(tried.await) else {
+                return;
             };
             _ = trial.update(cx, |trial, cx| {
                 trial.trying = false;

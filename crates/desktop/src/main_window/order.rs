@@ -3,6 +3,8 @@
 
 use wirecatch_protocol::DownloadId;
 
+use crate::backend::{Backend, said};
+
 /// Puts queue `queue`'s line in `order`: the manager first, then the list, which no event tells.
 pub fn apply(
     library: &gpui_kit::Entity<crate::library::Library>,
@@ -14,18 +16,16 @@ pub fn apply(
     use gpui_kit::component::WindowExt as _;
 
     let sent = order.clone();
-    let done = crate::backend::Backend::run(cx, move |manager| async move {
+    let done = Backend::run(cx, move |manager| async move {
         wirecatch_shell::api::reorder(&manager, queue, &sent)
     });
     let library = library.clone();
     window
         .spawn(cx, async move |cx| {
-            let refused = match done.await {
-                Ok(Ok(Ok(()))) => None,
-                Ok(Ok(Err(refused))) => Some(refused.message),
-                Ok(Err(unopened)) => Some(unopened.reason.message),
-                Err(_) => return,
+            let Some(answered) = said(done.await) else {
+                return;
             };
+            let refused = answered.err();
             _ = cx.update(|window, cx| match refused {
                 None => library.update(cx, |library, cx| {
                     library.reorder(&order);
