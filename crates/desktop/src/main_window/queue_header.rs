@@ -51,7 +51,7 @@ impl MainWindow {
                             .min_w_0()
                             .truncate()
                             .text_role(Role::Meta, cx)
-                            .child(format!("{facts} · {summary}")),
+                            .child(format!("{summary} · {facts}")),
                     )
                     .child(queue_actions(&queue, cx)),
             )
