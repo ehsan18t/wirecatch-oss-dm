@@ -556,3 +556,66 @@ async fn choosing_the_folder_of_the_guess_is_remembered() -> TestResult {
     assert_eq!(Path::new(&done.path), guessed.join(NAME));
     Ok(())
 }
+
+/// A partial file left beside the name does not hide the file from the setting.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_file_beside_a_leftover_resume_file_is_asked_about() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let [_, state] = crate::common::partial_files(&dir.join(NAME).to_string_lossy());
+    std::fs::write(state, b"left behind")?;
+    let mut events = h.manager.subscribe();
+    let row = add_into(&h, server.url("report").as_str(), &dir).await?;
+    let question = asked(&mut events).await?;
+    assert_eq!(question.download, row.id);
+    Ok(())
+}
+
+/// The engine continues the part file at an exact path whatever its link, so Replace must not meet another link's. Same size and no validators: only the link tells them apart.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn replace_never_continues_a_part_file_another_link_left() -> TestResult {
+    const BIG: usize = 4 * 1024 * KIB_USIZE;
+    // Far slower than any wait below: it cannot finish before the pause.
+    let other = TestServer::start(
+        vec![0xAA; BIG],
+        Config {
+            ranges: true,
+            per_connection_bps: Some(16 * KIB),
+            ..Config::default()
+        },
+    )
+    .await;
+    let wanted = TestServer::start(vec![0xBB; BIG], ranged()).await;
+    let h = Harness::new().await?;
+    let dir = h.root.path().join("saved");
+    let left = add_into(&h, other.url("a").as_str(), &dir).await?;
+    h.wait_for(left.id, "the other link's first bytes", |r| r.done > 0)
+        .await;
+    h.manager.pause(left.id)?;
+    let left = h.wait_status(left.id, DownloadStatus::Paused).await;
+    let [part, state] = crate::common::partial_files(&left.path);
+    let kept = (std::fs::read(&part)?, std::fs::read(&state)?);
+    assert!(kept.0.contains(&0xAA), "the part file holds no bytes yet");
+    h.manager.remove(&[left.id], RemoveFiles::Delete).await?;
+    std::fs::write(&part, &kept.0)?;
+    std::fs::write(&state, &kept.1)?;
+    std::fs::write(&left.path, b"older file")?;
+
+    choose(&h, WhenFileExists::Replace)?;
+    let row = add_into(&h, wanted.url("b").as_str(), &dir).await?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(done.path, left.path);
+    assert!(
+        std::fs::read(&done.path)? == wanted.data,
+        "the file holds bytes of another link"
+    );
+    Ok(())
+}
+
+fn ranged() -> Config {
+    Config {
+        ranges: true,
+        ..Config::default()
+    }
+}

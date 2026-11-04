@@ -103,7 +103,7 @@ impl Manager {
         remote: &ServerAnswer,
         path: &Path,
     ) -> Option<Found> {
-        let (then, history) = {
+        let (then, history, url) = {
             let state = self.lock();
             let entry = state.downloads.get(&id)?;
             let then = state.settings.when_file_exists;
@@ -124,9 +124,11 @@ impl Manager {
                         && naming::same_path(other.path(), path)
                 })
                 .map(|other| (other.row.url == entry.row.url, other.row.total));
-            (then, history)
+            (then, history, entry.row.url.clone())
         };
-        let size = naming::finished_size(path)?;
+        let size = naming::file_size(path)?;
+        // No download holds this path, so what lies beside the file is left over.
+        naming::discard_partials_of_other_links(path, &url);
         let same_size = |total: Option<u64>| total.is_none_or(|total| total == size);
         let same_history = history.is_none_or(|(same_link, total)| same_link && same_size(total));
         Some(Found {
