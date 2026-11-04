@@ -11,7 +11,7 @@ use wirecatch_engine::numeric::f64_to_u64;
 use wirecatch_streams::process::{self, Output, RunError, RunOptions, STALL_TIMEOUT};
 
 use super::cookies::CookiesFile;
-use super::{Attempt, Context, YtDlpError, common_args, refused, without_cookies};
+use super::{Attempt, Context, YtDlpError, common_args, refused, refused_address, without_cookies};
 use crate::MediaProgress;
 use crate::output::Container;
 
@@ -104,7 +104,10 @@ async fn download_once(
         Err(e) => return Err(YtDlpError::from_run(e).into()),
     };
     if !ran.success() {
-        return Err(refused(&ran));
+        return Err(match ran.stderr.error_line().and_then(refused_address) {
+            Some(address) => refused(&ran).of_address(address),
+            None => refused(&ran),
+        });
     }
     let work = work.to_path_buf();
     let found = tokio::task::spawn_blocking(move || {
