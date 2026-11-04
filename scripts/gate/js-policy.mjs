@@ -1,6 +1,7 @@
 // `js-policy`: every workspace package, and the repository's own scripts, are linted with the shared configuration at its full strength, with no warnings allowed, and format-checked, all by the one root `lint` script.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { workspaceParents as parentsIn } from '../workspace.mjs';
 import { capture, GateError, ROOT } from './process.mjs';
 
 /** Sources that make a package subject to the shared ESLint configuration. */
@@ -26,23 +27,8 @@ const MAY_BE_IGNORED = [
 /** JavaScript every package may lint without type information (`untyped` in wirecatch()), so the baseline for a JavaScript file is the untyped one. */
 const UNTYPED_JAVASCRIPT = ['**/*.js', '**/*.cjs'];
 
-/** The folders that hold the workspace packages, from the `packages` globs in pnpm-workspace.yaml (each a `folder/*`). */
-function workspaceParents() {
-  const manifest = readFileSync(join(ROOT, 'pnpm-workspace.yaml'), 'utf8');
-  const list = /^packages:[ \t]*\r?\n((?:(?:[ \t]*\r?\n)*[ \t]+-[ \t]+(?:\S.*)?\r?\n)+)/m.exec(
-    manifest,
-  );
-  if (!list) throw new GateError('pnpm-workspace.yaml has no `packages` list.');
-  const globs = [...list[1].matchAll(/-\s+["']?([^"'\s]+)["']?/g)].map((m) => m[1]);
-  return globs.map((glob) => {
-    if (!glob.endsWith('/*')) {
-      throw new GateError(
-        `The workspace glob ${glob} is not of the form folder/*; teach workspaceParents in scripts/gate/js-policy.mjs to read it.`,
-      );
-    }
-    return glob.slice(0, -2);
-  });
-}
+const workspaceParents = () =>
+  parentsIn(readFileSync(join(ROOT, 'pnpm-workspace.yaml'), 'utf8'), GateError);
 
 /** The workspace package folders. */
 function workspacePackages() {

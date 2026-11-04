@@ -1087,7 +1087,7 @@ Decided on 2026-10-31; the maintainer left the design open and asked for a bette
 
 1. The mark is a "W" whose two lower points land on a bar: the product's initial, and a download caught. It reads at 16 pixels, which the old wire, arrow and bar did not.
 2. Its strokes live once, in `packages/ui/src/mark.json`. The extension's `AppMark` and the desktop app's title bar draw it from there in the accent colour, so it follows the theme and the chosen accent. The desktop app reads the file at build time.
-3. The icons (the executable, the taskbar, the tray, notifications, the Linux packages, the installer's pictures and the extension's icons) show it white on a teal tile, `crates/desktop/assets/icons/icon.svg`, rendered from the same file. They stay one colour: the system shows them before any theme is known.
+3. The icons (the executable, the taskbar, the tray, notifications, the Linux packages, the installer's pictures and the extension's icons) show it white on a teal tile, `crates/desktop/assets/icons/icon.svg`, whose strokes the gate's `icon` check holds to `packages/ui/src/mark.json`; the pictures are rendered from that SVG. They stay one colour: the system shows them before any theme is known.
 
 ### D109. Settings ends with an About page
 
