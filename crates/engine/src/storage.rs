@@ -70,6 +70,7 @@ fn free_bytes(_path: &Path, file: &File) -> Option<u64> {
             |e| tracing::debug!(error = %crate::error::Chain(e), "could not read the free space"),
         )
         .ok()
+        .flatten()
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
@@ -523,16 +524,34 @@ mod linux {
         }
     }
 
-    /// What an unprivileged user may still write on the file system of `file`.
-    pub fn free_bytes(file: &File) -> io::Result<u64> {
+    /// What an unprivileged user may still write on the file system of `file`, when it says.
+    pub fn free_bytes(file: &File) -> io::Result<Option<u64>> {
         // SAFETY: `statvfs` is plain data, for which all zeros is a valid value.
         let mut stats: libc::statvfs = unsafe { std::mem::zeroed() };
         // SAFETY: a valid descriptor and a pointer to a `statvfs` that outlives the call.
         let rc = unsafe { libc::fstatvfs(file.as_raw_fd(), &raw mut stats) };
         if rc == 0 {
-            Ok(stats.f_bavail.saturating_mul(stats.f_frsize))
+            Ok(said_free(stats.f_blocks, stats.f_bavail, stats.f_frsize))
         } else {
             Err(io::Error::last_os_error())
+        }
+    }
+
+    /// A file system of no blocks reports nothing: a FUSE mount that leaves `statfs` to libfuse's default says all zeros, whatever it holds.
+    fn said_free(blocks: u64, available: u64, block_size: u64) -> Option<u64> {
+        (blocks > 0).then(|| available.saturating_mul(block_size))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::said_free;
+
+        #[test]
+        fn a_file_system_that_counts_nothing_says_nothing_about_free_space() {
+            assert_eq!(said_free(0, 0, 0), None);
+            assert_eq!(said_free(0, 0, 4096), None);
+            assert_eq!(said_free(10, 0, 4096), Some(0));
+            assert_eq!(said_free(10, 2, 4096), Some(8192));
         }
     }
 
