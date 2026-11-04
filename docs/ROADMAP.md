@@ -140,7 +140,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 75. A refused HLS or yt-dlp address fails instead of reading the page again (fixed)
 76. The import preview hides proxy and local site changes (open)
 77. A missing library is not seen as a broken add-on, and can raise a system dialog (fixed)
-78. A download moved to another queue shows in the wrong place (open)
+78. A download moved to another queue shows in the wrong place (fixed)
 79. The window and a restart disagree with what a queue's run really is (open)
 80. Answering the file-exists question opens a second window for the same download (open)
 81. Download windows offer only Try again, whatever fix the failure needs (open)
