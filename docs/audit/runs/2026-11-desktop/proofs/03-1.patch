@@ -1,4 +1,4 @@
-# Run: git apply this, then cargo test -p wirecatch-store --lib proof_03_1. Output at 02284bbd0: both FAILED; flipped bit: PRAGMA integrity_check said ok, then 'start 1 refused: The download list could not be read or saved (invalid utf-8 sequence of 1 bytes from index 0 at index 1)...'; the other test lists all 6 forms refused (BLOB path, text done, text added_at, bad UTF-8 settings, bad UTF-8 queue, user_version -1).
+# Run alone (these B09 patches do not stack), with [profile.b09] inherits = "dev" in Cargo.toml: git apply this, then cargo test --profile b09 -p wirecatch-store --lib proof_03_1. Output under that profile, same crates as 02284bbd0: both FAILED; flipped bit: PRAGMA integrity_check said ok, then 'start 1 refused: The download list could not be read or saved (invalid utf-8 sequence of 1 bytes from index 0 at index 1)...'; the other test lists all 6 forms refused (BLOB path, text done, text added_at, bad UTF-8 settings, bad UTF-8 queue, user_version -1).
 diff --git a/crates/store/src/lib.rs b/crates/store/src/lib.rs
 index 35f34186c..832d0ad8f 100644
 --- a/crates/store/src/lib.rs

@@ -1,4 +1,4 @@
-# Run: git apply this, then cargo test -p wirecatch-store --lib proof_03_3. Output at 02284bbd0: FAILED, left: 3 right: 1, ["no such table: downloads" three times]: each batch reports again.
+# Run alone (these B09 patches do not stack), with [profile.b09] inherits = "dev" in Cargo.toml: git apply this, then cargo test --profile b09 -p wirecatch-store --lib proof_03_3. Output under that profile, same crates as 02284bbd0: FAILED, left: 3 right: 1, ["no such table: downloads" three times]: each batch reports again.
 diff --git a/crates/store/src/lib.rs b/crates/store/src/lib.rs
 index 35f34186c..145aa6aa2 100644
 --- a/crates/store/src/lib.rs

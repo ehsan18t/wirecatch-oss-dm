@@ -1,4 +1,4 @@
-# Run: git apply this, then cargo test -p wirecatch-core --test proof_25_2 (its own test binary: a shared target dir can serve another worktree's manager binary). Output at 02284bbd0: FAILED, 'Try again saved nothing', left: 0 right: 1. Also proves Xfeature-behaviour-3 and the first half of 03-4.
+# Run alone (these B09 patches do not stack), with [profile.b09] inherits = "dev" in Cargo.toml: git apply this, then cargo test --profile b09 -p wirecatch-core --test proof_25_2. Output under that profile, same crates as 02284bbd0: FAILED, 'Try again saved nothing', left: 0 right: 1. Also proves Xfeature-behaviour-3 and the first half of 03-4.
 diff --git a/crates/core/tests/proof_25_2.rs b/crates/core/tests/proof_25_2.rs
 new file mode 100644
 index 000000000..533de503c
