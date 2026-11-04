@@ -129,7 +129,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-119 | fix(desktop): retry deleting a roaming data folder | `fix/roaming-folder-retry`       | 243                          | P3       | small  | none         | merged |
 | PR-120 | test(engine): keep the download fault tests        | `test/keep-fault-tests`          | none                         | none     | medium | PR-39        | merged |
 | PR-121 | fix(core): save a run's record before its rename   | `fix/record-before-rename`       | 245                          | P2       | medium | none         | open   |
-| PR-122 | fix(core): tie a stream's work folder to its link  | `fix/stream-work-identity`       | 14                           | P1       | medium | none         | open   |
+| PR-122 | fix(core): tie a stream's work folder to its link  | `fix/stream-work-identity`       | 14                           | P1       | medium | none         | merged |
 | PR-123 | fix(core): finish removals a quit cut short        | `fix/removal-after-quit`         | 252                          | P3       | small  | none         | open   |
 | PR-124 | test: tidy test comments in ipc and bridge         | `test/ipc-bridge-comments`       | 247                          | P3       | small  | none         | merged |
 | PR-125 | chore: guard whole-folder deletes with a lint      | `chore/folder-delete-lint`       | 248                          | P3       | medium | none         | merged |
@@ -1623,7 +1623,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/core, crates/streams
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core -p wirecatch-streams`, `cargo clippy -p wirecatch-core -p wirecatch-streams`
-- **Status:** open
+- **Status:** merged
 
 ### PR-123 fix(core): finish removals a quit cut short
 
