@@ -239,6 +239,7 @@ enum Plan {
 fn plan_in_folder(dir: PathBuf, name: String, url: &str, file: &Described) -> Plan {
     let found = {
         let mut names = naming::candidates(&dir, &name);
+        let mut free_in_a_row = 0;
         loop {
             let finish = Finish::FreeName {
                 dir: dir.clone(),
@@ -246,18 +247,22 @@ fn plan_in_folder(dir: PathBuf, name: String, url: &str, file: &Described) -> Pl
             };
             match look_at_name(target(names.next_name(), finish), url, file) {
                 Look::Take(plan) => break Some(plan),
-                Look::Free => break None,
-                Look::Occupied => {}
+                Look::Free if free_in_a_row == FREE_NAMES_TO_LOOK_PAST => break None,
+                Look::Free => free_in_a_row += 1,
+                Look::Occupied => free_in_a_row = 0,
             }
         }
     };
     found.unwrap_or(Plan::FreeName { dir, name })
 }
 
+/// How many free names a look for an earlier run goes on past: the file that made an earlier run take a number may have been moved since. Bounded, so a run further along than this starts anew.
+const FREE_NAMES_TO_LOOK_PAST: usize = 8;
+
 /// What one name of a download into a folder offers it.
 enum Look {
     Take(Plan),
-    /// Nothing is there, so no later name holds an earlier run either.
+    /// Nothing is there.
     Free,
     Occupied,
 }
@@ -485,6 +490,15 @@ mod tests {
         assert!(again.resumed);
         assert_eq!(again.target.file, dir.join("f (1).bin"));
         drop(again);
+
+        // The file that took the name moved away: the run is still under its number.
+        std::fs::remove_file(dir.join("f.bin")).unwrap();
+        let moved = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        assert!(moved.resumed);
+        assert_eq!(moved.target.file, dir.join("f (1).bin"));
+        drop(moved);
         dir.remove().unwrap();
     }
 
