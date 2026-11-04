@@ -11,6 +11,7 @@ use gpui_kit::{
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
+use wirecatch_shell::launch::one_link;
 
 use super::{MainWindow, View, order};
 use crate::backend::act;
@@ -64,18 +65,22 @@ fn pill<V>(label: String, cx: &Context<'_, V>) -> impl IntoElement {
 }
 
 impl MainWindow {
-    /// What dragging row `id` carries: the selection when it holds the row, else the row.
+    /// What dragging row `id` carries: what the list shows of the selection, in its order, when
+    /// the selection holds the row; else the row.
     pub(super) fn dragged_rows(
         &self,
         id: DownloadId,
         name: &str,
         cx: &gpui_kit::App,
     ) -> DraggedRows {
-        if self.selected.contains(&id) && self.selected.len() > 1 {
-            return DraggedRows {
-                ids: self.selection_facts(cx).dragged.clone(),
-                label: format!("{} downloads", self.selected.len()),
-            };
+        if self.selected.contains(&id) {
+            let shown = self.selection_facts(cx).ids.clone();
+            if shown.len() > 1 {
+                return DraggedRows {
+                    label: format!("{} downloads", shown.len()),
+                    ids: shown,
+                };
+            }
         }
         DraggedRows {
             ids: Rc::from([id]),
@@ -180,9 +185,7 @@ impl MainWindow {
 fn shortcut_link(text: &str) -> Option<String> {
     text.lines()
         .find_map(|line| line.trim().strip_prefix("URL="))
-        .map(str::trim)
-        .filter(|link| !link.is_empty())
-        .map(str::to_owned)
+        .and_then(one_link)
 }
 
 /// The look of a place that takes a drop while something is dragged over it.

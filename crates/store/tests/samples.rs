@@ -7,6 +7,7 @@ use serde::de::DeserializeOwned;
 use wirecatch_protocol::app::{AppSettings, QueueSettings, UserError};
 use wirecatch_records::answers::Answers;
 use wirecatch_records::batch::StoredBatch;
+use wirecatch_records::files::DownloadFiles;
 use wirecatch_records::media::output::{Container, Extras, OutputJob};
 use wirecatch_records::media::{FormatId, MediaJob, StoredMedia};
 use wirecatch_records::origin::Origin;
@@ -27,6 +28,7 @@ const KINDS: &[(&str, Check)] = &[
     ("download_error", loads::<UserError>),
     ("media", loads::<StoredMedia>),
     ("answers", loads::<Answers>),
+    ("files", loads::<DownloadFiles>),
 ];
 
 fn loads<T: DeserializeOwned>(json: &str) -> Result<(), String> {

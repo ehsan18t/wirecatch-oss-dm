@@ -1423,6 +1423,37 @@ async fn left_to_yt_dlp(vcodec: &str, page: &str) -> TestResult<Vec<String>> {
     args(&download_call)
 }
 
+/// A speed limit reaches yt-dlp's own download: the tighter of the app's and the queue's when it starts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn yt_dlps_own_download_takes_the_tightest_speed_limit() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tune(&h.manager, |s| s.global_speed_limit = Some(9 * KIB))?;
+    let info = serde_json::json!({
+        "title": "Dash only",
+        "formats": [{"format_id": "dash", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 720,
+            "protocol": "http_dash_segments", "url": server.url("x.mpd").as_str()}],
+    });
+    tell_tool(&h, "info.json", &info.to_string())?;
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(server.url("watch/96"), MediaKind::Page, None))
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    let id = h.manager.choose_media(choice.id, select("dash")).await?;
+    h.wait_status(id, DownloadStatus::Completed).await;
+    let call = ytdlp_calls(&h)?.pop().ok_or("yt-dlp was not run")?;
+    let argv = args(&call)?;
+    let limit = (9 * KIB).to_string();
+    assert!(
+        argv.windows(2)
+            .any(|w| w[0] == "--limit-rate" && w[1] == limit),
+        "{argv:?}"
+    );
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn formats_wirecatch_cannot_fetch_are_left_to_yt_dlp() -> TestResult {
     let argv = left_to_yt_dlp("avc1", "watch/4").await?;
@@ -2111,5 +2142,167 @@ async fn a_typed_extension_ffmpeg_refuses_falls_back_to_a_container_that_fits() 
         Path::new(&done.path).file_name().and_then(|n| n.to_str()),
         Some("clip.mkv")
     );
+    Ok(())
+}
+
+/// Starts the first option a page offers.
+async fn start_first_option(
+    h: &Harness,
+    server: &FileServer,
+    n: u32,
+) -> TestResult<wirecatch_protocol::DownloadId> {
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(
+            server.url(&format!("watch/{n}")),
+            MediaKind::Page,
+            None,
+        ))
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    let option = choice.options[0].id.clone();
+    Ok(h.manager.choose_media(choice.id, select(&option)).await?)
+}
+
+/// A refused HLS address reads the page again, as a refused file address does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_refused_hls_address_reads_the_page_again() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness_refreshing(publish(&server, &Releases::fake()?, "r")?, QUICK.to_vec()).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    server.put(
+        "hls/index.m3u8",
+        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:4.0,\nseg0.ts\n#EXT-X-ENDLIST\n",
+    );
+    let mut segment = test_data(1024);
+    segment[0] = 0x47;
+    server.put("hls/seg0.ts", segment);
+    server.fail("hls/index.m3u8", 1, 403);
+    let info = serde_json::json!({
+        "title": "Signed address",
+        "formats": [{"format_id": "hls-1", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
+            "protocol": "m3u8_native", "url": server.url("hls/index.m3u8").as_str()}],
+    });
+    tell_tool(&h, "info.json", &info.to_string())?;
+    let id = start_first_option(&h, &server, 92).await?;
+    let row = wait_until("the download to end", || {
+        h.manager.list_downloads().into_iter().find(|r| {
+            r.id == id && matches!(r.status, DownloadStatus::Completed | DownloadStatus::Failed)
+        })
+    })
+    .await;
+    assert_eq!(row.status, DownloadStatus::Completed, "{:?}", row.error);
+    Ok(())
+}
+
+/// What yt-dlp downloads itself: a format Wirecatch cannot fetch.
+fn page_for_ytdlp(id: &str) -> String {
+    serde_json::json!({
+        "title": "Its own download",
+        "formats": [{"format_id": id, "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
+            "protocol": "ism", "url": "https://cdn.example/v.ism"}],
+    })
+    .to_string()
+}
+
+/// A refusal during yt-dlp's own download reads the page again, under the same rule as any other format.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_refused_address_in_ytdlps_own_download_reads_the_page_again() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness_refreshing(publish(&server, &Releases::fake()?, "r")?, QUICK.to_vec()).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "info.json", &page_for_ytdlp("ism-1"))?;
+    tell_tool(
+        &h,
+        "download-fail.txt",
+        "unable to download video data: HTTP Error 403: Forbidden",
+    )?;
+    let id = start_first_option(&h, &server, 93).await?;
+    let row = wait_until("the download to end", || {
+        h.manager.list_downloads().into_iter().find(|r| {
+            r.id == id && matches!(r.status, DownloadStatus::Completed | DownloadStatus::Failed)
+        })
+    })
+    .await;
+    assert_eq!(row.status, DownloadStatus::Completed, "{:?}", row.error);
+    Ok(())
+}
+
+/// Starts the 1080p video of `page_info`, whose first run fails reading the page, and tries again once `changed` is what the page says.
+async fn failed_then_page_changes(
+    h: &Harness,
+    server: &FileServer,
+    n: u32,
+    changed: impl FnOnce(String) -> String,
+) -> TestResult<wirecatch_protocol::DownloadId> {
+    let (video, audio) = (mp4_data(300 * KIB_USIZE), mp4_data(20 * KIB_USIZE));
+    let first = page_info(server, &video, &audio);
+    tell_tool(h, "info.json", &first)?;
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(
+            server.url(&format!("watch/{n}")),
+            MediaKind::Page,
+            None,
+        ))
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    tell_tool(h, "fail.txt", "this page cannot be read right now")?;
+    let id = h.manager.choose_media(choice.id, select("137+140")).await?;
+    h.wait_status(id, DownloadStatus::Failed).await;
+    tell_tool(h, "info.json", &changed(first))?;
+    std::fs::remove_file(crate::media_support::tool_dir(h)?.join("fail.txt"))?;
+    h.manager.retry(id)?;
+    Ok(id)
+}
+
+fn downloads_by_ytdlp(h: &Harness) -> TestResult<usize> {
+    Ok(ytdlp_calls(h)?
+        .iter()
+        .filter(|call| {
+            call["args"]
+                .as_array()
+                .is_some_and(|a| a.iter().any(|x| x == "-f"))
+        })
+        .count())
+}
+
+/// A format the page stopped listing gives way to the page's format of the same quality, and yt-dlp is never sent for the one that is gone.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_format_the_page_stopped_listing_gives_way_to_one_of_its_quality() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let id = failed_then_page_changes(&h, &server, 94, |page| page.replace("\"137\"", "\"299\""))
+        .await?;
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+    assert!(Path::new(&done.path).is_file());
+    assert_eq!(downloads_by_ytdlp(&h)?, 0);
+    assert!(server.requests("fmt/video.mp4") >= 1);
+    Ok(())
+}
+
+/// A page that no longer offers the chosen quality ends the row with words that say so, and no try can change that.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_quality_the_page_stopped_offering_fails_in_plain_words() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let id = failed_then_page_changes(&h, &server, 95, |page| {
+        page.replace("\"137\"", "\"299\"").replace("1080", "720")
+    })
+    .await?;
+    // The first run's Failed may still show; its error offers Try again.
+    let failed = wait_until("the second run to end", || {
+        h.manager.list_downloads().into_iter().find(|r| {
+            r.id == id
+                && r.status == DownloadStatus::Failed
+                && r.error.as_ref().is_some_and(|e| e.fix.is_none())
+        })
+    })
+    .await;
+    let error = failed.error.unwrap();
+    assert!(error.message.contains("1080p"), "{}", error.message);
+    assert_eq!(downloads_by_ytdlp(&h)?, 0);
     Ok(())
 }

@@ -1,8 +1,10 @@
 //! Removing and cancelling downloads, each after a question that says what happens to their files.
 
+use std::collections::HashSet;
+
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex};
+use gpui_kit::component::{WindowExt as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
@@ -13,8 +15,10 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_shell::api;
 
+use super::{applies, selection};
 use crate::backend::command;
 use crate::library::Library;
+use crate::rows::Rows;
 use crate::ui::{Role, Typed as _};
 
 const WIDTH: f32 = 440.;
@@ -29,8 +33,17 @@ struct Asked {
     running: bool,
 }
 
+/// Those of `ids` that can be cancelled: a selection may hold finished rows too.
+fn cancellable(downloads: &Rows, ids: &[DownloadId]) -> Vec<DownloadId> {
+    ids.iter()
+        .copied()
+        .filter(|id| downloads.find(*id).is_some_and(applies::can_cancel))
+        .collect()
+}
+
 impl Asked {
     fn read(library: &Entity<Library>, ids: &[DownloadId], cx: &App) -> Self {
+        let ids: HashSet<DownloadId> = ids.iter().copied().collect();
         let rows: Vec<_> = library
             .read(cx)
             .downloads
@@ -67,7 +80,6 @@ struct RemoveForm {
 
 impl Render for RemoveForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let _theme = cx.theme();
         let asked = &self.asked;
         let unfinished = asked.count() - asked.finished;
         let consequence = if unfinished == 0 {
@@ -187,7 +199,7 @@ pub(super) fn cancel(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let asked = Asked::read(library, ids, cx);
+    let asked = Asked::read(library, &cancellable(&library.read(cx).downloads, ids), cx);
     if asked.count() == 0 {
         return;
     }
@@ -220,7 +232,6 @@ pub(super) fn cancel(
     let ids = asked.ids;
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let ids = ids.clone();
-        let _theme = cx.theme();
         dialog
             .title(title.clone())
             .w(px(WIDTH))
@@ -249,12 +260,33 @@ pub(super) fn cancel(
                             .label("Cancel download")
                             .on_click(move |_, window, cx| {
                                 window.close_dialog(cx);
-                                let ids = ids.clone();
-                                command(window.window_handle(), cx, move |manager| async move {
-                                    ids.iter().try_for_each(|id| api::cancel(&manager, *id))
-                                });
+                                selection::each_id(ids.clone(), api::cancel, window, cx);
                             }),
                     ),
             )
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wirecatch_protocol::app::DownloadSummary;
+    use wirecatch_test_support::downloads::download;
+
+    #[test]
+    fn cancel_leaves_out_finished_and_unknown_rows() {
+        let row = |id, status| DownloadSummary {
+            status,
+            ..download(id)
+        };
+        let mut rows = Rows::default();
+        rows.replace(vec![
+            row(1, DownloadStatus::Downloading),
+            row(2, DownloadStatus::Completed),
+            row(3, DownloadStatus::Cancelled),
+            row(4, DownloadStatus::Failed),
+        ]);
+        let ids = [1, 2, 3, 4, 5].map(DownloadId);
+        assert_eq!(cancellable(&rows, &ids), [DownloadId(1), DownloadId(4)]);
+    }
 }

@@ -134,12 +134,12 @@ pub enum Error {
 
     /// The decryption key could not be used.
     #[error(
-        "The decryption key at {url} is not usable: {}. The link may have expired; open the video page again to get a fresh one.",
+        "The decryption key from {host} is not usable: {}. The link may have expired; open the video page again to get a fresh one.",
         Chain(problem)
     )]
     Key {
-        /// Where the key came from.
-        url: String,
+        /// The host the key came from: its address can carry a signature.
+        host: String,
         /// What is wrong with it.
         problem: KeyProblem,
     },
@@ -247,13 +247,15 @@ struct Chain<'a>(&'a dyn std::error::Error);
 
 impl std::fmt::Display for Chain<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)?;
+        let mut whole = self.0.to_string();
         let mut cause = self.0.source();
         while let Some(error) = cause {
-            write!(f, ": {error}")?;
+            whole.push_str(": ");
+            whole.push_str(&error.to_string());
             cause = error.source();
         }
-        Ok(())
+        // Shown to a person, and an engine error names the signed address it fetched.
+        f.write_str(&wirecatch_logging::redact::text_for_log(&whole))
     }
 }
 
@@ -535,7 +537,7 @@ mod tests {
             },
         };
         let key = Error::Key {
-            url: "https://cdn.example/key".into(),
+            host: "cdn.example".into(),
             problem: KeyProblem::Fetch(wirecatch_engine::Error::Io {
                 action: wirecatch_engine::IoAction::Write,
                 path: PathBuf::from("key"),

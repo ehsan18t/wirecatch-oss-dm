@@ -111,7 +111,7 @@ impl MainWindow {
             .into_iter()
             .map(|index| downloads[index].id)
             .collect();
-        let chosen: Vec<DownloadId> = self.selected.iter().copied().collect();
+        let chosen = self.selection_facts(cx).ids.clone();
         if let Some(order) = order::nudged(&line, &chosen, up) {
             order::apply(&self.library, queue, order, window, cx);
         }

@@ -14,5 +14,8 @@ wirecatch-engine.workspace = true
 wirecatch-protocol.workspace = true
 wirecatch-sites.workspace = true
 
+[dev-dependencies]
+wirecatch-test-support = { path = "../test-support" }
+
 [lints]
 workspace = true

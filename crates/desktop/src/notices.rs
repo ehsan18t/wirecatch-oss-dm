@@ -77,10 +77,11 @@ pub fn start(cx: &mut App) {
     });
     cx.set_global(Kept(Arc::clone(&tellers)));
     let unopened = Arc::clone(&tellers);
-    // Runs until the manager stops, or ends at once when it could not open.
-    let watching = Backend::run(cx, move |manager| watch(manager, tellers));
+    // Runs from the open, which may come only after Try again, until the manager stops.
+    crate::backend::once_opened(cx, move |manager| watch(manager, tellers));
+    let opening = Backend::run(cx, |_| async {});
     cx.spawn(async move |_| {
-        if let Ok(Err(why)) = watching.await
+        if let Ok(Err(why)) = opening.await
             && !why.another_copy
         {
             let title = format!("{} could not open its download list", host::CHANNEL.name());

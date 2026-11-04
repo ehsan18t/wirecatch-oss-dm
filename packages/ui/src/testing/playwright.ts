@@ -34,13 +34,15 @@ export const test = base.extend<{ pageFaults: undefined }>({
           lost.push(`${response.url()} (${type})`);
       });
       await use(undefined);
+      // Read first: removing the route fails the requests it still holds, which the test did not lose.
+      const lostInTheTest = [...lost];
       // A route still fetching when the page closes would otherwise fail the whole run.
       await page.unrouteAll({ behavior: 'ignoreErrors' });
       if (testInfo.status !== testInfo.expectedStatus && errors.length > 0) {
         console.log(`What the page reported in "${testInfo.title}":\n${errors.join('\n')}`);
       }
       expect(warnings, 'Svelte warnings in development').toEqual([]);
-      expect(lost, 'requests the page lost').toEqual([]);
+      expect(lostInTheTest, 'requests the page lost').toEqual([]);
     },
     { auto: true },
   ],

@@ -3,45 +3,35 @@
 
 use std::time::Duration;
 
-use wirecatch_core::Manager;
-
 use crate::host::Core;
 
-/// The longest a quit waits for downloads to stop before exiting anyway. The manager already
-/// abandons a stuck download after its own stop timeout; this is the backstop.
+/// The longest a quit waits for downloads to stop before ending the process anyway (D144). The manager already abandons a stuck download after its own stop timeout; this is the backstop, and it also cuts a long move short (D119).
 pub const QUIT_PATIENCE: Duration = Duration::from_secs(15);
 
 /// The longest a quit waits for a manager that is still opening.
 pub const OPEN_PATIENCE: Duration = Duration::from_secs(10);
 
-/// Stops the manager so every download continues next time, then calls `exit`. Waits at most
-/// [`QUIT_PATIENCE`].
-pub async fn quit_sequence(manager: Option<&Manager>, exit: impl FnOnce()) {
-    if let Some(manager) = manager
-        && tokio::time::timeout(QUIT_PATIENCE, manager.shutdown())
-            .await
-            .is_err()
+/// Stops the manager in `core`, even one still opening, so every download continues next time: waits up to [`OPEN_PATIENCE`] for it to open, so a quit right after start still stops it cleanly, then up to [`QUIT_PATIENCE`] for it to stop. What is left then ends with the process.
+pub async fn stop(core: &Core) {
+    let manager = match tokio::time::timeout(OPEN_PATIENCE, core.manager()).await {
+        Ok(Ok(manager)) => manager,
+        Ok(Err(_)) => return,
+        Err(_) => {
+            tracing::warn!("the download list took too long to open; exiting anyway");
+            return;
+        }
+    };
+    if tokio::time::timeout(QUIT_PATIENCE, manager.shutdown())
+        .await
+        .is_err()
     {
         tracing::warn!("downloads took too long to stop; exiting anyway");
     }
-    exit();
 }
 
-/// Quits with the manager in `core`, even one still opening: waits up to [`OPEN_PATIENCE`] for it
-/// to open, so a quit right after start still stops it cleanly, then runs [`quit_sequence`].
-pub async fn quit_core(core: Option<&Core>, exit: impl FnOnce()) {
-    let manager = match core {
-        Some(core) => match tokio::time::timeout(OPEN_PATIENCE, core.manager()).await {
-            Ok(Ok(manager)) => Some(manager),
-            Ok(Err(_)) => None,
-            Err(_) => {
-                tracing::warn!("the download list took too long to open; exiting anyway");
-                None
-            }
-        },
-        None => None,
-    };
-    quit_sequence(manager, exit).await;
+/// Ends the process now. Never by returning from `main`: dropping the runtime waits, with no limit, for file work that is stuck (D144).
+pub fn end_process() -> ! {
+    std::process::exit(0)
 }
 
 /// Whether closing the main window should leave the app running: only with a tray icon to come
@@ -55,6 +45,46 @@ pub fn keeps_running(has_tray: bool, close_to_tray: Option<bool>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Set for the child of the test below, which is the one that gets stuck and ends.
+    const STUCK_CHILD_VAR: &str = "WIRECATCH_TEST_STUCK_QUIT";
+
+    #[tokio::test]
+    async fn stuck_file_work_does_not_keep_the_process_alive() {
+        if std::env::var_os(STUCK_CHILD_VAR).is_some() {
+            let runtime = tokio::runtime::Runtime::new().unwrap();
+            let (started, is_started) = std::sync::mpsc::channel();
+            drop(runtime.spawn_blocking(move || {
+                started.send(()).unwrap();
+                loop {
+                    std::thread::park();
+                }
+            }));
+            is_started.recv().unwrap();
+            end_process();
+        }
+        let child = tokio::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "quit::tests::stuck_file_work_does_not_keep_the_process_alive",
+            ])
+            .env(STUCK_CHILD_VAR, "1")
+            .stdout(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let output =
+            tokio::time::timeout(wirecatch_test_support::PATIENCE, child.wait_with_output())
+                .await
+                .expect("the process ends with its file work still stuck")
+                .unwrap();
+        assert!(output.status.success());
+        // A misspelt test name runs nothing, and the harness reports that; the child never returns to it.
+        assert!(
+            !String::from_utf8_lossy(&output.stdout).contains("test result"),
+            "the child did not reach the end of the process"
+        );
+    }
 
     #[test]
     fn closing_the_window_keeps_running_only_with_a_tray_and_close_to_tray_on() {

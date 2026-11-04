@@ -266,12 +266,12 @@ impl Keys {
             .get_or_try_init(|| async {
                 let response = fetcher.get(url, None, KEY_LIMIT).await.map_err(|e| {
                     map_engine(e, |e| Error::Key {
-                        url: url.to_string(),
+                        host: url.host_str().unwrap_or_default().to_owned(),
                         problem: KeyProblem::Fetch(e),
                     })
                 })?;
                 <[u8; 16]>::try_from(&response.body[..]).map_err(|_| Error::Key {
-                    url: url.to_string(),
+                    host: url.host_str().unwrap_or_default().to_owned(),
                     problem: KeyProblem::Length(response.body.len()),
                 })
             })
