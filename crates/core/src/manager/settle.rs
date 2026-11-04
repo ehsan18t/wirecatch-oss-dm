@@ -170,7 +170,7 @@ impl Manager {
                 entry.naming.name.as_deref(),
                 &remote.suggested_name,
                 &remote.final_url,
-                &entry.row.file_name,
+                entry.plain_name.as_deref().unwrap_or(&entry.row.file_name),
             )
             .map_err(|e| e.to_string())?;
             let category = settled_category(&state, entry, &name, remote);
@@ -236,6 +236,7 @@ impl Manager {
         entry.row.category = category;
         entry.naming.settled = true;
         entry.naming.writing = true;
+        entry.plain_name = None;
         entry.expect = None;
         entry.video_check = false;
         self.save(state, id);

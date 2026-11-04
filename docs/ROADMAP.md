@@ -73,7 +73,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 8. A move across drives can leave a cut-off file under the final name (fixed)
 9. Quitting during a move leaves the list pointing at the wrong place, partly fixed, a copy longer than the quit limit needs PR-10 (fixed)
 10. The quit time limit does not end the process (fixed)
-11. "If the file is already in the folder" is skipped for names from the link or browser (open)
+11. "If the file is already in the folder" is skipped for names from the link or browser (fixed)
 12. A settings file can send downloads into folders whose programs the app runs (fixed)
 13. Replace on a file with another extension downloads everything again and strands the old folder (fixed)
 14. A new media download can save another download's video, partly fixed, streams still rely on the fingerprint (fixed)

@@ -12,6 +12,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, PortablePath, UserError};
 
 use super::Manager;
+use super::file_exists::give_up_the_name;
 use super::state::{State, Stop};
 use crate::error::{CoreError, Result};
 use crate::naming::{self, partial_files};
@@ -116,7 +117,11 @@ impl Manager {
         match moved {
             Ok(new_path) => {
                 let finished = entry.row.status == DownloadStatus::Completed;
-                let new_name = naming::file_name_of(&new_path);
+                let new_name = entry
+                    .plain_name
+                    .clone()
+                    .unwrap_or_else(|| naming::file_name_of(&new_path));
+                let cancelled = entry.row.status == DownloadStatus::Cancelled;
                 if !entry.naming.settled {
                     // The server has not answered yet, so its answer will choose the
                     // path: it must use the folder the user chose now, and the
@@ -142,6 +147,9 @@ impl Manager {
                 }
                 if finished {
                     self.move_rows_of_one_file(&mut state, id, old_path, &new_path);
+                }
+                if cancelled {
+                    give_up_the_name(&mut state, id);
                 }
                 self.save(&mut state, id);
                 self.reconcile(&mut state);
@@ -199,7 +207,12 @@ impl Manager {
         old_path: &Path,
         dir: PathBuf,
     ) -> Result<PathBuf> {
-        let name = naming::file_name_of(old_path);
+        let name = self
+            .lock()
+            .downloads
+            .get(&id)
+            .and_then(|entry| entry.plain_name.clone())
+            .unwrap_or_else(|| naming::file_name_of(old_path));
         let manager = self.clone();
         let new_path = self
             .blocking(move || {
