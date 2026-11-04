@@ -127,7 +127,7 @@ fn origin_form(target: &str) -> Option<String> {
     })
 }
 
-/// Reads a request head. A body whose length the head does not give is refused: only the bytes of one request ever go on, so the end of it has to be known.
+/// Reads a request head. A body whose length the head does not give is refused, as is one that waits for an answer first: only the bytes of one request ever go on, and they are sent before any answer is read.
 fn read_request(head: &[u8]) -> Option<Destination> {
     let text = std::str::from_utf8(head).ok()?;
     let mut lines = text.split("\r\n");
@@ -155,7 +155,7 @@ fn read_request(head: &[u8]) -> Option<Destination> {
     let mut body_len = 0;
     for line in lines.take_while(|line| !line.is_empty()) {
         let (name, value) = line.split_once(':').unwrap_or((line, ""));
-        if name.eq_ignore_ascii_case("transfer-encoding") {
+        if name.eq_ignore_ascii_case("transfer-encoding") || name.eq_ignore_ascii_case("expect") {
             return None;
         }
         if name.eq_ignore_ascii_case("content-length") {
@@ -192,6 +192,8 @@ fn closing_response(head: &[u8]) -> Vec<u8> {
         sent.extend_from_slice(status);
         sent.extend_from_slice(END);
     }
+    // First: a client stops reading a head at a line it cannot parse.
+    sent.extend_from_slice(b"Connection: close\r\n");
     for line in lines.take_while(|line| !line.is_empty()) {
         let name = line.split(|b| *b == b':').next().unwrap_or_default();
         if !HOP_BY_HOP
@@ -202,7 +204,7 @@ fn closing_response(head: &[u8]) -> Vec<u8> {
             sent.extend_from_slice(END);
         }
     }
-    sent.extend_from_slice(b"Connection: close\r\n\r\n");
+    sent.extend_from_slice(END);
     sent
 }
 
@@ -318,39 +320,47 @@ async fn carry_request(
         .await?;
     let left = request.body_len.saturating_sub(held as u64);
     tokio::io::copy(&mut (&mut *client).take(left), server).await?;
+    // More than the request already came: no answer may follow it.
+    if rest.len() > held {
+        return Ok(());
+    }
     carry_response(client, server).await
 }
 
-/// Passes on the response, told to close. It ends when either side closes; what the client sends meanwhile is dropped.
-async fn carry_response(client: &mut TcpStream, server: &mut TcpStream) -> io::Result<()> {
+/// The response's final head and what came after it; `None` when the server ends first. Answers before it are not passed on: `http.client` reads some of them as final and keeps the connection, and no client here waits on one, since `Expect` is refused.
+async fn final_head(server: &mut TcpStream) -> Option<(Vec<u8>, Vec<u8>)> {
     const INFORMATIONAL: &[u8] = b"1";
     const STATUS_AT: usize = "HTTP/1.1 ".len();
     let mut bytes = Vec::new();
-    let body = loop {
-        let Some((head, after)) = read_head(server, bytes).await else {
-            return client.write_all(UNREACHABLE).await;
-        };
-        // Answers before the final one say nothing about closing; the client reads on past them.
-        if head.get(STATUS_AT..=STATUS_AT) == Some(INFORMATIONAL) {
-            client.write_all(&head).await?;
-            bytes = after;
-        } else {
-            client.write_all(&closing_response(&head)).await?;
-            break after;
+    loop {
+        let (head, after) = read_head(server, bytes).await?;
+        if head.get(STATUS_AT..=STATUS_AT) != Some(INFORMATIONAL) {
+            return Some((head, after));
         }
+        bytes = after;
+    }
+}
+
+/// Passes on the response, told to close. It ends when either side closes, and at anything more from the client: the client read this connection as still open, so whatever the server sends next would answer that request, which may be for another host.
+async fn carry_response(client: &mut TcpStream, server: &mut TcpStream) -> io::Result<()> {
+    let mut from_client = [0_u8; 1];
+    let (head, body) = tokio::select! {
+        response = final_head(server) => match response {
+            Some(response) => response,
+            None => return client.write_all(UNREACHABLE).await,
+        },
+        _ = client.read(&mut from_client) => return Ok(()),
     };
+    client.write_all(&closing_response(&head)).await?;
     client.write_all(&body).await?;
     let mut from_server = vec![0_u8; RELAY_BUFFER];
-    let mut from_client = [0_u8; KIB_USIZE];
     loop {
         tokio::select! {
             read = server.read(&mut from_server) => match read? {
                 0 => return Ok(()),
                 n => client.write_all(from_server.get(..n).unwrap_or_default()).await?,
             },
-            read = client.read(&mut from_client) => if read? == 0 {
-                return Ok(());
-            },
+            _ = client.read(&mut from_client) => return Ok(()),
         }
     }
 }
@@ -362,6 +372,8 @@ fn client_may_have_gone(told: &io::Result<()>) {
 
 #[cfg(test)]
 mod tests {
+    use wirecatch_test_support::PATIENCE;
+
     use super::*;
 
     fn nothing_kept_off(_: IpAddr) -> bool {
@@ -534,7 +546,7 @@ mod tests {
         let response = String::from_utf8(response).unwrap();
         assert_eq!(
             response,
-            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n"
+            "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\n\r\n"
         );
         while body.len() < 2 {
             let mut more = [0_u8; 2];
@@ -559,9 +571,6 @@ mod tests {
         let heard = tokio::spawn(async move {
             let (mut peer, _) = server.accept().await.unwrap();
             let (_, mut body) = read_head(&mut peer, Vec::new()).await.unwrap();
-            peer.write_all(b"HTTP/1.1 204 No Content\r\n\r\n")
-                .await
-                .unwrap();
             peer.read_to_end(&mut body).await.unwrap();
             body
         });
@@ -575,10 +584,9 @@ mod tests {
             )
             .await
             .unwrap();
-        read_head(&mut client, Vec::new()).await.unwrap();
-        // Told to close, as a client does.
+        let heard = tokio::time::timeout(PATIENCE, heard).await.unwrap();
+        assert_eq!(heard.unwrap(), b"body");
         drop(client);
-        assert_eq!(heard.await.unwrap(), b"body");
     }
 
     #[tokio::test]
@@ -587,6 +595,12 @@ mod tests {
         let said = answer(
             &guard,
             "POST http://127.0.0.1:9/ HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n",
+        )
+        .await;
+        assert!(said.starts_with("HTTP/1.1 400"), "{said}");
+        let said = answer(
+            &guard,
+            "POST http://127.0.0.1:9/ HTTP/1.1\r\nExpect: 100-continue\r\nContent-Length: 1\r\n\r\n",
         )
         .await;
         assert!(said.starts_with("HTTP/1.1 400"), "{said}");
@@ -601,5 +615,58 @@ mod tests {
         ] {
             assert_eq!(origin_form(target).as_deref(), Some(sent), "{target}");
         }
+    }
+
+    /// A server cannot keep the client reading: an early answer does not reach it, and anything more from the client ends the connection before a later answer could pass for its next request.
+    #[tokio::test]
+    async fn an_early_answer_cannot_hold_the_connection() {
+        let guard = Guard::keeping_off(nothing_kept_off).await.unwrap();
+        let server = local_server().await;
+        let target = server.local_addr().unwrap();
+        let (hinted, was_hinted) = tokio::sync::oneshot::channel();
+        let ended = tokio::spawn(async move {
+            let (mut peer, _) = server.accept().await.unwrap();
+            read_head(&mut peer, Vec::new()).await.unwrap();
+            peer.write_all(b"HTTP/1.1 103 Early Hints\r\n\r\n")
+                .await
+                .unwrap();
+            hinted.send(()).unwrap();
+            let mut later = Vec::new();
+            client_may_have_gone(&peer.read_to_end(&mut later).await.map(drop));
+            let answered = peer.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+            client_may_have_gone(&answered.await);
+            later
+        });
+        let mut client = TcpStream::connect(guard.address).await.unwrap();
+        client
+            .write_all(format!("GET http://{target}/a HTTP/1.1\r\n\r\n").as_bytes())
+            .await
+            .unwrap();
+        was_hinted.await.unwrap();
+        client
+            .write_all(b"GET http://other.example/ HTTP/1.1\r\n\r\n")
+            .await
+            .unwrap();
+        let later = tokio::time::timeout(PATIENCE, ended)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(later, Vec::<u8>::new());
+        let mut said = Vec::new();
+        // Closed with bytes unread, the connection may read as reset.
+        client_may_have_gone(&client.read_to_end(&mut said).await.map(drop));
+        assert_eq!(said, Vec::<u8>::new());
+    }
+
+    /// `Connection: close` comes first, ahead of a line that would stop a client reading.
+    #[test]
+    fn a_response_is_told_to_close_before_any_other_line() {
+        let sent = closing_response(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nno colon here\r\nKeep-Alive: x\r\n\r\n",
+        );
+        assert_eq!(
+            sent,
+            b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 2\r\nno colon here\r\n\r\n"
+        );
     }
 }
