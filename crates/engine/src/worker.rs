@@ -15,7 +15,7 @@ use crate::error::{Chain, Error, Result};
 use crate::http::Failure;
 use crate::limiter::{Paced, pace};
 use crate::numeric::clamp_to_len;
-use crate::receive::{Received, receive, skip_start};
+use crate::receive::{Received, ended_while_skipping, receive, skip_start};
 use crate::retry::{Attempts, Next, Refusals};
 use crate::segment::{Assignment, SharedTable, UNKNOWN_END};
 use crate::transport::{Body, Connection};
@@ -208,6 +208,7 @@ async fn stream(
     let outcome: Result<Ended> = loop {
         let data = match receive(&shared.request.cancel, stall, body.next()).await {
             Ok(Received::Data(data)) => skip_start(data, &mut skip),
+            Ok(Received::End) if skip > 0 => break Err(ended_while_skipping(from, skip)),
             Ok(Received::End) => break Ok(Ended::Eof),
             Ok(Received::Cancelled) => break Ok(Ended::Cancelled),
             Err(e) => {
