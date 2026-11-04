@@ -1,0 +1,44 @@
+Run: git apply Xcrash-and-resume-5.patch, then cargo test -p wirecatch-core --test manager a_queued_capture_still_checks_the_file_after_a_restart -- --nocapture. Output on 02284bbd0: AFTER Completed 2048 (the browser saw 1024), then panic "another size was saved as the capture".
+diff --git a/crates/core/tests/manager/protocol.rs b/crates/core/tests/manager/protocol.rs
+index 9f2342f0a..aed5b42c9 100644
+--- a/crates/core/tests/manager/protocol.rs
++++ b/crates/core/tests/manager/protocol.rs
+@@ -1842,3 +1842,38 @@ async fn a_password_in_a_link_is_never_shown() -> TestResult {
+     assert!(stored.contains("ada:s3cret@"), "{stored}");
+     Ok(())
+ }
++
++/// Xcrash-and-resume-5: a queued capture's check does not survive a restart.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn a_queued_capture_still_checks_the_file_after_a_restart() -> TestResult {
++    let changed = fast_server(2048).await?;
++    let mut h = Harness::new().await?;
++    h.manager
++        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
++        .unwrap();
++    let added = h
++        .manager
++        .add_capture(capture(changed.url("report.pdf").to_string()))
++        .await
++        .unwrap();
++    assert_eq!(added.action, AddAction::Queued);
++    let id = added.id.unwrap();
++
++    h.restart().await?;
++    h.manager
++        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
++        .unwrap();
++
++    let ended = h
++        .wait_for(id, "the run's end", |r| {
++            matches!(r.status, DownloadStatus::Completed | DownloadStatus::Failed)
++        })
++        .await;
++    println!("AFTER {:?} {}", ended.status, ended.total.unwrap_or(0));
++    assert_eq!(
++        ended.status,
++        DownloadStatus::Failed,
++        "another size was saved as the capture"
++    );
++    Ok(())
++}

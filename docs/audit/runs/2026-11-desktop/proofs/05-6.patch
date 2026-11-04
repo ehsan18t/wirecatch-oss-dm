@@ -1,0 +1,49 @@
+Run: git apply 05-6.patch, then cargo test -p wirecatch-core --test manager an_answered_replace_survives_a_restart -- --nocapture. Output on 02284bbd0: FINISHED AT report (1).pdf OLD FILE KEPT true, then panic "the Replace was forgotten".
+diff --git a/crates/core/tests/manager/file_exists.rs b/crates/core/tests/manager/file_exists.rs
+index 5374681cd..9150718ab 100644
+--- a/crates/core/tests/manager/file_exists.rs
++++ b/crates/core/tests/manager/file_exists.rs
+@@ -252,3 +252,43 @@ async fn a_file_saved_meanwhile_is_never_replaced() -> TestResult {
+     assert_eq!(std::fs::read(dir.join(NAME))?, b"saved by another program");
+     Ok(())
+ }
++
++/// 05-6: an answered Replace, part downloaded, app restarted.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn an_answered_replace_survives_a_restart() -> TestResult {
++    let server = TestServer::start(
++        test_data(512 * KIB_USIZE),
++        Config {
++            ranges: true,
++            per_connection_bps: Some(64 * KIB),
++            ..Config::default()
++        },
++    )
++    .await;
++    let mut h = Harness::new().await?;
++    let dir = folder_with(&h, b"the older file")?;
++    let mut events = h.manager.subscribe();
++    let row = add_into(&h, server.url("report").as_str(), &dir).await?;
++    let question = asked(&mut events).await?;
++    h.manager
++        .answer_file_exists(question.id, answer(FileExistsChoice::Replace, false))?;
++    h.wait_for(row.id, "some progress", |r| r.done > 0).await;
++    h.manager.pause(row.id)?;
++    h.wait_status(row.id, DownloadStatus::Paused).await;
++
++    h.restart().await?;
++    h.manager.resume(row.id)?;
++    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
++
++    println!(
++        "FINISHED AT {} OLD FILE KEPT {}",
++        done.file_name,
++        std::fs::read(dir.join(NAME))? == b"the older file"
++    );
++    assert_eq!(
++        Path::new(&done.path),
++        dir.join(NAME),
++        "the Replace was forgotten"
++    );
++    Ok(())
++}

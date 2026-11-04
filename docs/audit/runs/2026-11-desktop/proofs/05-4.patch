@@ -1,0 +1,31 @@
+Run (Windows, second drive needed): git apply docs/audit/runs/2026-11-desktop/proofs/05-4.patch, set AUDIT_OTHER_DRIVE to a folder on a drive other than %TEMP%'s, then cargo test -p wirecatch-core --lib audit_a_move -- --nocapture. Output: 1 failed, 'the moved file has no Zone.Identifier stream' (the mark was there before the move; the file's bytes arrived).
+diff --git a/crates/core/src/manager/relocate.rs b/crates/core/src/manager/relocate.rs
+index 267ceb00f..ce13408f4 100644
+--- a/crates/core/src/manager/relocate.rs
++++ b/crates/core/src/manager/relocate.rs
+@@ -349,6 +349,25 @@ mod tests {
+         assert!(from.exists());
+     }
+ 
++    /// Needs a second drive: `AUDIT_OTHER_DRIVE` names a folder on a drive other than the temporary folder's.
++    #[cfg(windows)]
++    #[test]
++    fn audit_a_move_across_drives_keeps_the_mark_of_the_web() {
++        let other = std::env::var_os("AUDIT_OTHER_DRIVE").expect("AUDIT_OTHER_DRIVE");
++        let dir = tempfile::tempdir().unwrap();
++        let far = tempfile::tempdir_in(other).unwrap();
++        let (from, to) = (dir.path().join("setup.exe"), far.path().join("setup.exe"));
++        std::fs::write(&from, b"MZ").unwrap();
++        wirecatch_files::zone::mark(&from, "https://example.com/setup.exe", None);
++        assert!(std::fs::read(format!("{}:Zone.Identifier", from.display())).is_ok());
++        move_file(&from, &to).unwrap();
++        assert_eq!(std::fs::read(&to).unwrap(), b"MZ");
++        assert!(
++            std::fs::read(format!("{}:Zone.Identifier", to.display())).is_ok(),
++            "the moved file has no Zone.Identifier stream"
++        );
++    }
++
+     #[test]
+     fn a_folder_that_is_a_file_cannot_be_used() {
+         let dir = tempfile::tempdir().unwrap();
