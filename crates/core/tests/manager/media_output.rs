@@ -554,3 +554,36 @@ async fn real_ffmpeg_saves_a_page_video_as_mp4() -> TestResult {
     assert!(text.contains("Chapter #0:1"), "{text}");
     Ok(())
 }
+
+/// Audio a page offers as FLAC, saved as a format the offer lists: the download is converted, not refused once it is on disk.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn flac_offered_as_mp3_is_not_refused_after_the_download() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let mut flac = test_data(64 * KIB_USIZE);
+    flac[..4].copy_from_slice(b"fLaC");
+    server.put("fmt/a.flac", flac);
+    let info = serde_json::json!({
+        "title": "A live recording",
+        "duration": 2.0,
+        "formats": [{"format_id": "flac", "ext": "flac", "vcodec": "none", "acodec": "flac",
+            "protocol": "https", "url": server.url("fmt/a.flac").as_str()}],
+    });
+    tell_tool(&h, "info.json", &info.to_string())?;
+    let choice = choice_for(&h, &server, 90).await?;
+    let audio = choice.options.last().ok_or("no options")?;
+    assert!(audio.outputs.iter().any(|f| f.format == OutputFormat::Mp3));
+    let id = h
+        .manager
+        .choose_media(choice.id, selection(&audio.id, OutputFormat::Mp3))
+        .await?;
+    let row = crate::common::wait_until("the download to end", || {
+        h.manager.list_downloads().into_iter().find(|r| {
+            r.id == id && matches!(r.status, DownloadStatus::Completed | DownloadStatus::Failed)
+        })
+    })
+    .await;
+    assert_eq!(row.status, DownloadStatus::Completed, "{:?}", row.error);
+    Ok(())
+}

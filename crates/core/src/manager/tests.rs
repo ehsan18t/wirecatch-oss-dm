@@ -359,6 +359,97 @@ async fn names_are_checked_on_disk_without_holding_the_lock() {
     state.assert_consistent();
 }
 
+#[tokio::test]
+async fn a_path_another_download_took_is_not_replaced_kept_or_asked_about() {
+    use super::state::{Found, OnExisting};
+    use wirecatch_protocol::app::WhenFileExists;
+
+    let (manager, dir) = manager_with(
+        |_| Box::pin(std::future::pending()),
+        Duration::from_secs(1),
+        DEFAULT_CAPTURE_TIMEOUT,
+    )
+    .await;
+    let holder = manager
+        .add_download(add_request("https://example.com/a.bin"))
+        .await
+        .unwrap();
+    let late = manager
+        .add_download(add_request("https://example.com/b.bin"))
+        .await
+        .unwrap();
+    let mut guard = manager.lock();
+    let state = &mut *guard;
+    let path = dir.path().join("taken.bin");
+    assert!(state.claimed.reserve(&path, holder));
+    let late_path = state.downloads[&late].path().to_path_buf();
+
+    for then in [
+        WhenFileExists::Replace,
+        WhenFileExists::KeepExisting,
+        WhenFileExists::Ask,
+    ] {
+        let found = Found {
+            path: path.clone(),
+            size: 1,
+            saved_at: None,
+            then,
+            same: true,
+        };
+        manager.on_found(state, late, &found);
+        let entry = &state.downloads[&late];
+        assert_eq!(entry.path(), late_path, "{then:?}");
+        assert_eq!(entry.on_existing, Some(OnExisting::KeepBoth), "{then:?}");
+        assert_eq!(entry.row.status, DownloadStatus::Queued, "{then:?}");
+        assert_eq!(state.claimed.holder(&path), Some(holder), "{then:?}");
+        assert!(state.file_exists.is_empty(), "{then:?}");
+    }
+}
+
+/// A folder that is slow to answer holds only its own download: other work on the runtime goes on.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn names_are_checked_on_disk_off_the_async_threads() {
+    let gate = Arc::new(Notify::new());
+    let engine = answers_on_cue(gate.clone(), "report.pdf");
+    let (manager, _dir) =
+        manager_with(engine, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/get?id=1"))
+        .await
+        .unwrap();
+    let run_id = manager.lock().downloads[&id].run.as_ref().unwrap().id;
+
+    let (told, entered) = tokio::sync::oneshot::channel::<()>();
+    let told = std::sync::Mutex::new(Some(told));
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    let settling = {
+        let manager = manager.clone();
+        tokio::spawn(async move {
+            let free_on_disk = move |_: &Path| {
+                if let Some(told) = told.lock().unwrap().take() {
+                    told.send(()).unwrap();
+                }
+                // The disk answers only once the runtime's one worker has run the task below.
+                held.lock()
+                    .unwrap()
+                    .recv_timeout(PATIENCE)
+                    .expect("the runtime stalled while the disk was checked");
+                true
+            };
+            manager.settle_path_checking(id, run_id, &answer("report.pdf"), &free_on_disk)
+        })
+    };
+    entered.await.unwrap();
+    let other_work = tokio::spawn(async move { release.send(()) });
+    let path = settling.await.unwrap();
+    other_work.await.unwrap().unwrap();
+    assert!(
+        path.is_ok(),
+        "the runtime stalled while the disk was checked"
+    );
+}
+
 /// A client sending a list longer than the list may hold is answered while the manager's lock is held elsewhere: the list is refused before the lock is taken, so such a request never waits for it nor holds it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_list_of_sites_too_long_is_refused_without_the_lock() {
@@ -425,11 +516,11 @@ async fn only_reservations_may_exceed_the_downloads_paths() {
     .await;
     let mut state = manager.lock();
     let path = dir.path().join("moment.bin");
-    state.claimed.reserve(&path);
+    assert!(state.claimed.reserve(&path, DownloadId(1)));
     state.assert_consistent();
-    state.claimed.release(&path);
+    state.claimed.release(&path, DownloadId(1));
     state.assert_consistent();
-    state.claimed.insert(&path);
+    state.claimed.insert(&path, DownloadId(1));
     let leaked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         state.assert_consistent();
     }));
@@ -720,4 +811,145 @@ async fn a_repeated_handover_never_joins_its_own_download() {
         "{target:?}"
     );
     adding.abort();
+}
+
+/// A run that stops only when `leave` lets it, however soon it is asked to.
+fn leaves_on_cue(leave: Arc<Notify>) -> impl Fn(FakeRun) -> EngineFuture {
+    move |_run: FakeRun| {
+        let leave = leave.clone();
+        Box::pin(async move {
+            leave.notified().await;
+            Err(EngineError::Cancelled)
+        })
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pause_all_never_keeps_a_download_being_cancelled() {
+    let leave = Arc::new(Notify::new());
+    let (manager, _dir) = manager_with(
+        leaves_on_cue(leave.clone()),
+        PATIENCE,
+        DEFAULT_CAPTURE_TIMEOUT,
+    )
+    .await;
+    let id = manager
+        .add_download(add_request("https://example.com/big.iso"))
+        .await
+        .unwrap();
+
+    manager.cancel(id).unwrap();
+    manager.pause_all().unwrap();
+    leave.notify_one();
+
+    wait_until("the run's end", || {
+        !manager.lock().downloads[&id].is_running()
+    })
+    .await;
+    assert_eq!(
+        manager.get_download(id).unwrap().status,
+        DownloadStatus::Cancelled
+    );
+}
+
+/// A run whose server answers with `report.pdf` when `gate` lets it, ends when `leave` lets it, and says so on `answered`.
+fn offers_a_file_on_cue(
+    gate: Arc<Notify>,
+    answered: Arc<Notify>,
+    leave: Arc<Notify>,
+) -> impl Fn(FakeRun) -> EngineFuture {
+    move |run: FakeRun| {
+        let (gate, answered, leave) = (gate.clone(), answered.clone(), leave.clone());
+        Box::pin(async move {
+            gate.notified().await;
+            let settle = run.settle.expect("the path is not settled yet");
+            let refused = settle(&answer("report.pdf")).unwrap_err();
+            answered.notify_one();
+            leave.notified().await;
+            Err(EngineError::TargetRejected(PathRejected::new(refused)))
+        })
+    }
+}
+
+/// A person's stop in the moment after the duplicate was found decides, not the setting.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_found_duplicate_does_not_override_a_stop_the_person_chose() {
+    for (stop, ended) in [
+        (
+            Manager::pause as fn(&Manager, DownloadId) -> crate::error::Result<()>,
+            DownloadStatus::Paused,
+        ),
+        (Manager::cancel, DownloadStatus::Cancelled),
+    ] {
+        let (gate, answered, leave) = (
+            Arc::new(Notify::new()),
+            Arc::new(Notify::new()),
+            Arc::new(Notify::new()),
+        );
+        let (manager, dir) = manager_with(
+            offers_a_file_on_cue(gate.clone(), answered.clone(), leave.clone()),
+            PATIENCE,
+            DEFAULT_CAPTURE_TIMEOUT,
+        )
+        .await;
+        let folder = dir.path().join("saved");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("report.pdf"), b"older").unwrap();
+        let mut request = add_request("https://example.com/get?id=1");
+        request.folder = Some(folder.to_string_lossy().into_owned());
+        let id = manager.add_download(request).await.unwrap();
+
+        gate.notify_one();
+        tokio::time::timeout(PATIENCE, answered.notified())
+            .await
+            .expect("the server never answered");
+        stop(&manager, id).unwrap();
+        leave.notify_one();
+
+        wait_until("the run's end", || {
+            !manager.lock().downloads[&id].is_running()
+        })
+        .await;
+        assert_eq!(manager.get_download(id).unwrap().status, ended);
+        assert_eq!(manager.pending_file_exists(), vec![]);
+    }
+}
+
+/// A new download never takes a name whose old files are still being deleted.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_removal_keeps_the_path_until_its_files_are_deleted() {
+    let (manager, _dir) =
+        manager_with(obedient, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let mut request = add_request("https://example.com/big.iso");
+    request.start = false;
+    let id = manager.add_download(request).await.unwrap();
+    let path = PathBuf::from(&manager.lock().downloads[&id].row.path);
+
+    let entered = Arc::new(Notify::new());
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    let told = entered.clone();
+    manager.use_before_deleting(Arc::new(move || {
+        told.notify_one();
+        assert!(
+            held.lock().unwrap().recv().is_err(),
+            "ends when the sender is dropped"
+        );
+    }));
+    let removing = {
+        let manager = manager.clone();
+        tokio::spawn(async move { manager.remove(&[id], RemoveFiles::Keep).await })
+    };
+    tokio::time::timeout(PATIENCE, entered.notified())
+        .await
+        .expect("the deletion never began");
+    assert!(manager.lock().claimed.contains(&path));
+    drop(release);
+    tokio::time::timeout(PATIENCE, removing)
+        .await
+        .expect("the removal never ended")
+        .unwrap()
+        .unwrap();
+    assert!(!manager.lock().claimed.contains(&path));
+    manager.lock().assert_consistent();
 }

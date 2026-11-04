@@ -133,7 +133,7 @@ pub enum Error {
     /// [`DownloadOptions::allow_insecure_redirects`](crate::DownloadOptions::allow_insecure_redirects)
     /// is set.
     #[error(
-        "the secure link {from} redirects to {to}, which is not encrypted, so the download was stopped. Allow insecure redirects to download it anyway"
+        "the secure link {from} redirects to {to}, which is not encrypted, so the download was stopped"
     )]
     InsecureRedirect {
         /// The `https` URL that redirected.

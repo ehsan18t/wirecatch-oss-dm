@@ -19,7 +19,7 @@ use std::error::Error;
 use std::io::Write;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use wirecatch_engine::numeric::{approx_f64, saturating_cast};
 use wirecatch_engine::units::{MIB, MIB_USIZE};
@@ -51,7 +51,10 @@ const SERVE_FTP_SESSIONS: usize = 4;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     let port = |default| args.get(1).and_then(|p| p.parse().ok()).unwrap_or(default);
     let cap: u64 = args
         .get(2)
@@ -256,7 +259,6 @@ async fn serve(port: u16, cap_mib: u64) -> Result<()> {
                 );
             }
         });
-        tokio::time::sleep(Duration::ZERO).await;
     }
 }
 

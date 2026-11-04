@@ -16,6 +16,7 @@ use wirecatch_engine::{Fetcher, FileWork};
 use super::{blocking, discarded};
 use crate::crypto;
 use crate::error::{Error, KeyProblem, Result, map_engine};
+use crate::ffmpeg::holds_no_media;
 use crate::lock;
 use crate::model::{Outcome, StreamProgress};
 use crate::plan::{Piece, Plan};
@@ -186,13 +187,17 @@ async fn fetch_piece(shared: &Shared, job: &Job, buffer: &mut Vec<u8>) -> Result
     let work = shared.work.clone();
     let (track, index) = (job.track, job.index);
     let mut memory = std::mem::take(buffer);
-    let (decrypted, memory) = blocking(&shared.file_work, move || {
+    let (fetched, memory) = blocking(&shared.file_work, move || {
         let path = work.segment_path(track, index);
         // Each segment is on disk before it gets its final name and its line
         // in the log, so a power cut can never leave a logged segment whose
         // file is empty or short.
         let size = match key {
             None => {
+                if holds_no_media(&part)? {
+                    discarded(&part, fs::remove_file(&part));
+                    return Ok((Fetched::NotMedia, memory));
+                }
                 // Write access: Windows refuses to flush a read-only handle.
                 let file = fs::OpenOptions::new().write(true).open(&part)?;
                 file.sync_all()?;
@@ -210,27 +215,42 @@ async fn fetch_piece(shared: &Shared, job: &Job, buffer: &mut Vec<u8>) -> Result
                 else {
                     drop(output);
                     discarded(&path, fs::remove_file(&path));
-                    return Ok((false, memory));
+                    return Ok((Fetched::KeyDoesNotFit, memory));
                 };
                 output.sync_all()?;
-                drop(input);
-                fs::remove_file(&part)?;
+                drop((input, output));
+                discarded(&part, fs::remove_file(&part));
+                if holds_no_media(&path)? {
+                    discarded(&path, fs::remove_file(&path));
+                    return Ok((Fetched::NotMedia, memory));
+                }
                 len
             }
         };
         work.record_segment(track, index, size)?;
-        Ok((true, memory))
+        Ok((Fetched::Saved, memory))
     })
     .await?;
     *buffer = memory;
-    if !decrypted {
-        return Err(Error::Decrypt {
-            number: job.number,
-            total: shared.total,
-        });
+    let (number, total) = (job.number, shared.total);
+    match fetched {
+        Fetched::Saved => {
+            debug!(track, index, "segment done");
+            Ok(())
+        }
+        Fetched::KeyDoesNotFit => Err(Error::Decrypt { number, total }),
+        Fetched::NotMedia => Err(Error::NotMedia { number, total }),
     }
-    debug!(track, index, "segment done");
-    Ok(())
+}
+
+/// What became of a fetched piece.
+enum Fetched {
+    /// Saved under its final name and noted in the log.
+    Saved,
+    /// It did not decrypt with its key, and nothing was kept.
+    KeyDoesNotFit,
+    /// It holds no media, and nothing was kept.
+    NotMedia,
 }
 
 /// Decryption keys, each fetched once however many segments use it.
