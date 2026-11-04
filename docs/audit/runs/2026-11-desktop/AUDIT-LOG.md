@@ -226,9 +226,9 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 199 | On Linux, media programs may outlive an app ended by a signal                                     | `Xshutdown-4`                                                                                      | P3       | medium | P3, 1 finding, medium                                                                                            | none                                          | open   |
 | 200 | Placing a finished video has its own weaker no-replace move                                       | `Xrepeated-logic-4`                                                                                | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 201 | Moving a finished video leaves its subtitle files behind                                          | `B10-1`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 202 | A failed browser registration logs no reason                                                      | `22-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 203 | The autostart Exec line escapes reserved characters once                                          | `22-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 204 | The autostart Launcher trait has one implementation and no test                                   | `22-8`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 202 | A failed browser registration logs no reason                                                      | `22-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 203 | The autostart Exec line escapes reserved characters once                                          | `22-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 204 | The autostart Launcher trait has one implementation and no test                                   | `22-8`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 205 | Every window has an empty native title                                                            | `U-2`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 206 | invalid_link ignores its argument, and its doc and test claim otherwise                           | `28-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 207 | An import can leave two queues with the same name                                                 | `19-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | `19-2`                                        | open   |
@@ -3685,7 +3685,7 @@ For a completed download `move_download_files` moves only the video, so `<name>.
 
 ### 202. A failed browser registration logs no reason
 
-P3, small, open.
+P3, small, fixed.
 
 `Report::fail` lines reach only stdout, and `run_bridge` reports only stderr, so a failed browser registration logs no reason.
 
@@ -3701,7 +3701,7 @@ P3, small, open.
 
 ### 203. The autostart Exec line escapes reserved characters once
 
-P3, small, open.
+P3, small, fixed.
 
 `exec_word` writes `\$`, while the Desktop Entry Specification applies the string escape first, so it should be `\\$`. Read, not run.
 
@@ -3717,7 +3717,7 @@ P3, small, open.
 
 ### 204. The autostart Launcher trait has one implementation and no test
 
-P3, small, open.
+P3, small, fixed.
 
 `autostart::Launcher` has one implementation, and `apply` and `follow` run in no test.
 
