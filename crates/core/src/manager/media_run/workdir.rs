@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use wirecatch_engine::Url;
 use wirecatch_media::output::{ImageFormat, SubtitleFormat, SubtitlePick};
+use wirecatch_sites::cookie_scope::site_of;
+use wirecatch_sites::public_suffix::SuffixList;
 
 use super::placement::link_digest;
 
@@ -54,6 +56,12 @@ pub(super) async fn claim_for_link(work: &Path, url: &Url) -> std::io::Result<()
     }
     tokio::fs::create_dir_all(work).await?;
     tokio::fs::write(named, digest).await
+}
+
+/// Whose a stream's segments are: the link's site and port. A refreshed stream keeps them on any host of the site, while another site serving the same paths never takes them.
+pub(super) fn stream_owner(url: &Url, suffixes: &SuffixList) -> String {
+    let site = site_of(url.as_str(), suffixes).unwrap_or_default();
+    format!("{site}:{}", url.port_or_known_default().unwrap_or_default())
 }
 
 /// Names the file a finished part (`role`) was saved as.

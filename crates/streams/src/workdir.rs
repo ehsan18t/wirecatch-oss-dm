@@ -3,7 +3,7 @@
 //!
 //! `<output name>.wcstream/` holds:
 //! - `stream.txt`: which plan the folder belongs to (a fingerprint of its
-//!   segments). A folder for another plan is cleared.
+//!   segments and their owner). A folder for another plan is cleared.
 //! - `done.log`: one line per finished segment (`S <track> <index> <size>`), per batch of segments appended to their track (`A <track> <next index> <track size>`) and per joined track (`J <track> <size>`), appended as they finish. A line whose file is missing or has another size is ignored, so a crash at any point only costs the segments it interrupted.
 //! - `t<track>/<index>.seg`: finished segments, decrypted. A segment is
 //!   written as `.part` and renamed once complete, and removed once it is
@@ -100,10 +100,10 @@ impl Log {
 impl WorkDir {
     /// Opens (or starts) the folder for `output`. `pieces` holds the number of
     /// pieces of each track. Blocks on the file system.
-    pub fn open(output: &Path, fingerprint: u64, pieces: &[usize]) -> io::Result<Self> {
+    pub fn open(output: &Path, identity: u64, pieces: &[usize]) -> io::Result<Self> {
         let dir = path_for(output);
-        let header = format!("{FORMAT_VERSION} {fingerprint:016x}\n");
-        let previous = format!("{PREVIOUS_VERSION} {fingerprint:016x}\n");
+        let header = format!("{FORMAT_VERSION} {identity:016x}\n");
+        let previous = format!("{PREVIOUS_VERSION} {identity:016x}\n");
         let written = fs::read_to_string(dir.join(HEADER));
         let current = written.as_ref().is_ok_and(|h| *h == header);
         let reuse = current || written.is_ok_and(|h| h == previous);
