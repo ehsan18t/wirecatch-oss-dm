@@ -375,7 +375,7 @@ impl Info {
         }
     }
 
-    /// What a page with several videos is read as: the first entry that describes a video (D119), which `--playlist-items 1` leaves as the only one. Any other page is itself.
+    /// What a page with several videos is read as: the first entry that describes a video (D120), which `--playlist-items 1` leaves as the only one. Any other page is itself.
     #[must_use]
     pub fn single_video(self) -> Info {
         if self.entries.is_empty() {

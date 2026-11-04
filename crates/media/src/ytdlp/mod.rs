@@ -265,7 +265,7 @@ fn common_args(ctx: &Context<'_>, cookies: Option<&CookiesFile>) -> Vec<OsString
     let mut args: Vec<OsString> = ISOLATION.iter().map(OsString::from).collect();
     args.extend([
         "--no-playlist".into(),
-        // A page with several videos is a list even so: D119.
+        // A page with several videos is a list even so: D120.
         "--playlist-items".into(),
         "1".into(),
         "--no-update".into(),
