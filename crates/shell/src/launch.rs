@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::future::Future;
 use std::time::Duration;
 
+use url::Url;
 use wirecatch_engine::units::KIB_USIZE;
 use wirecatch_engine::url::{FTP_SCHEMES, WEB_SCHEMES};
 use wirecatch_ipc::IpcError;
@@ -110,9 +111,19 @@ fn is_launch_link(arg: &str) -> bool {
     })
 }
 
+/// `text`, known to be one link, written so it reads whole: what would end a link in running text
+/// (a space, `<`, a quote) is percent-encoded. `None` when it is not such a link.
+#[must_use]
+pub fn one_link(text: &str) -> Option<String> {
+    let text = text.trim();
+    is_launch_link(text)
+        .then(|| Url::parse(text).ok())
+        .flatten()
+        .map(String::from)
+}
+
 /// Web and FTP links on a command line (program name first), in order, for the Add dialog.
-/// Anything else on the command line is ignored, and at most [`MAX_LAUNCH_LINKS`] are taken. An
-/// argument is one link, so its spaces are encoded: the dialog's text would end the link there.
+/// Anything else on the command line is ignored, and at most [`MAX_LAUNCH_LINKS`] are taken.
 pub fn links_from_args<I, S>(args: I) -> Vec<String>
 where
     I: IntoIterator<Item = S>,
@@ -120,9 +131,7 @@ where
 {
     args.into_iter()
         .skip(1)
-        .map(|a| a.as_ref().trim().to_owned())
-        .filter(|a| is_launch_link(a))
-        .map(|a| a.replace(' ', "%20"))
+        .filter_map(|a| one_link(a.as_ref()))
         .take(MAX_LAUNCH_LINKS)
         .collect()
 }
@@ -380,7 +389,7 @@ mod tests {
             "https://example.com/a.zip",
             "--background",
             "notes.txt",
-            "HTTP://EXAMPLE.COM/B",
+            "http://example.com/B",
             "ftp://files.example.com/c.iso",
             "https://",
         ]);
@@ -388,7 +397,7 @@ mod tests {
             found,
             [
                 "https://example.com/a.zip",
-                "HTTP://EXAMPLE.COM/B",
+                "http://example.com/B",
                 "ftp://files.example.com/c.iso"
             ]
         );
@@ -396,6 +405,36 @@ mod tests {
             links_from_args(["https://not-the-program-name.example"]),
             [] as [String; 0]
         );
+    }
+
+    #[test]
+    fn one_link_encodes_what_would_end_it_in_text() {
+        for (text, whole) in [
+            (
+                "https://example.com/a b.zip",
+                "https://example.com/a%20b.zip",
+            ),
+            (
+                "https://example.com/a<b>.zip",
+                "https://example.com/a%3Cb%3E.zip",
+            ),
+            (
+                "https://example.com/a\"b.zip",
+                "https://example.com/a%22b.zip",
+            ),
+            (
+                "https://example.com/a\u{3000}b.zip",
+                "https://example.com/a%E3%80%80b.zip",
+            ),
+            (
+                "ftpes://example.com/a b.zip",
+                "ftpes://example.com/a%20b.zip",
+            ),
+        ] {
+            assert_eq!(one_link(text).as_deref(), Some(whole));
+        }
+        assert_eq!(one_link("not a link"), None);
+        assert_eq!(one_link("file:///C:/a.exe"), None);
     }
 
     #[test]

@@ -178,13 +178,13 @@ impl MainWindow {
 
     /// Opens the Add dialog on the field's links and empties the field.
     pub(super) fn download_typed(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        let typed = self.typed_links(cx);
-        let urls = &typed.urls;
-        if urls.is_empty() {
+        let text = self.search.read(cx).value();
+        let pasted = links::pasted(&text);
+        if pasted.is_empty() {
             return;
         }
         self.search
             .update(cx, |search, cx| search.set_value("", window, cx));
-        self.new_download(urls, window, cx);
+        self.new_download(&pasted, window, cx);
     }
 }

@@ -32,7 +32,7 @@ const NO_LINK: &str =
     "Paste at least one link that starts with https://, http://, ftp://, ftps:// or ftpes://.";
 
 /// Said under Automatic when the links go to queues with different folders.
-const FOLDER_BY_QUEUE: &str = "Each queue's own folder";
+const FOLDER_BY_QUEUE: &str = "Set by each queue";
 
 /// One entry of the queue list: Automatic, or a queue.
 #[derive(Clone)]
@@ -214,17 +214,11 @@ impl AddForm {
         form
     }
 
-    /// Adds `urls` that are not in the box yet: links from a second launch while it is open.
+    /// Adds what brings links not in the box yet: from a second launch while it is open.
     pub fn add_links(&mut self, urls: &[String], window: &mut Window, cx: &mut Context<'_, Self>) {
-        let mut all = self.urls(cx);
-        all.extend(
-            urls.iter()
-                .filter(|url| !all.contains(url))
-                .cloned()
-                .collect::<Vec<_>>(),
-        );
+        let all = links::joined(&self.links.read(cx).value(), urls);
         self.links
-            .update(cx, |state, cx| state.set_value(all.join("\n"), window, cx));
+            .update(cx, |state, cx| state.set_value(all, window, cx));
         self.route(cx);
         cx.notify();
     }
@@ -464,12 +458,7 @@ impl Render for AddForm {
         let folder_row = self.folder_row(cx);
         let found = self.found(cx);
         let urls = &found.urls;
-        let ignored = found.lines_without_links;
-        let hint = match ignored {
-            0 => "One link per line, or paste several at once.".to_owned(),
-            1 => "One line has no link in it and is left out.".to_owned(),
-            n => format!("{n} lines have no link in them and are left out."),
-        };
+        let hint = links_hint(&found);
         let queue_hint = if self.picked_queue(cx).is_none() {
             self.automatic_hint()
         } else {
@@ -505,6 +494,7 @@ impl AddForm {
         let library = self.library.read(cx);
         let fallback = match self.picked_queue(cx).and_then(|id| library.queue(id)) {
             Some(queue) => own_folder(queue).unwrap_or_else(|| FOLDER_BY_TYPE.to_owned()),
+            None if self.found(cx).urls.len() > MAX_TRIED => FOLDER_BY_QUEUE.to_owned(),
             None => folder_of_routes(&self.routes, library.queues.first().and_then(own_folder)),
         };
         FolderRow::new(
@@ -516,6 +506,23 @@ impl AddForm {
                 cx.notify();
             }),
         )
+    }
+}
+
+/// What the links box says of its text. Words after a link come first: the link may have been
+/// meant to hold them, and a shorter address would be downloaded.
+fn links_hint(found: &links::Found) -> String {
+    match (found.lines_with_text_after, found.lines_without_links) {
+        (1, _) => "A link ends at a space. One line has text after its link, which is left out."
+            .to_owned(),
+        (n @ 2.., _) => {
+            format!(
+                "A link ends at a space. {n} lines have text after their link, which is left out."
+            )
+        }
+        (0, 0) => "One link per line, or paste several at once.".to_owned(),
+        (0, 1) => "One line has no link in it and is left out.".to_owned(),
+        (0, n) => format!("{n} lines have no link in them and are left out."),
     }
 }
 
@@ -573,6 +580,14 @@ mod tests {
     fn before_any_link_automatic_says_the_default_queues_folder() {
         assert_eq!(folder_of_routes(&[], Some("D:\\All".to_owned())), "D:\\All");
         assert_eq!(folder_of_routes(&[], None), FOLDER_BY_TYPE);
+    }
+
+    #[test]
+    fn the_box_warns_of_text_after_a_link_first() {
+        let hint = |text| links_hint(&links::Kept::default().of(text));
+        assert!(hint("https://example.com/a b.zip\nnotes").contains("One line has text after"));
+        assert!(hint("https://example.com/a b\nhttps://example.com/c d").contains("2 lines"));
+        assert!(hint("notes").contains("no link"));
     }
 
     #[test]

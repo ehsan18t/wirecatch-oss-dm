@@ -102,7 +102,7 @@ impl RefreshForm {
     /// The link in the field, if it holds one.
     fn found(&self, cx: &App) -> Option<String> {
         let found = self.read_link.of(&self.link.read(cx).value());
-        found.urls.first().cloned()
+        found.whole.clone().or_else(|| found.urls.first().cloned())
     }
 
     fn save(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {

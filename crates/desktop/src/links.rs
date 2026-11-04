@@ -8,6 +8,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use url::Url;
 use wirecatch_engine::url::{FTP_SCHEMES, WEB_SCHEMES};
+use wirecatch_shell::launch::one_link;
 
 /// A link in any scheme the engine takes, up to the first character no link holds.
 static LINK: LazyLock<Option<Regex>> = LazyLock::new(|| {
@@ -89,6 +90,10 @@ pub struct Kept(RefCell<Option<(String, Rc<Found>)>>);
 pub struct Found {
     pub urls: Vec<String>,
     pub lines_without_links: usize,
+    /// Lines with words after a link: the link may have held them, such as a raw space in its name.
+    pub lines_with_text_after: usize,
+    /// The whole text as one link, for a field that takes one.
+    pub whole: Option<String>,
 }
 
 impl Kept {
@@ -100,10 +105,58 @@ impl Kept {
         let found = Rc::new(Found {
             urls: extract(text),
             lines_without_links: lines_without_links(text),
+            lines_with_text_after: text
+                .lines()
+                .filter(|line| has_text_after_link(line))
+                .count(),
+            whole: one_link(text),
         });
         *kept = Some((text.to_owned(), found.clone()));
         found
     }
+}
+
+/// What a copied text gives the Add dialog: all of it when it holds a link, so the dialog can say
+/// what it left out.
+pub fn pasted(text: &str) -> Vec<String> {
+    if extract(text).is_empty() {
+        Vec::new()
+    } else {
+        vec![text.to_owned()]
+    }
+}
+
+/// `text` with each of `incoming` after it that brings a link it does not hold yet.
+pub fn joined(text: &str, incoming: &[String]) -> String {
+    let mut known: HashSet<String> = extract(text).into_iter().collect();
+    let mut all = text.to_owned();
+    for other in incoming {
+        let brings_one = extract(other)
+            .into_iter()
+            .filter(|url| known.insert(url.clone()))
+            .count()
+            > 0;
+        if brings_one {
+            if !all.is_empty() {
+                all.push('\n');
+            }
+            all.push_str(other);
+        }
+    }
+    all
+}
+
+fn has_text_after_link(text: &str) -> bool {
+    let Some(link) = LINK.as_ref() else {
+        return false;
+    };
+    let matches: Vec<_> = link.find_iter(text).collect();
+    matches.iter().enumerate().any(|(place, found)| {
+        let until = matches
+            .get(place + 1)
+            .map_or(text.len(), regex::Match::start);
+        !text[found.end()..until].trim().is_empty()
+    })
 }
 
 /// Lines with text but no link, which the Add dialog leaves out.
@@ -156,6 +209,51 @@ mod tests {
     }
 
     #[test]
+    fn words_after_a_link_are_counted_but_not_a_link_alone() {
+        let kept = Kept::default();
+        let count = |text| kept.of(text).lines_with_text_after;
+        assert_eq!(count("https://example.com/a b.zip"), 1);
+        assert_eq!(count("https://example.com/a b https://example.com/c"), 1);
+        assert_eq!(
+            count("https://example.com/a https://example.com/c\nnotes"),
+            0
+        );
+        assert_eq!(count("See https://example.com/a."), 0);
+    }
+
+    #[test]
+    fn a_field_for_one_link_reads_its_whole_text() {
+        let whole = Kept::default()
+            .of("https://example.com/a b.zip")
+            .whole
+            .clone();
+        assert_eq!(whole.as_deref(), Some("https://example.com/a%20b.zip"));
+    }
+
+    #[test]
+    fn a_copied_text_reaches_the_dialog_whole_when_it_holds_a_link() {
+        assert_eq!(
+            pasted("https://example.com/a b.zip"),
+            ["https://example.com/a b.zip"]
+        );
+        assert_eq!(pasted("no link here"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn joining_adds_only_what_brings_a_new_link_and_keeps_the_text() {
+        let text = "https://example.com/a b.zip";
+        let incoming = [
+            "https://example.com/a".to_owned(),
+            "https://example.com/c d".to_owned(),
+        ];
+        assert_eq!(
+            joined(text, &incoming),
+            "https://example.com/a b.zip\nhttps://example.com/c d"
+        );
+        assert_eq!(joined("", &incoming[..1]), "https://example.com/a");
+    }
+
+    #[test]
     fn a_huge_paste_is_read_in_one_pass() {
         const SIZE: usize = 1_000_000;
         let brackets = format!("https://example.com/a{}", ")".repeat(SIZE));
@@ -167,6 +265,10 @@ mod tests {
             .collect();
         let quoted = quoted.concat();
         assert_eq!(extract(&quoted).len(), SIZE / 10);
+        let many: Vec<String> = (0..SIZE / 10)
+            .map(|id| format!("https://example.com/{id}"))
+            .collect();
+        assert_eq!(extract(&joined(&many.join("\n"), &many)).len(), SIZE / 10);
     }
 
     #[test]

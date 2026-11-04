@@ -618,11 +618,11 @@ impl MainWindow {
             .read_from_clipboard()
             .and_then(|item| item.text())
             .unwrap_or_default();
-        let urls = links::extract(&copied);
-        if urls.is_empty() {
+        let pasted = links::pasted(&copied);
+        if pasted.is_empty() {
             window.push_notification(NO_LINK_PASTED, cx);
         } else {
-            self.new_download(&urls, window, cx);
+            self.new_download(&pasted, window, cx);
         }
     }
 

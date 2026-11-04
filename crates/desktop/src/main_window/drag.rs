@@ -9,6 +9,7 @@ use gpui_kit::{
 };
 use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
+use wirecatch_shell::launch::one_link;
 
 use super::{MainWindow, View, order};
 use crate::backend::act;
@@ -173,9 +174,7 @@ impl MainWindow {
 fn shortcut_link(text: &str) -> Option<String> {
     text.lines()
         .find_map(|line| line.trim().strip_prefix("URL="))
-        .map(str::trim)
-        .filter(|link| !link.is_empty())
-        .map(str::to_owned)
+        .and_then(one_link)
 }
 
 /// The look of a place that takes a drop while something is dragged over it.
