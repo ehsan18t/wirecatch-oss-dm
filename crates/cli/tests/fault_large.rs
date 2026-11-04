@@ -1,11 +1,12 @@
 //! Offsets above 4 GiB through the real command line, on a sparse part file, so no test needs the disk space or the time of a whole file: an earlier run is set up that says it has everything below the boundary, and only the bytes above it travel.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use wirecatch_test_support::faults::{
-    FaultServer, Generated, Req, Scratch, check_kept, cli, kept_now, wait_for, write_resume_file,
+    FaultServer, Generated, Req, Scratch, check_kept, cli, create_sparse, kept_now, wait_for,
+    write_resume_file,
 };
 use wirecatch_test_support::{PATIENCE, TestResult};
 
@@ -19,10 +20,17 @@ const FETCH_FROM: u64 = FOUR_GIB + 12_345;
 const NAME: &str = "large.bin";
 const BOUND: Duration = PATIENCE.saturating_mul(2);
 
+/// The finish clears a finished file's sparse flag, and NTFS then allocates its holes: about 4 GiB per test until it is removed, so one at a time.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+fn one_at_a_time() -> MutexGuard<'static, ()> {
+    ONE_AT_A_TIME.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// A part file of `LEN` bytes, sparse where the system allows, with a resume file that says only the bytes from `FETCH_FROM` are missing.
 fn earlier_run(scratch: &Scratch, server: &FaultServer, file: &Generated) -> TestResult {
     let part = scratch.downloads.join("large.bin.wcpart");
-    std::fs::File::create(&part)?.set_len(LEN)?;
+    create_sparse(&part, LEN)?;
     write_resume_file(
         &scratch.downloads.join("large.bin.wcstate"),
         &server.url(NAME),
@@ -50,6 +58,7 @@ fn asked_from(req: &Req) -> u64 {
 
 #[test]
 fn a_run_continues_above_4_gib_over_parallel_connections() -> TestResult {
+    let _turn = one_at_a_time();
     let scratch = Scratch::new("large-parallel");
     let file = Generated::new(1, LEN);
     let answers = file.clone();
@@ -76,6 +85,7 @@ fn a_run_continues_above_4_gib_over_parallel_connections() -> TestResult {
 /// A connection drops above the boundary, the process is killed, and what the resume file then says above 4 GiB is true and is not fetched again.
 #[test]
 fn a_run_dropped_and_killed_above_4_gib_continues_to_the_end() -> TestResult {
+    let _turn = one_at_a_time();
     let scratch = Scratch::new("large-kill");
     let file = Generated::new(2, LEN);
     let answers = file.clone();

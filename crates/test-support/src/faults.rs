@@ -732,6 +732,27 @@ pub fn kept_now(state: &Path, len: u64) -> Option<Vec<(u64, u64)>> {
     (kept_bytes(&kept) > 0).then_some(kept)
 }
 
+/// Creates a file of `len` bytes that takes no disk space for bytes never written: on NTFS only after `fsutil` marks it sparse, otherwise `set_len` allocates them all.
+///
+/// # Errors
+///
+/// The file cannot be made.
+pub fn create_sparse(path: &Path, len: u64) -> std::io::Result<()> {
+    let file = FsFile::create(path)?;
+    #[cfg(windows)]
+    {
+        let marked = Command::new("fsutil")
+            .args(["sparse", "setflag"])
+            .arg(path)
+            .stdout(Stdio::null())
+            .status()?;
+        if !marked.success() {
+            return Err(std::io::Error::other(format!("fsutil ended with {marked}")));
+        }
+    }
+    file.set_len(len)
+}
+
 /// Writes a resume file for `file` at `url` that says only the `remaining` ranges are missing, as an earlier run would have.
 ///
 /// # Errors
