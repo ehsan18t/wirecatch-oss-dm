@@ -9,8 +9,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use wirecatch_engine::units::{KIB_USIZE, MIB_USIZE};
 use wirecatch_engine::{
-    Backoff, CancellationToken, DownloadOptions, DownloadRequest, Error, Fetcher, Progress, Url,
-    download,
+    Backoff, CancellationToken, DownloadOptions, DownloadRequest, Error, Fetcher, Outcome,
+    Progress, Url, download,
 };
 use wirecatch_test_support::{PATIENCE, TestResult, private_dir};
 
@@ -125,10 +125,6 @@ fn cut_short(error: &Error) -> bool {
     matches!(error, Error::PrematureEof { .. })
 }
 
-fn changed(error: &Error) -> bool {
-    matches!(error, Error::RemoteChanged)
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_retry_that_says_it_is_shorter_than_the_bytes_kept_is_not_the_end() -> TestResult {
     let script = Script {
@@ -149,13 +145,57 @@ async fn a_retry_that_ends_before_the_bytes_kept_is_not_the_end() -> TestResult 
     both_fail_with(script, "short-retry-unsized", cut_short).await
 }
 
-/// Nothing ties the retry's answer to the first one, so its tail must not be joined to what was kept, however long it is.
+/// Nothing ties the retry's answer to the first one, so the file is that answer alone, never its tail joined to what was kept.
+async fn saved_as_the_retry_alone(script: Script, name: &str) -> TestResult {
+    let page = SHORT_PAGE.repeat(script.repeats);
+    let (url, _answers) = cut_then_page(script).await?;
+    let dir = private_dir(name)?;
+    let mut request = DownloadRequest::new(url, dir.to_path_buf());
+    request.options = quick_retries();
+    let run = download(
+        request,
+        Arc::new(Progress::default()),
+        CancellationToken::new(),
+    );
+    match tokio::time::timeout(PATIENCE, run).await?? {
+        Outcome::Completed { path, .. } => assert!(std::fs::read(path)? == page, "the download"),
+        other => return Err(format!("{other:?}").into()),
+    }
+    dir.remove()?;
+
+    let (url, _answers) = cut_then_page(script).await?;
+    let dir = private_dir(name)?;
+    let path = dir.join("segment.ts");
+    let fetcher = Fetcher::new(&url, &quick_retries(), CancellationToken::new()).await?;
+    let mut counted = 0;
+    let run = fetcher.save(&url, None, &path, |n| counted += n);
+    let written = tokio::time::timeout(PATIENCE, run).await??;
+    assert_eq!(written, page.len() as u64);
+    assert!(std::fs::read(&path)? == page, "the save");
+    assert!(
+        (written..=(KEPT as u64).max(written)).contains(&counted),
+        "{counted} bytes counted for {written} written: some counted twice"
+    );
+    dir.remove()?;
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_retry_with_nothing_to_compare_is_not_joined_to_the_bytes_kept() -> TestResult {
+async fn a_longer_retry_with_nothing_to_compare_is_not_joined_to_the_bytes_kept() -> TestResult {
     let script = Script {
         tagged: false,
         sized: true,
         repeats: 2 * KEPT / SHORT_PAGE.len(),
     };
-    both_fail_with(script, "long-retry-untagged", changed).await
+    saved_as_the_retry_alone(script, "long-retry-untagged").await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_shorter_retry_with_nothing_to_compare_is_the_whole_file() -> TestResult {
+    let script = Script {
+        tagged: false,
+        sized: false,
+        repeats: 1,
+    };
+    saved_as_the_retry_alone(script, "short-retry-untagged").await
 }

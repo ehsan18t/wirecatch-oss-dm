@@ -88,6 +88,11 @@ impl Validators {
         }
     }
 
+    /// Whether anything here could ever contradict another answer.
+    pub(crate) fn can_compare(&self) -> bool {
+        self.etag.is_some() || self.strong_modified.is_some()
+    }
+
     /// Whether an answer carrying `answer` is about another version of the
     /// file than the one these validators came from. When both carry an
     /// `ETag`, it alone decides (RFC 9110, section 13.2.2 gives it precedence);
@@ -101,11 +106,6 @@ impl Validators {
     /// sound. So entity tags are compared weakly (`W/"x"` matches `"x"`), two
     /// answers with the same weak tag count as not contradicted rather than
     /// proven the same, and a validator only one answer carries proves nothing.
-    /// Whether anything here could ever contradict another answer.
-    pub(crate) fn can_compare(&self) -> bool {
-        self.etag.is_some() || self.strong_modified.is_some()
-    }
-
     pub(crate) fn contradicts(&self, answer: &Validators) -> bool {
         if let (Some(known), Some(now)) = (&self.etag, &answer.etag) {
             return opaque_tag(known) != opaque_tag(now);

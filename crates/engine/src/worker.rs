@@ -16,6 +16,7 @@ use crate::http::Failure;
 use crate::limiter::{Paced, pace};
 use crate::numeric::clamp_to_len;
 use crate::receive::{Received, ended_while_skipping, receive, skip_start};
+use crate::request::RequestContext;
 use crate::retry::{Attempts, Next, Refusals};
 use crate::segment::{Assignment, SharedTable, UNKNOWN_END};
 use crate::transport::{Body, Connection};
@@ -115,13 +116,21 @@ async fn run_assignment(
     mut response: Option<Body>,
 ) -> Result<Ended> {
     let mut attempts = Attempts::new(Refusals::StepBack, shared.retries);
+    // The furthest a failed attempt got: one that started over gains nothing until it passes this.
+    let mut furthest = 0;
     loop {
         if shared.request.cancel.is_cancelled() {
             return Ok(Ended::Cancelled);
         }
-        let (from, to) = shared.table.lock().position(index);
+        let (mut from, to) = shared.table.lock().position(index);
         if from >= to {
             return Ok(Ended::Done);
+        }
+        if from > 0 && response.is_none() && retry_is_unprovable(&shared.request) {
+            info!("nothing ties a new answer to the bytes kept; starting over");
+            shared.table.lock().start_over(index);
+            shared.progress.take_back(from);
+            from = 0;
         }
         // A response handed over with the assignment (the first request's)
         // asked for the same: it started at `from` with the same limit.
@@ -152,7 +161,9 @@ async fn run_assignment(
             Err(_) if shared.request.cancel.is_cancelled() => return Ok(Ended::Cancelled),
             Err(f) => {
                 let (now, _) = shared.table.lock().position(index);
-                let next = attempts.after_failure(&f.error, f.retry_after, now > from);
+                let next =
+                    attempts.after_failure(&f.error, f.retry_after, now > from.max(furthest));
+                furthest = furthest.max(now);
                 let delay = match next {
                     Next::GiveUp => return Err(f.error),
                     Next::StepBackOrRetry(_)
@@ -183,6 +194,11 @@ async fn run_assignment(
             }
         }
     }
+}
+
+/// Whether nothing in the first answer could show a later whole answer to be about another file, so its tail must not be joined to the bytes kept.
+fn retry_is_unprovable(request: &RequestContext) -> bool {
+    !request.ranged && request.total.is_none() && !request.validators.can_compare()
 }
 
 /// Streams a response body into the segment until it is fully claimed, the body

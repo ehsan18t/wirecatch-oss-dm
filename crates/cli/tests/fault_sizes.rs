@@ -199,6 +199,34 @@ fn a_chunked_answer_cut_off_once() {
     assert_eq!(run("chunked-once", &server, 11), Ended::Exact);
 }
 
+/// Nothing ties the retry to the first answer, so the run starts over from byte 0 rather than joining them.
+#[test]
+fn a_chunked_answer_without_validators_cut_off_once_starts_over() {
+    let file = Generated::new(16, LEN).without_validators();
+    let server = FaultServer::start(move |req: &Req| {
+        let mut plan = file.chunked();
+        if req.no == 0 {
+            plan.send = LEN / 3;
+            plan.cut_off = true;
+        }
+        plan
+    });
+    assert_eq!(run("chunked-once-untagged", &server, 16), Ended::Exact);
+}
+
+/// Starting over never gets further than the last attempt, which is not progress: the run ends.
+#[test]
+fn a_chunked_answer_without_validators_cut_off_every_time_is_refused() {
+    let file = Generated::new(17, LEN).without_validators();
+    let server = FaultServer::start(move |_| {
+        let mut plan = file.chunked();
+        plan.send = LEN / 3;
+        plan.cut_off = true;
+        plan
+    });
+    assert_eq!(run("chunked-always-untagged", &server, 17), Ended::Refused);
+}
+
 #[test]
 fn a_chunked_answer_cut_off_every_time_is_refused() {
     let file = Generated::new(12, LEN);
