@@ -739,6 +739,7 @@ pub(super) fn parse_url(raw: &str) -> Result<Url> {
             wirecatch_engine::url::is_supported(url)
                 && url.host_str().is_some_and(|h| !h.is_empty())
         })
+        .map(wirecatch_engine::url::with_normal_host)
         .ok_or_else(|| CoreError::InvalidUrl(trimmed.to_string()))
 }
 
@@ -768,6 +769,15 @@ fn files_no_row_lists(state: &State, mut files: Vec<PathBuf>) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// So a refusal of a local address and a `<local>` queue rule read what a connection will reach.
+    #[test]
+    fn an_ftp_links_host_reaches_every_check_in_its_normal_form() {
+        let host = |raw: &str| parse_url(raw).unwrap().host_str().unwrap().to_owned();
+        assert_eq!(host("ftps://%31%32%37.0.0.1/a"), "127.0.0.1");
+        assert_eq!(host("ftps://2130706433/a"), "127.0.0.1");
+        assert_eq!(host("ftps://FILES.Home.Arpa/a.zip"), "files.home.arpa");
+    }
 
     #[test]
     fn web_and_ftp_links_are_accepted() {

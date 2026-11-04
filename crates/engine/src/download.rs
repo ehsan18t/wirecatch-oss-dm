@@ -282,12 +282,13 @@ pub async fn download(
 /// [`download`] with the given clients (tests pass ones that trust a test
 /// certificate).
 pub(crate) async fn download_with(
-    request: DownloadRequest,
+    mut request: DownloadRequest,
     progress: Arc<Progress>,
     cancel: CancellationToken,
     clients: Clients,
 ) -> Result<Outcome> {
     request.options.validate()?;
+    request.url = crate::url::with_normal_host(request.url);
     // Only for links that will be sent: `Auto` looks the host up, and another scheme is refused without one.
     let guard = if crate::url::is_supported(&request.url) {
         private_guard(
