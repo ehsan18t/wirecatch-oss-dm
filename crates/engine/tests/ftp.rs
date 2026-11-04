@@ -9,7 +9,8 @@ use std::time::Duration;
 
 use wirecatch_engine::units::{MIB, MIB_USIZE};
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error, Outcome, PrivateNetwork, Progress, Url, download,
+    CancellationToken, DownloadRequest, Error, ManualProxies, Outcome, PrivateNetwork, Progress,
+    ProxyChoice, Url, download,
 };
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer, Quirk, Refuse};
 use wirecatch_test_support::{PATIENCE, TestResult, files_in, private_dir, test_data};
@@ -73,6 +74,26 @@ async fn a_name_on_the_local_network_is_refused_under_block_before_any_connectio
         server.stats.commands().is_empty(),
         "a connection reached the local server"
     );
+    Ok(())
+}
+
+/// The proxy would resolve the name, so it is checked first, on this computer. The port is closed: reaching it would be another error.
+#[tokio::test]
+async fn a_name_on_the_local_network_is_refused_before_a_proxy_that_resolves_names() -> TestResult {
+    let closed = std::net::TcpListener::bind("127.0.0.1:0")?.local_addr()?;
+    let dir = private_dir("ftp-block-socks")?;
+    let url = Url::parse("ftp://localhost/pub/file.bin")?;
+    let mut req = request(&url, &dir, 1);
+    req.options.private_network = PrivateNetwork::Block;
+    let mut proxy = ManualProxies::default();
+    proxy.all = Some(format!("socks5h://{closed}"));
+    req.options.proxy = ProxyChoice::Manual(proxy);
+    let ended = run(req).await;
+    assert!(
+        matches!(ended, Err(Error::PrivateNetwork { .. })),
+        "{ended:?}"
+    );
+    dir.remove()?;
     Ok(())
 }
 

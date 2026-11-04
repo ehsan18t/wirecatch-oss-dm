@@ -287,13 +287,18 @@ pub(crate) async fn download_with(
     clients: Clients,
 ) -> Result<Outcome> {
     request.options.validate()?;
-    let guard = private_guard(
-        &request.url,
-        request.options.private_network,
-        request.options.stall_timeout,
-        clients.proxies(),
-    )
-    .await;
+    // Only for links that will be sent: `Auto` looks the host up, and another scheme is refused without one.
+    let guard = if crate::url::is_supported(&request.url) {
+        private_guard(
+            &request.url,
+            request.options.private_network,
+            request.options.stall_timeout,
+            clients.proxies(),
+        )
+        .await
+    } else {
+        None
+    };
     download_guarded(request, progress, cancel, clients, guard).await
 }
 
