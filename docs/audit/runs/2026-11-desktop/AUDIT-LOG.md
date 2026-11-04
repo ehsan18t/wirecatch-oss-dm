@@ -219,8 +219,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 192 | Two copies of the read-until-full loop have drifted                                               | `15-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 193 | Code keeps work folders of a layout that was never released                                       | `15-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 194 | axum is a dev-dependency nothing in streams uses                                                  | `15-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 195 | The path-escape half of a media test cannot fail                                                  | `17-8`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 196 | Doc comments on media runs sit on the wrong items                                                 | `17-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 195 | The path-escape half of a media test cannot fail                                                  | `17-8`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 196 | Doc comments on media runs sit on the wrong items                                                 | `17-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 197 | Sizes and bit rates a page chooses are added without a check                                      | `16-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | `B07-p2-tests`                                | fixed  |
 | 198 | The key error prints the whole signed address                                                     | `14-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 199 | On Linux, media programs may outlive an app ended by a signal                                     | `Xshutdown-4`                                                                                      | P3       | medium | P3, 1 finding, medium                                                                                            | none                                          | open   |
@@ -3585,7 +3585,7 @@ Nothing under `crates/streams` names `axum`, and `cargo check` passes with the l
 
 ### 195. The path-escape half of a media test cannot fail
 
-P3, small, open.
+P3, small, fixed.
 
 The test writes the URL where `remember_placing` writes a digest, so `waiting_to_place` returns `None` before `inside` is reached.
 
@@ -3601,7 +3601,7 @@ The test writes the URL where `remember_placing` writes a digest, so `waiting_to
 
 ### 196. Doc comments on media runs sit on the wrong items
 
-P3, small, open.
+P3, small, fixed.
 
 `disk`'s doc describes another function, `MAX_NAME_ATTEMPTS` carries `place`'s description, and a test's doc opens with a sentence about a deleted queue.
 
