@@ -1431,7 +1431,7 @@ async fn formats_wirecatch_cannot_fetch_are_left_to_yt_dlp() -> TestResult {
     assert!(argv.contains(&"--progress-template".to_string()));
     assert!(
         argv.windows(2)
-            .any(|w| w == ["--merge-output-format", "mp4"]),
+            .any(|w| w == ["--merge-output-format", "mp4/mkv"]),
         "{argv:?}"
     );
     Ok(())
