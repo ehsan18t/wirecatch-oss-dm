@@ -6,7 +6,7 @@ use wirecatch_protocol::proxy::{
     ProxyServer, ProxyServerDraft, ProxyServerSettings, ProxyTestResult, ProxyTestRun, ProxyUse,
 };
 use wirecatch_protocol::{ProxyServerId, Secret};
-use wirecatch_settings::proxy::{ComputerProxy, SavedProxyServer, UpdaterProxy};
+use wirecatch_settings::proxy::{ComputerProxy, SavedProxyServer};
 
 use super::Manager;
 use super::state::State;
@@ -232,12 +232,6 @@ impl Manager {
             self.test_in_background(id);
         }
         Ok(ids)
-    }
-
-    /// The proxy the app updater uses: Main's proxy for `https`.
-    #[must_use]
-    pub fn updater_proxy(&self) -> UpdaterProxy {
-        wirecatch_settings::proxy::updater_proxy(&self.lock().app_proxy())
     }
 
     /// Saves the profiles and tells the windows.
