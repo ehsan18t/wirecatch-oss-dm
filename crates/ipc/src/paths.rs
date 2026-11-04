@@ -227,7 +227,7 @@ mod tests {
     }
 
     // `/tmp` is shared, so a folder named after the uid alone could be made first by
-    // another account (IPB-10).
+    // another account.
     #[test]
     fn the_tmp_fallback_is_named_with_the_key() {
         assert_eq!(
