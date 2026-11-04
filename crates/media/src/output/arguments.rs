@@ -336,7 +336,6 @@ mod tests {
         assert_eq!(per_mille(5, None), None);
     }
 
-    /// Every input, subtitles and the metadata file included, is read as its own format from a local file only, and the output is one `file:` path.
     /// A silent video stops ffmpeg with a map that must match, whatever yt-dlp said about its audio.
     #[test]
     fn audio_inside_the_video_file_is_mapped_only_if_it_is_there() {
@@ -362,6 +361,7 @@ mod tests {
         assert!(args.iter().any(|a| a == "0:v:0"), "{args:?}");
     }
 
+    /// Every input, subtitles and the metadata file included, is read as its own format from a local file only, and the output is one `file:` path.
     #[test]
     fn every_input_of_a_conversion_is_a_named_local_file() {
         let mut j = job(Container::Mkv, VideoAction::Copy, AudioAction::Copy);

@@ -1186,4 +1186,4 @@ Decided on 2026-11-04. It amends D88.3 and D96.
 
 ### D119. A page with several videos is read as its first
 
-A page with several `<video>` tags reaches yt-dlp as a list, and a quality window asks about one video. Wirecatch reads and downloads the first video that has something to download (`Info::single_video`, `--playlist-items 1`), under the page's title when that video has none, and says nothing about the others. Offering the others would be a new window, not part of this choice.
+A page with several `<video>` tags reaches yt-dlp as a list, and a quality window asks about one video. Wirecatch has yt-dlp read and download only the list's first video (`--playlist-items 1`, `Info::single_video`), under the page's title when that video has none, and says nothing about the others. Offering the others would be a new window, not part of this choice.
