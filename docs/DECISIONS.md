@@ -1293,6 +1293,6 @@ Decided on 2026-11-05. It amends D119.
 
 Decided on 2026-11-05.
 
-1. On Unix, `SIGTERM` and `SIGHUP` kill every running program's group, then end the app as the signal would have by default. A thread of its own waits for them, through `signal-hook`: a handler on a tokio runtime would go on swallowing the signal after that runtime ended.
-2. `SIGINT` is left out: the command-line downloader stops itself in an orderly way on it.
+1. On Unix, `SIGTERM`, `SIGHUP` and `SIGINT` kill every running program's group, then end the app as the signal would have by default. Every program has a group of its own, so none of them hears a terminal's Ctrl+C by itself. A thread of its own waits for them, through `signal-hook`: a handler on a tokio runtime would go on swallowing the signal after that runtime ended.
+2. A signal the app was started ignoring, as `nohup` does for `SIGHUP`, stays ignored. The command-line downloader starts no programs and has no handler of this kind. A program that waits on `SIGINT` itself and has started a media program, as `crates/core/examples/headless.rs` does, ends at once instead of shutting down; what it had downloaded resumes on its next run.
 3. This does not cover a crash or `SIGKILL`, which no handler sees. The supervisor that case needs stays on the roadmap.

@@ -175,7 +175,7 @@ mod on_signal {
     use std::collections::BTreeSet;
     use std::sync::{Mutex, MutexGuard, Once, PoisonError};
 
-    use signal_hook::consts::{SIGHUP, SIGTERM};
+    use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
     use signal_hook::iterator::Signals;
     use signal_hook::low_level::emulate_default_handler;
 
@@ -198,7 +198,12 @@ mod on_signal {
     /// Starts the watcher once. Its thread lasts as long as the process, which it ends itself.
     pub(super) fn watch() {
         WATCHING.call_once(|| {
-            let started = Signals::new([SIGTERM, SIGHUP]).and_then(|mut signals| {
+            let started = Signals::new(
+                [SIGTERM, SIGHUP, SIGINT]
+                    .into_iter()
+                    .filter(|signal| !ignored(*signal)),
+            )
+            .and_then(|mut signals| {
                 std::thread::Builder::new()
                     .name("program-signals".into())
                     .spawn(move || {
@@ -214,6 +219,15 @@ mod on_signal {
                 tracing::warn!(error = %e, "programs will outlive a signal that ends the app");
             }
         });
+    }
+
+    /// Whether `signal` is ignored, as `nohup` does for `SIGHUP`: a handler would make it end the app after all.
+    fn ignored(signal: libc::c_int) -> bool {
+        // SAFETY: an all-zero `sigaction` is a valid value of that plain C struct.
+        let mut current: libc::sigaction = unsafe { std::mem::zeroed() };
+        // SAFETY: a null new action only reads the current one, into `current`, valid and writable for the call.
+        let read = unsafe { libc::sigaction(signal, std::ptr::null(), &raw mut current) };
+        read == 0 && current.sa_sigaction == libc::SIG_IGN
     }
 
     fn stop_all() {

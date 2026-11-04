@@ -691,7 +691,11 @@ async fn a_signal_that_ends_the_app_ends_what_it_started() -> TestResult {
     use std::os::unix::process::ExitStatusExt as _;
     use tokio::io::AsyncBufReadExt as _;
 
-    for (name, number) in [("-TERM", libc::SIGTERM), ("-HUP", libc::SIGHUP)] {
+    for (name, number) in [
+        ("-TERM", libc::SIGTERM),
+        ("-HUP", libc::SIGHUP),
+        ("-INT", libc::SIGINT),
+    ] {
         let (address, accepted) = holder_listener().await?;
         let mut app = tokio::process::Command::new(fake_runner()?)
             .arg(fake_program()?)
@@ -721,5 +725,48 @@ async fn a_signal_that_ends_the_app_ends_what_it_started() -> TestResult {
             .map_err(|_| format!("the app was still running {PATIENCE:?} after {name}"))??;
         assert_eq!(ended.signal(), Some(number), "{ended:?}");
     }
+    Ok(())
+}
+
+/// A signal the app was started ignoring, as `nohup` does, stays ignored (D137): closing the terminal ends nothing.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_signal_the_app_ignores_ends_nothing() -> TestResult {
+    use std::os::unix::process::ExitStatusExt as _;
+    use tokio::io::AsyncBufReadExt as _;
+
+    let (address, accepted) = holder_listener().await?;
+    // An ignored signal stays ignored through `exec`.
+    let mut app = tokio::process::Command::new("sh")
+        .args(["-c", r#"trap "" HUP; exec "$@""#, "sh"])
+        .arg(fake_runner()?)
+        .arg(fake_program()?)
+        .args(["start-holder", &address])
+        .stdout(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+    let out = app.stdout.take().ok_or("the app has no output")?;
+    let mut lines = tokio::io::BufReader::new(out).lines();
+    let connection = within_patience(accepted)
+        .await
+        .map_err(|_| format!("the holder did not connect within {PATIENCE:?}"))???;
+    let said = within_patience(lines.next_line())
+        .await
+        .map_err(|_| format!("the app passed on nothing within {PATIENCE:?}"))??;
+    assert_eq!(said.as_deref(), Some("holding"));
+    let id = app.id().ok_or("the app has no id")?.to_string();
+    // In this order, so an app that took the first would end by it, not by the second.
+    for signal in ["-HUP", "-TERM"] {
+        let sent = tokio::process::Command::new("kill")
+            .args([signal, &id])
+            .status()
+            .await?;
+        assert!(sent.success());
+    }
+    holder_ended(connection).await?;
+    let ended = within_patience(app.wait())
+        .await
+        .map_err(|_| format!("the app was still running {PATIENCE:?} after -TERM"))??;
+    assert_eq!(ended.signal(), Some(libc::SIGTERM), "{ended:?}");
     Ok(())
 }
