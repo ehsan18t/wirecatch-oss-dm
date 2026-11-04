@@ -123,7 +123,12 @@ pub(super) async fn page_attempt(
         // yt-dlp joins two formats into the container its own table picks (AV1 with AAC into MP4); the offer named the shared policy's.
         let merge_into = (video.is_some() && audio.is_some())
             .then(|| joined_container(stored_kept_ext(page), job));
-        progress.expect_own(found.iter().map(|f| (f.id.to_string(), f.size())));
+        let expected = if wanted.is_empty() {
+            info.best_formats()
+        } else {
+            found.iter().map(|f| (f.id.to_string(), f.size())).collect()
+        };
+        progress.expect_own(expected.into_iter());
         let format = ytdlp::selection(video.as_ref(), audio.as_ref());
         match ytdlp::download(&ctx, &format, merge_into, &work, progress, cancel).await {
             Ok(Fetched::Done(file)) => vec![file],
