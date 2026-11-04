@@ -17,14 +17,8 @@ pub(crate) const MAX_URL_LEN: usize = 8 * KIB_USIZE;
 /// The most address text one track's pieces may hold together, so a short manifest that repeats a long address cannot fill memory.
 pub(crate) const MAX_TRACK_URL_BYTES: u64 = 64 * MIB;
 
-/// The most address text one playlist or manifest may resolve to while it is read, over all its tracks. A master playlist's short lines resolve against its own (possibly long) address, so a small playlist could otherwise ask for gigabytes.
-pub(crate) const MAX_MANIFEST_URL_BYTES: u64 = 2 * MAX_TRACK_URL_BYTES;
-
-/// The most pieces, qualities and renditions one playlist or manifest may hold while it is read, over all its tracks.
-pub(crate) const MAX_MANIFEST_ENTRIES: u64 = 4 * MAX_SEGMENTS;
-
-/// The most representations one DASH manifest may offer. Real ones offer tens; each costs memory and work, however short its text. It also bounds the base addresses a manifest keeps: a representation shares its set's unless it has its own, and an address is at most [`MAX_URL_LEN`], so they come to at most 64 MiB (a representation's own and its set's) whatever the manifest's length.
-pub(crate) const MAX_REPRESENTATIONS: usize = 4096;
+/// The most tracks one DASH manifest (representations) or HLS master playlist (qualities and renditions together) may offer. Real ones offer tens; each costs memory and work, however short its text, and picking among them for every quality is quadratic. It also bounds the addresses: a master playlist's are at most 32 MiB whatever base it resolves against, and a DASH manifest's base addresses at most 64 MiB (a representation's own and its set's, which it shares unless it has its own), each address being at most [`MAX_URL_LEN`].
+pub(crate) const MAX_TRACKS: usize = 4096;
 
 /// The most name text (ids, codecs, types, languages and labels) one DASH manifest's representations may hold together. A representation keeps the names of its adaptation set, and what reading the manifest reports copies them once more, so one long label on a set of many representations would otherwise be repeated thousands of times. As much as the manifest itself may be long.
 pub(crate) const MAX_MANIFEST_NAME_BYTES: u64 = 8 * MIB;
@@ -69,43 +63,16 @@ impl AddressBudget {
     }
 }
 
-/// What reading one playlist or manifest has kept so far, over all its tracks, against [`MAX_MANIFEST_URL_BYTES`], [`MAX_MANIFEST_ENTRIES`] and [`MAX_MANIFEST_NAME_BYTES`]. What a DASH representation takes from an outer level is shared with that level; only its names, which are copied out once per representation when the manifest is reported, count here.
+/// The name text of a DASH manifest's representations so far, against [`MAX_MANIFEST_NAME_BYTES`]. What a representation takes from an outer level is shared with that level; only its names, which are copied out once per representation when the manifest is reported, count here.
 #[derive(Debug, Default)]
-pub(crate) struct ManifestBudget {
-    url_bytes: u64,
-    entries: u64,
-    name_bytes: u64,
-}
+pub(crate) struct NameBudget(u64);
 
-impl ManifestBudget {
-    /// Counts one more entry (a piece, a quality or a rendition) with its address; refused once the manifest passes either limit.
-    pub fn spend(&mut self, url: &Url) -> Result<(), ManifestError> {
-        self.count(1)?;
-        let len = u64::try_from(url.as_str().len()).unwrap_or(u64::MAX);
-        self.url_bytes = self.url_bytes.saturating_add(len);
-        if self.url_bytes > MAX_MANIFEST_URL_BYTES {
-            Err(ManifestError::AddressesTooLong)
-        } else {
-            Ok(())
-        }
-    }
-
-    /// Counts `bytes` more of a track's names; refused once the manifest passes [`MAX_MANIFEST_NAME_BYTES`].
-    pub fn names(&mut self, bytes: usize) -> Result<(), ManifestError> {
+impl NameBudget {
+    pub fn spend(&mut self, bytes: usize) -> Result<(), ManifestError> {
         let bytes = u64::try_from(bytes).unwrap_or(u64::MAX);
-        self.name_bytes = self.name_bytes.saturating_add(bytes);
-        if self.name_bytes > MAX_MANIFEST_NAME_BYTES {
+        self.0 = self.0.saturating_add(bytes);
+        if self.0 > MAX_MANIFEST_NAME_BYTES {
             Err(ManifestError::NamesTooLong)
-        } else {
-            Ok(())
-        }
-    }
-
-    /// Counts `entries` more entries without an address of their own (a rendition without an address); refused once the manifest passes [`MAX_MANIFEST_ENTRIES`].
-    pub fn count(&mut self, entries: u64) -> Result<(), ManifestError> {
-        self.entries = self.entries.saturating_add(entries);
-        if self.entries > MAX_MANIFEST_ENTRIES {
-            Err(ManifestError::TooManyEntries)
         } else {
             Ok(())
         }

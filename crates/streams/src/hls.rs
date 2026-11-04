@@ -12,7 +12,7 @@ use url::Url;
 use crate::codec::Codec;
 use crate::error::{DrmSystem, Feature, Located, ManifestError, excerpt};
 use crate::plan::{
-    AddressBudget, Encryption, ManifestBudget, Piece, Refusal, check_room_for, check_web_address,
+    AddressBudget, Encryption, MAX_TRACKS, Piece, Refusal, check_room_for, check_web_address,
 };
 
 /// The longest a segment may say it lasts (`#EXTINF`): a day. No real segment comes near it; a larger value comes from a broken or hostile playlist and counts as unknown, so it never shows a video billions of years long or skews the size estimate.
@@ -30,6 +30,16 @@ pub(crate) enum Playlist {
 pub(crate) struct Master {
     pub variants: Vec<Variant>,
     pub renditions: Vec<Rendition>,
+}
+
+impl Master {
+    fn check_room_for_a_track(&self) -> Result<(), ManifestError> {
+        if self.variants.len() + self.renditions.len() >= MAX_TRACKS {
+            Err(ManifestError::TooManyTracks)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 /// One `EXT-X-STREAM-INF` entry.
@@ -124,26 +134,17 @@ struct MasterReader {
     master: Master,
     /// The attributes of a quality whose address line comes next.
     pending: Option<Vec<(String, String)>>,
-    budget: ManifestBudget,
 }
 
 impl MasterReader {
-    /// Reads one line, counting each quality and rendition against the playlist's budget.
     fn line(&mut self, line: &str, base: &Url) -> Result<(), ManifestError> {
-        let Self {
-            master,
-            pending,
-            budget,
-        } = self;
+        let Self { master, pending } = self;
         if let Some((name, value)) = tag(line) {
             match name {
                 "#EXT-X-STREAM-INF" => *pending = Some(attributes(value)),
                 "#EXT-X-MEDIA" => {
                     if let Some(rendition) = rendition(&attributes(value), base)? {
-                        match &rendition.url {
-                            Some(url) => budget.spend(url)?,
-                            None => budget.count(1)?,
-                        }
+                        master.check_room_for_a_track()?;
                         master.renditions.push(rendition);
                     }
                 }
@@ -152,8 +153,8 @@ impl MasterReader {
         } else if !line.starts_with('#')
             && let Some(attrs) = pending.take()
         {
+            master.check_room_for_a_track()?;
             let url = join(base, line)?;
-            budget.spend(&url)?;
             master.variants.push(Variant {
                 url,
                 bandwidth: number(&attrs, "BANDWIDTH"),
@@ -992,29 +993,19 @@ a.ts
         assert_eq!(error, Some(ManifestError::AddressesTooLong));
     }
 
-    /// A master playlist served from a long address makes every short quality line a long address.
     #[test]
-    fn a_master_playlist_whose_addresses_are_too_long_together_is_refused() {
-        let folder = "f".repeat(crate::plan::MAX_URL_LEN - 100);
-        let base = Url::parse(&format!("https://cdn.example/{folder}/master.m3u8")).unwrap();
-        let len = u64::try_from(base.join("a").unwrap().as_str().len()).unwrap();
-        let count = crate::plan::MAX_MANIFEST_URL_BYTES / len + 1;
-        let mut text = String::from("#EXTM3U\n");
-        for _ in 0..count {
-            text.push_str("#EXT-X-STREAM-INF:BANDWIDTH=1\na\n");
-        }
-        let error = parse(&text, &base).err().map(|e| e.cause);
-        assert_eq!(error, Some(ManifestError::AddressesTooLong));
-    }
-
-    #[test]
-    fn a_master_playlist_holds_a_bounded_number_of_qualities() {
-        let mut text = String::from("#EXTM3U\n");
-        for _ in 0..=crate::plan::MAX_MANIFEST_ENTRIES {
-            text.push_str("#EXT-X-STREAM-INF:\na\n");
-        }
-        let error = parse(&text, &base()).err().map(|e| e.cause);
-        assert_eq!(error, Some(ManifestError::TooManyEntries));
+    fn a_master_playlist_holds_a_bounded_number_of_tracks() {
+        let playlist = |qualities: usize, renditions: usize| {
+            let quality = "#EXT-X-STREAM-INF:\na\n".repeat(qualities);
+            let rendition = "#EXT-X-MEDIA:TYPE=AUDIO,URI=\"a\"\n".repeat(renditions);
+            format!("#EXTM3U\n{rendition}{quality}")
+        };
+        let read = |text: String| parse(&text, &base()).err().map(|e| e.cause);
+        assert_eq!(read(playlist(MAX_TRACKS, 0)), None);
+        assert_eq!(read(playlist(MAX_TRACKS / 2, MAX_TRACKS / 2)), None);
+        let too_many = Some(ManifestError::TooManyTracks);
+        assert_eq!(read(playlist(MAX_TRACKS + 1, 0)), too_many);
+        assert_eq!(read(playlist(1, MAX_TRACKS)), too_many);
     }
 
     /// A new init section at the limit takes a place too, so it and its segment both have to fit.
