@@ -315,7 +315,10 @@ impl Manager {
                 entry.row.error = Some(wirecatch_messages::stopped_unexpectedly());
             }
         }
-        if let Some(found) = found {
+        // Whatever stopped it since the duplicate was found decides instead; a later run finds it again.
+        if let Some(found) = found
+            && matches!(run.stop, None | Some(Stop::FileExists))
+        {
             self.on_found(state, id, &found);
         }
         self.save(state, id);

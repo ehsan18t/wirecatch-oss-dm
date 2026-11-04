@@ -1159,12 +1159,10 @@ async fn page_media_is_read_again_after_a_restart_and_continues() -> TestResult 
     // Read at the choice, at the first start and again after the restart.
     assert!(ytdlp_calls(&h)?.len() >= 3, "{}", ytdlp_calls(&h)?.len());
     // The video continued where it stopped instead of starting over.
-    let resumed = server.seen_at("fmt/video.mp4").iter().any(|s| {
-        s.headers
-            .get("range")
-            .and_then(|r| r.to_str().ok())
-            .is_some_and(|r| r != "bytes=0-")
-    });
+    let resumed = server
+        .seen_at("fmt/video.mp4")
+        .iter()
+        .any(|s| s.header("range").is_some_and(|r| r != "bytes=0-"));
     assert!(resumed, "the video was downloaded again from the start");
     Ok(())
 }

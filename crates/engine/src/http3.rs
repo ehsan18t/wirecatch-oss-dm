@@ -89,8 +89,8 @@ impl Origin {
         let port = headers
             .get_all("alt-svc")
             .iter()
-            .filter_map(|value| value.to_str().ok())
-            .find_map(|value| h3_port(value, host))?;
+            .map(http::header_text)
+            .find_map(|value| h3_port(&value, host))?;
         let mut tls = tls.clone();
         tls.alpn_protocols = vec![b"h3".to_vec()];
         // A cache of its own: tickets from TCP connections do not work for QUIC.
