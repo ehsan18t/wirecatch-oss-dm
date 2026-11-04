@@ -1080,7 +1080,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Chunk 30: protocol-types                | done        |
 | 1     | Chunk 31: test-servers                  | done        |
 | 1     | Chunk 32: cli                           | done        |
-| 1     | Chunk 33: repo-checks                   | pending     |
+| 1     | Chunk 33: repo-checks                   | done        |
 | 1     | Flow `path-normal-download`             | pending     |
 | 1     | Flow `path-media-download`              | pending     |
 | 1     | Flow `path-app-update`                  | pending     |
