@@ -1017,7 +1017,7 @@ Decided on 2026-10-30 while building the GPUI shell (D95.5, D99.3). The Tauri ap
 1. One copy runs per user. A launch first claims the endpoint, as before, so the copy that holds it is the one running (D41).
 2. A launch that finds the endpoint taken connects to it as a client of the new kind `app` and asks the running copy for what its command line asks: `open_links` with its links (the main window comes up with the Add dialog holding them), `show_window` without links, and nothing for `--background` alone. Then it exits.
 3. `open_links` is part of protocol version 2, which is not released yet. It carries at most `MAX_OPEN_LINKS` links (20), the limit the command line already had; the app keeps the first ones. A running copy too old for it is asked only to show its window.
-4. When the hand-over fails (the running copy is too old to accept an `app` client, or does not answer), the launch says that Wirecatch is already running, as the Tauri app does, and exits.
+4. The running copy answers only once its list has opened, so a launch that gets no answer keeps trying for a minute without showing anything. A launch that asks for nothing visible contacts no one. When nothing listens at the endpoint any more, the launch claims it after all. When the hand-over still fails (the running copy is too old to accept an `app` client, or never answered), the launch says that Wirecatch is already running, as the Tauri app does, and exits.
 5. Reading the command line and the hand-over live in `wirecatch-shell` (`launch`), which the Tauri app also reads its command line with.
 
 ### D104. The GPUI app's tray icon runs on its own message loop, with no GTK

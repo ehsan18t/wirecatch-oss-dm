@@ -56,7 +56,9 @@ async fn main() -> anyhow::Result<()> {
 fn parse_args() -> anyhow::Result<(PathBuf, Vec<String>)> {
     let mut data_dir = None;
     let mut urls = Vec::new();
-    let mut args = std::env::args().skip(1);
+    let mut args = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned());
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--data-dir" => {

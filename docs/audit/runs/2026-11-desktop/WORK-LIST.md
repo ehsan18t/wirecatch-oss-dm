@@ -78,7 +78,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-70  | fix(core): answer a repeated capture once          | `fix/repeated-capture`           | 86, 151, 173                 | P2       | medium | none         | open   |
 | PR-71  | fix(engine): count transferred bytes correctly     | `fix/count-bytes`                | 87, 177, 180                 | P2       | small  | none         | open   |
 | PR-72  | fix(engine): read range answers as they are        | `fix/range-answers`              | 90, 178                      | P2       | small  | none         | open   |
-| PR-73  | fix(desktop): handle odd launches safely           | `fix/odd-launches`               | 92, 131                      | P2       | medium | none         | open   |
+| PR-73  | fix(desktop): handle odd launches safely           | `fix/odd-launches`               | 92, 131                      | P2       | medium | none         | merged |
 | PR-74  | fix(desktop): close the app before uninstalling    | `fix/uninstall-closes-app`       | 93                           | P2       | small  | none         | open   |
 | PR-75  | fix: correct faults in the linux packages          | `fix/linux-packages`             | 94, 188, 189, 190            | P2       | medium | none         | open   |
 | PR-76  | fix(media): track, limit yt-dlp's own downloads    | `fix/ytdlp-progress-limit`       | 96, 98                       | P2       | small  | none         | open   |
@@ -1025,7 +1025,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/main.rs`, `crates/desktop/src/backend.rs`, `crates/shell/src/launch.rs`, `clippy.toml`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop -p wirecatch-shell`, `cargo clippy -p wirecatch-desktop -p wirecatch-shell`. The log proposes a `disallowed-methods` entry for `std::env::args`; that is lint config, so run `node scripts/gate.mjs rust-lint` once on the final tree.
-- **Status:** open
+- **Status:** merged
 
 ### PR-74 fix(desktop): close the app before uninstalling
 
