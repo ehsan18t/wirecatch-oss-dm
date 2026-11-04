@@ -76,7 +76,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-68  | fix(desktop): keep one window per download         | `fix/one-window-per-download`    | 80, 139                      | P2       | medium | none         | open   |
 | PR-69  | fix(core): keep a row's answers after a restart    | `fix/answers-survive-restart`    | 82, 83                       | P2       | medium | PR-04        | open   |
 | PR-70  | fix(core): answer a repeated capture once          | `fix/repeated-capture`           | 86, 151, 173                 | P2       | medium | none         | merged |
-| PR-71  | fix(engine): count transferred bytes correctly     | `fix/count-bytes`                | 87, 177, 180                 | P2       | small  | none         | open   |
+| PR-71  | fix(engine): count transferred bytes correctly     | `fix/count-bytes`                | 87, 177, 180                 | P2       | small  | none         | merged |
 | PR-72  | fix(engine): read range answers as they are        | `fix/range-answers`              | 90, 178                      | P2       | small  | none         | merged |
 | PR-73  | fix(desktop): handle odd launches safely           | `fix/odd-launches`               | 92, 131                      | P2       | medium | none         | merged |
 | PR-74  | fix(desktop): close the app before uninstalling    | `fix/uninstall-closes-app`       | 93                           | P2       | small  | none         | merged |
@@ -1001,7 +1001,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/engine`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo clippy -p wirecatch-engine`
-- **Status:** open
+- **Status:** merged
 
 ### PR-72 fix(engine): read range answers as they are
 
