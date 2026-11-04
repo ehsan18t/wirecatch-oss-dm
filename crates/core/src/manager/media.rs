@@ -900,6 +900,7 @@ impl Manager {
             temp_dir: &self.inner.temp_dir,
             timeout: self.inner.media_timeout,
             proxy: proxy.as_deref(),
+            rate_limit: None,
         };
         let info = ytdlp::extract(&ctx, token)
             .await

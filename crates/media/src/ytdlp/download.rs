@@ -29,8 +29,7 @@ pub enum Fetched {
 }
 
 /// The fields of yt-dlp's progress lines after [`PROGRESS_MARK`], in the order [`progress_report`] reads them.
-const PROGRESS_FIELDS: &str =
-    "%(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s";
+const PROGRESS_FIELDS: &str = "%(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s %(info.format_id)s";
 
 /// Prefix of the progress lines asked of yt-dlp.
 const PROGRESS_MARK: &str = "wcprogress";
@@ -88,8 +87,8 @@ async fn download_once(
                 .strip_prefix(PROGRESS_MARK)
                 .filter(|_| output == Output::Stdout)
             {
-                if let Some((done, total)) = progress_report(report) {
-                    progress.set_own(done, total);
+                if let Some((done, total, format)) = progress_report(report) {
+                    progress.set_own(format, done, total);
                 }
             } else if let Some(path) = printed_output(output, line, work) {
                 printed = Some(path);
@@ -141,6 +140,10 @@ fn download_args(
     merge_into: Option<Container>,
 ) -> Vec<OsString> {
     let mut args = common_args(ctx, cookies);
+    if let Some(limit) = ctx.rate_limit {
+        args.push("--limit-rate".into());
+        args.push(limit.to_string().into());
+    }
     if let Some(container) = merge_into {
         args.push("--merge-output-format".into());
         args.push(merge_formats(container).into());
@@ -167,20 +170,21 @@ fn download_args(
     args
 }
 
-/// The bytes done and, when known, the total (exact, else estimated) from a
+/// The bytes done, when known the total (exact, else estimated), and the format, from a
 /// progress report yt-dlp printed after [`PROGRESS_MARK`]. Byte counts are
 /// read as yt-dlp prints them; a report whose bytes done are not a count is
 /// ignored rather than read as zero.
-fn progress_report(report: &str) -> Option<(u64, Option<u64>)> {
-    let mut numbers = report
-        .split_whitespace()
-        .map(|n| n.parse::<f64>().ok().and_then(f64_to_u64));
-    let (done, total, estimate) = (
-        numbers.next().flatten()?,
-        numbers.next().flatten(),
-        numbers.next().flatten(),
-    );
-    Some((done, total.or(estimate).filter(|t| *t > 0)))
+fn progress_report(report: &str) -> Option<(u64, Option<u64>, &str)> {
+    let mut fields = report.split_whitespace();
+    let mut number = || {
+        fields
+            .next()
+            .and_then(|n| n.parse::<f64>().ok())
+            .and_then(f64_to_u64)
+    };
+    let (done, total, estimate) = (number()?, number(), number());
+    let format = fields.next().unwrap_or_default();
+    Some((done, total.or(estimate).filter(|t| *t > 0), format))
 }
 
 /// The path of the finished file in a line yt-dlp printed (`--print
@@ -251,6 +255,7 @@ mod tests {
             temp_dir: Path::new("temp"),
             timeout: std::time::Duration::from_secs(1),
             proxy: None,
+            rate_limit: Some(2048),
         };
         let args = download_args(&ctx, None, "best", merge_into);
         args.iter()
@@ -258,6 +263,11 @@ mod tests {
             .and_then(|at| args.get(at + 1))
             .and_then(|a| a.to_str())
             .map(str::to_owned)
+    }
+
+    #[test]
+    fn a_speed_limit_is_passed_in_bytes_per_second() {
+        assert_eq!(value_of("--limit-rate", None).as_deref(), Some("2048"));
     }
 
     /// yt-dlp reads `%` and `$` anywhere in its output template, so no folder or title may reach it.
@@ -346,10 +356,13 @@ mod tests {
     /// estimated; a report whose bytes done are not a count is ignored.
     #[test]
     fn progress_reports_are_read_as_counts() {
-        assert_eq!(progress_report("10 20 NA"), Some((10, Some(20))));
-        assert_eq!(progress_report("10 NA 30.0"), Some((10, Some(30))));
-        assert_eq!(progress_report("10 NA NA"), Some((10, None)));
-        assert_eq!(progress_report("10 0 0"), Some((10, None)));
+        assert_eq!(progress_report("10 20 NA 137"), Some((10, Some(20), "137")));
+        assert_eq!(
+            progress_report("10 NA 30.0 140"),
+            Some((10, Some(30), "140"))
+        );
+        assert_eq!(progress_report("10 NA NA"), Some((10, None, "")));
+        assert_eq!(progress_report("10 0 0 137"), Some((10, None, "137")));
         assert_eq!(progress_report("-5 20 NA"), None);
         assert_eq!(progress_report("NA 20 NA"), None);
         assert_eq!(progress_report(""), None);

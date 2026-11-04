@@ -83,7 +83,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-73  | fix(desktop): handle odd launches safely           | `fix/odd-launches`               | 92, 131                      | P2       | medium | none         | merged |
 | PR-74  | fix(desktop): close the app before uninstalling    | `fix/uninstall-closes-app`       | 93                           | P2       | small  | none         | merged |
 | PR-75  | fix: correct faults in the linux packages          | `fix/linux-packages`             | 94, 188, 189, 190            | P2       | medium | none         | merged |
-| PR-76  | fix(media): track, limit yt-dlp's own downloads    | `fix/ytdlp-progress-limit`       | 96, 98                       | P2       | small  | none         | open   |
+| PR-76  | fix(media): track, limit yt-dlp's own downloads    | `fix/ytdlp-progress-limit`       | 96, 98                       | P2       | small  | none         | merged |
 | PR-77  | fix(media): make quality offers match downloads    | `fix/quality-offers`             | 97, 99, 197                  | P2       | medium | none         | merged |
 | PR-78  | fix(streams): read HLS masters, keys correctly     | `fix/hls-masters-keys`           | 100, 101, 102, 198           | P2       | medium | none         | open   |
 | PR-79  | fix(desktop): tell loading from a failed list      | `fix/list-open-states`           | 103, 135, 211                | P2       | medium | none         | open   |
@@ -1070,7 +1070,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-media -p wirecatch-core`, `cargo clippy -p wirecatch-media -p wirecatch-core`
 - **Note:** Formats listing `cookies` now always go through yt-dlp, whose `Context` has no connection or speed-limit field, so the person's limits must reach that route too.
-- **Status:** open
+- **Status:** merged
 
 ### PR-77 fix(media): make quality offers match downloads
 

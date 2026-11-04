@@ -1236,3 +1236,13 @@ Decided on 2026-11-04. It completes D104.4 and D119.
 ### D145. A captured download leaves the browser once the app has it
 
 Decided on 2026-11-05. The extension removes the browser's copy for every `AddAction`: `started`, `queued` and `awaiting_confirmation`. Waiting for `started` would leave a download paused in the browser for as long as a queue waits or a confirmation stays open. The risk that stays is a link that works only once or needs the browser's POST request: it can fail in the app after the browser's copy is gone, and the app then shows the error with a retry.
+
+### D135. yt-dlp's own download takes the tightest speed limit at its start
+
+Decided on 2026-11-04.
+
+A format left to yt-dlp runs in another process, which the engine's shared limiters cannot pace and which takes one fixed rate. So:
+
+1. It gets `--limit-rate` at the tighter of the app's and the queue's limit when the attempt starts. A limit changed while it runs applies from its next attempt.
+2. Its bytes do not count against those limiters, so downloads sharing a limit with it can together pass that limit by up to its own rate.
+3. It runs at yt-dlp's default of one connection per format, which is within any connection limit. `--concurrent-fragments` is not passed.

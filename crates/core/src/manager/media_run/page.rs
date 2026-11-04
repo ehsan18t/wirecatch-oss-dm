@@ -88,6 +88,7 @@ pub(super) async fn page_attempt(
         temp_dir: &job.temp_dir,
         timeout: job.timeout,
         proxy: proxy.as_deref(),
+        rate_limit: tightest_limit(job),
     };
     // Format addresses expire: read the page again on every start.
     let info = ytdlp::extract(&ctx, cancel)
@@ -127,6 +128,7 @@ pub(super) async fn page_attempt(
         // yt-dlp joins two formats into the container its own table picks (AV1 with AAC into MP4); the offer named the shared policy's.
         let merge_into = (video.is_some() && audio.is_some())
             .then(|| joined_container(stored_kept_ext(page), job));
+        progress.expect_own(found.iter().map(|f| (f.id.to_string(), f.size())));
         let format = ytdlp::selection(video.as_ref(), audio.as_ref());
         match ytdlp::download(&ctx, &format, merge_into, &work, progress, cancel).await {
             Ok(Fetched::Done(file)) => vec![file],
@@ -173,6 +175,15 @@ async fn formats_now(
         .await
         .map_err(|e| disk(&e, &job.output))?;
     Ok((video, audio))
+}
+
+/// The one rate a yt-dlp process takes (D135).
+fn tightest_limit(job: &Job) -> Option<u64> {
+    job.options
+        .rate_limiters
+        .iter()
+        .filter_map(|limiter| limiter.limit())
+        .min()
 }
 
 /// Downloads the formats `found` side by side into `work`: their files, in the
