@@ -108,7 +108,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-100 | test: stop racing real-clock limits in tests       | `test/no-clock-races`            | 144, 167                     | P3       | medium | none         | open   |
 | PR-101 | test: share test values through test-support       | `test/shared-test-values`        | 146, 147, 149, 183           | P3       | medium | none         | open   |
 | PR-102 | fix(desktop): show startup notices only once       | `fix/startup-notices-once`       | 150, 214                     | P3       | medium | none         | open   |
-| PR-103 | fix(core): let a person's stop win                 | `fix/person-stop-wins`           | 152, 172                     | P3       | small  | none         | open   |
+| PR-103 | fix(core): let a person's stop win                 | `fix/person-stop-wins`           | 152, 172                     | P3       | small  | none         | merged |
 | PR-104 | fix(engine): tighten network guard edge cases      | `fix/net-guard-edges`            | 154, 155, 216, 217           | P3       | medium | none         | open   |
 | PR-105 | fix(media): word program failures plainly          | `fix/word-program-failures`      | 164                          | P3       | small  | none         | open   |
 | PR-106 | refactor(desktop): share repeated form logic       | `refactor/share-form-logic`      | 168                          | P3       | medium | none         | open   |
@@ -1385,7 +1385,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-104 fix(engine): tighten network guard edge cases
 
