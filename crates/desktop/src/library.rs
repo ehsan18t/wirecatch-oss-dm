@@ -46,8 +46,31 @@ pub struct Library {
 #[derive(Default)]
 struct OrderReading {
     running: bool,
-    /// The order changed again during the read.
+    /// The order changed during the read, so what it answers may be out of date.
     stale: bool,
+}
+
+impl OrderReading {
+    /// Whether a read may start; with one running, that read's answer is out of date.
+    fn begin(&mut self) -> bool {
+        if self.running {
+            self.stale = true;
+            return false;
+        }
+        self.running = true;
+        true
+    }
+
+    /// The order changed here without a read being asked for.
+    fn changed(&mut self) {
+        self.stale = self.running;
+    }
+
+    /// Ends the read. Whether its answer holds; otherwise the order must be read again.
+    fn end(&mut self) -> bool {
+        self.running = false;
+        !std::mem::take(&mut self.stale)
+    }
 }
 
 /// Moves as each part changes. Every change notifies, up to ten times a second while downloads
@@ -254,11 +277,9 @@ impl Library {
 
     /// Reads the manager's order of the downloads, which no event carries.
     fn read_order(&mut self, cx: &mut Context<'_, Self>) {
-        if self.order.running {
-            self.order.stale = true;
+        if !self.order.begin() {
             return;
         }
-        self.order.running = true;
         let read = Backend::run(cx, |manager| async move {
             let rows = api::list_downloads(&manager);
             rows.iter().map(|row| row.id).collect::<Vec<DownloadId>>()
@@ -266,13 +287,11 @@ impl Library {
         cx.spawn(async move |this, cx| {
             let read = read.await;
             _ = this.update(cx, |library, cx| {
-                library.order.running = false;
-                if let Ok(Ok(ids)) = read {
+                if !library.order.end() {
+                    library.read_order(cx);
+                } else if let Ok(Ok(ids)) = read {
                     library.downloads.take_order(&ids);
                     cx.notify();
-                }
-                if std::mem::take(&mut library.order.stale) {
-                    library.read_order(cx);
                 }
             });
         })
@@ -282,6 +301,7 @@ impl Library {
     /// Puts `ids_in_order` in that order among the places they hold, once the manager took the
     /// same order: no event carries it.
     pub fn reorder(&mut self, ids_in_order: &[DownloadId]) {
+        self.order.changed();
         self.downloads.reorder(ids_in_order);
     }
 
@@ -304,6 +324,27 @@ fn asked_question(event: &UiEvent) -> Option<QuestionId> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_one_order_read_runs_and_a_second_ask_voids_its_answer() {
+        let mut order = OrderReading::default();
+        assert!(order.begin());
+        assert!(!order.begin());
+        assert!(!order.end(), "read again");
+        assert!(order.begin());
+        assert!(order.end(), "nothing changed during this one");
+    }
+
+    #[test]
+    fn a_reorder_during_a_read_voids_its_answer() {
+        let mut order = OrderReading::default();
+        order.changed();
+        assert!(order.begin());
+        assert!(order.end(), "the reorder came before the read");
+        assert!(order.begin());
+        order.changed();
+        assert!(!order.end());
+    }
     use gpui_kit::TestAppContext;
     use wirecatch_protocol::app::DownloadStatus;
     use wirecatch_test_support::downloads::download;
