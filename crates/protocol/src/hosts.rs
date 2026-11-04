@@ -49,57 +49,40 @@ fn is_strictly_under(host: &str, site: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[derive(serde::Deserialize)]
+    struct Cases {
+        on_site: Vec<Case>,
+        not_on_site: Vec<Case>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Case {
+        host: String,
+        site: String,
+    }
+
     #[test]
-    fn a_host_is_on_a_site_it_equals_or_sits_under() {
-        assert!(host_on_site("example.com", "example.com"));
-        assert!(host_on_site("cdn.example.com", "example.com"));
-        assert!(!host_on_site("badexample.com", "example.com"));
-        assert!(!host_on_site("example.com.evil.test", "example.com"));
-        assert!(!host_on_site("com", "example.com"));
+    fn hosts_are_on_a_site_as_the_shared_cases_say() {
+        let cases: Cases = serde_json::from_str(include_str!(
+            "../../../packages/protocol/src/hosts.cases.json"
+        ))
+        .unwrap();
+        for Case { host, site } in cases.on_site {
+            assert!(host_on_site(&host, &site), "{host} on {site}");
+        }
+        for Case { host, site } in cases.not_on_site {
+            assert!(!host_on_site(&host, &site), "{host} not on {site}");
+        }
     }
 
     #[test]
     fn under_needs_a_label_before_the_site() {
         assert!(host_under_site("a.example.com", "example.com"));
+        assert!(host_under_site("CDN.Example.com.", "example.com."));
         assert!(!host_under_site("example.com", "example.com"));
         assert!(!host_under_site(".example.com", "example.com"));
-    }
-
-    #[test]
-    fn case_and_trailing_dots_do_not_matter() {
-        for (host, site) in [
-            ("Example.COM", "example.com"),
-            ("example.com.", "example.com"),
-            ("example.com", "EXAMPLE.com."),
-            ("CDN.example.com.", "example.com"),
-        ] {
-            assert!(host_on_site(host, site), "{host} on {site}");
-        }
-        assert!(host_under_site("CDN.Example.com.", "example.com."));
-    }
-
-    #[test]
-    fn an_address_has_no_names_under_it() {
-        assert!(!host_on_site("127.0.0.1", "0.0.1"));
         assert!(!host_under_site("127.0.0.1", "0.0.1"));
-        assert!(!host_under_site("a.10.0.0.1", "10.0.0.1"));
-        assert!(host_on_site("10.0.0.1", "10.0.0.1"));
-        assert!(host_on_site("[::1]", "[::1]"));
-    }
-
-    #[test]
-    fn an_empty_site_covers_nothing() {
-        for site in ["", "."] {
-            assert!(!host_on_site("example.com", site), "{site:?}");
-            assert!(!host_on_site("example.com.", site), "{site:?}");
-            assert!(!host_on_site("", site), "{site:?}");
-            assert!(!host_under_site("example.com.", site), "{site:?}");
-        }
-    }
-
-    #[test]
-    fn a_name_split_inside_a_character_is_not_a_match() {
-        assert!(!host_on_site("bücher.example", "xcher.example"));
+        assert!(!host_under_site("example.com.", "."));
     }
 
     #[test]

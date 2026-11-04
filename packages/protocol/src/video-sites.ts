@@ -1,6 +1,7 @@
 // The sites whose pages show videos (D51), in one list for both apps: the extension offers to send such a page to the app, and the app reads a link to one for its video when it is added. The person can add sites of their own (`ExtensionSettings::video_sites`), which both apps take with this list.
 
 import { normalizeSite } from './extension-settings';
+import { hostOnSite } from './hosts';
 import SITES from './video-sites.json' with { type: 'json' };
 
 /**
@@ -26,11 +27,6 @@ export const VIDEO_SITES: readonly VideoSite[] = SITES.map((site) => ({
     : { path: new RegExp(site.path, 'ignore_case' in site && site.ignore_case ? 'i' : '') }),
 }));
 
-/** Whether `host` is `site` or one of its subdomains. */
-function onSite(host: string, site: string): boolean {
-  return host === site || host.endsWith(`.${site}`);
-}
-
 /**
  * The site's name when `url` is a page that shows a video: on a listed site, or on one of the
  * `added` sites (any page but the home page), named then by the site as added. Null otherwise.
@@ -38,16 +34,16 @@ function onSite(host: string, site: string): boolean {
 export function videoSiteFor(url: string | null, added: readonly string[] = []): string | null {
   const page = webPage(url);
   if (page === null) return null;
-  const host = page.hostname.toLowerCase().replace(/\.+$/u, '');
+  const host = page.hostname;
   const path = page.pathname;
   const listed = VIDEO_SITES.find(
     (site) =>
-      site.hosts.some((h) => onSite(host, h)) &&
+      site.hosts.some((h) => hostOnSite(host, h)) &&
       (site.path === undefined ? path.length > 1 : site.path.test(path)),
   );
   if (listed !== undefined) return listed.name;
   if (path.length <= 1) return null;
-  return added.map(normalizeSite).find((site) => site !== null && onSite(host, site)) ?? null;
+  return added.map(normalizeSite).find((site) => site !== null && hostOnSite(host, site)) ?? null;
 }
 
 /** `url` read as an http or https address, or null when it is not one. */
