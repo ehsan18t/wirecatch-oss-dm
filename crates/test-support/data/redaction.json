@@ -1547,6 +1547,70 @@
       "log": "https://token:***"
     },
     {
+      "text": "https://token:9f8e7d6c",
+      "secrets": [
+        "9f8e7d6c"
+      ],
+      "log": "https://token:***"
+    },
+    {
+      "text": "C:\\Videos\\enc.key: Access is denied",
+      "kept_by": [
+        "log",
+        "display"
+      ]
+    },
+    {
+      "text": "key.pem: Permission denied",
+      "kept_by": [
+        "log",
+        "display"
+      ]
+    },
+    {
+      "text": "password.new: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "password.new: ***"
+    },
+    {
+      "text": "api_key.prod: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "api_key.prod: ***"
+    },
+    {
+      "text": "token.raw: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "token.raw: ***"
+    },
+    {
+      "text": "config/db.password: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "config/db.password: ***"
+    },
+    {
+      "text": "C:\\\\x\\nauth.token: s3cretvalue",
+      "secrets": [
+        "s3cretvalue"
+      ],
+      "log": "C:\\\\x\\nauth.token: ***"
+    },
+    {
+      "text": "https://ada:pw@auth.example.com:8443/f",
+      "secrets": [
+        "pw@"
+      ],
+      "log": "https://ada:***@auth.example.com:8443/f",
+      "display": "https://ada:***@auth.example.com:8443/f"
+    },
+    {
       "text": "https://example.com/a?id=7#t=10",
       "log": "https://example.com/a?id=***#***"
     },
