@@ -280,7 +280,6 @@ struct PageJob {
     keep_ext: Option<String>,
 }
 
-/// The error once every automatic try with fresh addresses was refused too.
 fn disk(error: &std::io::Error, near: &Path) -> UserError {
     let folder = near.parent().unwrap_or(near);
     wirecatch_messages::disk(error, folder)
