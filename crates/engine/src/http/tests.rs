@@ -352,6 +352,12 @@ mod tls {
 
     #[cfg(windows)]
     #[test]
+    fn the_disallowed_stores_open_without_administrator_rights() {
+        super::super::client::disallowed_certificates().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn a_root_windows_disallows_is_not_trusted_from_either_source() {
         use super::super::client::roots_not_disallowed;
 

@@ -228,7 +228,7 @@ fn usable_roots(
         }
         Err(error) => {
             warn!(
-                ?error,
+                %error,
                 "could not read Windows' disallowed certificates; the bundled roots stay out"
             );
             system
@@ -260,13 +260,16 @@ pub(super) fn roots_not_disallowed(
 
 /// What Microsoft or an administrator told Windows never to trust.
 #[cfg(windows)]
-fn disallowed_certificates() -> std::io::Result<Vec<Vec<u8>>> {
-    use schannel::cert_store::CertStore;
+pub(super) fn disallowed_certificates() -> std::io::Result<Vec<Vec<u8>>> {
+    use schannel::cert_store::CertStoreBuilder;
 
+    // Read-only: the machine's store refuses anything more without administrator rights.
+    let mut options = CertStoreBuilder::new();
+    options.read_only();
     let mut found = Vec::new();
     for store in [
-        CertStore::open_current_user("Disallowed")?,
-        CertStore::open_local_machine("Disallowed")?,
+        options.open_current_user("Disallowed")?,
+        options.open_local_machine("Disallowed")?,
     ] {
         found.extend(store.certs().map(|cert| cert.to_der().to_vec()));
     }

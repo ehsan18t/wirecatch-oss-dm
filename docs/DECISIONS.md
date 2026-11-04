@@ -1160,5 +1160,5 @@ Decided on 2026-11-04. Certificates are checked by rustls. On Linux it uses the 
 
 1. Asking the system to check instead (`rustls-platform-verifier`) was tried and dropped: on Windows it fetches addresses named in the server's certificate during the handshake, outside the proxy setting and the private-network rule (D39, D44), and blocks the thread while it does.
 2. Certificates a company installs in the system still count, and a root in Windows' Disallowed stores is left out, whichever source has it; with those stores unreadable, the bundled roots stay out. A root merely removed from the system's trusted store stays trusted if the bundled set has it. Entries match by exact certificate and only roots are compared: a Disallowed intermediate, a reissued root under the same key and Windows' disallowed list outside these stores are not covered.
-3. `SSL_CERT_FILE` and `SSL_CERT_DIR` replace all of these, as they replaced the system's roots.
+3. `SSL_CERT_FILE` and `SSL_CERT_DIR` replace the system's and the bundled roots, as they replaced the system's. The Disallowed stores still apply to them.
 4. The bundled set ages with each release, so a dependency update before a release refreshes it.
