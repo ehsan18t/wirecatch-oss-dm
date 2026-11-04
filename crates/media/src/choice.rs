@@ -398,20 +398,22 @@ pub fn from_page(info: &Info) -> Result<Vec<Offer>, UserError> {
     }
     let all = info.all_formats();
     let usable = usable_formats(&all)?;
-    let audios = in_original_language(
-        usable
-            .iter()
-            .copied()
-            .filter(|f| f.has_audio() && !f.has_video())
-            .collect(),
-    );
-    let videos: Vec<&Format> = usable.iter().copied().filter(|f| f.has_video()).collect();
-    let duration_ms = duration_ms(info);
-    let joinable: Vec<&Format> = audios
+    let separate_audio: Vec<&Format> = usable
         .iter()
         .copied()
-        .filter(|a| output::ffmpeg_may_read(a))
+        .filter(|f| f.has_audio() && !f.has_video())
         .collect();
+    let videos: Vec<&Format> = usable.iter().copied().filter(|f| f.has_video()).collect();
+    let duration_ms = duration_ms(info);
+    // Ranked among what can be joined: an original ffmpeg may not read would otherwise leave the video silent.
+    let joinable = in_original_language(
+        separate_audio
+            .iter()
+            .copied()
+            .filter(|a| output::ffmpeg_may_read(a))
+            .collect(),
+    );
+    let audios = in_original_language(separate_audio);
     let offers: Vec<Offer> = heights(&videos)
         .into_iter()
         .filter_map(|height| video_offer(&videos, &joinable, height, duration_ms))
@@ -685,6 +687,38 @@ mod tests {
         ]}"#,
         );
         assert_eq!(offers[0].0.id, "140-0");
+    }
+
+    /// Saving a 60 fps row as MP4 never copies the 30 fps format: it converts the row's own video (D24.2).
+    #[test]
+    fn saving_as_a_container_keeps_the_rows_frame_rate() {
+        let offers = page_offers(
+            r#"{"title":"T","formats":[
+            {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"fps":30,"tbr":4000,"url":"u"},
+            {"format_id":"303","ext":"webm","vcodec":"vp9","acodec":"none","height":1080,"fps":60,"tbr":3000,"url":"u"},
+            {"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a","abr":128,"url":"u"}
+        ]}"#,
+        );
+        let (option, _) = &offers[0];
+        let mp4 = option
+            .outputs
+            .iter()
+            .find(|o| o.format == OutputFormat::Mp4)
+            .unwrap();
+        assert_ne!(mp4.video, StreamAction::Copy);
+    }
+
+    /// An original track ffmpeg may not read must not leave the video silent while a readable one is there.
+    #[test]
+    fn a_video_row_takes_the_best_ranked_audio_it_can_join() {
+        let offers = page_offers(
+            r#"{"title":"T","formats":[
+            {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"tbr":4000,"url":"u"},
+            {"format_id":"own","ext":"lnk","vcodec":"none","acodec":"mp4a","abr":129,"language_preference":10,"url":"u"},
+            {"format_id":"dub","ext":"m4a","vcodec":"none","acodec":"mp4a","abr":130,"language_preference":-1,"url":"u"}
+        ]}"#,
+        );
+        assert_eq!(offers[0].0.id, "137+dub");
     }
 
     /// Sizes a page chooses add up without overflowing.

@@ -162,12 +162,16 @@ fn bytes_for(kbps: u32, duration_ms: Option<u64>) -> Option<u64> {
         .map(|d| u64::from(kbps).saturating_mul(d) / 8)
 }
 
-/// The best of `formats` for a row whose video runs at `fps`: the same frame rate first, then the highest bit rate.
-fn best_for_fps<'a>(formats: impl Iterator<Item = &'a Format>, fps: f64) -> Option<&'a Format> {
-    formats.max_by(|a, b| {
-        let near = |f: &Format| (f.fps.unwrap_or(fps) - fps).abs() < 1.0;
-        near(a).cmp(&near(b)).then(rate(a).total_cmp(&rate(b)))
-    })
+/// The highest bit rate of `formats` at frame rate `fps`, for a row whose video runs at it. Another rate is never taken: without one at `fps` the row's video is converted (D24.2). A rate not said matches any.
+fn best_for_fps<'a>(
+    formats: impl Iterator<Item = &'a Format>,
+    fps: Option<f64>,
+) -> Option<&'a Format> {
+    let at_rate = |f: &&Format| match (f.fps, fps) {
+        (Some(own), Some(wanted)) => (own - wanted).abs() < 1.0,
+        _ => true,
+    };
+    best_by_rate(formats.filter(at_rate))
 }
 
 /// The format with the highest bit rate.
@@ -186,7 +190,7 @@ pub(crate) fn video_variants(
     height: Option<u32>,
     duration_ms: Option<u64>,
 ) -> Vec<Variant> {
-    let fps = original.0.fps.unwrap_or(0.0);
+    let fps = original.0.fps;
     let mut variants = Vec::with_capacity(4);
     // Original: the streams of the Original choice, in their own container.
     let own = Container::from_ext(original_ext);

@@ -317,14 +317,14 @@ impl Format {
         (bytes >= MIN_REQUEST_LIMIT).then(|| bytes.min(MAX_REQUEST_LIMIT))
     }
 
-    /// Whether Wirecatch downloads this format itself: plain web addresses with
-    /// the engine, HLS playlists with `wirecatch-streams`.
     pub(crate) fn language_rank(&self) -> i64 {
         // yt-dlp's own default for a format that does not say.
         const UNRANKED: i64 = -1;
         self.language_preference.unwrap_or(UNRANKED)
     }
 
+    /// Whether Wirecatch downloads this format itself: plain web addresses with
+    /// the engine, HLS playlists with `wirecatch-streams`.
     #[must_use]
     pub fn transport(&self) -> Transport {
         if self.cookies.is_some() {
