@@ -471,8 +471,8 @@ mod tests {
     }
 
     /// Folders of a test's own for a keyed endpoint: the key in `key`, and no runtime folder,
-    /// so the Linux socket is keyed in `/tmp` as in a session without one. Naming the
-    /// session's runtime folder put every test's socket at one path (W4 milestone review M1).
+    /// so the Linux socket is keyed in `/tmp` as in a session without one. The session's
+    /// runtime folder would put every test's socket at one path.
     fn keyed_in(key: PathBuf) -> Folders {
         Folders { key, runtime: None }
     }
@@ -518,7 +518,7 @@ mod tests {
 
     // Only the app writes the key, so before it starts there is none to read: the bridge
     // takes that as "not running", starts the app, and reads the key again until it can
-    // connect (W4I review M2).
+    // connect.
     #[tokio::test]
     async fn a_key_that_does_not_exist_yet_starts_the_app_and_is_read_again() {
         let dir = private_dir("bridge-keyed").unwrap();
@@ -676,7 +676,7 @@ mod tests {
         assert_eq!(*launches.lock().unwrap(), 1);
     }
 
-    // A key that never appears once the app was started means the bridge looks in other folders than the app (a browser from an app store, a snap or a flatpak); the bridge said only that the app did not respond (W4I review R2-L2).
+    // A key that never appears once the app was started means the bridge looks in other folders than the app (a browser from an app store, a snap or a flatpak), which "the app did not respond" would not tell.
     #[tokio::test]
     async fn a_key_that_never_appears_is_reported_with_its_own_advice() {
         let (endpoint, dir) = test_endpoint();
@@ -749,8 +749,8 @@ mod tests {
         assert_eq!(&byte, b"x");
     }
 
-    // A Wirecatch the person closed used to come back within a second: the extension reconnected and
-    // every new bridge started the app. A check that may not start it finds it closed and leaves it so.
+    // The extension reconnects at once, so a bridge that always starts the app would bring back a
+    // Wirecatch the person closed.
     #[tokio::test]
     async fn a_closed_app_is_not_started_when_starting_is_not_allowed() {
         let (endpoint, _dir) = test_endpoint();

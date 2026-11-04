@@ -271,7 +271,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 244 | The `<local>` queue rule is never tested against the real network check                           | `M-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 245 | A crash can save a download twice under a second name                                             | found while fixing                                                                                 | P2       | medium | Found by the fault tests while fixing.                                                                           | open                                          |
 | 246 | A killed copy leaves its temporary file behind                                                    | found while fixing                                                                                 | P2       | small  | Found by review of PR-08.                                                                                        | open                                          |
-| 247 | Test comments carry history and review labels                                                     | found while fixing                                                                                 | P3       | small  | Found while fixing PR-18.                                                                                        | open                                          |
+| 247 | Test comments carry history and review labels                                                     | found while fixing                                                                                 | P3       | small  | Found while fixing PR-18.                                                                                        | fixed                                         |
 | 248 | Nothing stops new code deleting a whole folder                                                    | found while fixing                                                                                 | P3       | medium | Left out of PR-02.                                                                                               | fixed                                         |
 | 249 | The timing check misses a throttled server racing an action                                       | found while fixing                                                                                 | P3       | medium | Found by review of PR-01 and PR-47.                                                                              | open                                          |
 | 250 | The capture reply's doc contradicts the extension                                                 | found while fixing                                                                                 | P3       | small  | Found by review of PR-70.                                                                                        | open                                          |
@@ -4409,7 +4409,7 @@ A move across drives copies to `.wirecatch-move-N` beside the target. A kill dur
 
 ### 247. Test comments carry history and review labels
 
-P3, small, open.
+P3, small, fixed.
 
 Test comments near the integrity checks hold labels such as "W4I review" and "IPB-9", which the comment rule forbids.
 

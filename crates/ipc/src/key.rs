@@ -1,6 +1,6 @@
 //! The per-user endpoint key: a random part of the endpoint's name, kept in a file only
 //! the user can read, so another account cannot work out the name and take it before
-//! Wirecatch starts (IPB-10, D41.4 to D41.6).
+//! Wirecatch starts (D41.4 to D41.6).
 //!
 //! Only the listener writes the key, and only while it holds the key folder's lock, which
 //! it keeps for as long as it listens: the lock is also what stops a second copy of the app
@@ -408,7 +408,7 @@ mod tests {
     }
 
     // The lock is the second-copy guard: a second listener with a new key would bind a
-    // name of its own and never hear that the first one runs (W4I review M1).
+    // name of its own and never hear that the first one runs.
     #[test]
     fn a_second_listener_cannot_take_the_lock() {
         let dir = private_dir("ipc-key-lock").unwrap();
@@ -459,9 +459,8 @@ mod tests {
         );
     }
 
-    // On Windows the key used to be read through a link, to wherever it pointed (W4I
-    // review L3). Making a symbolic link needs developer mode or an administrator, so the
-    // test says so and stops when it cannot make one.
+    // Making a symbolic link needs developer mode or an administrator, so the test says so and
+    // stops when it cannot make one.
     #[cfg(windows)]
     #[test]
     fn a_link_in_place_of_the_key_is_refused_on_windows() {
@@ -476,7 +475,7 @@ mod tests {
         assert!(err.to_string().contains("link"), "{err}");
     }
 
-    // A key an elevated program wrote without naming its owner (an earlier Wirecatch run elevated, or with UAC off) belongs to Administrators, and was refused by every later run, the listener included, which could not replace it either (W4I review R2-H1).
+    // A key an elevated program wrote without naming its owner (a Wirecatch run elevated, or with UAC off) belongs to Administrators; refusing it would stop every later run, the listener included, which could not replace it either.
     #[cfg(windows)]
     #[test]
     fn a_key_administrators_own_is_read_and_kept() {
