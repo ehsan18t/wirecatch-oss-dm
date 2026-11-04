@@ -60,7 +60,7 @@ impl MainWindow {
     }
 
     fn no_match(&self, needle: &str, cx: &mut Context<'_, Self>) -> Empty {
-        if !self.typed_links(cx).is_empty() {
+        if !self.typed_links(cx).urls.is_empty() {
             return not_downloaded(cx);
         }
         let mut actions = vec![

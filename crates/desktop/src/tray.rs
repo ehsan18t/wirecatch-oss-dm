@@ -7,14 +7,15 @@ use tray_icon::menu::{
     CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu,
 };
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use wirecatch_shell::activity::Activity;
+use wirecatch_shell::activity::tooltip;
 use wirecatch_shell::tray::{Shell, TrayAction, perform, problem_tooltip};
 use wirecatch_shell::tray_proxy::{self, ProxyItem};
 use wirecatch_shell::tray_queues::{self, QueueItem};
 use wirecatch_shell::tray_speed::{self, SpeedItem};
 
 use crate::backend::Backend;
-use crate::library::{Asked, Library, Loaded};
+use crate::library::{Asked, Library, Loaded, Revisions};
+use crate::main_window::Group;
 use crate::{lifecycle, links, main_window};
 
 const ICON_PNG: &[u8] = include_bytes!("../assets/icons/32x32.png");
@@ -24,6 +25,8 @@ struct Tray {
     icon: TrayIcon,
     tooltip: String,
     choices: Choices,
+    /// What `choices` were read from.
+    read_from: Option<Revisions>,
 }
 
 /// The menu's submenus, empty until the manager has opened.
@@ -70,6 +73,7 @@ pub fn start(library: &Entity<Library>, cx: &mut App) {
         icon,
         tooltip: String::new(),
         choices: Choices::default(),
+        read_from: None,
     });
     cx.spawn(async move |cx| {
         while let Some(click) = clicked.recv().await {
@@ -98,7 +102,7 @@ fn build() -> Result<TrayIcon, String> {
     let menu = menu(&Choices::default()).map_err(|e| e.to_string())?;
     TrayIconBuilder::new()
         .with_icon(icon()?)
-        .with_tooltip(wirecatch_shell::activity::tooltip(0, 0))
+        .with_tooltip(tooltip(0, 0))
         .with_menu(Box::new(menu))
         .with_menu_on_left_click(false)
         .build()
@@ -177,39 +181,42 @@ fn follow(library: &Entity<Library>, cx: &mut App) {
     let tooltip = match &library.loaded {
         Loaded::Failed(reason) => problem_tooltip(&reason.message),
         Loaded::Loading | Loaded::Ready => {
-            let mut activity = Activity::default();
-            activity.load(&library.downloads);
-            activity.tooltip()
+            let tally = library.downloads.tally();
+            tooltip(tally.in_group(Group::Downloading), tally.speed)
         }
     };
-    let choices = library
-        .settings
-        .as_ref()
-        .map(|settings| Choices {
-            queues: tray_queues::items(&library.queues),
-            speeds: tray_speed::items(settings.global_speed_limit),
-            proxies: tray_proxy::items(&settings.proxy, &library.proxies),
-        })
-        .unwrap_or_default();
+    let revisions = library.revisions;
     let Some(tray) = cx.try_global::<Tray>() else {
         return;
     };
-    let (new_tooltip, new_choices) = (tray.tooltip != tooltip, tray.choices != choices);
-    if !new_tooltip && !new_choices {
-        return;
-    }
+    let choices = (tray.read_from != Some(revisions)).then(|| {
+        library
+            .settings
+            .as_ref()
+            .map(|settings| Choices {
+                queues: tray_queues::items(&library.queues),
+                speeds: tray_speed::items(settings.global_speed_limit),
+                proxies: tray_proxy::items(&settings.proxy, &library.proxies),
+            })
+            .unwrap_or_default()
+    });
+    let new_tooltip = tray.tooltip != tooltip;
+    let new_choices = choices.filter(|choices| tray.choices != *choices);
     let tray = cx.global_mut::<Tray>();
-    if new_tooltip && let Err(e) = tray.icon.set_tooltip(Some(&tooltip)) {
-        tracing::debug!("could not change the tray tooltip: {e}");
+    tray.read_from = Some(revisions);
+    if new_tooltip {
+        if let Err(e) = tray.icon.set_tooltip(Some(&tooltip)) {
+            tracing::debug!("could not change the tray tooltip: {e}");
+        }
+        tray.tooltip = tooltip;
     }
-    if new_choices {
+    if let Some(choices) = new_choices {
         match menu(&choices) {
             Ok(menu) => tray.icon.set_menu(Some(Box::new(menu))),
             Err(e) => tracing::debug!("could not change the tray menu: {e}"),
         }
+        tray.choices = choices;
     }
-    tray.tooltip = tooltip;
-    tray.choices = choices;
 }
 
 struct AppShell<'a>(&'a mut App);
@@ -229,7 +236,7 @@ impl Shell for AppShell<'_> {
             .read_from_clipboard()
             .and_then(|item| item.text())
             .unwrap_or_default();
-        main_window::bring_up(&Asked::Links(links::extract(&copied)), self.0);
+        main_window::bring_up(&Asked::Links(links::pasted(&copied)), self.0);
     }
 
     fn open_folder(&mut self, folder: &std::path::Path) {

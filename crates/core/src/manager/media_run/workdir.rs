@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use wirecatch_engine::Url;
 use wirecatch_media::output::{ImageFormat, SubtitleFormat, SubtitlePick};
+use wirecatch_sites::cookie_scope::site_of;
+use wirecatch_sites::public_suffix::SuffixList;
 
 use super::placement::link_digest;
 
@@ -38,6 +40,18 @@ pub(super) fn joined(ext: &str) -> String {
 /// The digest of the link the folder's contents came from (a token in a link stays out of the folder).
 const LINK: &str = "link.digest";
 
+/// Removes `work`, if it is there.
+async fn clear(work: &Path) -> std::io::Result<()> {
+    let folder = work.to_owned();
+    let removed = tokio::task::spawn_blocking(move || wirecatch_files::remove_own_folder(&folder))
+        .await
+        .map_err(std::io::Error::other)?;
+    match removed {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    }
+}
+
 /// Makes `work` the folder of `url`: what another link left there, or a folder that names no link, is cleared, so a name shared by two downloads never gives one the other's video.
 pub(super) async fn claim_for_link(work: &Path, url: &Url) -> std::io::Result<()> {
     let digest = link_digest(url.as_str());
@@ -48,12 +62,37 @@ pub(super) async fn claim_for_link(work: &Path, url: &Url) -> std::io::Result<()
     {
         return Ok(());
     }
-    match tokio::fs::remove_dir_all(work).await {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-        _ => {}
-    }
+    clear(work).await?;
     tokio::fs::create_dir_all(work).await?;
     tokio::fs::write(named, digest).await
+}
+
+/// Whose a stream's segments are: the link's site and port. A refreshed stream keeps them on any host of the site, while another site serving the same paths never takes them.
+pub(super) fn stream_owner(url: &Url, suffixes: &SuffixList) -> String {
+    let site = site_of(url.as_str(), suffixes).unwrap_or_default();
+    format!("{site}:{}", url.port_or_known_default().unwrap_or_default())
+}
+
+/// The formats a download took when its saved ones were gone, written here so its next attempt keeps what this one finished.
+const CHOSEN_AGAIN: &str = "chosen-again.txt";
+
+/// Makes `work` the folder of the formats `chosen` again because the page stopped listing the saved ones, or with `None` of the saved ones: parts of any others are cleared, since a part's marker does not say which format it holds.
+pub(super) async fn claim_for_formats(
+    work: &Path,
+    url: &Url,
+    chosen: Option<&str>,
+) -> std::io::Result<()> {
+    let named = work.join(CHOSEN_AGAIN);
+    let held = tokio::fs::read_to_string(&named).await.ok();
+    if held.as_deref() == chosen {
+        return Ok(());
+    }
+    clear(work).await?;
+    claim_for_link(work, url).await?;
+    match chosen {
+        Some(ids) => tokio::fs::write(named, ids).await,
+        None => Ok(()),
+    }
 }
 
 /// Names the file a finished part (`role`) was saved as.

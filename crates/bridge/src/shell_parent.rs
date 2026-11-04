@@ -338,8 +338,8 @@ mod tests {
         }
     }
 
-    // `check_parent` alone being right did not mean `open_shell` asked it (W4I review L1):
-    // the shell found here is this very process, read back as another user's.
+    // `check_parent` alone being right does not prove `open_shell` asks it: the shell found here
+    // is this very process, read back as another user's.
     #[test]
     fn a_shell_read_as_another_users_is_not_opened_as_the_parent() {
         let here = std::process::id();
@@ -362,7 +362,7 @@ mod tests {
 
     // The app takes its parent's account: a shell of another user started it as that user,
     // listening where this user's bridge never looks; a shell with more rights started it
-    // elevated (IPB-8).
+    // elevated.
     #[test]
     fn a_shell_of_another_user_or_with_more_rights_is_not_used() {
         const ME: &str = "S-1-5-21-1-2-3-1001";

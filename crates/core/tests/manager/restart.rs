@@ -164,7 +164,8 @@ async fn the_data_folder_can_be_deleted_right_after_shutdown() -> TestResult {
     h.manager.shutdown().await;
     let data = h.root.path().join("data");
     assert!(data.join(wirecatch_core::DATABASE_FILE).is_file());
-    std::fs::remove_dir_all(&data).expect("the data folder is still in use after shutdown");
+    wirecatch_test_support::remove_test_folder(&data)
+        .expect("the data folder is still in use after shutdown");
     Ok(())
 }
 

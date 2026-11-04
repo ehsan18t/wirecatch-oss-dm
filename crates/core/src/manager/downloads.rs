@@ -17,6 +17,7 @@ use wirecatch_store::NameChoice;
 
 use super::Manager;
 use super::arrival::{Fetch, Kind, NewEntry, Wanted};
+use super::file_exists::give_up_the_name;
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, QueueRequest};
 use super::run::mark_cancelled;
@@ -208,6 +209,7 @@ impl Manager {
         if entry.row.status != DownloadStatus::Cancelled {
             mark_cancelled(entry);
             self.discard_partial(entry);
+            give_up_the_name(&mut state, id);
             self.save(&mut state, id);
             self.reconcile(&mut state);
         }
@@ -572,28 +574,20 @@ impl Manager {
         }
     }
 
-    /// Adds a download: picks its file name, category and a free path, then lets
-    /// it start if its queue has room. Returns the new row, or `None` for a capture
-    /// whose handover is already known (a retry from the extension, or two copies
-    /// racing), which adds nothing.
+    /// Adds a download: picks its file name, category and a path no other download holds, then lets it start if its queue has room. Returns the new row, or `None` for a capture whose handover is already known (a retry from the extension, or two copies racing), which adds nothing.
     pub(super) async fn insert(&self, new: NewEntry) -> Result<Option<DownloadSummary>> {
         let (dir, name, category) = self.destination(&new)?;
-        // A stream or page settles a taken name when it puts its file in place (D96).
-        let placed_later = matches!(new.kind, Kind::Media(_));
-        // Checking the disk blocks, so it happens off the lock and off async threads;
-        // if another add claimed the same path meanwhile, look again.
+        // If another add claimed the same path meanwhile, look again.
         loop {
             // Asked of the live set, under a short lock per name tried: a copy of the set for
             // each add makes a bulk add quadratic (CORE-10).
             let (dir, name, manager) = (dir.clone(), name.clone(), self.clone());
             let path = self
                 .blocking(move || {
-                    let claimed = |path: &Path| manager.lock().claimed.contains(path);
-                    Ok(if placed_later {
-                        naming::unclaimed_path(&dir, &name, claimed)
-                    } else {
-                        naming::unique_path(&dir, &name, claimed)
-                    })
+                    // Not `unique_path`: a file on disk is for the setting to judge once the name is final (D96), and a name changed for it here would hide it from that.
+                    Ok(naming::unclaimed_path(&dir, &name, |path: &Path| {
+                        manager.lock().claimed.contains(path)
+                    }))
                 })
                 .await?;
 
@@ -640,8 +634,7 @@ impl Manager {
         Ok((dir, name, category))
     }
 
-    /// Puts `new` in the list at the free `path`, lets it start if its queue has
-    /// room, and remembers its handover; returns its row.
+    /// Puts `new` in the list at `path`, lets it start if its queue has room, and remembers its handover; returns its row.
     fn add_entry(
         &self,
         state: &mut State,
@@ -716,6 +709,7 @@ impl Manager {
             cleanup: None,
             hold: Hold::Free,
             on_existing: None,
+            plain_name: None,
             offered_file: false,
             stranded: None,
             media_job,

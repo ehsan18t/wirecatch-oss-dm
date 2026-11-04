@@ -1237,9 +1237,9 @@ mod tests {
         );
     }
 
-    // The pipe used to be named after the SID alone, which every account on the computer
-    // can read, so any of them could create it first and keep Wirecatch from starting
-    // (IPB-10). Built with a made-up SID, so the test never touches a real Wirecatch's name.
+    // Every account on the computer can read the SID, so any of them could create a pipe named
+    // after it alone first. Built with a made-up SID, so the test never touches a real
+    // Wirecatch's name.
     #[test]
     fn a_keyed_pipe_name_cannot_be_worked_out_from_the_users_sid() {
         const SID: &str = "S-1-5-21-1111111111-2222222222-3333333333-1001";
@@ -1312,7 +1312,7 @@ mod tests {
         assert_eq!(Sid::local_system(), Sid::parse("S-1-5-18").unwrap());
     }
 
-    // An elevated program, and every program of an administrator with UAC off, gives what it creates to Administrators unless it names an owner, so a key such a Wirecatch wrote was refused by every later run, its own included (W4I review R2-H1).
+    // An elevated program, and every program of an administrator with UAC off, gives what it creates to Administrators unless it names an owner, and later runs must still read a key such a Wirecatch wrote.
     #[test]
     fn only_the_user_administrators_or_the_system_may_own_the_users_files() {
         let user = Sid::current_user().unwrap();
@@ -1370,7 +1370,7 @@ mod tests {
         );
     }
 
-    // The key took the folder's entries and the program's default owner, which an elevated program sets to Administrators (W4I review R2-H1).
+    // Without its own descriptor the key takes the folder's entries and the program's default owner, which an elevated program sets to Administrators.
     #[test]
     fn the_endpoint_key_is_the_users_alone_even_from_an_elevated_listener() {
         let user = Sid::current_user().unwrap();
@@ -1594,9 +1594,8 @@ mod tests {
         }
     }
 
-    // The listener used to take whoever the descriptor let in, so a descriptor that
-    // regressed (as the label once did, IPB-1) left nothing else to stop another
-    // principal (IPB-9).
+    // A second check behind the descriptor: a descriptor that regressed would otherwise leave
+    // nothing to stop another principal.
     #[tokio::test]
     async fn the_listener_refuses_another_principal_its_descriptor_let_in() {
         let endpoint = unique_endpoint();
@@ -1710,7 +1709,7 @@ mod tests {
     }
 
     // A restricted token keeps the user's SID and level, so behind a descriptor that let it
-    // in, the user and level checks served it (W4I review L4).
+    // in, the user and level checks alone would serve it.
     #[tokio::test]
     async fn the_listener_refuses_a_sandboxed_program_of_the_same_user() {
         let endpoint = unique_endpoint();
@@ -2117,8 +2116,8 @@ mod tests {
         );
     }
 
-    // An elevated app used to label its pipe medium, so any unelevated program of the
-    // same user could drive it: a way around UAC.
+    // A medium label would let any unelevated program of the same user drive an elevated app:
+    // a way around UAC.
     #[test]
     fn an_elevated_server_labels_its_pipe_high() {
         let sddl = owner_only_sddl("S-1-5-21-9", "S-1-16-12288");
@@ -2126,7 +2125,7 @@ mod tests {
         OwnerOnlyDescriptor::from_sddl(&sddl).expect("Windows accepts the descriptor");
     }
 
-    // The label must follow the integrity it is given, not a fixed level: an elevated app used to label its pipe medium. A test process cannot label above its own level, so a lower one proves the same.
+    // A test process cannot label above its own level, so a lower one proves the same.
     #[tokio::test]
     async fn a_listener_labels_its_pipe_at_the_given_integrity() {
         let low = Sid::parse("S-1-16-4096").unwrap();

@@ -87,7 +87,7 @@ impl Backend {
         let core = Arc::clone(&backend.core);
         backend
             .runtime
-            .spawn(async move { quit::quit_core(Some(&core), || ()).await })
+            .spawn(async move { quit::stop(&core).await })
     }
 
     /// Runs `work` with the manager on the runtime, once it has opened; its result comes back

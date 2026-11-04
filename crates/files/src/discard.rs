@@ -12,10 +12,11 @@ pub fn file(path: &Path) {
     logged(path, std::fs::remove_file(path));
 }
 
-/// Deletes the folder at `path` with everything in it, if there is one. Blocks
-/// on the disk.
+/// Deletes the folder at `path` with everything in it, if there is one. Only
+/// for a folder the app made, as [`crate::remove_own_folder`] says. Blocks on
+/// the disk.
 pub fn dir(path: &Path) {
-    logged(path, std::fs::remove_dir_all(path));
+    logged(path, crate::remove_own_folder(path));
 }
 
 fn logged(path: &Path, deleted: io::Result<()>) {

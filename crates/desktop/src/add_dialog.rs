@@ -2,6 +2,8 @@
 //! link, where they are saved, in which queue (Automatic, where the rules send each, unless one is
 //! picked), and whether they start now. A link to a video page is read for its qualities (D51).
 
+use std::rc::Rc;
+
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::component::select::{Select, SelectItem, SelectState};
@@ -12,7 +14,7 @@ use gpui_kit::{
     Styled as _, Subscription, WeakEntity, Window, px,
 };
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{AddRequest, Setting};
+use wirecatch_protocol::app::{AddRequest, Queue, Setting};
 use wirecatch_protocol::rules::{LinkTrial, RuleMatch};
 use wirecatch_shell::api;
 use wirecatch_sites::video_sites::video_site_for;
@@ -26,7 +28,11 @@ use crate::{files, links, text};
 /// Where links go with no folder picked and no queue folder.
 const FOLDER_BY_TYPE: &str = "By file type (from Settings)";
 
-const NO_LINK: &str = "Paste at least one link that starts with https://, http:// or ftp://.";
+const NO_LINK: &str =
+    "Paste at least one link that starts with https://, http://, ftp://, ftps:// or ftpes://.";
+
+/// Said under Automatic when the links go to queues with different folders.
+const FOLDER_BY_QUEUE: &str = "Set by each queue";
 
 /// One entry of the queue list: Automatic, or a queue.
 #[derive(Clone)]
@@ -61,6 +67,7 @@ pub struct AddForm {
     busy: bool,
     /// Where Automatic sends the links, once the rules were tried on them.
     routes: Vec<Route>,
+    read_links: links::Kept,
     /// Bumped on each change of the links, so an older trial's answer is dropped.
     tried: u64,
     _subscriptions: Vec<Subscription>,
@@ -70,6 +77,8 @@ pub struct AddForm {
 struct Route {
     queue: String,
     rule: Option<String>,
+    /// The queue's own folder; `None` when it sorts by file type.
+    folder: Option<String>,
 }
 
 /// Links tried against the rules at most, for the hint under Automatic.
@@ -197,6 +206,7 @@ impl AddForm {
             problem: None,
             busy: false,
             routes: Vec::new(),
+            read_links: links::Kept::default(),
             tried: 0,
             _subscriptions: vec![edited, redraw],
         };
@@ -204,17 +214,11 @@ impl AddForm {
         form
     }
 
-    /// Adds `urls` that are not in the box yet: links from a second launch while it is open.
+    /// Adds what brings links not in the box yet: from a second launch while it is open.
     pub fn add_links(&mut self, urls: &[String], window: &mut Window, cx: &mut Context<'_, Self>) {
-        let mut all = self.urls(cx);
-        all.extend(
-            urls.iter()
-                .filter(|url| !all.contains(url))
-                .cloned()
-                .collect::<Vec<_>>(),
-        );
+        let all = links::joined(&self.links.read(cx).value(), urls);
         self.links
-            .update(cx, |state, cx| state.set_value(all.join("\n"), window, cx));
+            .update(cx, |state, cx| state.set_value(all, window, cx));
         self.route(cx);
         cx.notify();
     }
@@ -259,27 +263,24 @@ impl AddForm {
     /// The queue a rule match names, or the default queue when none matched.
     fn route_of(&self, matched: Option<RuleMatch>, cx: &App) -> Route {
         let library = self.library.read(cx);
-        let name = |id: Option<QueueId>| {
-            id.and_then(|id| library.queue(id))
-                .or_else(|| library.queues.first())
-                .map(|queue| queue.settings.name.clone())
-                .unwrap_or_default()
-        };
-        match matched {
-            Some(found) => Route {
-                queue: name(found.queue),
-                rule: Some(text::rule_phrase(&found.rule)),
-            },
-            None => Route {
-                queue: name(None),
-                rule: None,
-            },
+        let (id, rule) = matched.map_or((None, None), |found| {
+            (found.queue, Some(text::rule_phrase(&found.rule)))
+        });
+        let queue = id
+            .and_then(|id| library.queue(id))
+            .or_else(|| library.queues.first());
+        Route {
+            queue: queue.map_or_else(String::new, |queue| queue.settings.name.clone()),
+            rule,
+            folder: queue.and_then(own_folder),
         }
     }
 
     /// Under Automatic: where the links go.
-    fn automatic_hint(&self) -> String {
-        match self.routes.as_slice() {
+    fn automatic_hint(&self, cx: &App) -> String {
+        let tried = self.routes.as_slice();
+        let all_tried = self.found(cx).urls.len() <= MAX_TRIED;
+        match if all_tried { tried } else { &[] } {
             [] => "Each link goes to the queue whose rules it matches, or the default queue."
                 .to_owned(),
             [only] => match &only.rule {
@@ -302,11 +303,15 @@ impl AddForm {
     }
 
     fn urls(&self, cx: &App) -> Vec<String> {
-        links::extract(&self.links.read(cx).value())
+        self.found(cx).urls.clone()
+    }
+
+    fn found(&self, cx: &App) -> Rc<links::Found> {
+        self.read_links.of(&self.links.read(cx).value())
     }
 
     fn link_count(&self, cx: &App) -> usize {
-        self.urls(cx).len()
+        self.found(cx).urls.len()
     }
 
     fn picked_queue(&self, cx: &App) -> Option<QueueId> {
@@ -453,16 +458,11 @@ impl AddForm {
 impl Render for AddForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let folder_row = self.folder_row(cx);
-        let raw = self.links.read(cx).value();
-        let urls = links::extract(&raw);
-        let ignored = links::lines_without_links(&raw);
-        let hint = match ignored {
-            0 => "One link per line, or paste several at once.".to_owned(),
-            1 => "One line has no link in it and is left out.".to_owned(),
-            n => format!("{n} lines have no link in them and are left out."),
-        };
+        let found = self.found(cx);
+        let urls = &found.urls;
+        let hint = links_hint(&found);
         let queue_hint = if self.picked_queue(cx).is_none() {
-            self.automatic_hint()
+            self.automatic_hint(cx)
         } else {
             "For this add only.".to_owned()
         };
@@ -493,13 +493,11 @@ impl AddForm {
     /// Where the links are saved: the folder picked, or the one the app picks, the queue's own
     /// folder or the folder by file type (D94).
     fn folder_row(&self, cx: &mut Context<'_, Self>) -> FolderRow {
-        let fallback = match self
-            .picked_queue(cx)
-            .and_then(|id| self.library.read(cx).queue(id))
-            .map(|queue| &queue.settings.folder)
-        {
-            Some(Setting::Own(folder)) => text::folder(&folder.0),
-            Some(Setting::Global) | None => FOLDER_BY_TYPE.to_owned(),
+        let library = self.library.read(cx);
+        let fallback = match self.picked_queue(cx).and_then(|id| library.queue(id)) {
+            Some(queue) => own_folder(queue).unwrap_or_else(|| FOLDER_BY_TYPE.to_owned()),
+            None if self.found(cx).urls.len() > MAX_TRIED => FOLDER_BY_QUEUE.to_owned(),
+            None => folder_of_routes(&self.routes, library.queues.first().and_then(own_folder)),
         };
         FolderRow::new(
             self.folder.clone(),
@@ -510,5 +508,95 @@ impl AddForm {
                 cx.notify();
             }),
         )
+    }
+}
+
+/// What the links box says of its text. Words after a link come first: the link may have been
+/// meant to hold them, and a shorter address would be downloaded.
+fn links_hint(found: &links::Found) -> String {
+    match (found.lines_with_text_after, found.lines_without_links) {
+        (1, _) => "A link ends at a space. One line has text after its link, which is left out."
+            .to_owned(),
+        (n @ 2.., _) => {
+            format!(
+                "A link ends at a space. {n} lines have text after their link, which is left out."
+            )
+        }
+        (0, 0) => "One link per line, or paste several at once.".to_owned(),
+        (0, 1) => "One line has no link in it and is left out.".to_owned(),
+        (0, n) => format!("{n} lines have no link in them and are left out."),
+    }
+}
+
+/// The folder `queue` keeps for itself, as shown.
+fn own_folder(queue: &Queue) -> Option<String> {
+    match &queue.settings.folder {
+        Setting::Own(folder) => Some(text::folder(&folder.0)),
+        Setting::Global => None,
+    }
+}
+
+/// Where the links under Automatic are saved; before any link is known, in the default queue's
+/// folder, `default`.
+fn folder_of_routes(routes: &[Route], default: Option<String>) -> String {
+    let Some((first, rest)) = routes.split_first() else {
+        return default.unwrap_or_else(|| FOLDER_BY_TYPE.to_owned());
+    };
+    if rest.iter().any(|route| route.folder != first.folder) {
+        return FOLDER_BY_QUEUE.to_owned();
+    }
+    first
+        .folder
+        .clone()
+        .unwrap_or_else(|| FOLDER_BY_TYPE.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn route(folder: Option<&str>) -> Route {
+        Route {
+            queue: String::new(),
+            rule: None,
+            folder: folder.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn automatic_says_the_folder_of_the_queue_the_links_go_to() {
+        let own = Some("D:\\Videos");
+        assert_eq!(folder_of_routes(&[route(own)], None), "D:\\Videos");
+        assert_eq!(folder_of_routes(&[route(None)], None), FOLDER_BY_TYPE);
+        assert_eq!(
+            folder_of_routes(&[route(own), route(own)], None),
+            "D:\\Videos"
+        );
+        assert_eq!(
+            folder_of_routes(&[route(own), route(None)], None),
+            FOLDER_BY_QUEUE
+        );
+    }
+
+    #[test]
+    fn before_any_link_automatic_says_the_default_queues_folder() {
+        assert_eq!(folder_of_routes(&[], Some("D:\\All".to_owned())), "D:\\All");
+        assert_eq!(folder_of_routes(&[], None), FOLDER_BY_TYPE);
+    }
+
+    #[test]
+    fn the_box_warns_of_text_after_a_link_first() {
+        let hint = |text| links_hint(&links::Kept::default().of(text));
+        assert!(hint("https://example.com/a b.zip\nnotes").contains("One line has text after"));
+        assert!(hint("https://example.com/a b\nhttps://example.com/c d").contains("2 lines"));
+        assert!(hint("notes").contains("no link"));
+    }
+
+    #[test]
+    fn the_no_link_message_names_every_scheme() {
+        use wirecatch_engine::url::{FTP_SCHEMES, WEB_SCHEMES};
+        for scheme in WEB_SCHEMES.iter().chain(&FTP_SCHEMES) {
+            assert!(NO_LINK.contains(&format!("{scheme}://")), "{scheme}");
+        }
     }
 }

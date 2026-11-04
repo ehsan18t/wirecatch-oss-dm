@@ -14,6 +14,7 @@ use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use wirecatch_shell::api;
 
 use crate::backend::Backend;
+use crate::rows::Rows;
 
 /// Whether the manager has answered yet.
 pub enum Loaded {
@@ -26,17 +27,27 @@ pub enum Loaded {
 /// Everything the main window lists.
 pub struct Library {
     pub loaded: Loaded,
-    pub downloads: Vec<DownloadSummary>,
+    pub downloads: Rows,
     pub queues: Vec<Queue>,
     pub proxies: Vec<ProxyServer>,
     pub addons: Vec<AddonInfo>,
     pub settings: Option<AppSettings>,
+    pub revisions: Revisions,
     /// Why the download list could not be saved, until it saves again or is dismissed.
     pub storage_problem: Option<String>,
     /// What the person must know about this start, such as a damaged list set aside.
     pub startup_notices: Vec<StartupNotice>,
     /// The questions the core asks about browser downloads, oldest first.
     pub open_questions: Vec<QuestionId>,
+}
+
+/// Moves as each part changes. Every change notifies, up to ten times a second while downloads
+/// run, so an observer of one part compares its revision before redoing work.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub struct Revisions {
+    pub queues: u64,
+    pub proxies: u64,
+    pub settings: u64,
 }
 
 /// Everything read at once, with the events that follow it.
@@ -72,18 +83,23 @@ impl Library {
     pub fn new(cx: &mut gpui_kit::App) -> Entity<Self> {
         cx.new(|cx| {
             Self::load(cx);
-            Self {
-                loaded: Loaded::Loading,
-                downloads: Vec::new(),
-                queues: Vec::new(),
-                proxies: Vec::new(),
-                addons: Vec::new(),
-                settings: None,
-                storage_problem: None,
-                startup_notices: Vec::new(),
-                open_questions: Vec::new(),
-            }
+            Self::empty()
         })
+    }
+
+    fn empty() -> Self {
+        Self {
+            loaded: Loaded::Loading,
+            downloads: Rows::default(),
+            queues: Vec::new(),
+            proxies: Vec::new(),
+            addons: Vec::new(),
+            settings: None,
+            revisions: Revisions::default(),
+            storage_problem: None,
+            startup_notices: Vec::new(),
+            open_questions: Vec::new(),
+        }
     }
 
     /// Reads everything again, then follows the manager's events. Also the way back after
@@ -121,9 +137,12 @@ impl Library {
                         open_questions,
                     } = snapshot;
                     let updated = this.update(cx, |library, cx| {
-                        library.downloads = downloads;
+                        library.downloads.replace(downloads);
                         library.queues = queues;
                         library.proxies = proxies;
+                        library.revisions.queues += 1;
+                        library.revisions.proxies += 1;
+                        library.revisions.settings += 1;
                         library.addons = addons;
                         crate::text::set_clock(settings.clock);
                         library.settings = Some(settings);
@@ -180,19 +199,23 @@ impl Library {
             }
             UiEvent::DownloadsChanged(rows) => {
                 for row in rows {
-                    match self.downloads.iter_mut().find(|known| known.id == row.id) {
-                        Some(known) => *known = row,
-                        None => self.downloads.push(row),
-                    }
+                    self.downloads.put(row);
                 }
             }
-            UiEvent::DownloadsRemoved(ids) => self.downloads.retain(|row| !ids.contains(&row.id)),
-            UiEvent::QueuesChanged(queues) => self.queues = queues,
-            UiEvent::ProxyServersChanged(proxies) => self.proxies = proxies,
+            UiEvent::DownloadsRemoved(ids) => self.downloads.remove(&ids),
+            UiEvent::QueuesChanged(queues) => {
+                self.queues = queues;
+                self.revisions.queues += 1;
+            }
+            UiEvent::ProxyServersChanged(proxies) => {
+                self.proxies = proxies;
+                self.revisions.proxies += 1;
+            }
             UiEvent::AddonsChanged(addons) => self.addons = addons,
             UiEvent::SettingsChanged(settings) => {
                 crate::text::set_clock(settings.clock);
                 self.settings = Some(*settings);
+                self.revisions.settings += 1;
                 cx.emit(SettingsChanged);
             }
             UiEvent::WindowRequested => return cx.emit(Asked::Window),
@@ -210,23 +233,7 @@ impl Library {
     /// Puts `ids_in_order` in that order among the places they hold, once the manager took the
     /// same order: no event carries it.
     pub fn reorder(&mut self, ids_in_order: &[DownloadId]) {
-        let places: Vec<usize> = self
-            .downloads
-            .iter()
-            .enumerate()
-            .filter(|(_, row)| ids_in_order.contains(&row.id))
-            .map(|(index, _)| index)
-            .collect();
-        let rows: Vec<DownloadSummary> = ids_in_order
-            .iter()
-            .filter_map(|id| self.downloads.iter().find(|row| row.id == *id).cloned())
-            .collect();
-        if rows.len() != places.len() {
-            return;
-        }
-        for (place, row) in places.into_iter().zip(rows) {
-            self.downloads[place] = row;
-        }
+        self.downloads.reorder(ids_in_order);
     }
 
     pub fn queue(&self, id: QueueId) -> Option<&Queue> {
@@ -242,5 +249,43 @@ fn asked_question(event: &UiEvent) -> Option<QuestionId> {
         UiEvent::MediaChoiceRequested(choice) => Some(choice.id),
         UiEvent::FileExistsRequested(question) => Some(question.id),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui_kit::TestAppContext;
+    use wirecatch_protocol::app::DownloadStatus;
+    use wirecatch_test_support::downloads::download;
+
+    #[gpui_kit::test]
+    fn a_progress_tick_moves_no_revision_and_a_new_proxy_list_moves_its_own(
+        cx: &mut TestAppContext,
+    ) {
+        let library = cx.update(|cx| cx.new(|_| Library::empty()));
+        let running = |done| DownloadSummary {
+            status: DownloadStatus::Downloading,
+            done,
+            ..download(1)
+        };
+        let read = |cx: &mut TestAppContext| {
+            library.read_with(cx, |library, _| {
+                (library.revisions, library.downloads.revision())
+            })
+        };
+        let apply = |event, cx: &mut TestAppContext| {
+            library.update(cx, |library, cx| library.apply(event, cx));
+            cx.run_until_parked();
+        };
+        apply(UiEvent::DownloadsChanged(vec![running(1)]), cx);
+        let before = read(cx);
+        apply(UiEvent::DownloadsChanged(vec![running(2)]), cx);
+        assert!(read(cx) == before);
+        apply(UiEvent::ProxyServersChanged(Vec::new()), cx);
+        let (revisions, rows) = read(cx);
+        assert_eq!(rows, before.1);
+        assert_eq!(revisions.proxies, before.0.proxies + 1);
+        assert_eq!(revisions.settings, before.0.settings);
     }
 }
