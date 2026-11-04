@@ -26,10 +26,12 @@ const FALLBACK_NAME: &str = "download";
 const MAX_EXTENSION_BYTES: usize = 32;
 
 /// Extracts the file name from a `Content-Disposition` header value.
-/// `filename*` (RFC 6266 / 5987) wins over plain `filename`.
+/// `filename*` (RFC 6266 / 5987) wins over plain `filename`, unless its bytes do
+/// not read in its charset: then it is only a last resort.
 #[must_use]
 pub(crate) fn from_content_disposition(value: &str) -> Option<String> {
     let mut plain = None;
+    let mut unreadable = None;
     for part in split_params(value) {
         let Some((key, val)) = part.split_once('=') else {
             continue;
@@ -37,11 +39,10 @@ pub(crate) fn from_content_disposition(value: &str) -> Option<String> {
         let key = key.trim().to_ascii_lowercase();
         let val = val.trim();
         if key == "filename*" {
-            // charset'language'percent-encoded
-            let encoded = val.splitn(3, '\'').nth(2).unwrap_or(val);
-            let decoded = percent_decode_str(encoded.trim_matches('"')).decode_utf8_lossy();
-            if !decoded.trim().is_empty() {
-                return Some(decoded.into_owned());
+            match read_extended_name(val) {
+                ExtendedName::Readable(name) if !name.trim().is_empty() => return Some(name),
+                ExtendedName::Readable(_) => {}
+                ExtendedName::Lossy(name) => unreadable = Some(name),
             }
         } else if key == "filename" {
             let unquoted = val.trim_matches('"').replace("\\\"", "\"");
@@ -50,7 +51,33 @@ pub(crate) fn from_content_disposition(value: &str) -> Option<String> {
             }
         }
     }
-    plain
+    plain.or(unreadable.filter(|name| !name.trim().is_empty()))
+}
+
+/// What a `filename*` value says.
+enum ExtendedName {
+    Readable(String),
+    /// A lossy reading of bytes that do not read in the value's charset, or of a charset other than the two RFC 5987 requires.
+    Lossy(String),
+}
+
+/// Reads `charset'language'percent-encoded`.
+fn read_extended_name(value: &str) -> ExtendedName {
+    let mut fields = value.splitn(3, '\'');
+    let (charset, encoded) = match (fields.next(), fields.next(), fields.next()) {
+        (Some(charset), Some(_), Some(encoded)) => (charset.trim_matches('"'), encoded),
+        _ => ("UTF-8", value),
+    };
+    let bytes: Vec<u8> = percent_decode_str(encoded.trim_matches('"')).collect();
+    if charset.eq_ignore_ascii_case("ISO-8859-1") {
+        return ExtendedName::Readable(bytes.iter().copied().map(char::from).collect());
+    }
+    match std::str::from_utf8(&bytes) {
+        Ok(name) if charset.eq_ignore_ascii_case("UTF-8") || name.is_ascii() => {
+            ExtendedName::Readable(name.to_owned())
+        }
+        _ => ExtendedName::Lossy(String::from_utf8_lossy(&bytes).into_owned()),
+    }
 }
 
 /// Splits on `;` while respecting double quotes.
@@ -73,12 +100,24 @@ fn split_params(value: &str) -> Vec<&str> {
     parts
 }
 
-/// The last non-empty path segment of the URL, percent-decoded.
+/// The last non-empty path segment of the URL, without its path parameters (`;type=i`, `;jsessionid=x`), percent-decoded.
 #[must_use]
 pub fn from_url(url: &Url) -> Option<String> {
-    let segment = url.path_segments()?.rev().find(|s| !s.is_empty())?;
+    let segment = url
+        .path_segments()?
+        .rev()
+        .map(without_path_parameters)
+        .find(|s| !s.is_empty())?;
     let decoded = percent_decode_str(segment).decode_utf8_lossy();
     (!decoded.trim().is_empty()).then(|| decoded.into_owned())
+}
+
+/// A `;` starts parameters only when `=` follows: `Artist;Live.mp3` is a name.
+fn without_path_parameters(segment: &str) -> &str {
+    match segment.split_once(';') {
+        Some((name, parameters)) if parameters.contains('=') => name,
+        _ => segment,
+    }
 }
 
 /// Makes a name safe on both Windows and Linux, and at most 200 bytes long,
@@ -378,6 +417,46 @@ impl Candidates<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_semicolon_in_a_link_starts_parameters_only_before_an_equals_sign() {
+        let name = |path: &str| {
+            from_url(&Url::parse(&format!("https://example.com/{path}")).unwrap()).unwrap()
+        };
+        assert_eq!(name("Artist;Live.mp3"), "Artist;Live.mp3");
+        assert_eq!(name("Artist%3BLive.mp3"), "Artist;Live.mp3");
+        assert_eq!(name("a%3Bb=c.zip"), "a;b=c.zip");
+        assert_eq!(name("a.zip;jsessionid=ABC123"), "a.zip");
+        assert_eq!(name("a.zip;type=i"), "a.zip");
+    }
+
+    #[test]
+    fn a_control_character_never_reaches_a_name() {
+        assert_eq!(sanitize("a\nb\u{7f}.txt"), "a_b_.txt");
+        assert!(!is_safe_name("a\nb.txt"));
+    }
+
+    #[test]
+    fn a_missing_folder_is_reported_rather_than_read_as_a_taken_name() {
+        let dir = wirecatch_test_support::private_dir("free-part-no-folder").unwrap();
+        let error = create_free_part(&dir.join("missing"), "f.bin").unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        dir.remove().unwrap();
+    }
+
+    #[test]
+    fn an_encoded_name_that_does_not_read_is_only_a_last_resort() {
+        let bad = "filename*=UTF-8''caf%E9.pdf";
+        assert_eq!(
+            from_content_disposition(&format!("attachment; filename=\"cafe.pdf\"; {bad}"))
+                .as_deref(),
+            Some("cafe.pdf")
+        );
+        assert_eq!(
+            from_content_disposition(&format!("attachment; {bad}")).as_deref(),
+            Some("caf\u{FFFD}.pdf")
+        );
+    }
 
     #[test]
     fn content_disposition_prefers_extended_filename() {

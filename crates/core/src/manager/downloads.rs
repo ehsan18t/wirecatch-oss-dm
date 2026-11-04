@@ -579,6 +579,14 @@ impl Manager {
             {
                 return Ok(None);
             }
+            // Two captures of one link can both have found no download to join, off the lock.
+            if let Some(handover) = new.kind.handover()
+                && self
+                    .join_unfinished_locked(&mut state, handover, new.fetch.url.as_str())
+                    .is_some()
+            {
+                return Ok(None);
+            }
             if state.claimed.contains(&path) {
                 continue;
             }
@@ -665,6 +673,7 @@ impl Manager {
         // media job's is final.
         let naming = NameChoice {
             settled: media_job.is_some(),
+            writing: false,
             name: wanted.file_name,
             folder: wanted.folder.map(|f| f.to_string_lossy().into_owned()),
         };

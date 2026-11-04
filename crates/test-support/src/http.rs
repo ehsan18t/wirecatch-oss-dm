@@ -134,7 +134,9 @@ impl Seen {
     /// The value of header `name`, if it was sent and is text.
     #[must_use]
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers.get(name).and_then(|v| v.to_str().ok())
+        self.headers
+            .get(name)
+            .and_then(|v| std::str::from_utf8(v.as_bytes()).ok())
     }
 
     /// Whether the path asked for ends in `.` and `extension`, such as `ts`
@@ -637,7 +639,7 @@ fn empty(builder: response::Builder) -> Response {
 
 /// `bytes=a-b` or `bytes=a-` as a half-open range within `len`.
 pub(crate) fn parse_range(headers: &HeaderMap, len: u64) -> Option<(u64, u64)> {
-    let value = headers.get(header::RANGE)?.to_str().ok()?;
+    let value = std::str::from_utf8(headers.get(header::RANGE)?.as_bytes()).ok()?;
     let spec = value.strip_prefix("bytes=")?;
     let (first, last) = spec.split_once('-')?;
     let start: u64 = first.parse().ok()?;
@@ -678,7 +680,7 @@ fn admit(current: &AtomicUsize, limit: usize) -> Option<usize> {
 fn asks_too_much(headers: &HeaderMap, max: u64) -> bool {
     let asked = headers
         .get(header::RANGE)
-        .and_then(|v| v.to_str().ok())
+        .and_then(|v| std::str::from_utf8(v.as_bytes()).ok())
         .and_then(|v| v.strip_prefix("bytes="))
         .and_then(|v| v.split_once('-'))
         .and_then(|(first, last)| Some((first.parse::<u64>().ok()?, last.parse::<u64>().ok()?)));

@@ -220,6 +220,7 @@ fn a_stream_downloads_under_the_rule_of_whoever_chose_it() {
             refresh_delays: Arc::new([]),
             clock: Arc::new(crate::clock::SystemClock),
             reserve: Arc::new(|_: &Path, _| true),
+            placing: Arc::new(|| {}),
             file_work: FileWork::new(),
             taken: Taken::KeepBoth,
         };
@@ -246,6 +247,7 @@ fn a_format_downloads_under_its_network_rule() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -278,6 +280,7 @@ async fn a_job_that_cannot_be_read_never_runs() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -329,6 +332,7 @@ async fn a_finished_stream_is_marked_before_it_is_put_in_place() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -375,6 +379,7 @@ async fn a_finished_video_is_marked_before_it_is_put_in_place() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
@@ -565,6 +570,7 @@ async fn a_small_file_past_its_limit_is_never_written() {
         refresh_delays: Arc::new([]),
         clock: Arc::new(crate::clock::SystemClock),
         reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
         file_work: FileWork::new(),
         taken: Taken::KeepBoth,
     };
