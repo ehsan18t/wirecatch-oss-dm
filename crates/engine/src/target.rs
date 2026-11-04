@@ -17,7 +17,7 @@ use crate::error::{Chain, Error, IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::segment::SegmentTable;
 use crate::state::{LoadError, ResumeState};
-use crate::storage::Finish;
+use crate::storage::{Finish, PartLock};
 use crate::transport::Opened;
 use crate::url::without_password;
 use crate::{ExistingFile, naming, storage};
@@ -54,6 +54,8 @@ pub(crate) struct Target {
     pub state: PathBuf,
     /// What happens to a file already at `file` when the download finishes.
     pub finish: Finish,
+    /// Keeps other runs off the part file until this is dropped, at the end of the run.
+    lock: PartLock,
 }
 
 impl Target {
@@ -149,20 +151,24 @@ impl Destination {
                     resumed_from: kept,
                 });
             }
-            Plan::Planned(target, None) => {
-                // Whatever is left there cannot continue: start over.
-                discard(&target.part);
+            Plan::Planned(mut target, None) => {
+                // Whatever is left there cannot continue: start over. The part file is emptied, not deleted: its lock would stop a new one from being made on Windows.
                 discard(&target.state);
                 storage::create_part(&target.part, file.total)
                     .context(IoAction::CreateFile, &target.part)?;
+                if !target.lock.is_held() {
+                    target.lock = PartLock::open(&target.part).unwrap_or_default();
+                }
                 target
             }
             Plan::FreeName { dir, name } => {
-                let (path, part) = naming::create_free_part(&dir, &name)
+                let (path, part, lock) = naming::create_free_part(&dir, &name)
                     .context(IoAction::CreateFile, &dir.join(&name))?;
-                let target = self::target(path, Finish::FreeName { dir, name });
+                let mut target = self::target(path, Finish::FreeName { dir, name });
+                target.lock = lock;
                 if let Err(e) = storage::size_part(&part, file.total) {
                     drop(part);
+                    target.lock = PartLock::default();
                     // Nothing was downloaded under the name: give it back.
                     discard(&target.part);
                     return Err(e).context(IoAction::CreateFile, &target.part);
@@ -205,12 +211,14 @@ fn target(file: PathBuf, finish: Finish) -> Target {
         part,
         state,
         finish,
+        lock: PartLock::default(),
     }
 }
 
-/// [`Destination::Exact`]: the URL is not compared, only what the server says about the file.
+/// [`Destination::Exact`]: the URL is not compared, only what the server says about the file. The path is the caller's, who owns who runs there, so a held lock does not stop this run.
 fn plan_exact(path: PathBuf, finish: Finish, file: &Described) -> (Target, Option<ResumeState>) {
-    let target = target(path, finish);
+    let mut target = target(path, finish);
+    target.lock = PartLock::open(&target.part).unwrap_or_default();
     let resume = saved_state(&target.state).filter(|saved| continues(saved, &target, file));
     (target, resume)
 }
@@ -225,9 +233,10 @@ enum Plan {
 }
 
 /// [`Destination::InFolder`]: `name`, continuing an earlier run of the same URL
-/// there or starting it over, else the first free name.
+/// there or starting it over, else the first free name. A run still going under
+/// `name` is not an earlier one: it keeps its files.
 fn plan_in_folder(dir: PathBuf, name: String, url: &str, file: &Described) -> Plan {
-    let preferred = target(
+    let mut preferred = target(
         dir.join(&name),
         Finish::FreeName {
             dir: dir.clone(),
@@ -237,7 +246,9 @@ fn plan_in_folder(dir: PathBuf, name: String, url: &str, file: &Described) -> Pl
     if let Some(saved) = saved_state(&preferred.state)
         && same_download(&saved.url, url)
         && !preferred.file.exists()
+        && let Some(lock) = PartLock::open(&preferred.part)
     {
+        preferred.lock = lock;
         if continues(&saved, &preferred, file) {
             return Plan::Planned(preferred, Some(Box::new(saved)));
         }
@@ -360,11 +371,47 @@ mod tests {
         )
         .save(&first.target.state, &abandonment.flag())
         .unwrap();
+        let path = first.target.file.clone();
+        drop(first);
         let again = in_folder(&dir)
             .prepare(url, &file, 1, &abandonment.flag())
             .unwrap();
         assert!(again.resumed);
-        assert_eq!(again.target.file, first.target.file);
+        assert_eq!(again.target.file, path);
+        dir.remove().unwrap();
+    }
+
+    /// A second copy of a command that is still running gets a name of its own, and leaves the first one's files alone.
+    #[test]
+    fn a_running_download_keeps_its_files_from_a_second_copy() {
+        let dir = wirecatch_test_support::private_dir("prepare-second-copy").unwrap();
+        let abandonment = Abandonment::new();
+        let file = ten_bytes();
+        let url = "https://a/f.bin";
+        let first = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        ResumeState::new(
+            url,
+            file.total,
+            file.ranged,
+            &file.validators,
+            first.table.remaining(),
+        )
+        .save(&first.target.state, &abandonment.flag())
+        .unwrap();
+        let second = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        assert!(!second.resumed);
+        assert_eq!(second.target.file, dir.join("f (1).bin"));
+        drop((first, second));
+        let third = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        assert!(third.resumed, "the run that ended is continued");
+        assert_eq!(third.target.file, dir.join("f.bin"));
+        drop(third);
         dir.remove().unwrap();
     }
 

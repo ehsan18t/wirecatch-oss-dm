@@ -334,7 +334,10 @@ pub fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
 /// final path with the open part file. The part file is created only if it is
 /// not there yet (`create_new`), so downloads racing for a name, in this
 /// process or another, each get their own. Blocks on the file system.
-pub(crate) fn create_free_part(dir: &Path, name: &str) -> io::Result<(PathBuf, File)> {
+pub(crate) fn create_free_part(
+    dir: &Path,
+    name: &str,
+) -> io::Result<(PathBuf, File, storage::PartLock)> {
     check_name(name)?;
     let mut candidates = candidates(dir, name);
     loop {
@@ -344,7 +347,12 @@ pub(crate) fn create_free_part(dir: &Path, name: &str) -> io::Result<(PathBuf, F
             continue;
         }
         match OpenOptions::new().write(true).create_new(true).open(&part) {
-            Ok(file) => return Ok((candidate, file)),
+            Ok(file) => {
+                // Held by another run already only if it took this new, empty file for one left behind.
+                if let Some(lock) = storage::PartLock::hold(file.try_clone()?) {
+                    return Ok((candidate, file, lock));
+                }
+            }
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
             Err(e) => return Err(e),
         }
