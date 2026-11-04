@@ -97,7 +97,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 36. Proxy exceptions are accepted that can never match (open)
 37. A typed file name is dropped when the download turns out to be a page (fixed)
 38. Pages yt-dlp describes at the top level, or with several videos, are misread (open)
-39. The CLI strands files under another name when a resume file is damaged or the name is numbered (open)
+39. The CLI strands files under another name when a resume file is damaged or the name is numbered (fixed)
 40. The add-on's state mixes an operation with whether the tools work (open)
 41. A download retried or removed just after it ended is still told as ended (open)
 42. The network guard's local-address rule is written twice (open)

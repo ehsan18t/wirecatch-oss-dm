@@ -44,7 +44,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-36  | fix(settings): read proxy values so they can work  | `fix/usable-proxy-values`        | 36, 115, 220                 | P2       | medium | none         | open   |
 | PR-37  | fix(core): keep a name when a link becomes a page  | `fix/page-keeps-name`            | 37, 175                      | P2       | medium | none         | merged |
 | PR-38  | fix(media): read all of yt-dlp's page description  | `fix/read-whole-page-info`       | 38, 61                       | P2       | medium | none         | open   |
-| PR-39  | fix(engine): reuse part files under other names    | `fix/find-own-part-file`         | 39                           | P2       | medium | none         | open   |
+| PR-39  | fix(engine): reuse part files under other names    | `fix/find-own-part-file`         | 39                           | P2       | medium | none         | merged |
 | PR-40  | fix(core): report whether the add-on works         | `fix/addon-usable`               | 40, 53                       | P2       | medium | none         | open   |
 | PR-41  | fix(desktop): keep notices in step with downloads  | `fix/notices-follow-downloads`   | 41, 123, 232                 | P2       | medium | none         | open   |
 | PR-42  | fix(engine): hold FTP to the local network rule    | `fix/ftp-local-network`          | 42, 43                       | P2       | medium | none         | open   |
@@ -616,7 +616,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/engine`, `crates/cli`, `crates/test-support`
 - **Proof:** `FT-kill.patch` holds the fault harness and 12 tests, 2 of them failing; keep it as a permanent test, as the plan asks. Every `FT-` patch carries its own copy of the harness, so they do not stack. `FT-ranges`, `FT-change`, `FT-large` and `FT-manager-kill` pass today and belong to no item, so PR-120 keeps them.
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo test -p wirecatch-cli --test fault_kill`, `cargo clippy -p wirecatch-engine -p wirecatch-cli -p wirecatch-test-support`, `node scripts/gate.mjs unused-deps`
-- **Status:** open
+- **Status:** merged
 
 ### PR-40 fix(core): report whether the add-on works
 
