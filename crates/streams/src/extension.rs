@@ -2,6 +2,9 @@
 
 #![forbid(unsafe_code)]
 
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+
 use crate::ffmpeg::InputFormat;
 
 /// Extensions a saved video or audio file may have, and the format ffmpeg reads each as: what a page offers to convert is only what ffmpeg may read. A site names the extension of what it serves (through yt-dlp, or in a link); taking that as it is would let a page save `Invoice.exe` (yt-dlp's CVE-2024-38519), so a name with any other extension gets one of these instead.
@@ -55,6 +58,24 @@ pub fn read_as(ext: &str) -> Option<InputFormat> {
 pub fn is_replaceable(ext: &str) -> bool {
     let ext = ext.to_ascii_lowercase();
     is_media(&ext) || STREAM_PARTS.contains(&ext.as_str())
+}
+
+/// `path` with its extension set to `ext`. Only a media, playlist or segment extension is replaced: what follows any other dot is the name's own words (`Dr. Who`).
+#[must_use]
+pub fn with_extension(path: &Path, ext: &str) -> PathBuf {
+    let replaced = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(is_replaceable);
+    let stem = if replaced {
+        path.file_stem()
+    } else {
+        path.file_name()
+    };
+    let mut name = stem.map(OsString::from).unwrap_or_default();
+    name.push(".");
+    name.push(ext);
+    path.with_file_name(name)
 }
 
 #[cfg(test)]

@@ -59,7 +59,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-51  | fix(desktop): correct what download questions say  | `fix/download-questions`         | 54, 122, 231                 | P2       | medium | none         | open   |
 | PR-52  | fix(desktop): give download windows the right fix  | `fix/window-fix-buttons`         | 55, 81                       | P2       | medium | none         | open   |
 | PR-53  | fix(desktop): make settings actions answer back    | `fix/settings-answers`           | 57, 127, 230                 | P2       | medium | none         | open   |
-| PR-54  | fix(core): handle typed names in media downloads   | `fix/typed-media-names`          | 58, 132                      | P2       | medium | none         | open   |
+| PR-54  | fix(core): handle typed names in media downloads   | `fix/typed-media-names`          | 58, 132                      | P2       | medium | none         | merged |
 | PR-55  | fix(desktop): follow an installer through setup    | `fix/installer-lifecycle`        | 59, 72                       | P2       | medium | none         | merged |
 | PR-56  | fix(core): offer updates only when they can work   | `fix/honest-update-offers`       | 60, 185, 186, 187            | P2       | medium | none         | merged |
 | PR-57  | fix(streams): stop trusting bad work folder data   | `fix/work-folder-trust`          | 62, 74                       | P2       | medium | none         | merged |
@@ -797,7 +797,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`, `crates/streams`, `crates/media`, `clippy.toml`
 - **Proof:** `17-3.patch` for item 58. Item 132 has none.
 - **Checks:** `cargo test -p wirecatch-core -p wirecatch-streams -p wirecatch-media`, `cargo clippy -p wirecatch-core -p wirecatch-streams -p wirecatch-media`. The log proposes a `disallowed-methods` entry for `Path::with_extension`; that is lint config, so run `node scripts/gate.mjs rust-lint` once on the final tree.
-- **Status:** open
+- **Status:** merged
 
 ### PR-55 fix(desktop): follow an installer through setup
 

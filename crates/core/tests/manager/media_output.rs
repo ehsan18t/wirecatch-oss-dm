@@ -319,7 +319,7 @@ async fn audio_saved_as_mp3_gets_tags_a_cover_and_subtitle_files() -> TestResult
     assert_eq!(server.requests("fmt/a251.webm"), 1);
     assert_eq!(server.requests("fmt/a140.m4a"), 0);
     // The subtitles, as SubRip next to the MP3.
-    let srt = Path::new(&done.path).with_extension("en.srt");
+    let srt = wirecatch_streams::extension::with_extension(Path::new(&done.path), "en.srt");
     let made = ffmpeg_args(&srt.to_string_lossy())?;
     assert!(has_pair(&made, "-f", "srt"), "{made:?}");
     assert!(has_pair(&made, "-f", "webvtt"), "{made:?}");

@@ -119,7 +119,8 @@ impl RollingFile {
 
     /// The `n`th old file, `n` from 1, or the file being moved on for 0.
     fn old(&self, n: usize) -> PathBuf {
-        self.path.with_extension(format!("{n}.log"))
+        let stem = self.path.file_stem().unwrap_or_default().to_string_lossy();
+        self.path.with_file_name(format!("{stem}.{n}.log"))
     }
 
     /// Deletes the oldest file, moves every other one up, and starts the file anew. The file is moved aside first, so when it cannot be moved (another program holds it) the old files stay as they are.

@@ -16,8 +16,9 @@ use wirecatch_files::whole_file;
 use super::{blocking, discarded};
 use crate::codec::Container;
 use crate::error::{Error, Result};
+use crate::extension::with_extension;
 use crate::ffmpeg::{self, CopyInput, InputFormat};
-use crate::model::{FALLBACK_FORMAT, Outcome, Role, StreamRequest, with_extension};
+use crate::model::{FALLBACK_FORMAT, Outcome, Role, StreamRequest};
 use crate::plan::Plan;
 use crate::workdir::{Appended, WorkDir};
 
@@ -323,7 +324,7 @@ mod tests {
             let from = dir.join("muxed");
             std::fs::write(&from, b"joined").unwrap();
             let moved = move_to_free_name(&from, &output, "mkv").unwrap();
-            assert_eq!(moved, output.with_extension("mkv"));
+            assert_eq!(moved, with_extension(&output, "mkv"));
             assert_eq!(std::fs::read(&moved).unwrap(), b"joined");
         }
         dir.remove().unwrap();
