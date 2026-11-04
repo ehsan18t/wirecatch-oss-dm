@@ -124,7 +124,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-116 | fix(desktop): correct what queue pages say         | `fix/queue-page-text`            | 225, 226, 227                | P3       | small  | none         | open   |
 | PR-117 | fix(desktop): keep a system accent readable        | `fix/system-accent-contrast`     | 229                          | P3       | small  | none         | open   |
 | PR-118 | fix(protocol): correct two language names          | `fix/language-names`             | 234                          | P3       | small  | none         | open   |
-| PR-119 | fix(desktop): retry deleting a roaming data folder | `fix/roaming-folder-retry`       | 243                          | P3       | small  | none         | open   |
+| PR-119 | fix(desktop): retry deleting a roaming data folder | `fix/roaming-folder-retry`       | 243                          | P3       | small  | none         | merged |
 | PR-120 | test(engine): keep the download fault tests        | `test/keep-fault-tests`          | none                         | none     | medium | PR-39        | open   |
 
 ## Lanes
@@ -1577,7 +1577,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/shell/src/host.rs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-shell`, `cargo clippy -p wirecatch-shell`
-- **Status:** open
+- **Status:** merged
 
 ### PR-120 test(engine): keep the download fault tests
 

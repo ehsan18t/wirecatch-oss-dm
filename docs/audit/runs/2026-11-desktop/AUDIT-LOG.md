@@ -267,7 +267,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 240 | Dead code in the product generator                                                                | `33-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 241 | Comments in the checked configuration describe things that are gone                               | `33-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 242 | Two test helpers wait for progress with no deadline                                               | `01-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 243 | A roaming data folder that could not be deleted keeps the list with its cookies                   | `Xdatabase-migrations-4`                                                                           | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 243 | A roaming data folder that could not be deleted keeps the list with its cookies                   | `Xdatabase-migrations-4`                                                                           | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 244 | The `<local>` queue rule is never tested against the real network check                           | `M-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 
 ## Items
@@ -4341,7 +4341,7 @@ P3, small, open.
 
 ### 243. A roaming data folder that could not be deleted keeps the list with its cookies
 
-P3, small, open.
+P3, small, fixed.
 
 `merge` and `copy_then_delete` only log a failed delete, and `needs_move` is false once the local folder holds a list. So a roaming copy stays for good, cookies included. Only a data folder an earlier version left, on Windows.
 
