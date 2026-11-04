@@ -9,6 +9,8 @@ use wirecatch_protocol::app::{
     UiEvent, WhenFileExists,
 };
 
+use wirecatch_core::RemoveFiles;
+
 use crate::common::{Config, Harness, PATIENCE, TestResult, TestServer, test_data};
 
 const NAME: &str = "report.pdf";
@@ -250,5 +252,145 @@ async fn a_file_saved_meanwhile_is_never_replaced() -> TestResult {
     assert_eq!(Path::new(&done.path), dir.join("report (1).pdf"));
     assert_eq!(std::fs::read(&done.path)?, server.data);
     assert_eq!(std::fs::read(dir.join(NAME))?, b"saved by another program");
+    Ok(())
+}
+
+/// One question is open on the file, so a second link with that name never reaches its path.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_open_question_keeps_its_path_from_other_downloads() -> TestResult {
+    let (bytes_one, bytes_two) = (vec![0xAA; LEN], vec![0xBB; LEN]);
+    let one = TestServer::start(bytes_one.clone(), Config::default()).await;
+    let two = TestServer::start(bytes_two.clone(), Config::default()).await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, b"older file")?;
+    let mut events = h.manager.subscribe();
+    let first = add_into(&h, one.url("a").as_str(), &dir).await?;
+    let question = asked(&mut events).await?;
+
+    let second = add_into(&h, two.url("b").as_str(), &dir).await?;
+    let second = h.wait_status(second.id, DownloadStatus::Completed).await;
+    assert_ne!(Path::new(&second.path), dir.join(NAME));
+    assert_eq!(std::fs::read(&second.path)?, bytes_two);
+    assert_eq!(h.manager.pending_file_exists(), vec![question.clone()]);
+
+    h.manager
+        .answer_file_exists(question.id, answer(FileExistsChoice::Replace, false))?;
+    let first = h.wait_status(first.id, DownloadStatus::Completed).await;
+    assert_eq!(Path::new(&first.path), dir.join(NAME));
+    assert_eq!(std::fs::read(dir.join(NAME))?, bytes_one);
+    assert_eq!(std::fs::read(&second.path)?, bytes_two);
+    Ok(())
+}
+
+/// A question that closes gives its path back: the next download with that name is asked.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_closed_question_gives_its_path_back() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let mut events = h.manager.subscribe();
+    let first = add_into(&h, server.url("a").as_str(), &dir).await?;
+    let question = asked(&mut events).await?;
+    h.manager
+        .answer_file_exists(question.id, answer(FileExistsChoice::Cancel, false))?;
+    h.wait_status(first.id, DownloadStatus::Cancelled).await;
+
+    let second = add_into(&h, server.url("b").as_str(), &dir).await?;
+    let question = asked(&mut events).await?;
+    assert_eq!(question.download, second.id);
+    Ok(())
+}
+
+/// Two finished rows on the file in the folder, from Keep the existing file.
+async fn two_rows_of_one_file(
+    h: &Harness,
+    link: &str,
+) -> TestResult<(DownloadSummary, DownloadSummary, PathBuf)> {
+    choose(h, WhenFileExists::KeepExisting)?;
+    let dir = folder_with(h, &same_size())?;
+    let first = add_into(h, link, &dir).await?;
+    let first = h.wait_status(first.id, DownloadStatus::Completed).await;
+    let second = add_into(h, link, &dir).await?;
+    let second = h.wait_status(second.id, DownloadStatus::Completed).await;
+    assert_eq!(first.path, second.path);
+    Ok((first, second, dir.join(NAME)))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn moving_a_file_moves_every_finished_row_of_it() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let (first, second, _) = two_rows_of_one_file(&h, server.url("a").as_str()).await?;
+    let elsewhere = h.root.path().join("elsewhere");
+
+    h.manager
+        .set_download_folder(first.id, &elsewhere.to_string_lossy())
+        .await?;
+
+    let moved = elsewhere.join(NAME);
+    assert_eq!(std::fs::read(&moved)?, same_size());
+    for id in [first.id, second.id] {
+        assert_eq!(Path::new(&h.manager.get_download(id)?.path), moved);
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_file_is_deleted_with_the_last_finished_row_of_it() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let (first, second, file) = two_rows_of_one_file(&h, server.url("a").as_str()).await?;
+
+    h.manager.remove(&[first.id], RemoveFiles::Delete).await?;
+    assert_eq!(std::fs::read(&file)?, same_size());
+
+    h.manager.remove(&[second.id], RemoveFiles::Delete).await?;
+    assert!(!file.exists());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removing_every_row_of_a_file_at_once_deletes_it() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let (first, second, file) = two_rows_of_one_file(&h, server.url("a").as_str()).await?;
+
+    h.manager
+        .remove(&[first.id, second.id], RemoveFiles::Delete)
+        .await?;
+    assert!(!file.exists());
+    Ok(())
+}
+
+/// The file stays for the download about to replace it, as it does for a finished row.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_file_another_download_holds_is_kept_when_a_finished_row_of_it_goes() -> TestResult {
+    let fast = server().await;
+    let slow = TestServer::start(
+        test_data(64 * KIB_USIZE),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(16 * KIB),
+            ..Config::default()
+        },
+    )
+    .await;
+    let h = Harness::new().await?;
+    let dir = h.root.path().join("saved");
+    let finished = add_into(&h, fast.url("a").as_str(), &dir).await?;
+    h.wait_status(finished.id, DownloadStatus::Completed).await;
+    choose(&h, WhenFileExists::Replace)?;
+    let running = add_into(&h, slow.url("b").as_str(), &dir).await?;
+    h.wait_for(running.id, "the first bytes", |r| r.done > 0)
+        .await;
+
+    h.manager
+        .remove(&[finished.id], RemoveFiles::Delete)
+        .await?;
+    assert_eq!(std::fs::read(dir.join(NAME))?, fast.data);
+
+    slow.configure(|c| c.per_connection_bps = None);
+    let done = h.wait_status(running.id, DownloadStatus::Completed).await;
+    assert_eq!(std::fs::read(&done.path)?, slow.data);
     Ok(())
 }
