@@ -433,7 +433,7 @@ impl Manager {
             .find(|entry| unfinished(entry.row.status) && same_address(&entry.row.url, url))?;
         let id = entry.row.id;
         let action = match capture_action(&entry.row) {
-            // Its run has not heard from a server: the browser's copy is still needed.
+            // `Started` says a server has answered, and this run has not heard from one.
             AddAction::Started if !entry.server_answered() => AddAction::Queued,
             action => action,
         };
