@@ -1158,7 +1158,7 @@ async fn a_key_error_names_only_the_host() {
     dir.remove().unwrap();
 }
 
-/// A refused key and a refused segment name their address in the engine's error, whose signature must not reach what a person reads.
+/// A refused key and a refused segment name their address in the engine's error, whose signature, in the query or the path, must not reach what a person reads.
 #[tokio::test]
 async fn a_refused_address_shows_no_signature() {
     let server = FileServer::start().await;
@@ -1172,6 +1172,16 @@ async fn a_refused_address_shows_no_signature() {
             "seg.m3u8",
             "#EXTM3U\n#EXTINF:1,\ngone.ts?token=SECRET\n#EXT-X-ENDLIST\n",
             "gone.ts",
+        ),
+        (
+            "path-key.m3u8",
+            "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"SECRET/k\"\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n",
+            "SECRET/k",
+        ),
+        (
+            "path-seg.m3u8",
+            "#EXTM3U\n#EXTINF:1,\nSECRET/gone.ts\n#EXT-X-ENDLIST\n",
+            "SECRET/gone.ts",
         ),
     ] {
         server.put_typed(name, playlist, MPEGURL);

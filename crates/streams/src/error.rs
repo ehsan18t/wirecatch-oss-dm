@@ -255,8 +255,29 @@ impl std::fmt::Display for Chain<'_> {
             cause = error.source();
         }
         // Shown to a person, and an engine error names the signed address it fetched.
-        f.write_str(&wirecatch_logging::redact::text_for_log(&whole))
+        f.write_str(&sites_only(&wirecatch_logging::redact::text_for_log(
+            &whole,
+        )))
     }
+}
+
+/// `text` with each address cut to its site: a signed address can carry its token in the path, where no pattern tells it from a name.
+fn sites_only(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some((before, after)) = rest.split_once("://") {
+        out.push_str(before);
+        out.push_str("://");
+        let link = after
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '<' | '>' | '`'))
+            .unwrap_or(after.len());
+        let (address, beyond) = after.split_at(link);
+        let site = address.find(['/', '?', '#']).unwrap_or(link);
+        out.push_str(address.get(..site).unwrap_or_default());
+        rest = beyond;
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Where a broken playlist is, in words: ` at <host> (line <n>)`.
@@ -585,6 +606,24 @@ mod tests {
             Error::manifest(&url, ManifestError::AddressesTooLong.into()),
             Error::TooLarge
         ));
+    }
+
+    #[test]
+    fn only_the_site_of_an_address_is_kept() {
+        for (text, kept) in [
+            (
+                "server answered 403 for https://cdn.example:8443/tok/k.bin?a=b",
+                "server answered 403 for https://cdn.example:8443",
+            ),
+            (
+                "it links to \"http://[::1/tok\", which is not valid",
+                "it links to \"http://[::1\", which is not valid",
+            ),
+            ("no address here: /a/b", "no address here: /a/b"),
+            ("ftp://a/x and https://b/y", "ftp://a and https://b"),
+        ] {
+            assert_eq!(sites_only(text), kept);
+        }
     }
 
     #[test]
