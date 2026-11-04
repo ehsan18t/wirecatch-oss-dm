@@ -238,8 +238,12 @@ fn resumes_link(state: &Path, url: &str) -> bool {
         .is_some_and(|saved| normalized_url(&saved) == normalized_url(url))
 }
 
+/// In the form a resume file saves. Not `without_credentials`: the user name tells two accounts' files apart.
 fn normalized_url(url: &str) -> String {
-    Url::parse(url).map_or_else(|_| url.to_string(), |u| u.to_string())
+    Url::parse(url).map_or_else(
+        |_| url.to_string(),
+        |u| wirecatch_engine::url::without_password(&u).to_string(),
+    )
 }
 
 /// Whether nothing is at `path`: no file, part file or resume file. Touches the
@@ -400,6 +404,38 @@ mod tests {
             unique_path(dir.path(), ".bashrc", |p| claimed.contains(p)),
             dir.path().join(".bashrc")
         );
+    }
+
+    /// The engine saves a link without its password; the row keeps it.
+    #[test]
+    fn partial_files_of_a_link_with_a_password_are_taken_up_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.zip");
+        let [part, state] = partial_files(&path);
+        std::fs::write(&part, b"x").unwrap();
+        std::fs::write(
+            &state,
+            br#"{"version":1,"url":"https://ada@example.com/a.zip","total":1,"ranged":true,"remaining":[]}"#,
+        )
+        .unwrap();
+        assert!(left_by(&path, "https://ada:secret@example.com/a.zip"));
+        assert!(!left_by(&path, "https://ada:secret@example.com/other.zip"));
+    }
+
+    /// One account's partial file is not another's, as the engine also holds.
+    #[test]
+    fn partial_files_of_another_account_are_not_taken_up_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("f");
+        let [part, state] = partial_files(&path);
+        std::fs::write(&part, b"x").unwrap();
+        std::fs::write(
+            &state,
+            br#"{"version":1,"url":"ftp://alice@host/f","total":1,"ranged":true,"remaining":[]}"#,
+        )
+        .unwrap();
+        assert!(!left_by(&path, "ftp://bob:pw@host/f"));
+        assert!(left_by(&path, "ftp://alice:pw@host/f"));
     }
 
     #[test]

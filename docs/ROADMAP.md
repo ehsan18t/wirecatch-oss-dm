@@ -109,7 +109,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 44. "This host is under that site" is written four times, and the copies differ (fixed)
 45. ftps and ftpes hosts are read raw by every check (fixed)
 46. An apostrophe in a link leaves its password or signed query in the log (fixed)
-47. A link's password reaches the browser extension, and a crash's partial file is not picked up (open)
+47. A link's password reaches the browser extension, and a crash's partial file is not picked up (fixed)
 48. A finished file with a leftover resume file is downloaded again (fixed)
 49. A title holding % or $ sends yt-dlp's file to another folder or stops it (fixed)
 50. Path parameters such as ;type=i or ;jsessionid end up in the file name (fixed)
