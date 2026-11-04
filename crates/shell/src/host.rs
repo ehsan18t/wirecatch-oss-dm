@@ -206,7 +206,7 @@ fn note_old_folder_left(old: &Path, new: &Path) {
 /// Tries again to delete the old data folder a finished move left behind.
 fn retry_deleting_old_folder(old: &Path, new: &Path) {
     let note = new.join(OLD_FOLDER_LEFT);
-    if !note.is_file() {
+    if old == new || !note.is_file() {
         return;
     }
     match std::fs::remove_dir_all(old) {
@@ -776,7 +776,6 @@ mod tests {
         assert!(!staging_for(&new.join(DATABASE_FILE)).exists());
     }
 
-    /// An existing `to` is refused, never copied into.
     #[test]
     fn an_old_folder_beside_a_list_is_kept_without_a_note_of_a_finished_move() {
         let root = tempfile::tempdir().unwrap();
@@ -838,6 +837,19 @@ mod tests {
         assert_eq!(std::fs::read(new.join(DATABASE_FILE)).unwrap(), b"list");
     }
 
+    /// On Linux the old and new folders are one; a note copied in from Windows names nothing.
+    #[test]
+    fn a_note_never_deletes_the_folder_in_use() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("data");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join(DATABASE_FILE), b"list").unwrap();
+        std::fs::write(folder.join(OLD_FOLDER_LEFT), []).unwrap();
+        assert!(matches!(migrate(&folder, &folder).1, Migration::Nothing));
+        assert_eq!(std::fs::read(folder.join(DATABASE_FILE)).unwrap(), b"list");
+    }
+
+    /// An existing `to` is refused, never copied into.
     #[test]
     fn copying_never_merges_into_an_existing_folder() {
         let root = tempfile::tempdir().unwrap();
