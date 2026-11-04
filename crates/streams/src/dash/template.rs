@@ -11,7 +11,7 @@ use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
 
 use super::{child, children, join};
 use crate::error::{ManifestError, excerpt};
-use crate::plan::{AddressBudget, Piece, check_room, check_room_for};
+use crate::plan::{AddressBudget, MAX_URL_LEN, Piece, check_room, check_room_for};
 
 /// The widest `%0<width>d` a segment address may ask for. Wider than any number, and a hostile manifest cannot make one address huge.
 const MAX_WIDTH: usize = 32;
@@ -291,7 +291,7 @@ pub(crate) fn substitute_into(
 ) -> Result<(), ManifestError> {
     let mut rest = template;
     while let Some(start) = rest.find('$') {
-        out.push_str(&rest[..start]);
+        push_limited(out, &rest[..start])?;
         let after = &rest[start + 1..];
         let end = after.find('$').ok_or(ManifestError::UnclosedTemplate)?;
         let identifier = &after[..end];
@@ -306,7 +306,7 @@ pub(crate) fn substitute_into(
         };
         let value = match name {
             "RepresentationID" if format.is_none() => {
-                out.push_str(id);
+                push_limited(out, id)?;
                 continue;
             }
             "Number" => number,
@@ -332,7 +332,16 @@ pub(crate) fn substitute_into(
         };
         write_number(out, value, width);
     }
-    out.push_str(rest);
+    push_limited(out, rest)
+}
+
+/// Appends `text` to an address being built, refused past [`MAX_URL_LEN`] before anything is held: a template may repeat a long id without end. A number is at most [`MAX_WIDTH`] digits, so it needs no check.
+fn push_limited(out: &mut String, text: &str) -> Result<(), ManifestError> {
+    let len = out.len().saturating_add(text.len());
+    if len > MAX_URL_LEN {
+        return Err(ManifestError::LinkTooLong(len));
+    }
+    out.push_str(text);
     Ok(())
 }
 
@@ -359,6 +368,18 @@ mod tests {
     ) -> Result<String, ManifestError> {
         let mut out = String::new();
         substitute_into(&mut out, template, id, bandwidth, number, time).map(|()| out)
+    }
+
+    #[test]
+    fn an_address_is_refused_as_it_passes_the_limit() {
+        let id = "a".repeat(MAX_URL_LEN / 2);
+        assert_eq!(
+            substitute("$RepresentationID$$RepresentationID$", &id, 0, None, None)
+                .map(|address| address.len()),
+            Ok(MAX_URL_LEN)
+        );
+        let too_long = substitute("$RepresentationID$$RepresentationID$b", &id, 0, None, None);
+        assert_eq!(too_long, Err(ManifestError::LinkTooLong(MAX_URL_LEN + 1)));
     }
 
     #[test]

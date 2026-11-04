@@ -43,7 +43,7 @@ pub struct Counts {
 fn asked(headers: &HeaderMap) -> u64 {
     headers
         .get(RANGE)
-        .and_then(|v| v.to_str().ok())
+        .and_then(|v| std::str::from_utf8(v.as_bytes()).ok())
         .and_then(|v| v.strip_prefix("bytes="))
         .and_then(|v| v.split_once('-'))
         .and_then(|(first, last)| Some((first.parse::<u64>().ok()?, last.parse::<u64>().ok()?)))
@@ -54,7 +54,9 @@ fn asked(headers: &HeaderMap) -> u64 {
 
 /// `bytes=a-b` or `bytes=a-` as a half-open range within `len`.
 fn range(headers: &HeaderMap, len: u64) -> Option<(u64, u64)> {
-    let spec = headers.get(RANGE)?.to_str().ok()?.strip_prefix("bytes=")?;
+    let spec = std::str::from_utf8(headers.get(RANGE)?.as_bytes())
+        .ok()?
+        .strip_prefix("bytes=")?;
     let (first, last) = spec.split_once('-')?;
     let start: u64 = first.parse().ok()?;
     let end = if last.is_empty() {

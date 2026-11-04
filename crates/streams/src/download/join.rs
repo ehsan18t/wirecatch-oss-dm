@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use wirecatch_engine::units::MIB;
 use wirecatch_engine::{FileWork, naming};
+use wirecatch_files::whole_file;
 
 use super::{blocking, discarded};
 use crate::codec::Container;
@@ -58,15 +59,17 @@ pub(super) async fn join(
 
     let bytes = {
         let (saved, work) = (saved.clone(), work.clone());
-        blocking(&request.file_work, move || {
-            let bytes = fs::metadata(&saved)?.len();
-            work.remove()?;
-            Ok(bytes)
-        })
-        .await?
+        blocking(&request.file_work, move || size_then_tidy(&saved, &work)).await?
     };
     info!(path = %saved.display(), bytes, "stream saved");
     Ok(Outcome::Completed { path: saved, bytes })
+}
+
+/// The size of the saved file. The work folder goes too, but failing to delete it stops nothing: the video is saved.
+fn size_then_tidy(saved: &Path, work: &WorkDir) -> io::Result<u64> {
+    let bytes = fs::metadata(saved)?.len();
+    discarded(work.folder(), work.remove());
+    Ok(bytes)
 }
 
 /// Muxes the joined tracks with `program` into the first container that takes
@@ -87,6 +90,12 @@ async fn mux(
     let mut inputs = Vec::with_capacity(tracks.len());
     for (path, role, format) in &tracks {
         let Some(format) = format else {
+            // Kept, a joined track is never fetched again, so the next try would refuse the same bytes.
+            let doomed = path.clone();
+            let deleted = file_work
+                .spawn_blocking(move || fs::remove_file(doomed))
+                .await;
+            discarded(path, deleted.unwrap_or_else(|e| Err(io::Error::other(e))));
             return Err(Error::UnknownFormat { role: *role });
         };
         inputs.push(CopyInput::new(path, *role, *format));
@@ -101,6 +110,8 @@ async fn mux(
             Ok(true) => {
                 let output = output.to_path_buf();
                 let target = blocking(file_work, move || {
+                    // On disk before the parts it came from go, so a power cut cannot lose both.
+                    whole_file::flush(&muxed)?;
                     move_to_free_name(&muxed, &output, extension)
                 })
                 .await?;
@@ -363,6 +374,22 @@ mod tests {
             "as MP4: codec not currently supported in container; as MKV: something else"
         );
         assert_eq!(failure_summary(&[(Container::Mkv, "x".into())]), "x");
+    }
+
+    /// The video is in place by now, so a work folder that cannot be deleted (a scanner holding a file, say) is no failure.
+    #[test]
+    fn a_work_folder_that_cannot_be_deleted_does_not_fail_a_saved_video() {
+        let dir = wirecatch_test_support::private_dir("tidy").unwrap();
+        let saved = dir.join("video.ts");
+        fs::write(&saved, b"saved").unwrap();
+        let work = WorkDir::open(&saved, 1, &[1]).unwrap();
+        let folder = work.track_path(0).parent().unwrap().to_path_buf();
+        work.remove().unwrap();
+        // A file in place of the folder: deleting a folder refuses it on every system.
+        fs::write(&folder, b"not a folder").unwrap();
+        assert!(work.remove().is_err());
+        assert_eq!(size_then_tidy(&saved, &work).unwrap(), 5);
+        dir.remove().unwrap();
     }
 
     fn plan_of(counts: &[usize]) -> Plan {

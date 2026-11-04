@@ -57,7 +57,6 @@ pub fn plan(queues: &[QueueView], downloads: &[DownloadView], global_max: u32) -
         let over = d.activity == Activity::Running && (!queue_room || running_total >= global_max);
         if over {
             out.stop.push(d.id);
-            continue;
         }
         *held.entry(d.queue).or_default() += 1;
         running_total += 1;
@@ -165,6 +164,25 @@ mod tests {
             dl(3, 1, Activity::Waiting),
         ];
         assert_eq!(plan(&queues, &downloads, 10), Plan::default());
+    }
+
+    #[test]
+    fn a_download_told_to_stop_holds_its_slot_this_round() {
+        let downloads = [
+            dl(1, 1, Activity::Running),
+            dl(2, 1, Activity::Running),
+            dl(3, 1, Activity::Waiting),
+        ];
+        let lowered = plan(&[queue(1, 1)], &downloads, 10);
+        assert_eq!(ids(&lowered.stop), vec![2]);
+        assert_eq!(lowered.start, [] as [DownloadId; 0]);
+
+        let mut closing = queue(1, 2);
+        closing.open = false;
+        let downloads = [dl(1, 1, Activity::Running), dl(2, 2, Activity::Waiting)];
+        let closed = plan(&[closing, queue(2, 2)], &downloads, 1);
+        assert_eq!(ids(&closed.stop), vec![1]);
+        assert_eq!(closed.start, [] as [DownloadId; 0]);
     }
 
     #[test]

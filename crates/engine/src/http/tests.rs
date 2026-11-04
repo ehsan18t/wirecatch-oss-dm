@@ -288,6 +288,33 @@ mod tls {
         assert_eq!(plain_requests.load(Ordering::SeqCst), 1);
     }
 
+    /// Where `localhost` answers IPv6 first (Windows does), a client that took the first address would fail: SOCKS4 cannot carry it.
+    #[tokio::test]
+    async fn a_socks4_proxy_is_given_the_ipv4_address_of_a_name() {
+        let (plain, _requests) = start_plain_server().await;
+        let port = plain.port().unwrap();
+        let socks = wirecatch_test_support::proxy::Socks4Server::start().await;
+        let manual = crate::ManualProxies {
+            all: Some(socks.url()),
+            ..Default::default()
+        };
+        let proxies = crate::proxy::Proxies::of(&crate::ProxyChoice::Manual(manual));
+        let client =
+            Clients::with_roots(&DownloadOptions::default(), rustls::RootCertStore::empty())
+                .with_proxies(proxies)
+                .build()
+                .unwrap();
+
+        let request = client.get(format!("http://localhost:{port}/")).send();
+        let response = tokio::time::timeout(wirecatch_test_support::PATIENCE, request)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(response.bytes().await.unwrap(), "ok");
+        assert_eq!(socks.destinations(), [format!("127.0.0.1:{port}")]);
+    }
+
     /// `bytes */10` names no bytes at all: a `206` carrying it is not the
     /// start of the file, whatever offset was asked for.
     #[tokio::test]

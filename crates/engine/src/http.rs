@@ -1,9 +1,11 @@
 //! HTTP requests: client setup, the first request, and ranged requests.
 
+use std::borrow::Cow;
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use base64::Engine as _;
-use percent_encoding::percent_decode_str;
+use percent_encoding::{CONTROLS, percent_decode_str, percent_encode};
 use reqwest::header::{
     ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE, DATE,
     DNT, ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED, LOCATION, PRAGMA, RANGE, REFERER,
@@ -31,6 +33,9 @@ pub(crate) use status::{MAX_REDIRECTS, is_busy};
 /// Longest `Retry-After` the engine waits for; a longer one is cut to this.
 pub(crate) const MAX_RETRY_AFTER: Duration = Duration::from_secs(300);
 
+/// How a signed address past its time answers: `400`, `403` or `410` by storage service, `401` and `404` on some file hosts.
+const EXPIRED_TARGET_STATUSES: [u16; 5] = [400, 401, 403, 404, 410];
+
 /// Headers that carry no credentials, so they may follow a redirect to another
 /// origin. Everything else the caller supplied (cookies, authorization, API keys,
 /// any custom header) is only ever sent to the origin it was given for.
@@ -44,6 +49,15 @@ const PORTABLE_HEADERS: [HeaderName; 7] = [
     REFERER,
     USER_AGENT,
 ];
+
+/// A header value as text: UTF-8 when its bytes are, otherwise Latin-1, which HTTP once specified. `HeaderValue::to_str` refuses any raw byte above 126, which servers send.
+pub(crate) fn header_text(value: &HeaderValue) -> Cow<'_, str> {
+    let bytes = value.as_bytes();
+    match std::str::from_utf8(bytes) {
+        Ok(text) => Cow::Borrowed(text),
+        Err(_) => Cow::Owned(bytes.iter().copied().map(char::from).collect()),
+    }
+}
 
 /// Values that change when the file on the server changes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -59,12 +73,7 @@ pub struct Validators {
 
 impl Validators {
     pub(crate) fn from_headers(headers: &HeaderMap) -> Self {
-        let text = |name| {
-            headers
-                .get(name)
-                .and_then(|v: &HeaderValue| v.to_str().ok())
-                .map(str::to_string)
-        };
+        let text = |name| headers.get(name).map(|v| header_text(v).into_owned());
         let time = |name| httpdate::parse_http_date(text(name)?.trim()).ok();
         let strong_modified = match (time(LAST_MODIFIED), time(DATE)) {
             (Some(modified), Some(sent)) if modified + Duration::from_secs(1) <= sent => {
@@ -145,8 +154,7 @@ impl Failure {
         let retry_after = is_busy(status)
             .then(|| headers.get(RETRY_AFTER))
             .flatten()
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| parse_retry_after(v, SystemTime::now()));
+            .and_then(|v| parse_retry_after(&header_text(v), SystemTime::now()));
         // Only a proxy answers 407; a server asking for a login answers 401.
         let error = if status == StatusCode::PROXY_AUTHENTICATION_REQUIRED {
             Error::ProxyLoginRefused
@@ -229,7 +237,7 @@ impl RequestHeaders {
 /// `https://site.example/page?x` becomes `https://site.example/`, the form
 /// browsers send to other origins. Anything unparsable is dropped.
 fn referer_origin(value: &HeaderValue) -> Option<HeaderValue> {
-    let url = Url::parse(value.to_str().ok()?).ok()?;
+    let url = Url::parse(&header_text(value)).ok()?;
     if !matches!(url.scheme(), "http" | "https") {
         return None;
     }
@@ -270,6 +278,10 @@ pub(crate) struct Session {
     cancel: CancellationToken,
     /// Checked before every request and every redirect hop; see [`Guard`].
     pub guard: Option<Guard>,
+    /// The URL the download was asked for, without credentials.
+    link: Url,
+    /// Where the link leads since its first target refused a request, if it did.
+    renewed_target: Mutex<Option<Url>>,
 }
 
 impl Session {
@@ -283,8 +295,26 @@ impl Session {
             answer_timeout: opts.stall_timeout,
             cancel,
             guard: None,
+            link: url.clone(),
+            renewed_target: Mutex::new(None),
         };
         (session, url)
+    }
+
+    /// Where a TCP request goes: `first`, the target of the first answer, until it is renewed. HTTP/3 keeps `first`: a refusal there gives up HTTP/3 before any renewal.
+    fn target(&self, first: &Url) -> Url {
+        self.renewed_target
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .unwrap_or_else(|| first.clone())
+    }
+
+    fn renew_target(&self, target: &Url) {
+        *self
+            .renewed_target
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(target.clone());
     }
 }
 
@@ -347,10 +377,10 @@ pub(crate) async fn send(
             .into());
         }
         hops += 1;
-        let next = location
-            .to_str()
+        // Raw bytes go back as they came: read as text and encoded again, a Latin-1 path would name another address.
+        let next = url
+            .join(&percent_encode(location.as_bytes(), CONTROLS).to_string())
             .ok()
-            .and_then(|l| url.join(l).ok())
             .filter(|next| matches!(next.scheme(), "http" | "https"))
             .ok_or_else(|| {
                 Error::InvalidUrl(format!(
@@ -425,12 +455,10 @@ async fn probe_range(
     let validators = Validators::from_headers(response_headers);
     let file_name = response_headers
         .get(CONTENT_DISPOSITION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(naming::from_content_disposition);
+        .and_then(|v| naming::from_content_disposition(&header_text(v)));
     let content_type = response_headers
         .get(CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
+        .map(|v| header_text(v).into_owned());
 
     let mut limited_without_size = false;
     let (ranged, total) = match status {
@@ -471,6 +499,8 @@ async fn probe_range(
 /// support the whole body is requested and the first `from` bytes must be
 /// skipped; the returned number says how many. Either way the answer must be
 /// of the same file the first answer was about.
+///
+/// A redirect target that refuses the request may have expired while its link still works, so the link is followed again once, and every later request of the download goes to where it leads now. The answer must still be about the same file.
 pub(crate) async fn fetch(
     client: &Client,
     request: &RequestContext,
@@ -478,8 +508,35 @@ pub(crate) async fn fetch(
     from: u64,
     to: u64,
 ) -> Result<(Response, u64), Failure> {
+    let target = session.target(&request.url);
+    let answer = fetch_from(client, &target, request, session, from, to).await;
+    let refused = matches!(
+        answer,
+        Err(Failure {
+            error: Error::HttpStatus { status, .. },
+            ..
+        }) if EXPIRED_TARGET_STATUSES.contains(&status)
+    );
+    if !refused || target == session.link {
+        return answer;
+    }
+    debug!(target = %target, "the redirect target refused the request; following the link again");
+    let (response, skip) = fetch_from(client, &session.link, request, session, from, to).await?;
+    session.renew_target(response.url());
+    Ok((response, skip))
+}
+
+/// [`fetch`] from `url`.
+async fn fetch_from(
+    client: &Client,
+    url: &Url,
+    request: &RequestContext,
+    session: &Session,
+    from: u64,
+    to: u64,
+) -> Result<(Response, u64), Failure> {
     if !request.ranged {
-        let response = send(client, &request.url, session, None).await?;
+        let response = send(client, url, session, None).await?;
         check_status(&response, StatusCode::OK)?;
         check_whole(
             response.headers(),
@@ -491,7 +548,7 @@ pub(crate) async fn fetch(
     }
 
     let range = RequestRange::new(from, to).ok_or_else(|| empty_range(from, to))?;
-    let response = send(client, &request.url, session, Some(range)).await?;
+    let response = send(client, url, session, Some(range)).await?;
     if response.status() == StatusCode::OK {
         return Err(Error::RangeNotHonored {
             expected: from,

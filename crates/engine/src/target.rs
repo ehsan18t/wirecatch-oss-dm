@@ -17,7 +17,7 @@ use crate::error::{Chain, Error, IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::segment::SegmentTable;
 use crate::state::{LoadError, ResumeState};
-use crate::storage::Finish;
+use crate::storage::{Finish, PartLock};
 use crate::transport::Opened;
 use crate::url::without_password;
 use crate::{ExistingFile, naming, storage};
@@ -32,8 +32,8 @@ pub(crate) enum Destination {
     /// by creating its part file ([`naming::create_free_part`]), so no other
     /// download can take it; nothing is at the final name until the download
     /// finishes, and a file another program saved there meanwhile is never
-    /// replaced ([`Finish::FreeName`]). An earlier run under `name` is
-    /// continued only if it had the same URL.
+    /// replaced ([`Finish::FreeName`]). An earlier run under `name` or a number
+    /// of it is continued only if it had the same URL.
     InFolder { dir: PathBuf, name: String },
 }
 
@@ -54,6 +54,8 @@ pub(crate) struct Target {
     pub state: PathBuf,
     /// What happens to a file already at `file` when the download finishes.
     pub finish: Finish,
+    /// Keeps other runs off the part file until this is dropped, at the end of the run.
+    lock: PartLock,
 }
 
 impl Target {
@@ -149,20 +151,24 @@ impl Destination {
                     resumed_from: kept,
                 });
             }
-            Plan::Planned(target, None) => {
-                // Whatever is left there cannot continue: start over.
-                discard(&target.part);
+            Plan::Planned(mut target, None) => {
+                // Whatever is left there cannot continue: start over. The part file is emptied, not deleted: its lock would stop a new one from being made on Windows.
                 discard(&target.state);
                 storage::create_part(&target.part, file.total)
                     .context(IoAction::CreateFile, &target.part)?;
+                if !target.lock.is_held() {
+                    target.lock = PartLock::open(&target.part).unwrap_or_default();
+                }
                 target
             }
             Plan::FreeName { dir, name } => {
-                let (path, part) = naming::create_free_part(&dir, &name)
+                let (path, part, lock) = naming::create_free_part(&dir, &name)
                     .context(IoAction::CreateFile, &dir.join(&name))?;
-                let target = self::target(path, Finish::FreeName { dir, name });
+                let mut target = self::target(path, Finish::FreeName { dir, name });
+                target.lock = lock;
                 if let Err(e) = storage::size_part(&part, file.total) {
                     drop(part);
+                    target.lock = PartLock::default();
                     // Nothing was downloaded under the name: give it back.
                     discard(&target.part);
                     return Err(e).context(IoAction::CreateFile, &target.part);
@@ -205,12 +211,14 @@ fn target(file: PathBuf, finish: Finish) -> Target {
         part,
         state,
         finish,
+        lock: PartLock::default(),
     }
 }
 
-/// [`Destination::Exact`]: the URL is not compared, only what the server says about the file.
+/// [`Destination::Exact`]: the URL is not compared, only what the server says about the file. The path is the caller's, who owns who runs there, so a held lock does not stop this run.
 fn plan_exact(path: PathBuf, finish: Finish, file: &Described) -> (Target, Option<ResumeState>) {
-    let target = target(path, finish);
+    let mut target = target(path, finish);
+    target.lock = PartLock::open(&target.part).unwrap_or_default();
     let resume = saved_state(&target.state).filter(|saved| continues(saved, &target, file));
     (target, resume)
 }
@@ -224,29 +232,85 @@ enum Plan {
     FreeName { dir: PathBuf, name: String },
 }
 
-/// [`Destination::InFolder`]: `name`, continuing an earlier run of the same URL
-/// there or starting it over, else the first free name.
+/// [`Destination::InFolder`]: an earlier run of the same URL, under `name` or a
+/// number of it, continued or started over; else what a run left that nothing
+/// can continue; else the first free name. A run still going is not an earlier
+/// one, and another link's partial file is that link's: both keep their files.
 fn plan_in_folder(dir: PathBuf, name: String, url: &str, file: &Described) -> Plan {
-    let preferred = target(
-        dir.join(&name),
-        Finish::FreeName {
-            dir: dir.clone(),
-            name: name.clone(),
-        },
-    );
-    if let Some(saved) = saved_state(&preferred.state)
-        && same_download(&saved.url, url)
-        && !preferred.file.exists()
-    {
-        if continues(&saved, &preferred, file) {
-            return Plan::Planned(preferred, Some(Box::new(saved)));
+    let found = {
+        let mut names = naming::candidates(&dir, &name);
+        let mut free_in_a_row = 0;
+        loop {
+            let finish = Finish::FreeName {
+                dir: dir.clone(),
+                name: name.clone(),
+            };
+            match look_at_name(target(names.next_name(), finish), url, file) {
+                Look::Take(plan) => break Some(plan),
+                Look::Free if free_in_a_row == FREE_NAMES_TO_LOOK_PAST => break None,
+                Look::Free => free_in_a_row += 1,
+                Look::Occupied => free_in_a_row = 0,
+            }
         }
-        // Same download, but it cannot continue (file changed, or no range support):
-        // start over under the same name.
-        info!("previous partial download cannot be resumed; starting over");
-        return Plan::Planned(preferred, None);
+    };
+    found.unwrap_or(Plan::FreeName { dir, name })
+}
+
+/// How many free names a look for an earlier run goes on past: the file that made an earlier run take a number may have been moved since. Bounded, so a run further along than this starts anew.
+const FREE_NAMES_TO_LOOK_PAST: usize = 8;
+
+/// What one name of a download into a folder offers it.
+enum Look {
+    Take(Plan),
+    /// Nothing is there.
+    Free,
+    Occupied,
+}
+
+fn look_at_name(mut candidate: Target, url: &str, file: &Described) -> Look {
+    let finished = candidate.file.exists();
+    let Some(saved) = saved_state(&candidate.state) else {
+        return look_past_lost_state(candidate, finished);
+    };
+    if finished || !same_download(&saved.url, url) {
+        return Look::Occupied;
     }
-    Plan::FreeName { dir, name }
+    let Some(lock) = PartLock::open(&candidate.part) else {
+        return Look::Occupied;
+    };
+    candidate.lock = lock;
+    if continues(&saved, &candidate, file) {
+        return Look::Take(Plan::Planned(candidate, Some(Box::new(saved))));
+    }
+    // Same download, but it cannot continue (file changed, or no range support):
+    // start over under the same name.
+    info!("previous partial download cannot be resumed; starting over");
+    Look::Take(Plan::Planned(candidate, None))
+}
+
+/// A name whose resume file is missing or unreadable. A part file there that no
+/// run holds can never be continued, so it is taken over; without a real lock
+/// (a file system that has none) it may be a run's that has yet to save.
+fn look_past_lost_state(mut candidate: Target, finished: bool) -> Look {
+    let part_exists = std::fs::symlink_metadata(&candidate.part).is_ok();
+    if finished {
+        return Look::Occupied;
+    }
+    if !part_exists {
+        return if std::fs::symlink_metadata(&candidate.state).is_ok() {
+            Look::Take(Plan::Planned(candidate, None))
+        } else {
+            Look::Free
+        };
+    }
+    match PartLock::open(&candidate.part) {
+        Some(lock) if lock.is_held() => {
+            info!(part = %candidate.part.display(), "a part file without a usable resume file; starting over");
+            candidate.lock = lock;
+            Look::Take(Plan::Planned(candidate, None))
+        }
+        _ => Look::Occupied,
+    }
 }
 
 /// Whether `saved` can continue as the download `file` describes, with its part
@@ -360,11 +424,115 @@ mod tests {
         )
         .save(&first.target.state, &abandonment.flag())
         .unwrap();
+        let path = first.target.file.clone();
+        drop(first);
         let again = in_folder(&dir)
             .prepare(url, &file, 1, &abandonment.flag())
             .unwrap();
         assert!(again.resumed);
-        assert_eq!(again.target.file, first.target.file);
+        assert_eq!(again.target.file, path);
+        dir.remove().unwrap();
+    }
+
+    fn save_state(prepared: &Prepared, url: &str, file: &Described, abandonment: &Abandonment) {
+        ResumeState::new(
+            url,
+            file.total,
+            file.ranged,
+            &file.validators,
+            prepared.table.remaining(),
+        )
+        .save(&prepared.target.state, &abandonment.flag())
+        .unwrap();
+    }
+
+    #[test]
+    fn another_links_partial_file_is_left_alone() {
+        let dir = wirecatch_test_support::private_dir("prepare-other-link").unwrap();
+        let abandonment = Abandonment::new();
+        let file = ten_bytes();
+        let theirs = in_folder(&dir)
+            .prepare("https://a/f.bin", &file, 1, &abandonment.flag())
+            .unwrap();
+        save_state(&theirs, "https://a/f.bin", &file, &abandonment);
+        let (part, state) = (theirs.target.part.clone(), theirs.target.state.clone());
+        drop(theirs);
+        std::fs::write(&part, b"their data").unwrap();
+        let saved = std::fs::read(&state).unwrap();
+
+        let ours = in_folder(&dir)
+            .prepare("https://b/f.bin", &file, 1, &abandonment.flag())
+            .unwrap();
+        assert_eq!(ours.target.file, dir.join("f (1).bin"));
+        assert_eq!(std::fs::read(&part).unwrap(), b"their data");
+        assert_eq!(std::fs::read(&state).unwrap(), saved);
+        drop(ours);
+        dir.remove().unwrap();
+    }
+
+    /// The first run took a number because the name was taken: the next run finds it there.
+    #[test]
+    fn a_run_under_a_numbered_name_is_continued() {
+        let dir = wirecatch_test_support::private_dir("prepare-numbered").unwrap();
+        std::fs::write(dir.join("f.bin"), b"someone else's").unwrap();
+        let abandonment = Abandonment::new();
+        let file = ten_bytes();
+        let url = "https://a/f.bin";
+        let first = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        assert_eq!(first.target.file, dir.join("f (1).bin"));
+        save_state(&first, url, &file, &abandonment);
+        drop(first);
+        let again = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        assert!(again.resumed);
+        assert_eq!(again.target.file, dir.join("f (1).bin"));
+        drop(again);
+
+        // The file that took the name moved away: the run is still under its number.
+        std::fs::remove_file(dir.join("f.bin")).unwrap();
+        let moved = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        assert!(moved.resumed);
+        assert_eq!(moved.target.file, dir.join("f (1).bin"));
+        drop(moved);
+        dir.remove().unwrap();
+    }
+
+    /// A second copy of a command that is still running gets a name of its own, and leaves the first one's files alone.
+    #[test]
+    fn a_running_download_keeps_its_files_from_a_second_copy() {
+        let dir = wirecatch_test_support::private_dir("prepare-second-copy").unwrap();
+        let abandonment = Abandonment::new();
+        let file = ten_bytes();
+        let url = "https://a/f.bin";
+        let first = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        ResumeState::new(
+            url,
+            file.total,
+            file.ranged,
+            &file.validators,
+            first.table.remaining(),
+        )
+        .save(&first.target.state, &abandonment.flag())
+        .unwrap();
+        let second = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        assert!(!second.resumed);
+        assert_eq!(second.target.file, dir.join("f (1).bin"));
+        drop((first, second));
+        let third = in_folder(&dir)
+            .prepare(url, &file, 1, &abandonment.flag())
+            .unwrap();
+        assert!(third.resumed, "the run that ended is continued");
+        assert_eq!(third.target.file, dir.join("f.bin"));
+        drop(third);
         dir.remove().unwrap();
     }
 
