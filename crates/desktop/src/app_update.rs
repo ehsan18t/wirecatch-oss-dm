@@ -52,6 +52,17 @@ pub struct Updates {
     pub stage: Stage,
     /// The person put the banner aside for this version.
     pub dismissed: Option<String>,
+    /// The choice of pre-release versions changed during a check, whose answer is out of date.
+    look_again: bool,
+}
+
+impl Updates {
+    /// The choice of pre-release versions changed. Whether to look now; during a check, the look
+    /// comes when that check ends.
+    fn choice_changed(&mut self) -> bool {
+        self.look_again = matches!(self.stage, Stage::Checking);
+        !self.look_again
+    }
 }
 
 struct Global_(Entity<Updates>);
@@ -90,6 +101,7 @@ pub fn start(library: &Entity<Library>, cx: &mut App) {
     let updates = cx.new(|_| Updates {
         stage: Stage::Unchecked,
         dismissed: None,
+        look_again: false,
     });
     cx.set_global(Global_(updates));
     if !set_up() {
@@ -102,7 +114,9 @@ pub fn start(library: &Entity<Library>, cx: &mut App) {
             .settings
             .as_ref()
             .map(|s| s.prerelease_updates);
-        if changed(&mut prereleases, chosen) {
+        if changed(&mut prereleases, chosen)
+            && entity(cx).update(cx, |updates, _| updates.choice_changed())
+        {
             check(false, cx);
         }
     })
@@ -168,7 +182,12 @@ pub fn check(quiet: bool, cx: &mut App) {
             }
             Err(message) => Stage::Failed(message),
         };
-        cx.update(|cx| set(stage, cx));
+        cx.update(|cx| {
+            set(stage, cx);
+            if entity(cx).update(cx, |updates, _| std::mem::take(&mut updates.look_again)) {
+                check(false, cx);
+            }
+        });
     })
     .detach();
 }
@@ -290,6 +309,20 @@ fn answered<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_choice_changed_during_a_check_waits_for_it_to_end() {
+        let mut updates = Updates {
+            stage: Stage::Checking,
+            dismissed: None,
+            look_again: false,
+        };
+        assert!(!updates.choice_changed());
+        assert!(updates.look_again);
+        updates.stage = Stage::Current;
+        assert!(updates.choice_changed());
+        assert!(!updates.look_again);
+    }
 
     #[test]
     fn only_a_later_different_choice_is_a_change() {
