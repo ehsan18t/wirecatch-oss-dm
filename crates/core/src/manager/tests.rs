@@ -359,6 +359,53 @@ async fn names_are_checked_on_disk_without_holding_the_lock() {
     state.assert_consistent();
 }
 
+#[tokio::test]
+async fn a_path_another_download_took_is_not_replaced_kept_or_asked_about() {
+    use super::state::{Found, OnExisting};
+    use wirecatch_protocol::app::WhenFileExists;
+
+    let (manager, dir) = manager_with(
+        |_| Box::pin(std::future::pending()),
+        Duration::from_secs(1),
+        DEFAULT_CAPTURE_TIMEOUT,
+    )
+    .await;
+    let holder = manager
+        .add_download(add_request("https://example.com/a.bin"))
+        .await
+        .unwrap();
+    let late = manager
+        .add_download(add_request("https://example.com/b.bin"))
+        .await
+        .unwrap();
+    let mut guard = manager.lock();
+    let state = &mut *guard;
+    let path = dir.path().join("taken.bin");
+    assert!(state.claimed.reserve(&path, holder));
+    let late_path = state.downloads[&late].path().to_path_buf();
+
+    for then in [
+        WhenFileExists::Replace,
+        WhenFileExists::KeepExisting,
+        WhenFileExists::Ask,
+    ] {
+        let found = Found {
+            path: path.clone(),
+            size: 1,
+            saved_at: None,
+            then,
+            same: true,
+        };
+        manager.on_found(state, late, &found);
+        let entry = &state.downloads[&late];
+        assert_eq!(entry.path(), late_path, "{then:?}");
+        assert_eq!(entry.on_existing, Some(OnExisting::KeepBoth), "{then:?}");
+        assert_eq!(entry.row.status, DownloadStatus::Queued, "{then:?}");
+        assert_eq!(state.claimed.holder(&path), Some(holder), "{then:?}");
+        assert!(state.file_exists.is_empty(), "{then:?}");
+    }
+}
+
 /// A client sending a list longer than the list may hold is answered while the manager's lock is held elsewhere: the list is refused before the lock is taken, so such a request never waits for it nor holds it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_list_of_sites_too_long_is_refused_without_the_lock() {
@@ -425,11 +472,11 @@ async fn only_reservations_may_exceed_the_downloads_paths() {
     .await;
     let mut state = manager.lock();
     let path = dir.path().join("moment.bin");
-    state.claimed.reserve(&path);
+    assert!(state.claimed.reserve(&path, DownloadId(1)));
     state.assert_consistent();
-    state.claimed.release(&path);
+    state.claimed.release(&path, DownloadId(1));
     state.assert_consistent();
-    state.claimed.insert(&path);
+    state.claimed.insert(&path, DownloadId(1));
     let leaked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         state.assert_consistent();
     }));

@@ -6,13 +6,13 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 
 | PR     | Title                                              | Branch                           | Items                        | Severity | Effort | Depends on   | Status |
 | ------ | -------------------------------------------------- | -------------------------------- | ---------------------------- | -------- | ------ | ------------ | ------ |
-| PR-01  | fix(core): stop two downloads writing one file     | `fix/one-writer-per-file`        | 1                            | P0       | large  | none         | open   |
-| PR-02  | fix(core): keep folders when removing a download   | `fix/remove-keeps-folders`       | 2                            | P0       | small  | none         | open   |
-| PR-03  | fix(engine): stop calling a cut-off file complete  | `fix/cut-off-unknown-size`       | 3                            | P0       | small  | none         | open   |
+| PR-01  | fix(core): stop two downloads writing one file     | `fix/one-writer-per-file`        | 1                            | P0       | large  | none         | merged |
+| PR-02  | fix(core): keep folders when removing a download   | `fix/remove-keeps-folders`       | 2                            | P0       | small  | none         | merged |
+| PR-03  | fix(engine): stop calling a cut-off file complete  | `fix/cut-off-unknown-size`       | 3                            | P0       | small  | none         | merged |
 | PR-04  | fix(core): save whether a row wrote its own file   | `fix/row-wrote-its-file`         | 4                            | P1       | medium | none         | open   |
 | PR-05  | fix(core): keep a browser capture that asks first  | `fix/capture-meets-ask`          | 5                            | P1       | small  | none         | open   |
-| PR-06  | fix(desktop): trust APPIMAGE only for this program | `fix/appimage-variable`          | 6                            | P1       | small  | none         | open   |
-| PR-07  | fix(desktop): name the official online sources     | `fix/official-sources`           | 7                            | P1       | small  | PR-06        | open   |
+| PR-06  | fix(desktop): trust APPIMAGE only for this program | `fix/appimage-variable`          | 6                            | P1       | small  | none         | merged |
+| PR-07  | fix(desktop): name the official online sources     | `fix/official-sources`           | 7                            | P1       | small  | PR-06        | merged |
 | PR-08  | fix(core): copy moved files under a temporary name | `fix/staged-move-copy`           | 8, 104                       | P2       | medium | none         | open   |
 | PR-09  | fix(core): wait for moves before quitting          | `fix/quit-waits-for-moves`       | 9                            | P1       | medium | PR-08        | open   |
 | PR-10  | fix(desktop): end the process at the quit limit    | `fix/quit-limit-ends-process`    | 10                           | P1       | medium | PR-08, PR-09 | open   |
@@ -24,9 +24,9 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-16  | fix(streams): limit the qualities of HLS playlists | `fix/limit-hls-qualities`        | 16                           | P1       | small  | none         | open   |
 | PR-17  | fix(streams): refuse segments that are not media   | `fix/check-segment-bodies`       | 17                           | P1       | medium | none         | open   |
 | PR-18  | fix(ipc): refuse a lower-integrity stand-in pipe   | `fix/pipe-integrity-check`       | 18                           | P1       | medium | none         | open   |
-| PR-19  | fix(streams): limit DASH addresses while building  | `fix/dash-address-limit`         | 19                           | P1       | small  | none         | open   |
+| PR-19  | fix(streams): limit DASH addresses while building  | `fix/dash-address-limit`         | 19                           | P1       | small  | none         | merged |
 | PR-20  | fix(engine): fail a run when a flush fails         | `fix/keep-failed-flush`          | 20                           | P1       | small  | none         | open   |
-| PR-21  | fix(engine): renew an expired redirect target      | `fix/expired-redirect-target`    | 21                           | P1       | small  | none         | open   |
+| PR-21  | fix(engine): renew an expired redirect target      | `fix/expired-redirect-target`    | 21                           | P1       | small  | none         | merged |
 | PR-22  | fix(store): open a list with an unreadable value   | `fix/unreadable-value-opens`     | 22                           | P1       | medium | none         | open   |
 | PR-23  | fix(media): offer only sources ffmpeg can read     | `fix/offer-readable-sources`     | 23                           | P1       | medium | none         | open   |
 | PR-24  | fix(media): fetch cookie-gated formats with yt-dlp | `fix/cookie-formats-ytdlp`       | 24                           | P1       | medium | none         | open   |
@@ -158,7 +158,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`
 - **Proof:** `05-1.patch`. `Xconcurrency-1.patch` shows the same bug but sleeps a fixed time, against ENGINEERING section 7, so do not keep it.
 - **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-02 fix(core): keep folders when removing a download
 
@@ -170,7 +170,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`, `clippy.toml`
 - **Proof:** `Xsecurity-path-handling-1.patch`
 - **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`. The log proposes a `disallowed-methods` entry for `std::fs::remove_dir_all`, allowed only in the helper for work folders; that is lint config, so run `node scripts/gate.mjs rust-lint` once on the final tree.
-- **Status:** open
+- **Status:** merged
 
 ### PR-03 fix(engine): stop calling a cut-off file complete
 
@@ -182,7 +182,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/engine`
 - **Proof:** `Xsecond-review-disk-writes-2.patch`, 2 tests in a new file.
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo clippy -p wirecatch-engine`
-- **Status:** open
+- **Status:** merged
 
 ### PR-04 fix(core): save whether a row wrote its own file
 
@@ -218,7 +218,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/shell`, `crates/desktop/src/lifecycle.rs`
 - **Proof:** `12-1.patch`, 2 tests. The `updates.rs` one is Unix only and has not been run.
 - **Checks:** `cargo test -p wirecatch-shell`, `cargo clippy -p wirecatch-shell -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-07 fix(desktop): name the official online sources
 
@@ -230,7 +230,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/backend.rs`
 - **Proof:** `Xfeature-behaviour-1.patch`, `Xfeature-behaviour-2.patch`. Each test reads `backend.rs` as text rather than building the desktop crate.
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`. The log proposes a test on `config()` that every official source is set.
-- **Status:** open
+- **Status:** merged
 
 ### PR-08 fix(core): copy moved files under a temporary name
 
@@ -376,7 +376,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/streams`
 - **Proof:** `14-1.patch`
 - **Checks:** `cargo test -p wirecatch-streams`, `cargo clippy -p wirecatch-streams`
-- **Status:** open
+- **Status:** merged
 
 ### PR-20 fix(engine): fail a run when a flush fails
 
@@ -400,7 +400,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/engine`
 - **Proof:** `02-1.patch`
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo clippy -p wirecatch-engine`
-- **Status:** open
+- **Status:** merged
 
 ### PR-22 fix(store): open a list with an unreadable value
 

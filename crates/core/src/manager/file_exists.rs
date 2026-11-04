@@ -54,6 +54,7 @@ impl Manager {
             .ok_or(CoreError::ConfirmationNotFound(id))?;
         self.emit(UiEvent::ConfirmationClosed { id });
         let download = question.download;
+        state.claimed.release(&path, download);
         if !state
             .downloads
             .get(&download)
@@ -67,10 +68,7 @@ impl Manager {
                 WhenFileExists::Replace
             }
             FileExistsChoice::KeepBoth => {
-                if let Some(entry) = state.downloads.get_mut(&download) {
-                    entry.on_existing = Some(OnExisting::KeepBoth);
-                    entry.row.status = DownloadStatus::Queued;
-                }
+                keep_both(state, download);
                 WhenFileExists::KeepBoth
             }
             FileExistsChoice::Cancel => {
@@ -92,20 +90,19 @@ impl Manager {
     }
 
     /// The finished file at `path`, where download `id` would save, unless the setting or the person
-    /// already chose to keep both. Touches the file system, so the lock is held only around it.
+    /// already chose to keep both or another download holds the path. Touches the file system, so
+    /// the lock is held only around it.
     pub(super) fn found_existing(
         &self,
         id: DownloadId,
         remote: &ServerAnswer,
         path: &Path,
-        provisional: &Path,
     ) -> Option<Found> {
         let (then, history) = {
             let state = self.lock();
             let entry = state.downloads.get(&id)?;
             let then = state.settings.when_file_exists;
-            let taken_by_another =
-                !naming::same_path(path, provisional) && state.claimed.contains(path);
+            let taken_by_another = state.claimed.held_by_another(path, id);
             if then == WhenFileExists::KeepBoth
                 || entry.on_existing == Some(OnExisting::KeepBoth)
                 || taken_by_another
@@ -137,25 +134,29 @@ impl Manager {
     }
 
     /// Does what the setting says with the duplicate `found` of download `id`, whose run has
-    /// just stopped for it.
+    /// just stopped for it. Another download that took the path since then keeps it, whatever
+    /// the setting says.
     pub(super) fn on_found(&self, state: &mut State, id: DownloadId, found: &Found) {
+        if state.claimed.held_by_another(&found.path, id) {
+            keep_both(state, id);
+            return;
+        }
         match found.then {
             WhenFileExists::Replace => replace_at(state, id, &found.path),
             WhenFileExists::KeepExisting => keep_existing(state, id, found, self.now()),
             WhenFileExists::Ask => self.ask(state, id, found),
             // Never found: a keep-both setting takes the next free name before asking.
-            WhenFileExists::KeepBoth => {
-                if let Some(entry) = state.downloads.get_mut(&id) {
-                    entry.on_existing = Some(OnExisting::KeepBoth);
-                    entry.row.status = DownloadStatus::Queued;
-                }
-            }
+            WhenFileExists::KeepBoth => keep_both(state, id),
         }
     }
 
-    /// Pauses download `id` and asks what to do about `found`.
+    /// Pauses download `id` and asks what to do about `found`. The path stays reserved for it until the question closes, so an answer of Replace never meets another download there.
     fn ask(&self, state: &mut State, id: DownloadId, found: &Found) {
         self.close_file_exists(state, id);
+        if !state.claimed.reserve(&found.path, id) {
+            keep_both(state, id);
+            return;
+        }
         let Some(entry) = state.downloads.get_mut(&id) else {
             return;
         };
@@ -194,7 +195,9 @@ impl Manager {
             .map(|asked| asked.question.id)
             .collect();
         for question in closed {
-            state.file_exists.remove(&question);
+            if let Some(asked) = state.file_exists.remove(&question) {
+                state.claimed.release(&asked.path, id);
+            }
             self.emit(UiEvent::ConfirmationClosed { id: question });
         }
     }
@@ -237,6 +240,14 @@ impl Manager {
     }
 }
 
+/// Download `id` goes back in line and takes the next free name when the server answers.
+fn keep_both(state: &mut State, id: DownloadId) {
+    if let Some(entry) = state.downloads.get_mut(&id) {
+        entry.on_existing = Some(OnExisting::KeepBoth);
+        entry.row.status = DownloadStatus::Queued;
+    }
+}
+
 /// Download `id` runs again at `path`, over the file there.
 fn replace_at(state: &mut State, id: DownloadId, path: &Path) {
     let category = wirecatch_settings::category_of(&state.settings, &naming::file_name_of(path));
@@ -249,8 +260,8 @@ fn replace_at(state: &mut State, id: DownloadId, path: &Path) {
     entry.on_existing = Some(OnExisting::Replace);
     entry.row.status = DownloadStatus::Queued;
     if !naming::same_path(&provisional, path) {
-        state.claimed.remove(&provisional);
-        state.claimed.insert(path);
+        state.claimed.remove(&provisional, id);
+        state.claimed.insert(path, id);
     }
 }
 
@@ -262,7 +273,7 @@ fn keep_existing(state: &mut State, id: DownloadId, found: &Found, now: UnixMill
     let provisional = entry.path().to_path_buf();
     settle_at(entry, &found.path);
     mark_completed(entry, found.size, now);
-    state.claimed.remove(&provisional);
+    state.claimed.remove(&provisional, id);
 }
 
 fn settle_at(entry: &mut super::state::Entry, path: &Path) {
