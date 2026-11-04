@@ -151,7 +151,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 90. A valid short partial answer is waited out as a failed connection (open)
 91. CLI speed and ETA are wrong for half a minute after a resume (fixed)
 92. A command-line argument that is not valid Unicode aborts the app (fixed)
-93. Uninstalling while the app runs leaves its program behind (open)
+93. Uninstalling while the app runs leaves its program behind (fixed)
 94. The AppImage's library folder leaks into programs the app starts (open)
 95. A video's title is cut at its last slash (fixed)
 96. yt-dlp progress goes backwards for a video with separate audio (open)
