@@ -229,26 +229,34 @@ impl Manager {
         // have stopped they stay stopped.
         {
             let mut state = self.lock_open()?;
-            for id in ids {
-                if let Ok(entry) = state.entry_mut(*id) {
-                    entry.hold.begin_remove();
-                }
-            }
+            self.begin_removing(&mut state, ids);
         }
         let (manager, ids) = (self.clone(), ids.to_vec());
         self.to_the_end(async move { manager.finish_removing(&ids, completed).await })
             .await
     }
 
-    /// Removes downloads already marked as being removed, once their runs and moves have ended.
-    async fn finish_removing(&self, ids: &[DownloadId], completed: RemoveFiles) -> Result<()> {
+    /// Marks downloads as being removed and takes them off the saved list, so a quit before the removal ends cannot bring them back. Their files stay until [`finish_removing`](Self::finish_removing): a crash before then leaves files with no download.
+    pub(super) fn begin_removing(&self, state: &mut State, ids: &[DownloadId]) {
+        let mut begun = Vec::new();
+        for id in ids {
+            if let Ok(entry) = state.entry_mut(*id) {
+                entry.hold.begin_remove();
+                begun.push(*id);
+            }
+        }
+        self.inner.store.delete_downloads(begun);
+    }
+
+    /// Stops the runs of downloads being removed and waits for those and for their moves.
+    async fn wait_until_stopped(&self, ids: &[DownloadId]) {
         // The engine must close its files before they can be deleted, and a move to
         // another folder must finish so the right files are deleted. Each wait for a
         // run is bounded by the stop timeout; a move takes as long as the disk.
         loop {
             let mut waits = Vec::new();
             {
-                let mut state = self.lock_open()?;
+                let mut state = self.lock();
                 for id in ids {
                     let Some(entry) = state.downloads.get_mut(id).filter(|e| e.hold.is_removing())
                     else {
@@ -268,12 +276,18 @@ impl Manager {
                 done.cancelled().await;
             }
         }
+    }
+
+    /// Removes downloads already marked as being removed, once their runs and moves have ended. Carries on after a shutdown began, as the removal was already promised.
+    async fn finish_removing(&self, ids: &[DownloadId], completed: RemoveFiles) -> Result<()> {
+        self.wait_until_stopped(ids).await;
 
         let mut finished_files = Vec::new();
         let mut partials = Vec::new();
         let mut removed = Vec::new();
+        let mut leaving = Vec::new();
         {
-            let mut state = self.lock_open()?;
+            let mut state = self.lock();
             for id in ids {
                 if !state
                     .downloads
@@ -286,6 +300,7 @@ impl Manager {
                 let Some(entry) = state.remove_entry(*id) else {
                     continue;
                 };
+                leaving.push((entry.path().to_path_buf(), *id));
                 if entry.row.status == DownloadStatus::Completed {
                     if completed == RemoveFiles::Delete {
                         finished_files.push(entry.path().to_path_buf());
@@ -301,13 +316,20 @@ impl Manager {
                 return Ok(());
             }
             finished_files = files_no_row_lists(&state, finished_files);
-            self.inner.store.delete_downloads(removed.clone());
+            // After that check, which reads a claim as another download's. A new download's name must not meet files about to be deleted.
+            leaving.retain(|(path, id)| state.claimed.reserve(path, *id));
             self.emit(UiEvent::DownloadsRemoved(removed));
             // Their queue may be done now; the ticker says so.
             self.inner.rows_changed.notify_one();
             self.reconcile(&mut state);
         }
+        #[cfg(test)]
+        let before_deleting = self.before_deleting();
         self.blocking(move || {
+            #[cfg(test)]
+            if let Some(hook) = before_deleting {
+                hook();
+            }
             // Never as a folder: by now a folder may have taken the finished file's name.
             for file in &finished_files {
                 wirecatch_files::discard::file(file);
@@ -317,23 +339,21 @@ impl Manager {
             }
             Ok(())
         })
-        .await
+        .await?;
+        let mut state = self.lock();
+        for (path, id) in &leaving {
+            state.claimed.release(path, *id);
+        }
+        Ok(())
     }
 
     /// Hides downloads at once, as [`remove`](Self::remove) does, and finishes
     /// removing them in the background.
     pub(super) fn remove_in_background(&self, ids: Vec<DownloadId>) {
-        {
-            let mut state = self.lock();
-            for id in &ids {
-                if let Ok(entry) = state.entry_mut(*id) {
-                    entry.hold.begin_remove();
-                }
-            }
-        }
+        self.begin_removing(&mut self.lock(), &ids);
         let manager = self.clone();
         self.spawn(async move {
-            if let Err(e) = manager.remove(&ids, RemoveFiles::Keep).await {
+            if let Err(e) = manager.finish_removing(&ids, RemoveFiles::Keep).await {
                 warn!(error = %e, "could not finish removing a download");
             }
         });
@@ -462,6 +482,15 @@ impl Manager {
             let Ok(entry) = state.entry_mut(id) else {
                 continue;
             };
+            // Not a choice about this download: one it is already stopping by stays.
+            if entry
+                .run
+                .as_ref()
+                .and_then(|run| run.stop)
+                .is_some_and(Stop::is_users_choice)
+            {
+                continue;
+            }
             if !self.stop_run(entry, Stop::Pause) && entry.row.status == DownloadStatus::Queued {
                 entry.row.status = DownloadStatus::Paused;
                 self.save(&mut state, id);
@@ -570,6 +599,14 @@ impl Manager {
             {
                 return Ok(None);
             }
+            // Two captures of one link can both have found no download to join, off the lock.
+            if let Some(handover) = new.kind.handover()
+                && self
+                    .join_unfinished_locked(&mut state, handover, new.fetch.url.as_str())
+                    .is_some()
+            {
+                return Ok(None);
+            }
             if state.claimed.contains(&path) {
                 continue;
             }
@@ -656,6 +693,7 @@ impl Manager {
         // media job's is final.
         let naming = NameChoice {
             settled: media_job.is_some(),
+            writing: false,
             name: wanted.file_name,
             folder: wanted.folder.map(|f| f.to_string_lossy().into_owned()),
         };
@@ -672,6 +710,7 @@ impl Manager {
             cleanup: None,
             hold: Hold::Free,
             on_existing: None,
+            offered_file: false,
             stranded: None,
             media_job,
             video_check,

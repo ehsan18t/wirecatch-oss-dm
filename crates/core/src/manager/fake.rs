@@ -29,6 +29,8 @@ pub(super) type FakeEngine = Arc<dyn Fn(FakeRun) -> EngineFuture + Send + Sync>;
 
 /// Moves one file in place of the real move, so a test can make a move fail.
 pub(super) type FakeMover = Arc<dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync>;
+/// Called before a removal deletes its files.
+pub(super) type BeforeDeleting = Arc<dyn Fn() + Send + Sync>;
 
 /// Starts `fake` on one run.
 pub(super) fn run(
@@ -62,6 +64,15 @@ impl Manager {
     /// The stand-in file mover, if a test set one.
     pub(super) fn fake_mover(&self) -> Option<FakeMover> {
         slot(&self.inner.fake_mover).clone()
+    }
+
+    /// Calls `hook` before a removal deletes its files.
+    pub(super) fn use_before_deleting(&self, hook: BeforeDeleting) {
+        *slot(&self.inner.before_deleting) = Some(hook);
+    }
+
+    pub(super) fn before_deleting(&self) -> Option<BeforeDeleting> {
+        slot(&self.inner.before_deleting).clone()
     }
 
     /// Moves every later download's files with `mover` instead of the file

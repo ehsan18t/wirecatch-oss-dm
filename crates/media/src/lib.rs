@@ -245,7 +245,12 @@ pub fn file_name(title: &str, ext: &str) -> String {
     let ext = safe_ext(Some(ext), Content::Unknown);
     let title = title.trim();
     let title = if title.is_empty() { "video" } else { title };
-    let mut stem: String = title.chars().take(MAX_TITLE_CHARS).collect();
+    // A title is no path: `sanitize` keeps only what follows the last slash of a server's name.
+    let mut stem: String = title
+        .chars()
+        .take(MAX_TITLE_CHARS)
+        .map(|c| if matches!(c, '/' | '\\') { '-' } else { c })
+        .collect();
     stem = wirecatch_engine::naming::sanitize(&stem);
     let stem = stem.trim_end_matches('.');
     format!("{stem}.{ext}")
@@ -254,6 +259,19 @@ pub fn file_name(title: &str, ext: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_title_keeps_what_is_before_its_slash() {
+        assert_eq!(
+            file_name("AC/DC - Thunderstruck", "mp4"),
+            "AC-DC - Thunderstruck.mp4"
+        );
+        assert_eq!(file_name("Episode 1\\10", "mp4"), "Episode 1-10.mp4");
+        assert_ne!(
+            file_name("Episode 1/10", "mp4"),
+            file_name("Episode 2/10", "mp4")
+        );
+    }
 
     #[test]
     fn only_media_extensions_are_kept() {
