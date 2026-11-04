@@ -27,7 +27,7 @@ fn remove_socket_folder(endpoint: &wirecatch_ipc::Endpoint) -> std::io::Result<(
     let folder = Path::new(endpoint.as_os_str())
         .parent()
         .ok_or(std::io::ErrorKind::InvalidInput)?;
-    std::fs::remove_dir_all(folder)
+    wirecatch_test_support::remove_test_folder(folder)
 }
 
 // A client may see other folders than the app (a browser from an app store, or a snap or

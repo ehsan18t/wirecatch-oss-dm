@@ -481,7 +481,10 @@ mod tests {
     #[cfg(unix)]
     fn remove_socket_folder(folders: &Folders) {
         let endpoint = wirecatch_ipc::endpoint_in(Channel::Dev, folders).unwrap();
-        std::fs::remove_dir_all(Path::new(endpoint.as_os_str()).parent().unwrap()).unwrap();
+        wirecatch_test_support::remove_test_folder(
+            Path::new(endpoint.as_os_str()).parent().unwrap(),
+        )
+        .unwrap();
     }
 
     /// Starts an in-process "app" that listens at a keyed endpoint after a delay, writing

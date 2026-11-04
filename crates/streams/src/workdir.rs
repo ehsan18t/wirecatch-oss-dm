@@ -273,7 +273,7 @@ fn cut_torn_line(log: &Path, text: &str) -> io::Result<()> {
 }
 
 fn remove_dir(dir: &Path) -> io::Result<()> {
-    match fs::remove_dir_all(dir) {
+    match wirecatch_files::remove_own_folder(dir) {
         Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
         _ => Ok(()),
     }
