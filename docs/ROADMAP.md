@@ -102,7 +102,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 41. A download retried or removed just after it ended is still told as ended (open)
 42. The network guard's local-address rule is written twice (open)
 43. The local network rule does not apply to FTP (open)
-44. "This host is under that site" is written four times, and the copies differ (open)
+44. "This host is under that site" is written four times, and the copies differ (fixed)
 45. ftps and ftpes hosts are read raw by every check (open)
 46. An apostrophe in a link leaves its password or signed query in the log (open)
 47. A link's password reaches the browser extension, and a crash's partial file is not picked up (open)
