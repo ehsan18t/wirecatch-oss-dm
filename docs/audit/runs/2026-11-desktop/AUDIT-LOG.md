@@ -141,8 +141,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 114 | A page address that is not a web address counts as on the person's network                        | `10-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 115 | A Windows socks= proxy fails on sites whose first address is IPv6                                 | `09-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 116 | The proxy form says a saved password is kept, then forgets it                                     | `27-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 117 | A download that fails to start leaves its slot empty                                              | `04-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 118 | A closing queue's slots are given away at once, exceeding the limit                               | `18-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 117 | A download that fails to start leaves its slot empty                                              | `04-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
+| 118 | A closing queue's slots are given away at once, exceeding the limit                               | `18-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 119 | Regular expressions differing only in case count as one rule                                      | `18-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 120 | Enter in the delete-queue field closes the question and deletes nothing                           | `27-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 121 | Saving a queue changes its speed limit                                                            | `27-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
@@ -2266,7 +2266,7 @@ The placeholder is fixed in `ProxyForm::new`, while `merge_password` answers `No
 
 ### 117. A download that fails to start leaves its slot empty
 
-P2, small, open.
+P2, small, fixed.
 
 `reconcile` computes `plan.start` once, and `fail_to_start` only saves. So a download that fails to start leaves its slot empty and an unscheduled queue stays stopped until an unrelated command.
 
@@ -2282,7 +2282,7 @@ P2, small, open.
 
 ### 118. A closing queue's slots are given away at once, exceeding the limit
 
-P2, small, open.
+P2, small, fixed.
 
 A `Running` download found `over` is pushed to `stop` without counting, so the fill loop sees the room free, against `plan`'s doc. It lasts until the stops finish, at most 5 s. It also holds for a lowered queue limit, which the finding says it does not.
 
