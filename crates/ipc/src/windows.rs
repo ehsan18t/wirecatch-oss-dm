@@ -60,6 +60,9 @@ const BUSY_RETRY: Duration = Duration::from_millis(10);
 /// digits each, every one after a dash.
 const MAX_SID_STRING_UNITS: usize = 4 + 15 + 15 * 11;
 
+/// Who holds a pipe that refuses the user: the user's own app lets them in.
+const SHUT_OUT_BY: &str = "an account that does not let you in";
+
 /// The integrity level of a normal, unelevated program: also what Windows takes an object with no label to be.
 const MEDIUM_INTEGRITY: u32 = 8192;
 
@@ -681,10 +684,7 @@ fn classify_taken(endpoint: &Endpoint, user: &Sid, probe: io::Result<Sid>) -> Ip
             endpoint: endpoint.to_string(),
         },
         Ok(owner) => taken_by(owner.to_string()),
-        // Our own pipe always lets us in, so a refusal means someone else's.
-        Err(e) if is_os_error(&e, ERROR_ACCESS_DENIED) => {
-            taken_by("an account that does not let you in".into())
-        }
+        Err(e) if is_os_error(&e, ERROR_ACCESS_DENIED) => taken_by(SHUT_OUT_BY.into()),
         // Every instance is busy serving a client: without the key's lock, our own app under
         // load is the likely case, and either way the name is not ours to take.
         Err(e) if is_os_error(&e, ERROR_PIPE_BUSY) => IpcError::AlreadyInUse {
@@ -801,10 +801,22 @@ pub(crate) async fn connect(endpoint: &Endpoint, expected: &Sid) -> Result<Conne
             .open(endpoint.as_os_str());
         match opened {
             Ok(client) => break client,
-            Err(e) if is_os_error(&e, ERROR_PIPE_BUSY) && started.elapsed() < BUSY_WAIT => {
+            Err(e) if is_os_error(&e, ERROR_PIPE_BUSY) => {
+                if started.elapsed() >= BUSY_WAIT {
+                    return Err(IpcError::EndpointBusy {
+                        endpoint: endpoint.to_string(),
+                    });
+                }
                 // No completion event exists for "an instance became free"
                 // (WaitNamedPipe blocks a thread), so wait briefly and retry.
                 sleep(BUSY_RETRY).await;
+            }
+            Err(e) if is_os_error(&e, ERROR_ACCESS_DENIED) => {
+                return Err(IpcError::WrongOwner {
+                    endpoint: endpoint.to_string(),
+                    expected: expected.to_string(),
+                    actual: SHUT_OUT_BY.into(),
+                });
             }
             Err(e) if is_os_error(&e, ERROR_FILE_NOT_FOUND) => {
                 return Err(IpcError::NotRunning {
@@ -2053,6 +2065,29 @@ mod tests {
         let _holder = PipeListener::bind(&seen).unwrap();
         let listener = crate::Listener::bind_keyed(Channel::Dev, &folders).unwrap();
         assert_ne!(listener.endpoint(), &seen);
+    }
+
+    #[tokio::test]
+    async fn the_connector_counts_a_pipe_that_shuts_it_out_as_someone_elses() {
+        let endpoint = unique_endpoint();
+        let user = Sid::current_user().unwrap();
+        let foreign = OwnerOnlyDescriptor::from_sddl(&format!("O:{user}D:P(A;;FA;;;SY)")).unwrap();
+        let _squatter = create_instance(&endpoint, &foreign, true).unwrap();
+        let err = connect(&endpoint, &user).await.unwrap_err();
+        assert!(matches!(err, IpcError::WrongOwner { .. }), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn the_connector_reports_a_pipe_with_every_instance_busy() {
+        let endpoint = unique_endpoint();
+        let user = Sid::current_user().unwrap();
+        let _squatter = limited_pipe(&endpoint, 1);
+        let _client = ClientOptions::new()
+            .security_qos_flags(SECURITY_IDENTIFICATION)
+            .open(endpoint.as_os_str())
+            .unwrap();
+        let err = connect(&endpoint, &user).await.unwrap_err();
+        assert!(matches!(err, IpcError::EndpointBusy { .. }), "{err:?}");
     }
 
     #[tokio::test]

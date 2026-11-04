@@ -39,11 +39,13 @@ impl HandOverError {
     }
 
     /// A new connection may fare better: the running copy may be restarting its connection, or
-    /// another client holds the one pipe instance waiting, and a busy pipe reports `Io`.
+    /// another client holds the one pipe instance waiting.
     fn may_pass(&self) -> bool {
         matches!(
             self,
-            Self::Closed | Self::Frame(_) | Self::Reach(IpcError::Io { .. })
+            Self::Closed
+                | Self::Frame(_)
+                | Self::Reach(IpcError::Io { .. } | IpcError::EndpointBusy { .. })
         )
     }
 }

@@ -286,7 +286,9 @@ impl Unavailable {
             IpcError::LowerRightsServer { .. } => Self::new(
                 "Wirecatch's connection point was made by a program running with fewer rights, so nothing was sent to it. That program may be trying to intercept your downloads. Open Wirecatch, then try again.",
             ),
-            IpcError::NoEndpointKey { .. } => Self::new(error.to_string()),
+            IpcError::NoEndpointKey { .. }
+            | IpcError::BadEndpointKey { .. }
+            | IpcError::EndpointBusy { .. } => Self::new(error.to_string()),
             IpcError::UnsafeDirectory { .. } => Self::new(format!(
                 "Wirecatch could not be reached safely, so nothing was sent to it. {error}"
             )),
@@ -310,7 +312,7 @@ pub(crate) enum Start {
 ///
 /// `endpoint` is asked for the endpoint at every attempt: its key may not exist until the
 /// app has started, and the app writes a new one when its name is taken (D41.6).
-/// No key yet counts as "not running"; if there is still none when the budget runs out, the error says so, with its advice for a browser that sees other folders than the app. A server owned by another user, or made by a program with fewer rights, counts as not running too, since the app takes a new name when it starts and finds its name held. Nothing is ever sent to it, and any other error than these is never retried and never causes a launch.
+/// No key yet counts as "not running"; if there is still none when the budget runs out, the error says so, with its advice for a browser that sees other folders than the app. A name someone else holds counts as not running too, since the app takes a new name when it starts and finds its name held, and so does a damaged key, which the app replaces. Nothing is ever sent to such a server, and any other error than these is never retried and never causes a launch.
 pub(crate) async fn connect_or_launch(
     endpoint: &dyn Fn() -> Result<Endpoint, IpcError>,
     launcher: &dyn Launcher,
@@ -372,9 +374,15 @@ async fn attempt(
         Ok(Ok(conn)) => Attempt::Connected(conn),
         Ok(Err(IpcError::NotRunning { .. })) => Attempt::NotYet(None),
         Ok(Err(error @ IpcError::NoEndpointKey { .. })) => Attempt::NotYet(Some(error)),
-        Ok(Err(error @ (IpcError::WrongOwner { .. } | IpcError::LowerRightsServer { .. }))) => {
+        Ok(Err(
+            error @ (IpcError::WrongOwner { .. }
+            | IpcError::LowerRightsServer { .. }
+            | IpcError::EndpointBusy { .. }
+            | IpcError::UnsafeDirectory { .. }
+            | IpcError::BadEndpointKey { .. }),
+        )) => {
             tracing::warn!(
-                "{error} Nothing was sent; starting Wirecatch, which moves to a new name."
+                "{error} Nothing was sent; starting Wirecatch, which moves to a new name or replaces a damaged key."
             );
             Attempt::NotYet(Some(error))
         }
@@ -584,6 +592,59 @@ mod tests {
         assert_eq!(&byte, b"n");
         #[cfg(unix)]
         remove_socket_folder(&folders);
+    }
+
+    #[tokio::test]
+    async fn a_name_that_stays_busy_starts_the_app_and_reads_the_new_key() {
+        assert_held_name_starts_the_app_and_reads_the_new_key(|| IpcError::EndpointBusy {
+            endpoint: "the keyed name".into(),
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn a_socket_folder_someone_else_made_starts_the_app_and_reads_the_new_key() {
+        assert_held_name_starts_the_app_and_reads_the_new_key(|| IpcError::UnsafeDirectory {
+            path: "the socket's folder".into(),
+            reason: "another account owns it".into(),
+            fix: "Restart the computer.".into(),
+        })
+        .await;
+    }
+
+    // The listener replaces a damaged key under its lock; a client only reads it (D41.4).
+    #[tokio::test]
+    async fn a_damaged_key_starts_the_app_that_replaces_it() {
+        let dir = private_dir("bridge-damaged-key").unwrap();
+        let folders = keyed_in(dir.path().to_path_buf());
+        std::fs::write(dir.path().join("endpoint-key"), "not a key").unwrap();
+        let launches = Arc::new(Mutex::new(0));
+        let app = DelayedKeyedApp {
+            folders: folders.clone(),
+            delay: Duration::ZERO,
+            launches: launches.clone(),
+        };
+        let find = || wirecatch_ipc::endpoint_in(Channel::Dev, &folders);
+        let mut conn = connect_or_launch(&find, &app, PATIENCE, Start::IfNeeded)
+            .await
+            .unwrap();
+        assert_eq!(*launches.lock().unwrap(), 1);
+        conn.write_all(b"d").await.unwrap();
+        let mut byte = [0u8; 1];
+        conn.read_exact(&mut byte).await.unwrap();
+        assert_eq!(&byte, b"d");
+        #[cfg(unix)]
+        remove_socket_folder(&folders);
+    }
+
+    #[test]
+    fn a_bad_key_gives_only_its_own_advice() {
+        let bad = IpcError::BadEndpointKey {
+            path: "endpoint-key".into(),
+            reason: "it does not hold a key Wirecatch wrote".into(),
+        };
+        let message = Unavailable::from_ipc(&bad).message;
+        assert_eq!(message, bad.to_string());
     }
 
     #[tokio::test]
