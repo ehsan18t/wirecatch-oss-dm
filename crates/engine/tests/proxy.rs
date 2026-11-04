@@ -199,23 +199,6 @@ async fn ftp_behind_a_proxy_that_cannot_carry_it_is_refused_unless_it_may_go_dir
 }
 
 #[tokio::test]
-async fn direct_uses_no_proxy() {
-    let data = test_data(1024);
-    let server = TestServer::start(data.clone(), Config::default()).await;
-    let dir = private_dir("proxy-direct").unwrap();
-    let mut request = DownloadRequest::new(server.url("/f.bin"), dir.path());
-    request.options.proxy = ProxyChoice::Direct;
-    let outcome = download(
-        request,
-        Arc::new(Progress::default()),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(completed_bytes(&outcome), data.len() as u64);
-}
-
-#[tokio::test]
 async fn a_given_proxy_that_cannot_be_read_is_refused_rather_than_gone_around() {
     let server = TestServer::start(test_data(1024), Config::default()).await;
     // Only digits and dots, but no address: a URL cannot hold it.

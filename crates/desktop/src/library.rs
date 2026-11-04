@@ -33,12 +33,44 @@ pub struct Library {
     pub addons: Vec<AddonInfo>,
     pub settings: Option<AppSettings>,
     pub revisions: Revisions,
+    order: OrderReading,
     /// Why the download list could not be saved, until it saves again or is dismissed.
     pub storage_problem: Option<String>,
     /// What the person must know about this start, such as a damaged list set aside.
     pub startup_notices: Vec<StartupNotice>,
     /// The questions the core asks about browser downloads, oldest first.
     pub open_questions: Vec<QuestionId>,
+}
+
+/// Reading the manager's order, one read at a time.
+#[derive(Default)]
+struct OrderReading {
+    running: bool,
+    /// The order changed during the read, so what it answers may be out of date.
+    stale: bool,
+}
+
+impl OrderReading {
+    /// Whether a read may start; with one running, that read's answer is out of date.
+    fn begin(&mut self) -> bool {
+        if self.running {
+            self.stale = true;
+            return false;
+        }
+        self.running = true;
+        true
+    }
+
+    /// The order changed here without a read being asked for.
+    fn changed(&mut self) {
+        self.stale = self.running;
+    }
+
+    /// Ends the read. Whether its answer holds; otherwise the order must be read again.
+    fn end(&mut self) -> bool {
+        self.running = false;
+        !std::mem::take(&mut self.stale)
+    }
 }
 
 /// Moves as each part changes. Every change notifies, up to ten times a second while downloads
@@ -96,6 +128,7 @@ impl Library {
             addons: Vec::new(),
             settings: None,
             revisions: Revisions::default(),
+            order: OrderReading::default(),
             storage_problem: None,
             startup_notices: Vec::new(),
             open_questions: Vec::new(),
@@ -198,14 +231,26 @@ impl Library {
                 self.open_questions.retain(|open| *open != id);
             }
             UiEvent::DownloadsChanged(rows) => {
+                let mut moved = false;
                 for row in rows {
-                    self.downloads.put(row);
+                    moved |= self.downloads.put(row);
+                }
+                if moved {
+                    self.read_order(cx);
                 }
             }
             UiEvent::DownloadsRemoved(ids) => self.downloads.remove(&ids),
             UiEvent::QueuesChanged(queues) => {
+                let same_order = self
+                    .queues
+                    .iter()
+                    .map(|queue| queue.id)
+                    .eq(queues.iter().map(|queue| queue.id));
                 self.queues = queues;
                 self.revisions.queues += 1;
+                if !same_order {
+                    self.read_order(cx);
+                }
             }
             UiEvent::ProxyServersChanged(proxies) => {
                 self.proxies = proxies;
@@ -230,9 +275,33 @@ impl Library {
         cx.notify();
     }
 
+    /// Reads the manager's order of the downloads, which no event carries.
+    fn read_order(&mut self, cx: &mut Context<'_, Self>) {
+        if !self.order.begin() {
+            return;
+        }
+        let read = Backend::run(cx, |manager| async move {
+            let rows = api::list_downloads(&manager);
+            rows.iter().map(|row| row.id).collect::<Vec<DownloadId>>()
+        });
+        cx.spawn(async move |this, cx| {
+            let read = read.await;
+            _ = this.update(cx, |library, cx| {
+                if !library.order.end() {
+                    library.read_order(cx);
+                } else if let Ok(Ok(ids)) = read {
+                    library.downloads.take_order(&ids);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
     /// Puts `ids_in_order` in that order among the places they hold, once the manager took the
     /// same order: no event carries it.
     pub fn reorder(&mut self, ids_in_order: &[DownloadId]) {
+        self.order.changed();
         self.downloads.reorder(ids_in_order);
     }
 
@@ -255,6 +324,27 @@ fn asked_question(event: &UiEvent) -> Option<QuestionId> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_one_order_read_runs_and_a_second_ask_voids_its_answer() {
+        let mut order = OrderReading::default();
+        assert!(order.begin());
+        assert!(!order.begin());
+        assert!(!order.end(), "read again");
+        assert!(order.begin());
+        assert!(order.end(), "nothing changed during this one");
+    }
+
+    #[test]
+    fn a_reorder_during_a_read_voids_its_answer() {
+        let mut order = OrderReading::default();
+        order.changed();
+        assert!(order.begin());
+        assert!(order.end(), "the reorder came before the read");
+        assert!(order.begin());
+        order.changed();
+        assert!(!order.end());
+    }
     use gpui_kit::TestAppContext;
     use wirecatch_protocol::app::DownloadStatus;
     use wirecatch_test_support::downloads::download;

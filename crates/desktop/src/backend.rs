@@ -133,10 +133,27 @@ where
     F: FnOnce(Manager) -> Fut + Send + 'static,
     Fut: Future<Output = Result<(), ProtocolError>> + Send + 'static,
 {
+    command_saying(window, cx, work, |()| None);
+}
+
+/// [`command`], with what `say` makes of the answer shown as a notification too.
+pub fn command_saying<T, F, Fut>(
+    window: AnyWindowHandle,
+    cx: &mut App,
+    work: F,
+    say: impl FnOnce(T) -> Option<String> + 'static,
+) where
+    T: Send + 'static,
+    F: FnOnce(Manager) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T, ProtocolError>> + Send + 'static,
+{
     let done = Backend::run(cx, work);
     cx.spawn(async move |cx| {
         let refused = match done.await {
-            Ok(Ok(Ok(()))) => return,
+            Ok(Ok(Ok(answer))) => match say(answer) {
+                Some(said) => said,
+                None => return,
+            },
             Ok(Ok(Err(error))) => error.message,
             Ok(Err(unopened)) => unopened.reason.message,
             Err(e) => {
