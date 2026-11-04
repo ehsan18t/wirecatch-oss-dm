@@ -901,9 +901,7 @@ const LOCK_WAIT: Duration = Duration::from_secs(2);
 
 /// The lock file of the list at `database`: its path with `.lock` after it.
 fn lock_path(database: &Path) -> PathBuf {
-    let mut path = database.as_os_str().to_owned();
-    path.push(".lock");
-    PathBuf::from(path)
+    with_suffix(database, ".lock")
 }
 
 /// Takes the list's lock, which makes this the one manager of the list in `dir` for as long
@@ -1042,6 +1040,18 @@ fn set_aside(path: &Path) -> Result<PathBuf> {
     Ok(kept_at)
 }
 
+/// How long ago the Unix time in milliseconds that `text` starts with was, as [`set_aside`] writes it.
+fn age_of_stamp(text: &str) -> Option<Duration> {
+    let digits = text
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(text.len());
+    let stamp = Duration::from_millis(text.get(..digits)?.parse().ok()?);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    Some(now.saturating_sub(stamp))
+}
+
 /// Deletes damaged lists set aside and copies taken before an upgrade once they are older than [`KEEP_COPIES_FOR`], with their side files. Failures are only logged: an old copy left behind never stops a start.
 fn remove_old_copies(path: &Path) {
     let (Some(dir), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str())) else {
@@ -1065,12 +1075,15 @@ fn remove_old_copies(path: &Path) {
         {
             continue;
         }
-        let old = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|modified| modified.elapsed().ok())
-            .is_some_and(|age| age > KEEP_COPIES_FOR);
+        // The stamp, not the modified time: moving a list aside keeps when it was last written.
+        let age = file_name
+            .strip_prefix(&copy_prefixes[0])
+            .and_then(age_of_stamp)
+            .or_else(|| {
+                let modified = entry.metadata().and_then(|m| m.modified()).ok()?;
+                modified.elapsed().ok()
+            });
+        let old = age.is_some_and(|age| age > KEEP_COPIES_FOR);
         if old && let Err(e) = std::fs::remove_file(entry.path()) {
             warn!(error = %e, file = file_name, "could not delete an old copy of the download list");
         }
@@ -2415,7 +2428,13 @@ mod tests {
         let old_damaged = copy(&format!("{DAMAGED_SUFFIX}1"), Some(old));
         let old_journal = copy(&format!("{DAMAGED_SUFFIX}1-wal"), Some(old));
         let old_backup = copy(&format!("{BACKUP_SUFFIX}1"), Some(old));
-        let recent = copy(&format!("{DAMAGED_SUFFIX}2"), None);
+        let stamp_now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let recent = copy(&format!("{DAMAGED_SUFFIX}{stamp_now}"), None);
+        // The stamp says when it was set aside, whatever a later touch of the file says.
+        let old_touched = copy(&format!("{DAMAGED_SUFFIX}1-shm"), None);
         let unrelated = dir.path().join("notes.txt");
         std::fs::File::create(&unrelated)
             .unwrap()
@@ -2424,7 +2443,7 @@ mod tests {
 
         Store::open(dir.path(), ignore_failures()).unwrap();
 
-        for gone in [old_damaged, old_journal, old_backup] {
+        for gone in [old_damaged, old_journal, old_backup, old_touched] {
             assert!(!gone.exists(), "{}", gone.display());
         }
         assert!(recent.exists());
@@ -3123,6 +3142,55 @@ mod tests {
             snapshot.recoveries.as_slice(),
             [Recovery::Damaged { .. }]
         ));
+        store.close(PATIENCE).await;
+    }
+
+    /// Last written over a month ago and found damaged today: a month counts from today.
+    #[tokio::test]
+    async fn a_list_set_aside_survives_the_next_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join(DATABASE_FILE);
+        std::fs::write(&db, vec![b'x'; 8192]).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&db)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - KEEP_COPIES_FOR - Duration::from_secs(60))
+            .unwrap();
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let Some(Recovery::Damaged { kept_at }) = snapshot.recoveries.first() else {
+            panic!("not set aside: {:?}", snapshot.recoveries);
+        };
+        assert!(kept_at.exists(), "kept at the first start");
+        store.close(PATIENCE).await;
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        store.close(PATIENCE).await;
+        assert!(kept_at.exists(), "deleted at the very next start");
+    }
+
+    /// What the oldest stored settings still in `samples` read as, after every migration.
+    #[tokio::test]
+    async fn the_oldest_settings_survive_every_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        for sql in &MIGRATIONS[..4] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 4).unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+            params![
+                SETTINGS_KEY,
+                include_str!("../samples/settings/oldest.json")
+            ],
+        )
+        .unwrap();
+        drop(conn);
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let settings = snapshot.settings.expect("the settings survive");
+        assert_eq!(settings.connections_per_download, 3, "as stored");
+        assert!(settings.extension.ask_before_download, "switched on once");
+        assert!(settings.show_progress_windows, "a new setting's default");
         store.close(PATIENCE).await;
     }
 }
