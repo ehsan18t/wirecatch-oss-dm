@@ -33,6 +33,9 @@ pub const KEPT_FILE: &str = "public-suffix-list.dat";
 /// The line of the file that says when it was published, before the time.
 const VERSION_LINE: &str = "// VERSION: ";
 
+/// A label no exception rule (`!www.ck`) names, to find a wildcard rule with.
+const WILDCARD_PROBE: &str = "wirecatch-wildcard-probe";
+
 /// The largest list accepted. The file was about 330 KB in 2026 and grows by a few KB a month.
 pub const MAX_LIST_BYTES: u64 = 2 * MIB;
 
@@ -212,13 +215,20 @@ impl SuffixList {
     }
 
     /// Whether `name` (written as for [`registrable_domain`](Self::registrable_domain))
-    /// is itself on the list (`com`, `ai`, `xn--p1ai`, `co.uk`, `github.io`), so
-    /// public DNS may serve it. A single label the list does not know (`nas`) is not.
+    /// is itself on the list (`com`, `ai`, `xn--p1ai`, `co.uk`, `github.io`) or holds a
+    /// wildcard rule (`*.jm`), so public DNS may serve it. A single label the list does
+    /// not know (`nas`) is not.
     #[must_use]
     pub fn is_public_suffix(&self, name: &str) -> bool {
-        self.rules
-            .suffix(name.as_bytes())
-            .is_some_and(|suffix| suffix.is_known() && suffix.as_bytes() == name.as_bytes())
+        let is_known_suffix = |candidate: &str| {
+            self.rules
+                .suffix(candidate.as_bytes())
+                .is_some_and(|suffix| {
+                    suffix.is_known() && suffix.as_bytes() == candidate.as_bytes()
+                })
+        };
+        // The list has no query for a rule itself; `*.jm` shows only through a name under `jm`.
+        is_known_suffix(name) || is_known_suffix(&format!("{WILDCARD_PROBE}.{name}"))
     }
 
     /// When publicsuffix.org published this list.
