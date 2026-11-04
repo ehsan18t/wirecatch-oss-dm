@@ -293,6 +293,7 @@ impl Manager {
             job.set_conversion_failed(matches!((&ended, run.stop), (Ended::NotConverted(_), None)));
         }
         let mut answered_page = None;
+        let finished = matches!(ended, Ended::Completed(_));
         match (ended, run.stop) {
             (Ended::Completed(finished), _) => {
                 complete(&mut state.claimed, entry, finished, now);
@@ -313,13 +314,9 @@ impl Manager {
                     entry.row.status = DownloadStatus::Downloading;
                 }
             }
-            (_, Some(Stop::Cancel)) => {
-                mark_cancelled(entry);
-                self.discard_partial(entry);
-            }
+            (_, Some(Stop::Cancel)) => mark_cancelled(entry),
             (_, Some(Stop::Restart)) => {
                 mark_cancelled(entry);
-                self.discard_partial(entry);
                 entry.row.status = DownloadStatus::Queued;
             }
             (Ended::Failed(error) | Ended::NotConverted(error), None) => {
@@ -332,8 +329,8 @@ impl Manager {
                 entry.row.error = Some(wirecatch_messages::stopped_unexpectedly());
             }
         }
-        if matches!(run.stop, Some(Stop::Cancel)) {
-            give_up_the_name(state, id);
+        if !finished {
+            self.discard_after_stop(state, id, run.stop.as_ref());
         }
         // Whatever stopped it since the duplicate was found decides instead; a later run finds it again.
         if let Some(found) = found
@@ -349,15 +346,47 @@ impl Manager {
         }
     }
 
-    /// Deletes a download's partial files in the background. A run started before
-    /// the deletion has finished waits for it, so it never writes into a file that
-    /// is being deleted.
-    pub(super) fn discard_partial(&self, entry: &mut Entry) {
+    /// A run that did not finish was stopped by `stop`: what cancelling or starting over leaves to do.
+    fn discard_after_stop(&self, state: &mut State, id: DownloadId, stop: Option<&Stop>) {
+        if matches!(stop, Some(Stop::Cancel | Stop::Restart)) {
+            self.discard_partial(state, id);
+        }
+        if matches!(stop, Some(Stop::Cancel)) {
+            give_up_the_name(state, id);
+        }
+    }
+
+    /// Deletes a download's partial files in the background, on record until they are gone (D134). A run started before the deletion has finished waits for it, so it never writes into a file that is being deleted.
+    pub(super) fn discard_partial(&self, state: &mut State, id: DownloadId) {
+        let Some(entry) = state.downloads.get_mut(&id) else {
+            return;
+        };
         let partial = entry.partial();
         let deleted = CancellationToken::new();
         entry.cleanup = Some(deleted.clone());
+        let deletion = entry.pending_deletion();
+        state.pending_deletions.insert(id, deletion);
+        self.save_pending_deletions(state);
+        let manager = self.clone();
+        #[cfg(test)]
+        let before_deleting = self.before_deleting();
         self.inner.runtime.spawn_blocking(move || {
+            #[cfg(test)]
+            if let Some(hook) = before_deleting {
+                hook();
+            }
             partial.delete();
+            let mut state = manager.lock();
+            // A removal that began meanwhile answers for the record itself.
+            if state
+                .downloads
+                .get(&id)
+                .is_some_and(|e| !e.hold.is_removing())
+            {
+                state.pending_deletions.remove(&id);
+                manager.save_pending_deletions(&state);
+            }
+            drop(state);
             deleted.cancel();
         });
     }

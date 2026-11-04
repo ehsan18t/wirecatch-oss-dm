@@ -20,6 +20,15 @@ pub struct MoveUnderWay {
     pub files: Vec<MovedFile>,
 }
 
+/// The partial files of a download being removed, on record until they are gone, so a kill during the removal cannot strand them with no row (D134).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingDeletion {
+    /// The download's path, which the partial files are beside.
+    pub path: PathBuf,
+    /// A video or audio download, which also has work folders.
+    pub media: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DownloadFiles {
