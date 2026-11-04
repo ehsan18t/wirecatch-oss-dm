@@ -201,11 +201,11 @@ impl AddonSlot {
     pub fn load(dir: &Path) -> Self {
         match Record::load(dir) {
             Ok(record) => {
-                let tools = addons::tools(dir, &record, Check::Sizes).map(MediaTools::from);
+                let scan = addons::scan(dir, &record, Check::Sizes);
                 Self {
-                    damaged: addons::damaged_parts(dir, &record, Check::Sizes),
                     record,
-                    tools,
+                    tools: scan.tools.map(MediaTools::from),
+                    damaged: scan.damaged,
                     ..Self::default()
                 }
             }
@@ -357,9 +357,8 @@ impl Manager {
                 let record = Record::load(&dir).map_err(|source| {
                     CoreError::File(FileError::new(&dir.join(addons::RECORD_FILE), source))
                 })?;
-                let tools = addons::tools(&dir, &record, check).map(MediaTools::from);
-                let damaged = addons::damaged_parts(&dir, &record, check);
-                Ok((record, tools, damaged))
+                let scan = addons::scan(&dir, &record, check);
+                Ok((record, scan.tools.map(MediaTools::from), scan.damaged))
             })
             .await;
         let (record, tools, damaged) = match scanned {

@@ -1584,6 +1584,15 @@ async fn a_failed_check_keeps_the_offer() -> TestResult {
         h.manager.list_addons()[0].state,
         AddonState::UpdateAvailable
     );
+
+    // The list arrives, but the network goes before the release's checksums do.
+    server.fail("api/releases", 0, 500);
+    server.fail("rel/2026.09.30/SHA2-256SUMS", 100, 500);
+    assert!(h.manager.check_addon_updates().await.is_err());
+    assert_eq!(
+        h.manager.list_addons()[0].state,
+        AddonState::UpdateAvailable
+    );
     Ok(())
 }
 

@@ -121,23 +121,44 @@ pub fn ytdlp_cache(dir: &Path) -> PathBuf {
 /// The add-on's programs if every recorded file is there with its recorded size, so nothing half-installed or damaged is ever run, and with [`Check::Hashes`] its SHA-256. Each program must be one of those files: a record naming any other (written by hand, or by a bug) runs nothing. Blocks on the disk.
 #[must_use]
 pub fn tools(dir: &Path, record: &Record, check: Check) -> Option<ToolPaths> {
-    Some(ToolPaths {
-        ytdlp: intact_program(dir, record, ComponentId::YtDlp, check)?,
-        ffmpeg: intact_program(dir, record, ComponentId::Ffmpeg, check)?,
-        deno: intact_program(dir, record, ComponentId::Deno, check)?,
-        ytdlp_cache: ytdlp_cache(dir),
-    })
+    scan(dir, record, check).tools
 }
 
-/// The parts of the record whose files are missing or changed.
+/// What a look at the add-on's files found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scan {
+    /// The programs, when every part is there and intact.
+    pub tools: Option<ToolPaths>,
+    /// The parts of the record whose files are missing or changed.
+    pub damaged: BTreeSet<ComponentId>,
+}
+
+/// Looks at every part's files once. Blocks on the disk.
 #[must_use]
-pub fn damaged_parts(dir: &Path, record: &Record, check: Check) -> BTreeSet<ComponentId> {
-    record
-        .components
-        .keys()
-        .copied()
-        .filter(|id| intact_program(dir, record, *id, check).is_none())
-        .collect()
+pub fn scan(dir: &Path, record: &Record, check: Check) -> Scan {
+    let program = |id| intact_program(dir, record, id, check);
+    let ytdlp = program(ComponentId::YtDlp);
+    let ffmpeg = program(ComponentId::Ffmpeg);
+    let deno = program(ComponentId::Deno);
+    let damaged = [
+        (ComponentId::YtDlp, ytdlp.is_none()),
+        (ComponentId::Ffmpeg, ffmpeg.is_none()),
+        (ComponentId::Deno, deno.is_none()),
+    ]
+    .into_iter()
+    .filter(|(id, missing)| *missing && record.components.contains_key(id))
+    .map(|(id, _)| id)
+    .collect();
+    let tools = match (ytdlp, ffmpeg, deno) {
+        (Some(ytdlp), Some(ffmpeg), Some(deno)) => Some(ToolPaths {
+            ytdlp,
+            ffmpeg,
+            deno,
+            ytdlp_cache: ytdlp_cache(dir),
+        }),
+        _ => None,
+    };
+    Scan { tools, damaged }
 }
 
 /// The program of part `id`, if every file of the part is as recorded.

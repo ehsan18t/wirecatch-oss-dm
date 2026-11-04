@@ -28,9 +28,40 @@ pub(super) const MAX_METADATA: u64 = 4 * MIB;
 /// Largest signature file read (yt-dlp's is under 1 KB).
 pub(super) const MAX_SIGNATURE: u64 = 64 * KIB;
 
+/// The releases of `releases` that may be installed, with when each came out, newest version first.
+fn candidates(releases: Vec<addons::Release>, pinned: &str) -> Vec<(addons::Release, UnixMillis)> {
+    let mut candidates: Vec<(addons::Release, UnixMillis)> = releases
+        .into_iter()
+        .take(RELEASES_LOOKED_AT)
+        .filter(|r| !r.draft && !r.prerelease)
+        // `newer` only reads plain dotted numbers, so the tag is safe in a path.
+        .filter(|r| addons::newer(r.tag_name.trim(), pinned))
+        .filter_map(|r| {
+            let published = r
+                .published_at
+                .as_deref()
+                .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())?
+                .timestamp_millis();
+            Some((r, UnixMillis(published)))
+        })
+        .collect();
+    // Newest version first, whatever order the list came in.
+    candidates.sort_by(|(a, _), (b, _)| {
+        if addons::newer(a.tag_name.trim(), b.tag_name.trim()) {
+            std::cmp::Ordering::Less
+        } else if addons::newer(b.tag_name.trim(), a.tag_name.trim()) {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Equal
+        }
+    });
+    candidates
+}
+
 /// What a look at yt-dlp's list of releases found.
 pub(super) struct Looked {
-    pub found: Vec<NewRelease>,
+    /// `None` when the look was cut short, which says nothing about the releases it did not reach.
+    pub found: Option<Vec<NewRelease>>,
     /// Why a release was passed over, the newest first.
     pub problem: Option<Lookup>,
 }
@@ -78,7 +109,7 @@ impl Manager {
             return Ok(());
         }
         let (found, problem) = match self.new_ytdlp_releases().await {
-            Ok(looked) => (Some(looked.found), looked.problem.and_then(problem_for)),
+            Ok(looked) => (looked.found, looked.problem.and_then(problem_for)),
             Err(lookup) => (None, problem_for(lookup)),
         };
         // Read only now: the add-on may have been removed or updated during the wait.
@@ -94,11 +125,19 @@ impl Manager {
         };
         if let Some(to_save) = to_save {
             let dir = self.inner.addon_dir.clone();
-            if let Err(e) = self.blocking(move || Ok(to_save.save(&dir))).await? {
+            // Saving creates the folder, and a removal may have taken it since the lock.
+            let saved = self
+                .blocking(move || Ok(dir.is_dir().then(|| to_save.save(&dir))))
+                .await?;
+            if let Some(Err(e)) = saved {
                 warn!(error = %e, "could not record the add-on update check");
             }
         }
         let mut state = self.lock_open()?;
+        // Removed during the save: every part would read as missing and be installed again.
+        if state.addon.tools.is_none() {
+            return Ok(());
+        }
         let installed = state
             .addon
             .record
@@ -147,7 +186,7 @@ impl Manager {
         let sources = self.inner.addon_sources.clone();
         let Some(api) = &sources.ytdlp_releases else {
             return Ok(Looked {
-                found: Vec::new(),
+                found: Some(Vec::new()),
                 problem: None,
             });
         };
@@ -169,31 +208,7 @@ impl Manager {
         let releases: Vec<addons::Release> = serde_json::from_slice(&body)
             .map_err(|e| Lookup::Refused(format!("unreadable list of releases ({e})")))?;
         let now = self.inner.clock.unix_millis();
-        let mut candidates: Vec<(addons::Release, UnixMillis)> = releases
-            .into_iter()
-            .take(RELEASES_LOOKED_AT)
-            .filter(|r| !r.draft && !r.prerelease)
-            // `newer` only reads plain dotted numbers, so the tag is safe in a path.
-            .filter(|r| addons::newer(r.tag_name.trim(), sources.ytdlp.version()))
-            .filter_map(|r| {
-                let published = r
-                    .published_at
-                    .as_deref()
-                    .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())?
-                    .timestamp_millis();
-                Some((r, UnixMillis(published)))
-            })
-            .collect();
-        // Newest version first, whatever order the list came in.
-        candidates.sort_by(|(a, _), (b, _)| {
-            if addons::newer(a.tag_name.trim(), b.tag_name.trim()) {
-                std::cmp::Ordering::Less
-            } else if addons::newer(b.tag_name.trim(), a.tag_name.trim()) {
-                std::cmp::Ordering::Greater
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        });
+        let candidates = candidates(releases, sources.ytdlp.version());
         let mut found = Vec::new();
         let mut problem = None;
         for (release, published) in candidates {
@@ -205,12 +220,13 @@ impl Manager {
             let component = match self.checked_release(&fetcher, &sources, &release).await {
                 Ok(component) => component,
                 Err(lookup) => {
-                    let unreachable = matches!(lookup, Lookup::Unreachable(_));
-                    problem.get_or_insert(lookup);
-                    // No network: the older ones would only wait for it in turn.
-                    if unreachable {
-                        break;
+                    if matches!(lookup, Lookup::Unreachable(_)) {
+                        return Ok(Looked {
+                            found: None,
+                            problem: Some(lookup),
+                        });
                     }
+                    problem.get_or_insert(lookup);
                     continue;
                 }
             };
@@ -222,7 +238,10 @@ impl Manager {
                 break;
             }
         }
-        Ok(Looked { found, problem })
+        Ok(Looked {
+            found: Some(found),
+            problem,
+        })
     }
 
     /// `release` as a component checked against its own checksum list.
