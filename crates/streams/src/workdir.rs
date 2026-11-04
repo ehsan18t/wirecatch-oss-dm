@@ -27,11 +27,8 @@ pub const DIR_SUFFIX: &str = ".wcstream";
 const HEADER: &str = "stream.txt";
 const LOG: &str = "done.log";
 
-/// The first words of `stream.txt`, naming the layout of the folder. A folder written in another layout is cleared, like one for another plan, except one of [`PREVIOUS_VERSION`].
+/// The first words of `stream.txt`, naming the layout of the folder. A folder written in another layout is cleared, like one for another plan.
 const FORMAT_VERSION: &str = "wirecatch-stream 2";
-
-/// The layout before [`FORMAT_VERSION`]: the same lines without `A`, so its folders are kept and renamed to the current layout.
-const PREVIOUS_VERSION: &str = "wirecatch-stream 1";
 
 /// How far a track's segments are appended to its file: the next segment to append, and the file's size up to there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,17 +100,14 @@ impl WorkDir {
     pub fn open(output: &Path, identity: u64, pieces: &[usize]) -> io::Result<Self> {
         let dir = path_for(output);
         let header = format!("{FORMAT_VERSION} {identity:016x}\n");
-        let previous = format!("{PREVIOUS_VERSION} {identity:016x}\n");
-        let written = fs::read_to_string(dir.join(HEADER));
-        let current = written.as_ref().is_ok_and(|h| *h == header);
-        let reuse = current || written.is_ok_and(|h| h == previous);
+        let reuse = fs::read_to_string(dir.join(HEADER)).is_ok_and(|h| h == header);
         if !reuse {
             remove_dir(&dir)?;
         }
         for track in 0..pieces.len() {
             fs::create_dir_all(track_dir(&dir, track))?;
         }
-        if !current {
+        if !reuse {
             fs::write(dir.join(HEADER), header)?;
         }
         let log = match fs::read_to_string(dir.join(LOG)) {
@@ -365,32 +359,19 @@ mod tests {
         dir.remove().unwrap();
     }
 
-    /// A download paused by the build before (layout 1, which had no `A` lines) resumes with its segments and joined tracks.
     #[test]
-    fn a_folder_of_the_layout_before_is_kept() {
-        let dir = wirecatch_test_support::private_dir("workdir-v1").unwrap();
+    fn a_folder_of_another_layout_is_cleared() {
+        let dir = wirecatch_test_support::private_dir("workdir-layout").unwrap();
         let out = dir.path().join("video.mp4");
         let folder = path_for(&out);
         fs::create_dir_all(folder.join("t0")).unwrap();
         fs::write(folder.join(HEADER), "wirecatch-stream 1 0000000000000001\n").unwrap();
         fs::write(folder.join("t0").join("000000.seg"), b"abc").unwrap();
-        fs::write(folder.join("track1"), b"joined").unwrap();
-        fs::write(folder.join(LOG), "S 0 0 3\nJ 1 6\n").unwrap();
+        fs::write(folder.join(LOG), "S 0 0 3\n").unwrap();
 
-        let work = WorkDir::open(&out, 1, &[2, 1]).unwrap();
-        assert_eq!(work.done.get(&(0, 0)), Some(&3));
-        assert_eq!(work.joined.get(&1), Some(&6));
-        drop(work);
-        // It is now written in the current layout, and still kept.
-        let header = fs::read_to_string(folder.join(HEADER)).unwrap();
-        assert_eq!(header, format!("{FORMAT_VERSION} 0000000000000001\n"));
-        let work = WorkDir::open(&out, 1, &[2, 1]).unwrap();
-        assert_eq!(work.done.get(&(0, 0)), Some(&3));
-        // A folder of the layout before for another plan is cleared as any is.
-        drop(work);
-        fs::write(folder.join(HEADER), "wirecatch-stream 1 0000000000000002\n").unwrap();
-        let work = WorkDir::open(&out, 1, &[2, 1]).unwrap();
+        let work = WorkDir::open(&out, 1, &[1]).unwrap();
         assert!(work.done.is_empty());
+        assert!(!folder.join("t0").join("000000.seg").exists());
         work.remove().unwrap();
         dir.remove().unwrap();
     }
