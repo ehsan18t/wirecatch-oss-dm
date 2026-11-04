@@ -1,4 +1,4 @@
-// The rules adopted beyond the recommended and strict sets, chosen by measuring each against the code: each catches a bug or says something more clearly, and almost every finding is fixed by `eslint --fix`. A rule whose fix broke the types or the tests, or that only adds churn, was left out; D66 says why, and docs/AUDIT.md W14 lists the ones that wait for a hand-fixed pass.
+// The rules adopted beyond the recommended and strict sets, chosen by measuring each against the code: each catches a bug or says something more clearly, and almost every finding is fixed by `eslint --fix`. A rule whose fix broke the types or the tests, or that only adds churn, was left out; D66 says why.
 
 /** ESLint's own rules: dead or misleading code, and the shorter way to write the same thing. */
 export const CORE_RULES = {

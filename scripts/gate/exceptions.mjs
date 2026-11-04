@@ -4,7 +4,7 @@ import { GateError } from './process.mjs';
 import { rustLintAttributes } from './rust-attributes.mjs';
 
 /**
- * The only places a lint is switched off, each listed with its reason in docs/AUDIT.md W14. An entry is one attribute or comment, named by its file and exactly the lints it switches off, so it may move within its file; a new one, another lint, or a second one in the same file fails the `exceptions` check until it is reasoned about and listed here and in AUDIT.
+ * The only places a lint is switched off, each with its reason beside it. An entry is one attribute or comment, named by its file and exactly the lints it switches off, so it may move within its file; a new one, another lint, or a second one in the same file fails the `exceptions` check until it is reasoned about and listed here.
  */
 const LINT_EXCEPTIONS = [
   { id: 'E3', file: 'crates/engine/src/transport.rs', lints: ['clippy::large_enum_variant'] },
@@ -37,7 +37,7 @@ const LINT_EXCEPTIONS = [
     lints: ['regexp/no-potentially-useless-backreference'],
   },
 ];
-const WHERE_LISTED = 'LINT_EXCEPTIONS in scripts/gate/exceptions.mjs and docs/AUDIT.md W14';
+const WHERE_LISTED = 'LINT_EXCEPTIONS in scripts/gate/exceptions.mjs';
 
 /** Every `#[expect]`, `#[allow]`, ESLint disable comment and svelte-ignore comment is one of LINT_EXCEPTIONS, and every listed exception is still in the code. */
 function lintExceptions() {

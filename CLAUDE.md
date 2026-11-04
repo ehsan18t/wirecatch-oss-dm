@@ -8,7 +8,7 @@ The bar is code a principal engineer would hold up as an example. Passing the ga
 
 - @docs/ENGINEERING.md: the engineering standard. Every rule there applies to every change.
 - `docs/DECISIONS.md`: why things are the way they are. Do not reverse a decision without recording a new one.
-- `docs/AUDIT.md`: the open quality workstreams. Work in the order it gives, and update its status table when a workstream finishes.
+- `docs/audit/AUDIT-PLAN.md`: how a code audit runs. Each audit keeps its findings and fix order in `docs/audit/runs/`.
 - `docs/PLAN.md` and `docs/ROADMAP.md`: work packages and what comes next.
 
 ## Layout
@@ -69,7 +69,7 @@ That runs every check CI runs (`node scripts/gate.mjs --list` shows them; `pnpm 
 
 - Fix the cause, not the symptom. When the same problem shows up in several places, fix it once at its source (docs/ENGINEERING.md, sections 1 and 3).
 - Data two languages or two packages need, test data included, lives in one file both load (docs/ENGINEERING.md, section 1). Before writing a list of values, samples or expected outputs, look for the file that already holds them; a reviewer flags any second copy.
-- Leave every file you touch better. No lint suppressions: fix the cause. The only exceptions are a single `#[expect(..., reason = "...")]`, an ESLint disable comment with a `--` reason, or a `svelte-ignore` with its reason in parentheses (`<!-- svelte-ignore code (reason) -->`), where the rule is wrong for that code, each listed in docs/AUDIT.md W14 and in `LINT_EXCEPTIONS` in `scripts/gate/exceptions.mjs` (the `exceptions` check fails on any other).
+- Leave every file you touch better. No lint suppressions: fix the cause. The only exceptions are a single `#[expect(..., reason = "...")]`, an ESLint disable comment with a `--` reason, or a `svelte-ignore` with its reason in parentheses (`<!-- svelte-ignore code (reason) -->`), where the rule is wrong for that code, each listed in `LINT_EXCEPTIONS` in `scripts/gate/exceptions.mjs` (the `exceptions` check fails on any other).
 - A bug fix starts with a failing test that proves the bug.
 - A test that passes here proves nothing about CI, whose runners are slower, busier and also Linux. Never assert how long something took, and never give a wait that has to succeed a short fixed time: wait for the event under `PATIENCE`, make the slow path outlast `PATIENCE` (hold the server, lengthen the timeout under test), count what was sent or tried, or run on tokio's paused clock (docs/ENGINEERING.md, section 7). The `test-timing` check refuses both in Rust; in TypeScript only review catches them.
 - When CI fails on something that passed locally, find what differs between the two (load, the other system, a time limit in the code under test, an input that changes by itself such as a new advisory) before changing anything, and fix that at its source. Never rerun until it passes, widen a bound, or call it flaky without naming the cause.

@@ -9,11 +9,11 @@
 5. **Media add-on.** One-click yt-dlp, ffmpeg and Deno, pinned by SHA-256, yt-dlp updates verified by signature and a two-day delay (D20, D21). Done; smoke-tested end to end against a real Wikimedia Commons video.
 6. **Remaining v1 protocols.** FTP and FTPS done; HTTP/3 available as an experimental option (A7).
 7. **Release readiness.** Done: final security review and fixes, Linux suite green in Docker, quiet-machine benchmark, Windows installer built (5.2 MiB), commit history cleaned. Left for the maintainer: GitHub organization, code signing, the updater signing key, store listings for the extension (which also gives Chromium browsers a trusted extension id), and the user actions in D21.
-8. **Interface revamp.** One design system for the desktop app and the extension, in two phases. Phase 1 done: the foundation, the main window, the add-download flow, the download window and the extension's pages. Phase 2 done: the settings, the dialogs, the rail, the media button, the installer's pictures and Copy diagnostics. See [REVAMP](REVAMP.md).
+8. **Interface revamp.** One design system for the desktop app and the extension, in two phases. Phase 1 done: the foundation, the main window, the add-download flow, the download window and the extension's pages. Phase 2 done: the settings, the dialogs, the rail, the media button, the installer's pictures and Copy diagnostics.
 
 ## Where things stand and what comes next
 
-As of 2026-10-31 the code quality audit has W0 to W5, W7, W8 and W14 done, most of W6, and W9's findings that could break a download (CORE-4 to CORE-7, CORE-9, CORE-10, CORE-12). The GPUI desktop app is on main (D95, D107), and so are queues that decide how their downloads run (D72), proxy profiles (D73), queue folders (D94) and the rebuilt download list (D115). [AUDIT](AUDIT.md) has the status table and every carried item. Items 1 to 7 under "Before the first release" are done; items 8 to 12, the audit's remaining code fixes, come next, then the release setup that is the maintainer's; this list is the order after it, which the maintainer may change.
+As of 2026-10-31 the code quality audit has W0 to W5, W7, W8 and W14 done, most of W6, and W9's findings that could break a download (CORE-4 to CORE-7, CORE-9, CORE-10, CORE-12). The GPUI desktop app is on main (D95, D107), and so are queues that decide how their downloads run (D72), proxy profiles (D73), queue folders (D94) and the rebuilt download list (D115). Items 1 to 7 under "Before the first release" are done; items 8 to 12, the audit's remaining code fixes, come next, then the release setup that is the maintainer's; this list is the order after it, which the maintainer may change.
 
 ## After the first release
 
@@ -70,7 +70,7 @@ Done before the release:
 - **A modern title bar** (design; done, D92). New window buttons in place of the "wire" glyphs: small rounded buttons with plain Windows 11 shapes and no background at rest, the one under the pointer filled (grey, red for Close), as variant D of the title bar mockup; the search box keeps its shape; every part of the bar that is not a control drags the window and a double-click on it maximizes, since today the wrappers of the search box and of the button groups refuse a drag across a wide band; the search box shows no keyboard shortcuts; and the speed readout is hidden while nothing downloads instead of saying "Idle", without moving the rest of the bar when it comes and goes.
 - **CORE-9 (done):** moving a download to another folder never replaces a file there, and a move that cannot delete the original leaves no duplicate behind; core uses the engine's no-replace move.
 - **CORE-4 (done):** withdrawing a browser capture while it is being confirmed never downloads it twice.
-- **Dropped downloads' file work (done):** a stopped run's queued file work cannot delete a new run's files (the drain handle in AUDIT's carried items).
+- **Dropped downloads' file work (done):** a stopped run's queued file work cannot delete a new run's files (the drain handle).
 - **One state for a download (CORE-12), one kind of question (rest of CORE-5) and cancel safety (CORE-6) (done):** the flags become one phase, which removes the class of bug behind 13 and 14.
 - **Saves and scans (done):** progress saves write only the progress (CORE-7), state changes stop scanning every download (CORE-10), and the system proxy is read off the manager's lock.
 

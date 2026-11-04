@@ -1,4 +1,4 @@
-//! Refuses a start with "Run as administrator". The app would hold rights the programs talking to it do not, and the browser extension, which runs without them, could not reach it anyway (docs/audit/ipc-bridge.md, IPB-1). An account that is always elevated (user account control off, or the built-in Administrator) is not refused: its browser runs elevated too, and there is no normal start to ask for.
+//! Refuses a start with "Run as administrator". The app would hold rights the programs talking to it do not, and the browser extension, which runs without them, could not reach it anyway. An account that is always elevated (user account control off, or the built-in Administrator) is not refused: its browser runs elevated too, and there is no normal start to ask for.
 
 use std::io;
 

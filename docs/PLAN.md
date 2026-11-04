@@ -4,7 +4,7 @@ How the rest of v1 gets built: what each part is, who builds it, the contracts b
 
 ## Where the work stands
 
-Waves 0 to 3 are built and merged. Since then the work follows the code quality audit and the interface revamp, not new work packages: [AUDIT](AUDIT.md) has the status of every workstream and [ROADMAP](ROADMAP.md) the order of the work, starting with what the first release waits for. The rules below still hold for any work package: its own folders only, the gates, an independent review, and a fix round before the merge.
+Waves 0 to 3 are built and merged. Since then the work follows the code quality audit and the interface revamp, not new work packages: [ROADMAP](ROADMAP.md) has the order of the work, starting with what the first release waits for. The rules below still hold for any work package: its own folders only, the gates, an independent review, and a fix round before the merge.
 
 ## How the work runs
 
@@ -43,6 +43,7 @@ The download manager the desktop app hosts.
 Builds: download lifecycle (add, start, pause, resume, cancel, remove, retry, refresh link, move between queues, reorder); queues with concurrency limits, schedules and speed limits; a global concurrency and speed limit; SQLite persistence with migrations; settings store with change notifications; settings export and import with portable paths; category rules that pick the folder; speed smoothing and ETA; mapping engine errors to `UserError` with a fix action; the local socket server speaking the protocol; a confirmation flow for `ask_before_download`; a protocol server that serves any async stream (`serve_connection`), so it is tested over in-memory streams and plugged into the real socket from `crates/ipc` in Wave 2; a headless example binary that runs the manager without any UI.
 
 Acceptance checklist:
+
 1. After a restart, every download is back with its status and progress; ones that were running continue on their own.
 2. A queue never runs more downloads than its limit, and the global limit holds across queues.
 3. A scheduled queue starts and stops inside its window (tested with an injected clock, not real time).
@@ -59,6 +60,7 @@ The native messaging host the browser starts, and the local socket transport bot
 Builds `wirecatch-ipc`: the per-user endpoint name, a listener that only the current user can connect to, and a connector that refuses a server owned by anyone else (protection against another local user squatting the pipe name). Builds the bridge: native messaging on stdin and stdout; caller origin check; connect to the app socket, starting the app with `--background` if needed; relay frames both ways; `install` and `uninstall` subcommands that register the host for Chrome, Chromium, Edge, Brave, Vivaldi, Opera and Firefox on Windows (per-user registry) and Linux (per-browser manifest folders).
 
 Acceptance checklist:
+
 1. A message from the extension reaches the app and the answer comes back unchanged; app events reach the extension.
 2. If the app is not running, the bridge starts it and the first message still succeeds within 5 seconds; if it cannot, the extension gets `AppUnavailable` instead of silence.
 3. A caller whose origin is not allowed is refused.
@@ -73,6 +75,7 @@ WXT and Svelte 5, built for Chromium MV3 and Firefox MV3.
 Builds: capturing browser downloads according to the settings (on/off, ignored sites, file types, minimum size); handing over URL, cookies, referrer and user agent; the popup with connection status, every D5 setting, "ignore this site", pause and resume all; live sync of settings through events, with a read-only cached copy when the app is unreachable; a "Download with Wirecatch" context menu item.
 
 Acceptance checklist:
+
 1. **No download is ever lost**: if the app does not confirm the handover, the browser keeps the download.
 2. The decision of whether to capture a download is a pure function with unit tests covering every setting.
 3. A setting changed in the popup shows up in the app, and a change made in the app shows up in an open popup without reopening it.
@@ -86,6 +89,7 @@ Tauri 2, Svelte 5 with Vite (D36). In Wave 1 the UI talks to a mock backend behi
 Builds the D3 principles: queues in the sidebar with schedule and limits visible, drag downloads between queues; a virtualized list; paste a link anywhere to add it; the toast after a capture (D4) and the confirmation dialog when asked; a command palette (Ctrl+K at the time; Ctrl+Shift+P since D47); searchable plain-language settings with an Advanced section; errors with fix buttons; empty states that teach; light, dark and system themes; settings export and import screens.
 
 Acceptance checklist:
+
 1. Every feature is reachable from visible UI along the path that feels natural to the person, and from the command palette (D36 retired the earlier two-click limit). The report includes the feature-to-path table that proves it.
 2. The list stays smooth at 10,000 downloads (measured in the report).
 3. Everything works with the keyboard alone, with visible focus; contrast meets WCAG AA in both themes.
@@ -97,6 +101,7 @@ Acceptance checklist:
 Builds: crates.io readiness (metadata, README, docs on every public item, examples, `cargo package` passing, no publish); honoring `Retry-After`; backing off from opening more connections when a server refuses them; sharing TLS session resumption across a download's connections; property tests for the segment table; a CI workflow running every D18 check on Windows and Ubuntu.
 
 Acceptance checklist:
+
 1. `cargo package -p wirecatch-engine` succeeds and `cargo doc` has no warnings with missing docs denied.
 2. A server answering 429 or 503 with `Retry-After` is retried after that delay, not before.
 3. A server that refuses connections beyond N still completes the download with N connections and no error.
@@ -126,6 +131,7 @@ Wave 1 is merged (engine, protocol, core, ipc, bridge, extension, desktop UI). W
 **WP12 Wiring and polish (`apps/desktop`, `apps/extension`).** Connect the media picker and add-ons screen to the real core; final end-to-end pass of every D3 principle in the running app.
 
 ### Each package
+
 Same rules as Wave 1: own folder only, D18, independent review, fix round, merge.
 
 ## Wave 3: Release readiness

@@ -23,8 +23,7 @@ async fn ftp_is_refused_while_a_proxy_is_set() {
 
     // SAFETY: as below. The machine running the test may exclude local hosts
     // from its proxy variables; this test decides that itself. A proxy turned
-    // on in the Windows settings still applies while no variable is set (see
-    // docs/AUDIT.md, W6).
+    // on in the Windows settings still applies while no variable is set.
     unsafe {
         std::env::remove_var("NO_PROXY");
         std::env::remove_var("no_proxy");
