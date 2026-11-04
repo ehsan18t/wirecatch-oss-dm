@@ -1,0 +1,80 @@
+Run: cargo test -p wirecatch-streams --test proof_p2 -- --nocapture. Output: 3 FAILED. 14-4: Err("Joining video and audio needs the ffmpeg add-on..."). 14-5: extension left "mkv" right "mp4"; video tracks left 2 right 1.
+diff --git a/crates/streams/tests/proof_p2.rs b/crates/streams/tests/proof_p2.rs
+new file mode 100644
+index 000000000..e0ea5ecb5
+--- /dev/null
++++ b/crates/streams/tests/proof_p2.rs
+@@ -0,0 +1,73 @@
++//! Reproductions of P2 findings 14-4 and 14-5 through `inspect`.
++
++use std::sync::Arc;
++
++use wirecatch_engine::{CancellationToken, DownloadOptions};
++use wirecatch_streams::{Choice, Error, PrivateNetwork, StreamInfo, StreamProgress, StreamRequest, download, inspect};
++use wirecatch_test_support::{TestResult, private_dir};
++use wirecatch_test_support::files::FileServer;
++
++const MPEGURL: &str = "application/vnd.apple.mpegurl";
++const MEDIA: &str = "#EXTM3U\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n";
++
++async fn inspect_master(master: &str) -> TestResult<StreamInfo> {
++    let server = FileServer::start().await;
++    server.put_typed("m.m3u8", master.to_string(), MPEGURL);
++    server.put_typed("v.m3u8", MEDIA, MPEGURL);
++    server.put_typed("fr.m3u8", MEDIA, MPEGURL);
++    Ok(inspect(
++        &server.url("m.m3u8"),
++        &DownloadOptions::default(),
++        PrivateNetwork::Auto,
++        CancellationToken::new(),
++    )
++    .await?)
++}
++
++#[tokio::test]
++async fn automatic_audio_stays_in_the_video_when_the_default_has_no_address() -> TestResult {
++    let server = FileServer::start().await;
++    let master = concat!(
++        "#EXTM3U\n",
++        "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"English\",DEFAULT=YES,AUTOSELECT=YES\n",
++        "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"French\",URI=\"fr.m3u8\"\n",
++        "#EXT-X-STREAM-INF:BANDWIDTH=1,AUDIO=\"a\"\n",
++        "v.m3u8\n",
++    );
++    server.put_typed("m.m3u8", master.to_string(), MPEGURL);
++    server.put_typed("v.m3u8", MEDIA, MPEGURL);
++    server.put_typed("fr.m3u8", MEDIA, MPEGURL);
++    let dir = private_dir("proof-14-4")?;
++    let request = StreamRequest::new(server.url("m.m3u8"), dir.join("v.ts"), PrivateNetwork::Auto);
++    let outcome = download(request, Arc::new(StreamProgress::default()), CancellationToken::new()).await;
++    dir.remove()?;
++    eprintln!("{:?}", outcome.as_ref().map_err(ToString::to_string).map(|_| ()));
++    assert!(!matches!(outcome, Err(Error::NeedsFfmpeg)), "French was picked as a separate track");
++    Ok(())
++}
++
++#[tokio::test]
++async fn a_subtitle_codec_does_not_change_the_container() -> TestResult {
++    let info = inspect_master(concat!(
++        "#EXTM3U\n",
++        "#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1x1,CODECS=\"avc1.640028,mp4a.40.2,wvtt\"\n",
++        "v.m3u8\n",
++    ))
++    .await?;
++    assert_eq!(info.extension(&Choice::Auto, &Choice::Auto, true), "mp4");
++    Ok(())
++}
++
++#[tokio::test]
++async fn audio_with_a_subtitle_codec_is_audio() -> TestResult {
++    let info = inspect_master(concat!(
++        "#EXTM3U\n",
++        "#EXT-X-STREAM-INF:BANDWIDTH=2,CODECS=\"mp4a.40.2,wvtt\"\n",
++        "v.m3u8\n",
++        "#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1x1,CODECS=\"avc1.640028\"\n",
++        "fr.m3u8\n",
++    ))
++    .await?;
++    assert_eq!(info.video.len(), 1, "listed as a video quality");
++    Ok(())
++}
