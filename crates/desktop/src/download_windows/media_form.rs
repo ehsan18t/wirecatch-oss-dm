@@ -18,8 +18,8 @@ use gpui_kit::{
     Styled as _, Subscription, Window, div, px,
 };
 use wirecatch_protocol::app::{
-    AddonId, AddonState, Category, MediaChoice, MediaOption, MediaSelection, OutputFormat,
-    StreamAction,
+    AddonId, AddonInfo, AddonState, Category, MediaChoice, MediaOption, MediaSelection,
+    OutputFormat, StreamAction,
 };
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use wirecatch_shell::activity::format_bytes;
@@ -150,6 +150,10 @@ pub struct MediaForm {
     pub earlier: Option<DownloadId>,
     /// A quality that needs the media add-on: it is sent once the add-on is in.
     awaiting_addon: Option<MediaSelection>,
+    /// The add-on's state when the install was asked for, until the install is seen to start: a change to the list before then says nothing about it.
+    addon_before: Option<AddonState>,
+    /// Why the last install asked for here did not work.
+    install_problem: Option<String>,
     quality: Entity<SelectState<SearchableVec<Quality>>>,
     format: Picker<OutputFormat>,
     kbps: Picker<Option<u32>>,
@@ -205,6 +209,8 @@ impl MediaForm {
             busy: false,
             earlier: None,
             awaiting_addon: None,
+            addon_before: None,
+            install_problem: None,
             quality,
             format,
             kbps,
@@ -386,12 +392,12 @@ impl MediaForm {
 
     fn needs_install(&self, cx: &App) -> bool {
         self.picked().is_some_and(|option| option.needs_ffmpeg)
-            && !self.library.read(cx).addons.iter().any(|addon| {
-                matches!(
-                    addon.state,
-                    AddonState::Installed | AddonState::UpdateAvailable
-                )
-            })
+            && !self
+                .library
+                .read(cx)
+                .addons
+                .iter()
+                .any(|addon| addon.usable)
     }
 
     fn join_note(&self, cx: &App) -> Option<String> {
@@ -404,6 +410,9 @@ impl MediaForm {
             return None;
         }
         if self.needs_install(cx) {
+            if let Some(problem) = &self.install_problem {
+                return Some(problem.clone());
+            }
             let library = self.library.read(cx);
             let size = library
                 .addons
@@ -442,18 +451,29 @@ impl MediaForm {
     /// Installs the media add-on; `addon_moved` sends `selection` once it is in.
     fn install_then(&mut self, selection: MediaSelection, cx: &mut Context<'_, Self>) {
         self.awaiting_addon = Some(selection);
+        self.install_problem = None;
+        self.addon_before = self
+            .library
+            .read(cx)
+            .addons
+            .first()
+            .map(|addon| addon.state.clone());
         cx.notify();
         let started = Backend::run(cx, move |manager| async move {
             api::install_addon(&manager, AddonId::Media).await
         });
         cx.spawn(async move |form, cx| {
-            let failed = !matches!(started.await, Ok(Ok(Ok(()))));
-            if failed {
-                _ = form.update(cx, |form: &mut Self, cx| {
-                    form.awaiting_addon = None;
-                    cx.notify();
-                });
-            }
+            let refused = match started.await {
+                Ok(Ok(Ok(()))) => return,
+                Ok(Ok(Err(error))) => error.message,
+                Ok(Err(unopened)) => unopened.reason.message,
+                Err(e) => format!("The install stopped unexpectedly ({e})."),
+            };
+            _ = form.update(cx, |form: &mut Self, cx| {
+                form.awaiting_addon = None;
+                form.install_problem = Some(refused);
+                cx.notify();
+            });
         })
         .detach();
     }
@@ -462,20 +482,22 @@ impl MediaForm {
         if self.awaiting_addon.is_none() {
             return;
         }
-        let state = self
-            .library
-            .read(cx)
-            .addons
-            .first()
-            .map(|addon| addon.state.clone());
-        match state {
-            Some(AddonState::Installed | AddonState::UpdateAvailable) => {
+        let wait = install_wait(
+            self.library.read(cx).addons.first(),
+            self.addon_before.as_ref(),
+        );
+        match wait {
+            InstallWait::Ready => {
                 if let Some(selection) = self.awaiting_addon.take() {
                     cx.emit(MediaAnswer::Choose(Box::new(selection)));
                 }
             }
-            Some(AddonState::Installing { .. }) => {}
-            _ => self.awaiting_addon = None,
+            InstallWait::Started => self.addon_before = None,
+            InstallWait::NotYet => {}
+            InstallWait::Ended(problem) => {
+                self.awaiting_addon = None;
+                self.install_problem = problem;
+            }
         }
         cx.notify();
     }
@@ -822,9 +844,112 @@ fn video_meta(page: Option<&str>, length: Option<String>) -> Option<String> {
     }
 }
 
+/// Where the form's wait for an install stands.
+#[derive(Debug, PartialEq, Eq)]
+enum InstallWait {
+    Ready,
+    Started,
+    NotYet,
+    /// It ended without the add-on, for this reason if it failed.
+    Ended(Option<String>),
+}
+
+/// The wait, with the add-on now `addon`; `before` is its state when the install was asked for, until the install is seen to start.
+fn install_wait(addon: Option<&AddonInfo>, before: Option<&AddonState>) -> InstallWait {
+    let Some(addon) = addon else {
+        return InstallWait::NotYet;
+    };
+    if addon.usable {
+        return InstallWait::Ready;
+    }
+    match &addon.state {
+        AddonState::Installing { .. } => InstallWait::Started,
+        state if Some(state) == before => InstallWait::NotYet,
+        AddonState::Failed { message } => InstallWait::Ended(Some(message.clone())),
+        _ => InstallWait::Ended(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn addon(state: AddonState, usable: bool) -> AddonInfo {
+        AddonInfo {
+            id: AddonId::Media,
+            name: "Media add-on".to_owned(),
+            description: String::new(),
+            state,
+            usable,
+            installed_version: None,
+            latest_version: None,
+            size: None,
+            note: None,
+        }
+    }
+
+    #[test]
+    fn a_list_change_before_the_install_starts_keeps_the_choice() {
+        let not_installed = addon(AddonState::NotInstalled, false);
+        assert_eq!(
+            install_wait(Some(&not_installed), Some(&not_installed.state)),
+            InstallWait::NotYet
+        );
+        let failed = addon(
+            AddonState::Failed {
+                message: "No connection.".to_owned(),
+            },
+            false,
+        );
+        assert_eq!(
+            install_wait(Some(&failed), Some(&failed.state)),
+            InstallWait::NotYet,
+            "the failure of an earlier try"
+        );
+    }
+
+    #[test]
+    fn an_install_that_fails_says_why_and_one_that_stops_ends_the_wait() {
+        let failed = addon(
+            AddonState::Failed {
+                message: "No connection.".to_owned(),
+            },
+            false,
+        );
+        let installing = AddonState::Installing {
+            done: 0,
+            total: None,
+        };
+        assert_eq!(
+            install_wait(
+                Some(&addon(installing, false)),
+                Some(&AddonState::NotInstalled)
+            ),
+            InstallWait::Started
+        );
+        assert_eq!(
+            install_wait(Some(&failed), None),
+            InstallWait::Ended(Some("No connection.".to_owned()))
+        );
+        assert_eq!(
+            install_wait(Some(&addon(AddonState::NotInstalled, false)), None),
+            InstallWait::Ended(None)
+        );
+    }
+
+    #[test]
+    fn a_working_add_on_is_ready_whatever_is_being_done_to_it() {
+        let failed_update = addon(
+            AddonState::Failed {
+                message: "No connection.".to_owned(),
+            },
+            true,
+        );
+        assert_eq!(
+            install_wait(Some(&failed_update), Some(&failed_update.state)),
+            InstallWait::Ready
+        );
+    }
 
     #[test]
     fn a_video_without_a_page_or_length_has_no_line_under_its_title() {

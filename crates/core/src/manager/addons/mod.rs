@@ -245,6 +245,9 @@ impl Manager {
             return Ok(());
         }
         if plan.is_empty() {
+            // Nothing is left to try, so nothing would ever clear an earlier failure.
+            state.addon.failure = None;
+            self.emit_addons(&state.addon);
             // No install runs to tell the pages waiting for it.
             let ready = state.addon.tools.is_some();
             drop(state);
@@ -423,6 +426,7 @@ impl Manager {
         AddonInfo {
             id: AddonId::Media,
             name: "Media add-on".into(),
+            usable: installed,
             description: "Downloads video and audio from sites such as YouTube (yt-dlp), and merges separate video and audio into one file (ffmpeg).".into(),
             state,
             installed_version: (!slot.record.components.is_empty()).then(|| {

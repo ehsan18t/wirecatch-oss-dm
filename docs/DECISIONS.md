@@ -1264,3 +1264,6 @@ Decided on 2026-11-05.
 2. A kept value is never read back: nothing can say whether it should win over what the person has changed since. It is there for recovery by hand, and it holds what the list holds, so it stays under the same owner-only access (D17).
 3. A category rule this build does not know is left out, so it costs that rule and not all the settings. This also holds for an imported settings file, with nothing said about the rule left out. Any other fault in a rule fails the whole value, which is then kept, and an imported file is refused.
 4. The id counters are never lower than an id still in the list, so a hidden row is never replaced by a new download.
+### D133. An add-on says whether it works apart from what is being done to it
+
+Decided on 2026-11-05. `AddonInfo.usable` says the programs on this machine work now; `state` says what is being done. An update under way or failed leaves the add-on usable, so the quality form does not ask to install it, About gives its version, and the card keeps Remove, and Check for updates after a failure. Try again with nothing left to install ends the failure.

@@ -47,7 +47,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-37  | fix(core): keep a name when a link becomes a page  | `fix/page-keeps-name`            | 37, 175                      | P2       | medium | none         | merged |
 | PR-38  | fix(media): read all of yt-dlp's page description  | `fix/read-whole-page-info`       | 38, 61                       | P2       | medium | none         | merged |
 | PR-39  | fix(engine): reuse part files under other names    | `fix/find-own-part-file`         | 39                           | P2       | medium | PR-93        | merged |
-| PR-40  | fix(core): report whether the add-on works         | `fix/addon-usable`               | 40, 53                       | P2       | medium | none         | open   |
+| PR-40  | fix(core): report whether the add-on works         | `fix/addon-usable`               | 40, 53                       | P2       | medium | none         | merged |
 | PR-41  | fix(desktop): keep notices in step with downloads  | `fix/notices-follow-downloads`   | 41, 123, 232                 | P2       | medium | none         | open   |
 | PR-42  | fix(engine): hold FTP to the local network rule    | `fix/ftp-local-network`          | 42, 43                       | P2       | medium | none         | merged |
 | PR-43  | refactor(sites): merge the host-under-site checks  | `refactor/one-host-under-site`   | 44                           | P3       | medium | none         | merged |
@@ -641,7 +641,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/protocol`, `packages/protocol`, `crates/core`, `crates/desktop/src/download_windows`, `crates/desktop/src/main_window/settings`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core -p wirecatch-desktop`, `cargo clippy -p wirecatch-core -p wirecatch-desktop`, `pnpm protocol:generate`, `pnpm gate` once on the final tree, since `crates/protocol` is a wide change.
-- **Status:** open
+- **Status:** merged
 
 ### PR-41 fix(desktop): keep notices in step with downloads
 

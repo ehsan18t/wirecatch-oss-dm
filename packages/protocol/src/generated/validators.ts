@@ -203,6 +203,7 @@ export function isAddonInfo(value: unknown): value is AddonInfo {
     typeof value1['name'] === 'string' &&
     typeof value1['description'] === 'string' &&
     isAddonState(value1['state']) &&
+    typeof value1['usable'] === 'boolean' &&
     (typeof value1['installed_version'] === 'string' || value1['installed_version'] === null) &&
     (typeof value1['latest_version'] === 'string' || value1['latest_version'] === null) &&
     (typeof value1['size'] === 'number' || value1['size'] === null) &&
