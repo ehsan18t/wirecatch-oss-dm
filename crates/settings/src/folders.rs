@@ -124,6 +124,13 @@ impl KnownFolders {
         }
     }
 
+    /// The same folders with `folder` protected too: a folder only the running app knows, such as where its data and add-ons really are.
+    #[must_use]
+    pub fn protecting(mut self, folder: PathBuf) -> Self {
+        self.protected.push(folder);
+        self
+    }
+
     /// Whether `path` is in a folder downloads from a settings file must never
     /// go to (see [`protected`](Self::protected)). Both the path as written and
     /// the real path of its nearest existing folder are checked, so a short
@@ -332,20 +339,16 @@ fn script_folders(documents: &Path) -> Vec<PathBuf> {
     }
 }
 
-/// The same for Linux: autostart entries, application entries (menus and file
-/// handlers) and systemd user units, wherever `XDG_CONFIG_HOME` and
-/// `XDG_DATA_HOME` put them, and the system's own folders. Hidden folders in
-/// home (`~/.config`, `~/.local`, `~/.ssh` and the like) are refused on top of
-/// these by [`KnownFolders::is_protected`].
+/// The same for Linux: all of the user's configuration and app data (this app's
+/// add-ons and data, autostart entries, application entries, systemd user units),
+/// wherever `XDG_CONFIG_HOME` and `XDG_DATA_HOME` put them, and the system's own
+/// folders. Hidden folders in home (`~/.config`, `~/.local`, `~/.ssh` and the like)
+/// are refused on top of these by [`KnownFolders::is_protected`].
 #[cfg(not(windows))]
 fn protected_folders(home: &Path, env: impl Fn(&str) -> Option<PathBuf>) -> Vec<PathBuf> {
     let config = env("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config"));
     let data = env("XDG_DATA_HOME").unwrap_or_else(|| home.join(".local").join("share"));
-    let mut out = vec![
-        config.join("autostart"),
-        config.join("systemd"),
-        data.join("applications"),
-    ];
+    let mut out = vec![config, data];
     out.extend(
         ["/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot"]
             .iter()
@@ -779,7 +782,25 @@ mod tests {
             "XDG_CONFIG_HOME" => Some(PathBuf::from("/data/config")),
             _ => None,
         });
-        assert!(moved.contains(&PathBuf::from("/data/config/autostart")));
+        assert!(moved.contains(&PathBuf::from("/data/config")));
+        let moved = protected_folders(&home(), |name| match name {
+            "XDG_DATA_HOME" => Some(PathBuf::from("/data/share")),
+            _ => None,
+        });
+        assert!(moved.contains(&PathBuf::from("/data/share")));
+    }
+
+    #[test]
+    fn a_folder_added_later_is_refused_with_what_is_inside_it() {
+        let data = if cfg!(windows) {
+            PathBuf::from(r"E:\Moved")
+        } else {
+            PathBuf::from("/data/moved")
+        };
+        let folders = KnownFolders::under_home(home()).protecting(data.clone());
+        assert!(folders.is_protected(&data));
+        assert!(folders.is_protected(&data.join("addons")));
+        assert!(!folders.is_protected(&data.with_file_name("Other")));
     }
 
     /// A link that points into a protected folder is followed.
