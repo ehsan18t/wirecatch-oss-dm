@@ -131,17 +131,10 @@ impl Manager {
             return Ok(reply);
         }
         match self
-            .await_answer(row.id, &capture.handover_id, arrived)
+            .await_answer(row.id, &capture.handover_id, arrived, &reply)
             .await
         {
-            Ok(()) => {
-                let mut state = self.lock();
-                state.handovers.decide(&capture.handover_id, reply.clone());
-                if let Ok(entry) = state.entry(row.id) {
-                    self.emit(UiEvent::Captured(entry.summary()));
-                }
-                Ok(reply)
-            }
+            Ok(()) => Ok(reply),
             Err(reason) => {
                 // Answer at once: stopping the attempt can take up to the stop
                 // timeout, and the extension does not wait that long. The attempt
@@ -155,13 +148,14 @@ impl Manager {
 
     /// Waits until the server has answered the app with the captured file, the
     /// attempt failed, or the capture timeout, counted from when the capture
-    /// `arrived`, ran out. `Err` carries the reason as whole sentences, for
+    /// `arrived`, ran out. An answer is recorded as `reply` in the step that finds the handover still there, so a withdrawal comes either before it or after, never between. `Err` carries the reason as whole sentences, for
     /// [`CoreError::NotStarted`].
     async fn await_answer(
         &self,
         id: DownloadId,
         handover: &str,
         arrived: Instant,
+        reply: &AddedDownload,
     ) -> std::result::Result<(), String> {
         let tokens = {
             let state = self.lock();
@@ -179,18 +173,23 @@ impl Manager {
                 self.inner.capture_timeout.as_secs()
             ));
         }
-        let state = self.lock();
+        let mut state = self.lock();
         if state.handovers.get(handover).is_none() {
             return Err("The browser took it back.".into());
         }
-        match state.entry(id) {
-            Err(_) => Err("It was removed.".into()),
-            Ok(entry) if entry.server_answered() => Ok(()),
-            Ok(entry) => Err(entry.row.error.as_ref().map_or_else(
-                || "It stopped before the server answered.".to_string(),
-                |e| e.message.clone(),
-            )),
-        }
+        let summary = match state.entry(id) {
+            Err(_) => return Err("It was removed.".into()),
+            Ok(entry) if entry.server_answered() => entry.summary(),
+            Ok(entry) => {
+                return Err(entry.row.error.as_ref().map_or_else(
+                    || "It stopped before the server answered.".to_string(),
+                    |e| e.message.clone(),
+                ));
+            }
+        };
+        state.handovers.decide(handover, reply.clone());
+        self.emit(UiEvent::Captured(summary));
+        Ok(())
     }
 
     /// The answer for a handover already being handled: the final answer, after
@@ -418,28 +417,39 @@ impl Manager {
         if state.handovers.get(&capture.handover_id).is_some() {
             return Ok(None);
         }
-        let Some(row) = state
+        Ok(self.join_unfinished_locked(&mut state, &capture.handover_id, url.as_str()))
+    }
+
+    /// [`join_unfinished`](Self::join_unfinished) under the lock of the caller, for the decision to join or add to be one step.
+    pub(super) fn join_unfinished_locked(
+        &self,
+        state: &mut State,
+        handover: &str,
+        url: &str,
+    ) -> Option<AddedDownload> {
+        let entry = state
             .unfinished()
             .filter(|entry| !entry.hold.is_removing())
-            .map(|entry| &entry.row)
-            .find(|row| unfinished(row.status) && same_address(&row.url, url.as_str()))
-            .cloned()
-        else {
-            return Ok(None);
+            .find(|entry| unfinished(entry.row.status) && same_address(&entry.row.url, url))?;
+        let id = entry.row.id;
+        let action = match capture_action(&entry.row) {
+            // Its run has not heard from a server: the browser's copy is still needed.
+            AddAction::Started if !entry.server_answered() => AddAction::Queued,
+            action => action,
         };
         let reply = AddedDownload {
-            id: Some(row.id),
-            action: capture_action(&row),
+            id: Some(id),
+            action,
         };
         // Confirmed, not the capture's own: withdrawing this handover never takes the download back.
-        let handover = Handover {
+        let record = Handover {
             reply: reply.clone(),
-            target: Target::Confirmed(row.id),
+            target: Target::Confirmed(id),
             deciding: None,
         };
-        state.handovers.insert(&capture.handover_id, handover);
-        self.emit(UiEvent::CaptureRepeated(Repeated::Download(row.id)));
-        Ok(Some(reply))
+        state.handovers.insert(handover, record);
+        self.emit(UiEvent::CaptureRepeated(Repeated::Download(id)));
+        Some(reply)
     }
 
     /// How a capture arrives, read from the state in one go.
@@ -479,7 +489,7 @@ impl Manager {
         if let Some(id) = state
             .pending
             .values()
-            .find(|p| p.capture.url == url_text)
+            .find(|p| same_address(&p.capture.url, &url_text))
             .map(|p| p.capture.id)
         {
             state.pending.join(id, &capture.handover_id)?;
