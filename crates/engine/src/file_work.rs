@@ -20,6 +20,9 @@ struct Count {
     /// Tests: counts down the flushes of the part file; the one that takes it from 1 to 0 fails, as a write-back error reported once would.
     #[cfg(test)]
     flushes_until_failure: AtomicUsize,
+    /// Tests: counts down the writes to the part file; the one that takes it from 1 to 0 fails.
+    #[cfg(test)]
+    writes_until_failure: AtomicUsize,
 }
 
 /// Counts one piece of work as running until dropped.
@@ -78,11 +81,29 @@ impl FileWork {
     /// Tests: counts one flush, and answers whether it is the one to fail.
     #[cfg(test)]
     pub(crate) fn flush_fails(&self) -> bool {
-        let countdown = &self.0.flushes_until_failure;
-        let left = countdown.load(Ordering::SeqCst);
-        countdown.store(left.saturating_sub(1), Ordering::SeqCst);
-        left == 1
+        reaches_failure(&self.0.flushes_until_failure)
     }
+
+    /// Tests: the write after the next `passing` ones fails.
+    #[cfg(test)]
+    pub(crate) fn fail_write_after(&self, passing: usize) {
+        self.0
+            .writes_until_failure
+            .store(passing + 1, Ordering::SeqCst);
+    }
+
+    /// Tests: counts one write, and answers whether it is the one to fail.
+    #[cfg(test)]
+    pub(crate) fn write_fails(&self) -> bool {
+        reaches_failure(&self.0.writes_until_failure)
+    }
+}
+
+#[cfg(test)]
+fn reaches_failure(countdown: &AtomicUsize) -> bool {
+    let left = countdown.load(Ordering::SeqCst);
+    countdown.store(left.saturating_sub(1), Ordering::SeqCst);
+    left == 1
 }
 
 #[cfg(test)]

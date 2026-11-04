@@ -18,10 +18,35 @@ fn url(s: &str) -> Url {
     Url::parse(s).unwrap()
 }
 
+#[test]
+fn a_guarded_target_keeps_only_addresses_off_the_local_network() {
+    let answers = || {
+        ["10.0.0.1:21", "93.184.215.14:21", "[::1]:21"]
+            .map(|address| address.parse::<SocketAddr>().unwrap())
+            .to_vec()
+    };
+    let open = target("ftp://files.example/f").unwrap();
+    assert_eq!(open.allowed_addresses(answers()), answers());
+    let guarded = Target {
+        guard: Some(Guard(std::sync::Arc::new(|_| Box::pin(async { Ok(()) })))),
+        ..open
+    };
+    assert_eq!(
+        guarded.allowed_addresses(answers()),
+        ["93.184.215.14:21".parse::<SocketAddr>().unwrap()]
+    );
+}
+
 fn target(s: &str) -> Result<Target, Error> {
     let roots = rustls::RootCertStore::empty();
     let clients = Clients::with_roots(&DownloadOptions::default(), roots);
-    Target::new(&url(s), &DownloadOptions::default(), clients.tls(), None)
+    Target::new(
+        &url(s),
+        &DownloadOptions::default(),
+        clients.tls(),
+        None,
+        None,
+    )
 }
 
 #[test]

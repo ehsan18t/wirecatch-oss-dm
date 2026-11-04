@@ -33,7 +33,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 6   | An inherited APPIMAGE variable can make the app overwrite or start another program                | `12-1` `Xpath-app-update-4` `Xsecurity-update-signatures-2` `B05-1`                                | P1       | small  | P1, 4 findings; must land before item 7 switches updates on                                                      | `12-1`                                        | fixed  |
 | 7   | The app never looks for updates, and every proxy test fails                                       | `Xfeature-behaviour-1` `Xpath-app-update-1` `Xsecurity-update-signatures-1` `Xfeature-behaviour-2` | P1       | small  | P1, 4 findings; right after the item that makes updates safe to switch on                                        | `Xfeature-behaviour-1` `Xfeature-behaviour-2` | fixed  |
 | 8   | A move across drives can leave a cut-off file under the final name                                | `Xsecond-review-disk-writes-7` `Xcrash-and-resume-4`                                               | P2       | medium | P2 placed early: ending the process at the quit limit would make this cut-off file reachable on an ordinary quit | none                                          | fixed  |
-| 9   | Quitting during a move leaves the list pointing at the wrong place                                | `Xshutdown-1` `Xconcurrency-4`                                                                     | P1       | medium | P1; needs the staged copy, and shapes what the quit limit waits for                                              | `Xshutdown-1`                                 | open   |
+| 9   | Quitting during a move leaves the list pointing at the wrong place                                | `Xshutdown-1` `Xconcurrency-4`                                                                     | P1       | medium | P1; needs the staged copy, and shapes what the quit limit waits for                                              | `Xshutdown-1`                                 | fixed  |
 | 10  | The quit time limit does not end the process                                                      | `Xshutdown-3` `22-1` `B10-2` `22-7`                                                                | P1       | medium | P1, 4 findings; its two blockers sit just above it                                                               | `Xshutdown-3`                                 | open   |
 | 11  | "If the file is already in the folder" is skipped for names from the link or browser              | `05-2` `Xpath-normal-download-1` `B01-1`                                                           | P1       | medium | P1, 3 findings; after the items its fix would otherwise make common                                              | `05-2`                                        | open   |
 | 12  | A settings file can send downloads into folders whose programs the app runs                       | `Xsecurity-path-handling-2` `Xsecurity-addon-unpacking-1` `B12-1`                                  | P1       | medium | P1, 3 findings, medium                                                                                           | `Xsecurity-path-handling-2`                   | fixed  |
@@ -42,7 +42,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 15  | Typing a space in search pauses downloads, and Enter can open a file                              | `25-1` `B13-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `25-1`                                        | open   |
 | 16  | A very large HLS playlist freezes inspection for minutes to hours                                 | `14-2` `B08-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `14-2`                                        | fixed  |
 | 17  | A video with a web page or nothing in place of a segment is reported as complete                  | `15-1` `B06-1`                                                                                     | P1       | medium | P1, 2 findings, medium                                                                                           | `15-1`                                        | fixed  |
-| 18  | A lower-integrity program can stand in for the app and receive downloads' cookies                 | `08-1` `08-2`                                                                                      | P1       | medium | P1, 2 findings, medium                                                                                           | `08-1` `B04-p2-checks`                        | open   |
+| 18  | A lower-integrity program can stand in for the app and receive downloads' cookies                 | `08-1` `08-2`                                                                                      | P1       | medium | P1, 2 findings, medium                                                                                           | `08-1` `B04-p2-checks`                        | fixed  |
 | 19  | A DASH template can ask for an address of hundreds of gigabytes and abort the app                 | `14-1`                                                                                             | P1       | small  | P1, 1 finding, small                                                                                             | `14-1`                                        | fixed  |
 | 20  | A failed flush while saving progress is forgotten                                                 | `Xsecond-review-disk-writes-1`                                                                     | P1       | small  | P1, 1 finding, small                                                                                             | `Xsecond-review-disk-writes-1`                | fixed  |
 | 21  | An expired redirect target fails a download whose link still works                                | `02-1`                                                                                             | P1       | small  | P1, 1 finding, small                                                                                             | `02-1`                                        | fixed  |
@@ -59,15 +59,15 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 32  | A raw non-ASCII byte or another charset in a header loses the file name or fails a redirect       | `02-2` `B11-1` `01-7`                                                                              | P2       | small  | P2, 3 findings, small                                                                                            | `02-2` `B11-1` `01-7`                         | fixed  |
 | 33  | Failing to delete a temporary file turns a saved video into a failure                             | `15-2` `Xsecond-review-disk-writes-6` `B06-2`                                                      | P2       | small  | P2, 3 findings, small                                                                                            | none                                          | fixed  |
 | 34  | A damaged or squatted key does not lead the bridge to start the app and renew it                  | `06-1` `08-3` `B04-2`                                                                              | P2       | small  | P2, 3 findings, small                                                                                            | `B04-p2-checks`                               | open   |
-| 35  | An open file-exists question outlives the download state it asked about                           | `04-4` `05-7` `Xconcurrency-8`                                                                     | P2       | medium | P2, 3 findings, medium                                                                                           | `04-4`                                        | open   |
+| 35  | An open file-exists question outlives the download state it asked about                           | `04-4` `05-7` `Xconcurrency-8`                                                                     | P2       | medium | P2, 3 findings, medium                                                                                           | `04-4`                                        | fixed  |
 | 36  | Proxy exceptions are accepted that can never match                                                | `09-3` `19-3` `19-5`                                                                               | P2       | medium | P2, 3 findings, medium                                                                                           | none                                          | fixed  |
 | 37  | A typed file name is dropped when the download turns out to be a page                             | `17-7` `Xpath-normal-download-5` `Xfeature-behaviour-6`                                            | P2       | medium | P2, 3 findings, medium                                                                                           | `B07-p2-tests`                                | fixed  |
 | 38  | Pages yt-dlp describes at the top level, or with several videos, are misread                      | `Xpath-media-download-3` `Xpath-media-download-4` `B07-1`                                          | P2       | medium | P2, 3 findings, medium                                                                                           | `B07-p2-tests`                                | fixed  |
 | 39  | The CLI strands files under another name when a resume file is damaged or the name is numbered    | `01-1` `F-1` `M-2`                                                                                 | P2       | medium | P2, 3 findings, medium                                                                                           | `FT-kill`                                     | fixed  |
 | 40  | The add-on's state mixes an operation with whether the tools work                                 | `24-3` `27-4` `B12-2`                                                                              | P2       | medium | P2, 3 findings, medium; clears the way for item 53                                                               | none                                          | open   |
 | 41  | A download retried or removed just after it ended is still told as ended                          | `26-5` `26-8` `B17-2`                                                                              | P2       | medium | P2, 3 findings, medium                                                                                           | none                                          | open   |
-| 42  | The network guard's local-address rule is written twice                                           | `09-8`                                                                                             | P3       | small  | P3 placed here: merging the copies comes before the FTP fix that needs the rule                                  | none                                          | open   |
-| 43  | The local network rule does not apply to FTP                                                      | `09-1` `21-1` `Xsecurity-bridge-and-pipe-input-1`                                                  | P2       | medium | P2, 3 findings, medium; after item 42                                                                            | none                                          | open   |
+| 42  | The network guard's local-address rule is written twice                                           | `09-8`                                                                                             | P3       | small  | P3 placed here: merging the copies comes before the FTP fix that needs the rule                                  | none                                          | fixed  |
+| 43  | The local network rule does not apply to FTP                                                      | `09-1` `21-1` `Xsecurity-bridge-and-pipe-input-1`                                                  | P2       | medium | P2, 3 findings, medium; after item 42                                                                            | none                                          | fixed  |
 | 44  | "This host is under that site" is written four times, and the copies differ                       | `10-4` `Xrepeated-logic-3`                                                                         | P3       | medium | P3 placed here: merging the copies comes before the host fix in the next item                                    | none                                          | fixed  |
 | 45  | ftps and ftpes hosts are read raw by every check                                                  | `21-1` `Xsecurity-bridge-and-pipe-input-1` `Xrepeated-logic-3` `B14-1`                             | P2       | small  | P2, 4 findings, small; after item 44                                                                             | none                                          | open   |
 | 46  | An apostrophe in a link leaves its password or signed query in the log                            | `20-1`                                                                                             | P2       | small  | P2; must land before item 47 removes the mask that hides this today                                              | none                                          | fixed  |
@@ -84,13 +84,13 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 57  | Choosing a file or folder without a file chooser portal does nothing and says nothing             | `23-6` `B18-1`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
 | 58  | A typed file name with a dot loses the words after it                                             | `17-3` `Xrepeated-logic-2`                                                                         | P2       | small  | P2, 2 findings, small                                                                                            | `17-3`                                        | open   |
 | 59  | Downloaded installers are never removed                                                           | `12-2` `Xpath-app-update-5`                                                                        | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
-| 60  | An update with no usable file is shown as a package manager update or opens the release page      | `Xpath-app-update-6` `Xsecurity-update-signatures-3`                                               | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
+| 60  | An update with no usable file is shown as a package manager update or opens the release page      | `Xpath-app-update-6` `Xsecurity-update-signatures-3`                                               | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 61  | A conversion demands audio or video that a format did not describe                                | `Xpath-media-download-10` `B07-4`                                                                  | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 62  | A torn last line of a stream's log can truncate its joined track                                  | `Xsecond-review-disk-writes-4` `Xsecond-review-resume-3`                                           | P2       | small  | P2, 2 findings, small                                                                                            | `Xsecond-review-disk-writes-4`                | fixed  |
-| 63  | Blank lines hide a program's failure reason and grow memory without limit                         | `13-1` `13-5`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | `13-1`                                        | open   |
+| 63  | Blank lines hide a program's failure reason and grow memory without limit                         | `13-1` `13-5`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | `13-1`                                        | fixed  |
 | 64  | No test covers control characters in names or a part file that cannot be created                  | `M-1` `M-3`                                                                                        | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 65  | Ctrl+C in the CLI can exit with the wrong code or abort                                           | `32-2` `32-3`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
-| 66  | Keep existing, Replace and captures leave the wrong category on the row                           | `05-11` `07-4`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
+| 66  | Keep existing, Replace and captures leave the wrong category on the row                           | `05-11` `07-4`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 67  | A finished media file is not flushed before its sources are deleted                               | `Xsecond-review-disk-writes-3` `Xsecond-review-resume-7`                                           | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 68  | Leftover proxy code from the earlier form has no caller                                           | `19-8` `Xrepeated-logic-7` `B05-2`                                                                 | P3       | small  | P3 placed here: removing the third copy comes before the fix to the live one                                     | none                                          | fixed  |
 | 69  | yt-dlp ignores proxy exceptions and the page's scheme                                             | `19-4` `B15-1`                                                                                     | P2       | small  | P2, 2 findings, small; after item 68                                                                             | none                                          | fixed  |
@@ -101,7 +101,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 74  | A stored bad part can never be thrown away, so Refresh link cannot help                           | `15-3` `Xpath-media-download-6`                                                                    | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 75  | A refused HLS or yt-dlp address fails instead of reading the page again                           | `17-5` `B07-3`                                                                                     | P2       | medium | P2, 2 findings, medium                                                                                           | `B07-p2-tests`                                | open   |
 | 76  | The import preview hides proxy and local site changes                                             | `19-1` `27-2`                                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
-| 77  | A missing library is not seen as a broken add-on, and can raise a system dialog                   | `Xsecurity-addon-unpacking-2` `B12-3`                                                              | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
+| 77  | A missing library is not seen as a broken add-on, and can raise a system dialog                   | `Xsecurity-addon-unpacking-2` `B12-3`                                                              | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 78  | A download moved to another queue shows in the wrong place                                        | `23-1` `25-5`                                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
 | 79  | The window and a restart disagree with what a queue's run really is                               | `18-2` `18-3`                                                                                      | P2       | medium | P2, 2 findings, medium; clears the way for item 138                                                              | none                                          | open   |
 | 80  | Answering the file-exists question opens a second window for the same download                    | `24-6` `U-7`                                                                                       | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
@@ -109,12 +109,12 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 82  | Refreshing the link cannot clear the check against what the browser saw                           | `Xpath-normal-download-3`                                                                          | P2       | small  | P2 with one finding; placed here because saving this check alone would remove the only way out of it             | `Xpath-normal-download-3`                     | open   |
 | 83  | An answered Replace and a capture's size check are lost at a restart                              | `05-6` `Xcrash-and-resume-5`                                                                       | P2       | medium | P2, 2 findings, medium; after items 4, 82                                                                        | `05-6` `Xcrash-and-resume-5`                  | open   |
 | 84  | A write that can never pass raises a notification for every batch                                 | `03-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `03-3`                                        | open   |
-| 85  | Choosing the folder the guess already points at is not remembered                                 | `05-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 85  | Choosing the folder the guess already points at is not remembered                                 | `05-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 86  | A capture joining an unfinished download is answered Started too early                            | `07-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 87  | Skipped bytes are not counted against the speed limit                                             | `02-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 87  | Skipped bytes are not counted against the speed limit                                             | `02-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 88  | A stale resume file that could not be deleted makes zeros count as downloaded                     | `Xsecond-review-resume-5`                                                                          | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 89  | A resume file is rewritten every second even when nothing changed                                 | `01-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 90  | A valid short partial answer is waited out as a failed connection                                 | `F-2`                                                                                              | P2       | small  | P2, 1 finding, small                                                                                             | `FT-sizes`                                    | open   |
+| 90  | A valid short partial answer is waited out as a failed connection                                 | `F-2`                                                                                              | P2       | small  | P2, 1 finding, small                                                                                             | `FT-sizes`                                    | fixed  |
 | 91  | CLI speed and ETA are wrong for half a minute after a resume                                      | `32-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 92  | A command-line argument that is not valid Unicode aborts the app                                  | `22-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 93  | Uninstalling while the app runs leaves its program behind                                         | `29-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -138,7 +138,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 111 | Cancel on a selection stops at a finished download                                                | `25-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 112 | The drawer stays open over a page opened from its foot                                            | `25-7`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 113 | Change queue inside the details opens the same details again                                      | `25-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 114 | A page address that is not a web address counts as on the person's network                        | `10-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 114 | A page address that is not a web address counts as on the person's network                        | `10-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 115 | A Windows socks= proxy fails on sites whose first address is IPv6                                 | `09-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 116 | The proxy form says a saved password is kept, then forgets it                                     | `27-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 117 | A download that fails to start leaves its slot empty                                              | `04-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -164,7 +164,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 137 | Reading a website's page with yt-dlp escapes the local network rule                               | `Xsecurity-bridge-and-pipe-input-2`                                                                | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | open   |
 | 138 | A queue's run ends while its last download only waits                                             | `18-1`                                                                                             | P2       | medium | P2, 1 finding, medium; after item 79                                                                             | none                                          | open   |
 | 139 | Nothing opens a download's window again after Hide                                                | `24-8`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | open   |
-| 140 | A file too large for the disk is not noticed until it is full                                     | `01-3`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | open   |
+| 140 | A file too large for the disk is not noticed until it is full                                     | `01-3`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 141 | A crash at the end of a move leaves the list and the disk disagreeing                             | `Xcrash-and-resume-4`                                                                              | P2       | medium | P2, 1 finding, medium; after item 8                                                                              | none                                          | open   |
 | 142 | Commands and items left from the removed web interface are dead                                   | `23-11` `24-11` `30-5` `30-6` `B19-5`                                                              | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | open   |
 | 143 | Tests give waits a fixed short limit, and the timing check cannot see them                        | `01-10` `33-2` `04-7` `06-3` `21-3`                                                                | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | open   |
@@ -181,7 +181,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 154 | Cancelling does not interrupt name lookups                                                        | `09-4` `B14-2`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 155 | The rebinding tests never reach the filtering resolver, and its refusal ends as a network failure | `09-5` `09-6`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 156 | Tests do not cover the stored forms of enums and old settings                                     | `03-6` `Xdatabase-migrations-5`                                                                    | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
-| 157 | A held-open output loses a program's collected output, and its test cannot fail                   | `13-2` `13-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
+| 157 | A held-open output loses a program's collected output, and its test cannot fail                   | `13-2` `13-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 158 | A resume file's temporary file can stay for good                                                  | `01-8` `Xsecond-review-disk-writes-8`                                                              | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 159 | Add-on release files of skipped versions stay in the work folder                                  | `11-4` `Xsecurity-addon-unpacking-4`                                                               | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 160 | Tray ticks flip on a repeat click, and & in a name shows wrongly                                  | `26-2` `26-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
@@ -201,17 +201,17 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 174 | A file beside a leftover part or resume file is never asked about                                 | `B02-1`                                                                                            | P3       | small  | P3, 1 finding, small; after item 48                                                                              | none                                          | open   |
 | 175 | A saved download that gives way to its page loses its link if the app stops first                 | `Xcrash-and-resume-6`                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 176 | A removal gives up the path before it deletes the files                                           | `Xconcurrency-10`                                                                                  | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 177 | A failed write takes too much back from the progress count                                        | `01-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 178 | A range past the end of a shrunken file is reported as a server error                             | `02-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 177 | A failed write takes too much back from the progress count                                        | `01-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 178 | A range past the end of a shrunken file is reported as a server error                             | `02-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 179 | The step-back rule's long-wait test is true only because of jitter                                | `02-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 180 | Fetcher::save promises data survives a drop, but up to 256 KiB is lost                            | `02-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 180 | Fetcher::save promises data survives a drop, but up to 256 KiB is lost                            | `02-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 181 | bench_local sleeps for no time after each accept                                                  | `02-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 182 | A redirect error tells the CLI user to allow something the CLI cannot                             | `32-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 183 | async_and_blocking_reads_agree never does a blocking read                                         | `06-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 184 | The AppImage replacement is renamed into place without a flush                                    | `12-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 185 | The unsigned release page address reaches the system shell unchecked                              | `Xsecurity-update-signatures-4`                                                                    | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 186 | Turning off pre-release versions keeps offering the one already found                             | `Xpath-app-update-7`                                                                               | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 187 | No test holds a manifest's version and size rules                                                 | `12-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 185 | The unsigned release page address reaches the system shell unchecked                              | `Xsecurity-update-signatures-4`                                                                    | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 186 | Turning off pre-release versions keeps offering the one already found                             | `Xpath-app-update-7`                                                                               | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 187 | No test holds a manifest's version and size rules                                                 | `12-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 188 | The packaging example for ARM64 on x64 cannot work                                                | `29-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 189 | ARM64 Linux packages are drafted without the fresh-system check                                   | `29-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 190 | The .deb and .rpm state no C library version                                                      | `29-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -239,7 +239,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 212 | `let _theme = cx.theme()` does nothing                                                            | `25-12`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 213 | The link's hover popover covers the row's menu                                                    | `U-8`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 214 | The damaged-list notice squeezes its text and breaks the path                                     | `U-15`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 215 | A top-level domain held only through a wildcard counts as a local name                            | `10-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 215 | A top-level domain held only through a wildcard counts as a local name                            | `10-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 216 | direct_uses_no_proxy passes whatever Direct does                                                  | `09-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 217 | Module docs describe proxy behaviour that has changed                                             | `09-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 218 | A proxy test cancelled by quitting is saved as its last result                                    | `19-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -268,7 +268,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 241 | Comments in the checked configuration describe things that are gone                               | `33-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 242 | Two test helpers wait for progress with no deadline                                               | `01-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 243 | A roaming data folder that could not be deleted keeps the list with its cookies                   | `Xdatabase-migrations-4`                                                                           | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 244 | The `<local>` queue rule is never tested against the real network check                           | `M-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 244 | The `<local>` queue rule is never tested against the real network check                           | `M-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 
 ## Items
 
@@ -424,7 +424,7 @@ P2, medium, fixed.
 
 ### 9. Quitting during a move leaves the list pointing at the wrong place
 
-P1, medium, open.
+P1, medium, fixed.
 
 `shutdown` collects only `run.exited` and does not wait for `Hold::Moving`, and `finish_move`'s save reaches a closed store. The reopened row names a path with no file (finished) or the old folder with its part file in the new one (partial). The file still exists.
 
@@ -582,7 +582,7 @@ P1, medium, fixed.
 
 ### 18. A lower-integrity program can stand in for the app and receive downloads' cookies
 
-P1, medium, open.
+P1, medium, fixed.
 
 `connect` compares only the pipe owner's SID, and the key file has no no-read-up label. So a low-integrity program of the same user can read the key, make the pipe, and receive what the bridge sends, cookies included. The real app then gets `AlreadyInUse` and does not recover, the same cause as `08-2`, where a name held under the key lock is not always renewed.
 
@@ -888,7 +888,7 @@ P2, small, open.
 
 ### 35. An open file-exists question outlives the download state it asked about
 
-P2, medium, open.
+P2, medium, fixed.
 
 Only `requeue`, `cancel` and `finish_removing` close a file-exists question, and `answer_file_exists` checks neither status nor a move under way. After Resume all, a late Replace returns `Ok` and sets a finished row back to Queued. The usual path is harmless, since `ask` closes an older question when the duplicate is found again.
 
@@ -1014,7 +1014,7 @@ P2, medium, open.
 
 ### 42. The network guard's local-address rule is written twice
 
-P3, small, open.
+P3, small, fixed.
 
 `check` and `all_private` in `net_guard.rs` hold the same rule, and `check` repeats the host match of `host_addresses`.
 
@@ -1030,7 +1030,7 @@ P3, small, open.
 
 ### 43. The local network rule does not apply to FTP
 
-P2, medium, open.
+P2, medium, fixed.
 
 `download_with` makes a guard for `http` and `https` only, and `Target::resolve` uses a bare `lookup_host`. So a website's FTP link that rebinds or mixes answers reaches the local network, logs in and saves, while the doc of `refuses` promises otherwise. Nothing read goes back to the site. D34.9 and D39.1 state the rule for every start.
 
@@ -1328,7 +1328,7 @@ P2, small, fixed.
 
 ### 60. An update with no usable file is shown as a package manager update or opens the release page
 
-P2, small, open.
+P2, small, fixed.
 
 `download: None` has several reasons that the app reads as one. So a person on Windows is told to use a package manager and loses What's new, and a release whose asset is missing or of another size falls through to the unchecked release page with no log.
 
@@ -1379,7 +1379,7 @@ P2, small, fixed.
 
 ### 63. Blank lines hide a program's failure reason and grow memory without limit
 
-P2, small, open.
+P2, small, fixed.
 
 `push` adds 0 bytes for a blank line, so the eviction loop never runs and 100,000 pushes keep 100,000 lines. With a blank last line, `error_line` gives an empty reason where the line before said "Conversion failed!". `cut` and the no-reason wording are also written twice.
 
@@ -1430,7 +1430,7 @@ P2, small, fixed.
 
 ### 66. Keep existing, Replace and captures leave the wrong category on the row
 
-P2, small, open.
+P2, small, fixed.
 
 `settle_at` and `replace_at` do not carry the category known so far, and `add_entry` does not keep the wanted one. So Keep existing and Replace leave the wrong category on the row, and a direct media file the browser called audio goes to the wrong folder.
 
@@ -1618,7 +1618,7 @@ P2, medium, open.
 
 ### 77. A missing library is not seen as a broken add-on, and can raise a system dialog
 
-P2, medium, open.
+P2, medium, fixed.
 
 `mark_broken` is reached only from spawn errors, but a missing library starts the process and it dies with `C0000135`. With the default error mode a system message box can instead hold the run until `STALL_TIMEOUT`, naming a DLL on the person's screen (`B12-3`). `CREATE_NO_WINDOW` itself was not shown to behave that way.
 
@@ -1752,7 +1752,7 @@ P2, small, open.
 
 ### 85. Choosing the folder the guess already points at is not remembered
 
-P2, small, open.
+P2, small, fixed.
 
 An early return in `set_download_folder` runs before `naming.folder` is set. Picking the folder the guess already points at is not remembered, so a later server name picks another folder.
 
@@ -1784,7 +1784,7 @@ P2, small, fixed.
 
 ### 87. Skipped bytes are not counted against the speed limit
 
-P2, small, open.
+P2, small, fixed.
 
 In `stream` and `Fetcher::attempt`, `data.is_empty()` continues before `pace`, and only kept bytes count. A retry that skips a large part runs with no speed limit, against the `Fetcher` doc's "Every byte counts".
 
@@ -1832,7 +1832,7 @@ P2, small, open.
 
 ### 90. A valid short partial answer is waited out as a failed connection
 
-P2, small, open.
+P2, small, fixed.
 
 A server capping each answer sends a valid short `206`, and `stream` compares only with what it asked for, so the clean end is `PrematureEof`. Each one waits out the first backoff: 16 MiB at a 256 KiB cap took 57 waits and 5.17 s against about 55 ms. The file is right.
 
@@ -2218,7 +2218,7 @@ P2, small, open.
 
 ### 114. A page address that is not a web address counts as on the person's network
 
-P2, small, open.
+P2, small, fixed.
 
 `of_capture` only requires `Url::parse` to succeed. `chrome-extension://abcdef/x` has the opaque host `abcdef`, read as a single label off the list, so the capture is `LocalPage` and a link to a local address gets through. `cookie_scope::site_of` refuses those schemes next door.
 
@@ -2634,7 +2634,7 @@ The only call of `show_download` is the `CaptureRepeated` arm of `follow`, and n
 
 ### 140. A file too large for the disk is not noticed until it is full
 
-P2, medium, open.
+P2, medium, fixed.
 
 `linux::fallocate(...).or_else(set_len)` discards `ENOSPC`, and on NTFS a sparse file allocates nothing. No crate asks for free space, so a file too large for the disk is not noticed until it is full. Not run. The README's "reserved up front" is the promise that fails. A full disk itself is untested.
 
@@ -2943,7 +2943,7 @@ P3, small, open.
 
 ### 157. A held-open output loses a program's collected output, and its test cannot fail
 
-P3, small, open.
+P3, small, fixed.
 
 `Readers::abort` aborts the task that holds the only copy of the output, so a run past the grace parses nothing. It needs a detached child on Unix or a stall of over 2 s. `a_child_that_left_the_group_does_not_hold_the_run` passes without the grace, and is `cfg(unix)`, not run here.
 
@@ -3283,7 +3283,7 @@ P3, small, fixed.
 
 ### 177. A failed write takes too much back from the progress count
 
-P3, small, open.
+P3, small, fixed.
 
 A failed write moves `unwritten` to `dropped`, `stream` breaks before `progress.add`, and `take_back` then takes too much. It shows only when one connection fails and others carry on, and only in the count.
 
@@ -3299,7 +3299,7 @@ A failed write moves `unwritten` to `dropped`, `stream` breaks before `progress.
 
 ### 178. A range past the end of a shrunken file is reported as a server error
 
-P3, small, open.
+P3, small, fixed.
 
 `fetch` sends a 416 to `HttpStatus`, and the words depend on which connection failed first. A new run recovers.
 
@@ -3331,7 +3331,7 @@ P3, small, fixed.
 
 ### 180. Fetcher::save promises data survives a drop, but up to 256 KiB is lost
 
-P3, small, open.
+P3, small, fixed.
 
 `sink.finish()` is reached only after `transfer` returns, and `BufWriter` does not flush on drop, so up to 256 KiB is lost on a drop, against `Fetcher::save`'s doc. The one caller renames only after `Ok`, so nothing is harmed.
 
@@ -3411,7 +3411,7 @@ P3, small, fixed.
 
 ### 185. The unsigned release page address reaches the system shell unchecked
 
-P3, small, open.
+P3, small, fixed.
 
 `html_url` is a plain string kept unparsed and reaches `ShellExecuteW` through `open_url`, against the letter of D111.3. It takes a trusted certificate, a genuine signed manifest and a click.
 
@@ -3427,7 +3427,7 @@ P3, small, open.
 
 ### 186. Turning off pre-release versions keeps offering the one already found
 
-P3, small, open.
+P3, small, fixed.
 
 A quiet check returns early on `Available`, and that state has no check button. So turning the setting off keeps offering the pre-release already found.
 
@@ -3443,7 +3443,7 @@ A quiet check returns early on `Available`, and that state has no check button. 
 
 ### 187. No test holds a manifest's version and size rules
 
-P3, small, open.
+P3, small, fixed.
 
 `Harness::publish` derives the manifest's version from the tag and gives the asset and manifest one size. With both checks removed, all 5 `app_update` tests still passed.
 
@@ -3893,7 +3893,7 @@ P3, small, open.
 
 ### 215. A top-level domain held only through a wildcard counts as a local name
 
-P3, small, open.
+P3, small, fixed.
 
 `find` takes `node.leaf` for the first label, so `jm`, `ck` and five others read as not public. Only those registries could serve a host at the bare label, so no realistic site gains.
 
@@ -4357,7 +4357,7 @@ P3, small, fixed.
 
 ### 244. The `<local>` queue rule is never tested against the real network check
 
-P3, small, open.
+P3, small, fixed.
 
 All three mutants of `is_on_own_network` survive: `queues` tests `<local>` with a stand-in, and `placement` tests use named sites. The code is right today.
 

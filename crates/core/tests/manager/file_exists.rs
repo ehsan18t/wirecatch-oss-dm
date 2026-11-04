@@ -5,11 +5,11 @@ use std::path::{Path, PathBuf};
 
 use wirecatch_engine::units::{KIB, KIB_USIZE};
 use wirecatch_protocol::app::{
-    DownloadStatus, DownloadSummary, FileExistsAnswer, FileExistsChoice, FileExistsQuestion,
-    UiEvent, WhenFileExists,
+    Category, DownloadStatus, DownloadSummary, FileExistsAnswer, FileExistsChoice,
+    FileExistsQuestion, UiEvent, WhenFileExists,
 };
 
-use wirecatch_core::RemoveFiles;
+use wirecatch_core::{LinkFrom, RemoveFiles};
 
 use crate::common::{Config, Harness, PATIENCE, TestResult, TestServer, test_data};
 
@@ -411,5 +411,148 @@ async fn a_replace_still_waiting_is_not_completed_by_a_restart() -> TestResult {
         DownloadStatus::Completed,
         "completed on the file it was to replace"
     );
+    Ok(())
+}
+
+/// Resume all closes the question (D88.3), and a late answer never touches a finished row.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resume_all_closes_the_question() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let mut events = h.manager.subscribe();
+    let row = add_into(&h, server.url("report").as_str(), &dir).await?;
+    let question = asked(&mut events).await?;
+    h.wait_status(row.id, DownloadStatus::Paused).await;
+    std::fs::remove_file(dir.join(NAME))?;
+    h.manager.resume_all()?;
+    h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(h.manager.pending_file_exists(), vec![]);
+    assert!(
+        h.manager
+            .answer_file_exists(question.id, answer(FileExistsChoice::Replace, false))
+            .is_err()
+    );
+    assert_eq!(h.row(row.id).status, DownloadStatus::Completed);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_new_link_closes_the_question() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let mut events = h.manager.subscribe();
+    let row = add_into(&h, server.url("report").as_str(), &dir).await?;
+    asked(&mut events).await?;
+    h.manager
+        .refresh_link(row.id, server.url("again").as_str(), LinkFrom::Person)?;
+    assert!(
+        !h.manager
+            .pending_file_exists()
+            .iter()
+            .any(|q| q.url.ends_with("report"))
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_move_closes_the_question() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let mut events = h.manager.subscribe();
+    let row = add_into(&h, server.url("report").as_str(), &dir).await?;
+    let question = asked(&mut events).await?;
+    h.wait_status(row.id, DownloadStatus::Paused).await;
+    let elsewhere = h.root.path().join("elsewhere");
+    h.manager
+        .set_download_folder(row.id, &elsewhere.to_string_lossy())
+        .await?;
+    assert!(
+        h.manager
+            .answer_file_exists(question.id, answer(FileExistsChoice::Replace, false))
+            .is_err()
+    );
+    assert_eq!(h.row(row.id).status, DownloadStatus::Paused);
+    Ok(())
+}
+
+/// A server that names the file against what the link suggests.
+async fn naming_server(name: &str) -> TestServer {
+    TestServer::start(
+        test_data(LEN),
+        Config {
+            ranges: true,
+            content_disposition: Some(format!("attachment; filename=\"{name}\"")),
+            ..Config::default()
+        },
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn keep_existing_takes_the_category_of_the_servers_name() -> TestResult {
+    let server = naming_server(NAME).await;
+    let h = Harness::new().await?;
+    choose(&h, WhenFileExists::KeepExisting)?;
+    let dir = folder_with(&h, &same_size())?;
+    let row = h
+        .add_with(server.url("archive.zip").as_str(), |r| {
+            r.folder = Some(dir.to_string_lossy().into_owned());
+        })
+        .await?;
+    assert_eq!(row.category, Category::Archive);
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(done.category, Category::Document);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn replace_takes_the_category_of_the_servers_type() -> TestResult {
+    let server = TestServer::start(
+        test_data(LEN),
+        Config {
+            ranges: true,
+            content_disposition: Some("attachment; filename=\"talk\"".into()),
+            content_type: Some("audio/mpeg".into()),
+            ..Config::default()
+        },
+    )
+    .await;
+    let h = Harness::new().await?;
+    choose(&h, WhenFileExists::Replace)?;
+    let dir = h.root.path().join("saved");
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(dir.join("talk"), b"older")?;
+    let row = h
+        .add_with(server.url("archive.zip").as_str(), |r| {
+            r.folder = Some(dir.to_string_lossy().into_owned());
+        })
+        .await?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(done.category, Category::Audio);
+    assert_eq!(std::fs::read(dir.join("talk"))?, server.data);
+    Ok(())
+}
+
+/// The folder a person picks is theirs, also when the guess already points at it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn choosing_the_folder_of_the_guess_is_remembered() -> TestResult {
+    let server = naming_server(NAME).await;
+    let h = Harness::new().await?;
+    let row = h
+        .add_with(server.url("archive.zip").as_str(), |r| r.start = false)
+        .await?;
+    let guessed = Path::new(&row.path)
+        .parent()
+        .ok_or("no folder")?
+        .to_path_buf();
+    h.manager
+        .set_download_folder(row.id, &guessed.to_string_lossy())
+        .await?;
+    h.manager.resume(row.id)?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(Path::new(&done.path), guessed.join(NAME));
     Ok(())
 }
