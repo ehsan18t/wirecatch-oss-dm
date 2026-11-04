@@ -37,6 +37,23 @@ Set with the maintainer on 2026-10-30, and extended on 2026-10-31 with items 8 t
 11. **W13, the extension** (done, D112). EXT-4, EXT-5, EXT-10, EXT-11, EXT-12, EXT-13 and EXT-16, and D44.6: the extension takes the cookie scope from the app's Public Suffix List, which the app keeps current (D44), instead of the copy bundled with each extension release. It changes what the app and the extension send each other, which after the release protocol version 1 freezes (D32), and a stale list can send a site's cookies with another site's download.
 12. **The rest of W9, the core** (done). CORE-8, CORE-11, CORE-13, CORE-14, CORE-19, CORE-23, CORE-25, CORE-26 and the small items, with CORE-23 and CORE-8, which change what a download does, last.
 
+Open, found on 2026-11-04. Whether the release waits for them is not decided.
+
+To fix:
+
+- **A failed video shows the add-on's raw output.** The message from `crates/media/src/describe.rs` quotes yt-dlp, such as `[generic] 1: Unable to download webpage: HTTP Error 404`, in the list and the download window. D83 asks for wording an established app would use.
+- **The wrong-size update message is awkward.** "the installer is not the size its list of files gives", in `crates/core/src/manager/app_update.rs`.
+- **The Download folder field may read as a placeholder.** Saving files shows a dim "Downloads" where other screens show the full path. Not yet checked whether this is intended.
+- **Empty space in a short download window.** The "already answered" note leaves a gap under Close, because the window keeps its minimum height.
+
+Not tested yet:
+
+- **A real update.** A successful download, install and restart has never run; the banner was only seen up to a failed checksum, with its stage seeded by a temporary change. It needs a signed release to test against.
+- **Real installers.** None has been built with the third-party notices (D117), so the first run of the release workflow is the first test of its Linux steps.
+- **Certificates on Linux (D116).** The change has run only in CI, not on a Linux computer.
+- **A video that fails before its window first reads the question.** The logic has a test; the timing was not reproduced.
+- **Light theme.** Of the screens changed on 2026-11-04, only the update banner, the list and the failed video note were seen in light theme.
+
 Done before the release:
 
 - **Queues save to their own folder** (feature; done, D94).
