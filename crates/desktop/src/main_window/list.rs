@@ -102,11 +102,6 @@ impl MainWindow {
             return self.empty(cx).into_any_element();
         }
         self.sync_scroll(&laid, cx);
-        self.drag_selection = if self.selected.len() > 1 {
-            self.selected.iter().copied().collect()
-        } else {
-            Rc::from([])
-        };
         list(
             self.scroll.state.clone(),
             cx.processor(move |this, index: usize, _, cx| {
@@ -196,13 +191,9 @@ impl MainWindow {
             sort: self.sort,
             folded: Asked::folded(&self.folded),
         };
-        let mut kept = self.laid.borrow_mut();
-        if let Some(laid) = kept.as_ref().filter(|laid| laid.asked == asked) {
-            return laid.clone();
-        }
-        let laid = Rc::new(Laid::of(asked, downloads, &mut self.frozen.borrow_mut()));
-        *kept = Some(laid.clone());
-        laid
+        self.laid
+            .borrow_mut()
+            .get(asked, downloads, &mut self.frozen.borrow_mut())
     }
 
     /// The downloads of a queue's own view that are still to run or running, in the order they
@@ -263,7 +254,7 @@ impl MainWindow {
         ids: Rc<[DownloadId]>,
         cx: &mut Context<'_, Self>,
     ) -> impl IntoElement {
-        let picked = self.picked_of(&ids);
+        let picked = self.kept_pick(&ids, cx);
         circle_cell().child(
             SelectCircle::new(ElementId::Name(name), picked)
                 .on_click(cx.listener(move |this, _, _, cx| this.toggle_rows(&ids, cx))),
@@ -402,7 +393,7 @@ impl MainWindow {
                 line.child(marker(cursor_bounds))
             })
             .on_drag(
-                self.dragged_rows(id, &row.file_name),
+                self.dragged_rows(id, &row.file_name, cx),
                 |dragged, _, _, cx| gpui_kit::AppContext::new(cx, |_| dragged.clone()),
             )
             .drag_over::<DraggedRows>(|style, _, _, cx| drag::drop_target(style, cx))

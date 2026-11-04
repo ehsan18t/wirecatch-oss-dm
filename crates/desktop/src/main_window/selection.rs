@@ -2,6 +2,9 @@
 //! takes one away, Shift+click and Shift with the arrows take a range, and the arrows move a
 //! cursor. A selection built on purpose gets a bar over the list with what it can do.
 
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use gpui_kit::assets::IconName as Lucide;
@@ -13,9 +16,9 @@ use gpui_kit::{
     AnyElement, App, Context, IntoElement, Modifiers, ParentElement as _, Styled as _, Window, div,
     px,
 };
-use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadSummary;
 use wirecatch_protocol::wire::ProtocolError;
+use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
 
 use super::applies::{self, Applicable};
@@ -28,6 +31,47 @@ use crate::ui::{Role, Typed as _};
 
 /// How far Page Up and Page Down move the cursor.
 const PAGE: usize = 10;
+
+/// The selected downloads. Reaching the set to change it moves the revision, so nothing kept from
+/// the selection can miss a change.
+#[derive(Default)]
+pub(super) struct Selected {
+    ids: HashSet<DownloadId>,
+    revision: u64,
+}
+
+impl Deref for Selected {
+    type Target = HashSet<DownloadId>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.ids
+    }
+}
+
+impl DerefMut for Selected {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.revision += 1;
+        &mut self.ids
+    }
+}
+
+/// What the selection comes to in the list, kept until the lines, the selection or the queues
+/// change: status and queue, all it reads, move only with the lines.
+pub(super) struct Facts {
+    laid: Rc<Laid>,
+    selected: u64,
+    picked: bool,
+    queue_list: u64,
+    count: usize,
+    can: Applicable,
+    ids: Rc<[DownloadId]>,
+    queues: Rc<[(QueueId, String)]>,
+    many_queues: bool,
+    /// What a drag from any selected row carries.
+    pub dragged: Rc<[DownloadId]>,
+    /// How much of each heading's rows is ticked, by the kept list of those rows.
+    picks: RefCell<HashMap<*const DownloadId, Picked>>,
+}
 
 /// Where the cursor goes.
 #[derive(Clone, Copy)]
@@ -65,6 +109,56 @@ impl MainWindow {
             .filter_map(|index| downloads.get(*index))
             .filter(|row| self.selected.contains(&row.id))
             .collect()
+    }
+
+    /// The selection's facts, worked out again only when they may differ.
+    pub(super) fn selection_facts(&self, cx: &App) -> Rc<Facts> {
+        let laid = self.laid(cx);
+        let library = self.library.read(cx);
+        let queue_list = library.revisions.queues;
+        let mut kept = self.selection_facts.borrow_mut();
+        if let Some(facts) = kept.as_ref().filter(|facts| {
+            Rc::ptr_eq(&facts.laid, &laid)
+                && facts.selected == self.selected.revision
+                && facts.picked == self.picked
+                && facts.queue_list == queue_list
+        }) {
+            return facts.clone();
+        }
+        let rows = self.chosen(&laid, cx);
+        let facts = Rc::new(Facts {
+            selected: self.selected.revision,
+            picked: self.picked,
+            queue_list,
+            count: rows.len(),
+            can: Applicable::to(&rows),
+            ids: rows.iter().map(|row| row.id).collect(),
+            queues: library
+                .queues
+                .iter()
+                .filter(|queue| applies::can_move_to(&rows, queue.id))
+                .map(|queue| (queue.id, queue.settings.name.clone()))
+                .collect(),
+            many_queues: library.queues.len() > 1,
+            dragged: if self.selected.len() > 1 {
+                self.selected.iter().copied().collect()
+            } else {
+                Rc::from([])
+            },
+            picks: RefCell::default(),
+            laid,
+        });
+        *kept = Some(facts.clone());
+        facts
+    }
+
+    /// How much of `ids`, a list kept by the lines, is ticked.
+    pub(super) fn kept_pick(&self, ids: &Rc<[DownloadId]>, cx: &App) -> Picked {
+        let facts = self.selection_facts(cx);
+        let mut picks = facts.picks.borrow_mut();
+        *picks
+            .entry(Rc::as_ptr(ids).cast())
+            .or_insert_with(|| self.picked_of(ids))
     }
 
     /// Lets go of the selection, the cursor with it.
@@ -139,7 +233,7 @@ impl MainWindow {
             return;
         };
         let (low, high) = (from.min(to), from.max(to));
-        self.selected = shown[low..=high].iter().copied().collect();
+        *self.selected = shown[low..=high].iter().copied().collect();
         self.anchor = Some(anchor);
         self.cursor = Some(id);
         self.picked = true;
@@ -175,7 +269,7 @@ impl MainWindow {
     /// Selects every download the list shows.
     pub(super) fn select_all(&mut self, cx: &mut Context<'_, Self>) {
         let shown = self.shown_ids(cx);
-        self.selected = shown.iter().copied().collect();
+        *self.selected = shown.iter().copied().collect();
         self.anchor = shown.first().copied();
         self.cursor = shown.last().copied();
         self.picked = !shown.is_empty();
@@ -218,7 +312,7 @@ impl MainWindow {
     /// The bar's circle, in the list's column of circles: ticks every download the list shows,
     /// or unticks them when all are.
     fn every_circle(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let every = self.picked_of(&self.shown_ids(cx));
+        let every = self.kept_pick(&self.shown_ids(cx), cx);
         h_flex().w(px(list::CIRCLE_WIDTH)).justify_center().child(
             SelectCircle::new("sel-every", every).on_click(cx.listener(move |this, _, _, cx| {
                 if every == Picked::All {
@@ -237,23 +331,12 @@ impl MainWindow {
         if self.selected.len() < 2 && !self.picked {
             return None;
         }
-        let laid = self.laid(cx);
-        let rows = self.chosen(&laid, cx);
-        let count = rows.len();
+        let facts = self.selection_facts(cx);
+        let count = facts.count;
         if count < 2 && !(self.picked && count == 1) {
             return None;
         }
-        let can = Applicable::to(&rows);
-        let ids: Rc<[DownloadId]> = rows.iter().map(|row| row.id).collect();
-        let queues: Vec<(wirecatch_protocol::QueueId, String)> = self
-            .library
-            .read(cx)
-            .queues
-            .iter()
-            .filter(|queue| applies::can_move_to(&rows, queue.id))
-            .map(|queue| (queue.id, queue.settings.name.clone()))
-            .collect();
-        let many_queues = self.library.read(cx).queues.len() > 1;
+        let ids = facts.ids.clone();
         let theme = cx.theme();
         let library = self.library.clone();
         let bar = h_flex()
@@ -273,9 +356,9 @@ impl MainWindow {
                     .child(format!("{count} selected")),
             )
             .child(div().flex_1())
-            .children(state_buttons(&can, cx))
-            .when(many_queues && !queues.is_empty(), |bar| {
-                bar.child(move_button(queues, ids.clone()))
+            .children(state_buttons(&facts.can, cx))
+            .when(facts.many_queues && !facts.queues.is_empty(), |bar| {
+                bar.child(move_button(facts.queues.clone(), ids.clone()))
             })
             .child(
                 bar_button("sel-remove", "Remove", Icon::new(Lucide::Trash)).on_click(
@@ -365,10 +448,7 @@ fn state_buttons(can: &Applicable, cx: &mut Context<'_, MainWindow>) -> Vec<Butt
 }
 
 /// Move to queue, with the `queues` some of `ids` are not in.
-fn move_button(
-    queues: Vec<(wirecatch_protocol::QueueId, String)>,
-    ids: Rc<[DownloadId]>,
-) -> impl IntoElement {
+fn move_button(queues: Rc<[(QueueId, String)]>, ids: Rc<[DownloadId]>) -> impl IntoElement {
     bar_button(
         "sel-move",
         "Move to queue",

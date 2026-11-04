@@ -65,10 +65,15 @@ fn pill<V>(label: String, cx: &Context<'_, V>) -> impl IntoElement {
 
 impl MainWindow {
     /// What dragging row `id` carries: the selection when it holds the row, else the row.
-    pub(super) fn dragged_rows(&self, id: DownloadId, name: &str) -> DraggedRows {
+    pub(super) fn dragged_rows(
+        &self,
+        id: DownloadId,
+        name: &str,
+        cx: &gpui_kit::App,
+    ) -> DraggedRows {
         if self.selected.contains(&id) && self.selected.len() > 1 {
             return DraggedRows {
-                ids: self.drag_selection.clone(),
+                ids: self.selection_facts(cx).dragged.clone(),
                 label: format!("{} downloads", self.selected.len()),
             };
         }

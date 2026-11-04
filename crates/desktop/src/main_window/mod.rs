@@ -288,7 +288,7 @@ pub struct MainWindow {
     library: Entity<Library>,
     screen: Screen,
     view: View,
-    selected: HashSet<DownloadId>,
+    selected: selection::Selected,
     /// Where a Shift range starts.
     anchor: Option<DownloadId>,
     /// The row the arrow keys move from.
@@ -298,9 +298,8 @@ pub struct MainWindow {
     sort: sort::Sort,
     frozen: std::cell::RefCell<sort::Frozen>,
     /// The list's last lines, for as long as they hold.
-    laid: std::cell::RefCell<Option<Rc<laid::Laid>>>,
-    /// The selection, for what a drag from any selected row carries.
-    drag_selection: Rc<[DownloadId]>,
+    laid: std::cell::RefCell<laid::Kept>,
+    selection_facts: std::cell::RefCell<Option<Rc<selection::Facts>>>,
     nav: rail::Nav,
     /// The full navigation is open over the list, from the rail of a narrow window.
     drawer: bool,
@@ -395,7 +394,7 @@ impl MainWindow {
         for group in groups {
             self.folded.remove(&group);
         }
-        self.selected = reveal.ids.iter().copied().collect();
+        *self.selected = reveal.ids.iter().copied().collect();
         self.anchor = reveal.ids.first().copied();
         self.cursor = self.anchor;
         self.picked = reveal.ids.len() > 1;
@@ -450,7 +449,7 @@ impl MainWindow {
             library,
             screen: Screen::Downloads,
             view: View::All,
-            selected: HashSet::new(),
+            selected: selection::Selected::default(),
             anchor: None,
             cursor: None,
             picked: false,
@@ -461,7 +460,7 @@ impl MainWindow {
             sort: sort::Sort::default(),
             frozen: std::cell::RefCell::default(),
             laid: std::cell::RefCell::default(),
-            drag_selection: Rc::from([]),
+            selection_facts: std::cell::RefCell::default(),
             cursor_bounds: Rc::default(),
             folded: HashSet::new(),
             hovered: None,

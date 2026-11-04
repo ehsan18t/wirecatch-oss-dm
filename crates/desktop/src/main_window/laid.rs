@@ -135,6 +135,27 @@ impl Laid {
     }
 }
 
+/// The last lines, for as long as they hold.
+#[derive(Default)]
+pub(super) struct Kept(Option<Rc<Laid>>);
+
+impl Kept {
+    /// The lines for `asked`, laid out again only when it differs from the last.
+    pub fn get(
+        &mut self,
+        asked: Asked,
+        downloads: &[DownloadSummary],
+        frozen: &mut sort::Frozen,
+    ) -> Rc<Laid> {
+        if let Some(laid) = self.0.as_ref().filter(|laid| laid.asked == asked) {
+            return laid.clone();
+        }
+        let laid = Rc::new(Laid::of(asked, downloads, frozen));
+        self.0 = Some(laid.clone());
+        laid
+    }
+}
+
 /// Puts finished `members` under the days they finished, with what each heading tells.
 fn finished_lines(
     members: &[usize],
@@ -212,6 +233,38 @@ mod tests {
 
     fn laid(asked: Asked, downloads: &[DownloadSummary]) -> Laid {
         Laid::of(asked, downloads, &mut sort::Frozen::default())
+    }
+
+    #[test]
+    fn the_same_question_reuses_the_lines_and_each_part_of_it_replaces_them() {
+        let downloads = [row(1, 1, DownloadStatus::Queued)];
+        let mut frozen = sort::Frozen::default();
+        let mut kept = Kept::default();
+        let first = kept.get(asked(View::All, "", &[]), &downloads, &mut frozen);
+        let again = kept.get(asked(View::All, "", &[]), &downloads, &mut frozen);
+        assert!(Rc::ptr_eq(&first, &again));
+        let others = [
+            Asked {
+                revision: 1,
+                ..asked(View::All, "", &[])
+            },
+            asked(View::Group(Group::UpNext), "", &[]),
+            asked(View::All, "file", &[]),
+            Asked {
+                sort: sort::Sort {
+                    key: sort::Key::Name,
+                    descending: false,
+                },
+                ..asked(View::All, "", &[])
+            },
+            asked(View::All, "", &[Group::UpNext]),
+        ];
+        let mut last = first;
+        for other in others {
+            let next = kept.get(other, &downloads, &mut frozen);
+            assert!(!Rc::ptr_eq(&last, &next));
+            last = next;
+        }
     }
 
     #[test]

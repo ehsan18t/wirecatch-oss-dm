@@ -231,16 +231,15 @@ impl Rows {
     }
 }
 
-/// Whether two states of a row group, sort and search alike. What runs moves only its figures; a
-/// row at rest shows `done` in its day's total.
+/// Whether two states of a row group, sort and search alike. What runs moves only its figures, a
+/// stream's `total` among them as it is estimated; a row at rest shows both in its day's total.
 fn sits_alike(a: &DownloadSummary, b: &DownloadSummary) -> bool {
     a.status == b.status
         && a.queue == b.queue
         && a.file_name == b.file_name
         && a.url == b.url
-        && a.total == b.total
         && a.completed_at == b.completed_at
-        && (Group::of(a.status) == Group::Downloading || a.done == b.done)
+        && (Group::of(a.status) == Group::Downloading || (a.done == b.done && a.total == b.total))
 }
 
 #[cfg(test)]
@@ -257,6 +256,7 @@ impl<'a> FromIterator<&'a DownloadSummary> for Tally {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wirecatch_protocol::UnixMillis;
     use wirecatch_test_support::downloads::download;
 
     fn row(id: i64, queue: i64, status: DownloadStatus, speed: u64) -> DownloadSummary {
@@ -354,6 +354,45 @@ mod tests {
         let paused = rows.revision();
         rows.put(row(2, 1, DownloadStatus::Queued, 0));
         assert_ne!(rows.revision(), paused);
+    }
+
+    #[test]
+    fn a_stream_moving_its_estimated_size_leaves_the_revision() {
+        let mut rows = rows(vec![row(1, 1, DownloadStatus::Downloading, 500)]);
+        let start = rows.revision();
+        rows.put(DownloadSummary {
+            total: Some(900),
+            done: 50,
+            ..row(1, 1, DownloadStatus::Downloading, 500)
+        });
+        assert_eq!(rows.revision(), start);
+    }
+
+    #[test]
+    fn each_field_the_list_reads_moves_the_revision() {
+        type Change = (&'static str, fn(&mut DownloadSummary));
+        let changes: [Change; 7] = [
+            ("status", |row| row.status = DownloadStatus::Failed),
+            ("queue", |row| row.queue = QueueId(2)),
+            ("file name", |row| row.file_name = "other.zip".to_owned()),
+            ("link", |row| {
+                row.url = "https://example.com/other".to_owned();
+            }),
+            ("size", |row| row.total = Some(999)),
+            ("finished at", |row| {
+                row.completed_at = Some(UnixMillis(row.added_at.0 + 1));
+            }),
+            ("done at rest", |row| row.done = 99),
+        ];
+        for (field, change) in changes {
+            let start = row(1, 1, DownloadStatus::Paused, 0);
+            let mut rows = rows(vec![start.clone()]);
+            let before = rows.revision();
+            let mut moved = start;
+            change(&mut moved);
+            rows.put(moved);
+            assert_ne!(rows.revision(), before, "{field}");
+        }
     }
 
     #[test]
