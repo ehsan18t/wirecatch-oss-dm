@@ -15,6 +15,7 @@ use gpui_kit::{
     App, AppContext as _, Context, Div, Entity, IntoElement, ParentElement as _, Render,
     SharedString, Styled as _, Subscription, Window, div, px,
 };
+use wirecatch_core::same_proxy;
 use wirecatch_protocol::app::{Setting, Update};
 use wirecatch_protocol::proxy::{
     ProxyKind, ProxyServer, ProxyServerDraft, ProxyServerSettings, ProxyTestResult, ProxyUse,
@@ -32,6 +33,10 @@ const KINDS: [(ProxyKind, &str); 3] = [
     (ProxyKind::Https, "HTTPS"),
     (ProxyKind::Socks5, "SOCKS5"),
 ];
+const KEEPS_PASSWORD: &str = "Leave empty to keep the saved password";
+const FORGETS_PASSWORD: &str = "Enter the password: the saved one is for the old details";
+const BAD_PORT: &str = "Enter a port from 1 to 65535.";
+
 /// The port SOCKS proxies listen on (RFC 1928).
 const SOCKS_PORT: u16 = 1080;
 const HTTP_PROXY_PORT: u16 = 8080;
@@ -181,19 +186,24 @@ impl ProxyForm {
         let password = cx.new(|cx| {
             InputState::new(window, cx).masked(true).placeholder(
                 if original.as_ref().is_some_and(|p| p.has_password) {
-                    "Leave empty to keep the saved password"
+                    KEEPS_PASSWORD
                 } else {
                     ""
                 },
             )
         });
         let edited = [&name, &host, &port, &user, &password].map(|field| {
-            cx.subscribe(field, |form: &mut Self, _, event: &InputEvent, cx| {
-                if matches!(event, InputEvent::Change) {
-                    form.outcome = None;
-                    cx.notify();
-                }
-            })
+            cx.subscribe_in(
+                field,
+                window,
+                |form: &mut Self, _, event: &InputEvent, window, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        form.outcome = None;
+                        form.say_what_happens_to_the_password(window, cx);
+                        cx.notify();
+                    }
+                },
+            )
         });
         Self {
             original,
@@ -211,26 +221,41 @@ impl ProxyForm {
         }
     }
 
-    fn settings(&self, cx: &App) -> ProxyServerSettings {
-        ProxyServerSettings {
+    /// What the form holds; `None` while the port is not one.
+    fn settings(&self, cx: &App) -> Option<ProxyServerSettings> {
+        Some(ProxyServerSettings {
             name: self.name.read(cx).value().trim().to_owned(),
             kind: self.kind,
             host: self.host.read(cx).value().trim().to_owned(),
-            port: self
-                .port
-                .read(cx)
-                .value()
-                .trim()
-                .parse()
-                .unwrap_or_else(|_| usual_port(self.kind)),
+            port: typed_port(&self.port.read(cx).value())?,
             user: self.user.read(cx).value().trim().to_owned(),
-        }
+        })
     }
 
-    fn draft(&self, cx: &App) -> ProxyServerDraft {
+    /// Whether the saved password goes with what the form holds: it is forgotten when the type,
+    /// server, port or user name changes (D71.2).
+    fn keeps_password(&self, cx: &App) -> bool {
+        let now = self.settings(cx);
+        self.original.as_ref().is_some_and(|proxy| {
+            proxy.has_password
+                && now
+                    .as_ref()
+                    .is_some_and(|now| same_proxy(&proxy.settings, now))
+        })
+    }
+
+    fn say_what_happens_to_the_password(&self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        let has_saved = self.original.as_ref().is_some_and(|p| p.has_password);
+        let said = password_hint(has_saved, self.keeps_password(cx));
+        self.password.update(cx, |state, cx| {
+            state.set_placeholder(said, window, cx);
+        });
+    }
+
+    fn draft(&self, cx: &App) -> Option<ProxyServerDraft> {
         let typed = self.password.read(cx).value().to_string();
-        ProxyServerDraft {
-            settings: self.settings(cx),
+        Some(ProxyServerDraft {
+            settings: self.settings(cx)?,
             password: if !typed.is_empty() {
                 Update::Set(Some(Secret::from(typed)))
             } else if self.saved_password == Password::Remove {
@@ -238,15 +263,24 @@ impl ProxyForm {
             } else {
                 Update::Keep
             },
+        })
+    }
+
+    /// The draft to try or save; without one, the form says why.
+    fn draft_or_say(&mut self, cx: &mut Context<'_, Self>) -> Option<ProxyServerDraft> {
+        let held = self.draft(cx);
+        if held.is_none() {
+            self.outcome = Some(Err(BAD_PORT.to_owned()));
+            cx.notify();
         }
+        held
     }
 
     /// Whether a login was given that the proxy could refuse.
     fn login_entered(&self, cx: &App) -> bool {
         !self.user.read(cx).value().trim().is_empty()
             || !self.password.read(cx).value().is_empty()
-            || self.original.as_ref().is_some_and(|p| p.has_password)
-                && self.saved_password == Password::Keep
+            || self.keeps_password(cx) && self.saved_password == Password::Keep
     }
 
     fn test(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
@@ -254,7 +288,9 @@ impl ProxyForm {
             return;
         }
         let id = self.original.as_ref().map(|proxy| proxy.id);
-        let draft = self.draft(cx);
+        let Some(draft) = self.draft_or_say(cx) else {
+            return;
+        };
         self.stage = Stage::Testing;
         self.outcome = None;
         cx.notify();
@@ -281,7 +317,9 @@ impl ProxyForm {
             return;
         }
         let id = self.original.as_ref().map(|proxy| proxy.id);
-        let draft = self.draft(cx);
+        let Some(draft) = self.draft_or_say(cx) else {
+            return;
+        };
         self.stage = Stage::Saving;
         cx.notify();
         let saved = Backend::run(cx, move |manager| async move {
@@ -325,6 +363,7 @@ impl ProxyForm {
         }
         self.kind = kind;
         self.outcome = None;
+        self.say_what_happens_to_the_password(window, cx);
         cx.notify();
     }
 }
@@ -462,6 +501,20 @@ fn usual_port(kind: ProxyKind) -> u16 {
     match kind {
         ProxyKind::Socks5 => SOCKS_PORT,
         ProxyKind::Http | ProxyKind::Https => HTTP_PROXY_PORT,
+    }
+}
+
+/// A typed port; `None` for anything but a whole number from 1 to 65535.
+fn typed_port(typed: &str) -> Option<u16> {
+    typed.trim().parse().ok().filter(|port| *port != 0)
+}
+
+/// What the empty password field says of a saved password.
+fn password_hint(has_saved: bool, keeps: bool) -> &'static str {
+    match (has_saved, keeps) {
+        (false, _) => "",
+        (true, true) => KEEPS_PASSWORD,
+        (true, false) => FORGETS_PASSWORD,
     }
 }
 
@@ -650,4 +703,24 @@ pub(super) fn ask_delete(
                     ),
             )
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_impossible_port_is_refused() {
+        assert_eq!(typed_port(" 8080 "), Some(8080));
+        for typed in ["70000", "80a", "", "0", "-1", "1.5"] {
+            assert_eq!(typed_port(typed), None, "{typed}");
+        }
+    }
+
+    #[test]
+    fn the_password_field_says_what_saving_will_do() {
+        assert_eq!(password_hint(false, false), "");
+        assert_eq!(password_hint(true, true), KEEPS_PASSWORD);
+        assert_eq!(password_hint(true, false), FORGETS_PASSWORD);
+    }
 }
