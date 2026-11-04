@@ -22,6 +22,15 @@ pub enum Worked {
     Never,
 }
 
+fn network_problem(error: &wirecatch_engine::NetworkError) -> UserError {
+    let message = if error.is_timeout() {
+        "The server took too long to answer. Try again in a few minutes."
+    } else {
+        "Could not reach the server. Check your internet connection, then try again."
+    };
+    fix(message, FixAction::Retry)
+}
+
 /// Describes why a download failed, saved in `folder`.
 #[must_use]
 pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError {
@@ -31,12 +40,9 @@ pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError
             "This link is not a valid web address. Refresh the link with one copied from the page.",
             FixAction::RefreshLink,
         ),
-        EngineError::Network(e) if e.is_timeout() => fix(
-            "The server took too long to answer. Try again in a few minutes.",
-            FixAction::Retry,
-        ),
-        EngineError::Network(_) => fix(
-            "Could not reach the server. Check your internet connection, then try again.",
+        EngineError::Network(e) => network_problem(e),
+        EngineError::Certificate { .. } => fix(
+            "This site's security certificate could not be verified, so Wirecatch did not download from it. Check that your computer's date and time are right. If they are, the site needs to fix its certificate.",
             FixAction::Retry,
         ),
         EngineError::TooManyRedirects { .. } => fix(
@@ -647,6 +653,19 @@ mod tests {
             action(&EngineError::Internal("bug".into()), Worked::Never),
             Some(FixAction::Retry)
         );
+    }
+
+    #[test]
+    fn an_untrusted_certificate_is_not_called_a_connection_problem() {
+        let error = EngineError::Certificate {
+            reason: "UnknownIssuer".into(),
+        };
+        let told = describe(&error, Path::new("/d"), Worked::Never);
+        assert_eq!(
+            told.message,
+            "This site's security certificate could not be verified, so Wirecatch did not download from it. Check that your computer's date and time are right. If they are, the site needs to fix its certificate."
+        );
+        assert_eq!(told.fix, Some(FixAction::Retry));
     }
 
     #[test]

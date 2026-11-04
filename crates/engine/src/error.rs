@@ -30,11 +30,16 @@ pub enum Error {
     #[error("the download option `{0}` is outside the range it accepts")]
     InvalidOption(&'static str),
 
-    /// The connection failed: DNS, refused or reset connections, TLS errors,
-    /// timeouts while connecting. Used for every protocol (HTTP, HTTP/3 and
+    /// The connection failed: DNS, refused or reset connections, TLS errors other
+    /// than [`Error::Certificate`], timeouts while connecting. Used for every protocol (HTTP, HTTP/3 and
     /// FTP).
     #[error("network error: {0}")]
     Network(NetworkError),
+
+    /// The server's TLS certificate failed the check, so nothing was sent to it. Waiting does not
+    /// change that, so it is not retried.
+    #[error("the server's certificate is not trusted: {reason}")]
+    Certificate { reason: String },
 
     /// The server answered with a status that is not a success, such as `404`.
     #[error("server answered {status} for {url}")]
@@ -263,6 +268,9 @@ impl Error {
         if refused_by_proxy(&error) {
             return Error::ProxyLoginRefused;
         }
+        if let Some(reason) = certificate_problem(&error) {
+            return Error::Certificate { reason };
+        }
         Error::Network(NetworkError(Inner::Http(error)))
     }
 
@@ -270,6 +278,9 @@ impl Error {
     /// says what was being done; `connecting` whether the connection was still
     /// being opened.
     pub(crate) fn socket(what: impl Into<String>, error: io::Error, connecting: bool) -> Self {
+        if let Some(reason) = certificate_problem(&error) {
+            return Error::Certificate { reason };
+        }
         Error::Network(NetworkError(Inner::Io {
             what: what.into(),
             error,
@@ -415,9 +426,25 @@ fn login_refused_text(host: &str, code: u16, message: &str, anonymous: bool) -> 
     }
 }
 
+/// Why TLS refused the server's certificate, if that is what `error` comes down to.
+fn certificate_problem(error: &(dyn std::error::Error + 'static)) -> Option<String> {
+    let mut cause = Some(error);
+    while let Some(c) = cause {
+        if let Some(rustls::Error::InvalidCertificate(reason)) = c.downcast_ref() {
+            return Some(reason.to_string());
+        }
+        // `source` of an `io::Error` skips the error it wraps, which is where TLS puts its own.
+        cause = match c.downcast_ref::<io::Error>().and_then(io::Error::get_ref) {
+            Some(wrapped) => Some(wrapped as &(dyn std::error::Error + 'static)),
+            None => c.source(),
+        };
+    }
+    None
+}
+
 /// A failed connection or request. The message says what failed, including
-/// the underlying cause (for example "connection refused" or a certificate
-/// problem); [`std::error::Error::source`] gives the chain.
+/// the underlying cause (for example "connection refused");
+/// [`std::error::Error::source`] gives the chain.
 pub struct NetworkError(Inner);
 
 enum Inner {

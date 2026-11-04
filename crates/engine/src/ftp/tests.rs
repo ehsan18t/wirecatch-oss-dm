@@ -236,11 +236,7 @@ async fn an_untrusted_certificate_is_refused() {
         .await
         .unwrap_err();
 
-    let Error::Network(network) = &error else {
-        panic!("expected a network error, got {error:?}");
-    };
-    assert!(network.is_connect());
-    assert!(error.to_string().contains("certificate"), "{error}");
+    assert!(matches!(error, Error::Certificate { .. }), "{error:?}");
     assert_eq!(server.stats.count("USER"), 0, "no credentials sent");
     dir.remove().unwrap();
 }
