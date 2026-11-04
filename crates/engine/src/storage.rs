@@ -542,6 +542,18 @@ mod linux {
         (blocks > 0).then(|| available.saturating_mul(block_size))
     }
 
+    pub fn fallocate(file: &File, len: u64) -> io::Result<()> {
+        let len =
+            libc::off_t::try_from(len).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+        // SAFETY: plain syscall on a valid descriptor.
+        let rc = unsafe { libc::fallocate(file.as_raw_fd(), 0, 0, len) };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use super::said_free;
@@ -552,18 +564,6 @@ mod linux {
             assert_eq!(said_free(0, 0, 4096), None);
             assert_eq!(said_free(10, 0, 4096), Some(0));
             assert_eq!(said_free(10, 2, 4096), Some(8192));
-        }
-    }
-
-    pub fn fallocate(file: &File, len: u64) -> io::Result<()> {
-        let len =
-            libc::off_t::try_from(len).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
-        // SAFETY: plain syscall on a valid descriptor.
-        let rc = unsafe { libc::fallocate(file.as_raw_fd(), 0, 0, len) };
-        if rc == 0 {
-            Ok(())
-        } else {
-            Err(io::Error::last_os_error())
         }
     }
 }
