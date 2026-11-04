@@ -11,7 +11,7 @@ use gpui_kit::{
     AnyElement, App, Context, IntoElement, ParentElement as _, Styled as _, Window, div, relative,
 };
 use wirecatch_protocol::DownloadId;
-use wirecatch_protocol::app::{DownloadSummary, Queue, QueueSettings};
+use wirecatch_protocol::app::{Queue, QueueSettings};
 use wirecatch_protocol::rules::AddDownloads;
 use wirecatch_shell::api;
 
@@ -69,40 +69,28 @@ impl MainWindow {
     /// What is happening in the queue now: how many download and about how long the longest has
     /// left, and how many are up next; else how many it holds; or what a search found.
     fn summary(&self, queue: &Queue, cx: &App) -> String {
-        let downloads = &self.library.read(cx).downloads;
-        let rows: Vec<&DownloadSummary> = downloads
-            .iter()
-            .filter(|row| row.queue == queue.id)
-            .collect();
         let needle = self.needle(cx);
         if !needle.is_empty() {
-            let found = rows
-                .iter()
-                .filter(|row| {
-                    row.file_name.to_lowercase().contains(&needle)
-                        || row.url.to_lowercase().contains(&needle)
-                })
-                .count();
+            let found = self.laid(cx).rows.len();
             return format!("{} matching \u{201c}{needle}\u{201d}", count(found));
         }
-        let downloading: Vec<&&DownloadSummary> = rows
-            .iter()
-            .filter(|row| Group::of(row.status) == Group::Downloading)
-            .collect();
-        let waiting = rows
-            .iter()
-            .filter(|row| Group::of(row.status) == Group::UpNext)
-            .count();
+        let downloads = &self.library.read(cx).downloads;
+        let tally = downloads.tally_of(queue.id);
+        let waiting = tally.in_group(Group::UpNext);
         let next = (waiting > 0).then(|| format!("{waiting} up next"));
-        if downloading.is_empty() {
+        if tally.running.is_empty() {
             return next.map_or_else(
-                || count(rows.len()),
+                || count(tally.count),
                 |next| format!("Nothing downloading · {next}"),
             );
         }
-        let longest = downloading.iter().filter_map(|row| row.eta_secs).max();
+        let longest = tally
+            .running
+            .iter()
+            .filter_map(|id| downloads.find(*id)?.eta_secs)
+            .max();
         [
-            Some(format!("{} downloading", downloading.len())),
+            Some(format!("{} downloading", tally.running.len())),
             longest.map(|left| format!("about {} left", text::eta(left))),
             next,
         ]

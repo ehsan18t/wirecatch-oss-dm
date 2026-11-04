@@ -633,7 +633,7 @@ pub const LANGUAGES: &[Language] = &[
     },
     Language {
         code: "os",
-        name: "Ossetic",
+        name: "Ossetian",
         also_called: Some("Ossetic"),
     },
     Language {
@@ -843,7 +843,7 @@ pub const LANGUAGES: &[Language] = &[
     },
     Language {
         code: "tw",
-        name: "Akan",
+        name: "Twi",
         also_called: None,
     },
     Language {
@@ -935,5 +935,18 @@ mod tests {
     #[test]
     fn each_code_is_listed_once_in_order() {
         assert!(LANGUAGES.windows(2).all(|pair| pair[0].code < pair[1].code));
+    }
+
+    #[test]
+    fn each_name_is_its_own_and_another_name_adds_to_it() {
+        for (at, language) in LANGUAGES.iter().enumerate() {
+            assert_ne!(language.also_called, Some(language.name), "{language:?}");
+            let later = LANGUAGES.get(at + 1..).unwrap_or_default();
+            assert!(
+                later.iter().all(|other| other.name != language.name),
+                "{} is named twice",
+                language.name
+            );
+        }
     }
 }

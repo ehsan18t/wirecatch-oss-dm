@@ -230,6 +230,8 @@ pub(super) async fn fetch_part(
         let mut request = StreamRequest::new(url, part, private_network);
         request.ffmpeg = job.tools.as_ref().map(|t| t.ffmpeg.clone());
         request.options = options;
+        // A format's address moves between CDNs when the page is read again; the page's link stays.
+        request.work_owner.clone_from(&job.work_owner);
         let stream = Arc::new(StreamProgress::default());
         progress.add_stream(stream.clone());
         // Boxed: a download's state is tens of kilobytes, which every future
