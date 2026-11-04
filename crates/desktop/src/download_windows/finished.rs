@@ -336,6 +336,7 @@ fn row_buttons(row: &DownloadSummary, alone: bool) -> Vec<Button> {
 #[cfg(test)]
 mod tests {
     use gpui_kit::TestAppContext;
+    use wirecatch_protocol::DownloadId;
     use wirecatch_test_support::downloads::download;
 
     use super::*;
