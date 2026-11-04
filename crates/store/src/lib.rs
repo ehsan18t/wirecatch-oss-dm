@@ -24,6 +24,7 @@ use wirecatch_protocol::{DownloadId, QueueId, UnixMillis};
 use wirecatch_files::{FileError, owner_only, with_suffix};
 use wirecatch_records::answers::Answers;
 use wirecatch_records::batch::StoredBatch;
+use wirecatch_records::files::DownloadFiles;
 use wirecatch_records::media::{MediaJob, StoredMedia, unreadable};
 use wirecatch_records::origin::{Origin, without_sign_in};
 use wirecatch_records::proxy::{Logins, SavedProxyServer};
@@ -183,6 +184,10 @@ const MIGRATIONS: &[&str] = &[
     r"
     ALTER TABLE downloads ADD COLUMN answers TEXT NOT NULL DEFAULT '{}';
 ",
+    // The files a download has besides its own path, and a move of them under way (`DownloadFiles`).
+    r"
+    ALTER TABLE downloads ADD COLUMN files TEXT NOT NULL DEFAULT '{}';
+",
 ];
 
 const SETTINGS_KEY: &str = "app";
@@ -216,6 +221,7 @@ pub struct StoredDownload {
     /// Where a failed move left some of its files, if it did.
     pub stranded: Option<PathBuf>,
     pub answers: Answers,
+    pub files: DownloadFiles,
 }
 
 /// How a download's final name and folder get decided.
@@ -1170,7 +1176,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     let mut stmt = conn.prepare(
         "SELECT id, url, path, queue_id, position, category, status, total, done, error,
                 added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-                stranded, chosen_by, queue_reason, proxy_label, writing, answers
+                stranded, chosen_by, queue_reason, proxy_label, writing, answers, files
          FROM downloads ORDER BY position",
     )?;
     let mut downloads = Vec::new();
@@ -1310,9 +1316,9 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         "INSERT OR REPLACE INTO downloads
             (id, url, path, queue_id, position, category, status, total, done, error,
              added_at, completed_at, origin, settled, chosen_name, chosen_folder, media,
-             stranded, chosen_by, queue_reason, proxy_label, writing, answers)
+             stranded, chosen_by, queue_reason, proxy_label, writing, answers, files)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                 ?18, ?19, ?20, ?21, ?22, ?23)",
+                 ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
     )?
     .execute(params![
         d.id.0,
@@ -1340,15 +1346,16 @@ fn save_download(tx: &Transaction<'_>, row: &StoredDownload) -> rusqlite::Result
         d.proxy,
         row.naming.writing,
         to_json(&row.answers),
+        to_json(&row.files),
     ])?;
     Ok(())
 }
 
-/// Stored answers, or none when they cannot be read: the run then asks or checks less, which a person can see and correct.
-fn from_json_or_default(json: &str) -> Answers {
+/// A stored value, or the default when it cannot be read: a run then asks or checks less, and a move or a deletion leaves a subtitle file behind, all of which a person can see and correct.
+fn from_json_or_default<T: DeserializeOwned + Default>(json: &str) -> T {
     serde_json::from_str(json).unwrap_or_else(|error| {
-        warn!(%error, "could not read a download's saved answers");
-        Answers::default()
+        warn!(%error, "could not read a value saved with a download");
+        T::default()
     })
 }
 
@@ -1460,6 +1467,7 @@ fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
             media,
             stranded: row.get::<_, Option<String>>(17)?.map(PathBuf::from),
             answers: from_json_or_default(&row.get::<_, String>(22)?),
+            files: from_json_or_default(&row.get::<_, String>(23)?),
         }),
     })
 }
@@ -1631,6 +1639,7 @@ mod tests {
             media: None,
             stranded: None,
             answers: Answers::default(),
+            files: DownloadFiles::default(),
         }
     }
 

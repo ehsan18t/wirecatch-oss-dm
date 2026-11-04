@@ -11,6 +11,8 @@ use wirecatch_core::Manager;
 use wirecatch_ipc::{Connection, IpcError, Listener};
 use wirecatch_server::serve_connection;
 
+use crate::host::Core;
+
 /// File name of the bridge, installed next to the app. The bridge starts the app from its own
 /// folder, so both must sit side by side (D19).
 pub use wirecatch_product::BRIDGE_FILE_NAME;
@@ -86,15 +88,25 @@ pub fn bind() -> Result<Listener, IpcError> {
 /// Serves every client that connects (the bridge, later the CLI) until the task is stopped.
 pub async fn serve(listener: Listener, manager: Manager) {
     tracing::info!("serving browser connections at {}", listener.endpoint());
-    accept_loop(listener, move |connection| {
+    let mut listener = listener;
+    accept_loop(&mut listener, move |connection| {
         serve_connection(manager.clone(), connection)
     })
     .await;
 }
 
+/// [`serve_unavailable`] with `reason` until the manager opens after all, then [`serve`].
+pub async fn serve_once_opened(core: &Core, mut listener: Listener, reason: String) {
+    let manager = tokio::select! {
+        () = serve_unavailable(&mut listener, reason) => return,
+        manager = core.when_opened() => manager,
+    };
+    serve(listener, manager.clone()).await;
+}
+
 /// Serves clients while the download manager could not open: every request is answered with
 /// `reason`, so the extension tells the person what is wrong instead of waiting in silence.
-pub async fn serve_unavailable(listener: Listener, reason: String) {
+pub async fn serve_unavailable(listener: &mut Listener, reason: String) {
     accept_loop(listener, move |connection| {
         let reason = reason.clone();
         async move { answer_unavailable(connection, &reason).await }
@@ -104,7 +116,7 @@ pub async fn serve_unavailable(listener: Listener, reason: String) {
 
 /// Accepts clients and runs `handle` on each, at most [`MAX_CONNECTIONS`] at once. The
 /// connections belong to this loop: stopping it ends every one still open.
-async fn accept_loop<F, Fut>(mut listener: Listener, handle: F)
+async fn accept_loop<F, Fut>(listener: &mut Listener, handle: F)
 where
     F: Fn(Connection) -> Fut,
     Fut: Future<Output = std::io::Result<()>> + Send + 'static,
@@ -481,7 +493,10 @@ mod tests {
         let dir = private_dir("bridge-stop").unwrap();
         let endpoint = Endpoint::from_raw(dir.endpoint_name());
         let listener = Listener::bind(&endpoint).unwrap();
-        let serving = tokio::spawn(serve_unavailable(listener, "The disk is full.".into()));
+        let serving = tokio::spawn(async move {
+            let mut listener = listener;
+            serve_unavailable(&mut listener, "The disk is full.".into()).await;
+        });
         let mut client = wirecatch_ipc::connect(&endpoint).await.unwrap();
         let ask = Message::Request {
             id: 1,
@@ -495,6 +510,63 @@ mod tests {
         let mut rest = Vec::new();
         let read = tokio::time::timeout(PATIENCE, client.read_to_end(&mut rest)).await;
         assert!(read.is_ok(), "the connection outlived its server");
+    }
+
+    #[tokio::test]
+    async fn the_browser_is_served_once_a_failed_open_succeeds() {
+        use std::sync::Arc;
+        use wirecatch_core::{KnownFolders, ManagerConfig};
+        use wirecatch_ipc::Endpoint;
+        use wirecatch_protocol::frame;
+        use wirecatch_protocol::wire::{Call, Message};
+        use wirecatch_test_support::{PATIENCE, private_dir};
+
+        const REASON: &str = "The list is busy.";
+        async fn answer(endpoint: &Endpoint) -> String {
+            let mut client = wirecatch_ipc::connect(endpoint).await.unwrap();
+            let ask = Message::Request {
+                id: 1,
+                call: Call::ListQueues,
+            };
+            frame::write_async(&mut client, &ask).await.unwrap();
+            let answer: Option<Message> = frame::read_async(&mut client).await.unwrap();
+            format!("{answer:?}")
+        }
+
+        let dir = private_dir("bridge-opens-late").unwrap();
+        let mut config = ManagerConfig::new(
+            dir.path().join("data"),
+            KnownFolders::under_home(dir.path()),
+        );
+        config.addon_sources.ytdlp_releases = None;
+        let first = Core::new(config.clone());
+        let holder = first.opened().await.expect("the first copy opens the list");
+        let second = Arc::new(Core::new(config));
+        assert!(second.opened().await.is_err());
+
+        let endpoint = Endpoint::from_raw(dir.endpoint_name());
+        let listener = Listener::bind(&endpoint).unwrap();
+        let serving = {
+            let second = Arc::clone(&second);
+            tokio::spawn(async move {
+                serve_once_opened(&second, listener, REASON.to_owned()).await;
+            })
+        };
+        assert!(answer(&endpoint).await.contains(REASON));
+
+        holder.shutdown().await;
+        second.try_again();
+        let manager = second.opened().await.expect("the list is free now");
+        let served = tokio::time::timeout(PATIENCE, async {
+            while answer(&endpoint).await.contains(REASON) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        assert!(served.is_ok(), "still told the list could not open");
+        serving.abort();
+        _ = serving.await;
+        manager.shutdown().await;
     }
 
     #[test]

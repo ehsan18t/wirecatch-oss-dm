@@ -137,14 +137,17 @@ impl Rows {
         self.revision += 1;
     }
 
-    /// Takes in `row`, as new or in place of the one with its id.
-    pub fn put(&mut self, row: DownloadSummary) {
+    /// Takes in `row`, as new or in place of the one with its id. Answers whether the row may now
+    /// sit elsewhere in the manager's order, which no row says: it joined another queue's line, or
+    /// came new behind another queue's row.
+    pub fn put(&mut self, row: DownloadSummary) -> bool {
         let Some(place) = self.places.get(&row.id).copied() else {
+            let misplaced = self.list.last().is_some_and(|last| last.queue != row.queue);
             self.places.insert(row.id, self.list.len());
             self.count_in(&row);
             self.list.push(row);
             self.revision += 1;
-            return;
+            return misplaced;
         };
         let known = self.list[place].clone();
         if !sits_alike(&known, &row) {
@@ -153,6 +156,20 @@ impl Rows {
         self.count_out(&known);
         self.count_in(&row);
         self.list[place] = row;
+        known.queue != self.list[place].queue
+    }
+
+    /// Puts the rows in the manager's order `ids`; rows it does not name yet stay after them.
+    pub fn take_order(&mut self, ids: &[DownloadId]) {
+        let ranks: HashMap<DownloadId, usize> = ids
+            .iter()
+            .enumerate()
+            .map(|(rank, id)| (*id, rank))
+            .collect();
+        self.list
+            .sort_by_key(|row| ranks.get(&row.id).copied().unwrap_or(usize::MAX));
+        self.index();
+        self.revision += 1;
     }
 
     pub fn remove(&mut self, ids: &[DownloadId]) {
@@ -354,6 +371,39 @@ mod tests {
         let paused = rows.revision();
         rows.put(row(2, 1, DownloadStatus::Queued, 0));
         assert_ne!(rows.revision(), paused);
+    }
+
+    #[test]
+    fn a_row_that_changes_queue_asks_for_the_managers_order() {
+        let mut rows = rows(vec![
+            row(1, 1, DownloadStatus::Queued, 0),
+            row(2, 2, DownloadStatus::Queued, 0),
+        ]);
+        assert!(!rows.put(row(1, 1, DownloadStatus::Paused, 0)));
+        assert!(rows.put(row(1, 2, DownloadStatus::Paused, 0)));
+    }
+
+    #[test]
+    fn a_new_row_asks_for_the_order_only_behind_another_queue() {
+        let mut rows = rows(Vec::new());
+        assert!(!rows.put(row(1, 1, DownloadStatus::Queued, 0)));
+        assert!(!rows.put(row(2, 1, DownloadStatus::Queued, 0)));
+        assert!(rows.put(row(3, 2, DownloadStatus::Queued, 0)));
+    }
+
+    #[test]
+    fn the_managers_order_moves_rows_and_keeps_unnamed_ones_last() {
+        let mut rows = rows(vec![
+            row(1, 1, DownloadStatus::Queued, 0),
+            row(2, 1, DownloadStatus::Queued, 0),
+            row(3, 2, DownloadStatus::Queued, 0),
+        ]);
+        let before = rows.revision();
+        rows.take_order(&[DownloadId(2), DownloadId(1)]);
+        let order: Vec<i64> = rows.iter().map(|row| row.id.0).collect();
+        assert_eq!(order, [2, 1, 3]);
+        assert_ne!(rows.revision(), before);
+        assert_in_step(&rows);
     }
 
     #[test]

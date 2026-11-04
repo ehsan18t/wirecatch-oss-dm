@@ -339,7 +339,10 @@ pub(crate) async fn send(
     let mut hops = 0;
     loop {
         if let Some(guard) = &session.guard {
-            (guard.0)(&url).await?;
+            let Some(checked) = session.cancel.run_until_cancelled((guard.0)(&url)).await else {
+                return Err(Error::Cancelled.into());
+            };
+            checked?;
         }
         let mut request = client
             .get(url.clone())

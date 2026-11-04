@@ -958,7 +958,7 @@ Decided by the maintainer on 2026-10-30, after their own research. It replaces t
 
 ### D96. A file of the same name is enough for "If the file is already in the folder"
 
-Decided with the maintainer on 2026-10-30. It amends D88.1: the setting decides whenever a file of that name is already in the folder, whatever the file is. A file that differs in size or link no longer takes the next free name by itself. It holds for every kind of download, streams and media downloads included (D88.5 is replaced by this and ROADMAP's release item 4). The person always knows which case it is: the question says either that the file in the folder looks like the same file (same size and, where known, the same link, as D88.1 compares) or that a different file has the same name, and the choices are the same in both. The setting chosen beforehand on Saving files applies to both. A stream or a video or audio download keeps its plain name when it is added, unless another download holds it, and the setting applies when its finished file is put in place; asked, it waits with the file kept in its work folder, and the answer puts it in place without downloading it again. Its file counts as the same when the sizes match.
+Decided with the maintainer on 2026-10-30. It amends D88.1: the setting decides whenever a file of that name is already in the folder, whatever the file is. A file that differs in size or link no longer takes the next free name by itself. It holds for every kind of download, streams and media downloads included (D88.5 is replaced by this and ROADMAP's release item 4). The person always knows which case it is: the question says either that the file in the folder looks like the same file (same size and, where known, the same link, as D88.1 compares) or that a different file has the same name, and the choices are the same in both. The setting chosen beforehand on Saving files applies to both. Every download keeps its plain name when it is added, unless another download holds it, so the setting meets the name itself and not the next free one. A file settles it when the server answers. A download cancelled before that stays in the list under the plain name but gives it up to other downloads, and when tried again it is judged by the plain name as a new download would be; one already settled, or failed, keeps its path. A stream or a video or audio download settles it when its finished file is put in place; asked, it waits with the file kept in its work folder, and the answer puts it in place without downloading it again. Its file counts as the same when the sizes match.
 
 ### D97. Notices in the browser follow the person, and a closed one never comes back
 
@@ -1190,9 +1190,9 @@ Decided on 2026-11-04. It amends D88.3 and D96.
 2. An open "already in the folder" question reserves the path it asks about until it closes. Another download that wants that name meanwhile takes the next free name, without a question of its own, as it does for any name another download holds. The same goes for a download whose setting or answer would act on a path another download took first.
 3. Two finished rows can still list one file: Keep the existing file, or Replace over a finished download. A file has one place, so moving it through either row moves both rows. Removing a row with its file deletes the file only when no other finished row lists it and no other download holds its path; otherwise the file stays.
 
-### D119. Quitting waits for moves to other folders
+### D119. Quitting waits for moves to other folders and for removals
 
-Decided on 2026-11-04. `Manager::shutdown` waits for every move under way, however long the disk takes, so the list and the disk agree on the next start. It sets no limit of its own: a limit on quitting belongs to the program around it, which ends the process. A kill during a copy to another drive is safe because the copy reaches its final name only when whole: the original stays, and the list still names it.
+Decided on 2026-11-04. `Manager::shutdown` waits for every move under way, however long the disk takes, so the list and the disk agree on the next start, and for every removal under way to delete its files, so a quit leaves no part files with no row. A crash during a removal can still leave them, since the row is off the saved list first. It sets no limit of its own: a limit on quitting belongs to the program around it, which ends the process. A kill during a copy to another drive is safe because the copy reaches its final name only when whole: the original stays, and the list still names it.
 
 ### D120. A page with several videos is read as its first
 
@@ -1218,6 +1218,15 @@ Decided on 2026-11-04. It amends D41.4 and D41.6.
 4. `BadEndpointKey` starts the app even for a key the app will not replace (a link, a folder, another account's file, D41.4), since a client cannot tell these from a damaged one without repeating the listener's rule. The app then starts without its endpoint, and the bridge reports the key's own advice alone: close Wirecatch, delete the file, open it again. `UnsafeDirectory` in the runtime folder, which has no key to renew, starts the app the same way and reports its own advice. Such an app holds the download list, so every later bridge connection starts a copy that finds the list taken. A launch that shows no window, as the bridge's and the one at sign-in are, closes without a word; only a launch that would show a window says "already running", so the person gets no message per connection.
 5. A link, a folder or a file the user may not read in the key's place is `BadEndpointKey` on both systems, for clients and the listener, which refuses it rather than replacing it.
 
+### D132. A move is on record before its first file moves
+
+Decided on 2026-11-04.
+
+1. Before a download's files move to another folder or name, the row saves what moves where, in the order it moves: the largest file first. The save is on disk before the first file moves.
+2. A start that finds the record finishes the move if any file has reached its new place, and otherwise leaves the download where it was. A file counts as there when it is gone from its old place, or both are the same size; one of another size at the new place is another program's. What stops an unfinished download's move from finishing leaves it failed with its files split, as a move that fails while running does; a finished download keeps its new place, and a subtitle file that cannot follow stays where it is and is logged.
+3. The same start deletes the temporary copies in the record's target folder. No other folder is searched.
+4. A finished video's row lists its subtitle files. They move with it, their names following the file's, and "Remove and delete" deletes them unless another row keeps the file. A listed name another download now holds, or another finished row lists as its file, is left alone, and a moved subtitle file never takes a name another download holds. A subtitle file placed in the moment before a kill is not listed when the row is completed at the next start.
+
 ### D142. An AppImage finds its libraries from its own binaries
 
 Decided on 2026-11-04. It amends D110.1.
@@ -1225,3 +1234,24 @@ Decided on 2026-11-04. It amends D110.1.
 1. The app and the bridge are linked with an `RPATH` of `$ORIGIN/../lib`, and `AppRun` only starts the app. `LD_LIBRARY_PATH` is never set, since every program the app starts would inherit it and load the build machine's keyboard libraries instead of the system's.
 2. It is an `RPATH`, not the newer `RUNPATH`: a `RUNPATH` does not reach what a library loads, and `libxkbcommon-x11` loads `libxcb-xkb`. The same binaries go in the `.deb` and `.rpm`, where the folder is `/usr/lib`, which holds nothing of the app's.
 3. The release workflow's check reads with `ldd` that the app in the AppImage resolves each carried library to its own copy.
+
+### D144. A quit ends the process itself
+
+Decided on 2026-11-04. It completes D104.4 and D119.
+
+1. Once the manager has stopped or `QUIT_PATIENCE` has run out, the app frees its endpoint, starts a new copy if a launch asked for one, and ends the process at once. It does not return from `main`: dropping the Tokio runtime waits, with no limit, for blocking work, which keeps a process with no window alive and holding the database lock.
+2. A move still copying when the limit runs out is cut short. The original stays and the list still names it (D119); the temporary copy stays in the new folder.
+
+### D145. A captured download leaves the browser once the app has it
+
+Decided on 2026-11-05. The extension removes the browser's copy for every `AddAction`: `started`, `queued` and `awaiting_confirmation`. Waiting for `started` would leave a download paused in the browser for as long as a queue waits or a confirmation stays open. The risk that stays is a link that works only once or needs the browser's POST request: it can fail in the app after the browser's copy is gone, and the app then shows the error with a retry.
+
+### D135. yt-dlp's own download takes the tightest speed limit at its start
+
+Decided on 2026-11-04.
+
+A format left to yt-dlp runs in another process, which the engine's shared limiters cannot pace and which takes one fixed rate. So:
+
+1. It gets `--limit-rate` at the tighter of the app's and the queue's limit when the attempt starts. A limit changed while it runs applies from its next attempt.
+2. Its bytes do not count against those limiters, so downloads sharing a limit with it can together pass that limit by up to its own rate.
+3. It runs at yt-dlp's default of one connection per format, which is within any connection limit. `--concurrent-fragments` is not passed.

@@ -236,7 +236,7 @@ impl Shell for AppShell<'_> {
             .read_from_clipboard()
             .and_then(|item| item.text())
             .unwrap_or_default();
-        main_window::bring_up(&Asked::Links(links::extract(&copied)), self.0);
+        main_window::bring_up(&Asked::Links(links::pasted(&copied)), self.0);
     }
 
     fn open_folder(&mut self, folder: &std::path::Path) {

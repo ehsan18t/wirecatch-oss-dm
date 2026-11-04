@@ -1,6 +1,7 @@
 //! Opening a finished download, showing it in its folder, and picking a folder. A program asks
 //! first (D43.1).
 
+use std::fmt::Display;
 use std::future::Future;
 use std::path::PathBuf;
 
@@ -8,9 +9,16 @@ use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::{App, PathPromptOptions, Window};
 use wirecatch_protocol::DownloadId;
+use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::api::{self, ProgramWarning, Reveal, ToOpen};
 
 use crate::backend::Backend;
+
+const CHOOSER_FAILED: &str = if cfg!(target_os = "linux") {
+    "The file chooser could not open. Install xdg-desktop-portal with the portal for your desktop, then try again."
+} else {
+    "The file chooser could not open. Try again, and restart your computer if this keeps happening."
+};
 
 /// Asks for a folder to save in; `None` when none is picked, or when its name is not valid text,
 /// which the window in front is told.
@@ -23,8 +31,13 @@ pub fn choose_folder(cx: &mut App) -> impl Future<Output = Option<String>> + use
     });
     let cx = cx.to_async();
     async move {
-        let folder = picked.await.ok()?.ok()??.into_iter().next()?;
-        api::path_text(&folder)
+        let folder = chooser_answer(picked.await).and_then(|paths| {
+            let Some(folder) = paths.and_then(|paths| paths.into_iter().next()) else {
+                return Ok(None);
+            };
+            api::path_text(&folder).map(Some)
+        });
+        folder
             .map_err(|refused| {
                 cx.update(|cx| {
                     if let Some(window) = crate::backend::window_in_front(cx) {
@@ -35,6 +48,22 @@ pub fn choose_folder(cx: &mut App) -> impl Future<Output = Option<String>> + use
                 });
             })
             .ok()
+            .flatten()
+    }
+}
+
+/// What a system file chooser answered: `None` when closed without a choice, and a refusal to show
+/// when it could not open, as on a Linux desktop with no file chooser portal.
+pub fn chooser_answer<T, E: Display, Gone>(
+    answer: Result<Result<Option<T>, E>, Gone>,
+) -> Result<Option<T>, ProtocolError> {
+    match answer {
+        Ok(Ok(chosen)) => Ok(chosen),
+        Err(_) => Ok(None),
+        Ok(Err(e)) => {
+            tracing::error!("the system file chooser could not open: {e}");
+            Err(api::failed(CHOOSER_FAILED))
+        }
     }
 }
 
@@ -97,4 +126,27 @@ pub fn show_in_folder(id: DownloadId, window: &mut Window, cx: &mut App) {
             });
         })
         .detach();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type Answer = Result<Result<Option<u8>, &'static str>, ()>;
+
+    #[test]
+    fn a_chooser_that_could_not_open_is_not_taken_for_a_cancel() {
+        let failed: Answer = Ok(Err("no portal"));
+        assert_eq!(chooser_answer(failed).unwrap_err().message, CHOOSER_FAILED);
+    }
+
+    #[test]
+    fn a_chooser_closed_without_a_choice_says_nothing() {
+        let closed: Answer = Ok(Ok(None));
+        let gone: Answer = Err(());
+        let chosen: Answer = Ok(Ok(Some(1)));
+        assert_eq!(chooser_answer(closed).ok(), Some(None));
+        assert_eq!(chooser_answer(gone).ok(), Some(None));
+        assert_eq!(chooser_answer(chosen).ok(), Some(Some(1)));
+    }
 }
