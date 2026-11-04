@@ -199,7 +199,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 134. A saved format the page no longer lists can never succeed (fixed)
 135. Try again can never succeed after the list failed to open (fixed)
 136. Dragging moves rows the selection no longer shows (fixed)
-137. Reading a website's page with yt-dlp escapes the local network rule (open)
+137. Reading a website's page with yt-dlp escapes the local network rule (fixed)
 138. A queue's run ends while its last download only waits (open)
 139. Nothing opens a download's window again after Hide (open)
 140. A file too large for the disk is not noticed until it is full (fixed)

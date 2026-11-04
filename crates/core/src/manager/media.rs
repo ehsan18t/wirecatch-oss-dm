@@ -892,7 +892,14 @@ impl Manager {
     ) -> std::result::Result<Found, UserError> {
         let cookies = cookie_header(&source.fetch.origin);
         let proxy = wirecatch_settings::proxy::ytdlp_proxy(&proxy, &source.fetch.url);
+        let off_local_network = super::media_run::ytdlp_off_local_network(
+            source.fetch.chosen_by,
+            &source.fetch.url,
+            proxy.as_deref(),
+        )
+        .await;
         let ctx = ytdlp::Context {
+            off_local_network,
             tools,
             page: &source.fetch.url,
             cookies: cookies.as_deref(),
