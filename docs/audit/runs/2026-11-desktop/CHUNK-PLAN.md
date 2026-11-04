@@ -1093,7 +1093,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Flow `security-path-handling`           | done        |
 | 1     | Flow `security-update-signatures`       | done        |
 | 1     | Flow `security-addon-unpacking`         | done        |
-| 1     | Flow `repeated-logic`                   | pending     |
+| 1     | Flow `repeated-logic`                   | done        |
 | 1     | Flow `second-review-resume`             | pending     |
 | 1     | Flow `second-review-disk-writes`        | pending     |
 | 1     | UI review (`ui.md`)                     | pending     |
