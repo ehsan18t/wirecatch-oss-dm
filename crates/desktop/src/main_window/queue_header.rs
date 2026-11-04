@@ -51,7 +51,7 @@ impl MainWindow {
                             .min_w_0()
                             .truncate()
                             .text_role(Role::Meta, cx)
-                            .child(format!("{facts} · {summary}")),
+                            .child(format!("{summary} · {facts}")),
                     )
                     .child(queue_actions(&queue, cx)),
             )
@@ -231,24 +231,13 @@ fn facts(queue: &Queue) -> String {
 
 /// A queue's own limits, one short phrase each, or that it follows the app's when it has none.
 fn limits(settings: &QueueSettings) -> Vec<String> {
-    let concurrent = settings.max_concurrent.own_ref().copied();
-    let speed = settings.speed_limit.own_ref().copied();
-    let connections = settings.connections.own_ref().copied();
-    let mut facts: Vec<String> = [
-        concurrent.map(|n| format!("{n} at once")),
-        speed.map(|limit| format!("Up to {}", text::speed(limit))),
-        connections.map(|n| match n {
-            1 => "1 connection each".to_owned(),
-            n => format!("{n} connections each"),
-        }),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
+    let own = text::own_limits(settings);
+    let some_global = own.iter().any(Option::is_none);
+    let mut facts: Vec<String> = own.into_iter().flatten().collect();
     if facts.is_empty() {
         return vec!["Uses global limits".to_owned()];
     }
-    if concurrent.is_none() || speed.is_none() || connections.is_none() {
+    if some_global {
         facts.push("Other limits are global".to_owned());
     }
     facts

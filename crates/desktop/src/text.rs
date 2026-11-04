@@ -6,7 +6,7 @@ use chrono::{Datelike as _, Local, NaiveDate, NaiveTime, TimeZone as _};
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
     Category, ClockFormat, DownloadStatus, DownloadSummary, FixAction, MediaSummary, OutputFormat,
-    PER_MILLE_DONE, ProcessingStep, Schedule, TimeOfDay, WaitReason, Weekday,
+    PER_MILLE_DONE, ProcessingStep, QueueSettings, Schedule, TimeOfDay, WaitReason, Weekday,
 };
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::rules::{AddDownloads, LinkProtocol, Rule};
@@ -106,6 +106,43 @@ pub fn percent(row: &DownloadSummary) -> Option<String> {
         "{}%",
         (row.done * PERCENT_MAX / total).min(PERCENT_MAX - 1)
     ))
+}
+
+/// The lines of a typed list that hold something.
+pub fn filled_lines(typed: &str) -> Vec<String> {
+    typed
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// A typed list of file types as they are kept: without the dot, in lower case.
+pub fn typed_extensions(typed: &str) -> Vec<String> {
+    typed
+        .split([',', ';', ' ', '\n'])
+        .map(|typed| typed.trim().trim_start_matches('.').to_lowercase())
+        .filter(|extension| !extension.is_empty())
+        .collect()
+}
+
+/// A queue's own limits in words: how many at once, its speed, its connections.
+pub fn own_limits(settings: &QueueSettings) -> [Option<String>; 3] {
+    [
+        settings
+            .max_concurrent
+            .own()
+            .map(|n| format!("{n} at once")),
+        settings
+            .speed_limit
+            .own()
+            .map(|bytes| format!("Up to {}", speed(bytes))),
+        settings.connections.own().map(|n| match n {
+            1 => "1 connection each".to_owned(),
+            n => format!("{n} connections each"),
+        }),
+    ]
 }
 
 /// `1.2 GB of 4.7 GB`, `4.7 GB`, or what is known so far.

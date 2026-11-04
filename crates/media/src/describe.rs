@@ -11,7 +11,7 @@ use wirecatch_streams::{Error as StreamError, Role};
 use super::choice::format_name;
 use super::ffmpeg::FfmpegError;
 use super::output::{OutputJob, VideoAction};
-use super::ytdlp::YtDlpError;
+use super::ytdlp::{YtDlpError, needs_sign_in};
 use crate::MediaTools;
 use wirecatch_sites::local_network::ChosenBy;
 
@@ -39,6 +39,11 @@ pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
         YtDlpError::Cookies(source) => retry(format!(
             "Wirecatch could not prepare the page's sign-in for the media add-on ({source}). Check that the disk has free space, then try again."
         )),
+        YtDlpError::Guard(source) => retry(format!(
+            "Wirecatch could not start what keeps the media add-on off your own network ({source}). Try again."
+        )),
+        // The run has this rule only for a page on the internet, so its link was sent on from there.
+        YtDlpError::LocalNetwork => wirecatch_messages::private_network(ChosenBy::Person),
         YtDlpError::Start(source) => cannot_start(tools, "yt-dlp", source),
         YtDlpError::Cancelled => retry("Reading the page was stopped. Try again.".into()),
         YtDlpError::TimedOut(limit) => retry(format!(
@@ -46,9 +51,9 @@ pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
             limit.as_secs()
         )),
         YtDlpError::Stalled(_) => retry("The media add-on stopped answering. Try again.".into()),
-        YtDlpError::Refused { reason } | YtDlpError::AddressRefused { reason, .. } => retry(format!(
-            "The media add-on could not get the video from this page ({reason}). Check that the video plays in your browser; if it does, update the media add-on in Settings > Media, then try again."
-        )),
+        YtDlpError::Refused { reason } | YtDlpError::AddressRefused { reason, .. } => {
+            retry(ytdlp_refusal(reason).to_owned())
+        }
         YtDlpError::BadOutput(e) => {
             tracing::warn!(error = %e, "yt-dlp printed something that is not a page description");
             retry("The media add-on could not read this page. Update the media add-on in Settings > Media, then try again.".into())
@@ -64,6 +69,68 @@ pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
         YtDlpError::NothingSaved => {
             retry("The media add-on finished without saving the video. Try again.".into())
         }
+    }
+}
+
+/// What yt-dlp's own words `reason` mean for a person; the words themselves are in the log. It reports causes only as text.
+fn ytdlp_refusal(reason: &str) -> &'static str {
+    let reason = reason.to_ascii_lowercase();
+    let says = |words: &[&str]| words.iter().any(|w| reason.contains(w));
+    if says(&["http error 5"]) {
+        "The site is having trouble right now. Wait a while, then try again."
+    } else if says(&["http error 404", "http error 410"]) {
+        "This page could not be found. Check the link in your browser, then try again."
+    } else if says(&["http error 401", "http error 403"]) {
+        "The site refused the request for this video. Check that the video plays in your browser, then try again."
+    } else if says(&["http error 429", "too many requests"]) {
+        "The site has received too many requests from this computer. Wait a while, then try again."
+    } else if needs_sign_in(Some(&reason)) {
+        "This video asks you to sign in. Sign in on the site in your browser, then try again."
+    } else if says(&["in your country", "in your region", "from your location"]) {
+        "This video is not offered where you are."
+    } else if says(&[
+        "video unavailable",
+        "is unavailable",
+        "has been removed",
+        "no longer available",
+    ]) {
+        "This video is no longer available on the site."
+    } else if says(&["unsupported url", "no video formats"]) {
+        "The media add-on found no video on this page. Check that the video plays in your browser; if it does, update the media add-on in Settings > Media, then try again."
+    } else if says(&[
+        "timed out",
+        "unable to connect",
+        "getaddrinfo",
+        "connection",
+    ]) {
+        "The media add-on could not reach the site. Check your connection, then try again."
+    } else {
+        "The media add-on could not get the video from this page. Check that the video plays in your browser; if it does, update the media add-on in Settings > Media, then try again."
+    }
+}
+
+/// What ffmpeg's own words `reason` mean, after a colon, when they say something a person can use; the words themselves are in the log.
+fn ffmpeg_cause(reason: &str) -> &'static str {
+    let reason = reason.to_ascii_lowercase();
+    let says = |words: &[&str]| words.iter().any(|w| reason.contains(w));
+    if says(&["no space left"]) {
+        ": the disk is full"
+    } else if says(&["permission denied"]) {
+        ": it has no permission to write the file"
+    } else if says(&["invalid data found", "moov atom not found"]) {
+        ": the downloaded file is damaged"
+    } else if says(&["not currently supported in container"]) {
+        ": this file type cannot hold what was downloaded"
+    } else {
+        ""
+    }
+}
+
+/// How `error`, from a step of ffmpeg's, ends the sentence that says the step failed.
+fn ffmpeg_failure(error: &FfmpegError) -> String {
+    match error {
+        FfmpegError::Failed { reason } => ffmpeg_cause(reason).to_owned(),
+        other => format!(" ({other})"),
     }
 }
 
@@ -91,6 +158,10 @@ pub fn stream(
         // A track that is not a real video or audio file: the link most likely does not point at the video any more.
         E::UnknownFormat { role } => unknown_format(*role),
         E::PrivateNetwork => wirecatch_messages::private_network(chosen_by),
+        E::Ffmpeg(said) => retry(format!(
+            "ffmpeg could not join the video{}. The downloaded parts are kept; try again.",
+            ffmpeg_cause(said)
+        )),
         // A fresh link lists as many segments, as long.
         E::Live
         | E::Drm(_)
@@ -137,7 +208,8 @@ pub fn join(error: &FfmpegError, tools: &MediaTools) -> UserError {
             retry("ffmpeg stopped joining the video and audio. Try again.".into())
         }
         other => retry(format!(
-            "ffmpeg could not join the video and audio ({other}). Try again; the downloaded parts are kept."
+            "ffmpeg could not join the video and audio{}. Try again; the downloaded parts are kept.",
+            ffmpeg_failure(other)
         )),
     })
 }
@@ -153,13 +225,14 @@ pub fn conversion(error: &FfmpegError, output: &OutputJob, tools: &MediaTools) -
     } else {
         "audio"
     };
+    let failure = ffmpeg_failure(error);
     let message = if output.original {
         format!(
-            "Wirecatch downloaded the {what}, but could not add the subtitles or chapters to it ({error}). The download is kept: Try again only does this step again, and Keep the original saves it without them."
+            "Wirecatch downloaded the {what}, but could not add the subtitles or chapters to it{failure}. The download is kept: Try again only does this step again, and Keep the original saves it without them."
         )
     } else {
         format!(
-            "Wirecatch downloaded the {what}, but could not save it as {} ({error}). The download is kept: Try again only converts it again, and Keep the original saves it as it was downloaded ({}).",
+            "Wirecatch downloaded the {what}, but could not save it as {}{failure}. The download is kept: Try again only converts it again, and Keep the original saves it as it was downloaded ({}).",
             output.container.label(),
             format_name(&output.original_ext)
         )
@@ -256,6 +329,159 @@ mod tests {
             &tools,
         );
         assert!(tools.is_broken());
+    }
+
+    /// What the add-on's programs print goes to the log; a person reads what it means.
+    #[test]
+    fn a_program_failure_shows_no_raw_output() {
+        let tools = tools();
+        for (said, means) in [
+            (
+                "[generic] 1: Unable to download webpage: HTTP Error 404: Not Found (caused by <HTTPError 404: 'Not Found'>)",
+                "could not be found",
+            ),
+            ("[site] x: HTTP Error 403: Forbidden", "refused"),
+            ("[youtube] x: Sign in to confirm your age", "sign in"),
+            (
+                "[youtube] x: Private video. Sign in if you have access",
+                "sign in",
+            ),
+            ("[youtube] x: Video unavailable", "no longer available"),
+            ("HTTP Error 503: Service Unavailable", "having trouble"),
+            (
+                "[site] x: This video is not available in your country",
+                "where you are",
+            ),
+            (
+                "[youtube] x: Video unavailable. It is not available in your country",
+                "where you are",
+            ),
+            (
+                "Unsupported URL: https://example.com/page",
+                "found no video",
+            ),
+            ("[site] x: No video formats found!", "found no video"),
+            (
+                "Unable to download webpage: <urlopen error timed out>",
+                "connection",
+            ),
+            ("HTTP Error 429: Too Many Requests", "too many requests"),
+            (
+                "something no one has seen before",
+                "could not get the video",
+            ),
+        ] {
+            let shown = ytdlp(
+                &YtDlpError::Refused {
+                    reason: said.into(),
+                },
+                &tools,
+            )
+            .message;
+            assert!(shown.to_lowercase().contains(means), "{said}: {shown}");
+            for raw in [
+                "[generic]",
+                "[site]",
+                "[youtube]",
+                "caused by",
+                "HTTPError",
+                "urlopen",
+                "https://",
+            ] {
+                assert!(!shown.contains(raw), "{said}: {shown}");
+            }
+            assert!(shown.ends_with('.'), "{shown}");
+        }
+    }
+
+    /// ffmpeg's last line is rarely the cause: the table reads all it kept.
+    #[test]
+    fn the_cause_is_found_anywhere_in_what_ffmpeg_wrote() {
+        let tools = tools();
+        let error = FfmpegError::Failed {
+            reason: [
+                "[mp4 @ 0x1] Could not find tag for codec rawvideo in stream #0, codec not currently supported in container",
+                "[out#0/mp4 @ 0x2] Could not write header (incorrect codec parameters ?): Invalid argument",
+                "Error opening output file a.mp4",
+                "Conversion failed!",
+                "Error while filtering",
+                "Nothing was written into output file, because at least one of its streams received no packets.",
+            ]
+            .join(" / "),
+        };
+        let shown = join(&error, &tools).message;
+        assert!(shown.contains("cannot hold"), "{shown}");
+    }
+
+    #[test]
+    fn a_stream_join_and_a_conversion_show_no_raw_output() {
+        let tools = tools();
+        let said = "[mp4 @ 0x1] Error writing trailer: No space left on device";
+        let joined = stream(
+            &StreamError::Ffmpeg(said.into()),
+            Path::new("folder"),
+            Some(&tools),
+            ChosenBy::Website,
+        );
+        assert!(!joined.message.contains("@ 0x"), "{}", joined.message);
+        assert!(
+            joined.message.contains("disk is full"),
+            "{}",
+            joined.message
+        );
+        let job = OutputJob {
+            container: crate::output::Container::Mp4,
+            video: VideoAction::Copy,
+            audio: crate::output::AudioAction::Copy,
+            subtitles: Vec::new(),
+            subtitle_files: false,
+            extras: crate::output::Extras::default(),
+            duration_ms: None,
+            original_ext: "mkv".into(),
+            original: false,
+        };
+        let failed = FfmpegError::Failed {
+            reason: said.into(),
+        };
+        let converted = conversion(&failed, &job, &tools);
+        assert!(!converted.message.contains("@ 0x"), "{}", converted.message);
+        assert!(
+            converted.message.contains("disk is full"),
+            "{}",
+            converted.message
+        );
+    }
+
+    #[test]
+    fn a_failed_join_or_conversion_shows_no_raw_output() {
+        let tools = tools();
+        for (said, means) in [
+            (
+                "[out#0/mp4 @ 0x1234] Error writing trailer: No space left on device",
+                "disk is full",
+            ),
+            (
+                "[mp4 @ 0x1234] Could not open file: Permission denied",
+                "permission",
+            ),
+            (
+                "[mov @ 0x1234] moov atom not found: Invalid data found when processing input",
+                "damaged",
+            ),
+            (
+                "[mp4 @ 0x1] Could not find tag for codec vp9, codec not currently supported in container",
+                "cannot hold",
+            ),
+            ("[aac @ 0x1] something no one has seen", ""),
+        ] {
+            let error = FfmpegError::Failed {
+                reason: said.into(),
+            };
+            let shown = join(&error, &tools).message;
+            assert!(shown.contains(means), "{said}: {shown}");
+            assert!(!shown.contains("@ 0x"), "{said}: {shown}");
+            assert!(shown.ends_with('.'), "{shown}");
+        }
     }
 
     #[test]

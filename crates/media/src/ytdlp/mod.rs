@@ -7,6 +7,7 @@
 
 mod cookies;
 mod download;
+mod guard;
 mod info;
 
 pub use download::{Fetched, download};
@@ -23,6 +24,7 @@ use wirecatch_streams::process::{self, Ran, RunError, RunOptions};
 
 use crate::MediaTools;
 use cookies::CookiesFile;
+use guard::Guard;
 
 /// Where and how yt-dlp runs.
 #[derive(Clone, Copy)]
@@ -40,6 +42,8 @@ pub struct Context<'a> {
     pub proxy: Option<&'a str>,
     /// The speed limit of yt-dlp's own download, in bytes per second (D135).
     pub rate_limit: Option<u64>,
+    /// Whether the run is kept off the local network (D136). Takes the place of [`proxy`](Self::proxy), so it is for a run that goes directly.
+    pub off_local_network: bool,
 }
 
 /// Whether the browser's cookies go to yt-dlp from the first try for `page`.
@@ -100,6 +104,9 @@ pub enum YtDlpError {
     /// The file with the page's cookies could not be written.
     #[error("could not write the page's sign-in for the media add-on")]
     Cookies(#[source] std::io::Error),
+    /// The guard that keeps a run off the local network could not be started.
+    #[error("could not start the local network guard for the media add-on")]
+    Guard(#[source] std::io::Error),
     /// The add-on's yt-dlp could not be started.
     #[error("yt-dlp could not be started")]
     Start(#[source] std::io::Error),
@@ -126,6 +133,9 @@ pub enum YtDlpError {
         /// What yt-dlp said, without its `ERROR:` prefix.
         reason: String,
     },
+    /// A request of the run led into the local network and was stopped (D136).
+    #[error("yt-dlp was sent on into the local network")]
+    LocalNetwork,
     /// yt-dlp printed something that is not a page description.
     #[error("yt-dlp printed something that is not a page description")]
     BadOutput(#[source] serde_json::Error),
@@ -196,7 +206,7 @@ const SIGN_IN_MARKERS: [&str; 9] = [
 ];
 
 /// Whether yt-dlp's failure says the video needs the viewer signed in (see [`SIGN_IN_MARKERS`]).
-fn needs_sign_in(error_line: Option<&str>) -> bool {
+pub(crate) fn needs_sign_in(error_line: Option<&str>) -> bool {
     error_line.is_some_and(|line| {
         let line = line.to_ascii_lowercase();
         SIGN_IN_MARKERS.iter().any(|marker| line.contains(marker))
@@ -249,8 +259,22 @@ impl From<YtDlpError> for Attempt {
     }
 }
 
+/// The guard of a run that has one (D136).
+async fn start_guard(ctx: &Context<'_>) -> Result<Option<Guard>, YtDlpError> {
+    if !ctx.off_local_network {
+        return Ok(None);
+    }
+    Guard::start().await.map(Some).map_err(YtDlpError::Guard)
+}
+
 async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<Info, Attempt> {
     make_dir(ctx.temp_dir).await?;
+    let guard = start_guard(ctx).await?;
+    let guard_url = guard.as_ref().map(Guard::url);
+    let ctx = &Context {
+        proxy: guard_url.as_deref().or(ctx.proxy),
+        ..*ctx
+    };
     let cookies = CookiesFile::create(ctx).await?;
     let mut args = common_args(ctx, cookies.as_ref());
     args.push("-J".into());
@@ -270,7 +294,11 @@ async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<I
     CookiesFile::delete(cookies).await;
     let ran = result.map_err(YtDlpError::from_run)?;
     if !ran.success() {
-        return Err(refused(&ran));
+        return Err(if guard.as_ref().is_some_and(Guard::refused_any) {
+            YtDlpError::LocalNetwork.into()
+        } else {
+            refused(&ran)
+        });
     }
     if ran.stdout_truncated {
         return Err(YtDlpError::OutputTooLarge.into());
@@ -428,6 +456,7 @@ mod tests {
             timeout: Duration::from_secs(1),
             proxy: None,
             rate_limit: None,
+            off_local_network: false,
         };
         let args = common_args(&ctx, None);
         let at = args.iter().position(|a| a == "--cache-dir");
@@ -455,6 +484,7 @@ mod tests {
                 timeout: Duration::from_secs(1),
                 proxy,
                 rate_limit: None,
+                off_local_network: false,
             };
             let args = common_args(&ctx, None);
             args.iter()
@@ -482,6 +512,7 @@ mod tests {
                 timeout: Duration::from_secs(1),
                 proxy,
                 rate_limit: None,
+                off_local_network: false,
             })
         };
         assert_eq!(environment(None), Vec::new());
@@ -517,6 +548,7 @@ mod tests {
             timeout: Duration::from_secs(1),
             proxy: None,
             rate_limit: None,
+            off_local_network: false,
         };
         for args in [common_args(&ctx, None), version_args()] {
             for flag in ["--ignore-config", "--no-plugin-dirs"] {

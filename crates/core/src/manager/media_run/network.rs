@@ -3,7 +3,7 @@
 use std::net::IpAddr;
 use std::time::Duration;
 
-use wirecatch_engine::{PrivateNetwork, Url};
+use wirecatch_engine::{ManualProxies, PrivateNetwork, Url};
 use wirecatch_media::describe;
 use wirecatch_protocol::app::UserError;
 use wirecatch_sites::local_network::{self, ChosenBy};
@@ -17,9 +17,6 @@ use wirecatch_sites::local_network::{self, ChosenBy};
 /// check, is what keeps a format out of the local network, so a redirect or a
 /// name that answers local only when the engine connects (DNS rebinding) is
 /// refused too.
-///
-/// When yt-dlp downloads a format by itself (the fallback), its own requests
-/// are not covered by this.
 pub(super) async fn network_rule(
     chosen_by: ChosenBy,
     page: &Url,
@@ -29,6 +26,22 @@ pub(super) async fn network_rule(
         return Ok(PrivateNetwork::Allow);
     }
     format_rule(chosen_by, &local_network::addresses(format, LOOKUP).await)
+}
+
+/// Whether a run of yt-dlp on `page`, given `proxy`, is kept off the local network: as its formats are, unless it goes through a proxy, whose own network decides what it reaches (D136).
+pub(in crate::manager) async fn ytdlp_off_local_network(
+    chosen_by: ChosenBy,
+    page: &Url,
+    proxy: Option<&str>,
+) -> bool {
+    let direct = if let Some(proxy) = proxy {
+        proxy.is_empty()
+    } else {
+        // Any proxy the computer has: `proxy_environment` would replace them all, the page's scheme or not (D136.2).
+        let system = tokio::task::spawn_blocking(ManualProxies::from_system).await;
+        matches!(system, Ok(None))
+    };
+    direct && !page_is_local(chosen_by, page).await
 }
 
 /// How long the early check waits for a format's name to resolve.

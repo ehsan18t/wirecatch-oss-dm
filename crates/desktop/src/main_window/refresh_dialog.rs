@@ -15,7 +15,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_shell::api;
 
-use crate::backend::Backend;
+use crate::backend::{Backend, said};
 use crate::library::Library;
 use crate::ui::{Field, Role, Typed as _};
 use crate::{links, text};
@@ -116,10 +116,8 @@ impl RefreshForm {
             api::refresh_link(&manager, id, &url, LinkFrom::Person)
         });
         cx.spawn_in(window, async move |form, cx| {
-            let answer = match saved.await {
-                Ok(Ok(answer)) => answer.map_err(|e| e.message),
-                Ok(Err(unopened)) => Err(unopened.reason.message),
-                Err(_) => return,
+            let Some(answer) = said(saved.await) else {
+                return;
             };
             _ = form.update_in(cx, |form, window, cx| {
                 form.busy = false;
