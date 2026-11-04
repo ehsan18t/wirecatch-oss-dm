@@ -1,5 +1,4 @@
-//! A download whose file is already in its folder (D88): a file that only shares the name gets a
-//! new one, and a duplicate does what `when_file_exists` says.
+//! A download whose file is already in its folder (D88, D96): `when_file_exists` decides, whatever the file is and wherever its name came from.
 
 use std::path::{Path, PathBuf};
 
@@ -293,6 +292,25 @@ async fn a_closed_question_gives_its_path_back() -> TestResult {
     let question = asked(&mut events).await?;
     h.manager
         .answer_file_exists(question.id, answer(FileExistsChoice::Cancel, false))?;
+    h.wait_status(first.id, DownloadStatus::Cancelled).await;
+
+    let second = add_into(&h, server.url("b").as_str(), &dir).await?;
+    let question = asked(&mut events).await?;
+    assert_eq!(question.download, second.id);
+    Ok(())
+}
+
+/// So does a question closed by cancelling the download.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelling_a_download_that_asks_gives_its_path_back() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let mut events = h.manager.subscribe();
+    let first = add_into(&h, server.url("a").as_str(), &dir).await?;
+    asked(&mut events).await?;
+    h.wait_status(first.id, DownloadStatus::Paused).await;
+    h.manager.cancel(first.id)?;
     h.wait_status(first.id, DownloadStatus::Cancelled).await;
 
     let second = add_into(&h, server.url("b").as_str(), &dir).await?;
@@ -654,5 +672,97 @@ async fn an_answered_replace_survives_a_restart() -> TestResult {
         dir.join(NAME),
         "the Replace was forgotten"
     );
+    Ok(())
+}
+
+async fn add_named_by_the_link(
+    h: &Harness,
+    server: &TestServer,
+    dir: &Path,
+) -> TestResult<DownloadSummary> {
+    h.add_with(server.url(NAME).as_str(), |r| {
+        r.folder = Some(dir.to_string_lossy().into_owned());
+    })
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_name_from_the_link_is_asked_about_too() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let mut events = h.manager.subscribe();
+    let row = add_named_by_the_link(&h, &server, &dir).await?;
+    assert_eq!(row.file_name, NAME);
+
+    let question = asked(&mut events).await?;
+    assert_eq!(question.download, row.id);
+    assert_eq!(question.file_name, NAME);
+    h.wait_status(row.id, DownloadStatus::Paused).await;
+    assert_eq!(std::fs::read(dir.join(NAME))?, same_size());
+
+    h.manager
+        .answer_file_exists(question.id, answer(FileExistsChoice::KeepBoth, false))?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(Path::new(&done.path), dir.join("report (1).pdf"));
+    assert_eq!(std::fs::read(dir.join(NAME))?, same_size());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_name_from_the_link_replaces_when_the_setting_says_so() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    choose(&h, WhenFileExists::Replace)?;
+    let dir = folder_with(&h, &same_size())?;
+    let row = add_named_by_the_link(&h, &server, &dir).await?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(Path::new(&done.path), dir.join(NAME));
+    assert_eq!(std::fs::read(dir.join(NAME))?, server.data);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_name_from_the_link_takes_the_next_free_name_under_keep_both() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    choose(&h, WhenFileExists::KeepBoth)?;
+    let dir = folder_with(&h, &same_size())?;
+    let row = add_named_by_the_link(&h, &server, &dir).await?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(Path::new(&done.path), dir.join("report (1).pdf"));
+    assert_eq!(std::fs::read(dir.join(NAME))?, same_size());
+    Ok(())
+}
+
+/// A file in the folder it was added to says nothing about the folder it is moved to.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_name_from_the_link_stays_plain_in_a_folder_chosen_before_the_answer() -> TestResult {
+    let server = server().await;
+    server.hold();
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let row = add_named_by_the_link(&h, &server, &dir).await?;
+    let elsewhere = h.root.path().join("elsewhere");
+    h.manager
+        .set_download_folder(row.id, &elsewhere.to_string_lossy())
+        .await?;
+    server.release();
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(Path::new(&done.path), elsewhere.join(NAME));
+    assert_eq!(std::fs::read(dir.join(NAME))?, same_size());
+    Ok(())
+}
+
+/// Removing a download that never got an answer leaves the file its name only points at.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removing_a_download_before_the_answer_keeps_the_file_of_that_name() -> TestResult {
+    let server = server().await;
+    server.hold();
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let row = add_named_by_the_link(&h, &server, &dir).await?;
+    h.manager.remove(&[row.id], RemoveFiles::Delete).await?;
+    assert_eq!(std::fs::read(dir.join(NAME))?, same_size());
     Ok(())
 }

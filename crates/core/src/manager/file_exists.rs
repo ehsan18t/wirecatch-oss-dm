@@ -81,6 +81,7 @@ impl Manager {
                     mark_cancelled(entry);
                     self.discard_partial(entry);
                 }
+                give_up_the_name(state, download, &path);
                 WhenFileExists::Ask
             }
         };
@@ -252,6 +253,27 @@ fn keep_both(state: &mut State, id: DownloadId) {
     if let Some(entry) = state.downloads.get_mut(&id) {
         entry.on_existing = Some(OnExisting::KeepBoth);
         entry.row.status = DownloadStatus::Queued;
+    }
+}
+
+/// Download `id`, cancelled at the question about `path` with nothing written, takes a name no other download holds: it stays in the list, and the name would keep the next download of that file from being asked.
+pub(super) fn give_up_the_name(state: &mut State, id: DownloadId, path: &Path) {
+    let Some(entry) = state.downloads.get(&id) else {
+        return;
+    };
+    if entry.naming.settled || !naming::same_path(entry.path(), path) {
+        return;
+    }
+    let free = naming::unclaimed_path(
+        path.parent().unwrap_or(Path::new("")),
+        &naming::file_name_of(path),
+        |taken| state.claimed.contains(taken),
+    );
+    state.claimed.remove(path, id);
+    state.claimed.insert(&free, id);
+    if let Some(entry) = state.downloads.get_mut(&id) {
+        entry.row.path = free.to_string_lossy().into_owned();
+        entry.row.file_name = naming::file_name_of(&free);
     }
 }
 
