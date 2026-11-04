@@ -462,6 +462,15 @@ impl Manager {
             let Ok(entry) = state.entry_mut(id) else {
                 continue;
             };
+            // Not a choice about this download: one it is already stopping by stays.
+            if entry
+                .run
+                .as_ref()
+                .and_then(|run| run.stop)
+                .is_some_and(Stop::is_users_choice)
+            {
+                continue;
+            }
             if !self.stop_run(entry, Stop::Pause) && entry.row.status == DownloadStatus::Queued {
                 entry.row.status = DownloadStatus::Paused;
                 self.save(&mut state, id);
@@ -570,6 +579,14 @@ impl Manager {
             {
                 return Ok(None);
             }
+            // Two captures of one link can both have found no download to join, off the lock.
+            if let Some(handover) = new.kind.handover()
+                && self
+                    .join_unfinished_locked(&mut state, handover, new.fetch.url.as_str())
+                    .is_some()
+            {
+                return Ok(None);
+            }
             if state.claimed.contains(&path) {
                 continue;
             }
@@ -656,6 +673,7 @@ impl Manager {
         // media job's is final.
         let naming = NameChoice {
             settled: media_job.is_some(),
+            writing: false,
             name: wanted.file_name,
             folder: wanted.folder.map(|f| f.to_string_lossy().into_owned()),
         };

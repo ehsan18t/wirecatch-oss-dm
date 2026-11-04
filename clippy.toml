@@ -8,6 +8,7 @@ disallowed-methods = [
     { path = "std::env::args", reason = "it panics on an argument that is not valid text, and a release build aborts; use `std::env::args_os`" },
     # A blocked thread cannot be woken: a shutdown or a change waits out the whole sleep, and a test that sleeps is slow or flaky.
     { path = "std::thread::sleep", reason = "wait on the condition instead (a channel, a watch, `recv_timeout`), or use `tokio::time::sleep` in async code" },
+    { path = "http::HeaderValue::to_str", allow-invalid = true, reason = "it refuses a header with one raw byte above 126, which servers send: use the engine's `http::header_text`, or read `as_bytes`" },
 ]
 
 # docs/ENGINEERING.md, section 4: a function past 80 lines is a signal to split.

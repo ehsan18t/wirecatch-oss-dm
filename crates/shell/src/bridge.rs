@@ -34,7 +34,7 @@ pub enum BridgeError {
         bridge: PathBuf,
         subcommand: String,
         status: std::process::ExitStatus,
-        /// What the bridge wrote to its error output.
+        /// What the bridge wrote to its standard output and error output.
         output: String,
     },
     #[cfg(unix)]
@@ -305,13 +305,37 @@ pub fn run_bridge(bridge: &Path, subcommand: &str) -> Result<(), BridgeError> {
         bridge: bridge.to_owned(),
         subcommand: subcommand.to_owned(),
         status: output.status,
-        output: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        output: what_it_said(&output.stdout, &output.stderr),
     })
+}
+
+/// A failed step of `install` is written to standard output as part of its report, and anything
+/// else to standard error, so a failure's reason may be in either.
+fn what_it_said(stdout: &[u8], stderr: &[u8]) -> String {
+    let (stdout, stderr) = (
+        String::from_utf8_lossy(stdout),
+        String::from_utf8_lossy(stderr),
+    );
+    [stdout.trim(), stderr.trim()]
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_step_keeps_what_the_bridge_reported_on_either_output() {
+        assert_eq!(
+            what_it_said(b"Edge: not written\n", b""),
+            "Edge: not written"
+        );
+        assert_eq!(what_it_said(b"", b" boom\n"), "boom");
+        assert_eq!(what_it_said(b"Edge\n", b"boom\n"), "Edge\nboom");
+    }
 
     #[test]
     fn a_refused_client_does_not_pause_the_next_accept() {
