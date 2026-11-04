@@ -732,6 +732,33 @@ pub fn kept_now(state: &Path, len: u64) -> Option<Vec<(u64, u64)>> {
     (kept_bytes(&kept) > 0).then_some(kept)
 }
 
+/// Writes a resume file for `file` at `url` that says only the `remaining` ranges are missing, as an earlier run would have.
+///
+/// # Errors
+///
+/// The file cannot be written.
+pub fn write_resume_file(
+    state: &Path,
+    url: &str,
+    file: &Generated,
+    remaining: &[(u64, u64)],
+) -> std::io::Result<()> {
+    let remaining: Vec<_> = remaining
+        .iter()
+        .map(|&(start, end)| serde_json::json!({ "start": start, "end": end }))
+        .collect();
+    let saved = serde_json::json!({
+        "version": 1,
+        "url": url,
+        "total": file.len,
+        "ranged": true,
+        "etag": file.etag,
+        "last_modified": file.last_modified,
+        "remaining": remaining,
+    });
+    std::fs::write(state, saved.to_string())
+}
+
 /// How many bytes `kept` covers.
 #[must_use]
 pub fn kept_bytes(kept: &[(u64, u64)]) -> u64 {
