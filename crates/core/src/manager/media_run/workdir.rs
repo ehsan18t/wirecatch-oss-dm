@@ -50,7 +50,11 @@ pub(super) async fn claim_for_link(work: &Path, url: &Url) -> std::io::Result<()
     {
         return Ok(());
     }
-    match tokio::fs::remove_dir_all(work).await {
+    let folder = work.to_owned();
+    let removed = tokio::task::spawn_blocking(move || wirecatch_files::remove_own_folder(&folder))
+        .await
+        .map_err(std::io::Error::other)?;
+    match removed {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
         _ => {}
     }

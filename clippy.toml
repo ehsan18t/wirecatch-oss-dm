@@ -9,6 +9,9 @@ disallowed-methods = [
     { path = "std::path::Path::with_extension", reason = "it replaces whatever follows the last dot, so `Dr. Who` becomes `Dr.mp4`: use `wirecatch_streams::extension::with_extension` for a person's file name, `with_file_name` otherwise" },
     # A blocked thread cannot be woken: a shutdown or a change waits out the whole sleep, and a test that sleeps is slow or flaky.
     { path = "std::thread::sleep", reason = "wait on the condition instead (a channel, a watch, `recv_timeout`), or use `tokio::time::sleep` in async code" },
+    # A whole-folder delete on a path from a record or a person can take their own files with it.
+    { path = "std::fs::remove_dir_all", reason = "use `wirecatch_files::remove_own_folder` for a folder the app made, `wirecatch_test_support::remove_test_folder` in a test" },
+    { path = "tokio::fs::remove_dir_all", allow-invalid = true, reason = "use `wirecatch_files::remove_own_folder` on a blocking thread" },
     { path = "http::HeaderValue::to_str", allow-invalid = true, reason = "it refuses a header with one raw byte above 126, which servers send: use the engine's `http::header_text`, or read `as_bytes`" },
 ]
 

@@ -17,10 +17,8 @@ const ITEM_TEXT_SHARE = 0.6;
  * system's sans stands in, and DejaVu Sans, Ubuntu's, sets the same words about 14% wider. The
  * page brings its own copy, so every machine checks the layout in it, not only a Linux one.
  */
-const FONTS: readonly Font[] = [
-  { name: 'the system font', query: '', bundled: null },
-  { name: 'DejaVu Sans', query: '&font=dejavu', bundled: 'DejaVu Sans' },
-];
+const DEJAVU: Font = { name: 'DejaVu Sans', query: '&font=dejavu', bundled: 'DejaVu Sans' };
+const FONTS: readonly Font[] = [{ name: 'the system font', query: '', bundled: null }, DEJAVU];
 
 interface Font {
   name: string;
@@ -176,6 +174,14 @@ async function untippedLabels(page: Page, labels: string[]): Promise<string[]> {
   }
   return untipped;
 }
+
+test('loads the page and its font without the browser opening a socket', async ({
+  page,
+  context,
+}) => {
+  await context.setOffline(true);
+  await open(page, 'state=connected', DEJAVU);
+});
 
 for (const font of FONTS) {
   test.describe(`in ${font.name}`, () => {

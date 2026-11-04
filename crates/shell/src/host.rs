@@ -209,7 +209,7 @@ fn retry_deleting_old_folder(old: &Path, new: &Path) {
     if old == new || !note.is_file() {
         return;
     }
-    match std::fs::remove_dir_all(old) {
+    match wirecatch_files::remove_own_folder(old) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
             tracing::warn!(folder = %old.display(), error = %e, "could not delete the old data folder; the next start tries again");
         }
@@ -271,7 +271,7 @@ fn merge(old: &Path, new: &Path) -> std::io::Result<()> {
         }
     }
     move_database(old, new, &database)?;
-    if let Err(e) = std::fs::remove_dir_all(old) {
+    if let Err(e) = wirecatch_files::remove_own_folder(old) {
         // Everything is in the new folder already; the old one is only clutter now.
         tracing::warn!(folder = %old.display(), error = %e, "could not delete the old data folder");
     }
@@ -304,9 +304,9 @@ fn merge_entry(from: &Path, to: &Path) -> std::io::Result<()> {
                 let entry = entry?;
                 merge_entry(&entry.path(), &to.join(entry.file_name()))?;
             }
-            std::fs::remove_dir_all(from)
+            wirecatch_files::remove_own_folder(from)
         }
-        Ok(_) if kind.is_dir() => std::fs::remove_dir_all(from),
+        Ok(_) if kind.is_dir() => wirecatch_files::remove_own_folder(from),
         Ok(_) => std::fs::remove_file(from),
     }
 }
@@ -361,7 +361,7 @@ pub fn copy_then_delete(from: &Path, to: &Path) -> std::io::Result<()> {
         return Err(e);
     }
     let removed = if is_dir {
-        std::fs::remove_dir_all(from)
+        wirecatch_files::remove_own_folder(from)
     } else {
         std::fs::remove_file(from)
     };
@@ -377,7 +377,7 @@ fn remove_leftover(staging: &Path) -> std::io::Result<()> {
     let removed = match std::fs::symlink_metadata(staging) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e),
-        Ok(there) if there.is_dir() => std::fs::remove_dir_all(staging),
+        Ok(there) if there.is_dir() => wirecatch_files::remove_own_folder(staging),
         Ok(_) => std::fs::remove_file(staging),
     };
     match removed {
