@@ -132,7 +132,7 @@ impl Manager {
         };
 
         let first = naming::candidate(&dir, &name, 0);
-        self.stop_for_duplicate(id, run_id, remote, &first, &provisional)?;
+        self.stop_for_duplicate(id, run_id, remote, &first)?;
 
         // The disk is checked without the lock, which a folder that is slow to
         // answer (an unreachable network share) would otherwise keep from every
@@ -148,18 +148,17 @@ impl Manager {
                 // The download's own provisional path is its to keep.
                 if naming::same_path(&candidate, &provisional) {
                     false
-                } else if state.claimed.contains(&candidate) {
-                    continue;
-                } else {
-                    state.claimed.reserve(&candidate);
+                } else if state.claimed.reserve(&candidate, id) {
                     true
+                } else {
+                    continue;
                 }
             };
             if free_on_disk(&candidate) {
                 break (candidate, claimed_here);
             }
             if claimed_here {
-                self.lock().claimed.release(&candidate);
+                self.lock().claimed.release(&candidate, id);
             }
         };
 
@@ -168,18 +167,18 @@ impl Manager {
         // The run may have been stopped while the disk was checked.
         if let Err(reason) = current_run(state, id, run_id) {
             if claimed_here {
-                state.claimed.release(&path);
+                state.claimed.release(&path, id);
             }
             return Err(reason);
         }
         if !naming::same_path(&path, &provisional) {
-            state.claimed.remove(&provisional);
+            state.claimed.remove(&provisional, id);
         }
         let Some(entry) = state.downloads.get_mut(&id) else {
-            state.claimed.release(&path);
+            state.claimed.release(&path, id);
             return Err(REMOVED.into());
         };
-        state.claimed.settle(&path);
+        state.claimed.insert(&path, id);
         entry.row.path = path.to_string_lossy().into_owned();
         entry.row.file_name = naming::file_name_of(&path);
         entry.row.category = category;
@@ -208,9 +207,8 @@ impl Manager {
         run_id: u64,
         remote: &ServerAnswer,
         path: &Path,
-        provisional: &Path,
     ) -> Result<(), String> {
-        let Some(found) = self.found_existing(id, remote, path, provisional) else {
+        let Some(found) = self.found_existing(id, remote, path) else {
             return Ok(());
         };
         let mut state = self.lock();
