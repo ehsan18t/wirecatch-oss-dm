@@ -192,6 +192,7 @@ impl Library {
                         library.loaded = Loaded::Ready;
                         cx.emit(SettingsChanged);
                         cx.notify();
+                        crate::download_windows::finished::reload(&library.downloads, cx);
                         crate::download_windows::restore(&open_questions, cx);
                         library.open_questions = open_questions;
                     });

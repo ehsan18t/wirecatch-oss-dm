@@ -115,6 +115,11 @@ mod tests {
             Recovery::ValueKept(KeptValue::ProxyPasswords),
             Recovery::ValueKept(KeptValue::QueueBatches),
         ];
+        let damaged = list_recovered(&recoveries[..1]).expect("a notice for the damaged list");
+        assert!(
+            !damaged.message.contains("damaged-1"),
+            "the path breaks the notice's text, and Show the old list reveals it"
+        );
         let notices = recoveries
             .iter()
             .map(|r| list_recovered(std::slice::from_ref(r)))

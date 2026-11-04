@@ -181,6 +181,23 @@ impl Registry {
         steps
     }
 
+    /// The questions windows still show that are no longer in `open`: they closed during events
+    /// that were missed, and are forgotten here.
+    pub fn closed_meanwhile(&mut self, open: &[QuestionId]) -> Vec<QuestionId> {
+        let closed: Vec<QuestionId> = self
+            .windows
+            .iter()
+            .filter_map(|window| match window.shows {
+                Shows::Question(id) if !open.contains(&id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        for id in &closed {
+            self.closed(*id);
+        }
+        closed
+    }
+
     /// The person asked to see every open question (`open`, oldest first): open windows come
     /// to the front, closed ones open again.
     pub fn show_all(&mut self, open: &[QuestionId]) -> Vec<Step> {
@@ -355,6 +372,17 @@ mod tests {
 
     fn q(id: u64) -> QuestionId {
         QuestionId(id)
+    }
+
+    #[test]
+    fn a_window_on_a_question_closed_meanwhile_is_found_after_a_reload() {
+        let mut registry = Registry::default();
+        registry.restore(&[q(1), q(2)]);
+        assert_eq!(registry.closed_meanwhile(&[q(2)]), [q(1)]);
+        assert_eq!(
+            registry.closed_meanwhile(&[q(1), q(2)]),
+            Vec::<QuestionId>::new()
+        );
     }
 
     #[test]
