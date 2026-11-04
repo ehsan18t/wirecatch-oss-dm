@@ -192,6 +192,12 @@ fn stored(path: &Path) -> Result<Stored, IpcError> {
     let file = match open_for_reading(path) {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Stored::Missing),
+        Err(e) if is_link_refused(&e) => {
+            return Err(bad_key(path, "it is a link to another file".into()));
+        }
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+            return Err(bad_key(path, "you are not allowed to read it".into()));
+        }
         Err(e) => {
             return Err(IpcError::io(
                 format!("Could not open {}", path.display()),
@@ -223,6 +229,18 @@ fn bad_key(path: &Path, reason: String) -> IpcError {
     }
 }
 
+/// Whether [`open_for_reading`] failed because a link is in the key's place.
+#[cfg(unix)]
+fn is_link_refused(error: &io::Error) -> bool {
+    error.raw_os_error() == Some(libc::ELOOP)
+}
+
+/// Never on Windows: [`open_for_reading`] opens the link itself.
+#[cfg(windows)]
+fn is_link_refused(_error: &io::Error) -> bool {
+    false
+}
+
 /// Opens the key without following a link in its place: a link could point at a file
 /// another account controls.
 #[cfg(unix)]
@@ -237,15 +255,18 @@ fn open_for_reading(path: &Path) -> io::Result<File> {
 
 /// Opens the key without following a link in its place (a symbolic link or a junction):
 /// with `FILE_FLAG_OPEN_REPARSE_POINT` the link itself opens, which [`check_private`] then
-/// refuses.
+/// refuses. `FILE_FLAG_BACKUP_SEMANTICS` does the same for a folder, which otherwise gives a
+/// bare access denied.
 #[cfg(windows)]
 fn open_for_reading(path: &Path) -> io::Result<File> {
     use std::os::windows::fs::OpenOptionsExt;
-    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    };
 
     OpenOptions::new()
         .read(true)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)
 }
 
@@ -428,9 +449,14 @@ mod tests {
     fn a_folder_in_place_of_the_key_is_refused() {
         let dir = private_dir("ipc-key-folder").unwrap();
         fs::create_dir(dir.path().join(KEY_FILE)).unwrap();
-        assert!(read(dir.path()).is_err());
+        let err = read(dir.path()).unwrap_err();
+        assert!(matches!(err, IpcError::BadEndpointKey { .. }), "{err:?}");
         let lock = KeyLock::take(dir.path()).unwrap();
-        assert!(lock.current().is_err(), "the listener does not replace it");
+        let err = lock.current().unwrap_err();
+        assert!(
+            matches!(err, IpcError::BadEndpointKey { .. }),
+            "the listener does not replace it: {err:?}"
+        );
     }
 
     // On Windows the key used to be read through a link, to wherever it pointed (W4I
@@ -501,6 +527,10 @@ mod tests {
         fs::write(&elsewhere, "0123456789abcdef0123456789abcdef").unwrap();
         fs::set_permissions(&elsewhere, fs::Permissions::from_mode(0o600)).unwrap();
         std::os::unix::fs::symlink(&elsewhere, &path).unwrap();
-        assert!(read(dir.path()).is_err(), "a link is not followed");
+        let err = read(dir.path()).unwrap_err();
+        assert!(
+            matches!(err, IpcError::BadEndpointKey { .. }) && err.to_string().contains("link"),
+            "a link is not followed: {err:?}"
+        );
     }
 }

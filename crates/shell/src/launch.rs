@@ -39,11 +39,13 @@ impl HandOverError {
     }
 
     /// A new connection may fare better: the running copy may be restarting its connection, or
-    /// another client holds the one pipe instance waiting, and a busy pipe reports `Io`.
+    /// another client holds the one pipe instance waiting.
     fn may_pass(&self) -> bool {
         matches!(
             self,
-            Self::Closed | Self::Frame(_) | Self::Reach(IpcError::Io { .. })
+            Self::Closed
+                | Self::Frame(_)
+                | Self::Reach(IpcError::Io { .. } | IpcError::EndpointBusy { .. })
         )
     }
 }
@@ -51,16 +53,6 @@ impl HandOverError {
 /// Shown by a copy of the app that finds another one already serving this user and cannot hand
 /// its launch over.
 pub const ALREADY_RUNNING: &str = "Wirecatch is already running for you, so this copy will close. Look for its icon in the tray, or open it from the Start menu again.";
-
-/// Says that another copy of the app is already running, and waits until the person closes the
-/// message.
-pub fn say_already_running() {
-    crate::message_box::show(
-        crate::message_box::Tone::Information,
-        crate::host::CHANNEL.name(),
-        ALREADY_RUNNING,
-    );
-}
 
 /// The flag the bridge (and the start-with-system entry) passes: run with no window.
 pub const BACKGROUND_FLAG: &str = "--background";
@@ -156,6 +148,25 @@ impl Launch {
     #[must_use]
     pub fn shows_window(&self) -> bool {
         !self.background || !self.links.is_empty()
+    }
+
+    /// Says that another copy of the app is already running, and waits until the person closes
+    /// the message. A launch that shows no window says nothing: the bridge makes one at every
+    /// connection while the app runs without its endpoint (D131).
+    pub fn say_already_running(&self) {
+        self.speak_if_shown(|| {
+            crate::message_box::show(
+                crate::message_box::Tone::Information,
+                crate::host::CHANNEL.name(),
+                ALREADY_RUNNING,
+            );
+        });
+    }
+
+    fn speak_if_shown(&self, say: impl FnOnce()) {
+        if self.shows_window() {
+            say();
+        }
     }
 
     /// The call that hands this launch to a running copy speaking protocol `version`, or `None`
@@ -412,6 +423,20 @@ mod tests {
         let found = links_from_args(&many);
         assert_eq!(found.len(), MAX_LAUNCH_LINKS);
         assert_eq!(found[0], "https://example.com/0");
+    }
+
+    #[test]
+    fn only_a_launch_that_shows_a_window_says_another_copy_is_running() {
+        for (command_line, says) in [
+            (&["app"][..], true),
+            (&["app", "https://x.example/f"][..], true),
+            (&["app", "--background", "https://x.example/f"][..], true),
+            (&["app", "--background"][..], false),
+        ] {
+            let mut said = false;
+            Launch::from_args(&args(command_line)).speak_if_shown(|| said = true);
+            assert_eq!(said, says, "{command_line:?}");
+        }
     }
 
     #[test]
