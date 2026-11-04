@@ -59,7 +59,7 @@ Audit fixes, in the order to fix them. Findings, proofs and fix directions are i
 
 To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: what to take next, on which branch, as which pull request.
 
-1. Two downloads can end up writing the same file (open)
+1. Two downloads can end up writing the same file (fixed)
 2. Removing a finished download can delete a whole folder (fixed)
 3. A cut-off download of unknown size is reported as complete (fixed)
 4. A restart can mark a download finished on a file it never downloaded (open)
