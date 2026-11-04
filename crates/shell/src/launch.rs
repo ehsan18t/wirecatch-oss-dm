@@ -10,8 +10,8 @@ use wirecatch_ipc::IpcError;
 use wirecatch_protocol::frame::{self, FrameError};
 use wirecatch_protocol::version::VersionRange;
 use wirecatch_protocol::wire::{
-    BRIDGE_START_BUDGET_MS, Call, CallMethod, ClientKind, Hello, MAX_OPEN_LINKS, Message,
-    OpenLinks, Outcome, ProtocolError, Reply,
+    Call, CallMethod, ClientKind, Hello, MAX_OPEN_LINKS, Message, OpenLinks, Outcome,
+    ProtocolError, Reply,
 };
 
 /// Why a launch could not be handed to the running copy.
@@ -38,9 +38,13 @@ impl HandOverError {
         matches!(self, Self::Reach(IpcError::NotRunning { .. }))
     }
 
-    /// The running copy may answer later: it answers nothing until its list has opened.
+    /// A new connection may fare better: the running copy may be restarting its connection, or
+    /// another client holds the one pipe instance waiting, and a busy pipe reports `Io`.
     fn may_pass(&self) -> bool {
-        matches!(self, Self::Timeout | Self::Closed | Self::Frame(_))
+        matches!(
+            self,
+            Self::Closed | Self::Frame(_) | Self::Reach(IpcError::Io { .. })
+        )
     }
 }
 
@@ -70,11 +74,8 @@ pub const MAX_LINK_LEN: usize = 8 * KIB_USIZE;
 /// Schemes a command-line link may use.
 const LINK_SCHEMES: [&str; 5] = ["http://", "https://", "ftp://", "ftps://", "ftpes://"];
 
-/// How long a second launch waits for each answer from the running copy.
-const ANSWER_WAIT: Duration = Duration::from_millis(BRIDGE_START_BUDGET_MS);
-
-/// How long a launch keeps trying a running copy that does not answer. Opening a long list, or
-/// repairing one, takes this copy no window and the person no action, so it may wait.
+/// How long a launch waits for a running copy to answer. Opening a long list, or repairing one,
+/// takes this copy no window and the person no action, so it may wait.
 const HAND_OVER_PATIENCE: Duration = Duration::from_mins(1);
 
 /// The pause before trying again a running copy that closed the connection at once.
@@ -195,7 +196,9 @@ where
     let deadline = tokio::time::Instant::now() + HAND_OVER_PATIENCE;
     loop {
         let result = match connect().await {
-            Ok(mut stream) => hand_over_on(&mut stream, launch).await,
+            // Kept open for the whole wait: on Windows the one pipe instance is taken until the
+            // running copy accepts, so a new connection would find it busy.
+            Ok(mut stream) => hand_over_on(&mut stream, launch, deadline).await,
             Err(e) => Err(e.into()),
         };
         match result {
@@ -209,8 +212,12 @@ where
     }
 }
 
-/// [`hand_over`] on a connection already open.
-async fn hand_over_on<S>(stream: &mut S, launch: &Launch) -> Result<(), HandOverError>
+/// [`hand_over`] on a connection already open, waiting for answers until `deadline`.
+async fn hand_over_on<S>(
+    stream: &mut S,
+    launch: &Launch,
+    deadline: tokio::time::Instant,
+) -> Result<(), HandOverError>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -222,24 +229,29 @@ where
         browser: None,
         start_app: false,
     });
-    let version = match ask(stream, 1, hello).await? {
+    let version = match ask(stream, 1, hello, deadline).await? {
         Reply::Hello(reply) => reply.protocol_version,
         other => return Err(HandOverError::Unexpected(format!("{other:?}"))),
     };
     match launch.call(version) {
-        Some(call) => ask(stream, 2, call).await.map(|_| ()),
+        Some(call) => ask(stream, 2, call, deadline).await.map(|_| ()),
         None => Ok(()),
     }
 }
 
-/// Sends `call` as request `id` and waits for its answer.
-async fn ask<S>(stream: &mut S, id: u64, call: Call) -> Result<Reply, HandOverError>
+/// Sends `call` as request `id` and waits for its answer until `deadline`.
+async fn ask<S>(
+    stream: &mut S,
+    id: u64,
+    call: Call,
+    deadline: tokio::time::Instant,
+) -> Result<Reply, HandOverError>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     frame::write_async(stream, &Message::Request { id, call }).await?;
     loop {
-        let message = tokio::time::timeout(ANSWER_WAIT, frame::read_async::<Message>(stream))
+        let message = tokio::time::timeout_at(deadline, frame::read_async::<Message>(stream))
             .await
             .map_err(|_| HandOverError::Timeout)??
             .ok_or(HandOverError::Closed)?;
@@ -261,6 +273,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wirecatch_protocol::app::UiEvent;
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(ToString::to_string).collect()
@@ -304,7 +317,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_copy_that_never_answers_is_tried_until_the_patience_runs_out() {
+    async fn a_copy_that_never_answers_is_waited_for_on_one_connection() {
         let launch = Launch::from_args(&args(&["app", "https://x.example/f"]));
         let mut held = Vec::new();
         let handed = hand_over_patiently(&launch, || {
@@ -312,7 +325,7 @@ mod tests {
         })
         .await;
         assert!(matches!(handed, Err(HandOverError::Timeout)), "{handed:?}");
-        assert!(held.len() > 1, "tried once only");
+        assert_eq!(held.len(), 1, "a new connection would find the pipe busy");
     }
 
     #[test]
@@ -428,19 +441,96 @@ mod tests {
         assert_eq!(linked.call(1), Some(Call::ShowWindow));
     }
 
-    #[tokio::test]
-    async fn a_second_launch_hands_its_links_to_the_running_copy() {
+    async fn manager_in(dir: &std::path::Path) -> wirecatch_core::Manager {
         use wirecatch_core::{KnownFolders, ManagerConfig};
-        use wirecatch_protocol::app::UiEvent;
 
-        let dir = wirecatch_test_support::private_dir("launch").unwrap();
-        let mut config = ManagerConfig::new(
-            dir.path().join("data"),
-            KnownFolders::under_home(dir.path()),
-        );
+        let mut config = ManagerConfig::new(dir.join("data"), KnownFolders::under_home(dir));
         config.addon_sources.ytdlp_releases = None;
         let core = crate::host::Core::new(config);
-        let manager = core.opened().await.unwrap().clone();
+        core.opened().await.unwrap().clone()
+    }
+
+    async fn links_requested(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> Vec<String> {
+        loop {
+            if let UiEvent::LinksRequested(links) = ui.recv().await.unwrap() {
+                return links;
+            }
+        }
+    }
+
+    /// Another client takes the pipe's one instance, as the first try of a launch does, so the
+    /// launch finds the pipe busy until the running copy opens its list and accepts.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_busy_pipe_is_tried_again_until_the_running_copy_accepts() {
+        use wirecatch_ipc::{Endpoint, Listener};
+        use wirecatch_test_support::PATIENCE;
+
+        let dir = wirecatch_test_support::private_dir("launch").unwrap();
+        let manager = manager_in(dir.path()).await;
+        let mut ui = manager.subscribe();
+        let endpoint = Endpoint::from_raw(dir.endpoint_name());
+        let mut listener = Listener::bind(&endpoint).unwrap();
+        let holder = wirecatch_ipc::connect(&endpoint).await.unwrap();
+
+        let (counter, mut counted) = tokio::sync::watch::channel(0_u32);
+        let launch = Launch::from_args(&args(&["app", "https://x.example/f"]));
+        let client = endpoint.clone();
+        let handing = tokio::spawn(async move {
+            hand_over_patiently(&launch, || {
+                counter.send_modify(|count| *count += 1);
+                wirecatch_ipc::connect(&client)
+            })
+            .await
+        });
+        tokio::time::timeout(PATIENCE, counted.wait_for(|count| *count >= 2))
+            .await
+            .unwrap()
+            .unwrap();
+
+        let first = listener.accept().await.unwrap();
+        drop((holder, first));
+        let second = listener.accept().await.unwrap();
+        tokio::spawn(wirecatch_server::serve_connection(manager, second));
+        let handed = tokio::time::timeout(PATIENCE, handing)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(handed.is_ok(), "{handed:?}");
+        assert_eq!(links_requested(&mut ui).await, ["https://x.example/f"]);
+    }
+
+    /// The hello is sent while the running copy has not accepted: its list is still opening.
+    #[tokio::test]
+    async fn a_launch_is_answered_on_the_connection_it_opened_before_the_list_was_open() {
+        use wirecatch_ipc::{Endpoint, Listener};
+        use wirecatch_test_support::PATIENCE;
+
+        const HELLO_SENT_BY_THEN: Duration = Duration::from_millis(100);
+
+        let dir = wirecatch_test_support::private_dir("launch").unwrap();
+        let manager = manager_in(dir.path()).await;
+        let mut ui = manager.subscribe();
+        let endpoint = Endpoint::from_raw(dir.endpoint_name());
+        let mut listener = Listener::bind(&endpoint).unwrap();
+        let mut stream = wirecatch_ipc::connect(&endpoint).await.unwrap();
+
+        let handing = tokio::spawn(async move {
+            let launch = Launch::from_args(&args(&["app", "https://x.example/f"]));
+            let deadline = tokio::time::Instant::now() + PATIENCE;
+            hand_over_on(&mut stream, &launch, deadline).await
+        });
+        tokio::time::sleep(HELLO_SENT_BY_THEN).await;
+        let accepted = listener.accept().await.unwrap();
+        tokio::spawn(wirecatch_server::serve_connection(manager, accepted));
+        handing.await.unwrap().unwrap();
+        assert_eq!(links_requested(&mut ui).await, ["https://x.example/f"]);
+    }
+
+    #[tokio::test]
+    async fn a_second_launch_hands_its_links_to_the_running_copy() {
+        let dir = wirecatch_test_support::private_dir("launch").unwrap();
+        let manager = manager_in(dir.path()).await;
         let mut ui = manager.subscribe();
         let (mut stream, server_side) = tokio::io::duplex(64 * KIB_USIZE);
         tokio::spawn(wirecatch_server::serve_connection(
@@ -449,13 +539,9 @@ mod tests {
         ));
 
         let launch = Launch::from_args(&args(&["app", "https://x.example/f"]));
-        hand_over_on(&mut stream, &launch).await.unwrap();
-        loop {
-            if let UiEvent::LinksRequested(links) = ui.recv().await.unwrap() {
-                assert_eq!(links, ["https://x.example/f"]);
-                break;
-            }
-        }
+        let deadline = tokio::time::Instant::now() + wirecatch_test_support::PATIENCE;
+        hand_over_on(&mut stream, &launch, deadline).await.unwrap();
+        assert_eq!(links_requested(&mut ui).await, ["https://x.example/f"]);
 
         // A copy not ready for the first try, which ends at once, takes the second.
         let launch = Launch::from_args(&args(&["app", "https://y.example/f"]));
@@ -474,11 +560,6 @@ mod tests {
         .await;
         assert!(handed.is_ok(), "{handed:?}");
         assert_eq!(tries, 2);
-        loop {
-            if let UiEvent::LinksRequested(links) = ui.recv().await.unwrap() {
-                assert_eq!(links, ["https://y.example/f"]);
-                break;
-            }
-        }
+        assert_eq!(links_requested(&mut ui).await, ["https://y.example/f"]);
     }
 }
