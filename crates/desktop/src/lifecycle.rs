@@ -53,7 +53,8 @@ pub fn quit_and_start_again(cx: &mut App) {
 }
 
 /// Quits: the windows and the tray icon go at once, every download stops so it continues next
-/// time (within [`quit::QUIT_PATIENCE`]), then the process exits. Safe to call repeatedly.
+/// time (within [`quit::QUIT_PATIENCE`]), then the process ends, with whatever is left (D144).
+/// Safe to call repeatedly.
 pub fn quit(cx: &mut App) {
     if is_quitting(cx) {
         return;
@@ -75,7 +76,8 @@ pub fn quit(cx: &mut App) {
         if let Some(args) = again {
             start_again(&args);
         }
-        cx.update(|cx| cx.quit());
+        // At once after the start: past the limit, the new copy needs the database lock this one holds.
+        quit::end_process();
     })
     .detach();
 }
