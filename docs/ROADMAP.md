@@ -45,6 +45,7 @@ To fix:
 - **The wrong-size update message is awkward.** "the installer is not the size its list of files gives", in `crates/core/src/manager/app_update.rs`.
 - **The Download folder field may read as a placeholder.** Saving files shows a dim "Downloads" where other screens show the full path. Not yet checked whether this is intended.
 - **Empty space in a short download window.** The "already answered" note leaves a gap under Close, because the window keeps its minimum height.
+- **On Linux, yt-dlp and ffmpeg keep running after the app crashes.** Only a live app kills their process group (`crates/streams/src/process/tree.rs`). `PR_SET_PDEATHSIG` does not solve it: it fires when the thread that started the program exits, and the runtime threads come and go. It needs another mechanism, such as a small supervisor that kills the group when the pipe to the app closes, with a test that kills the app and finds both programs gone.
 
 Not tested yet:
 
