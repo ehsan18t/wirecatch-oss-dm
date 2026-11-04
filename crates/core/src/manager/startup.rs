@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use wirecatch_protocol::app::StartupNotice;
-use wirecatch_store::Recovery;
+use wirecatch_store::{KeptValue, Recovery};
 
 /// The notice for a download list that had to be repaired while opening, if it
 /// had to be: one notice, saying everything that was repaired.
@@ -68,6 +68,33 @@ fn recovered(recovery: &Recovery) -> StartupNotice {
             ),
             set_aside: false,
         },
+        Recovery::ValueKept(which) => StartupNotice {
+            title: "Wirecatch could not read part of its list".to_owned(),
+            message: kept_value(*which).to_owned(),
+            set_aside: false,
+        },
+    }
+}
+
+/// What not being able to read `which` costs the person (D148).
+fn kept_value(which: KeptValue) -> &'static str {
+    match which {
+        KeptValue::Settings => {
+            "Wirecatch could not read its settings, perhaps saved by a newer version, so it is using the defaults. Check your folders, limits and proxy in Settings."
+        }
+        KeptValue::Queue => {
+            "Wirecatch could not read one of its queues, perhaps saved by a newer version. Its downloads moved to the default queue."
+        }
+        KeptValue::ProxyServers => {
+            "Wirecatch could not read a saved proxy server. Downloads that used it no longer go through it, so check the proxy in Settings > Network before they run."
+        }
+        KeptValue::ProxyPasswords => {
+            "Wirecatch could not read the saved proxy passwords. Enter them again in Settings > Network."
+        }
+        KeptValue::QueueBatches => {
+            "Wirecatch could not read what each queue had finished so far, so the next summary of a queue may leave some downloads out."
+        }
+        _ => "Wirecatch could not read a saved value and is using its default.",
     }
 }
 
@@ -85,6 +112,11 @@ mod tests {
             Recovery::UnreadableKept(3),
             Recovery::ValuesReset { downloads: 1 },
             Recovery::ValuesReset { downloads: 3 },
+            Recovery::ValueKept(KeptValue::Settings),
+            Recovery::ValueKept(KeptValue::Queue),
+            Recovery::ValueKept(KeptValue::ProxyServers),
+            Recovery::ValueKept(KeptValue::ProxyPasswords),
+            Recovery::ValueKept(KeptValue::QueueBatches),
         ];
         let notices = recoveries
             .iter()

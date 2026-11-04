@@ -1255,3 +1255,12 @@ A format left to yt-dlp runs in another process, which the engine's shared limit
 1. It gets `--limit-rate` at the tighter of the app's and the queue's limit when the attempt starts. A limit changed while it runs applies from its next attempt.
 2. Its bytes do not count against those limiters, so downloads sharing a limit with it can together pass that limit by up to its own rate.
 3. It runs at yt-dlp's default of one connection per format, which is within any connection limit. `--concurrent-fragments` is not passed.
+
+### D148. A stored value that cannot be read is kept, not saved over
+
+Decided on 2026-11-05.
+
+1. Settings, a queue's settings, the proxy servers, the proxy passwords or the queue batches that cannot be read are read as absent, as before, and the app goes on with defaults. Their bytes first go to `kept:<key>` in the same table, so what the app then saves costs nothing, and the person is told once through a startup notice.
+2. A kept value is never read back: nothing can say whether it should win over what the person has changed since. It is there for recovery by hand, and it holds what the list holds, so it stays under the same owner-only access (D17).
+3. A category rule this build does not know is left out, so it costs that rule and not all the settings.
+4. The id counters are never lower than an id still in the list, so a hidden row is never replaced by a new download.
