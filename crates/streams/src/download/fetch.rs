@@ -195,7 +195,7 @@ async fn fetch_piece(shared: &Shared, job: &Job, buffer: &mut Vec<u8>) -> Result
         let size = match key {
             None => {
                 if holds_no_media(&part)? {
-                    fs::remove_file(&part)?;
+                    discarded(&part, fs::remove_file(&part));
                     return Ok((Fetched::NotMedia, memory));
                 }
                 // Write access: Windows refuses to flush a read-only handle.
@@ -219,9 +219,9 @@ async fn fetch_piece(shared: &Shared, job: &Job, buffer: &mut Vec<u8>) -> Result
                 };
                 output.sync_all()?;
                 drop((input, output));
-                fs::remove_file(&part)?;
+                discarded(&part, fs::remove_file(&part));
                 if holds_no_media(&path)? {
-                    fs::remove_file(&path)?;
+                    discarded(&path, fs::remove_file(&path));
                     return Ok((Fetched::NotMedia, memory));
                 }
                 len
