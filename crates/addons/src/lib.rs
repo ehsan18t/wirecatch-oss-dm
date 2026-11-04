@@ -14,7 +14,7 @@ pub mod archive;
 pub mod manifest;
 pub mod signature;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -121,33 +121,46 @@ pub fn ytdlp_cache(dir: &Path) -> PathBuf {
 /// The add-on's programs if every recorded file is there with its recorded size, so nothing half-installed or damaged is ever run, and with [`Check::Hashes`] its SHA-256. Each program must be one of those files: a record naming any other (written by hand, or by a bug) runs nothing. Blocks on the disk.
 #[must_use]
 pub fn tools(dir: &Path, record: &Record, check: Check) -> Option<ToolPaths> {
-    let program = |id: ComponentId| -> Option<PathBuf> {
-        let component = record.components.get(&id)?;
-        if !component.files.iter().any(|f| f.path == component.program) {
-            warn!(part = id.as_str(), program = %component.program, "the media add-on's program is not one of its checked files");
-            return None;
-        }
-        let folder = dir.join(id.as_str());
-        for file in &component.files {
-            let path = archive::safe_join(&folder, &file.path).ok()?;
-            let meta = std::fs::metadata(&path).ok()?;
-            let intact = meta.is_file()
-                && meta.len() == file.size
-                && (check == Check::Sizes
-                    || archive::sha256_file(&path).is_ok_and(|h| h == file.sha256));
-            if !intact {
-                warn!(path = %path.display(), "a media add-on file is missing or changed");
-                return None;
-            }
-        }
-        archive::safe_join(&folder, &component.program).ok()
-    };
     Some(ToolPaths {
-        ytdlp: program(ComponentId::YtDlp)?,
-        ffmpeg: program(ComponentId::Ffmpeg)?,
-        deno: program(ComponentId::Deno)?,
+        ytdlp: intact_program(dir, record, ComponentId::YtDlp, check)?,
+        ffmpeg: intact_program(dir, record, ComponentId::Ffmpeg, check)?,
+        deno: intact_program(dir, record, ComponentId::Deno, check)?,
         ytdlp_cache: ytdlp_cache(dir),
     })
+}
+
+/// The parts of the record whose files are missing or changed.
+#[must_use]
+pub fn damaged_parts(dir: &Path, record: &Record, check: Check) -> BTreeSet<ComponentId> {
+    record
+        .components
+        .keys()
+        .copied()
+        .filter(|id| intact_program(dir, record, *id, check).is_none())
+        .collect()
+}
+
+/// The program of part `id`, if every file of the part is as recorded.
+fn intact_program(dir: &Path, record: &Record, id: ComponentId, check: Check) -> Option<PathBuf> {
+    let component = record.components.get(&id)?;
+    if !component.files.iter().any(|f| f.path == component.program) {
+        warn!(part = id.as_str(), program = %component.program, "the media add-on's program is not one of its checked files");
+        return None;
+    }
+    let folder = dir.join(id.as_str());
+    for file in &component.files {
+        let path = archive::safe_join(&folder, &file.path).ok()?;
+        let meta = std::fs::metadata(&path).ok()?;
+        let intact = meta.is_file()
+            && meta.len() == file.size
+            && (check == Check::Sizes
+                || archive::sha256_file(&path).is_ok_and(|h| h == file.sha256));
+        if !intact {
+            warn!(path = %path.display(), "a media add-on file is missing or changed");
+            return None;
+        }
+    }
+    archive::safe_join(&folder, &component.program).ok()
 }
 
 /// Whether yt-dlp version `candidate` is newer than `installed`. Versions are
