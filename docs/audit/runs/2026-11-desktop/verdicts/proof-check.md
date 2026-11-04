@@ -1,0 +1,64 @@
+# Proof check: P0 and P1 findings
+
+An independent rerun of every patch in `proofs/` that backs a P0 or P1 that survived in `verdicts/B*.md`.
+
+- Checked at 5cb4b35f5, in one clean detached worktree, with one target folder used by nothing else (each output line names `target\proof-check\debug\deps`). `git diff 02284bbd0 HEAD -- crates Cargo.lock Cargo.toml .cargo` is empty, so the code is the code the verdicts judged.
+- One proof at a time on Windows: patch applied with `git apply`, the command from its top lines without any `--profile`, patch reversed, tree confirmed clean before the next. Lowest free space on D: was 12 GB.
+- Result: 25 patches rerun, 25 fail as claimed. Every patch applied, none gave a build error, none failed on a timeout, and none asserts how long something took. The one `not rerun` row is the Unix half of 12-1.
+
+## Results
+
+| Finding ID | Severity | Patch | Result | Key output line |
+| --- | --- | --- | --- | --- |
+| 05-1 | P0 | `05-1.patch` | fails as claimed | `END Completed None / Failed Some("The folder ... cannot be used...")`; `FILE len 4194304 aa 0 bb 4194304 zero 0`; "two downloads share one path" |
+| Xconcurrency-1 | P0 | `Xconcurrency-1.patch` | fails as claimed | `END Completed None / Failed ...`; `FILE len 4194304 aa 0 bb 4194304`; "two downloads share one path" |
+| Xsecurity-path-handling-1 | P0 | `Xsecurity-path-handling-1.patch` | fails as claimed | `FOLDER KEPT false`, "the folder was deleted" |
+| Xsecond-review-disk-writes-2 | P0 | `Xsecond-review-disk-writes-2.patch` | fails as claimed | "reported complete: 1048576 bytes ... after the server's last answer was a 20 byte page"; "saved as whole: 1048576 bytes, 1048576 on disk..." |
+| 05-2, Xpath-normal-download-1 | P1 | `05-2.patch` | fails as claimed | `ASK Completed report (1).pdf questions 0`; `REPLACE report (1).pdf old file kept true` |
+| 05-3, 07-1, Xpath-normal-download-2 | P1 | `05-3.patch` | fails as claimed | `AGAIN Err(NotStarted("It stopped before the server answered."))`; asked, closed, removed; `OPEN 0 ROWS 1` |
+| Xconcurrency-3 | P1 | `Xconcurrency-3-and-6.patch` | fails as claimed | Same events as 05-3; `OPEN 0 ROWS 1`, left 0, right 1 |
+| 04-1, Xcrash-and-resume-1, Xsecond-review-resume-1 | P1 | `04-1.patch` | fails as claimed | `AFTER Completed done 14 total Some(14) fetched 0`; `AFTER Completed done 14 total Some(14)` |
+| Xsecond-review-disk-writes-1 | P1 | `Xsecond-review-disk-writes-1.patch` | fails as claimed | "reported complete after a failed flush: Ok(Completed { ..., bytes: 4194304, resumed_from: 0 })" |
+| 08-1 | P1 | `08-1.patch` | fails as claimed | At S-1-16-12288 and at S-1-16-8192: "connect served it and it received "cookies"; the real app's bind_keyed gave Err(AlreadyInUse ...)", label S-1-16-4096 |
+| Xfeature-behaviour-1, Xpath-app-update-1, Xsecurity-update-signatures-1 | P1 | `Xfeature-behaviour-1.patch` | fails as claimed | "a published, signed v0.2.0 was not found: None" |
+| Xfeature-behaviour-2 | P1 | `Xfeature-behaviour-2.patch` | fails as claimed | left `Unreachable { reason: "this build has no address to test the proxy with" }`, right `Works` |
+| 12-1, Xpath-app-update-4, Xsecurity-update-signatures-2 (`autostart::program`) | P1 | `12-1.patch` | fails as claimed | left `/home/ana/Apps/Editor.AppImage`, right the test binary's path |
+| 12-1 (`replace_appimage`) | P1 | `12-1.patch` | not rerun | Test is `#[cfg(all(test, unix))]`; needs Linux |
+| 17-1, Xsecond-review-resume-2 | P1 | `17-1.patch` | fails as claimed | "a link that was never read or downloaded completed as Ok(Completed { .. Clip.mp4, bytes: 28 })"; "the part of another page was reused without any request" |
+| 15-1 | P1 | `15-1.patch` | fails as claimed | `bytes: 3071`; `pages ... bytes: 142`, `empty ... bytes: 0`; "fmp4: reported Completed from a 6 s source ... Duration: 00:00:02.00"; "ts: ... Duration: 00:00:06.00" |
+| Xpath-media-download-1 | P1 | `Xpath-media-download-1.patch` | fails as claimed | "an offered conversion was refused after the download: ... not in a format Wirecatch can join ... fix: Some(RefreshLink)", left Failed, right Completed |
+| Xpath-media-download-2 | P1 | `Xpath-media-download-2.patch` | fails as claimed | "4 requests without the format's cookie, yt-dlp never tried: ... (it answered 403)" |
+| 14-1 | P1 | `14-1.patch` | fails as claimed | "manifest 1053375 bytes, peak 258 MiB"; "it links to an address of 268435456 characters" |
+| 14-2 | P1 | `14-2.patch` | fails as claimed | "24163538 allocations to inspect 4000 qualities" |
+| 03-1 | P1 | `03-1.patch` | fails as claimed | "start 1 refused: ... (invalid utf-8 sequence of 1 bytes from index 0 at index 1)"; all 6 other forms refused |
+| Xshutdown-1, Xconcurrency-4 | P1 | `Xshutdown-1.patch` | fails as claimed | "shutdown returned while the move was held: true"; "the finished row names ...big.iso, where no file is"; "the row names ...big.iso, with no part file" |
+| Xshutdown-3, 22-1 | P1 | `Xshutdown-3.patch` | fails as claimed | Stuck task: alive 30 s after the quit, exit code 0 91 ms after release. Control: exit in the same second as the quit |
+| 02-1 | P1 | `02-1.patch` | fails as claimed | "the link still works, but: Err(HttpStatus { status: 403, url: ".../old" }) (the link was asked 1 time)" |
+| Xsecurity-path-handling-2, Xsecurity-addon-unpacking-1 | P1 | `Xsecurity-path-handling-2.patch` | fails as claimed | "accepted with no flag: used PortablePath("{Home}/AppData/Local/Wirecatch/addons/media/ffmpeg"), reason None, outside false"; all 6 folders accepted |
+| 25-1 | P1 | `25-1.patch` | fails as claimed | left `("ab", 1, 0)`, right `("a b", 0, 0)`; the control without the window's keys passes |
+
+## Runs beyond the first
+
+- 05-1 ran twice, because the first run hit the debug-only check `claimed paths out of step` (`state.rs:647`) on a worker thread, and the verdict's P0 rests on the end state in a release build. With `profile.dev.package.wirecatch-core.debug-assertions=false` no such panic occurs and the end is identical: `Completed` / `Failed`, `aa 0 bb 4194304`. The panic does not cause the outcome. This is not a release build of the whole app.
+- 08-1 ran at two integrity levels, as its header asks. The method in its header, `runas /trustlevel:0x20000`, stayed at S-1-16-12288 here (`EnableLUA=0` on this machine). The medium run used this process's token lowered to S-1-16-8192 with `CreateProcessAsUserW`, confirmed by `whoami /groups` and by the test's own message. The result is the same at both. B04's medium claim holds, but the header's command does not produce a medium run on this machine.
+
+## How each proof was judged
+
+- **Commands the patches do not give.** `Xconcurrency-1.patch` and `Xconcurrency-3-and-6.patch` have no run line, so the command was taken from the test name. Only the Xconcurrency-3 test of the second patch ran; `two_clicks_at_once_make_one_download` is Xconcurrency-6, a P3.
+- **Fixed sleeps (ENGINEERING.md section 7).** Xconcurrency-1 sleeps 1500 ms before the second answer, while a 4 MiB body at 512 KiB/s takes about 8 s. Xconcurrency-3 sleeps 500 ms, but only to collect events to print; `add_capture` has already returned its error when the question count is asserted. Neither result depends on the sleep, and both agree with the event-waiting 05-1 and 05-3. The sleeps break the rule, so a regression test should start from 05-1 and 05-3.
+- **Tests that cannot pass as written.** The two real-ffmpeg tests in 15-1 panic on every branch, including when ffmpeg refuses the input, so they were judged by message: both say `reported Completed`. They used the ffmpeg on PATH. The 6.00 s MPEG-TS duration shows no shortening; the hole in the middle is inferred from the replaced segment, not measured.
+- **Source text as input.** Xfeature-behaviour-1 and -2 read `crates/desktop/src/backend.rs` as text and set the source only if it is named there. A search of `crates/` finds no caller of `with_official_app_releases` or `with_official_proxy_test` outside their definitions and doc links, and `ManagerConfig::new` leaves both `None`, so the text check does not hide a caller elsewhere.
+- **Counts that could read zero by accident.** Xpath-media-download-2 counts headers through `Seen`, whose `Debug` output includes request headers, and looks for `--no-simulate`, which `crates/media/src/ytdlp/download.rs` really passes. So zero means zero. The 403 is simulated by the test server.
+- **Injected fault.** Xsecond-review-disk-writes-1 forces one failed flush. It reached its final assertion, so the planned failure did happen before the end.
+- **Windows reach of 12-1.** The value is a Linux path in a Windows run: it proves `autostart::program` trusts the variable, not an AppImage scenario on Linux.
+
+## Parts of verdicts these reruns do not cover
+
+Each was left out because no patch command covers it or it needs something outside this check. None changes a result above.
+
+- 14-1: the 977 GiB form (cut to 1/4096 on purpose). 14-2: the wall times (ignored test, full-size runs up to 100 minutes).
+- Xpath-media-download-2: real yt-dlp giving `cookies` outside `http_headers`.
+- Xsecond-review-disk-writes-1: a later flush passing with the bytes gone (the verdict also says this was not reproduced).
+- Xshutdown-3: a task stuck inside a run's `FileWork`, the 15 s limit and the skipped `store.close`.
+- 25-1: the real-app keystrokes with `PostMessage`, and `screens/B13-space-typed.png`.
+- Xsecurity-path-handling-2: the junk `USP10.dll` load test.
