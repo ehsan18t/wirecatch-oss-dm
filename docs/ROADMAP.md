@@ -226,7 +226,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 161. Messages name the product with a literal (open)
 162. A navigation item left behind keeps its hover colour until the mouse moves (open)
 163. Empty pages offer Pause all or Resume all (fixed)
-164. Listed above as "A failed video shows the add-on's raw output" (open)
+164. Listed above as "A failed video shows the add-on's raw output" (fixed)
 165. New queue and New proxy do not put the cursor in the Name field (fixed)
 166. The row, the menu and the details decide offers and words on their own (fixed)
 167. Two test files depend on an order only timing decides (open)
