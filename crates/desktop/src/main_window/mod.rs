@@ -179,6 +179,30 @@ pub enum Screen {
     About,
 }
 
+/// The page on screen, and the navigation over it.
+struct Page {
+    screen: Screen,
+    /// The full navigation is open over the list, from the rail of a narrow window.
+    drawer: bool,
+}
+
+impl Default for Page {
+    fn default() -> Self {
+        Self {
+            screen: Screen::Downloads,
+            drawer: false,
+        }
+    }
+}
+
+impl Page {
+    /// Goes to `screen`; opening a page closes the drawer it may have been chosen from.
+    fn open(&mut self, screen: Screen) {
+        self.screen = screen;
+        self.drawer = false;
+    }
+}
+
 /// What the list shows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum View {
@@ -286,7 +310,7 @@ fn answer_in(shown: &Shown, asked: &Asked, cx: &mut App) -> bool {
 
 pub struct MainWindow {
     library: Entity<Library>,
-    screen: Screen,
+    page: Page,
     view: View,
     selected: selection::Selected,
     /// Where a Shift range starts.
@@ -301,8 +325,6 @@ pub struct MainWindow {
     laid: std::cell::RefCell<laid::Kept>,
     selection_facts: std::cell::RefCell<Option<Rc<selection::Facts>>>,
     nav: rail::Nav,
-    /// The full navigation is open over the list, from the rail of a narrow window.
-    drawer: bool,
     /// The Add dialog's form, while it is open.
     add_form: Option<WeakEntity<add_dialog::AddForm>>,
     /// The row menu the keyboard opened, while it shows.
@@ -363,8 +385,7 @@ impl MainWindow {
             opening: self.settings_on.opening + 1,
             page: Some(page),
         };
-        self.screen = Screen::Settings;
-        self.drawer = false;
+        self.page.open(Screen::Settings);
         cx.notify();
     }
 
@@ -377,7 +398,7 @@ impl MainWindow {
         if reveal.proxy_settings {
             return self.open_settings(settings::Page::Network, cx);
         }
-        self.screen = Screen::Downloads;
+        self.page.screen = Screen::Downloads;
         let library = self.library.read(cx);
         let view = reveal
             .queue
@@ -448,7 +469,7 @@ impl MainWindow {
         let updates = Self::follow_updates(cx);
         Self {
             library,
-            screen: Screen::Downloads,
+            page: Page::default(),
             view: View::All,
             selected: selection::Selected::default(),
             anchor: None,
@@ -457,7 +478,6 @@ impl MainWindow {
             keyboard_menu: None,
             add_form: None,
             nav: rail::Nav::default(),
-            drawer: false,
             sort: sort::Sort::default(),
             frozen: std::cell::RefCell::default(),
             laid: std::cell::RefCell::default(),
@@ -498,8 +518,8 @@ impl MainWindow {
 
     fn show(&mut self, view: View, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.view = view;
-        self.screen = Screen::Downloads;
-        self.drawer = false;
+        self.page.screen = Screen::Downloads;
+        self.page.drawer = false;
         self.clear_selection();
         let placeholder = match view {
             View::All => ALL_PLACEHOLDER.to_owned(),
@@ -514,14 +534,13 @@ impl MainWindow {
     }
 
     pub(super) fn open_screen(&mut self, screen: Screen, cx: &mut Context<'_, Self>) {
-        self.screen = screen;
-        self.drawer = false;
+        self.page.open(screen);
         cx.notify();
     }
 
     /// Ctrl+,: Settings, or back to the downloads from there.
     fn toggle_settings(&mut self, cx: &mut Context<'_, Self>) {
-        let screen = if self.screen == Screen::Settings {
+        let screen = if self.page.screen == Screen::Settings {
             Screen::Downloads
         } else {
             Screen::Settings
@@ -546,7 +565,7 @@ impl MainWindow {
                     .size_full()
                     .bg(theme.overlay)
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.drawer = false;
+                        this.page.drawer = false;
                         cx.notify();
                     })),
             )
@@ -561,7 +580,7 @@ impl MainWindow {
 
     /// F6 and Shift+F6: the keyboard moves between the search and the list.
     fn next_region(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        self.screen = Screen::Downloads;
+        self.page.screen = Screen::Downloads;
         if self.search.read(cx).focus_handle(cx).is_focused(window) {
             self.focus.focus(window, cx);
             if self.cursor.is_none() {
@@ -577,10 +596,10 @@ impl MainWindow {
     /// Escape outside a field goes back to the downloads, else clears the selection; a dialog
     /// closes on its own Escape first.
     fn dismiss(&mut self, cx: &mut Context<'_, Self>) {
-        if self.screen == Screen::Downloads {
+        if self.page.screen == Screen::Downloads {
             self.clear_selection();
         } else {
-            self.screen = Screen::Downloads;
+            self.page.screen = Screen::Downloads;
         }
         cx.notify();
     }
@@ -716,7 +735,7 @@ impl Render for MainWindow {
             .on_action(cx.listener(|this, _: &PasteLinks, window, cx| this.paste_links(window, cx)))
             .on_action(cx.listener(|this, _: &Dismiss, _, cx| this.dismiss(cx)))
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
-                this.screen = Screen::Downloads;
+                this.page.screen = Screen::Downloads;
                 this.search
                     .update(cx, |search, cx| search.focus(window, cx));
             }))
@@ -734,14 +753,14 @@ impl Render for MainWindow {
             .on_action(
                 cx.listener(|this, _: &PreviousRegion, window, cx| this.next_region(window, cx)),
             )
-            .when(self.screen == Screen::Downloads, |window| {
+            .when(self.page.screen == Screen::Downloads, |window| {
                 Self::list_keys(window, cx)
             })
             .size_full()
             .bg(background)
             .text_role(Role::Body, cx)
             .child(self.title_bar(cx))
-            .child(match self.screen {
+            .child(match self.page.screen {
                 Screen::Downloads => layout::body(
                     navigation,
                     self.command_bar(cx).into_any_element(),
@@ -763,11 +782,29 @@ impl Render for MainWindow {
                 }
             })
             .when(
-                rail && self.drawer && self.screen != Screen::Settings,
+                rail && self.page.drawer && self.page.screen != Screen::Settings,
                 |window| window.child(self.drawer(cx)),
             )
             .when_some(self.keyboard_menu.as_ref(), |window, (menu, _)| {
                 window.child(row_menu::keyboard_menu(menu, self.keyboard_menu_at()))
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn opening_a_page_closes_the_drawer() {
+        for screen in [Screen::Settings, Screen::Shortcuts, Screen::About] {
+            let mut page = Page {
+                screen: Screen::Downloads,
+                drawer: true,
+            };
+            page.open(screen);
+            assert_eq!(page.screen, screen);
+            assert!(!page.drawer);
+        }
     }
 }

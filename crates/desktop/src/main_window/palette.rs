@@ -184,7 +184,7 @@ impl MainWindow {
     fn views(&self, cx: &App) -> Vec<Entry> {
         let show = |title: String, view: View| {
             entry(title, "view show list", move |main, window, cx| {
-                main.screen = Screen::Downloads;
+                main.page.screen = Screen::Downloads;
                 main.show(view, window, cx);
             })
         };
@@ -256,7 +256,7 @@ fn general() -> Vec<Entry> {
             },
         ),
         entry("Search the list", "find filter", |main, w, cx| {
-            main.screen = Screen::Downloads;
+            main.page.screen = Screen::Downloads;
             main.search.update(cx, |search, cx| search.focus(w, cx));
         }),
         entry("Pause every download", "stop all", |_, w, cx| {

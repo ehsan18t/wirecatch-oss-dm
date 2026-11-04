@@ -126,7 +126,7 @@ impl MainWindow {
 
     /// The foot of the navigation: Settings by name, then the two pages that fit in an icon.
     pub(super) fn foot(&self, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
-        let on_settings = self.screen == Screen::Settings;
+        let on_settings = self.page.screen == Screen::Settings;
         let shortcuts = self.foot_icon(Screen::Shortcuts, cx);
         let about = self.foot_icon(Screen::About, cx);
         let open_settings = cx.listener(|this, _, _, cx| this.open_screen(Screen::Settings, cx));
@@ -170,7 +170,7 @@ impl MainWindow {
     /// Keyboard shortcuts or About at the foot: an icon, with its name on hover.
     fn foot_icon(&self, screen: Screen, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
-        let current = self.screen == screen;
+        let current = self.page.screen == screen;
         let (id, label, icon) = foot_page(screen);
         let dot = screen == Screen::About && update_waiting(cx);
         div()
@@ -290,7 +290,7 @@ impl MainWindow {
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
         let theme = cx.theme();
-        let current = self.screen == Screen::Downloads && self.view == view;
+        let current = self.page.screen == Screen::Downloads && self.view == view;
         let alarming = view == View::Group(Group::Attention) && count > 0;
         h_flex()
             .id(id)
