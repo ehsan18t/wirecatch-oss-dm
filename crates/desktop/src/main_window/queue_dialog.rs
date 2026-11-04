@@ -812,7 +812,6 @@ fn speed_limit(typed: &str, unit: Unit) -> Option<u64> {
     (bytes > 0).then_some(bytes)
 }
 
-/// `bytes` in `unit` to one decimal, without a trailing `.0`.
 /// The limit in the field: `opened` while it still reads as shown, as showing it may round it.
 fn limit_from(typed: &str, unit: Unit, opened: u64) -> Option<u64> {
     if typed.trim() == in_unit(opened, unit) {
@@ -821,6 +820,7 @@ fn limit_from(typed: &str, unit: Unit, opened: u64) -> Option<u64> {
     speed_limit(typed, unit)
 }
 
+/// `bytes` in `unit` to one decimal, without a trailing `.0`.
 fn in_unit(bytes: u64, unit: Unit) -> String {
     let tenths = bytes.saturating_mul(10).saturating_add(unit.bytes() / 2) / unit.bytes();
     match tenths % 10 {
