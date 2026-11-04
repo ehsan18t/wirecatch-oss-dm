@@ -1,0 +1,60 @@
+[
+  {
+    "kind": "picked"
+  },
+  {
+    "kind": "matched",
+    "rule": {
+      "kind": "site",
+      "value": "example.com"
+    }
+  },
+  {
+    "kind": "matched",
+    "rule": {
+      "kind": "file_name",
+      "value": "a"
+    }
+  },
+  {
+    "kind": "matched",
+    "rule": {
+      "kind": "file_type",
+      "value": "zip"
+    }
+  },
+  {
+    "kind": "matched",
+    "rule": {
+      "kind": "category",
+      "value": "video"
+    }
+  },
+  {
+    "kind": "matched",
+    "rule": {
+      "kind": "protocol",
+      "value": "http"
+    }
+  },
+  {
+    "kind": "matched",
+    "rule": {
+      "kind": "protocol",
+      "value": "https"
+    }
+  },
+  {
+    "kind": "matched",
+    "rule": {
+      "kind": "protocol",
+      "value": "ftp"
+    }
+  },
+  {
+    "kind": "browser_queue"
+  },
+  {
+    "kind": "default_queue"
+  }
+]
