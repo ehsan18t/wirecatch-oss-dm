@@ -57,6 +57,8 @@ Not tested yet:
 
 Audit fixes, in the order to fix them. Findings, proofs and fix directions are in `docs/audit/runs/2026-11-desktop/AUDIT-LOG.md`.
 
+To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: what to take next, on which branch, as which pull request.
+
 1. Two downloads can end up writing the same file (open)
 2. Removing a finished download can delete a whole folder (open)
 3. A cut-off download of unknown size is reported as complete (open)
