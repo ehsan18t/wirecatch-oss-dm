@@ -136,7 +136,7 @@ fn parse_master(lines: &[(usize, &str)], base: &Url) -> Result<Master, Located> 
 
 /// Each audio group's rendition to pair with a quality: its default one, else the one to select automatically, else the first.
 fn paired_audio(renditions: &[Rendition]) -> HashMap<String, usize> {
-    let rank = |r: &Rendition| u8::from(r.autoselect) + 2 * u8::from(r.default);
+    let rank = |r: &Rendition| if r.default { 2 } else { u8::from(r.autoselect) };
     let mut paired: HashMap<String, usize> = HashMap::new();
     for (i, rendition) in renditions.iter().enumerate() {
         if rendition.kind != RenditionKind::Audio || rendition.url.is_none() {
@@ -1023,6 +1023,31 @@ a.ts
         // Not `unwrap_err`, which would print every address on failure.
         let error = parse(&text, &base).err().map(|e| e.cause);
         assert_eq!(error, Some(ManifestError::AddressesTooLong));
+    }
+
+    #[test]
+    fn a_groups_paired_audio_is_its_first_default_else_autoselect_else_first() {
+        const PLAIN: &str = "NAME=\"p\"";
+        const AUTO: &str = "AUTOSELECT=YES";
+        const DEFAULT: &str = "DEFAULT=YES";
+        const BOTH: &str = "DEFAULT=YES,AUTOSELECT=YES";
+        let paired = |renditions: &[&str]| {
+            let mut text = String::from("#EXTM3U\n");
+            for rendition in renditions {
+                text.push_str("#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"g\",URI=\"a\",");
+                text.push_str(rendition);
+                text.push('\n');
+            }
+            text.push_str("#EXT-X-STREAM-INF:AUDIO=\"g\"\nv\n");
+            let Ok(Playlist::Master(master)) = parse(&text, &base()) else {
+                panic!("not a master playlist");
+            };
+            master.paired_audio.get("g").copied()
+        };
+        assert_eq!(paired(&[PLAIN, PLAIN]), Some(0));
+        assert_eq!(paired(&[PLAIN, AUTO, AUTO]), Some(1));
+        assert_eq!(paired(&[AUTO, DEFAULT]), Some(1));
+        assert_eq!(paired(&[DEFAULT, BOTH]), Some(0));
     }
 
     #[test]
