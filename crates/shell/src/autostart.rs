@@ -321,7 +321,7 @@ fn desktop_entry(name: &str, program: &Path) -> String {
 /// The file's own string escape comes on top of the quoting, so every backslash is doubled.
 #[cfg(any(not(windows), test))]
 fn exec_word(text: &str) -> String {
-    const RESERVED: &str = " \t\n\"'\\><~|&;$*?#()`";
+    const RESERVED: &str = " \t\n\r\"'\\><~|&;$*?#()`";
     let text = text.replace('%', "%%");
     if !text.chars().any(|c| RESERVED.contains(c)) {
         return text;
@@ -330,6 +330,9 @@ fn exec_word(text: &str) -> String {
     for c in text.chars() {
         match c {
             '\\' => quoted.push_str(r"\\\\"),
+            // A raw line break would end the entry's line.
+            '\n' => quoted.push_str(r"\n"),
+            '\r' => quoted.push_str(r"\r"),
             '"' | '`' | '$' => {
                 quoted.push_str(r"\\");
                 quoted.push(c);
@@ -458,6 +461,7 @@ mod tests {
             r#""/home/a b/Wirecatch \\$1 \\"x\\".AppImage""#
         );
         assert_eq!(exec_word(r"/opt/a\b"), r#""/opt/a\\\\b""#);
+        assert_eq!(exec_word("/opt/a\nb\rc"), r#""/opt/a\nb\rc""#);
         assert_eq!(exec_word("/opt/100%/w"), "/opt/100%%/w");
     }
 
