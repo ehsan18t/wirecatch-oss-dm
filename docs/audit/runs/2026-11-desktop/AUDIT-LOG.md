@@ -178,8 +178,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 151 | A capture's check and its record sit in separate lock sections                                    | `07-5` `Xconcurrency-6`                                                                            | P3       | small  | P3, 2 findings, small                                                                                            | `Xconcurrency-3-and-6`                        | fixed  |
 | 152 | A found duplicate overrides a stop the person chose in the same moment                            | `04-3` `05-12`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 153 | A link or folder in place of the key gets a raw system error                                      | `08-4` `B04-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | `B04-p2-checks`                               | fixed  |
-| 154 | Cancelling does not interrupt name lookups                                                        | `09-4` `B14-2`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
-| 155 | The rebinding tests never reach the filtering resolver, and its refusal ends as a network failure | `09-5` `09-6`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
+| 154 | Cancelling does not interrupt name lookups                                                        | `09-4` `B14-2`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
+| 155 | The rebinding tests never reach the filtering resolver, and its refusal ends as a network failure | `09-5` `09-6`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 156 | Tests do not cover the stored forms of enums and old settings                                     | `03-6` `Xdatabase-migrations-5`                                                                    | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 157 | A held-open output loses a program's collected output, and its test cannot fail                   | `13-2` `13-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 158 | A resume file's temporary file can stay for good                                                  | `01-8` `Xsecond-review-disk-writes-8`                                                              | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
@@ -240,8 +240,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 213 | The link's hover popover covers the row's menu                                                    | `U-8`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 214 | The damaged-list notice squeezes its text and breaks the path                                     | `U-15`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 215 | A top-level domain held only through a wildcard counts as a local name                            | `10-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 216 | direct_uses_no_proxy passes whatever Direct does                                                  | `09-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 217 | Module docs describe proxy behaviour that has changed                                             | `09-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 216 | direct_uses_no_proxy passes whatever Direct does                                                  | `09-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 217 | Module docs describe proxy behaviour that has changed                                             | `09-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 218 | A proxy test cancelled by quitting is saved as its last result                                    | `19-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 219 | A test named for keeping the last result does not check it                                        | `19-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 220 | Copy from system turns a SOCKS4 server into a SOCKS5 profile                                      | `B15-2`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -2904,7 +2904,7 @@ P3, small, fixed.
 
 ### 154. Cancelling does not interrupt name lookups
 
-P3, small, open.
+P3, small, fixed.
 
 `private_guard` and the guard in `send` sit outside any `select!`, and `fetch_parts` awaits `network_rule` the same way. In the app the delay is bounded by `stop_timeout`, and nothing is lost by the abort. The 60 s holds only for a direct user of the engine.
 
@@ -2921,7 +2921,7 @@ P3, small, open.
 
 ### 155. The rebinding tests never reach the filtering resolver, and its refusal ends as a network failure
 
-P3, small, open.
+P3, small, fixed.
 
 Both rebinding tests use `localhost`, refused before any connection, so removing `.dns_resolver` passes them. A refusal by the resolver also ends as `Error::Network`, not `PrivateNetwork`. The connection stays blocked.
 
@@ -3921,7 +3921,7 @@ P3, small, fixed.
 
 ### 216. direct_uses_no_proxy passes whatever Direct does
 
-P3, small, open.
+P3, small, fixed.
 
 The test sets no proxy and checks only the size. The real proof is in `proxy/tests.rs`.
 
@@ -3937,7 +3937,7 @@ The test sets no proxy and checks only the size. The real proof is in `proxy/tes
 
 ### 217. Module docs describe proxy behaviour that has changed
 
-P3, small, open.
+P3, small, fixed.
 
 The `proxy.rs` header says FTP is refused while `ftp_route` carries it, and the `PrivateNetwork` section says the proxy resolves every name, while reqwest resolves locally for `socks4` and `socks5`.
 

@@ -123,7 +123,13 @@ pub(super) async fn page_attempt(
             .filter(|f| f.cookies.is_some())
             .filter_map(|f| Url::parse(f.url.as_deref()?).ok())
         {
-            network_rule(job.chosen_by, &job.url, &url).await?;
+            let Some(rule) = cancel
+                .run_until_cancelled(network_rule(job.chosen_by, &job.url, &url))
+                .await
+            else {
+                return Ok(MediaDone::Paused);
+            };
+            rule?;
         }
         // yt-dlp joins two formats into the container its own table picks (AV1 with AAC into MP4); the offer named the shared policy's.
         let merge_into = (video.is_some() && audio.is_some())
@@ -202,7 +208,13 @@ pub(super) async fn fetch_parts(
             .as_deref()
             .and_then(|u| Url::parse(u).ok())
             .ok_or_else(describe::invalid_format_address)?;
-        rules.push(network_rule(job.chosen_by, &job.url, &url).await?);
+        let Some(rule) = cancel
+            .run_until_cancelled(network_rule(job.chosen_by, &job.url, &url))
+            .await
+        else {
+            return Ok(None);
+        };
+        rules.push(rule?);
     }
     let parts = found
         .iter()
