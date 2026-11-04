@@ -1225,7 +1225,7 @@ Decided on 2026-11-04.
 1. Before a download's files move to another folder or name, the row saves what moves where, in the order it moves: the largest file first. The save is on disk before the first file moves.
 2. A start that finds the record finishes the move if any file has reached its new place, and otherwise leaves the download where it was. A file counts as there when it is gone from its old place, or both are the same size; one of another size at the new place is another program's. What stops an unfinished download's move from finishing leaves it failed with its files split, as a move that fails while running does; a finished download keeps its new place, and a subtitle file that cannot follow stays where it is and is logged.
 3. The same start deletes the temporary copies in the record's target folder. No other folder is searched.
-4. A finished video's row lists its subtitle files. They move with it, their names following the file's, and "Remove and delete" deletes them unless another row keeps the file. A subtitle file placed in the moment before a kill is not listed when the row is completed at the next start.
+4. A finished video's row lists its subtitle files. They move with it, their names following the file's, and "Remove and delete" deletes them unless another row keeps the file. A listed name another download now holds, or another finished row lists as its file, is left alone, and a moved subtitle file never takes a name another download holds. A subtitle file placed in the moment before a kill is not listed when the row is completed at the next start.
 
 ### D142. An AppImage finds its libraries from its own binaries
 

@@ -306,7 +306,11 @@ impl Manager {
                 if entry.row.status == DownloadStatus::Completed {
                     if completed == RemoveFiles::Delete {
                         finished_files.push(entry.path().to_path_buf());
-                        subtitles.push((entry.path().to_path_buf(), entry.files.sidecars.clone()));
+                        subtitles.push((
+                            *id,
+                            entry.path().to_path_buf(),
+                            entry.files.sidecars.clone(),
+                        ));
                     }
                 } else {
                     // An unfinished download has no file of its own at its final
@@ -320,8 +324,10 @@ impl Manager {
             }
             finished_files = files_no_row_lists(&state, finished_files);
             // Only with the file itself: another row may keep it.
-            for (file, beside) in subtitles {
+            for (id, file, beside) in subtitles {
                 if finished_files.contains(&file) {
+                    let beside = files_no_row_lists(&state, beside);
+                    leaving.extend(beside.iter().map(|path| (path.clone(), id)));
                     finished_files.extend(beside);
                 }
             }

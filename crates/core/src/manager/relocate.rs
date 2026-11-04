@@ -218,16 +218,11 @@ impl Manager {
                 .downloads
                 .get(&id)
                 .is_some_and(|e| e.row.status == DownloadStatus::Completed);
-            let sidecars: Vec<PathBuf> = state
-                .downloads
-                .values()
-                .filter(|e| {
-                    completed
-                        && e.row.status == DownloadStatus::Completed
-                        && naming::same_path(e.path(), old_path)
-                })
-                .flat_map(|e| e.files.sidecars.iter().cloned())
-                .collect();
+            let sidecars = if completed {
+                sidecars_of_file(&state, old_path)
+            } else {
+                Vec::new()
+            };
             // A finished file holds its name on disk, with no claim.
             let free = if completed {
                 !state.claimed.contains(&new_path)
@@ -249,11 +244,7 @@ impl Manager {
         let mover: Mover = Arc::new(move_file);
         let result = self
             .blocking(move || {
-                let files = files_to_move(&from, &to, completed, &sidecars);
-                manager.record_move(id, &to, &files);
-                let pairs: Vec<(PathBuf, PathBuf)> =
-                    files.into_iter().map(|file| (file.from, file.to)).collect();
-                move_together(&pairs, |old, new| mover(old, new))
+                manager.move_on_record(id, (&from, &to), completed, &sidecars, &*mover)
             })
             .await;
         if let Err(e) = &result {
@@ -270,6 +261,52 @@ impl Manager {
         result.map(|()| new_path)
     }
 
+    /// Records and moves the files of download `id` as it goes `between` two paths. Blocks on the disk and the database.
+    fn move_on_record(
+        &self,
+        id: DownloadId,
+        between: (&Path, &Path),
+        completed: bool,
+        sidecars: &[PathBuf],
+        move_one: &(dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync),
+    ) -> Result<()> {
+        let (from, to) = between;
+        let files = files_to_move(from, to, completed, sidecars, |sidecar| {
+            self.reserve_sidecar_target(id, sidecar, from, to)
+        });
+        self.record_move(id, to, &files);
+        let pairs: Vec<(PathBuf, PathBuf)> = files
+            .iter()
+            .map(|file| (file.from.clone(), file.to.clone()))
+            .collect();
+        let result = move_together(&pairs, move_one);
+        // A finished file holds its name on disk, with no claim.
+        if completed {
+            let mut state = self.lock();
+            for file in files.iter().skip(1) {
+                state.claimed.release(&file.to, id);
+            }
+        }
+        result
+    }
+
+    /// Picks and reserves where `sidecar` of download `id` goes when its file moves from `from` to `to`. Touches the file system.
+    fn reserve_sidecar_target(
+        &self,
+        id: DownloadId,
+        sidecar: &Path,
+        from: &Path,
+        to: &Path,
+    ) -> PathBuf {
+        loop {
+            let target =
+                sidecar_target(sidecar, from, to, |path| self.lock().claimed.contains(path));
+            if self.lock().claimed.reserve(&target, id) {
+                return target;
+            }
+        }
+    }
+
     /// Puts the record of a move of download `id` to `to` on disk. Blocks on the database.
     fn record_move(&self, id: DownloadId, to: &Path, files: &[MovedFile]) {
         let mut guard = self.lock();
@@ -284,6 +321,24 @@ impl Manager {
         drop(guard);
         self.wait_for_record(id);
     }
+}
+
+/// The subtitle files listed by the finished rows of the file at `path`. A listed name may since be another download's, or another finished row's file; those stay.
+fn sidecars_of_file(state: &State, path: &Path) -> Vec<PathBuf> {
+    let finished = || {
+        state
+            .downloads
+            .values()
+            .filter(|e| e.row.status == DownloadStatus::Completed)
+    };
+    finished()
+        .filter(|e| naming::same_path(e.path(), path))
+        .flat_map(|e| e.files.sidecars.iter().cloned())
+        .filter(|sidecar| {
+            !state.claimed.contains(sidecar)
+                && !finished().any(|e| naming::same_path(e.path(), sidecar))
+        })
+        .collect()
 }
 
 /// The download's path and name are `new_path`, in `dir`.
@@ -391,8 +446,14 @@ fn discard_staged(dir: &Path) {
     }
 }
 
-/// The files that move when a download goes from `from` to `to`, in the order they move. Touches the file system.
-fn files_to_move(from: &Path, to: &Path, completed: bool, sidecars: &[PathBuf]) -> Vec<MovedFile> {
+/// The files that move when a download goes from `from` to `to`, in the order they move, each of `sidecars` to where `sidecar_to` says. Touches the file system.
+fn files_to_move(
+    from: &Path,
+    to: &Path,
+    completed: bool,
+    sidecars: &[PathBuf],
+    sidecar_to: impl Fn(&Path) -> PathBuf,
+) -> Vec<MovedFile> {
     if !completed {
         return partial_files(from)
             .into_iter()
@@ -411,14 +472,19 @@ fn files_to_move(from: &Path, to: &Path, completed: bool, sidecars: &[PathBuf]) 
             .filter(|sidecar| sidecar.exists())
             .map(|sidecar| MovedFile {
                 from: sidecar.clone(),
-                to: sidecar_target(sidecar, from, to),
+                to: sidecar_to(sidecar),
             }),
     );
     files
 }
 
 /// Where `sidecar` of the file at `from` goes when that file moves to `to`: its name follows the file's, and is free there.
-fn sidecar_target(sidecar: &Path, from: &Path, to: &Path) -> PathBuf {
+fn sidecar_target(
+    sidecar: &Path,
+    from: &Path,
+    to: &Path,
+    claimed: impl Fn(&Path) -> bool,
+) -> PathBuf {
     let stem = |path: &Path| {
         path.file_stem()
             .map(|stem| stem.to_string_lossy().into_owned())
@@ -428,7 +494,7 @@ fn sidecar_target(sidecar: &Path, from: &Path, to: &Path) -> PathBuf {
     let name = name
         .strip_prefix(&stem(from))
         .map_or_else(|| name.clone(), |rest| format!("{}{rest}", stem(to)));
-    naming::unique_path(to.parent().unwrap_or(Path::new("")), &name, |_| false)
+    naming::unique_path(to.parent().unwrap_or(Path::new("")), &name, claimed)
 }
 
 /// Moves one file from the first path to the second.
@@ -691,10 +757,11 @@ mod tests {
         let [part, state] = partial_files(&from);
         std::fs::write(&part, b"data").unwrap();
         std::fs::write(&state, b"state").unwrap();
-        let pairs: Vec<(PathBuf, PathBuf)> = files_to_move(&from, &to, false, &[])
-            .into_iter()
-            .map(|file| (file.from, file.to))
-            .collect();
+        let pairs: Vec<(PathBuf, PathBuf)> =
+            files_to_move(&from, &to, false, &[], Path::to_path_buf)
+                .into_iter()
+                .map(|file| (file.from, file.to))
+                .collect();
         move_together(&pairs, move_file).unwrap();
         let [new_part, new_state] = partial_files(&to);
         assert_eq!(std::fs::read(new_part).unwrap(), b"data");
