@@ -55,7 +55,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 28  | Nothing knows whether a download can continue, so messages promise what will not happen           | `01-6` `32-1` `28-1` `B03-1`                                                                       | P2       | medium | P2, 4 findings, medium                                                                                           | none                                          | open   |
 | 29  | The Public Suffix List's date and Check now were never put in Settings                            | `23-5` `30-3` `Xfeature-behaviour-4` `B19-4`                                                       | P2       | medium | P2, 4 findings, medium                                                                                           | none                                          | open   |
 | 30  | The window redoes whole-list work on every frame and progress tick                                | `25-6` `26-7` `27-8` `B13-3`                                                                       | P2       | large  | P2, 4 findings, large                                                                                            | none                                          | fixed  |
-| 31  | The Add dialog's link rule leaves out ftpes, so such links cannot be added                        | `22-2` `Xrepeated-logic-1` `Xpath-normal-download-4`                                               | P2       | small  | P2, 3 findings, small                                                                                            | none                                          | open   |
+| 31  | The Add dialog's link rule leaves out ftpes, so such links cannot be added                        | `22-2` `Xrepeated-logic-1` `Xpath-normal-download-4`                                               | P2       | small  | P2, 3 findings, small                                                                                            | none                                          | fixed  |
 | 32  | A raw non-ASCII byte or another charset in a header loses the file name or fails a redirect       | `02-2` `B11-1` `01-7`                                                                              | P2       | small  | P2, 3 findings, small                                                                                            | `02-2` `B11-1` `01-7`                         | fixed  |
 | 33  | Failing to delete a temporary file turns a saved video into a failure                             | `15-2` `Xsecond-review-disk-writes-6` `B06-2`                                                      | P2       | small  | P2, 3 findings, small                                                                                            | none                                          | fixed  |
 | 34  | A damaged or squatted key does not lead the bridge to start the app and renew it                  | `06-1` `08-3` `B04-2`                                                                              | P2       | small  | P2, 3 findings, small                                                                                            | `B04-p2-checks`                               | fixed  |
@@ -80,8 +80,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 53  | The quality form loses the person's choice or says nothing around an add-on install               | `24-1` `24-2`                                                                                      | P2       | small  | P2, 2 findings, small; after item 40                                                                             | none                                          | open   |
 | 54  | The file-exists question never says whether it is the same file                                   | `24-4` `30-1`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
 | 55  | Cancel in a download window discards the partial file with no question                            | `24-7` `U-14`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
-| 56  | A pasted link is cut at an apostrophe, a space or a bracket, so another address is downloaded     | `23-2` `Xpath-normal-download-4`                                                                   | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
-| 57  | Choosing a file or folder without a file chooser portal does nothing and says nothing             | `23-6` `B18-1`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
+| 56  | A pasted link is cut at an apostrophe, a space or a bracket, so another address is downloaded     | `23-2` `Xpath-normal-download-4`                                                                   | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
+| 57  | Choosing a file or folder without a file chooser portal does nothing and says nothing             | `23-6` `B18-1`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 58  | A typed file name with a dot loses the words after it                                             | `17-3` `Xrepeated-logic-2`                                                                         | P2       | small  | P2, 2 findings, small                                                                                            | `17-3`                                        | fixed  |
 | 59  | Downloaded installers are never removed                                                           | `12-2` `Xpath-app-update-5`                                                                        | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 60  | An update with no usable file is shown as a package manager update or opens the release page      | `Xpath-app-update-6` `Xsecurity-update-signatures-3`                                               | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
@@ -151,8 +151,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 124 | A tray action that fails tells the person nothing                                                 | `26-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 125 | An unfinished download reads 100%                                                                 | `23-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 126 | A finished download whose file is gone gets advice it cannot follow                               | `23-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 127 | Settings, Media shows an empty Resolution after a rarer quality                                   | `27-6`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 128 | The Add dialog says By file type for downloads going to a queue's folder                          | `Xpath-normal-download-7`                                                                          | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 127 | Settings, Media shows an empty Resolution after a rarer quality                                   | `27-6`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
+| 128 | The Add dialog says By file type for downloads going to a queue's folder                          | `Xpath-normal-download-7`                                                                          | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 129 | scripts/linux-test.sh can never pass                                                              | `33-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 130 | A second running copy of one CLI download takes over the first one's files                        | `01-2`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 131 | A launch handed over while the list is opening pops a box and loses links                         | `22-3`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
@@ -254,7 +254,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 227 | The queue page's facts line is cut off with no way to read the end                                | `U-12`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 228 | The details panel says Merging for every processing step                                          | `23-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 229 | The system accent breaks the promised contrast                                                    | `23-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 230 | Check for updates and Copy from system give no answer when there is nothing to do                 | `27-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 230 | Check for updates and Copy from system give no answer when there is nothing to do                 | `27-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 231 | A download waiting on the question reads Paused at Size unknown                                   | `U-6`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 232 | The complete window stays open and blank once its rows are removed                                | `24-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 233 | The notice of a failed save ignores Do Not Disturb                                                | `26-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -824,7 +824,7 @@ P2, large, fixed.
 
 ### 31. The Add dialog's link rule leaves out ftpes, so such links cannot be added
 
-P2, small, open.
+P2, small, fixed.
 
 `links.rs` accepts `https?` and `ftps?`, while `launch.rs`, the engine and core also take `ftpes`. So an `ftpes://` link from a command line stays in the Add dialog, counts as a line with no link and is refused, and no window can add one. `ftps://host:21` asks for the same TLS, though nothing says so.
 
@@ -1270,7 +1270,7 @@ P2, small, open.
 
 ### 56. A pasted link is cut at an apostrophe, a space or a bracket, so another address is downloaded
 
-P2, small, open.
+P2, small, fixed.
 
 The `LINK` regex stops at `'` and a space, and `trim_end_matches` removes a closing bracket without looking for its opener. `report_(final)` becomes `report_(final`, and `https://example.com/a b.zip` offers `https://example.com/a`. Both parse, so the Add dialog downloads the shortened address with no warning.
 
@@ -1287,7 +1287,7 @@ The `LINK` regex stops at `'` and a space, and `trim_end_matches` removes a clos
 
 ### 57. Choosing a file or folder without a file chooser portal does nothing and says nothing
 
-P2, small, open.
+P2, small, fixed.
 
 `picked.await.ok()?.ok()??` and the two `let Ok(Ok(Some(..)))` in the backup dialog treat an error as a cancel. On a Linux desktop with no XDG portal, choosing a folder, Export and Import do nothing and log nothing. Linux was not run.
 
@@ -2438,7 +2438,7 @@ P2, small, open.
 
 ### 127. Settings, Media shows an empty Resolution after a rarer quality
 
-P2, small, open.
+P2, small, fixed.
 
 `remember_media_choice` saves any height, and `QUALITIES` has six, so a rarer one shows an empty Resolution. The saved value still works.
 
@@ -2454,7 +2454,7 @@ P2, small, open.
 
 ### 128. The Add dialog says By file type for downloads going to a queue's folder
 
-P2, small, open.
+P2, small, fixed.
 
 `folder_row` reads a folder only from `picked_queue`, so Automatic says "By file type" while `add_download` uses the placed queue's own folder. `Route` keeps only the queue's name.
 
@@ -4145,7 +4145,7 @@ The doc promises 4.5:1, and the system accent gives as little as 2.34 with stock
 
 ### 230. Check for updates and Copy from system give no answer when there is nothing to do
 
-P3, small, open.
+P3, small, fixed.
 
 `command` returns silently on `Ok`, and both buttons discard the result, so nothing changes on screen when there is nothing to do.
 

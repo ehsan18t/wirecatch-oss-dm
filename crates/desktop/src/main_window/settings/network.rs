@@ -14,6 +14,7 @@ use gpui_kit::{
     AnyElement, App, Axis, ElementId, Entity, IntoElement, ParentElement as _, SharedString,
     Styled as _, Window, div,
 };
+use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{AppSettingsPatch, Setting, Update};
 use wirecatch_protocol::proxy::{
     MAX_PROXY_SERVERS, ProxyServer, ProxyServerDraft, ProxySettings, ProxyTestResult, ProxyUse,
@@ -21,7 +22,7 @@ use wirecatch_protocol::proxy::{
 use wirecatch_shell::api;
 
 use super::{Typing, change, current, list_field};
-use crate::backend::command;
+use crate::backend::{command, command_saying};
 use crate::library::Library;
 use crate::main_window::proxy_dialog::{self, Users};
 use crate::text;
@@ -143,6 +144,17 @@ fn global_proxy(library: &Entity<Library>, cx: &App) -> SettingField<SharedStrin
     )
 }
 
+/// What Copy from system says when no server was added to `known`; one that was shows in the list.
+fn nothing_copied(copied: &[ProxyServerId], known: &[ProxyServerId]) -> Option<&'static str> {
+    if copied.is_empty() {
+        return Some("No system proxy is set, so there is nothing to copy.");
+    }
+    copied
+        .iter()
+        .all(|id| known.contains(id))
+        .then_some("The system proxy is already saved.")
+}
+
 /// The saved servers, with New proxy and Copy from system above them.
 fn servers(library: &Entity<Library>, cx: &mut App) -> AnyElement {
     let read = library.read(cx);
@@ -153,7 +165,7 @@ fn servers(library: &Entity<Library>, cx: &mut App) -> AnyElement {
         .enumerate()
         .map(|(index, proxy)| server_row(library, proxy, index == 0, read, cx))
         .collect();
-    let (adding, theme) = (library.clone(), cx.theme());
+    let (adding, copying, theme) = (library.clone(), library.clone(), cx.theme());
     v_flex()
         .w_full()
         .gap_2()
@@ -176,10 +188,15 @@ fn servers(library: &Entity<Library>, cx: &mut App) -> AnyElement {
                         .small()
                         .outline()
                         .label("Copy from system")
-                        .on_click(|_, window, cx| {
-                            command(window.window_handle(), cx, |manager| async move {
-                                api::copy_system_proxy(&manager).await.map(|_| ())
-                            });
+                        .on_click(move |_, window, cx| {
+                            let known: Vec<ProxyServerId> =
+                                copying.read(cx).proxies.iter().map(|p| p.id).collect();
+                            command_saying(
+                                window.window_handle(),
+                                cx,
+                                |manager| async move { api::copy_system_proxy(&manager).await },
+                                move |copied| nothing_copied(&copied, &known).map(str::to_owned),
+                            );
                         }),
                 ),
         )
@@ -439,4 +456,17 @@ fn change_proxy(library: &Entity<Library>, cx: &mut App, edit: impl FnOnce(&mut 
         },
         cx,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copy_from_system_answers_only_when_it_added_nothing() {
+        let (a, b) = (ProxyServerId(1), ProxyServerId(2));
+        assert!(nothing_copied(&[], &[a]).is_some_and(|said| said.contains("No system proxy")));
+        assert!(nothing_copied(&[a], &[a, b]).is_some_and(|said| said.contains("already saved")));
+        assert_eq!(nothing_copied(&[a, b], &[a]), None);
+    }
 }
