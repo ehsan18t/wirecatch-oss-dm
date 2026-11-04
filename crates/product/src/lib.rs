@@ -56,6 +56,9 @@ pub const CLI_EXECUTABLE: &str = "wirecatch";
 /// The download list, in the data folder.
 pub const DATABASE_FILE: &str = "wirecatch.db";
 
+/// The third-party notices a build ships.
+pub const NOTICES_FILE: &str = "THIRD-PARTY-NOTICES.txt";
+
 /// The environment variable that chooses which lines every binary logs, in `tracing` filter syntax (`debug`, `wirecatch_core=trace`).
 pub const LOG_FILTER_VARIABLE: &str = "WIRECATCH_LOG";
 

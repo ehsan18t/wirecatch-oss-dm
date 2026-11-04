@@ -62,7 +62,7 @@ const SCHEMA = {
   links: { repository: 'url', website: 'url', addon_files: 'url' },
   contacts: { support_email: EMAIL, security_email: EMAIL },
   executables: { app: SLUG, bridge: SLUG, cli: SLUG },
-  files: { database: FILE_NAME },
+  files: { database: FILE_NAME, notices: FILE_NAME },
   updates: { public_key: /^[\w-]{43}$/ },
   native_host: { name: HOST_NAME, description: TEXT },
   extension: {

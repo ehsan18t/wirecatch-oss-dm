@@ -9,6 +9,9 @@ export const PRODUCT_SLUG = 'wirecatch';
 /** The product website. */
 export const WEBSITE_URL = 'https://TODO-PRODUCT-WEBSITE.invalid/';
 
+/** The third-party notices a build ships. */
+export const NOTICES_FILE = 'THIRD-PARTY-NOTICES.txt';
+
 /** The native messaging host name the bridge registers and the extension connects to. */
 export const NATIVE_HOST_NAME = 'app.wirecatch.bridge';
 

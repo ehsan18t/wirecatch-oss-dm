@@ -8,18 +8,22 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  appendFileSync,
   chmodSync,
   copyFileSync,
   cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { ROOT } from './gate/process.mjs';
+import { GateError, ROOT } from './gate/process.mjs';
+import { INSTALLER_CRATES, installerPackages } from './notices/cargo.mjs';
+import { noticeSection, renderNotices } from './notices/render.mjs';
 import { fillTemplate } from './product/manifests.mjs';
 import { readProduct } from './product/read.mjs';
 
@@ -99,8 +103,16 @@ const ICON_SIZES = [32, 64, 128, 256, 512];
  */
 const APPIMAGE_LIBRARIES = ['libxkbcommon.so.0', 'libxkbcommon-x11.so.0', 'libxcb-xkb.so.1'];
 
-/** Copies the `APPIMAGE_LIBRARIES` the app at `binary` links, directly or through another, as this machine resolves them, into `folder`. */
-function bundleLibraries(binary, folder) {
+/** The copyright file of the Debian package that installed the library at `path`, which the library's licence requires alongside it. */
+function libraryCopyright(path) {
+  // Lines read `package:architecture: /path`. The package database lists the real file, not the link ldd names.
+  const owner = execFileSync('dpkg-query', ['-S', realpathSync(path)], { encoding: 'utf8' });
+  const name = owner.split(':')[0];
+  return readFileSync(join('/usr/share/doc', name, 'copyright'), 'utf8');
+}
+
+/** Copies the `APPIMAGE_LIBRARIES` the app at `binary` links, directly or through another, as this machine resolves them, into `folder`, and adds their licences to the `notices` file. */
+function bundleLibraries(binary, folder, notices) {
   mkdirSync(folder, { recursive: true });
   // Lines read `name => /path/name (0x...)`.
   const linked = new Map(
@@ -114,6 +126,7 @@ function bundleLibraries(binary, folder) {
     const path = linked.get(name);
     if (!path?.startsWith('/')) fail(`The app does not link ${name}, or this machine lacks it.`);
     copyFileSync(path, join(folder, name));
+    appendFileSync(notices, noticeSection(name, libraryCopyright(path)));
   }
 }
 
@@ -161,7 +174,7 @@ function build(triple) {
     env.RUSTFLAGS = `${env.RUSTFLAGS ?? ''} -C target-feature=+crt-static`.trim();
   }
   // No cargo feature: the bridge's one feature, test-overrides, is for tests only (D22).
-  const crates = ['-p', 'wirecatch-desktop', '-p', 'wirecatch-bridge'];
+  const crates = INSTALLER_CRATES.flatMap((name) => ['-p', name]);
   run('cargo', ['build', '--release', '--locked', ...crates, '--target', triple], { env });
   const dir = process.env.CARGO_TARGET_DIR ?? join(ROOT, 'target');
   return join(dir, triple, 'release');
@@ -175,11 +188,24 @@ function stageBinaries(product, built, into, exe) {
   }
 }
 
-function windows(product, built, arch) {
+/** The third-party notices of the build for `triple`, in the `folder` it installs them to (D117). */
+function writeNotices(product, triple, folder) {
+  const title = `Third-party notices for ${product.product.name} ${product.product.version} (${triple})`;
+  try {
+    const packages = installerPackages(triple);
+    writeFileSync(join(folder, product.files.notices), renderNotices({ title, packages }));
+  } catch (error) {
+    if (error instanceof GateError) fail(error.message);
+    throw error;
+  }
+}
+
+function windows(product, built, arch, triple) {
   const stage = join(OUT, `stage-windows-${arch}`);
   rmSync(stage, { recursive: true, force: true });
   stageBinaries(product, built, stage, '.exe');
   copyFileSync(join(ROOT, 'LICENSE'), join(stage, 'LICENSE.txt'));
+  writeNotices(product, triple, stage);
   const iscc =
     process.env.ISCC ??
     join(
@@ -200,6 +226,7 @@ function windows(product, built, arch) {
     Repository: product.links.repository,
     AppExe: product.executables.app,
     BridgeExe: product.executables.bridge,
+    NoticesFile: product.files.notices,
     Arch: arch === 'x64' ? 'x64compatible' : 'arm64',
     Icon: join(ICONS, 'icon.ico'),
     Stage: stage,
@@ -253,7 +280,7 @@ function desktopEntry(product) {
 }
 
 /** The files every Linux package installs, under `root` as they go under `/`. */
-function stageLinux(product, built, root) {
+function stageLinux(product, built, root, triple) {
   const id = product.channels.release.identifier;
   rmSync(root, { recursive: true, force: true });
   stageBinaries(product, built, join(root, 'usr', 'bin'), '');
@@ -270,12 +297,13 @@ function stageLinux(product, built, root) {
   const license = join(root, 'usr', 'share', 'licenses', product.product.slug);
   mkdirSync(license, { recursive: true });
   copyFileSync(join(ROOT, 'LICENSE'), join(license, 'LICENSE'));
+  writeNotices(product, triple, license);
 }
 
-async function linux(product, built, arch) {
+async function linux(product, built, arch, triple) {
   const { name, slug, version, summary, description, license } = product.product;
   const root = join(OUT, `stage-linux-${arch}`);
-  stageLinux(product, built, root);
+  stageLinux(product, built, root, triple);
   const prerm = join(OUT, `prerm-${arch}.sh`);
   const template = readFileSync(join(ROOT, 'config', 'templates', 'prerm.sh'), 'utf8');
   writeFileSync(prerm, fillTemplate(template, product, 'prerm.sh'), { mode: 0o755 });
@@ -321,7 +349,12 @@ async function linux(product, built, arch) {
       target,
     ]);
   }
+  await appImage(product, root, arch);
+}
 
+/** The AppImage: the files every Linux package installs, the libraries it carries, and the entry point. */
+async function appImage(product, root, arch) {
+  const { name, slug, version } = product.product;
   const appDir = join(OUT, `${name}.AppDir`);
   rmSync(appDir, { recursive: true, force: true });
   cpSync(root, appDir, { recursive: true });
@@ -332,7 +365,19 @@ async function linux(product, built, arch) {
   );
   copyFileSync(join(ICONS, '128x128@2x.png'), join(appDir, `${id}.png`));
   symlinkSync(`${id}.png`, join(appDir, '.DirIcon'));
-  bundleLibraries(join(appDir, 'usr', 'bin', product.executables.app), join(appDir, 'usr', 'lib'));
+  const notices = join(appDir, 'usr', 'share', 'licenses', slug, product.files.notices);
+  bundleLibraries(
+    join(appDir, 'usr', 'bin', product.executables.app),
+    join(appDir, 'usr', 'lib'),
+    notices,
+  );
+  appendFileSync(
+    notices,
+    noticeSection(
+      `the AppImage runtime ${LINUX_TOOLS.runtime.version}`,
+      readFileSync(join(ROOT, 'config', 'licenses', 'appimage-runtime.txt'), 'utf8'),
+    ),
+  );
   writeFileSync(join(appDir, 'AppRun'), appRun(product.executables.app), { mode: 0o755 });
   const appimagetool = await tool('appimagetool', arch);
   const runtime = await tool('runtime', arch);
@@ -362,7 +407,7 @@ const triple = targetTriple();
 const arch = architecture(triple);
 mkdirSync(OUT, { recursive: true });
 const built = build(triple);
-if (triple.includes('-windows-')) windows(product, built, arch);
-else if (triple.includes('-linux-')) await linux(product, built, arch);
+if (triple.includes('-windows-')) windows(product, built, arch, triple);
+else if (triple.includes('-linux-')) await linux(product, built, arch, triple);
 else fail(`No installer is made for ${triple}.`);
 console.log(`Installers are in ${OUT}.`);

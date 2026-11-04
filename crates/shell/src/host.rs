@@ -12,7 +12,7 @@ use wirecatch_core::{
     CoreError, DATABASE_FILE, DATABASE_SIDE_FILES, KnownFolders, Manager, ManagerConfig, StoreError,
 };
 use wirecatch_ipc::{Endpoint, IpcError};
-use wirecatch_product::Channel;
+use wirecatch_product::{Channel, NOTICES_FILE, PRODUCT_SLUG};
 use wirecatch_protocol::wire::ProtocolError;
 
 /// Overrides the data folder, for tests and for trying things on a throwaway download list.
@@ -390,9 +390,54 @@ pub fn known_folders(home: &Path) -> KnownFolders {
     KnownFolders::detect().unwrap_or_else(|| KnownFolders::under_home(home))
 }
 
+/// Where an installer puts the third-party notices, given the folder of the app's executable
+/// (D117): beside it on Windows, under `share/licenses` next to `bin` on Linux, AppImage included.
+fn notices_path(executable_folder: &Path) -> PathBuf {
+    if cfg!(windows) {
+        return executable_folder.join(NOTICES_FILE);
+    }
+    executable_folder
+        .join("..")
+        .join("share")
+        .join("licenses")
+        .join(PRODUCT_SLUG)
+        .join(NOTICES_FILE)
+}
+
+/// The third-party notices of this copy of the app; a build run from `target` has none.
+#[must_use]
+pub fn third_party_notices() -> Option<PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    let path = notices_path(executable.parent()?);
+    path.is_file().then_some(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_notices_are_found_where_the_installers_put_them() {
+        let dir = wirecatch_test_support::private_dir("desktop-notices").unwrap();
+        let bin = dir.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let path = notices_path(&bin);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "notices").unwrap();
+        let expected = if cfg!(windows) {
+            bin.join(NOTICES_FILE)
+        } else {
+            dir.path()
+                .join("share/licenses")
+                .join(PRODUCT_SLUG)
+                .join(NOTICES_FILE)
+        };
+        assert_eq!(
+            std::fs::read_to_string(expected).unwrap(),
+            "notices",
+            "the path scripts/package.mjs installs to"
+        );
+    }
 
     #[tokio::test]
     async fn the_configuration_is_prepared_off_the_caller() {
