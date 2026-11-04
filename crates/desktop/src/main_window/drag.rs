@@ -3,6 +3,8 @@
 //! shortcut files from outside, whose links open the Add dialog. GPUI takes only files from
 //! other programs, so a link dragged from a browser cannot be dropped.
 
+use std::rc::Rc;
+
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex};
 use gpui_kit::{
     Context, ExternalPaths, IntoElement, ParentElement as _, Render, Styled as _, Window,
@@ -17,7 +19,7 @@ use crate::ui::{Role, Typed as _};
 /// Downloads being dragged, with what the pointer shows.
 #[derive(Clone)]
 pub struct DraggedRows {
-    pub ids: Vec<DownloadId>,
+    pub ids: Rc<[DownloadId]>,
     label: String,
 }
 
@@ -66,12 +68,12 @@ impl MainWindow {
     pub(super) fn dragged_rows(&self, id: DownloadId, name: &str) -> DraggedRows {
         if self.selected.contains(&id) && self.selected.len() > 1 {
             return DraggedRows {
-                ids: self.selected.iter().copied().collect(),
+                ids: self.drag_selection.clone(),
                 label: format!("{} downloads", self.selected.len()),
             };
         }
         DraggedRows {
-            ids: vec![id],
+            ids: Rc::from([id]),
             label: name.to_owned(),
         }
     }
@@ -108,7 +110,7 @@ impl MainWindow {
         window: &mut Window,
         cx: &mut gpui_kit::App,
     ) {
-        let ids = dragged.ids.clone();
+        let ids = dragged.ids.to_vec();
         act(window.window_handle(), cx, move |manager| {
             api::move_to_queue(manager, &ids, queue)
         });

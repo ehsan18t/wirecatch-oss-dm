@@ -14,6 +14,7 @@ mod lifecycle;
 mod links;
 mod main_window;
 mod notices;
+mod rows;
 mod sign_in;
 mod text;
 mod theme;

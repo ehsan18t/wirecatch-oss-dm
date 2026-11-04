@@ -10,6 +10,7 @@ mod drag;
 mod empty;
 mod fixes;
 mod keymap;
+mod laid;
 mod link_trial;
 mod list;
 mod notices_bar;
@@ -137,6 +138,18 @@ impl Group {
             DownloadStatus::Paused => Self::Paused,
             DownloadStatus::Completed => Self::Finished,
             DownloadStatus::Cancelled => Self::Cancelled,
+        }
+    }
+
+    /// Its place in [`Self::ALL`].
+    pub const fn place(self) -> usize {
+        match self {
+            Self::Attention => 0,
+            Self::Downloading => 1,
+            Self::UpNext => 2,
+            Self::Paused => 3,
+            Self::Finished => 4,
+            Self::Cancelled => 5,
         }
     }
 
@@ -284,6 +297,10 @@ pub struct MainWindow {
     picked: bool,
     sort: sort::Sort,
     frozen: std::cell::RefCell<sort::Frozen>,
+    /// The list's last lines, for as long as they hold.
+    laid: std::cell::RefCell<Option<Rc<laid::Laid>>>,
+    /// The selection, for what a drag from any selected row carries.
+    drag_selection: Rc<[DownloadId]>,
     nav: rail::Nav,
     /// The full navigation is open over the list, from the rail of a narrow window.
     drawer: bool,
@@ -443,6 +460,8 @@ impl MainWindow {
             drawer: false,
             sort: sort::Sort::default(),
             frozen: std::cell::RefCell::default(),
+            laid: std::cell::RefCell::default(),
+            drag_selection: Rc::from([]),
             cursor_bounds: Rc::default(),
             folded: HashSet::new(),
             hovered: None,
@@ -458,18 +477,16 @@ impl MainWindow {
 
     /// Samples each running queue's speed, and forgets the speeds of a queue that stopped.
     fn keep_queue_speeds(&mut self, cx: &App) {
-        let mut speeds: HashMap<QueueId, (u64, bool)> = HashMap::new();
-        for row in &self.library.read(cx).downloads {
-            let (speed, running) = speeds.entry(row.queue).or_default();
-            *speed += row.speed;
-            *running |= Group::of(row.status) == Group::Downloading;
-        }
+        let rows = &self.library.read(cx).downloads;
         let now = Instant::now();
         self.queue_speeds
-            .retain(|queue, _| speeds.get(queue).is_some_and(|(_, running)| *running));
-        for (queue, (speed, running)) in speeds {
-            if running {
-                self.queue_speeds.entry(queue).or_default().keep(speed, now);
+            .retain(|queue, _| !rows.tally_of(*queue).running.is_empty());
+        for (queue, tally) in rows.queue_tallies() {
+            if !tally.running.is_empty() {
+                self.queue_speeds
+                    .entry(queue)
+                    .or_default()
+                    .keep(tally.speed, now);
             }
         }
     }

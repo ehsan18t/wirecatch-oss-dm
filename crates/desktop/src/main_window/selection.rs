@@ -2,6 +2,8 @@
 //! takes one away, Shift+click and Shift with the arrows take a range, and the arrows move a
 //! cursor. A selection built on purpose gets a bar over the list with what it can do.
 
+use std::rc::Rc;
+
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
@@ -17,6 +19,7 @@ use wirecatch_protocol::wire::ProtocolError;
 use wirecatch_shell::api;
 
 use super::applies::{self, Applicable};
+use super::laid::Laid;
 use super::{MainWindow, confirm, details, list};
 use crate::backend::act;
 use crate::files;
@@ -39,21 +42,28 @@ pub(super) enum Step {
 
 impl MainWindow {
     /// The downloads the list shows, in its order.
-    pub(super) fn shown_ids(&self, cx: &App) -> Vec<DownloadId> {
-        let downloads = &self.library.read(cx).downloads;
-        self.shown_rows(cx)
-            .into_iter()
-            .filter_map(|index| downloads.get(index).map(|row| row.id))
-            .collect()
+    pub(super) fn shown_ids(&self, cx: &App) -> Rc<[DownloadId]> {
+        self.laid(cx).ids.clone()
     }
 
     /// The selected downloads, in the list's order.
     pub(super) fn selected_rows(&self, cx: &App) -> Vec<DownloadSummary> {
-        let downloads = &self.library.read(cx).downloads;
-        self.shown_ids(cx)
+        self.chosen(&self.laid(cx), cx)
             .into_iter()
-            .filter(|id| self.selected.contains(id))
-            .filter_map(|id| downloads.iter().find(|row| row.id == id).cloned())
+            .cloned()
+            .collect()
+    }
+
+    /// The rows of `laid` that are selected.
+    fn chosen<'a>(&self, laid: &Laid, cx: &'a App) -> Vec<&'a DownloadSummary> {
+        if self.selected.is_empty() {
+            return Vec::new();
+        }
+        let downloads = &self.library.read(cx).downloads;
+        laid.rows
+            .iter()
+            .filter_map(|index| downloads.get(*index))
+            .filter(|row| self.selected.contains(&row.id))
             .collect()
     }
 
@@ -224,19 +234,23 @@ impl MainWindow {
     /// The bar over the list while a selection is built up on purpose: several downloads, or one
     /// added with Ctrl. A row only clicked has its details instead.
     pub(super) fn selection_bar(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
-        let rows = self.selected_rows(cx);
-        if rows.len() < 2 && !(self.picked && rows.len() == 1) {
+        if self.selected.len() < 2 && !self.picked {
             return None;
         }
-        let refs: Vec<&DownloadSummary> = rows.iter().collect();
-        let can = Applicable::to(&refs);
-        let ids: Vec<DownloadId> = rows.iter().map(|row| row.id).collect();
+        let laid = self.laid(cx);
+        let rows = self.chosen(&laid, cx);
+        let count = rows.len();
+        if count < 2 && !(self.picked && count == 1) {
+            return None;
+        }
+        let can = Applicable::to(&rows);
+        let ids: Rc<[DownloadId]> = rows.iter().map(|row| row.id).collect();
         let queues: Vec<(wirecatch_protocol::QueueId, String)> = self
             .library
             .read(cx)
             .queues
             .iter()
-            .filter(|queue| applies::can_move_to(&refs, queue.id))
+            .filter(|queue| applies::can_move_to(&rows, queue.id))
             .map(|queue| (queue.id, queue.settings.name.clone()))
             .collect();
         let many_queues = self.library.read(cx).queues.len() > 1;
@@ -256,32 +270,12 @@ impl MainWindow {
                 div()
                     .px_2()
                     .text_role(Role::Strong, cx)
-                    .child(format!("{} selected", rows.len())),
+                    .child(format!("{count} selected")),
             )
             .child(div().flex_1())
-            .children(state_buttons(&rows, &can, cx))
+            .children(state_buttons(&can, cx))
             .when(many_queues && !queues.is_empty(), |bar| {
-                let ids = ids.clone();
-                bar.child(
-                    bar_button(
-                        "sel-move",
-                        "Move to queue",
-                        Icon::new(Lucide::ArrowRightLeft),
-                    )
-                    .dropdown_menu(move |menu, _, _| {
-                        queues.iter().fold(menu, |menu, (queue, name)| {
-                            let (queue, ids) = (*queue, ids.clone());
-                            menu.item(PopupMenuItem::new(name.clone()).on_click(
-                                move |_, window, cx| {
-                                    let ids = ids.clone();
-                                    act(window.window_handle(), cx, move |manager| {
-                                        api::move_to_queue(manager, &ids, queue)
-                                    });
-                                },
-                            ))
-                        })
-                    }),
-                )
+                bar.child(move_button(queues, ids.clone()))
             })
             .child(
                 bar_button("sel-remove", "Remove", Icon::new(Lucide::Trash)).on_click(
@@ -318,12 +312,8 @@ struct Offer {
     command: Command,
 }
 
-/// Pause, Resume and Try again, each while some of `rows` takes it.
-fn state_buttons(
-    rows: &[DownloadSummary],
-    can: &Applicable,
-    cx: &mut Context<'_, MainWindow>,
-) -> Vec<Button> {
+/// Pause, Resume and Try again, each while some of the selection takes it.
+fn state_buttons(can: &Applicable, cx: &mut Context<'_, MainWindow>) -> Vec<Button> {
     let offered = [
         Offer {
             shown: can.pause,
@@ -362,9 +352,9 @@ fn state_buttons(
                  command,
                  ..
              }| {
-                let rows = rows.to_vec();
                 bar_button(id, label, Icon::new(icon)).on_click(cx.listener(
-                    move |_, _, window, cx| {
+                    move |this, _, window, cx| {
+                        let rows = this.selected_rows(cx);
                         let rows: Vec<&DownloadSummary> = rows.iter().collect();
                         each(&rows, takes, command, window, cx);
                     },
@@ -372,6 +362,31 @@ fn state_buttons(
             },
         )
         .collect()
+}
+
+/// Move to queue, with the `queues` some of `ids` are not in.
+fn move_button(
+    queues: Vec<(wirecatch_protocol::QueueId, String)>,
+    ids: Rc<[DownloadId]>,
+) -> impl IntoElement {
+    bar_button(
+        "sel-move",
+        "Move to queue",
+        Icon::new(Lucide::ArrowRightLeft),
+    )
+    .dropdown_menu(move |menu, _, _| {
+        queues.iter().fold(menu, |menu, (queue, name)| {
+            let (queue, ids) = (*queue, ids.clone());
+            menu.item(
+                PopupMenuItem::new(name.clone()).on_click(move |_, window, cx| {
+                    let ids = ids.to_vec();
+                    act(window.window_handle(), cx, move |manager| {
+                        api::move_to_queue(manager, &ids, queue)
+                    });
+                }),
+            )
+        })
+    })
 }
 
 fn bar_button(id: &'static str, label: &'static str, icon: Icon) -> Button {

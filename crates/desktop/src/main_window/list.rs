@@ -3,6 +3,8 @@
 //! they finished. Every row shares one grid: a circle that picks it, its time to the second, its
 //! file tile, then its name over the lines the View menu keeps (link, save folder), and one figure.
 
+use std::rc::Rc;
+
 use chrono::NaiveDate;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::ContextMenuExt as _;
@@ -24,7 +26,8 @@ use wirecatch_shell::activity::format_bytes;
 use wirecatch_shell::api;
 
 use super::drag::{self, DraggedRows};
-use super::{Group, MainWindow, View, fixes, row_menu, sort};
+use super::laid::{Asked, Day, Laid, Line};
+use super::{Group, MainWindow, View, fixes, row_menu};
 use crate::backend::act;
 use crate::ui::select_circle::{Picked, SelectCircle};
 use crate::ui::{FileTile, Role, Typed as _, icon, tokens};
@@ -52,7 +55,7 @@ const HEADING_SPACE: f32 = 12.;
 /// The list's scroll and the lines it last laid out, which its state follows.
 pub(super) struct Scroll {
     state: ListState,
-    drawn: Vec<Line>,
+    drawn: Option<Rc<Laid>>,
     shown: Option<ListLines>,
 }
 
@@ -60,21 +63,10 @@ impl Default for Scroll {
     fn default() -> Self {
         Self {
             state: ListState::new(0, ListAlignment::Top, px(OVERDRAW)),
-            drawn: Vec::new(),
+            drawn: None,
             shown: None,
         }
     }
-}
-
-/// One line of the list.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Line {
-    Heading(Group, usize),
-    /// The day the rows under it finished on.
-    Day(NaiveDate),
-    /// A download by its index in the library, with its place in its queue's line, and whether
-    /// a day heading over it already says its day.
-    Row(usize, Option<usize>, bool),
 }
 
 /// What a heading's button does to every download.
@@ -105,21 +97,28 @@ fn line_height(shown: ListLines) -> f32 {
 
 impl MainWindow {
     pub(super) fn list(&mut self, cx: &mut Context<'_, Self>) -> AnyElement {
-        let lines = self.lines(cx);
-        if lines.is_empty() {
+        let laid = self.laid(cx);
+        if laid.lines.is_empty() {
             return self.empty(cx).into_any_element();
         }
-        self.sync_scroll(&lines, cx);
+        self.sync_scroll(&laid, cx);
+        self.drag_selection = if self.selected.len() > 1 {
+            self.selected.iter().copied().collect()
+        } else {
+            Rc::from([])
+        };
         list(
             self.scroll.state.clone(),
             cx.processor(move |this, index: usize, _, cx| {
                 let shown = this.list_lines(cx);
-                match lines.get(index).copied() {
-                    Some(Line::Heading(group, count)) => this.heading(group, count, cx),
-                    Some(Line::Day(day)) => {
-                        let rows = rows_under(&lines[index + 1..]);
-                        this.day_heading(day, &rows, cx)
+                match laid.lines.get(index).copied() {
+                    Some(Line::Heading(group, count)) => {
+                        this.heading(group, count, laid.group_ids(group), cx)
                     }
+                    Some(Line::Day(day)) => match laid.day(index) {
+                        Some(facts) => this.day_heading(day, facts, cx),
+                        None => div().into_any_element(),
+                    },
                     Some(Line::Row(row, place, dated)) => this.row(row, place, dated, shown, cx),
                     None => div().into_any_element(),
                 }
@@ -130,38 +129,46 @@ impl MainWindow {
         .into_any_element()
     }
 
-    /// Keeps the list's state on `lines`: only the lines that changed are laid out again, so the
+    /// Keeps the list's state on `laid`: only the lines that changed are laid out again, so the
     /// scroll stays where it was, and every line is when the View menu changes the rows' height.
-    fn sync_scroll(&mut self, lines: &[Line], cx: &App) {
+    fn sync_scroll(&mut self, laid: &Rc<Laid>, cx: &App) {
         let shown = self.list_lines(cx);
         let scroll = &mut self.scroll;
-        let drawn = &scroll.drawn;
-        let same_start = drawn.iter().zip(lines).take_while(|(a, b)| a == b).count();
-        let same_end = drawn[same_start..]
-            .iter()
-            .rev()
-            .zip(lines[same_start..].iter().rev())
-            .take_while(|(a, b)| a == b)
-            .count();
-        if same_start < drawn.len() || drawn.len() != lines.len() {
-            scroll.state.splice(
-                same_start..drawn.len() - same_end,
-                lines.len() - same_start - same_end,
-            );
+        if !scroll
+            .drawn
+            .as_ref()
+            .is_some_and(|drawn| Rc::ptr_eq(drawn, laid))
+        {
+            let drawn: &[Line] = scroll.drawn.as_ref().map_or(&[], |drawn| &drawn.lines);
+            let lines = laid.lines.as_slice();
+            let same_start = drawn.iter().zip(lines).take_while(|(a, b)| a == b).count();
+            let same_end = drawn[same_start..]
+                .iter()
+                .rev()
+                .zip(lines[same_start..].iter().rev())
+                .take_while(|(a, b)| a == b)
+                .count();
+            if same_start < drawn.len() || drawn.len() != lines.len() {
+                scroll.state.splice(
+                    same_start..drawn.len() - same_end,
+                    lines.len() - same_start - same_end,
+                );
+            }
+            scroll.drawn = Some(laid.clone());
         }
         if scroll.shown != Some(shown) {
             scroll.state.remeasure();
             scroll.shown = Some(shown);
         }
-        scroll.drawn = lines.to_vec();
     }
 
     /// Scrolls download `id` into view, if the list shows it.
     pub(super) fn scroll_to_row(&mut self, id: DownloadId, cx: &App) {
-        let lines = self.lines(cx);
-        self.sync_scroll(&lines, cx);
+        let laid = self.laid(cx);
+        self.sync_scroll(&laid, cx);
         let downloads = &self.library.read(cx).downloads;
-        if let Some(line) = lines
+        if let Some(line) = laid
+            .lines
             .iter()
             .position(|line| matches!(line, Line::Row(index, ..) if downloads[*index].id == id))
         {
@@ -179,15 +186,23 @@ impl MainWindow {
             .unwrap_or_default()
     }
 
-    /// The rows the list shows, by their index in the library, in its order.
-    pub(super) fn shown_rows(&self, cx: &App) -> Vec<usize> {
-        self.lines(cx)
-            .into_iter()
-            .filter_map(|line| match line {
-                Line::Row(index, ..) => Some(index),
-                Line::Heading(..) | Line::Day(_) => None,
-            })
-            .collect()
+    /// The list's lines, laid out again only when something they depend on changed.
+    pub(super) fn laid(&self, cx: &App) -> Rc<Laid> {
+        let downloads = &self.library.read(cx).downloads;
+        let asked = Asked {
+            revision: downloads.revision(),
+            view: self.view,
+            needle: self.needle(cx),
+            sort: self.sort,
+            folded: Asked::folded(&self.folded),
+        };
+        let mut kept = self.laid.borrow_mut();
+        if let Some(laid) = kept.as_ref().filter(|laid| laid.asked == asked) {
+            return laid.clone();
+        }
+        let laid = Rc::new(Laid::of(asked, downloads, &mut self.frozen.borrow_mut()));
+        *kept = Some(laid.clone());
+        laid
     }
 
     /// The downloads of a queue's own view that are still to run or running, in the order they
@@ -206,78 +221,6 @@ impl MainWindow {
             .collect()
     }
 
-    /// The view's downloads in `group` that the search finds, in the sort's order.
-    fn members(&self, group: Group, cx: &App) -> Vec<usize> {
-        let downloads = &self.library.read(cx).downloads;
-        let needle = self.needle(cx);
-        let mut members: Vec<usize> = downloads
-            .iter()
-            .enumerate()
-            .filter(|(_, row)| {
-                self.view.shows(row) && Group::of(row.status) == group && found(row, &needle)
-            })
-            .map(|(index, _)| index)
-            .collect();
-        self.sort.apply(
-            group,
-            &mut members,
-            downloads,
-            &mut self.frozen.borrow_mut(),
-        );
-        members
-    }
-
-    /// The list's lines: the view's downloads that hold the search in their name or link. A queue's
-    /// view lists its line first, numbered in the order it runs, then what is over by group; All
-    /// downloads groups everything, each group under its heading, and a status's own page lists its
-    /// downloads with no heading. Finished downloads in queue order go under the day they finished
-    /// instead. A search shows everything it finds, folded or not.
-    fn lines(&self, cx: &App) -> Vec<Line> {
-        let downloads = &self.library.read(cx).downloads;
-        let needle = self.needle(cx);
-        let mut lines: Vec<Line> = self
-            .queue_line(cx)
-            .into_iter()
-            .enumerate()
-            .filter(|(_, index)| found(&downloads[*index], &needle))
-            .map(|(place, index)| Line::Row(index, Some(place + 1), false))
-            .collect();
-        let in_queue = matches!(self.view, View::Queue(_));
-        for group in Group::ALL {
-            if in_queue && !group.is_over() {
-                continue;
-            }
-            let members = self.members(group, cx);
-            if members.is_empty() {
-                continue;
-            }
-            if group == Group::Finished && self.sort.key == sort::Key::QueueOrder {
-                let mut last = None;
-                for index in members {
-                    let day = finished_day(&downloads[index]);
-                    if day != last {
-                        lines.extend(day.map(Line::Day));
-                        last = day;
-                    }
-                    lines.push(Line::Row(index, None, day.is_some()));
-                }
-                continue;
-            }
-            if !matches!(self.view, View::Group(_)) {
-                lines.push(Line::Heading(group, members.len()));
-                if needle.is_empty() && self.folded.contains(&group) {
-                    continue;
-                }
-            }
-            lines.extend(
-                members
-                    .into_iter()
-                    .map(|index| Line::Row(index, None, false)),
-            );
-        }
-        lines
-    }
-
     /// The search, as the list compares it.
     pub(super) fn needle(&self, cx: &App) -> String {
         self.search.read(cx).value().trim().to_lowercase()
@@ -290,12 +233,7 @@ impl MainWindow {
         group: Group,
         cx: &App,
     ) -> Option<(&'static str, GroupCommand)> {
-        let running = self
-            .library
-            .read(cx)
-            .downloads
-            .iter()
-            .any(|row| Group::of(row.status) == Group::Downloading);
+        let running = !self.library.read(cx).downloads.tally().running.is_empty();
         match group {
             Group::Downloading => Some(("Pause all", GroupCommand::PauseAll)),
             Group::UpNext if !running => Some(("Pause all", GroupCommand::PauseAll)),
@@ -318,18 +256,11 @@ impl MainWindow {
         }
     }
 
-    fn ids_of(&self, rows: &[usize], cx: &App) -> Vec<DownloadId> {
-        let downloads = &self.library.read(cx).downloads;
-        rows.iter()
-            .filter_map(|index| downloads.get(*index).map(|row| row.id))
-            .collect()
-    }
-
     /// A heading's circle, which ticks every download under it.
     fn heading_circle(
         &self,
         name: SharedString,
-        ids: Vec<DownloadId>,
+        ids: Rc<[DownloadId]>,
         cx: &mut Context<'_, Self>,
     ) -> impl IntoElement {
         let picked = self.picked_of(&ids);
@@ -339,11 +270,16 @@ impl MainWindow {
         )
     }
 
-    fn heading(&self, group: Group, count: usize, cx: &mut Context<'_, Self>) -> AnyElement {
+    fn heading(
+        &self,
+        group: Group,
+        count: usize,
+        ids: Rc<[DownloadId]>,
+        cx: &mut Context<'_, Self>,
+    ) -> AnyElement {
         let (quiet, loud) = (cx.theme().muted_foreground, cx.theme().foreground);
         let folded = self.folded.contains(&group);
         let command = self.group_command(group, cx);
-        let ids = self.ids_of(&self.members(group, cx), cx);
         heading_line()
             .child(self.heading_circle(format!("pick-{group:?}").into(), ids, cx))
             .child(
@@ -389,25 +325,13 @@ impl MainWindow {
     }
 
     /// A day over the downloads that finished on it, with how many and how much.
-    fn day_heading(
-        &self,
-        day: NaiveDate,
-        rows: &[usize],
-        cx: &mut Context<'_, Self>,
-    ) -> AnyElement {
-        let downloads = &self.library.read(cx).downloads;
-        let bytes: u64 = rows
-            .iter()
-            .filter_map(|index| downloads.get(*index))
-            .map(|row| row.total.unwrap_or(row.done))
-            .sum();
-        let files = match rows.len() {
+    fn day_heading(&self, day: NaiveDate, facts: &Day, cx: &mut Context<'_, Self>) -> AnyElement {
+        let files = match facts.ids.len() {
             1 => "1 file".to_owned(),
             n => format!("{n} files"),
         };
-        let ids = self.ids_of(rows, cx);
         heading_line()
-            .child(self.heading_circle(format!("pick-day-{day}").into(), ids, cx))
+            .child(self.heading_circle(format!("pick-day-{day}").into(), facts.ids.clone(), cx))
             .child(
                 div()
                     .text_role(Role::Strong, cx)
@@ -416,7 +340,7 @@ impl MainWindow {
             .child(
                 div()
                     .text_role(Role::Meta, cx)
-                    .child(format!("{files}, {}", format_bytes(bytes))),
+                    .child(format!("{files}, {}", format_bytes(facts.bytes))),
             )
             .into_any_element()
     }
@@ -556,29 +480,6 @@ fn tile(row: &DownloadSummary, compact: bool, tone: Hsla) -> AnyElement {
         .text_color(tone)
         .child(Icon::new(icon::category(row.category)).with_size(tokens::ICON))
         .into_any_element()
-}
-
-/// Whether a row holds the search in its name or link.
-fn found(row: &DownloadSummary, needle: &str) -> bool {
-    needle.is_empty()
-        || row.file_name.to_lowercase().contains(needle)
-        || row.url.to_lowercase().contains(needle)
-}
-
-/// The rows at the start of `lines`, up to the next heading.
-fn rows_under(lines: &[Line]) -> Vec<usize> {
-    lines
-        .iter()
-        .map_while(|line| match line {
-            Line::Row(index, ..) => Some(*index),
-            Line::Heading(..) | Line::Day(_) => None,
-        })
-        .collect()
-}
-
-/// The day a finished download goes under: the day it finished, or was added when that is unknown.
-fn finished_day(row: &DownloadSummary) -> Option<NaiveDate> {
-    text::local_day(row.completed_at.unwrap_or(row.added_at))
 }
 
 /// A heading's line, in the rows' grid, with room above it to set it apart from the rows before.
