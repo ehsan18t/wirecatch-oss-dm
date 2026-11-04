@@ -1,0 +1,186 @@
+Run: cargo test -p wirecatch-media --lib audit_ and cargo test -p wirecatch-core --test manager audit_a_. Output: all FAILED: 16-2, 16-4, 16-5 (overflow panic at choice.rs video_offer), Xpath-media-download-3 (File, not Hls; no Referer), Xpath-media-download-4, B07-1, B07-2 ("140-1" not "140-0"), 17-5 (Failed with RefreshLink, no re-read), 17-7 (file_name "about", not "report.html").
+diff --git a/crates/core/tests/manager/media.rs b/crates/core/tests/manager/media.rs
+index b44446d62..0973a6ba5 100644
+--- a/crates/core/tests/manager/media.rs
++++ b/crates/core/tests/manager/media.rs
+@@ -1746,3 +1746,68 @@ async fn a_password_in_a_video_link_is_never_shown() -> TestResult {
+     }
+     Ok(())
+ }
++
++/// Audit 17-7: a typed name reaches the file when the page has no video.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn audit_a_typed_name_survives_a_page_without_a_video() -> TestResult {
++    let server = FileServer::start().await;
++    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
++    assert_eq!(install(&h).await?.state, AddonState::Installed);
++    tell_tool(&h, "fail.txt", "[generic] Unsupported URL")?;
++    server.put_typed("about", "<html></html>", "text/html");
++    let mut request = added(&server.url("about"));
++    request.file_name = Some("report.html".into());
++    h.manager.add_download(request).await?;
++    let row = wait_until("the page's own download", || {
++        h.manager
++            .list_downloads()
++            .into_iter()
++            .find(|r| r.status == DownloadStatus::Completed)
++    })
++    .await;
++    assert_eq!(row.file_name, "report.html");
++    Ok(())
++}
++
++/// Audit 17-5: a refused HLS address reads the page again, as a refused file address does.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn audit_a_refused_hls_address_reads_the_page_again() -> TestResult {
++    let server = FileServer::start().await;
++    let h = harness_refreshing(publish(&server, &Releases::fake()?, "r")?, QUICK.to_vec()).await?;
++    assert_eq!(install(&h).await?.state, AddonState::Installed);
++    server.put(
++        "hls/index.m3u8",
++        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:4.0,\nseg0.ts\n#EXT-X-ENDLIST\n",
++    );
++    let mut segment = test_data(1024);
++    segment[0] = 0x47;
++    server.put("hls/seg0.ts", segment);
++    server.fail("hls/index.m3u8", 1, 403);
++    let info = serde_json::json!({
++        "title": "Signed address",
++        "formats": [{"format_id": "hls-1", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
++            "protocol": "m3u8_native", "url": server.url("hls/index.m3u8").as_str()}],
++    });
++    tell_tool(&h, "info.json", &info.to_string())?;
++    let id = start_first_option(&h, &server, 92).await?;
++    let row = wait_until("the download to end", || {
++        h.manager.list_downloads().into_iter().find(|r| {
++            r.id == id && matches!(r.status, DownloadStatus::Completed | DownloadStatus::Failed)
++        })
++    })
++    .await;
++    assert_eq!(row.status, DownloadStatus::Completed, "{:?}", row.error);
++    Ok(())
++}
++
++/// Starts the first option a page offers.
++async fn start_first_option(h: &Harness, server: &FileServer, n: u32) -> TestResult<wirecatch_protocol::DownloadId> {
++    let mut ui = h.manager.subscribe();
++    h.manager
++        .add_capture(media_capture(server.url(&format!("watch/{n}")), MediaKind::Page, None))
++        .await
++        .unwrap();
++    let choice = choice_requested(&mut ui).await;
++    let option = choice.options[0].id.clone();
++    Ok(h.manager.choose_media(choice.id, select(&option)).await?)
++}
+diff --git a/crates/media/src/choice.rs b/crates/media/src/choice.rs
+index a095792da..5a750900d 100644
+--- a/crates/media/src/choice.rs
++++ b/crates/media/src/choice.rs
+@@ -1029,3 +1029,107 @@ mod tests {
+         );
+     }
+ }
++
++#[cfg(test)]
++mod audit_b07 {
++    use super::*;
++
++    fn offers(json: &str) -> Vec<Offer> {
++        from_page(&serde_json::from_str::<Info>(json).unwrap()).unwrap()
++    }
++
++    /// B07-1: a page yt-dlp describes at the top level as audio only.
++    #[test]
++    fn audit_top_level_audio_is_offered_as_audio() {
++        let offers = offers(
++            r#"{"title":"T","url":"https://x/a.mp3","ext":"mp3","vcodec":"none","acodec":"mp3","protocol":"https"}"#,
++        );
++        assert!(offers[0].0.audio_only, "{}", offers[0].0.label);
++    }
++
++    /// B07-2: the track in the video's own language, against a dubbed one at a higher rate.
++    #[test]
++    fn audit_best_audio_prefers_the_original_language() {
++        let offers = offers(
++            r#"{"title":"T","formats":[
++            {"format_id":"140-0","ext":"m4a","vcodec":"none","acodec":"mp4a","abr":129,"language":"en","language_preference":10,"url":"u"},
++            {"format_id":"140-1","ext":"m4a","vcodec":"none","acodec":"mp4a","abr":130,"language":"hi","language_preference":-1,"url":"u"}
++        ]}"#,
++        );
++        assert_eq!(offers[0].0.id, "140-0");
++    }
++
++    /// 16-4: the row's label against what it downloads.
++    #[test]
++    fn audit_a_row_labelled_60_fps_downloads_60_fps() {
++        let offers = offers(
++            r#"{"title":"T","formats":[
++            {"format_id":"137","ext":"mp4","vcodec":"avc1","acodec":"none","height":1080,"fps":30,"tbr":4000,"url":"u"},
++            {"format_id":"303","ext":"webm","vcodec":"vp9","acodec":"none","height":1080,"fps":60,"tbr":3000,"url":"u"},
++            {"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a","abr":128,"url":"u"}
++        ]}"#,
++        );
++        let (option, _) = &offers[0];
++        assert!(
++            !(option.quality.contains("60 fps") && option.id.starts_with("137")),
++            "{} downloads {}",
++            option.quality,
++            option.id
++        );
++    }
++
++    /// 16-5: sizes a page chooses.
++    #[test]
++    fn audit_huge_sizes_do_not_overflow() {
++        let huge = u64::MAX;
++        let _ = offers(&format!(
++            r#"{{"title":"T","formats":[
++            {{"format_id":"v","ext":"mp4","vcodec":"avc1","acodec":"none","height":720,"filesize":{huge},"url":"u"}},
++            {{"format_id":"a","ext":"m4a","vcodec":"none","acodec":"mp4a","filesize":{huge},"url":"u"}}
++        ]}}"#
++        ));
++    }
++
++    /// Xpath-media-download-3: the transport of a top-level HLS page.
++    #[test]
++    fn audit_top_level_hls_is_not_a_plain_file() {
++        let info: Info = serde_json::from_str(
++            r#"{"title":"T","url":"https://x/p.m3u8","ext":"mp4","protocol":"m3u8_native","format_id":"0","http_headers":{"Referer":"https://x/"}}"#,
++        )
++        .unwrap();
++        let all = info.all_formats();
++        assert_eq!(all[0].transport(), crate::ytdlp::Transport::Hls);
++    }
++
++    /// Xpath-media-download-3: a top-level file's headers.
++    #[test]
++    fn audit_top_level_headers_are_kept() {
++        let info: Info = serde_json::from_str(
++            r#"{"title":"T","url":"https://x/v.mp4","ext":"mp4","protocol":"https","http_headers":{"Referer":"https://x/"}}"#,
++        )
++        .unwrap();
++        assert!(info.all_formats()[0].http_headers.contains_key("Referer"));
++    }
++
++    /// Xpath-media-download-4: a page with two videos.
++    #[test]
++    fn audit_a_page_with_several_videos_is_not_nothing() {
++        let info: Info = serde_json::from_str(
++            r#"{"_type":"playlist","title":"T","entries":[
++            {"title":"a","formats":[{"format_id":"0","ext":"mp4","url":"https://x/a.mp4"}]},
++            {"title":"b","formats":[{"format_id":"0","ext":"mp4","url":"https://x/b.mp4"}]}]}"#,
++        )
++        .unwrap();
++        assert!(from_page(&info).is_ok());
++    }
++
++    /// 16-2: a title with a slash.
++    #[test]
++    fn audit_a_title_keeps_what_is_before_its_slash() {
++        assert!(crate::file_name("AC/DC - Thunderstruck", "mp4").contains("AC"));
++        assert_ne!(
++            crate::file_name("Episode 1/10", "mp4"),
++            crate::file_name("Episode 2/10", "mp4")
++        );
++    }
++}
