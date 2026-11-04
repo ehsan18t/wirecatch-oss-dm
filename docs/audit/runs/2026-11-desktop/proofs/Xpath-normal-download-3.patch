@@ -1,0 +1,52 @@
+Run: git apply Xpath-normal-download-3.patch, then cargo test -p wirecatch-core --test manager a_fresh_link_clears_the_size_the_browser_saw -- --nocapture. Output on 02284bbd0: AFTER Failed "The server sent a different file than the browser saw (2048 bytes instead of 1024)...", then panic.
+diff --git a/crates/core/tests/manager/protocol.rs b/crates/core/tests/manager/protocol.rs
+index 9f2342f0a..620a672bd 100644
+--- a/crates/core/tests/manager/protocol.rs
++++ b/crates/core/tests/manager/protocol.rs
+@@ -1842,3 +1842,46 @@ async fn a_password_in_a_link_is_never_shown() -> TestResult {
+     assert!(stored.contains("ada:s3cret@"), "{stored}");
+     Ok(())
+ }
++
++/// Xpath-normal-download-3: a fresh link serving the file as it is now.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn a_fresh_link_clears_the_size_the_browser_saw() -> TestResult {
++    let changed = fast_server(2048).await?;
++    let fresh = fast_server(2048).await?;
++    let h = Harness::new().await?;
++    h.manager
++        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
++        .unwrap();
++    let added = h
++        .manager
++        .add_capture(capture(changed.url("report.pdf").to_string()))
++        .await
++        .unwrap();
++    let id = added.id.unwrap();
++    h.manager
++        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
++        .unwrap();
++    h.wait_status(id, DownloadStatus::Failed).await;
++
++    let link = fresh.url("report.pdf").to_string();
++    h.manager
++        .refresh_link(id, &link, LinkFrom::Person)
++        .unwrap();
++    let ended = h
++        .wait_for(id, "the run's end", |r| {
++            r.url == link
++                && matches!(r.status, DownloadStatus::Completed | DownloadStatus::Failed)
++        })
++        .await;
++    println!(
++        "AFTER {:?} {:?}",
++        ended.status,
++        ended.error.as_ref().map(|e| &e.message)
++    );
++    assert_eq!(
++        ended.status,
++        DownloadStatus::Completed,
++        "the fresh link failed the old check"
++    );
++    Ok(())
++}

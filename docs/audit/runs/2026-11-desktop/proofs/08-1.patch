@@ -1,0 +1,129 @@
+Run: cargo test -p wirecatch-ipc --lib a_program_with_fewer_rights -- --nocapture, at high and again at medium integrity (runas /trustlevel:0x20000). Output at both: FAILED, "connect served it and it received \"cookies\"; the real app's bind_keyed gave Err(AlreadyInUse ...)", pipe owner = user, label S-1-16-4096.
+diff --git a/crates/ipc/src/windows.rs b/crates/ipc/src/windows.rs
+index 5fbb4ead1..3b5ad4639 100644
+--- a/crates/ipc/src/windows.rs
++++ b/crates/ipc/src/windows.rs
+@@ -1865,6 +1865,123 @@ mod tests {
+         );
+     }
+ 
++    /// Runs `work` on a thread of its own as the current user at low integrity.
++    fn at_low_integrity<T: Send>(work: impl FnOnce() -> T + Send) -> T {
++        std::thread::scope(|scope| {
++            scope
++                .spawn(|| {
++                    let low = Sid::parse("S-1-16-4096").unwrap();
++                    let mut process_token: HANDLE = ptr::null_mut();
++                    let mut token: HANDLE = ptr::null_mut();
++                    // SAFETY: as in `open_at_low_integrity`.
++                    unsafe {
++                        assert_ne!(
++                            OpenProcessToken(
++                                GetCurrentProcess(),
++                                TOKEN_DUPLICATE | TOKEN_QUERY,
++                                &raw mut process_token
++                            ),
++                            0
++                        );
++                        assert_ne!(
++                            DuplicateTokenEx(
++                                process_token,
++                                TOKEN_IMPERSONATE | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT,
++                                ptr::null(),
++                                SecurityImpersonation,
++                                TokenImpersonation,
++                                &raw mut token,
++                            ),
++                            0
++                        );
++                        CloseHandle(process_token);
++                        let label = TOKEN_MANDATORY_LABEL {
++                            Label: SID_AND_ATTRIBUTES {
++                                Sid: low.as_psid(),
++                                Attributes: SE_GROUP_INTEGRITY as u32,
++                            },
++                        };
++                        let size =
++                            win32_size_of::<TOKEN_MANDATORY_LABEL>() + GetLengthSid(low.as_psid());
++                        assert_ne!(
++                            SetTokenInformation(
++                                token,
++                                TokenIntegrityLevel,
++                                (&raw const label).cast(),
++                                size,
++                            ),
++                            0
++                        );
++                        assert_ne!(SetThreadToken(ptr::null(), token), 0);
++                    }
++                    let result = work();
++                    // SAFETY: undoes the impersonation above and closes its token.
++                    unsafe {
++                        RevertToSelf();
++                        CloseHandle(token);
++                    }
++                    result
++                })
++                .join()
++                .unwrap()
++        })
++    }
++
++    // Proof of audit finding 08-1.
++    #[tokio::test]
++    async fn a_program_with_fewer_rights_cannot_stand_in_for_the_app() {
++        use tokio::io::{AsyncReadExt, AsyncWriteExt};
++
++        let dir = wirecatch_test_support::private_dir("ipc-08-1").unwrap();
++        let folders = crate::Folders {
++            key: dir.path().to_path_buf(),
++            runtime: None,
++        };
++        // The app has run once and closed.
++        let endpoint = crate::Listener::bind_keyed(Channel::Dev, &folders)
++            .unwrap()
++            .endpoint()
++            .clone();
++        let user = Sid::current_user().unwrap();
++        let user_text = user.to_string_form().unwrap();
++        let key_path = dir.path().join(crate::key::KEY_FILE);
++        let runtime = tokio::runtime::Handle::current();
++
++        // A low-integrity program of the user reads the key and makes the pipe, naming the user.
++        let (key, mut fake) = at_low_integrity(|| {
++            let key = std::fs::read_to_string(&key_path).expect("low integrity reads the key");
++            let _enter = runtime.enter();
++            let descriptor =
++                OwnerOnlyDescriptor::from_sddl(&format!("O:{user_text}D:P(A;;FA;;;{user_text})"))
++                    .unwrap();
++            let fake =
++                create_instance(&endpoint, &descriptor, true).expect("low integrity makes the pipe");
++            (key, fake)
++        });
++        assert!(endpoint.as_os_str().to_string_lossy().contains(&key));
++        let security = read_security(fake.as_raw_handle()).unwrap();
++
++        // What the bridge does.
++        let reached = connect(&endpoint, &user).await;
++        let was_refused = reached.is_err();
++        let mut received = [0u8; 7];
++        if let Ok(mut client) = reached {
++            client.write_all(b"cookies").await.unwrap();
++            fake.connect().await.unwrap();
++            fake.read_exact(&mut received).await.unwrap();
++        }
++        // What opening the real app does.
++        let reopened = crate::Listener::bind_keyed(Channel::Dev, &folders);
++        assert!(
++            was_refused && !matches!(reopened, Err(IpcError::AlreadyInUse { .. })),
++            "this test runs at {}; the fake pipe's owner is {} and its label {:?}; connect served it and it received {:?}; the real app's bind_keyed gave {reopened:?}",
++            Sid::current_integrity().unwrap(),
++            security.owner,
++            security.label,
++            String::from_utf8_lossy(&received),
++        );
++    }
++
+     #[test]
+     fn the_process_integrity_matches_its_elevation() {
+         let integrity = Sid::current_integrity().unwrap().to_string_form().unwrap();

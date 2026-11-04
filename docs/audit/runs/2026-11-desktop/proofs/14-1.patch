@@ -1,0 +1,92 @@
+Run: cargo test -p wirecatch-streams --test proof_14_1 -- --nocapture. Output: FAILED, "manifest 1053375 bytes, peak 258 MiB", refused only after the whole 268435456-character address was built ("it links to an address of 268435456 characters"). Sizes are cut down on purpose; the 977 GiB form in the finding was not run, as it would exhaust the machine.
+diff --git a/crates/streams/tests/proof_14_1.rs b/crates/streams/tests/proof_14_1.rs
+new file mode 100644
+index 000000000..7e6ea9e8c
+--- /dev/null
++++ b/crates/streams/tests/proof_14_1.rs
+@@ -0,0 +1,85 @@
++//! A DASH template that repeats a long representation id: what planning holds, counted by the allocator. The sizes are 1/4096 of the finding's so the machine survives the proof.
++
++use std::alloc::{GlobalAlloc, Layout, System};
++use std::sync::Arc;
++use std::sync::atomic::{AtomicUsize, Ordering};
++
++use wirecatch_engine::CancellationToken;
++use wirecatch_streams::{PrivateNetwork, StreamProgress, StreamRequest, download};
++use wirecatch_test_support::files::FileServer;
++use wirecatch_test_support::{TestResult, private_dir};
++
++static NOW: AtomicUsize = AtomicUsize::new(0);
++static PEAK: AtomicUsize = AtomicUsize::new(0);
++
++struct Counting;
++
++fn add(bytes: usize) {
++    let now = NOW.fetch_add(bytes, Ordering::Relaxed).saturating_add(bytes);
++    PEAK.fetch_max(now, Ordering::Relaxed);
++}
++
++// SAFETY: every call goes to the system allocator unchanged.
++unsafe impl GlobalAlloc for Counting {
++    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
++        add(layout.size());
++        // SAFETY: as the caller's contract.
++        unsafe { System.alloc(layout) }
++    }
++    unsafe fn dealloc(&self, block: *mut u8, layout: Layout) {
++        NOW.fetch_sub(layout.size(), Ordering::Relaxed);
++        // SAFETY: as the caller's contract.
++        unsafe { System.dealloc(block, layout) };
++    }
++    unsafe fn realloc(&self, block: *mut u8, layout: Layout, size: usize) -> *mut u8 {
++        NOW.fetch_sub(layout.size(), Ordering::Relaxed);
++        add(size);
++        // SAFETY: as the caller's contract.
++        unsafe { System.realloc(block, layout, size) }
++    }
++}
++
++#[global_allocator]
++static COUNTING: Counting = Counting;
++
++const MIB: usize = 1024 * 1024;
++
++#[tokio::test]
++async fn planning_a_template_holds_a_multiple_of_its_manifest() -> TestResult {
++    let id = "a".repeat(MIB);
++    let media = "$RepresentationID$".repeat(256);
++    let text = format!(
++        r#"<MPD mediaPresentationDuration="PT10S"><Period><AdaptationSet mimeType="video/mp4"><SegmentTemplate duration="1" media="{media}"/><Representation id="{id}" bandwidth="1"/></AdaptationSet></Period></MPD>"#
++    );
++    let len = text.len();
++    let server = FileServer::start().await;
++    server.put_typed("manifest.mpd", text, "application/dash+xml");
++    let dir = private_dir("proof-14-1")?;
++    let request = StreamRequest::new(
++        server.url("manifest.mpd"),
++        dir.join("v.mp4"),
++        PrivateNetwork::Auto,
++    );
++    let start = NOW.load(Ordering::Relaxed);
++    PEAK.store(start, Ordering::Relaxed);
++    let outcome = download(
++        request,
++        Arc::new(StreamProgress::default()),
++        CancellationToken::new(),
++    )
++    .await;
++    let peak = PEAK.load(Ordering::Relaxed).saturating_sub(start);
++    eprintln!(
++        "manifest {len} bytes, peak {} MiB, outcome {:?}",
++        peak / MIB,
++        outcome.as_ref().map_err(ToString::to_string).map(|_| ())
++    );
++    dir.remove()?;
++    // The limit manifest_memory.rs holds `inspect` to.
++    assert!(
++        peak <= 32 * len + 8 * MIB,
++        "planning a manifest of {len} bytes held {} MiB at once",
++        peak / MIB
++    );
++    Ok(())
++}

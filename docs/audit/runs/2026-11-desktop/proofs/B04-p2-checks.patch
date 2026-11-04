@@ -1,0 +1,126 @@
+Run: cargo test -p wirecatch-ipc --lib audit_ ; cargo test -p wirecatch-bridge --features test-overrides --bin wirecatch-bridge audit_06_1 . Output: all 5 FAILED: 08-2 limit 1 Io(231), limit 2 with a client AlreadyInUse; 08-3 Io(5); B04-1 Io(5); 06-1 launches 0, AppUnavailable with both pieces of advice.
+diff --git a/crates/bridge/src/app.rs b/crates/bridge/src/app.rs
+index f94c15b40..df8674e5f 100644
+--- a/crates/bridge/src/app.rs
++++ b/crates/bridge/src/app.rs
+@@ -566,6 +566,28 @@ mod tests {
+         remove_socket_folder(&folders);
+     }
+ 
++    // Proof of audit finding 06-1.
++    #[tokio::test]
++    async fn audit_06_1_a_damaged_key_starts_the_app_that_replaces_it() {
++        let dir = private_dir("bridge-06-1").unwrap();
++        let folders = keyed_in(dir.path().to_path_buf());
++        std::fs::write(dir.path().join("endpoint-key"), "not a key").unwrap();
++        let launches = Arc::new(Mutex::new(0));
++        let app = DelayedKeyedApp {
++            folders: folders.clone(),
++            delay: Duration::ZERO,
++            launches: launches.clone(),
++        };
++        let find = || wirecatch_ipc::endpoint_in(Channel::Dev, &folders);
++        let reached = connect_or_launch(&find, &app, PATIENCE, Start::IfNeeded).await;
++        assert!(
++            *launches.lock().unwrap() == 1 && reached.is_ok(),
++            "launches {}, got {:?}",
++            *launches.lock().unwrap(),
++            reached.err()
++        );
++    }
++
+     #[tokio::test]
+     async fn a_keyed_name_that_stays_taken_is_reported_as_taken() {
+         let (endpoint, _dir) = test_endpoint();
+diff --git a/crates/ipc/src/windows.rs b/crates/ipc/src/windows.rs
+index 5fbb4ead1..27d7e1456 100644
+--- a/crates/ipc/src/windows.rs
++++ b/crates/ipc/src/windows.rs
+@@ -1865,6 +1865,87 @@ mod tests {
+         );
+     }
+ 
++    fn audit_folders(dir: &wirecatch_test_support::PrivateDir) -> crate::Folders {
++        crate::Folders {
++            key: dir.path().to_path_buf(),
++            runtime: None,
++        }
++    }
++
++    /// A first pipe instance at `endpoint`, the user's, with at most `limit` instances.
++    fn audit_limited_pipe(endpoint: &Endpoint, limit: usize) -> NamedPipeServer {
++        let user = Sid::current_user().unwrap().to_string_form().unwrap();
++        let descriptor = OwnerOnlyDescriptor::from_sddl(&private_sddl(&user)).unwrap();
++        let mut attributes = SECURITY_ATTRIBUTES {
++            nLength: win32_size_of::<SECURITY_ATTRIBUTES>(),
++            lpSecurityDescriptor: descriptor.0,
++            bInheritHandle: 0,
++        };
++        let mut options = ServerOptions::new();
++        options.first_pipe_instance(true).max_instances(limit);
++        // SAFETY: as in `create_instance`.
++        unsafe {
++            options
++                .create_with_security_attributes_raw(
++                    endpoint.as_os_str(),
++                    (&raw mut attributes).cast(),
++                )
++                .unwrap()
++        }
++    }
++
++    // Proof of audit finding 08-2: under the key's lock no copy of ours can hold the name.
++    #[tokio::test]
++    async fn audit_08_2_a_held_name_with_one_instance_is_renewed() {
++        let dir = wirecatch_test_support::private_dir("ipc-08-2a").unwrap();
++        let folders = audit_folders(&dir);
++        let seen = crate::Listener::bind_keyed(Channel::Dev, &folders)
++            .unwrap()
++            .endpoint()
++            .clone();
++        let _squatter = audit_limited_pipe(&seen, 1);
++        let bound = crate::Listener::bind_keyed(Channel::Dev, &folders);
++        assert!(bound.is_ok(), "limit 1: {bound:?}");
++    }
++
++    #[tokio::test]
++    async fn audit_08_2_a_held_name_with_every_instance_busy_is_renewed() {
++        let dir = wirecatch_test_support::private_dir("ipc-08-2b").unwrap();
++        let folders = audit_folders(&dir);
++        let seen = crate::Listener::bind_keyed(Channel::Dev, &folders)
++            .unwrap()
++            .endpoint()
++            .clone();
++        let _squatter = audit_limited_pipe(&seen, 2);
++        let _client = ClientOptions::new()
++            .security_qos_flags(SECURITY_IDENTIFICATION)
++            .open(seen.as_os_str())
++            .unwrap();
++        let bound = crate::Listener::bind_keyed(Channel::Dev, &folders);
++        assert!(bound.is_ok(), "limit 2 with a client: {bound:?}");
++    }
++
++    // Proof of audit finding 08-3.
++    #[tokio::test]
++    async fn audit_08_3_a_pipe_that_shuts_the_client_out_is_wrong_owner() {
++        let endpoint = unique_endpoint();
++        let user = Sid::current_user().unwrap();
++        let foreign =
++            OwnerOnlyDescriptor::from_sddl(&format!("O:{user}D:P(A;;FA;;;SY)")).unwrap();
++        let _squatter = create_instance(&endpoint, &foreign, true).unwrap();
++        let err = connect(&endpoint, &user).await.unwrap_err();
++        assert!(matches!(err, IpcError::WrongOwner { .. }), "{err:?}");
++    }
++
++    // Proof of audit finding B04-1: a folder in place of the key, promised as BadEndpointKey.
++    #[test]
++    fn audit_b04_1_a_folder_in_place_of_the_key_is_a_bad_key() {
++        let dir = wirecatch_test_support::private_dir("ipc-b04-1").unwrap();
++        std::fs::create_dir(dir.path().join(crate::key::KEY_FILE)).unwrap();
++        let err = crate::key::read(dir.path()).unwrap_err();
++        assert!(matches!(err, IpcError::BadEndpointKey { .. }), "{err:?}");
++    }
++
+     #[test]
+     fn the_process_integrity_matches_its_elevation() {
+         let integrity = Sid::current_integrity().unwrap().to_string_form().unwrap();

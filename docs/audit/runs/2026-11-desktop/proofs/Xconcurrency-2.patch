@@ -1,0 +1,25 @@
+--- a/crates/core/tests/manager/restart.rs
++++ b/crates/core/tests/manager/restart.rs
+@@ -211,3 +211,22 @@
+     );
+     Ok(())
+ }
++
++/// Xconcurrency-3: a removal still waiting for its run when the app quits.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn a_removal_in_progress_at_quit_stays_removed() -> TestResult {
++    let slow = throttled_server(4096 * KIB, 64 * KIB).await?;
++    let mut h = Harness::new().await?;
++    let row = h.add(&slow.url("gone.bin")).await?;
++    h.wait_for(row.id, "the server's answer", |r| r.done > 0).await;
++    let ids = [row.id];
++    let (removed, ()) = tokio::join!(
++        h.manager.remove(&ids, wirecatch_core::RemoveFiles::Keep),
++        h.manager.shutdown()
++    );
++    println!("REMOVE {removed:?}");
++    h.reopen().await?;
++    println!("AFTER {:?}", h.manager.get_download(row.id).map(|r| r.status));
++    assert!(h.manager.get_download(row.id).is_err(), "the removed download came back");
++    Ok(())
++}

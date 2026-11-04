@@ -1,0 +1,31 @@
+Run: cargo test -p wirecatch-streams --lib proof_13_1 -- --nocapture. Output: 2 FAILED, "100000 lines kept"; error_line left Some("") right Some("Conversion failed!").
+diff --git a/crates/streams/src/process/tail.rs b/crates/streams/src/process/tail.rs
+index e735af328..d251f7c5b 100644
+--- a/crates/streams/src/process/tail.rs
++++ b/crates/streams/src/process/tail.rs
+@@ -174,3 +174,25 @@ mod tests {
+         assert_eq!(tail.summary(2), "line 3 / line 4");
+     }
+ }
++
++#[cfg(test)]
++mod proof_13_1 {
++    use super::*;
++
++    #[test]
++    fn blank_lines_are_bounded() {
++        let mut tail = StderrTail::default();
++        for _ in 0..100_000 {
++            tail.push("");
++        }
++        assert!(tail.lines().len() <= STDERR_TAIL_BYTES, "{} lines kept", tail.lines().len());
++    }
++
++    #[test]
++    fn a_blank_last_line_does_not_hide_the_reason() {
++        let mut tail = StderrTail::default();
++        tail.push("Conversion failed!");
++        tail.push("");
++        assert_eq!(tail.error_line(), Some("Conversion failed!"));
++    }
++}

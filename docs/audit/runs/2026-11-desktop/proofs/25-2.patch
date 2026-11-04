@@ -1,0 +1,51 @@
+# Run alone (these B09 patches do not stack), with [profile.b09] inherits = "dev" in Cargo.toml: git apply this, then cargo test --profile b09 -p wirecatch-core --test proof_25_2. Output under that profile, same crates as 02284bbd0: FAILED, 'Try again saved nothing', left: 0 right: 1. Also proves Xfeature-behaviour-3 and the first half of 03-4.
+diff --git a/crates/core/tests/proof_25_2.rs b/crates/core/tests/proof_25_2.rs
+new file mode 100644
+index 000000000..533de503c
+--- /dev/null
++++ b/crates/core/tests/proof_25_2.rs
+@@ -0,0 +1,44 @@
++//! 25-2: Try again on the could-not-save banner sends an empty change, "through the save like any other".
++
++#![allow(dead_code, unused_imports)]
++
++#[path = "manager/common.rs"]
++mod common;
++
++use common::{Harness, PATIENCE, TestResult};
++use wirecatch_protocol::app::AppSettingsPatch;
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn proof_25_2_an_empty_change_reaches_the_store() -> TestResult {
++    let h = Harness::new().await?;
++    let db = h
++        .root
++        .path()
++        .join("data")
++        .join(wirecatch_core::DATABASE_FILE);
++    let other = rusqlite::Connection::open(db).unwrap();
++    let count = |other: &rusqlite::Connection| -> i64 {
++        other
++            .query_row("SELECT count(*) FROM settings WHERE key = 'app'", [], |r| {
++                r.get(0)
++            })
++            .unwrap()
++    };
++    tokio::time::timeout(PATIENCE, async {
++        while count(&other) == 0 {
++            tokio::task::yield_now().await;
++        }
++    })
++    .await
++    .expect("the first start saves its settings");
++    // Removed from outside, so a save of the settings shows.
++    other
++        .execute("DELETE FROM settings WHERE key = 'app'", [])
++        .unwrap();
++    h.manager
++        .change_settings(AppSettingsPatch::default())
++        .unwrap();
++    h.manager.shutdown().await;
++    assert_eq!(count(&other), 1, "Try again saved nothing");
++    Ok(())
++}

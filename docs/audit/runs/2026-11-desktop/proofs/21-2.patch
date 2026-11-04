@@ -1,0 +1,60 @@
+Run: git apply this, then CARGO_TARGET_DIR=<dir> cargo test -p wirecatch-engine --test audit_names an_ftp_type. Output: FAILED, left "file.bin;type=i", right "file.bin".
+diff --git a/crates/engine/tests/audit_names.rs b/crates/engine/tests/audit_names.rs
+new file mode 100644
+index 000000000..bf076af38
+--- /dev/null
++++ b/crates/engine/tests/audit_names.rs
+@@ -0,0 +1,53 @@
++//! Proofs of 01-7, 21-2 and B11-2: names from headers and links.
++
++use std::sync::Arc;
++
++use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Url, download};
++use wirecatch_test_support::ftp::{FtpConfig, FtpServer};
++use wirecatch_test_support::http::{Config, TestServer};
++use wirecatch_test_support::{private_dir, test_data};
++
++async fn saved_as(url: Url, tag: &str) -> String {
++    let dir = private_dir(tag).unwrap();
++    let mut request = DownloadRequest::new(url, &*dir);
++    request.options.connections = 1;
++    match download(request, Arc::new(Progress::default()), CancellationToken::new()).await {
++        Ok(Outcome::Completed { path, .. }) => path.file_name().unwrap().to_str().unwrap().to_owned(),
++        other => panic!("{other:?}"),
++    }
++}
++
++/// 01-7
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn a_name_in_latin1_is_read_as_latin1_or_the_plain_name_is_used() {
++    let server = TestServer::start(
++        test_data(1024),
++        Config {
++            content_disposition: Some("attachment; filename=\"cafe.pdf\"; filename*=ISO-8859-1''caf%E9.pdf".into()),
++            ..Default::default()
++        },
++    )
++    .await;
++    let name = saved_as(server.url("get"), "audit-01-7").await;
++    assert!(name == "café.pdf" || name == "cafe.pdf", "saved as {name:?}");
++}
++
++/// 21-2
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn an_ftp_type_suffix_stays_out_of_the_name() {
++    let server = FtpServer::start(FtpConfig {
++        files: vec![("pub/file.bin".to_string(), Arc::new(test_data(1024)))],
++        ..Default::default()
++    })
++    .await;
++    let name = saved_as(server.url("ftp", "", "pub/file.bin;type=i"), "audit-21-2").await;
++    assert_eq!(name, "file.bin");
++}
++
++/// B11-2
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn path_parameters_stay_out_of_a_name_from_a_web_link() {
++    let server = TestServer::start(test_data(1024), Config::default()).await;
++    let name = saved_as(server.url("a.zip;jsessionid=ABC123"), "audit-b11-2").await;
++    assert_eq!(name, "a.zip");
++}

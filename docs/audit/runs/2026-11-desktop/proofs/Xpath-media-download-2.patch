@@ -1,0 +1,58 @@
+Run: cargo test -p wirecatch-core --test manager audit_a_format_that_needs. Output: FAILED, "4 requests without the format's cookie, yt-dlp never tried: The video's server kept refusing to send the video (it answered 403) (...)". Real yt-dlp 2026.10.26 against a local cookie-gated server: -J gives "cookies":"sid=abc123; Domain=127.0.0.1; Path=/; ..." outside http_headers, a request without it gets 403, yt-dlp with --cookies saves the file.
+diff --git a/crates/core/tests/manager/media.rs b/crates/core/tests/manager/media.rs
+index b44446d62..db9260850 100644
+--- a/crates/core/tests/manager/media.rs
++++ b/crates/core/tests/manager/media.rs
+@@ -1746,3 +1746,52 @@ async fn a_password_in_a_video_link_is_never_shown() -> TestResult {
+     }
+     Ok(())
+ }
++
++/// Audit Xpath-media-download-2: yt-dlp gives a format the cookies it needs in `cookies`, not in `http_headers`. A server that wants them must get them, from the engine or from yt-dlp as the fallback.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn audit_a_format_that_needs_its_cookies_is_not_fetched_without_them() -> TestResult {
++    let server = FileServer::start().await;
++    let h = harness_refreshing(publish(&server, &Releases::fake()?, "r")?, QUICK.to_vec()).await?;
++    assert_eq!(install(&h).await?.state, AddonState::Installed);
++    server.put("fmt/gated.mp4", mp4_data(64 * KIB_USIZE));
++    // The refusal of a server that wants the cookie; the assertion below checks no request had it.
++    server.fail("fmt/gated.mp4", 1000, 403);
++    let info = serde_json::json!({
++        "title": "Signed in only",
++        "formats": [{"format_id": "0", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
++            "protocol": "https", "url": server.url("fmt/gated.mp4").as_str(),
++            "cookies": "sid=abc123; Domain=127.0.0.1; Path=/",
++            "http_headers": {"User-Agent": "yt-dlp-agent", "Accept": "*/*"}}],
++    });
++    tell_tool(&h, "info.json", &info.to_string())?;
++    let id = start_first_option(&h, &server, 91).await?;
++    let failed = h.wait_status(id, DownloadStatus::Failed).await;
++    let with_cookie = server
++        .seen_at("fmt/gated.mp4")
++        .iter()
++        .filter(|s| format!("{s:?}").contains("abc123"))
++        .count();
++    let by_ytdlp = ytdlp_calls(&h)?
++        .iter()
++        .filter(|call| args(call).is_ok_and(|a| a.iter().any(|x| x == "--no-simulate")))
++        .count();
++    assert!(
++        with_cookie > 0 || by_ytdlp > 0,
++        "{} requests without the format's cookie, yt-dlp never tried: {:?}",
++        server.requests("fmt/gated.mp4"),
++        failed.error.map(|e| e.message)
++    );
++    Ok(())
++}
++
++/// Starts the first option a page offers.
++async fn start_first_option(h: &Harness, server: &FileServer, n: u32) -> TestResult<wirecatch_protocol::DownloadId> {
++    let mut ui = h.manager.subscribe();
++    h.manager
++        .add_capture(media_capture(server.url(&format!("watch/{n}")), MediaKind::Page, None))
++        .await
++        .unwrap();
++    let choice = choice_requested(&mut ui).await;
++    let option = choice.options[0].id.clone();
++    Ok(h.manager.choose_media(choice.id, select(&option)).await?)
++}

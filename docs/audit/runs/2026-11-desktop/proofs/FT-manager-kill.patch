@@ -1,0 +1,1309 @@
+# Run: git apply this file at the repository root, then cargo test --config profile.dev.package.sha2.opt-level=3 --config profile.dev.package.wirecatch-test-support.opt-level=2 -p wirecatch-core --test manager fault_kill:: -- --nocapture. Cargo.lock updates itself on the first build. Output on Windows at a139e6a9d: test result: ok. 7 passed; 0 failed; 1 ignored (the ignored one is the child process the others start).
+diff --git a/crates/core/Cargo.toml b/crates/core/Cargo.toml
+index bf03db57a..e6d6934e6 100644
+--- a/crates/core/Cargo.toml
++++ b/crates/core/Cargo.toml
+@@ -58,7 +58,7 @@ wirecatch-logging = { workspace = true, features = ["setup"] }
+ wirecatch-files = { workspace = true, features = ["testing"] }
+ wirecatch-server.workspace = true
+ wirecatch-sites = { workspace = true, features = ["testing"] }
+-wirecatch-test-support = { path = "../test-support", features = ["downloads", "resume", "servers"] }
++wirecatch-test-support = { path = "../test-support", features = ["downloads", "faults", "resume", "servers"] }
+ base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
+ ed25519-dalek = { version = "2.2.0", default-features = false, features = ["std"] }
+ 
+diff --git a/crates/core/tests/manager/fault_kill.rs b/crates/core/tests/manager/fault_kill.rs
+new file mode 100644
+index 000000000..190349c80
+--- /dev/null
++++ b/crates/core/tests/manager/fault_kill.rs
+@@ -0,0 +1,460 @@
++//! The process hosting a `Manager` killed mid-download, then a new manager on the same data: the list comes back and every file ends byte for byte the original.
++//!
++//! The killed manager runs in a child process: this test binary, started again with only [`manager_in_a_child_process`], which does nothing unless the variables below are set.
++
++use std::collections::BTreeMap;
++use std::path::{Path, PathBuf};
++use std::process::Command;
++
++use wirecatch_core::{ComputerProxy, KnownFolders, Manager, ManagerConfig};
++use wirecatch_protocol::DownloadId;
++use wirecatch_protocol::app::{AddRequest, DownloadStatus, DownloadSummary};
++use wirecatch_test_support::faults::{
++    FaultServer, Generated, Plan, Req, Running, Scratch, check_file, check_kept, fills_overlapping,
++    kept_bytes, kept_now, wait_for,
++};
++
++use crate::common::{TestResult, is_running, row, tune, wait_until};
++
++const ROOT_VARIABLE: &str = "WIRECATCH_FAULT_ROOT";
++const ADD_VARIABLE: &str = "WIRECATCH_FAULT_ADD";
++const MIB: u64 = 1024 * 1024;
++const CONNECTIONS: u8 = 8;
++
++async fn open(root: &Path) -> TestResult<Manager> {
++    let folders = KnownFolders::under_home(root.join("home"));
++    let mut config = ManagerConfig::new(root.join("data"), folders)
++        .with_computer_proxy(ComputerProxy::Given(None));
++    config.addon_sources.ytdlp_releases = None;
++    Ok(Manager::open(config).await?)
++}
++
++fn settings(manager: &Manager) -> TestResult {
++    tune(manager, |s| {
++        s.connections_per_download = CONNECTIONS.into();
++        s.extension.ask_before_download = false;
++    })
++}
++
++async fn add(manager: &Manager, url: &str) -> TestResult<DownloadId> {
++    Ok(manager
++        .add_download(AddRequest {
++            url: url.into(),
++            queue: None,
++            folder: None,
++            file_name: None,
++            start: true,
++        })
++        .await?)
++}
++
++/// Opens a manager and keeps it running until killed, or until the parent is gone and standard input closes.
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++#[ignore = "started by the other tests of this module"]
++async fn manager_in_a_child_process() -> TestResult {
++    let Some(root) = std::env::var_os(ROOT_VARIABLE) else {
++        return Ok(());
++    };
++    let manager = open(Path::new(&root)).await?;
++    settings(&manager)?;
++    for line in std::env::var(ADD_VARIABLE).unwrap_or_default().lines() {
++        add(&manager, line).await?;
++    }
++    tokio::task::spawn_blocking(|| {
++        let mut sink = String::new();
++        while std::io::stdin().read_line(&mut sink).is_ok_and(|n| n > 0) {}
++    })
++    .await?;
++    manager.shutdown().await;
++    Ok(())
++}
++
++fn child(scratch: &Scratch, add: &[String]) -> Running {
++    let mut command = Command::new(std::env::current_exe().unwrap());
++    command
++        .args([
++            "--exact",
++            "fault_kill::manager_in_a_child_process",
++            "--ignored",
++            "--nocapture",
++        ])
++        .env(ROOT_VARIABLE, &scratch.root)
++        .env(ADD_VARIABLE, add.join("\n"))
++        .env("WIRECATCH_LOG_DIR", &scratch.logs);
++    Running::start(command, &scratch.logs, true)
++}
++
++/// Every file under `dir` whose name ends in `ending`.
++fn find(dir: &Path, ending: &str) -> Vec<PathBuf> {
++    let mut found = Vec::new();
++    let Ok(entries) = std::fs::read_dir(dir) else {
++        return found;
++    };
++    for entry in entries.flatten() {
++        let path = entry.path();
++        if path.is_dir() {
++            found.extend(find(&path, ending));
++        } else if path.to_string_lossy().ends_with(ending) {
++            found.push(path);
++        }
++    }
++    found
++}
++
++/// Every file under the home folder, sorted.
++fn every_file(scratch: &Scratch) -> Vec<PathBuf> {
++    let mut all = find(&scratch.root.join("home"), "");
++    all.sort();
++    all
++}
++
++fn names(scratch: &Scratch) -> Vec<String> {
++    let mut names: Vec<_> = every_file(scratch)
++        .iter()
++        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
++        .collect();
++    names.sort();
++    names
++}
++
++async fn completed(manager: &Manager, id: DownloadId) -> DownloadSummary {
++    wait_until(&format!("download {id:?} to complete"), || {
++        let now = row(manager, id);
++        assert_ne!(now.status, DownloadStatus::Failed, "{:?}", now.error);
++        (now.status == DownloadStatus::Completed).then_some(now)
++    })
++    .await
++}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn a_killed_manager_continues_and_the_file_is_exact() -> TestResult {
++    const LEN: u64 = 128 * MIB;
++    let scratch = Scratch::new("manager-kill");
++    let file = Generated::new(1, LEN);
++    let server = FaultServer::start(move |req| file.ranged(req));
++    server.hold_at(LEN / 2);
++
++    let mut run = child(&scratch, &[server.url("f.bin")]);
++    let home = scratch.root.join("home");
++    let kept = wait_for("kept bytes in the resume file", || {
++        find(&home, ".wcstate")
++            .first()
++            .and_then(|state| kept_now(state, LEN))
++    });
++    run.kill();
++    let state = find(&home, ".wcstate").remove(0);
++    let kept = kept_now(&state, LEN).unwrap_or(kept);
++    let part = find(&home, ".wcpart").remove(0);
++    check_kept(&part, &kept, 1)?;
++
++    let before = server.log().len();
++    let manager = open(&scratch.root).await?;
++    let rows = manager.list_downloads();
++    let [first] = &rows[..] else {
++        panic!("the list came back as {rows:?}");
++    };
++    assert!(
++        is_running(first) || first.status == DownloadStatus::Queued,
++        "it did not continue on its own: {:?}",
++        first.status
++    );
++    // The list saves progress every 2 seconds, so its numbers can trail the resume file until the engine reads it.
++    server.release();
++
++    let done = completed(&manager, first.id).await;
++    assert_eq!((done.done, done.total), (LEN, Some(LEN)));
++    println!("sha256 {}", check_file(Path::new(&done.path), 1, LEN)?);
++    let again = fills_overlapping(&server.log()[before..], &kept, LEN);
++    assert!(again.is_empty(), "asked again for {again:?} of {kept:?}");
++    assert_eq!(every_file(&scratch), [PathBuf::from(&done.path)]);
++    manager.shutdown().await;
++    Ok(())
++}
++
++/// A file of its own at each path.
++fn per_path(req: &Req, len: u64, seeds: &BTreeMap<String, u64>) -> Plan {
++    Generated::new(seeds[req.path.trim_start_matches('/')], len).ranged(req)
++}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn repeated_kills_keep_the_list_and_every_file_right() -> TestResult {
++    const LEN: u64 = 64 * MIB;
++    const ROUNDS: u64 = 4;
++    let scratch = Scratch::new("manager-storm");
++    let seeds: BTreeMap<String, u64> = [
++        ("a.bin", 11),
++        ("b.bin", 12),
++        ("c.bin", 13),
++        ("paused.bin", 14),
++    ]
++    .map(|(name, seed)| (name.to_string(), seed))
++    .into();
++    let by_path = seeds.clone();
++    let server = FaultServer::start(move |req| per_path(req, LEN, &by_path).paced(8 * MIB));
++
++    // One paused with some of its file, by a manager that stops properly.
++    let manager = open(&scratch.root).await?;
++    settings(&manager)?;
++    let paused = add(&manager, &server.url("paused.bin")).await?;
++    wait_until("part of the file", || {
++        (row(&manager, paused).done > 0).then_some(())
++    })
++    .await;
++    manager.pause(paused)?;
++    wait_until("the pause", || {
++        (row(&manager, paused).status == DownloadStatus::Paused).then_some(())
++    })
++    .await;
++    manager.shutdown().await;
++    drop(manager);
++
++    let urls: Vec<_> = ["a.bin", "b.bin", "c.bin"]
++        .map(|name| server.url(name))
++        .into();
++    for round in 0..ROUNDS {
++        let mut run = child(&scratch, if round == 0 { &urls } else { &[] });
++        let from = server.sent();
++        server.wait(&format!("round {round}"), |sent, _| {
++            sent >= from + 3 * LEN / 8
++        });
++        run.kill();
++        println!("round {round}: {} sent", server.sent());
++    }
++
++    let manager = open(&scratch.root).await?;
++    let rows = manager.list_downloads();
++    assert_eq!(rows.len(), 4, "{rows:?}");
++    assert_eq!(
++        row(&manager, paused).status,
++        DownloadStatus::Paused,
++        "a paused download started by itself"
++    );
++    for listed in &rows {
++        if listed.id != paused {
++            let done = completed(&manager, listed.id).await;
++            let seed = seeds[&done.file_name];
++            println!(
++                "{}: sha256 {}",
++                done.file_name,
++                check_file(Path::new(&done.path), seed, LEN)?
++            );
++        }
++    }
++    manager.resume(paused)?;
++    let done = completed(&manager, paused).await;
++    println!(
++        "paused: sha256 {}",
++        check_file(Path::new(&done.path), 14, LEN)?
++    );
++    assert_eq!(names(&scratch), ["a.bin", "b.bin", "c.bin", "paused.bin"]);
++    manager.shutdown().await;
++    Ok(())
++}
++
++/// Kills land around the moment short downloads finish: between the rename and the list's save.
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn kills_during_a_burst_of_short_downloads_lose_or_double_nothing() -> TestResult {
++    const LEN: u64 = 2 * MIB;
++    const FILES: u64 = 60;
++    const ROUNDS: u64 = 5;
++    let scratch = Scratch::new("manager-burst");
++    let seeds: BTreeMap<String, u64> = (0..FILES)
++        .map(|n| (format!("f{n:02}.bin"), 100 + n))
++        .collect();
++    let by_path = seeds.clone();
++    let server = FaultServer::start(move |req| per_path(req, LEN, &by_path).paced(32 * MIB));
++    let urls: Vec<_> = seeds.keys().map(|name| server.url(name)).collect();
++
++    for round in 0..ROUNDS {
++        let mut run = child(&scratch, if round == 0 { &urls } else { &[] });
++        let from = server.sent();
++        server.wait(&format!("round {round}"), |sent, _| {
++            sent >= from + FILES * LEN / (ROUNDS + 3)
++        });
++        run.kill();
++        println!(
++            "round {round}: {} sent, {} files",
++            server.sent(),
++            every_file(&scratch).len()
++        );
++    }
++
++    let manager = open(&scratch.root).await?;
++    let rows = manager.list_downloads();
++    assert_eq!(rows.len() as u64, FILES, "{rows:?}");
++    for listed in &rows {
++        let done = completed(&manager, listed.id).await;
++        let Some(&seed) = seeds.get(&done.file_name) else {
++            panic!("a download is named {} now: {done:?}", done.file_name);
++        };
++        check_file(Path::new(&done.path), seed, LEN)?;
++    }
++    let want: Vec<_> = seeds.keys().cloned().collect();
++    assert_eq!(names(&scratch), want);
++    manager.shutdown().await;
++    Ok(())
++}
++
++/// Killed while the row's path is still a guess, then with the path known and no byte yet: the server's name wins and one file comes of it.
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn killed_before_the_server_answered_one_file_comes_of_it() -> TestResult {
++    const LEN: u64 = 8 * MIB;
++    for (case, hold_heads) in [("no-answer", true), ("no-byte", false)] {
++        let scratch = Scratch::new(case);
++        let file = Generated::new(20, LEN);
++        let server = FaultServer::start(move |req| {
++            file.ranged(req)
++                .header("Content-Disposition", "attachment; filename=\"report.pdf\"")
++        });
++        if hold_heads {
++            server.hold_heads();
++        } else {
++            server.hold_at(0);
++        }
++        let mut run = child(&scratch, &[server.url("get?id=1")]);
++        server.wait("the first request", |_, requests| requests >= 1);
++        if !hold_heads {
++            wait_for("the part file", || {
++                find(&scratch.root.join("home"), ".wcpart")
++                    .first()
++                    .map(|_| ())
++            });
++        }
++        run.kill();
++        server.release();
++
++        let manager = open(&scratch.root).await?;
++        let rows = manager.list_downloads();
++        let [first] = &rows[..] else {
++            panic!("{case}: the list came back as {rows:?}");
++        };
++        let done = completed(&manager, first.id).await;
++        assert_eq!(done.file_name, "report.pdf", "{case}");
++        println!(
++            "{case}: sha256 {}",
++            check_file(Path::new(&done.path), 20, LEN)?
++        );
++        assert_eq!(every_file(&scratch), [PathBuf::from(&done.path)], "{case}");
++        manager.shutdown().await;
++    }
++    Ok(())
++}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn killed_then_the_file_changes_the_new_version_is_saved_whole() -> TestResult {
++    const LEN: u64 = 64 * MIB;
++    let scratch = Scratch::new("manager-changed");
++    let file = Generated::new(30, LEN);
++    let server = FaultServer::start(move |req| file.ranged(req));
++    server.hold_at(LEN / 2);
++    let mut run = child(&scratch, &[server.url("f.bin")]);
++    let home = scratch.root.join("home");
++    wait_for("kept bytes in the resume file", || {
++        find(&home, ".wcstate")
++            .first()
++            .and_then(|state| kept_now(state, LEN))
++    });
++    run.kill();
++    let new = Generated::new(31, LEN);
++    server.set_handler(move |req| new.ranged(req));
++    server.release();
++
++    let manager = open(&scratch.root).await?;
++    let rows = manager.list_downloads();
++    let [first] = &rows[..] else {
++        panic!("the list came back as {rows:?}");
++    };
++    let done = completed(&manager, first.id).await;
++    println!("sha256 {}", check_file(Path::new(&done.path), 31, LEN)?);
++    assert_eq!(every_file(&scratch), [PathBuf::from(&done.path)]);
++    manager.shutdown().await;
++    Ok(())
++}
++
++/// The server fails after the restart: the download stops with its error, and retrying continues from what was kept.
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn killed_then_the_server_fails_then_a_retry_continues() -> TestResult {
++    const LEN: u64 = 64 * MIB;
++    let scratch = Scratch::new("manager-fail");
++    let file = Generated::new(40, LEN);
++    let honest = file.clone();
++    let server = FaultServer::start(move |req| file.ranged(req));
++    server.hold_at(LEN / 2);
++    let mut run = child(&scratch, &[server.url("f.bin")]);
++    let home = scratch.root.join("home");
++    let kept = wait_for("kept bytes in the resume file", || {
++        find(&home, ".wcstate")
++            .first()
++            .and_then(|state| kept_now(state, LEN))
++    });
++    run.kill();
++    let state = find(&home, ".wcstate").remove(0);
++    let kept = kept_now(&state, LEN).unwrap_or(kept);
++    server.release();
++    server.set_handler(|_| Plan {
++        status: 404,
++        headers: vec![("Content-Length".into(), "0".into())],
++        seed: 40,
++        from: 0,
++        send: 0,
++        chunked: false,
++        pace: None,
++        cut_off: false,
++    });
++
++    let manager = open(&scratch.root).await?;
++    let id = manager.list_downloads().remove(0).id;
++    let failed = wait_until("the failure", || {
++        let now = row(&manager, id);
++        (now.status == DownloadStatus::Failed).then_some(now)
++    })
++    .await;
++    println!("failed: {:?}", failed.error);
++    let still = kept_now(&state, LEN).ok_or("the resume file is gone")?;
++    assert!(
++        kept_bytes(&still) >= kept_bytes(&kept),
++        "{still:?} < {kept:?}"
++    );
++
++    let before = server.log().len();
++    server.set_handler(move |req| honest.ranged(req));
++    manager.retry(id)?;
++    let done = completed(&manager, id).await;
++    println!("sha256 {}", check_file(Path::new(&done.path), 40, LEN)?);
++    let again = fills_overlapping(&server.log()[before..], &kept, LEN);
++    assert!(again.is_empty(), "asked again for {again:?} of {kept:?}");
++    assert_eq!(every_file(&scratch), [PathBuf::from(&done.path)]);
++    manager.shutdown().await;
++    Ok(())
++}
++
++/// The resume file is unreadable after a kill: the download starts over and nothing of the earlier run stays.
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn killed_with_a_torn_resume_file_the_download_starts_over_at_its_path() -> TestResult {
++    const LEN: u64 = 64 * MIB;
++    let scratch = Scratch::new("manager-torn");
++    let file = Generated::new(50, LEN);
++    let server = FaultServer::start(move |req| file.ranged(req));
++    server.hold_at(LEN / 2);
++    let mut run = child(&scratch, &[server.url("f.bin")]);
++    let home = scratch.root.join("home");
++    wait_for("kept bytes in the resume file", || {
++        find(&home, ".wcstate")
++            .first()
++            .and_then(|state| kept_now(state, LEN))
++    });
++    run.kill();
++    server.release();
++    let state = find(&home, ".wcstate").remove(0);
++    let whole = std::fs::read(&state)?;
++    std::fs::write(&state, &whole[..whole.len() / 2])?;
++
++    let manager = open(&scratch.root).await?;
++    let id = manager.list_downloads().remove(0).id;
++    let done = completed(&manager, id).await;
++    println!("sha256 {}", check_file(Path::new(&done.path), 50, LEN)?);
++    assert_eq!(done.file_name, "f.bin");
++    assert_eq!(every_file(&scratch), [PathBuf::from(&done.path)]);
++    manager.shutdown().await;
++    Ok(())
++}
+diff --git a/crates/core/tests/manager/main.rs b/crates/core/tests/manager/main.rs
+index 1dd54594c..2ee016523 100644
+--- a/crates/core/tests/manager/main.rs
++++ b/crates/core/tests/manager/main.rs
+@@ -4,6 +4,7 @@
+ mod addons;
+ mod again;
+ mod common;
++mod fault_kill;
+ mod file_exists;
+ mod ftp;
+ mod lifecycle;
+diff --git a/crates/test-support/Cargo.toml b/crates/test-support/Cargo.toml
+index 4a25dc1f1..1fc4ce8bd 100644
+--- a/crates/test-support/Cargo.toml
++++ b/crates/test-support/Cargo.toml
+@@ -39,6 +39,9 @@ wirecatch-product = { workspace = true, optional = true }
+ tracing = { workspace = true, optional = true }
+ tracing-subscriber = { version = "0.3.18", default-features = false, features = ["registry", "std"], optional = true }
+ 
++# Checksums for fault tests, only with the `faults` feature.
++sha2 = { version = "0.10.9", optional = true }
++
+ # The HTTP/3 test servers, only with the `http3` feature.
+ h3 = { version = "0.0.8", optional = true }
+ h3-quinn = { version = "0.0.10", optional = true }
+@@ -49,6 +52,8 @@ quinn = { version = "0.11.9", default-features = false, features = ["runtime-tok
+ 
+ [features]
+ default = []
++# Fault tests: a server that generates its body, and killable child processes.
++faults = ["resume", "dep:sha2"]
+ # The HTTP, FTP and silent test servers, and the certificate their TLS uses.
+ servers = [
+     "dep:axum",
+diff --git a/crates/test-support/src/faults.rs b/crates/test-support/src/faults.rs
+new file mode 100644
+index 000000000..4ce4b1d6f
+--- /dev/null
++++ b/crates/test-support/src/faults.rs
+@@ -0,0 +1,775 @@
++//! What fault tests need beyond `http::TestServer`: a raw HTTP/1.1 server whose body is generated from the offset, so a file can be larger than memory, change mid-download, and its headers can lie, and a runner for a child process that can be killed.
++
++use std::fs::File as FsFile;
++use std::io::{BufRead as _, BufReader, Read as _, Write as _};
++use std::net::{SocketAddr, TcpListener, TcpStream};
++use std::path::{Path, PathBuf};
++use std::process::{Child, Command, Stdio};
++use std::sync::atomic::{AtomicU32, Ordering};
++use std::sync::{Arc, Condvar, Mutex};
++use std::time::{Duration, Instant};
++
++use sha2::{Digest as _, Sha256};
++
++use crate::PATIENCE;
++
++const CHUNK: usize = 64 * 1024;
++const HASH_BUFFER: usize = 1024 * 1024;
++const POLL: Duration = Duration::from_millis(20);
++
++/// The byte at each position of generated file `seed`: every 8-byte word is a hash of its index, so a byte in the wrong place or from another version shows.
++pub fn fill(seed: u64, offset: u64, buf: &mut [u8]) {
++    let mut position = offset;
++    let mut at = 0;
++    while at < buf.len() {
++        let word = mix(seed ^ (position / 8)).to_le_bytes();
++        #[allow(clippy::cast_possible_truncation)]
++        let skip = (position % 8) as usize;
++        let take = (8 - skip).min(buf.len() - at);
++        buf[at..at + take].copy_from_slice(&word[skip..skip + take]);
++        at += take;
++        position += take as u64;
++    }
++}
++
++fn mix(value: u64) -> u64 {
++    let mut z = value.wrapping_add(0x9E37_79B9_7F4A_7C15);
++    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
++    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
++    z ^ (z >> 31)
++}
++
++/// A request as the server read it.
++#[derive(Clone, Debug)]
++pub struct Req {
++    /// Its sequence number, 0 for the first.
++    pub no: usize,
++    /// The path asked for.
++    pub path: String,
++    /// `[start, end)` from the `Range` header; `end` is `None` for an open range.
++    pub range: Option<(u64, Option<u64>)>,
++    /// Body bytes the server had sent over all requests when this one arrived.
++    pub sent_before: u64,
++}
++
++/// How to answer one request.
++#[derive(Clone, Debug)]
++pub struct Plan {
++    /// The status line's code.
++    pub status: u16,
++    /// Headers, sent as given; `Connection: close` is always added.
++    pub headers: Vec<(String, String)>,
++    /// Which generated file the body is.
++    pub seed: u64,
++    /// The offset of the body's first byte.
++    pub from: u64,
++    /// How many body bytes go out before the connection closes.
++    pub send: u64,
++    /// `Transfer-Encoding: chunked`.
++    pub chunked: bool,
++    /// Bytes per second, if limited.
++    pub pace: Option<u64>,
++    /// With `chunked`, leaves out the final chunk, so the answer is visibly cut off.
++    pub cut_off: bool,
++}
++
++impl Plan {
++    /// Sets or replaces a header.
++    #[must_use]
++    pub fn header(mut self, name: &str, value: impl Into<String>) -> Self {
++        self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(name));
++        self.headers.push((name.to_string(), value.into()));
++        self
++    }
++
++    /// Removes a header.
++    #[must_use]
++    pub fn without(mut self, name: &str) -> Self {
++        self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(name));
++        self
++    }
++
++    /// Limits the speed.
++    #[must_use]
++    pub fn paced(mut self, bps: u64) -> Self {
++        self.pace = Some(bps);
++        self
++    }
++}
++
++/// A generated file with its validators.
++#[derive(Clone, Debug)]
++pub struct Generated {
++    /// Picks the bytes.
++    pub seed: u64,
++    /// Its size.
++    pub len: u64,
++    /// The `ETag` to send.
++    pub etag: Option<String>,
++    /// The `Last-Modified` to send.
++    pub last_modified: Option<String>,
++}
++
++impl Generated {
++    /// A file with an `ETag` that names its seed.
++    #[must_use]
++    pub fn new(seed: u64, len: u64) -> Self {
++        Self {
++            seed,
++            len,
++            etag: Some(format!("\"v{seed}\"")),
++            last_modified: None,
++        }
++    }
++
++    /// The same file with no validators.
++    #[must_use]
++    pub fn without_validators(mut self) -> Self {
++        self.etag = None;
++        self
++    }
++
++    fn base(&self, status: u16, from: u64, send: u64) -> Plan {
++        let mut plan = Plan {
++            status,
++            headers: Vec::new(),
++            seed: self.seed,
++            from,
++            send,
++            chunked: false,
++            pace: None,
++            cut_off: false,
++        };
++        if let Some(etag) = &self.etag {
++            plan = plan.header("ETag", etag.as_str());
++        }
++        if let Some(modified) = &self.last_modified {
++            plan = plan.header("Last-Modified", modified.as_str());
++        }
++        plan
++    }
++
++    /// An honest answer from a server with ranges: `206`, or `416` past the end, or `200` to a request without a range.
++    #[must_use]
++    pub fn ranged(&self, req: &Req) -> Plan {
++        let Some((start, end)) = req.range else {
++            return self
++                .base(200, 0, self.len)
++                .header("Content-Length", self.len.to_string())
++                .header("Accept-Ranges", "bytes");
++        };
++        if start >= self.len {
++            return self
++                .base(416, 0, 0)
++                .header("Content-Range", format!("bytes */{}", self.len))
++                .header("Content-Length", "0");
++        }
++        let end = end.unwrap_or(self.len).min(self.len);
++        self.base(206, start, end - start)
++            .header(
++                "Content-Range",
++                format!("bytes {start}-{}/{}", end - 1, self.len),
++            )
++            .header("Content-Length", (end - start).to_string())
++            .header("Accept-Ranges", "bytes")
++    }
++
++    /// An honest answer from a server without ranges: always `200` and the whole file.
++    #[must_use]
++    pub fn whole(&self) -> Plan {
++        self.base(200, 0, self.len)
++            .header("Content-Length", self.len.to_string())
++    }
++
++    /// The whole file as a chunked body of unknown size.
++    #[must_use]
++    pub fn chunked(&self) -> Plan {
++        let mut plan = self.base(200, 0, self.len);
++        plan.chunked = true;
++        plan.header("Transfer-Encoding", "chunked")
++    }
++}
++
++/// A request and how many body bytes went out for it.
++#[derive(Clone, Debug)]
++pub struct Seen {
++    /// The request.
++    pub req: Req,
++    /// The status it was answered with.
++    pub status: u16,
++}
++
++type Handler = Arc<dyn Fn(&Req) -> Plan + Send + Sync>;
++
++#[derive(Default)]
++struct State {
++    sent: u64,
++    requests: usize,
++    hold_at: Option<u64>,
++    hold_heads: bool,
++    closing: bool,
++    log: Vec<Seen>,
++}
++
++struct Shared {
++    handler: Mutex<Handler>,
++    state: Mutex<State>,
++    changed: Condvar,
++}
++
++/// A local HTTP/1.1 server, one thread per connection and one request per connection, whose answers `handler` plans.
++pub struct FaultServer {
++    addr: SocketAddr,
++    shared: Arc<Shared>,
++}
++
++impl FaultServer {
++    /// Starts answering with `handler`.
++    ///
++    /// # Panics
++    ///
++    /// When no local port can be bound.
++    pub fn start(handler: impl Fn(&Req) -> Plan + Send + Sync + 'static) -> Self {
++        let listener = TcpListener::bind("127.0.0.1:0").expect("bind a local port");
++        let addr = listener.local_addr().expect("the bound address");
++        let shared = Arc::new(Shared {
++            handler: Mutex::new(Arc::new(handler)),
++            state: Mutex::default(),
++            changed: Condvar::new(),
++        });
++        let accepting = Arc::clone(&shared);
++        std::thread::spawn(move || {
++            for stream in listener.incoming() {
++                if accepting.state.lock().unwrap().closing {
++                    return;
++                }
++                let Ok(stream) = stream else { continue };
++                let serving = Arc::clone(&accepting);
++                std::thread::spawn(move || serve(&serving, stream));
++            }
++        });
++        Self { addr, shared }
++    }
++
++    /// Replaces how requests are answered from now on.
++    pub fn set_handler(&self, handler: impl Fn(&Req) -> Plan + Send + Sync + 'static) {
++        *self.shared.handler.lock().unwrap() = Arc::new(handler);
++    }
++
++    /// The URL of `path`, given without its leading slash.
++    #[must_use]
++    pub fn url(&self, path: &str) -> String {
++        format!("http://{}/{path}", self.addr)
++    }
++
++    /// Body bytes sent so far, over all requests.
++    #[must_use]
++    pub fn sent(&self) -> u64 {
++        self.shared.state.lock().unwrap().sent
++    }
++
++    /// Every request so far.
++    #[must_use]
++    pub fn log(&self) -> Vec<Seen> {
++        self.shared.state.lock().unwrap().log.clone()
++    }
++
++    /// Stops sending bodies once `at` bytes went out in total, until [`release`](Self::release). Headers still go out.
++    pub fn hold_at(&self, at: u64) {
++        self.shared.state.lock().unwrap().hold_at = Some(at);
++        self.shared.changed.notify_all();
++    }
++
++    /// Accepts requests without answering them, until [`release`](Self::release).
++    pub fn hold_heads(&self) {
++        self.shared.state.lock().unwrap().hold_heads = true;
++        self.shared.changed.notify_all();
++    }
++
++    /// Ends both holds.
++    pub fn release(&self) {
++        let mut state = self.shared.state.lock().unwrap();
++        state.hold_at = None;
++        state.hold_heads = false;
++        self.shared.changed.notify_all();
++    }
++
++    /// Waits until `what` holds for the server's state, under [`PATIENCE`].
++    ///
++    /// # Panics
++    ///
++    /// When it does not in time.
++    pub fn wait(&self, what: &str, check: impl Fn(u64, usize) -> bool) {
++        let deadline = Instant::now() + PATIENCE;
++        let mut state = self.shared.state.lock().unwrap();
++        while !check(state.sent, state.requests) {
++            assert!(Instant::now() < deadline, "timed out waiting for: {what}");
++            state = self.shared.changed.wait_timeout(state, POLL).unwrap().0;
++        }
++    }
++}
++
++impl Drop for FaultServer {
++    fn drop(&mut self) {
++        self.shared.state.lock().unwrap().closing = true;
++        self.shared.changed.notify_all();
++        drop(TcpStream::connect(self.addr));
++    }
++}
++
++fn read_request(stream: &TcpStream) -> Option<(String, Option<(u64, Option<u64>)>)> {
++    let mut reader = BufReader::new(stream);
++    let mut line = String::new();
++    reader.read_line(&mut line).ok()?;
++    let path = line.split_whitespace().nth(1)?.to_string();
++    let mut range = None;
++    loop {
++        line.clear();
++        reader.read_line(&mut line).ok()?;
++        let text = line.trim();
++        if text.is_empty() {
++            return Some((path, range));
++        }
++        let Some((name, value)) = text.split_once(':') else {
++            continue;
++        };
++        if name.eq_ignore_ascii_case("range") {
++            let (first, last) = value.trim().strip_prefix("bytes=")?.split_once('-')?;
++            let end = if last.is_empty() {
++                None
++            } else {
++                Some(last.parse::<u64>().ok()? + 1)
++            };
++            range = Some((first.parse().ok()?, end));
++        }
++    }
++}
++
++fn serve(shared: &Shared, mut stream: TcpStream) {
++    let Some((path, range)) = read_request(&stream) else {
++        return;
++    };
++    let req = {
++        let mut state = shared.state.lock().unwrap();
++        let req = Req {
++            no: state.requests,
++            path,
++            range,
++            sent_before: state.sent,
++        };
++        state.requests += 1;
++        shared.changed.notify_all();
++        req
++    };
++    {
++        let mut state = shared.state.lock().unwrap();
++        while state.hold_heads && !state.closing {
++            state = shared.changed.wait_timeout(state, POLL).unwrap().0;
++        }
++    }
++    let handler = Arc::clone(&*shared.handler.lock().unwrap());
++    let plan = handler(&req);
++    shared.state.lock().unwrap().log.push(Seen {
++        req,
++        status: plan.status,
++    });
++    let _ = answer(shared, &mut stream, &plan);
++}
++
++fn answer(shared: &Shared, stream: &mut TcpStream, plan: &Plan) -> std::io::Result<()> {
++    let mut head = format!("HTTP/1.1 {} Fault\r\n", plan.status);
++    for (name, value) in &plan.headers {
++        head.push_str(&format!("{name}: {value}\r\n"));
++    }
++    head.push_str("Connection: close\r\n\r\n");
++    stream.write_all(head.as_bytes())?;
++
++    let piece = plan
++        .pace
++        .map_or(CHUNK as u64, |bps| (bps / 20).clamp(1024, CHUNK as u64));
++    let mut buf = vec![0; usize::try_from(piece).unwrap_or(CHUNK)];
++    let started = Instant::now();
++    let mut done = 0;
++    while done < plan.send {
++        {
++            let mut state = shared.state.lock().unwrap();
++            while state.hold_at.is_some_and(|at| state.sent >= at) && !state.closing {
++                state = shared.changed.wait_timeout(state, POLL).unwrap().0;
++            }
++            if state.closing {
++                return Ok(());
++            }
++        }
++        let take = piece.min(plan.send - done);
++        let slice = &mut buf[..usize::try_from(take).unwrap_or(CHUNK)];
++        fill(plan.seed, plan.from + done, slice);
++        if plan.chunked {
++            stream.write_all(format!("{take:x}\r\n").as_bytes())?;
++            stream.write_all(slice)?;
++            stream.write_all(b"\r\n")?;
++        } else {
++            stream.write_all(slice)?;
++        }
++        done += take;
++        {
++            let mut state = shared.state.lock().unwrap();
++            state.sent += take;
++            shared.changed.notify_all();
++        }
++        if let Some(bps) = plan.pace {
++            let due = started + Duration::from_secs_f64(done as f64 / bps as f64);
++            let mut state = shared.state.lock().unwrap();
++            while Instant::now() < due && !state.closing {
++                let left = due.saturating_duration_since(Instant::now());
++                state = shared.changed.wait_timeout(state, left).unwrap().0;
++            }
++        }
++    }
++    if plan.chunked && !plan.cut_off {
++        stream.write_all(b"0\r\n\r\n")?;
++    }
++    stream.flush()
++}
++
++/// Compares the file at `path` with generated file `seed` of `len` bytes by SHA-256, and says where they differ when they do. Returns the checksum.
++///
++/// # Errors
++///
++/// The file cannot be read, or differs.
++pub fn check_file(path: &Path, seed: u64, len: u64) -> Result<String, String> {
++    let shown = path.display();
++    let mut file = FsFile::open(path).map_err(|e| format!("{shown}: {e}"))?;
++    let on_disk = file.metadata().map_err(|e| e.to_string())?.len();
++    let mut got = Sha256::new();
++    let mut want = Sha256::new();
++    let mut read = vec![0; HASH_BUFFER];
++    let mut made = vec![0; HASH_BUFFER];
++    let (mut at, mut first_diff, mut differing) = (0u64, None, 0u64);
++    loop {
++        let n = file.read(&mut read).map_err(|e| e.to_string())?;
++        if n == 0 {
++            break;
++        }
++        got.update(&read[..n]);
++        let inside = usize::try_from((len.saturating_sub(at)).min(n as u64)).unwrap_or(n);
++        fill(seed, at, &mut made[..inside]);
++        want.update(&made[..inside]);
++        if read[..inside] != made[..inside] {
++            for i in 0..inside {
++                if read[i] != made[i] {
++                    first_diff.get_or_insert(at + i as u64);
++                    differing += 1;
++                }
++            }
++        }
++        at += n as u64;
++    }
++    while at < len {
++        let take = usize::try_from((len - at).min(HASH_BUFFER as u64)).unwrap_or(HASH_BUFFER);
++        fill(seed, at, &mut made[..take]);
++        want.update(&made[..take]);
++        at += take as u64;
++    }
++    let (got, want) = (hex(&got.finalize()), hex(&want.finalize()));
++    if on_disk == len && got == want {
++        return Ok(got);
++    }
++    Err(format!(
++        "{shown}: sha256 {got}, expected {want}; {on_disk} bytes, expected {len}; first differing byte {first_diff:?}, {differing} differing bytes"
++    ))
++}
++
++fn hex(bytes: &[u8]) -> String {
++    bytes.iter().map(|b| format!("{b:02x}")).collect()
++}
++
++/// Checks that the ranges `kept` of a part file really hold generated file `seed`.
++///
++/// # Errors
++///
++/// The file cannot be read, or a kept range holds other bytes.
++pub fn check_kept(part: &Path, kept: &[(u64, u64)], seed: u64) -> Result<(), String> {
++    use std::io::{Seek as _, SeekFrom};
++    let mut file = FsFile::open(part).map_err(|e| format!("{}: {e}", part.display()))?;
++    let mut read = vec![0; HASH_BUFFER];
++    let mut made = vec![0; HASH_BUFFER];
++    for &(start, end) in kept {
++        file.seek(SeekFrom::Start(start))
++            .map_err(|e| e.to_string())?;
++        let mut at = start;
++        while at < end {
++            let take = usize::try_from((end - at).min(HASH_BUFFER as u64)).unwrap_or(HASH_BUFFER);
++            file.read_exact(&mut read[..take])
++                .map_err(|e| format!("kept range {start}..{end} at {at}: {e}"))?;
++            fill(seed, at, &mut made[..take]);
++            if read[..take] != made[..take] {
++                let off = read[..take]
++                    .iter()
++                    .zip(&made[..take])
++                    .position(|(a, b)| a != b)
++                    .unwrap_or(0);
++                return Err(format!(
++                    "the resume file says {start}..{end} is on disk, but byte {} differs",
++                    at + off as u64
++                ));
++            }
++            at += take as u64;
++        }
++    }
++    Ok(())
++}
++
++/// A folder for one test, removed when dropped, with its downloads and its logs kept apart.
++pub struct Scratch {
++    /// The folder.
++    pub root: PathBuf,
++    /// Where downloads go.
++    pub downloads: PathBuf,
++    /// Where child processes' output and logs go.
++    pub logs: PathBuf,
++}
++
++impl Scratch {
++    /// A new folder under the system's temporary folder.
++    ///
++    /// # Panics
++    ///
++    /// When it cannot be made.
++    #[must_use]
++    pub fn new(name: &str) -> Self {
++        static NEXT: AtomicU32 = AtomicU32::new(0);
++        let n = NEXT.fetch_add(1, Ordering::Relaxed);
++        let root =
++            std::env::temp_dir().join(format!("wirecatch-fault-{name}-{}-{n}", std::process::id()));
++        let (downloads, logs) = (root.join("downloads"), root.join("logs"));
++        std::fs::create_dir_all(&downloads).unwrap();
++        std::fs::create_dir_all(&logs).unwrap();
++        Self {
++            root,
++            downloads,
++            logs,
++        }
++    }
++
++    /// The names in the downloads folder, sorted.
++    ///
++    /// # Panics
++    ///
++    /// When the folder cannot be read.
++    #[must_use]
++    pub fn files(&self) -> Vec<String> {
++        let mut names: Vec<_> = std::fs::read_dir(&self.downloads)
++            .unwrap()
++            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
++            .collect();
++        names.sort();
++        names
++    }
++}
++
++impl Drop for Scratch {
++    fn drop(&mut self) {
++        let _ = std::fs::remove_dir_all(&self.root);
++    }
++}
++
++/// How a child process ended.
++#[derive(Debug)]
++pub struct Ran {
++    /// Its exit status.
++    pub code: Option<i32>,
++    /// What it wrote to standard output.
++    pub stdout: String,
++    /// What it wrote to standard error.
++    pub stderr: String,
++    /// How long it ran.
++    pub took: Duration,
++}
++
++/// A child process; killed when dropped, so none outlives a failed test.
++pub struct Running {
++    child: Child,
++    out: PathBuf,
++    err: PathBuf,
++    started: Instant,
++}
++
++impl Running {
++    /// Starts `command` with its output going to files in `logs`.
++    ///
++    /// # Panics
++    ///
++    /// When it cannot be started.
++    #[must_use]
++    pub fn start(mut command: Command, logs: &Path, keep_stdin_open: bool) -> Self {
++        static NEXT: AtomicU32 = AtomicU32::new(0);
++        let n = NEXT.fetch_add(1, Ordering::Relaxed);
++        let (out, err) = (
++            logs.join(format!("out{n}.txt")),
++            logs.join(format!("err{n}.txt")),
++        );
++        command
++            .stdout(Stdio::from(FsFile::create(&out).unwrap()))
++            .stderr(Stdio::from(FsFile::create(&err).unwrap()))
++            .stdin(if keep_stdin_open {
++                Stdio::piped()
++            } else {
++                Stdio::null()
++            });
++        Self {
++            child: command.spawn().expect("start the child process"),
++            out,
++            err,
++            started: Instant::now(),
++        }
++    }
++
++    /// Kills the process at once, as a crash or a power cut of the process would end it, and waits for it to be gone.
++    ///
++    /// # Panics
++    ///
++    /// When it cannot be killed.
++    pub fn kill(&mut self) {
++        self.child.kill().expect("kill the child process");
++        self.child.wait().expect("reap the child process");
++    }
++
++    /// Waits for the process to end by itself, under `bound`.
++    ///
++    /// # Errors
++    ///
++    /// It did not end in time; it is killed then.
++    pub fn wait(mut self, bound: Duration) -> Result<Ran, String> {
++        let deadline = Instant::now() + bound;
++        loop {
++            match self.child.try_wait().map_err(|e| e.to_string())? {
++                Some(status) => {
++                    return Ok(Ran {
++                        code: status.code(),
++                        stdout: std::fs::read_to_string(&self.out).unwrap_or_default(),
++                        stderr: std::fs::read_to_string(&self.err).unwrap_or_default(),
++                        took: self.started.elapsed(),
++                    });
++                }
++                None if Instant::now() >= deadline => {
++                    let _ = self.child.kill();
++                    let _ = self.child.wait();
++                    return Err(format!(
++                        "still running after {bound:?}; stderr: {}",
++                        std::fs::read_to_string(&self.err).unwrap_or_default()
++                    ));
++                }
++                None => std::thread::park_timeout(POLL),
++            }
++        }
++    }
++}
++
++impl Drop for Running {
++    fn drop(&mut self) {
++        let _ = self.child.kill();
++        let _ = self.child.wait();
++    }
++}
++
++/// The command line downloader at `exe`, saving into `scratch`, with its log file in `scratch`.
++#[must_use]
++pub fn cli(exe: &str, scratch: &Scratch, url: &str) -> Running {
++    let mut command = Command::new(exe);
++    command
++        .arg("--quiet")
++        .arg("--no-proxy")
++        .arg("--output-dir")
++        .arg(&scratch.downloads)
++        .arg(url)
++        .env("WIRECATCH_LOG_DIR", &scratch.logs);
++    Running::start(command, &scratch.logs, false)
++}
++
++/// Polls `check` under [`PATIENCE`] until it gives a value.
++///
++/// # Panics
++///
++/// When it does not in time.
++pub fn wait_for<T>(what: &str, mut check: impl FnMut() -> Option<T>) -> T {
++    let deadline = Instant::now() + PATIENCE;
++    loop {
++        if let Some(value) = check() {
++            return value;
++        }
++        assert!(Instant::now() < deadline, "timed out waiting for: {what}");
++        std::thread::park_timeout(POLL);
++    }
++}
++
++/// The ranges the resume file at `state` says are on disk, once it can be read and says some are.
++#[must_use]
++pub fn kept_now(state: &Path, len: u64) -> Option<Vec<(u64, u64)>> {
++    let kept = crate::resume::kept_ranges(state, len).ok()?;
++    (kept_bytes(&kept) > 0).then_some(kept)
++}
++
++/// How many bytes `kept` covers.
++#[must_use]
++pub fn kept_bytes(kept: &[(u64, u64)]) -> u64 {
++    kept.iter().map(|(start, end)| end - start).sum()
++}
++
++/// How a run that faced a fault ended, when it ended safely.
++#[derive(Debug, PartialEq, Eq)]
++pub enum Ended {
++    /// Exit status 0, and the file is exactly the expected one.
++    Exact,
++    /// Another exit status, and nothing at the file's final name.
++    Refused,
++}
++
++/// The rule every fault test holds a run to: it says the file is saved only when it is byte for byte the original, and otherwise leaves nothing at the final name.
++///
++/// # Panics
++///
++/// When the run broke that rule.
++#[must_use]
++pub fn safe_end(ran: &Ran, scratch: &Scratch, name: &str, seed: u64, len: u64) -> Ended {
++    let path = scratch.downloads.join(name);
++    let ended = if ran.code == Some(0) {
++        let sum = check_file(&path, seed, len).unwrap_or_else(|e| {
++            panic!(
++                "exit status 0 with a wrong file: {e}\nstdout: {}",
++                ran.stdout
++            )
++        });
++        println!("saved, sha256 {sum}, in {:?}", ran.took);
++        Ended::Exact
++    } else {
++        assert!(
++            !path.exists(),
++            "exit status {:?} but a file is at the final name; stderr: {}",
++            ran.code,
++            ran.stderr
++        );
++        println!(
++            "refused with {:?} in {:?}: {}",
++            ran.code,
++            ran.took,
++            ran.stderr.trim()
++        );
++        Ended::Refused
++    };
++    println!("files: {:?}", scratch.files());
++    ended
++}
++
++/// The requests among `seen` that asked again for bytes in `kept`, other than each run's first probe, which asks from byte 0 and is broken off.
++#[must_use]
++pub fn fills_overlapping(seen: &[Seen], kept: &[(u64, u64)], len: u64) -> Vec<(u64, u64)> {
++    seen.iter()
++        .skip(1)
++        .map(|s| {
++            s.req
++                .range
++                .map_or((0, len), |(start, end)| (start, end.unwrap_or(len)))
++        })
++        .filter(|&(start, end)| kept.iter().any(|&(from, to)| start < to && from < end))
++        .collect()
++}
+diff --git a/crates/test-support/src/lib.rs b/crates/test-support/src/lib.rs
+index d0b7e73d9..fa81497cb 100644
+--- a/crates/test-support/src/lib.rs
++++ b/crates/test-support/src/lib.rs
+@@ -45,6 +45,8 @@
+ pub mod bridge;
+ #[cfg(feature = "downloads")]
+ pub mod downloads;
++#[cfg(feature = "faults")]
++pub mod faults;
+ #[cfg(feature = "servers")]
+ pub mod files;
+ #[cfg(feature = "servers")]

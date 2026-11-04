@@ -1,0 +1,52 @@
+# Run: cargo test -p wirecatch-shell --lib audit_proof. On Windows only the autostart test runs, and it failed: left "/home/ana/Apps/Editor.AppImage", right the test binary's path (autostart::program trusts APPIMAGE). The updates.rs test is #[cfg(unix)] and was not run.
+diff --git a/crates/shell/src/autostart.rs b/crates/shell/src/autostart.rs
+index 59a7e540c..42cde5735 100644
+--- a/crates/shell/src/autostart.rs
++++ b/crates/shell/src/autostart.rs
+@@ -431,3 +431,18 @@ mod tests {
+         ));
+     }
+ }
++
++#[cfg(test)]
++mod audit_proof_inherited_appimage {
++    /// A process that does not run from an AppImage inherited another program's `APPIMAGE`.
++    #[test]
++    fn an_inherited_appimage_is_not_taken_as_this_program() {
++        let other = "/home/ana/Apps/Editor.AppImage";
++        // SAFETY: no other test in this binary reads or writes this variable while it runs alone.
++        unsafe { std::env::set_var(crate::appimage::APPIMAGE_VAR, other) };
++        let program = super::program().unwrap();
++        // SAFETY: as above.
++        unsafe { std::env::remove_var(crate::appimage::APPIMAGE_VAR) };
++        assert_eq!(program, std::env::current_exe().unwrap(), "the start-at-sign-in entry and start_again would run another program");
++    }
++}
+diff --git a/crates/shell/src/updates.rs b/crates/shell/src/updates.rs
+index d678e00ee..d7021cc95 100644
+--- a/crates/shell/src/updates.rs
++++ b/crates/shell/src/updates.rs
+@@ -119,3 +119,23 @@ fn replace_appimage(installer: &Path) -> Result<(), InstallError> {
+ fn replace_appimage(_installer: &Path) -> Result<(), InstallError> {
+     Err(InstallError::AppImageElsewhere)
+ }
++
++#[cfg(all(test, unix))]
++mod audit_proof_inherited_appimage {
++    /// Not run: the audit does not test on Linux. A process that does not run from `other`
++    /// inherited `APPIMAGE=other`; the update must not replace it.
++    #[test]
++    fn an_update_does_not_overwrite_the_program_named_by_an_inherited_variable() {
++        let dir = tempfile::tempdir().unwrap();
++        let other = dir.path().join("Editor.AppImage");
++        std::fs::write(&other, b"#!/bin/sh\n# the editor\n").unwrap();
++        let installer = dir.path().join("new.AppImage");
++        std::fs::write(&installer, b"#!/bin/sh\n# wirecatch\n").unwrap();
++        // SAFETY: no other test in this binary reads or writes this variable while it runs alone.
++        unsafe { std::env::set_var(crate::appimage::APPIMAGE_VAR, &other) };
++        let _ = super::replace_appimage(&installer);
++        // SAFETY: as above.
++        unsafe { std::env::remove_var(crate::appimage::APPIMAGE_VAR) };
++        assert_eq!(std::fs::read(&other).unwrap(), b"#!/bin/sh\n# the editor\n");
++    }
++}

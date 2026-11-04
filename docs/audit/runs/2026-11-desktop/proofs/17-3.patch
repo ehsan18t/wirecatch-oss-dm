@@ -1,0 +1,23 @@
+Run: cargo test --profile b06 --config 'profile.b06.inherits="dev"' -p wirecatch-core --lib -- proof_a_typed. Output: FAILED, left: "/v/Dr.mp4", right: "/v/Dr. Who.mp4".
+diff --git a/crates/core/src/manager/media_run/tests.rs b/crates/core/src/manager/media_run/tests.rs
+index c29a202c5..32e701652 100644
+--- a/crates/core/src/manager/media_run/tests.rs
++++ b/crates/core/src/manager/media_run/tests.rs
+@@ -561,3 +561,17 @@ async fn a_small_file_past_its_limit_is_never_written() {
+     assert!(matches!(fetched, super::extras::Fetch::Failed(_)));
+     assert!(!path.exists(), "the file past its limit was written");
+ }
++
++/// 17-3: a typed name keeps its words.
++#[test]
++fn proof_a_typed_name_keeps_the_words_after_its_dot() {
++    for (typed, wanted) in [
++        ("/v/Dr. Who", "/v/Dr. Who.mp4"),
++        ("/v/Episode 1.5 - Finale", "/v/Episode 1.5 - Finale.mp4"),
++    ] {
++        assert_eq!(
++            final_path(Path::new("/w/media.mp4"), Path::new(typed)),
++            Path::new(wanted)
++        );
++    }
++}

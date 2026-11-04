@@ -1,0 +1,34 @@
+# Run: cargo test -p wirecatch-core --test manager audit_proof. Failed: left Unreachable { reason: "this build has no address to test the proxy with" }, right Works. The test reads crates/desktop/src/backend.rs, since building the desktop crate here ran out of disk, and sets the address only if config asks for it.
+diff --git a/crates/core/tests/manager/proxy.rs b/crates/core/tests/manager/proxy.rs
+index 0459f65f0..57e9d5c5f 100644
+--- a/crates/core/tests/manager/proxy.rs
++++ b/crates/core/tests/manager/proxy.rs
+@@ -407,3 +407,28 @@ async fn a_profile_or_proxy_that_cannot_work_is_refused_and_nothing_changes() ->
+     assert!(h.manager.create_queue(queue).is_err());
+     Ok(())
+ }
++
++/// Reads the app's own `config`, whose crate needs GPUI, and sets what it asks for.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn audit_proof_the_app_tests_a_working_proxy() -> TestResult {
++    let app = include_str!("../../../desktop/src/backend.rs");
++    let site = fast_server(KIB).await?;
++    let url = site.url("ping");
++    let tweak = Arc::new(move |config: wirecatch_core::ManagerConfig| {
++        if app.contains("with_official_proxy_test") {
++            config.with_proxy_test_url(url.clone())
++        } else {
++            config
++        }
++    });
++    let h = Harness::configured(tweak).await?;
++    let socks = socks_with_login().await;
++    let settings = socks_profile("Office", &socks, "alice");
++    assert_eq!(
++        h.manager
++            .test_proxy_server(None, draft(settings, Some("secret")))
++            .await?,
++        ProxyTestResult::Works
++    );
++    Ok(())
++}

@@ -1,0 +1,28 @@
+Run: git apply Xsecurity-path-handling-1.patch, then cargo test -p wirecatch-core --test manager removing_a_finished_download_with_its_file_leaves_a_folder_at_that_path -- --nocapture. Output on 02284bbd0: FOLDER KEPT false, then panic "the folder was deleted".
+diff --git a/crates/core/tests/manager/lifecycle.rs b/crates/core/tests/manager/lifecycle.rs
+index d6a45c13b..48ce5c167 100644
+--- a/crates/core/tests/manager/lifecycle.rs
++++ b/crates/core/tests/manager/lifecycle.rs
+@@ -712,3 +712,22 @@ async fn a_download_without_a_browser_agent_names_the_app() -> TestResult {
+     }
+     Ok(())
+ }
++
++/// Xsecurity-path-handling-1: a folder now at a finished download's saved path.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn removing_a_finished_download_with_its_file_leaves_a_folder_at_that_path() -> TestResult {
++    let server = fast_server(8 * KIB).await?;
++    let h = Harness::new().await?;
++    let row = h.add(&server.url("data")).await?;
++    let row = h.wait_status(row.id, DownloadStatus::Completed).await;
++    let path = std::path::PathBuf::from(&row.path);
++    std::fs::rename(&path, path.with_extension("zip"))?;
++    std::fs::create_dir(&path)?;
++    std::fs::write(path.join("thesis.docx"), b"their work")?;
++
++    h.manager.remove(&[row.id], RemoveFiles::Delete).await?;
++
++    println!("FOLDER KEPT {}", path.join("thesis.docx").exists());
++    assert!(path.join("thesis.docx").exists(), "the folder was deleted");
++    Ok(())
++}

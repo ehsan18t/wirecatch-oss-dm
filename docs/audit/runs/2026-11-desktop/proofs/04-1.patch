@@ -1,0 +1,112 @@
+Run: git apply 04-1.patch, then cargo test -p wirecatch-core --test manager is_not_completed_by_a_restart -- --nocapture. Output on 02284bbd0: stream: AFTER Completed done 14 total Some(14) fetched 0; Replace: AFTER Completed done 14 total Some(14); both panic "completed on ...".
+diff --git a/crates/core/tests/manager/file_exists.rs b/crates/core/tests/manager/file_exists.rs
+index 5374681cd..38af7ff57 100644
+--- a/crates/core/tests/manager/file_exists.rs
++++ b/crates/core/tests/manager/file_exists.rs
+@@ -252,3 +252,34 @@ async fn a_file_saved_meanwhile_is_never_replaced() -> TestResult {
+     assert_eq!(std::fs::read(dir.join(NAME))?, b"saved by another program");
+     Ok(())
+ }
++
++/// 04-1 (b): Replace answered, waiting for a slot, app restarted.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn a_replace_still_waiting_is_not_completed_by_a_restart() -> TestResult {
++    let server = server().await;
++    let mut h = Harness::new().await?;
++    let dir = folder_with(&h, b"the older file")?;
++    let mut events = h.manager.subscribe();
++    let row = add_into(&h, server.url("report").as_str(), &dir).await?;
++    let question = asked(&mut events).await?;
++    h.wait_status(row.id, DownloadStatus::Paused).await;
++    h.manager
++        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
++    h.manager
++        .answer_file_exists(question.id, answer(FileExistsChoice::Replace, false))?;
++    h.wait_status(row.id, DownloadStatus::Queued).await;
++
++    h.restart().await?;
++
++    let after = h.row(row.id);
++    println!(
++        "AFTER {:?} done {} total {:?}",
++        after.status, after.done, after.total
++    );
++    assert_ne!(
++        after.status,
++        DownloadStatus::Completed,
++        "completed on the file it was to replace"
++    );
++    Ok(())
++}
+diff --git a/crates/core/tests/manager/media.rs b/crates/core/tests/manager/media.rs
+index b44446d62..1ec24e261 100644
+--- a/crates/core/tests/manager/media.rs
++++ b/crates/core/tests/manager/media.rs
+@@ -1746,3 +1746,67 @@ async fn a_password_in_a_video_link_is_never_shown() -> TestResult {
+     }
+     Ok(())
+ }
++
++/// 04-1 (a): a stream added for later whose name is already taken, app restarted.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn a_stream_for_later_whose_name_is_taken_is_not_completed_by_a_restart() -> TestResult {
++    let server = FileServer::start().await;
++    hls(&server, false, false);
++    let mut h = Harness::new().await?;
++    let mut ui = h.manager.subscribe();
++    let capture = media_capture(
++        server.url("hls/master.m3u8"),
++        MediaKind::Hls,
++        Some("Holiday clip"),
++    );
++    h.manager
++        .add_capture(NewDownload {
++            handover_id: "first".into(),
++            ..capture.clone()
++        })
++        .await?;
++    let choice = choice_requested(&mut ui).await;
++    h.manager
++        .choose_media(choice.id, select(&choice.options[0].id))
++        .await?;
++    let first = h.manager.list_downloads().remove(0);
++    let first = h.wait_status(first.id, DownloadStatus::Completed).await;
++    h.manager
++        .remove(&[first.id], wirecatch_core::RemoveFiles::Keep)
++        .await?;
++    std::fs::write(&first.path, b"an older video")?;
++
++    h.manager
++        .add_capture(NewDownload {
++            handover_id: "second".into(),
++            ..capture
++        })
++        .await?;
++    let choice = choice_requested(&mut ui).await;
++    let later = MediaSelection {
++        later: true,
++        ..select(&choice.options[0].id)
++    };
++    h.manager.choose_media(choice.id, later).await?;
++    let second = h.manager.list_downloads().remove(0);
++    assert_eq!(second.status, DownloadStatus::Paused);
++    assert_eq!(second.path, first.path);
++    let fetched = server.seen_at("hls/720/seg0.ts").len();
++
++    h.restart().await?;
++
++    let after = h.row(second.id);
++    println!(
++        "AFTER {:?} done {} total {:?} fetched {}",
++        after.status,
++        after.done,
++        after.total,
++        server.seen_at("hls/720/seg0.ts").len() - fetched
++    );
++    assert_ne!(
++        after.status,
++        DownloadStatus::Completed,
++        "completed on a file it never downloaded"
++    );
++    Ok(())
++}

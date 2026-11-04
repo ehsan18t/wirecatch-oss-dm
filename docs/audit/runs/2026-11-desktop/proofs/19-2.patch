@@ -1,0 +1,31 @@
+# Run: git apply this in a worktree of HEAD, then cargo test -p wirecatch-settings audit_an_import. Output: FAILED, assertion left == right, ["Videos", "Videos"], left: 2, right: 1.
+diff --git a/crates/settings/src/settings_file.rs b/crates/settings/src/settings_file.rs
+index 949960492..9969eb5a6 100644
+--- a/crates/settings/src/settings_file.rs
++++ b/crates/settings/src/settings_file.rs
+@@ -858,4 +858,25 @@ mod tests {
+         assert_eq!(flagged.reason, None);
+         assert!(flagged.outside_user_folders);
+     }
++
++    /// Audit proof for 19-2: the file's default queue takes the name of another queue here.
++    #[test]
++    fn audit_an_import_does_not_leave_two_queues_of_one_name() {
++        let current = vec![default_queue(), queue(2, "Videos")];
++        let mut incoming = default_queue();
++        incoming.id = QueueId(10);
++        incoming.settings.name = "Videos".into();
++        let profile = SettingsFile {
++            format_version: SETTINGS_FILE_FORMAT_VERSION,
++            app_version: "0.1.0".into(),
++            exported_at: UnixMillis(0),
++            settings: default_settings(),
++            queues: vec![in_profile(incoming)],
++            proxy_servers: Vec::new(),
++            addons: vec![],
++        };
++        let imported = merge(profile, &current, &folders(), || QueueId(3)).unwrap();
++        let names: Vec<_> = imported.queues.iter().map(|q| q.settings.name.as_str()).collect();
++        assert_eq!(names.iter().filter(|n| **n == "Videos").count(), 1, "{names:?}");
++    }
+ }
