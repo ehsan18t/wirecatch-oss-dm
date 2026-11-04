@@ -69,6 +69,7 @@ pub(super) async fn finish(
         headers::referrer(&job.origin.headers).map(str::to_string),
     );
     let reserve = job.reserve.clone();
+    let placing = job.placing.clone();
     let sidecars = sidecars.to_vec();
     let taken = job.taken;
     let moved = job
@@ -76,6 +77,7 @@ pub(super) async fn finish(
         .spawn_blocking(move || -> std::io::Result<MediaDone> {
             // Marked before it is put in place, so it is never there unmarked.
             wirecatch_files::zone::mark(&file, &url, referrer.as_deref());
+            placing();
             let (target, bytes) = match place(&file, &planned, &reserve, taken)? {
                 Placed::At(target) => {
                     let bytes = std::fs::metadata(&target)?.len();
