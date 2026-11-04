@@ -9957,6 +9957,7 @@ dependencies = [
  "pgp",
  "rand 0.8.8",
  "rusqlite",
+ "same-file",
  "serde",
  "serde_json",
  "sha2 0.10.9",

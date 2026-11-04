@@ -192,7 +192,7 @@ pub enum Codec {
 }
 
 impl Codec {
-    /// The codec a name stands for (see [`VideoCodec::from_name`] and [`AudioCodec::from_name`]); `None` for a name that is neither, such as a subtitle format (`stpp`, `wvtt`) or one this policy does not know.
+    /// The codec a name stands for (see [`VideoCodec::from_name`] and [`AudioCodec::from_name`]); `None` for a name that is neither, such as one this policy does not know.
     #[must_use]
     pub fn from_name(name: &str) -> Option<Codec> {
         VideoCodec::from_name(name)
@@ -200,13 +200,13 @@ impl Codec {
             .or_else(|| AudioCodec::from_name(name).map(Codec::Audio))
     }
 
-    /// Every codec of a comma-separated list such as HLS `CODECS="avc1.64001f,mp4a.40.2"`, each `None` when it is not known; empty entries are left out.
+    /// Every codec of a comma-separated list such as HLS `CODECS="avc1.64001f,mp4a.40.2"`, each `None` when it is not known; empty entries and subtitle formats, which say nothing of the video and audio saved, are left out.
     #[must_use]
     pub fn list(names: &str) -> Vec<Option<Codec>> {
         names
             .split(',')
             .map(str::trim)
-            .filter(|n| !n.is_empty())
+            .filter(|n| !n.is_empty() && !is_subtitle_codec(n))
             .map(Codec::from_name)
             .collect()
     }
@@ -225,6 +225,14 @@ impl Codec {
             .iter()
             .any(|c| matches!(c, Some(Codec::Video(_))))
     }
+}
+
+/// The RFC 6381 names of subtitle and caption formats a codecs attribute can list beside the video and audio.
+const SUBTITLE_CODECS: [&str; 5] = ["wvtt", "stpp", "tx3g", "c608", "c708"];
+
+pub(crate) fn is_subtitle_codec(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    SUBTITLE_CODECS.iter().any(|s| name.starts_with(s))
 }
 
 /// The file a video or audio is saved in.

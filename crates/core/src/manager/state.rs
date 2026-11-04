@@ -25,6 +25,7 @@ use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
 use wirecatch_queues::schedule::Gate;
 use wirecatch_records::answers::Answers;
 pub(super) use wirecatch_records::answers::{Expectation, OnExisting};
+use wirecatch_records::files::DownloadFiles;
 use wirecatch_settings::folders::KnownFolders;
 use wirecatch_settings::proxy::{ComputerProxy, Logins, SavedProxyServer};
 use wirecatch_sites::local_network::ChosenBy;
@@ -77,6 +78,8 @@ pub(super) struct State {
     pub handovers: Handovers,
     /// Rows changed since the last `DownloadsChanged` event.
     pub dirty: BTreeSet<DownloadId>,
+    /// Cancelled when a removal has deleted its files; a quit waits for them.
+    pub removals: Vec<CancellationToken>,
     /// What each queue at work has finished or failed so far (D52).
     pub batches: Batches,
     /// The passwords of the proxy servers, which never leave the app (D71.2).
@@ -207,11 +210,14 @@ pub(super) struct Entry {
     /// download is not moved or relinked meanwhile. Saved with the download, so
     /// this holds across restarts.
     pub stranded: Option<PathBuf>,
+    pub files: DownloadFiles,
     /// For a stream or a page read by yt-dlp: what to download. `None` for every
     /// other download, including direct media files.
     pub media_job: Option<MediaJob>,
     /// What the person chose for the file already in its folder (D88), for its next run, also after a restart.
     pub on_existing: Option<OnExisting>,
+    /// See [`Answers::plain_name`]. The row keeps showing it; only the path differs.
+    pub plain_name: Option<String>,
     /// A server answered with the file, and the run stopped there for the one already in the folder, before a path was settled.
     pub offered_file: bool,
     /// Added in the app itself: if the server first answers with a web page while
@@ -739,7 +745,9 @@ impl Entry {
             answers: Answers {
                 on_existing: self.on_existing,
                 expect: self.expect.clone(),
+                plain_name: self.plain_name.clone(),
             },
+            files: self.files.clone(),
         }
     }
 
@@ -822,8 +830,10 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         cleanup: None,
         hold: Hold::Free,
         on_existing: None,
+        plain_name: None,
         offered_file: false,
         stranded: None,
+        files: DownloadFiles::default(),
         media_job: None,
         video_check: false,
     }
@@ -861,8 +871,10 @@ mod tests {
             cleanup: None,
             hold: Hold::Free,
             on_existing: None,
+            plain_name: None,
             offered_file: false,
             stranded: None,
+            files: DownloadFiles::default(),
             media_job: None,
             video_check: false,
         }

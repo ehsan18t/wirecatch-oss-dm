@@ -13,7 +13,7 @@ use crate::checkpoint::{Checkpoints, ResumeSaver};
 use crate::error::{Chain, Error, IoAction, IoContext, Result};
 use crate::file_work::FileWork;
 use crate::http::Clients;
-use crate::net_guard::{PrivateGuard, private_guard};
+use crate::net_guard::{PrivateGuard, guard_from, private_guard};
 use crate::numeric::saturating_cast;
 use crate::options::DownloadOptions;
 use crate::progress::Progress;
@@ -291,13 +291,22 @@ pub(crate) async fn download_with(
     request.url = crate::url::with_normal_host(request.url);
     // Only for links that will be sent: `Auto` looks the host up, and another scheme is refused without one.
     let guard = if crate::url::is_supported(&request.url) {
-        private_guard(
-            &request.url,
-            request.options.private_network,
-            request.options.stall_timeout,
-            clients.proxies(),
-        )
-        .await
+        let looked_up = cancel
+            .run_until_cancelled(private_guard(
+                &request.url,
+                request.options.private_network,
+                request.options.stall_timeout,
+                clients.proxies(),
+            ))
+            .await;
+        // Stopped before the answer: the run below ends at once, still behind the guard.
+        looked_up.unwrap_or_else(|| {
+            Some(guard_from(
+                &request.url,
+                request.options.stall_timeout,
+                clients.proxies(),
+            ))
+        })
     } else {
         None
     };

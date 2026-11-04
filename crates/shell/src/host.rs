@@ -6,8 +6,9 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use tokio::sync::OnceCell;
+use tokio::sync::{Mutex, OnceCell, watch};
 use wirecatch_core::{
     CoreError, DATABASE_FILE, DATABASE_SIDE_FILES, KnownFolders, Manager, ManagerConfig, StoreError,
 };
@@ -40,7 +41,13 @@ type Prepare = Arc<dyn Fn() -> ManagerConfig + Send + Sync>;
 /// The download manager this process hosts, opened on first use.
 pub struct Core {
     prepare: Prepare,
-    cell: OnceCell<Result<Manager, Unopened>>,
+    manager: OnceCell<Manager>,
+    /// Why the last open failed. Held across an open, so only one runs.
+    failed: Mutex<Option<Unopened>>,
+    /// The next call opens again instead of answering with `failed`.
+    try_again: AtomicBool,
+    /// Moves once, when the manager opens.
+    now_open: watch::Sender<bool>,
 }
 
 /// Why the manager did not open.
@@ -75,7 +82,10 @@ impl Core {
     pub fn preparing(prepare: impl Fn() -> ManagerConfig + Send + Sync + 'static) -> Self {
         Self {
             prepare: Arc::new(prepare),
-            cell: OnceCell::new(),
+            manager: OnceCell::new(),
+            failed: Mutex::new(None),
+            try_again: AtomicBool::new(false),
+            now_open: watch::Sender::new(false),
         }
     }
 
@@ -85,43 +95,79 @@ impl Core {
     ///
     /// The manager could not open (a database from a newer Wirecatch, say, or a data folder
     /// that cannot be written). The error carries the core's code and plain-language reason,
-    /// ready to show to a person, and every later call answers with it again.
+    /// ready to show to a person, and later calls answer with it again until [`Self::try_again`].
     pub async fn manager(&self) -> Result<&Manager, ProtocolError> {
-        self.opened()
-            .await
-            .map_err(|unopened| unopened.reason.clone())
+        self.opened().await.map_err(|unopened| unopened.reason)
     }
 
     /// The manager, opening it if nobody has yet.
     ///
     /// # Errors
     ///
-    /// Why the manager could not open, including whether another copy of Wirecatch has the list open; every later call answers the same.
-    pub async fn opened(&self) -> Result<&Manager, &Unopened> {
-        self.cell
-            .get_or_init(|| async {
-                let prepare = Arc::clone(&self.prepare);
-                let config = tokio::task::spawn_blocking(move || prepare())
-                    .await
-                    .map_err(|e| {
-                        CoreError::Internal(format!("preparing the download list stopped ({e})"))
-                    });
-                match config {
-                    Ok(config) => Manager::open(config).await,
-                    Err(e) => Err(e),
-                }
-                .map_err(|e| {
-                    tracing::error!("could not open the download manager: {e}");
-                    Unopened::from_core(&e)
-                })
-            })
+    /// Why the manager could not open, including whether another copy of Wirecatch has the list open; later calls answer the same until [`Self::try_again`].
+    pub async fn opened(&self) -> Result<&Manager, Unopened> {
+        if let Some(manager) = self.manager.get() {
+            return Ok(manager);
+        }
+        let mut failed = self.failed.lock().await;
+        if let Some(manager) = self.manager.get() {
+            return Ok(manager);
+        }
+        if self.try_again.swap(false, Ordering::Relaxed) {
+            *failed = None;
+        }
+        if let Some(unopened) = failed.as_ref() {
+            return Err(unopened.clone());
+        }
+        match self.open().await {
+            Ok(manager) => {
+                let manager = self.manager.get_or_init(|| async { manager }).await;
+                self.now_open.send_replace(true);
+                Ok(manager)
+            }
+            Err(unopened) => {
+                *failed = Some(unopened.clone());
+                Err(unopened)
+            }
+        }
+    }
+
+    /// Waits for the manager to open, however late that is; this alone does not open it.
+    pub async fn when_opened(&self) -> &Manager {
+        let mut told = self.now_open.subscribe();
+        loop {
+            if let Some(manager) = self.manager.get() {
+                return manager;
+            }
+            if told.changed().await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        }
+    }
+
+    /// Lets the next use open the manager again, after an open failed.
+    pub fn try_again(&self) {
+        self.try_again.store(true, Ordering::Relaxed);
+    }
+
+    async fn open(&self) -> Result<Manager, Unopened> {
+        let prepare = Arc::clone(&self.prepare);
+        let config = tokio::task::spawn_blocking(move || prepare())
             .await
-            .as_ref()
+            .map_err(|e| CoreError::Internal(format!("preparing the download list stopped ({e})")));
+        match config {
+            Ok(config) => Manager::open(config).await,
+            Err(e) => Err(e),
+        }
+        .map_err(|e| {
+            tracing::error!("could not open the download manager: {e}");
+            Unopened::from_core(&e)
+        })
     }
 
     /// The manager if it has opened successfully, without waiting.
     pub fn get(&self) -> Option<&Manager> {
-        self.cell.get().and_then(|r| r.as_ref().ok())
+        self.manager.get()
     }
 }
 
@@ -522,6 +568,34 @@ mod tests {
 
         let unwritable = Unopened::from_core(&CoreError::Closed);
         assert!(!unwritable.another_copy);
+    }
+
+    #[tokio::test]
+    async fn try_again_opens_a_list_that_could_not_open_before() {
+        let dir = wirecatch_test_support::private_dir("desktop-try-again").unwrap();
+        let mut config = ManagerConfig::new(
+            dir.path().join("data"),
+            KnownFolders::under_home(dir.path()),
+        );
+        config.addon_sources.ytdlp_releases = None;
+        let first = Core::new(config.clone());
+        let holder = first.opened().await.expect("the first copy opens the list");
+        let second = Arc::new(Core::new(config));
+        assert!(second.opened().await.is_err());
+        holder.shutdown().await;
+        assert!(second.opened().await.is_err(), "only Try again opens again");
+        second.try_again();
+        let waiting = {
+            let second = Arc::clone(&second);
+            tokio::spawn(async move { second.when_opened().await.clone() })
+        };
+        let manager = second.opened().await.expect("the list is free now");
+        let told = tokio::time::timeout(wirecatch_test_support::PATIENCE, waiting)
+            .await
+            .expect("whoever waits hears of the open")
+            .expect("the wait ran");
+        told.shutdown().await;
+        manager.shutdown().await;
     }
 
     /// The tests that build their expectations from `CHANNEL` only mean something if a debug
