@@ -1088,7 +1088,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Flow `crash-and-resume`                 | pending     |
 | 1     | Flow `shutdown`                         | pending     |
 | 1     | Flow `concurrency`                      | pending     |
-| 1     | Flow `database-migrations`              | pending     |
+| 1     | Flow `database-migrations`              | done        |
 | 1     | Flow `security-bridge-and-pipe-input`   | pending     |
 | 1     | Flow `security-path-handling`           | pending     |
 | 1     | Flow `security-update-signatures`       | pending     |
