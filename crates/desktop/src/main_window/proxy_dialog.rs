@@ -246,7 +246,7 @@ impl ProxyForm {
 
     fn say_what_happens_to_the_password(&self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let has_saved = self.original.as_ref().is_some_and(|p| p.has_password);
-        let said = password_hint(has_saved, self.keeps_password(cx));
+        let said = password_hint(has_saved, self.saved_password, self.keeps_password(cx));
         self.password.update(cx, |state, cx| {
             state.set_placeholder(said, window, cx);
         });
@@ -397,9 +397,10 @@ impl Render for ProxyForm {
                     Button::new("remove-password")
                         .ghost()
                         .label("Remove saved")
-                        .on_click(cx.listener(|form, _, _, cx| {
+                        .on_click(cx.listener(|form, _, window, cx| {
                             form.saved_password = Password::Remove;
                             form.outcome = None;
+                            form.say_what_happens_to_the_password(window, cx);
                             cx.notify();
                         })),
                 )
@@ -510,11 +511,11 @@ fn typed_port(typed: &str) -> Option<u16> {
 }
 
 /// What the empty password field says of a saved password.
-fn password_hint(has_saved: bool, keeps: bool) -> &'static str {
-    match (has_saved, keeps) {
-        (false, _) => "",
-        (true, true) => KEEPS_PASSWORD,
-        (true, false) => FORGETS_PASSWORD,
+fn password_hint(has_saved: bool, saved: Password, keeps: bool) -> &'static str {
+    match (has_saved, saved, keeps) {
+        (false, ..) | (true, Password::Remove, _) => "",
+        (true, Password::Keep, true) => KEEPS_PASSWORD,
+        (true, Password::Keep, false) => FORGETS_PASSWORD,
     }
 }
 
@@ -719,8 +720,9 @@ mod tests {
 
     #[test]
     fn the_password_field_says_what_saving_will_do() {
-        assert_eq!(password_hint(false, false), "");
-        assert_eq!(password_hint(true, true), KEEPS_PASSWORD);
-        assert_eq!(password_hint(true, false), FORGETS_PASSWORD);
+        assert_eq!(password_hint(false, Password::Keep, false), "");
+        assert_eq!(password_hint(true, Password::Keep, true), KEEPS_PASSWORD);
+        assert_eq!(password_hint(true, Password::Keep, false), FORGETS_PASSWORD);
+        assert_eq!(password_hint(true, Password::Remove, true), "");
     }
 }
