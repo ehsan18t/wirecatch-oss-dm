@@ -117,6 +117,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         suffix_check: SuffixCheck::default(),
         handovers: Handovers::default(),
         dirty: BTreeSet::default(),
+        removals: Vec::new(),
         batches: Batches::default(),
         proxy_logins,
         proxy_servers: profiles,

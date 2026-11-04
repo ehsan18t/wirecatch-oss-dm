@@ -77,6 +77,8 @@ pub(super) struct State {
     pub handovers: Handovers,
     /// Rows changed since the last `DownloadsChanged` event.
     pub dirty: BTreeSet<DownloadId>,
+    /// Cancelled when a removal has deleted its files; a quit waits for them.
+    pub removals: Vec<CancellationToken>,
     /// What each queue at work has finished or failed so far (D52).
     pub batches: Batches,
     /// The passwords of the proxy servers, which never leave the app (D71.2).

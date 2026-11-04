@@ -544,7 +544,7 @@ impl Manager {
         self.emit(UiEvent::BrowserSettingsRequested);
     }
 
-    /// Stops every download so it can continue on the next start, waits for moves to other folders under way (as long as the disk takes), saves everything,
+    /// Stops every download so it can continue on the next start, waits for moves to other folders and removals under way (as long as the disk takes), saves everything,
     /// closes the database and stops the background work. Once it returns, the data
     /// folder can be deleted or moved (the database file is closed). Later operations
     /// fail with [`CoreError::Closed`].
@@ -576,6 +576,10 @@ impl Manager {
             .collect();
         for moved in moves {
             moved.cancelled().await;
+        }
+        let removals = self.lock().removals.clone();
+        for removal in removals {
+            removal.cancelled().await;
         }
         self.save_batches_at_shutdown();
         self.inner.store.close(DATABASE_CLOSE_TIMEOUT).await;
