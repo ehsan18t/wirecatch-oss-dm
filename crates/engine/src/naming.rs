@@ -344,18 +344,18 @@ fn held_by_download(path: &Path) -> bool {
 }
 
 /// The paths `name`, `name (1)`, `name (2)`... in a folder.
-struct Candidates<'a> {
+pub(crate) struct Candidates<'a> {
     dir: &'a Path,
     name: &'a str,
     next: u64,
 }
 
-fn candidates<'a>(dir: &'a Path, name: &'a str) -> Candidates<'a> {
+pub(crate) fn candidates<'a>(dir: &'a Path, name: &'a str) -> Candidates<'a> {
     Candidates { dir, name, next: 0 }
 }
 
 impl Candidates<'_> {
-    fn next_name(&mut self) -> PathBuf {
+    pub(crate) fn next_name(&mut self) -> PathBuf {
         let n = self.next;
         self.next += 1;
         if n == 0 {

@@ -9941,6 +9941,7 @@ dependencies = [
  "wirecatch-engine",
  "wirecatch-logging",
  "wirecatch-product",
+ "wirecatch-test-support",
 ]
 
 [[package]]
@@ -10306,6 +10307,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "tokio-rustls",
  "tracing",
