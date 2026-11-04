@@ -333,9 +333,10 @@ mod tls {
         );
     }
 
+    #[cfg(windows)]
     #[test]
-    fn the_bundled_roots_cover_what_a_system_may_not_have_fetched() {
-        let bundled = webpki_root_certs::TLS_SERVER_ROOT_CERTS;
+    fn the_bundled_roots_cover_what_windows_may_not_have_fetched() {
+        let bundled = super::super::client::roots_not_disallowed(&[]);
         for name in [
             "ISRG Root X2",
             "Amazon Root CA 3",
@@ -347,12 +348,32 @@ mod tls {
             };
             assert!(bundled.iter().any(named), "{name}");
         }
-        assert!(!super::super::client::merged_roots(Vec::new(), true).is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_root_windows_disallows_is_not_trusted_from_the_bundle() {
+        use super::super::client::roots_not_disallowed;
+
+        let all = roots_not_disallowed(&[]);
+        let refused = all[0].to_vec();
+        let kept = roots_not_disallowed(std::slice::from_ref(&refused));
+        assert_eq!(kept.len(), all.len() - 1);
+        assert!(!kept.iter().any(|root| root.as_ref() == refused.as_slice()));
     }
 
     #[test]
-    fn certificate_files_named_by_the_environment_replace_the_bundled_roots() {
-        assert!(super::super::client::merged_roots(Vec::new(), false).is_empty());
+    fn named_certificate_files_are_told_as_the_certificate_loader_tells_them() {
+        use super::super::client::names_certificates;
+        use std::ffi::OsStr;
+
+        assert!(!names_certificates(None, None));
+        assert!(names_certificates(Some(OsStr::new("roots.pem")), None));
+        // Empty: the loader finds no certificates in it, rather than reading the system's.
+        assert!(names_certificates(Some(OsStr::new("")), None));
+        assert!(names_certificates(None, Some(OsStr::new("certs"))));
+        // Empty: the loader ignores it and reads the system's store.
+        assert!(!names_certificates(None, Some(OsStr::new(""))));
     }
 
     #[tokio::test]

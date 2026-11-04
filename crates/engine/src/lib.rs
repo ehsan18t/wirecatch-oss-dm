@@ -160,7 +160,7 @@
 //!
 //! All connections share one TLS session cache for the whole process, so only
 //! the first connection to a host does a full handshake and later ones, in the
-//! same download or the next, resume its session. The system's root
+//! same download or the next, resume its session. The trusted root
 //! certificates are read once per process. Each connection
 //! still has its own TCP connection, so a server that limits speed per
 //! connection is really downloaded from in parallel.

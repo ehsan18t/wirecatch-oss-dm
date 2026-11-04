@@ -35,8 +35,6 @@ reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no
 # accepts; ring is the engine's own choice of crypto provider.
 rustls = { version = "0.23.4", default-features = false, features = ["std", "tls12", "ring"] }
 rustls-native-certs = "0.8.0"
-# Roots Windows has not fetched yet (D116).
-webpki-root-certs = "1.0.11"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -70,6 +68,9 @@ all-features = true
 windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 # The system's proxy setting (src/proxy.rs); the version the HTTP client's own reader uses.
 windows-registry = "0.6.1"
+schannel = "0.1.30"
+# Roots Windows has not fetched yet (D116).
+webpki-root-certs = "1.0.11"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true

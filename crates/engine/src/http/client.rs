@@ -1,5 +1,6 @@
 //! The HTTP clients of a download: one per connection, sharing one TLS setup.
 
+use std::ffi::OsStr;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -35,12 +36,12 @@ pub(crate) struct Clients {
     apply_proxies: bool,
 }
 
-/// The process-wide TLS configuration: the system's root certificates are read
+/// The process-wide TLS configuration: the trusted root certificates are read
 /// once, and sessions resume across downloads from the same host too.
 static SHARED_TLS: OnceLock<rustls::ClientConfig> = OnceLock::new();
 
 impl Clients {
-    /// Uses the operating system's root certificates, read once per process,
+    /// Uses the operating system's root certificates (and more on Windows, D116), read once per process,
     /// and the proxy settings `opts` asks for, as they are now. The first call reads the
     /// certificate store, so it must not run on an async thread; see
     /// [`Clients::shared_ready`]. The proxy settings come from the environment
@@ -180,33 +181,73 @@ fn tls_config(roots: rustls::RootCertStore) -> Result<rustls::ClientConfig> {
     Ok(config)
 }
 
-/// The operating system's trusted roots and the bundled ones (D116). Unreadable entries are
-/// skipped; with none at all, HTTPS requests fail with a certificate error.
+/// The operating system's trusted roots and, on Windows, the bundled ones (D116). Unreadable
+/// entries are skipped; with none at all, HTTPS requests fail with a certificate error.
 fn trusted_roots() -> rustls::RootCertStore {
     let loaded = rustls_native_certs::load_native_certs();
     for error in &loaded.errors {
         // Its message already includes its source.
         debug!(%error, "skipped part of the system certificate store");
     }
-    // Named files replace the system's roots in `load_native_certs`, and so the bundled ones too.
-    let named_files = ["SSL_CERT_FILE", "SSL_CERT_DIR"]
-        .iter()
-        .any(|name| std::env::var_os(name).is_some());
-    let roots = merged_roots(loaded.certs, !named_files);
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add_parsable_certificates(loaded.certs);
+    if !names_certificates(
+        std::env::var_os("SSL_CERT_FILE").as_deref(),
+        std::env::var_os("SSL_CERT_DIR").as_deref(),
+    ) {
+        roots.add_parsable_certificates(bundled_roots());
+    }
     if roots.is_empty() {
         warn!("no usable root certificates found; HTTPS downloads will fail");
     }
     roots
 }
 
-pub(super) fn merged_roots(
-    certificates: Vec<rustls::pki_types::CertificateDer<'static>>,
-    bundled: bool,
-) -> rustls::RootCertStore {
-    let mut roots = rustls::RootCertStore::empty();
-    roots.add_parsable_certificates(certificates);
-    if bundled {
-        roots.add_parsable_certificates(webpki_root_certs::TLS_SERVER_ROOT_CERTS.iter().cloned());
+/// Whether these variables make `load_native_certs` read named files instead of the system's
+/// store, as the bundled roots then do not apply either. It ignores empty entries of the folder list.
+pub(super) fn names_certificates(file: Option<&OsStr>, folders: Option<&OsStr>) -> bool {
+    file.is_some()
+        || folders.is_some_and(|folders| {
+            std::env::split_paths(folders).any(|folder| !folder.as_os_str().is_empty())
+        })
+}
+
+#[cfg(windows)]
+fn bundled_roots() -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    roots_not_disallowed(&disallowed_certificates())
+}
+
+/// Only Windows fetches roots on demand; elsewhere the system's store is the whole answer.
+#[cfg(not(windows))]
+fn bundled_roots() -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    Vec::new()
+}
+
+#[cfg(windows)]
+pub(super) fn roots_not_disallowed(
+    disallowed: &[Vec<u8>],
+) -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    webpki_root_certs::TLS_SERVER_ROOT_CERTS
+        .iter()
+        .filter(|root| !disallowed.iter().any(|der| der.as_slice() == root.as_ref()))
+        .cloned()
+        .collect()
+}
+
+/// What Microsoft or an administrator told Windows never to trust.
+#[cfg(windows)]
+fn disallowed_certificates() -> Vec<Vec<u8>> {
+    use schannel::cert_store::CertStore;
+
+    let mut found = Vec::new();
+    for store in [
+        CertStore::open_current_user("Disallowed"),
+        CertStore::open_local_machine("Disallowed"),
+    ] {
+        match store {
+            Ok(store) => found.extend(store.certs().map(|cert| cert.to_der().to_vec())),
+            Err(error) => debug!(?error, "could not read the Disallowed certificate store"),
+        }
     }
-    roots
+    found
 }
