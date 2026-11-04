@@ -118,7 +118,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 91  | CLI speed and ETA are wrong for half a minute after a resume                                      | `32-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 92  | A command-line argument that is not valid Unicode aborts the app                                  | `22-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 93  | Uninstalling while the app runs leaves its program behind                                         | `29-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 94  | The AppImage's library folder leaks into programs the app starts                                  | `29-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 94  | The AppImage's library folder leaks into programs the app starts                                  | `29-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 95  | A video's title is cut at its last slash                                                          | `16-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | fixed  |
 | 96  | yt-dlp progress goes backwards for a video with separate audio                                    | `16-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 97  | A quality says 60 fps but may download 30 fps                                                     | `16-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | open   |
@@ -212,9 +212,9 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 185 | The unsigned release page address reaches the system shell unchecked                              | `Xsecurity-update-signatures-4`                                                                    | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 186 | Turning off pre-release versions keeps offering the one already found                             | `Xpath-app-update-7`                                                                               | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 187 | No test holds a manifest's version and size rules                                                 | `12-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 188 | The packaging example for ARM64 on x64 cannot work                                                | `29-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 189 | ARM64 Linux packages are drafted without the fresh-system check                                   | `29-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 190 | The .deb and .rpm state no C library version                                                      | `29-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 188 | The packaging example for ARM64 on x64 cannot work                                                | `29-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 189 | ARM64 Linux packages are drafted without the fresh-system check                                   | `29-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 190 | The .deb and .rpm state no C library version                                                      | `29-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 191 | The icon holds its own unchecked copy of the mark                                                 | `29-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 192 | Two copies of the read-until-full loop have drifted                                               | `15-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 193 | Code keeps work folders of a layout that was never released                                       | `15-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -1910,7 +1910,7 @@ P2, small, fixed.
 
 ### 94. The AppImage's library folder leaks into programs the app starts
 
-P2, small, open.
+P2, small, fixed.
 
 `appRun` exports `LD_LIBRARY_PATH` and nothing removes it, so what `xdg-open` starts inherits the bundle's libraries. A program needing a newer libxkbcommon would fail, which is plausible on a rolling distribution. It is harmless for yt-dlp and ffmpeg. Not run.
 
@@ -3471,7 +3471,7 @@ P3, small, fixed.
 
 ### 188. The packaging example for ARM64 on x64 cannot work
 
-P3, small, open.
+P3, small, fixed.
 
 `arch` from the triple also picks the tool, so x64 runs an arm64 `nfpm`. `release.yml` passes no `--target`, so only the documented example breaks.
 
@@ -3487,7 +3487,7 @@ P3, small, open.
 
 ### 189. ARM64 Linux packages are drafted without the fresh-system check
 
-P3, small, open.
+P3, small, fixed.
 
 `linux-packages` downloads `desktop-Linux-X64` only, while `draft` merges every artifact. PACKAGING.md says it checks each Linux package.
 
@@ -3503,7 +3503,7 @@ P3, small, open.
 
 ### 190. The .deb and .rpm state no C library version
 
-P3, small, open.
+P3, small, fixed.
 
 Neither list names a C library or version, and nfpm computes none, so a package installs where the app cannot start. Which symbols the binary needs was not read. `29-S1` suggests a named older base.
 
