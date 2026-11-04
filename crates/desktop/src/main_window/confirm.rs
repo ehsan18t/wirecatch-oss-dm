@@ -1,5 +1,7 @@
 //! Removing and cancelling downloads, each after a question that says what happens to their files.
 
+use std::collections::HashSet;
+
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::{WindowExt as _, h_flex, v_flex};
@@ -16,6 +18,7 @@ use wirecatch_shell::api;
 use super::{applies, selection};
 use crate::backend::command;
 use crate::library::Library;
+use crate::rows::Rows;
 use crate::ui::{Role, Typed as _};
 
 const WIDTH: f32 = 440.;
@@ -31,20 +34,16 @@ struct Asked {
 }
 
 /// Those of `ids` that can be cancelled: a selection may hold finished rows too.
-fn cancellable(library: &Entity<Library>, ids: &[DownloadId], cx: &App) -> Vec<DownloadId> {
-    let downloads = &library.read(cx).downloads;
+fn cancellable(downloads: &Rows, ids: &[DownloadId]) -> Vec<DownloadId> {
     ids.iter()
         .copied()
-        .filter(|id| {
-            downloads
-                .iter()
-                .any(|row| row.id == *id && applies::can_cancel(row))
-        })
+        .filter(|id| downloads.find(*id).is_some_and(applies::can_cancel))
         .collect()
 }
 
 impl Asked {
     fn read(library: &Entity<Library>, ids: &[DownloadId], cx: &App) -> Self {
+        let ids: HashSet<DownloadId> = ids.iter().copied().collect();
         let rows: Vec<_> = library
             .read(cx)
             .downloads
@@ -200,7 +199,7 @@ pub(super) fn cancel(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let asked = Asked::read(library, &cancellable(library, ids, cx), cx);
+    let asked = Asked::read(library, &cancellable(&library.read(cx).downloads, ids), cx);
     if asked.count() == 0 {
         return;
     }
@@ -266,4 +265,28 @@ pub(super) fn cancel(
                     ),
             )
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wirecatch_protocol::app::DownloadSummary;
+    use wirecatch_test_support::downloads::download;
+
+    #[test]
+    fn cancel_leaves_out_finished_and_unknown_rows() {
+        let row = |id, status| DownloadSummary {
+            status,
+            ..download(id)
+        };
+        let mut rows = Rows::default();
+        rows.replace(vec![
+            row(1, DownloadStatus::Downloading),
+            row(2, DownloadStatus::Completed),
+            row(3, DownloadStatus::Cancelled),
+            row(4, DownloadStatus::Failed),
+        ]);
+        let ids = [1, 2, 3, 4, 5].map(DownloadId);
+        assert_eq!(cancellable(&rows, &ids), [DownloadId(1), DownloadId(4)]);
+    }
 }

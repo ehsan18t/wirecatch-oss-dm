@@ -59,7 +59,8 @@ impl DerefMut for Selected {
 /// change: status and queue, all it reads, move only with the lines.
 pub(super) struct Facts {
     from: FactsFrom,
-    count: usize,
+    /// How many selected rows the list shows.
+    pub count: usize,
     can: Applicable,
     pub ids: Rc<[DownloadId]>,
     queues: Rc<[(QueueId, String)]>,
@@ -293,9 +294,15 @@ impl MainWindow {
 
     /// Alt+Enter: the details of the download under the cursor.
     pub(super) fn details_of_cursor(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        if let Some(id) = self.cursor.filter(|id| self.selected.contains(id)) {
+        if let Some(id) = self.cursor_row(cx) {
             details::open(self.library.clone(), id, window, cx);
         }
+    }
+
+    /// The cursor's download, while it is selected and the list shows it.
+    pub(super) fn cursor_row(&self, cx: &App) -> Option<DownloadId> {
+        let facts = self.selection_facts(cx);
+        self.cursor.filter(|id| facts.ids.contains(id))
     }
 
     /// Delete: asks before removing the selection.
