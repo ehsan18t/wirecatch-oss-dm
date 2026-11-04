@@ -387,7 +387,7 @@ pub(crate) async fn download_guarded(
     ));
     {
         let saver = saver.clone();
-        storage::blocking(&shared.file_work, move || saver.save()).await?;
+        storage::blocking(&shared.file_work, move || saver.save_or_fail()).await?;
     }
 
     let first = first_work(&shared, resumed, &mut connection, body).await;
@@ -540,10 +540,11 @@ fn finish(
             saver.save()?;
         }
         // Closing waits for a checkpoint still flushing, during which the owner may drop the download and start another run on the same files.
-        saver.close();
+        let closed = saver.close();
         #[cfg(test)]
         abandoned.slow_step_done();
         abandoned.check()?;
+        closed?;
         let path = storage::finalize(
             &target.part,
             &target.file,
@@ -562,7 +563,7 @@ fn finish(
     }
 
     saver.save()?;
-    saver.close();
+    saver.close()?;
     if shared.request.cancel.is_cancelled() {
         return Ok(Outcome::Paused {
             path: target.file,

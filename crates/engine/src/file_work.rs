@@ -17,6 +17,17 @@ pub struct FileWork(Arc<Count>);
 struct Count {
     running: AtomicUsize,
     idle: Notify,
+    #[cfg(test)]
+    failing_flush: FailingFlush,
+}
+
+/// Tests: one flush of the part file that fails, as a write-back error reported once would.
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct FailingFlush {
+    /// Counts down the flushes to make; the one that takes it from 1 to 0 fails. 0 means none is planned.
+    countdown: AtomicUsize,
+    failed: Notify,
 }
 
 /// Counts one piece of work as running until dropped.
@@ -62,6 +73,35 @@ impl FileWork {
             drop(ticket);
             done
         })
+    }
+
+    /// Tests: the flush after the next `passing` ones fails.
+    #[cfg(test)]
+    pub(crate) fn fail_flush_after(&self, passing: usize) {
+        self.0
+            .failing_flush
+            .countdown
+            .store(passing + 1, Ordering::SeqCst);
+    }
+
+    /// Tests: counts one flush, and answers whether it is the one to fail.
+    #[cfg(test)]
+    pub(crate) fn flush_fails(&self) -> bool {
+        let plan = &self.0.failing_flush;
+        let left = plan.countdown.load(Ordering::SeqCst);
+        plan.countdown
+            .store(left.saturating_sub(1), Ordering::SeqCst);
+        let fails = left == 1;
+        if fails {
+            plan.failed.notify_one();
+        }
+        fails
+    }
+
+    /// Tests: waits for the planned flush to have failed.
+    #[cfg(test)]
+    pub(crate) async fn flush_failed(&self) {
+        self.0.failing_flush.failed.notified().await;
     }
 }
 

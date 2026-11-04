@@ -8,7 +8,7 @@ use tracing::warn;
 
 use crate::abandon::Abandoned;
 use crate::download::Shared;
-use crate::error::{Chain, IoAction, IoContext, Result};
+use crate::error::{Chain, Error, IoAction, IoContext, Result};
 use crate::http::Validators;
 use crate::state::ResumeState;
 use crate::storage;
@@ -26,6 +26,8 @@ use crate::storage;
 /// were done before that flush. So a power cut or a crash of the system, not
 /// only of the process, never leaves a resume file that counts bytes the disk
 /// never received (which would read back as zeros).
+///
+/// A failed flush may have lost bytes that a later flush then passes without, so it ends the saving: the resume file stays as the last good save left it, and [`close`](Self::close) reports the failure.
 ///
 /// Every method blocks, on file I/O or on a save in progress, so it is only
 /// called on the blocking pool.
@@ -60,6 +62,7 @@ impl ResumeSaver {
             saving: Mutex::new(Saving {
                 closed: false,
                 part: None,
+                failed_flush: None,
             }),
             abandoned,
         }
@@ -80,12 +83,15 @@ impl ResumeSaver {
     /// Saves the ranges still to download, unless the download has ended.
     pub fn save(&self) -> Result<()> {
         let mut saving = self.saving();
-        if saving.closed || self.abandoned.is_set() {
+        if saving.closed || saving.failed_flush.is_some() || self.abandoned.is_set() {
             return Ok(());
         }
         // Read before the flush: every range done by now was written before it.
         let remaining = self.shared.table.lock().remaining();
-        let part = match &mut saving.part {
+        let Saving {
+            part, failed_flush, ..
+        } = &mut *saving;
+        let part = match part {
             Some(part) => part,
             empty => {
                 let path = &self.shared.part_path;
@@ -93,34 +99,69 @@ impl ResumeSaver {
             }
         };
         let shared = &self.shared;
-        flush_then(part, &shared.part_path, &self.abandoned, || {
-            ResumeState::new(
-                &self.url,
-                shared.request.total,
-                shared.request.ranged,
-                &self.validators,
-                remaining,
-            )
-            .save(&self.path, &self.abandoned)
-        })
+        let flush = || {
+            #[cfg(test)]
+            if shared.file_work.flush_fails() {
+                return Err(std::io::Error::other("write-back failed"));
+            }
+            part.sync_data()
+        };
+        flush_then(
+            flush,
+            &shared.part_path,
+            &self.abandoned,
+            failed_flush,
+            || {
+                ResumeState::new(
+                    &self.url,
+                    shared.request.total,
+                    shared.request.ranged,
+                    &self.validators,
+                    remaining,
+                )
+                .save(&self.path, &self.abandoned)
+            },
+        )
+    }
+
+    /// A save whose failed flush ends the download at once: the first one, before anything is fetched.
+    pub fn save_or_fail(&self) -> Result<()> {
+        self.save()?;
+        match self.saving().failed_flush.take() {
+            Some(failure) => Err(failure),
+            None => Ok(()),
+        }
     }
 
     /// Waits for a save still writing, then stops any later one.
-    pub fn close(&self) {
+    ///
+    /// # Errors
+    ///
+    /// The failed flush of any save of this download.
+    pub fn close(&self) -> Result<()> {
         let mut saving = self.saving();
         saving.closed = true;
         saving.part = None;
+        match saving.failed_flush.take() {
+            Some(failure) => Err(failure),
+            None => Ok(()),
+        }
     }
 }
 
-/// Flushes `part` (at `path`) to the disk, then runs `write`, unless the download was abandoned meanwhile: a slow flush is just when an owner gives up waiting and drops the download, and then deletes its files.
+/// Runs `flush` on the part file at `path`, then `write`, unless the download was abandoned meanwhile: a slow flush is just when an owner gives up waiting and drops the download, and then deletes its files. A failed flush goes to `failed_flush` and nothing is written.
 fn flush_then(
-    part: &File,
+    flush: impl FnOnce() -> std::io::Result<()>,
     path: &Path,
     abandoned: &Abandoned,
+    failed_flush: &mut Option<Error>,
     write: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
-    part.sync_data().context(IoAction::Flush, path)?;
+    if let Err(failure) = flush().context(IoAction::Flush, path) {
+        warn!(error = %Chain(&failure), "could not flush the part file; the download will fail when it ends");
+        *failed_flush = Some(failure);
+        return Ok(());
+    }
     #[cfg(test)]
     abandoned.slow_step_done();
     if abandoned.is_set() {
@@ -135,6 +176,8 @@ struct Saving {
     closed: bool,
     /// The part file, to flush to the disk, once a save has opened it.
     part: Option<File>,
+    /// The first flush that failed; no save writes after it.
+    failed_flush: Option<Error>,
 }
 
 /// The task that saves the resume file at every checkpoint while a download
@@ -192,6 +235,18 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use tokio::sync::Notify;
+    use tokio_util::sync::CancellationToken;
+    use url::Url;
+    use wirecatch_test_support::resume::kept_ranges;
+    use wirecatch_test_support::{PATIENCE, private_dir, test_data};
+
+    use crate::download::{DownloadRequest, download};
+    use crate::progress::Progress;
+    use crate::units::{KIB_USIZE, MIB_USIZE};
+
     #[test]
     fn a_download_dropped_during_the_flush_writes_no_resume_file() {
         let dir = wirecatch_test_support::private_dir("flush-then").unwrap();
@@ -199,20 +254,33 @@ mod tests {
         let part = File::create(&path).unwrap();
         let abandonment = crate::abandon::Abandonment::new();
         let abandoned = abandonment.flag();
+        let mut failed_flush = None;
         let mut wrote = false;
-        flush_then(&part, &path, &abandoned, || {
-            wrote = true;
-            Ok(())
-        })
+        flush_then(
+            || part.sync_data(),
+            &path,
+            &abandoned,
+            &mut failed_flush,
+            || {
+                wrote = true;
+                Ok(())
+            },
+        )
         .unwrap();
         assert!(wrote, "a live download writes after the flush");
 
         abandoned.drop_after_slow_step();
         let mut wrote = false;
-        flush_then(&part, &path, &abandoned, || {
-            wrote = true;
-            Ok(())
-        })
+        flush_then(
+            || part.sync_data(),
+            &path,
+            &abandoned,
+            &mut failed_flush,
+            || {
+                wrote = true;
+                Ok(())
+            },
+        )
         .unwrap();
         assert!(
             !wrote,
@@ -238,5 +306,121 @@ mod tests {
             every,
             "the missed checkpoints came at once"
         );
+    }
+
+    /// Answers `/f.bin` with half of its `len` bytes, then the rest once `release` says.
+    async fn half_then_wait(len: usize, release: Arc<Notify>) -> Url {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut head = Vec::new();
+            let mut buf = [0u8; KIB_USIZE];
+            while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = socket.read(&mut buf).await.unwrap();
+                head.extend_from_slice(&buf[..n]);
+            }
+            let body = test_data(len);
+            let answer = format!("HTTP/1.1 200 OK\r\nContent-Length: {len}\r\n\r\n");
+            socket.write_all(answer.as_bytes()).await.unwrap();
+            let (first, second) = body.split_at(len / 2);
+            socket.write_all(first).await.unwrap();
+            release.notified().await;
+            socket.write_all(second).await.unwrap();
+            socket.shutdown().await.unwrap();
+        });
+        Url::parse(&format!("http://127.0.0.1:{port}/f.bin")).unwrap()
+    }
+
+    fn assert_flush_error<T: std::fmt::Debug>(result: &Result<T>) {
+        assert!(
+            matches!(
+                result,
+                Err(Error::Io {
+                    action: IoAction::Flush,
+                    ..
+                })
+            ),
+            "the failed flush was forgotten: {result:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_download_whose_checkpoint_flush_failed_is_not_reported_complete() {
+        let len = MIB_USIZE;
+        let release = Arc::new(Notify::new());
+        let url = half_then_wait(len, release.clone()).await;
+        let dir = private_dir("failed-flush").unwrap();
+        let mut request = DownloadRequest::new(url, dir.to_path_buf());
+        request.options.checkpoint_interval = Duration::from_millis(1);
+        // The first save, before anything is fetched, passes; the first checkpoint's fails.
+        request.file_work.fail_flush_after(1);
+        let files = request.file_work.clone();
+        let run = tokio::spawn(download(
+            request,
+            Arc::new(Progress::default()),
+            CancellationToken::new(),
+        ));
+        tokio::time::timeout(PATIENCE, files.flush_failed())
+            .await
+            .expect("no checkpoint flushed");
+        release.notify_one();
+        let result = tokio::time::timeout(PATIENCE, run)
+            .await
+            .expect("the download hung")
+            .unwrap();
+        assert_flush_error(&result);
+        let kept = kept_ranges(&dir.join("f.bin.wcstate"), len as u64).unwrap();
+        assert!(
+            kept.is_empty(),
+            "the resume file counts bytes after the failed flush: {kept:?}"
+        );
+        dir.remove().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_paused_download_whose_checkpoint_flush_failed_reports_the_failure() {
+        let len = MIB_USIZE;
+        let url = half_then_wait(len, Arc::new(Notify::new())).await;
+        let dir = private_dir("failed-flush-paused").unwrap();
+        let mut request = DownloadRequest::new(url, dir.to_path_buf());
+        request.options.checkpoint_interval = Duration::from_millis(1);
+        request.file_work.fail_flush_after(1);
+        let files = request.file_work.clone();
+        let cancel = CancellationToken::new();
+        let run = tokio::spawn(download(
+            request,
+            Arc::new(Progress::default()),
+            cancel.clone(),
+        ));
+        tokio::time::timeout(PATIENCE, files.flush_failed())
+            .await
+            .expect("no checkpoint flushed");
+        cancel.cancel();
+        let result = tokio::time::timeout(PATIENCE, run)
+            .await
+            .expect("the download hung")
+            .unwrap();
+        assert_flush_error(&result);
+        dir.remove().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_download_whose_first_flush_failed_ends_at_once() {
+        let len = MIB_USIZE;
+        let url = half_then_wait(len, Arc::new(Notify::new())).await;
+        let dir = private_dir("failed-flush-first").unwrap();
+        let request = DownloadRequest::new(url, dir.to_path_buf());
+        request.file_work.fail_flush_after(0);
+        let run = download(
+            request,
+            Arc::new(Progress::default()),
+            CancellationToken::new(),
+        );
+        let result = tokio::time::timeout(PATIENCE, run)
+            .await
+            .expect("the download hung");
+        assert_flush_error(&result);
+        dir.remove().unwrap();
     }
 }
