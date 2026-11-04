@@ -130,7 +130,7 @@ impl MainWindow {
         }
         if can.retry {
             entries.push(each(
-                format!("Try {named} again"),
+                can.retry_phrase(&named),
                 applies::can_retry,
                 api::retry,
             ));

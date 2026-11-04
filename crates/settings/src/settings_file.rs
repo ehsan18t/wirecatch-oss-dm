@@ -425,6 +425,22 @@ mod tests {
     }
 
     #[test]
+    fn a_malformed_category_rule_is_refused() {
+        let exported = export(
+            &default_settings(),
+            &[default_queue()],
+            &[],
+            &folders(),
+            UnixMillis(42),
+        );
+        let mut profile = serde_json::to_value(&exported).unwrap();
+        profile["settings"]["categories"] =
+            serde_json::json!([{ "category": "video", "extensions": [], "folder": 5 }]);
+        let err = parse(&serde_json::to_vec(&profile).unwrap()).unwrap_err();
+        assert!(matches!(err, SettingsFileError::Invalid(_)), "{err}");
+    }
+
+    #[test]
     fn junk_is_not_a_profile() {
         assert!(matches!(
             parse(b"not json"),

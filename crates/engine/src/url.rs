@@ -87,7 +87,7 @@ pub fn without_credentials(url: &Url) -> Url {
 /// saved this way still says which account it signs in with, which tells two
 /// downloads from the same server apart. [`without_credentials`] removes both.
 #[must_use]
-pub(crate) fn without_password(url: &Url) -> Url {
+pub fn without_password(url: &Url) -> Url {
     let mut clean = url.clone();
     removed(clean.set_password(None));
     clean

@@ -887,6 +887,27 @@ async fn a_cancelled_download_moved_leaves_the_name_to_the_next() -> TestResult 
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_question_never_carries_the_links_password() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let mut events = h.manager.subscribe();
+    let link = server
+        .url(NAME)
+        .as_str()
+        .replacen("http://", "http://ada:s3cret@", 1);
+    add_into(&h, &link, &dir).await?;
+    let question = asked(&mut events).await?;
+    assert!(
+        question.url.starts_with("http://ada:***@"),
+        "{}",
+        question.url
+    );
+    assert_eq!(h.manager.pending_file_exists(), vec![question]);
+    Ok(())
+}
+
 /// Removing a download that never got an answer leaves the file its name only points at.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn removing_a_download_before_the_answer_keeps_the_file_of_that_name() -> TestResult {
