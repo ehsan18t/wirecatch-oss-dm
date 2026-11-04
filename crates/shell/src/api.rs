@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
+use crate::host::CHANNEL;
 use wirecatch_core::{LinkFrom, Manager, RemoveFiles};
 use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{
@@ -47,8 +48,9 @@ pub fn refused(message: impl Into<String>) -> ProtocolError {
 pub fn path_text(path: &Path) -> CommandResult<String> {
     path.to_str().map(str::to_owned).ok_or_else(|| {
         refused(format!(
-            "The name of {} is not valid text, so Wirecatch cannot use it. Rename it, or choose another.",
-            path.display()
+            "The name of {} is not valid text, so {} cannot use it. Rename it, or choose another.",
+            path.display(),
+            CHANNEL.name()
         ))
     })
 }
@@ -484,10 +486,7 @@ pub async fn file_to_open(m: &Manager, id: DownloadId) -> CommandResult<ToOpen> 
     on_disk(move || {
         let path = PathBuf::from(&row.path);
         if !path.is_file() {
-            return Err(refused(format!(
-                "{} is no longer at {}. It may have been moved or deleted. Download it again with Retry, or look for it in another folder.",
-                row.file_name, row.path
-            )));
+            return Err(refused(file_gone(&row.file_name, &row.path)));
         }
         Ok(if is_program(&path) {
             ToOpen::Program {
@@ -524,14 +523,34 @@ pub async fn item_to_reveal(m: &Manager, id: DownloadId) -> CommandResult<Reveal
         }
         match path.parent() {
             Some(folder) if folder.is_dir() => Ok(Reveal::Folder(folder.to_path_buf())),
-            Some(folder) => Err(refused(format!(
-                "The folder {} does not exist yet. Wirecatch creates it when the download starts.",
-                folder.display()
-            ))),
+            Some(folder) => Err(refused(folder_missing(row.status, folder))),
             None => Err(refused(format!("{} has no folder to show.", row.path))),
         }
     })
     .await
+}
+
+/// Why a finished download's file cannot open. Retry is not offered: it is only for failed and cancelled rows.
+fn file_gone(name: &str, path: &str) -> String {
+    format!(
+        "{name} is no longer at {path}. It may have been moved or deleted. Look for it in another folder, or add its link again to download it."
+    )
+}
+
+/// Why a download's folder cannot be shown: a finished one had the folder, the others make it when they start.
+fn folder_missing(status: DownloadStatus, folder: &Path) -> String {
+    if status == DownloadStatus::Completed {
+        format!(
+            "The folder {} no longer exists. It may have been moved or deleted.",
+            folder.display()
+        )
+    } else {
+        format!(
+            "The folder {} does not exist yet. {} creates it when the download starts.",
+            folder.display(),
+            CHANNEL.name()
+        )
+    }
 }
 
 /// Runs `look` on a blocking thread: a folder on an unreachable network share holds a disk
@@ -930,6 +949,24 @@ mod tests {
         ] {
             assert!(is_program(Path::new(name)), "{name} should need trust");
         }
+    }
+
+    #[test]
+    fn a_finished_downloads_missing_file_is_not_sent_to_retry() {
+        let message = file_gone("a.zip", "/gone/a.zip");
+        assert!(message.contains("/gone/a.zip"), "{message}");
+        assert!(!message.contains("Retry"), "{message}");
+    }
+
+    #[test]
+    fn only_a_download_yet_to_finish_is_told_its_folder_will_be_made() {
+        let folder = Path::new("/gone");
+        let finished = folder_missing(DownloadStatus::Completed, folder);
+        assert!(finished.contains("no longer exists"), "{finished}");
+        assert!(!finished.contains("creates it"), "{finished}");
+        let failed = folder_missing(DownloadStatus::Failed, folder);
+        assert!(failed.contains("creates it"), "{failed}");
+        assert!(failed.contains(CHANNEL.name()), "{failed}");
     }
 
     #[test]
