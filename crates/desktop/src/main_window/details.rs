@@ -20,6 +20,7 @@ use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, FixAction, PER_MI
 use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_shell::api;
 
+use super::applies::RowAction;
 use super::list::status_tone;
 use super::{Group, applies, confirm, fixes, refresh_dialog};
 use crate::backend::act;
@@ -323,6 +324,11 @@ fn queue_picker(id: DownloadId, queue: String, others: Vec<(QueueId, String)>) -
         })
 }
 
+/// Whether the details offer `fix`: Try again stands beside it, and the queue field is right here.
+fn offered_here(fix: FixAction) -> bool {
+    !matches!(fix, FixAction::Retry | FixAction::ChangeQueue)
+}
+
 /// Why it failed, with its fix and Try again.
 fn failure(
     id: DownloadId,
@@ -331,20 +337,17 @@ fn failure(
     cx: &mut Context<'_, Details>,
 ) -> impl IntoElement + use<> {
     Callout::danger(message.to_owned())
-        .when_some(
-            fix.filter(|fix| *fix != FixAction::Retry),
-            |callout, fix| {
-                callout.action(
-                    Button::new("details-fix")
-                        .small()
-                        .primary()
-                        .label(text::fix_label(fix))
-                        .on_click(cx.listener(move |_, _, window, cx| {
-                            fixes::run(id, fix, window, cx);
-                        })),
-                )
-            },
-        )
+        .when_some(fix.filter(|fix| offered_here(*fix)), |callout, fix| {
+            callout.action(
+                Button::new("details-fix")
+                    .small()
+                    .primary()
+                    .label(text::fix_label(fix))
+                    .on_click(cx.listener(move |_, _, window, cx| {
+                        fixes::run(id, fix, window, cx);
+                    })),
+            )
+        })
         .action(
             Button::new("details-retry")
                 .small()
@@ -472,18 +475,8 @@ fn footer(
     cx: &mut Context<'_, Details>,
 ) -> impl IntoElement {
     let id = row.id;
-    let main: (&'static str, IconName) = match row.status {
-        DownloadStatus::Completed => ("Open", IconName::ExternalLink),
-        DownloadStatus::Paused => ("Resume", IconName::Play),
-        DownloadStatus::Cancelled => ("Start over", IconName::RotateCw),
-        DownloadStatus::Failed => ("Try again", IconName::RotateCw),
-        _ => ("Pause", IconName::Pause),
-    };
-    let status = row.status;
-    let cancellable = !matches!(
-        row.status,
-        DownloadStatus::Completed | DownloadStatus::Cancelled | DownloadStatus::Failed
-    );
+    let main = RowAction::offered(row.status).first().cloned();
+    let cancellable = applies::can_cancel(row);
     let quiet = |name: &'static str, icon: IconName, tip: &'static str| {
         Button::new(name).ghost().icon(icon).tooltip(tip)
     };
@@ -504,26 +497,25 @@ fn footer(
                 .on_click(move |_, window, cx| confirm::remove(&library, &[id], window, cx)),
         )
         .child(div().flex_1())
-        .child(
-            Button::new("details-main")
-                .primary()
-                .icon(main.1)
-                .label(main.0)
-                .on_click(cx.listener(move |_, _, window, cx| match status {
-                    DownloadStatus::Completed => files::open(id, window, cx),
-                    DownloadStatus::Paused => {
-                        act(window.window_handle(), cx, move |manager| {
-                            api::resume(manager, id)
-                        });
-                    }
-                    DownloadStatus::Cancelled | DownloadStatus::Failed => {
-                        act(window.window_handle(), cx, move |manager| {
-                            api::retry(manager, id)
-                        });
-                    }
-                    _ => act(window.window_handle(), cx, move |manager| {
-                        api::pause(manager, id)
-                    }),
-                })),
-        )
+        .when_some(main, |bar, (action, label, icon)| {
+            bar.child(
+                Button::new("details-main")
+                    .primary()
+                    .icon(icon)
+                    .label(label)
+                    .on_click(cx.listener(move |_, _, window, cx| action.run(id, window, cx))),
+            )
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_details_do_not_offer_a_fix_that_would_reopen_them() {
+        assert!(!offered_here(FixAction::ChangeQueue));
+        assert!(!offered_here(FixAction::Retry));
+        assert!(offered_here(FixAction::ChooseFolder));
+    }
 }

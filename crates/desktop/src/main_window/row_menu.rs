@@ -189,7 +189,7 @@ fn actions(menu: PopupMenu, target: &Target) -> PopupMenu {
         can.retry && fix.map(|(_, fix)| fix) != Some(FixAction::Retry),
         |menu| {
             menu.item(each_item(
-                "Try again",
+                can.retry_word,
                 IconName::RotateCw,
                 rows,
                 applies::can_retry,

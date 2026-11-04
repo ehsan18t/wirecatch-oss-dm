@@ -137,7 +137,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 110 | One bad yt-dlp release stops the check, and a failed check forgets its offers                     | `Xsecurity-addon-unpacking-3`                                                                      | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 111 | Cancel on a selection stops at a finished download                                                | `25-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 112 | The drawer stays open over a page opened from its foot                                            | `25-7`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 113 | Change queue inside the details opens the same details again                                      | `25-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 113 | Change queue inside the details opens the same details again                                      | `25-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 114 | A page address that is not a web address counts as on the person's network                        | `10-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 115 | A Windows socks= proxy fails on sites whose first address is IPv6                                 | `09-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 116 | The proxy form says a saved password is kept, then forgets it                                     | `27-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
@@ -187,10 +187,10 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 160 | Tray ticks flip on a repeat click, and & in a name shows wrongly                                  | `26-2` `26-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 161 | Messages name the product with a literal                                                          | `26-9` `B17-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 162 | A navigation item left behind keeps its hover colour until the mouse moves                        | `U-1` `B18-2`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
-| 163 | Empty pages offer Pause all or Resume all                                                         | `U-3` `B13-2`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
+| 163 | Empty pages offer Pause all or Resume all                                                         | `U-3` `B13-2`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 164 | A failed video or conversion shows the program's raw output                                       | `U-9` `B18-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 165 | New queue and New proxy do not put the cursor in the Name field                                   | `U-13` `B16-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
-| 166 | The row, the menu and the details decide offers and words on their own                            | `25-11` `U-10`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
+| 166 | The row, the menu and the details decide offers and words on their own                            | `25-11` `U-10`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 167 | Two test files depend on an order only timing decides                                             | `05-14` `21-3`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 168 | The same small pieces of logic are written many times in the forms                                | `27-12` `B19-3`                                                                                    | P3       | medium | P3, 2 findings, medium                                                                                           | none                                          | open   |
 | 169 | Dying between placing a video and deleting its work folder gives a second copy                    | `Xcrash-and-resume-3` `Xsecond-review-resume-8`                                                    | P3       | medium | P3, 2 findings, medium; after item 4                                                                             | none                                          | fixed  |
@@ -2214,7 +2214,7 @@ P2, small, fixed.
 
 ### 113. Change queue inside the details opens the same details again
 
-P2, small, open.
+P2, small, fixed.
 
 `failure` offers every fix except `Retry`, `fixes::run` answers `ChangeQueue` with `details::open`, and `open_dialog` adds another dialog. So the fix inside the details opens the same details.
 
@@ -3061,7 +3061,7 @@ P3, small, open.
 
 ### 163. Empty pages offer Pause all or Resume all
 
-P3, small, open.
+P3, small, fixed.
 
 `group_command` does not look at the page's rows, so empty pages offer Pause all beside "Nothing downloading", and Resume all beside "Nothing paused".
 
@@ -3114,7 +3114,7 @@ P3, small, open.
 
 ### 166. The row, the menu and the details decide offers and words on their own
 
-P3, small, open.
+P3, small, fixed.
 
 `cancellable` leaves out Failed while `can_cancel` allows it, `RowAction::offered` matches on status itself, and a cancelled row says Try again in the menu and Start over in the details.
 
