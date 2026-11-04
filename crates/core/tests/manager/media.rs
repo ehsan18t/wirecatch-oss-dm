@@ -1547,6 +1547,21 @@ async fn a_direct_media_file_downloads_like_any_file() -> TestResult {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_direct_file_the_browser_calls_audio_stays_audio() -> TestResult {
+    let server = FileServer::start().await;
+    server.put("clips/talk.webm", test_data(10 * KIB_USIZE));
+    let h = Harness::new().await?;
+    let mut capture = media_capture(server.url("clips/talk.webm"), MediaKind::Direct, None);
+    capture.mime = Some("audio/webm".into());
+    let added = h.manager.add_capture(capture).await?;
+    let done = h
+        .wait_status(added.id.ok_or("no id")?, DownloadStatus::Completed)
+        .await;
+    assert_eq!(done.category, Category::Audio);
+    Ok(())
+}
+
 /// A real ffmpeg joins real video and audio.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn real_ffmpeg_joins_real_video_and_audio() -> TestResult {
