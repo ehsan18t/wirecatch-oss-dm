@@ -17,7 +17,7 @@ pub(super) enum Line {
     Heading(Group, usize),
     /// The day the rows under it finished on.
     Day(NaiveDate),
-    /// A download by its index in the library, with its place in its queue's line, and whether
+    /// A download by its index in the library, with its place among what waits in its queue, and whether
     /// a day heading over it already says its day.
     Row(usize, Option<usize>, bool),
 }
@@ -63,7 +63,7 @@ pub(super) struct Laid {
 
 impl Laid {
     /// The view's downloads that hold the search in their name or link. A queue's view lists its
-    /// line first, numbered in the order it runs, then what is over by group; All downloads groups
+    /// line first, what waits numbered in the order it runs, then what is over by group; All downloads groups
     /// everything, each group under its heading, and a status's own page lists its downloads with
     /// no heading. Finished downloads in queue order go under the day they finished instead. A
     /// search shows everything it finds, folded or not.
@@ -79,9 +79,10 @@ impl Laid {
             let group = Group::of(row.status);
             let hit = found(row, &asked.needle);
             if in_queue && !group.is_over() {
-                place += 1;
+                let waits = group == Group::UpNext;
+                place += usize::from(waits);
                 if hit {
-                    lines.push(Line::Row(index, Some(place), false));
+                    lines.push(Line::Row(index, waits.then_some(place), false));
                 }
             } else if hit {
                 members[group.place()].push(index);
@@ -313,6 +314,28 @@ mod tests {
         assert!(shown.lines == [Line::Row(2, Some(2), false)]);
         let whole = laid(asked(View::Queue(QueueId(1)), "", &[]), &downloads);
         assert_eq!(whole.rows, [0, 2, 3]);
+    }
+
+    #[test]
+    fn only_what_waits_in_a_queue_has_a_number() {
+        let downloads = [
+            row(1, 1, DownloadStatus::Failed),
+            row(2, 1, DownloadStatus::Downloading),
+            row(3, 1, DownloadStatus::Queued),
+            row(4, 1, DownloadStatus::Paused),
+            row(5, 1, DownloadStatus::Queued),
+        ];
+        let shown = laid(asked(View::Queue(QueueId(1)), "", &[]), &downloads);
+        assert!(
+            shown.lines
+                == [
+                    Line::Row(0, None, false),
+                    Line::Row(1, None, false),
+                    Line::Row(2, Some(1), false),
+                    Line::Row(3, None, false),
+                    Line::Row(4, Some(2), false),
+                ]
+        );
     }
 
     #[test]

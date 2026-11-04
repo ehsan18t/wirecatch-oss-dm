@@ -32,6 +32,7 @@ use wirecatch_protocol::app::UserError;
 use wirecatch_sites::local_network::{self, ChosenBy};
 use wirecatch_streams::{Choice, StreamProgress, StreamRequest};
 
+pub(super) use self::network::ytdlp_off_local_network;
 use self::page::run_page;
 use self::placement::{Reserve, Taken, finish, waiting_to_place};
 use super::Manager;

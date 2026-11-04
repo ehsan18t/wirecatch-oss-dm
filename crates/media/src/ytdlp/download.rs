@@ -11,7 +11,11 @@ use wirecatch_engine::numeric::f64_to_u64;
 use wirecatch_streams::process::{self, Output, RunError, RunOptions, STALL_TIMEOUT};
 
 use super::cookies::CookiesFile;
-use super::{Attempt, Context, YtDlpError, common_args, refused, refused_address, without_cookies};
+use super::guard::Guard;
+use super::{
+    Attempt, Context, YtDlpError, common_args, refused, refused_address, start_guard,
+    without_cookies,
+};
 use crate::MediaProgress;
 use crate::output::Container;
 
@@ -69,6 +73,12 @@ async fn download_once(
     progress: &MediaProgress,
     cancel: &CancellationToken,
 ) -> Result<Fetched, Attempt> {
+    let guard = start_guard(ctx).await?;
+    let guard_url = guard.as_ref().map(Guard::url);
+    let ctx = &Context {
+        proxy: guard_url.as_deref().or(ctx.proxy),
+        ..*ctx
+    };
     let cookies = CookiesFile::create(ctx).await?;
     let args = download_args(ctx, cookies.as_ref(), format, merge_into);
     let mut printed = None::<PathBuf>;
@@ -103,9 +113,12 @@ async fn download_once(
         Err(e) => return Err(YtDlpError::from_run(e).into()),
     };
     if !ran.success() {
-        return Err(match ran.stderr.error_line().and_then(refused_address) {
-            Some(address) => refused(&ran).of_address(address),
-            None => refused(&ran),
+        return Err(if guard.as_ref().is_some_and(Guard::refused_any) {
+            YtDlpError::LocalNetwork.into()
+        } else if let Some(address) = ran.stderr.error_line().and_then(refused_address) {
+            refused(&ran).of_address(address)
+        } else {
+            refused(&ran)
         });
     }
     let work = work.to_path_buf();
@@ -256,6 +269,7 @@ mod tests {
             timeout: std::time::Duration::from_secs(1),
             proxy: None,
             rate_limit: Some(2048),
+            off_local_network: false,
         };
         let args = download_args(&ctx, None, "best", merge_into);
         args.iter()

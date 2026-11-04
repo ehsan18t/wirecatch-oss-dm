@@ -39,6 +39,11 @@ pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
         YtDlpError::Cookies(source) => retry(format!(
             "Wirecatch could not prepare the page's sign-in for the media add-on ({source}). Check that the disk has free space, then try again."
         )),
+        YtDlpError::Guard(source) => retry(format!(
+            "Wirecatch could not start what keeps the media add-on off your own network ({source}). Try again."
+        )),
+        // The run has this rule only for a page on the internet, so its link was sent on from there.
+        YtDlpError::LocalNetwork => wirecatch_messages::private_network(ChosenBy::Person),
         YtDlpError::Start(source) => cannot_start(tools, "yt-dlp", source),
         YtDlpError::Cancelled => retry("Reading the page was stopped. Try again.".into()),
         YtDlpError::TimedOut(limit) => retry(format!(

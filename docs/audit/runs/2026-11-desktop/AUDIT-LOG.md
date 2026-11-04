@@ -161,7 +161,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 134 | A saved format the page no longer lists can never succeed                                         | `Xpath-media-download-9`                                                                           | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 135 | Try again can never succeed after the list failed to open                                         | `Xdatabase-migrations-2`                                                                           | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 136 | Dragging moves rows the selection no longer shows                                                 | `25-4`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
-| 137 | Reading a website's page with yt-dlp escapes the local network rule                               | `Xsecurity-bridge-and-pipe-input-2`                                                                | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | open   |
+| 137 | Reading a website's page with yt-dlp escapes the local network rule                               | `Xsecurity-bridge-and-pipe-input-2`                                                                | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 138 | A queue's run ends while its last download only waits                                             | `18-1`                                                                                             | P2       | medium | P2, 1 finding, medium; after item 79                                                                             | none                                          | open   |
 | 139 | Nothing opens a download's window again after Hide                                                | `24-8`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | open   |
 | 140 | A file too large for the disk is not noticed until it is full                                     | `01-3`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
@@ -249,11 +249,11 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 222 | A file name or host holding a secret word loses the rest of its log line                          | `20-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 223 | The rules help says the highest queue wins, but for sites the most specific does                  | `27-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 224 | A dotted file type is accepted in a category rule and never matches                               | `Xrepeated-logic-5`                                                                                | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 225 | Queue page numbers start at 2 and number failed rows                                              | `U-5`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 226 | A queue using a proxy with no name reads "via" and nothing after it                               | `U-11`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 227 | The queue page's facts line is cut off with no way to read the end                                | `U-12`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 225 | Queue page numbers start at 2 and number failed rows                                              | `U-5`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 226 | A queue using a proxy with no name reads "via" and nothing after it                               | `U-11`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 227 | The queue page's facts line is cut off with no way to read the end                                | `U-12`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 228 | The details panel says Merging for every processing step                                          | `23-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 229 | The system accent breaks the promised contrast                                                    | `23-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 229 | The system accent breaks the promised contrast                                                    | `23-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 230 | Check for updates and Copy from system give no answer when there is nothing to do                 | `27-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 231 | A download waiting on the question reads Paused at Size unknown                                   | `U-6`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 232 | The complete window stays open and blank once its rows are removed                                | `24-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -2598,7 +2598,7 @@ P2, medium, fixed.
 
 ### 137. Reading a website's page with yt-dlp escapes the local network rule
 
-P2, medium, open.
+P2, medium, fixed.
 
 `capture_arrived` checks only the first host, `hold_media` starts `analyse` at once, and `read_page` runs yt-dlp with no address rule, before the person answers. `page_attempt`'s else branch also downloads outside `network_rule`. No cookies cross hosts and nothing goes back to the site. That yt-dlp follows the redirect was not run.
 
@@ -4069,7 +4069,7 @@ P3, small, fixed.
 
 ### 225. Queue page numbers start at 2 and number failed rows
 
-P3, small, open.
+P3, small, fixed.
 
 `queue_line` keeps every row that is not over, so failed, paused and running rows take a place, and a row can read "2" while its reason says "1st in line". D47.4 does not cover failed rows.
 
@@ -4085,7 +4085,7 @@ P3, small, open.
 
 ### 226. A queue using a proxy with no name reads "via" and nothing after it
 
-P3, small, open.
+P3, small, fixed.
 
 `marks` clones an empty name and `summary` formats `via {proxy}`. `proxy_dialog::shown_name` already falls back to the address.
 
@@ -4101,7 +4101,7 @@ P3, small, open.
 
 ### 227. The queue page's facts line is cut off with no way to read the end
 
-P3, small, open.
+P3, small, fixed.
 
 The line truncates with no tooltip, and the current state comes last, so it is the part lost.
 
@@ -4133,7 +4133,7 @@ P3, small, fixed.
 
 ### 229. The system accent breaks the promised contrast
 
-P3, small, open.
+P3, small, fixed.
 
 The doc promises 4.5:1, and the system accent gives as little as 2.34 with stock Windows colours. The default accent is Cyan, and `Accent::System` is opt-in.
 
