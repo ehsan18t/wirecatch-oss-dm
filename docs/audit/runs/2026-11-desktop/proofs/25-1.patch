@@ -1,0 +1,82 @@
+Run: add [profile.b13] inherits = "dev" to Cargo.toml, then cargo test --profile b13 -p wirecatch-desktop --bin wirecatch-app main_window::keymap::tests. Output: without_the_window_keys_a_space_reaches_the_search_field ok; a_space_typed_in_the_search_field_is_text_and_not_a_command FAILED left ("ab", 1, 0) right ("a b", 0, 0); enter_in_the_search_field_does_not_open_the_selected_file FAILED left ("a", 0, 1) right ("a", 0, 0) (B13-1). Tuple: field text, PauseOrResume count, OpenSelected count.
+
+diff --git a/crates/desktop/src/main_window/keymap.rs b/crates/desktop/src/main_window/keymap.rs
+index 0a612c49b..05547010b 100644
+--- a/crates/desktop/src/main_window/keymap.rs
++++ b/crates/desktop/src/main_window/keymap.rs
+@@ -203,6 +203,75 @@ pub(super) fn page() -> SettingPage {
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    use gpui_kit::component::input::{Input, InputState};
++    use gpui_kit::component::v_flex;
++    use gpui_kit::{
++        AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement, Render,
++        TestAppContext, Window,
++    };
++
++    /// The tree `MainWindow::render` and `command_bar` build around the search field.
++    struct SearchInWindow {
++        search: Entity<InputState>,
++        focus: FocusHandle,
++        pauses: usize,
++        opens: usize,
++    }
++
++    impl Render for SearchInWindow {
++        fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
++            v_flex()
++                .id("main-window")
++                .key_context(KEY_CONTEXT)
++                .track_focus(&self.focus)
++                .on_action(cx.listener(|this, _: &PauseOrResume, _, _| this.pauses += 1))
++                .on_action(cx.listener(|this, _: &OpenSelected, _, _| this.opens += 1))
++                .child(
++                    h_flex()
++                        .key_context(super::super::SEARCH_CONTEXT)
++                        .child(Input::new(&self.search)),
++                )
++        }
++    }
++
++    fn type_in_search(bound: bool, keys: &str, cx: &mut TestAppContext) -> (String, usize, usize) {
++        cx.update(|cx| {
++            gpui_kit::component::init(cx);
++            if bound {
++                bind(cx);
++            }
++        });
++        let (root, cx) = cx.add_window_view(|window, cx| SearchInWindow {
++            search: cx.new(|cx| InputState::new(window, cx)),
++            focus: cx.focus_handle(),
++            pauses: 0,
++            opens: 0,
++        });
++        cx.run_until_parked();
++        let search = root.read_with(cx, |root, _| root.search.clone());
++        let focusing = search.clone();
++        cx.update(|window, cx| focusing.update(cx, |search, cx| search.focus(window, cx)));
++        cx.run_until_parked();
++        cx.simulate_keystrokes(keys);
++        let value = search.read_with(cx, |search, _| search.value().to_string());
++        let (pauses, opens) = root.read_with(cx, |root, _| (root.pauses, root.opens));
++        (value, pauses, opens)
++    }
++
++    #[gpui_kit::test]
++    fn without_the_window_keys_a_space_reaches_the_search_field(cx: &mut TestAppContext) {
++        assert_eq!(type_in_search(false, "a space b", cx), ("a b".to_owned(), 0, 0));
++    }
++
++    #[gpui_kit::test]
++    fn a_space_typed_in_the_search_field_is_text_and_not_a_command(cx: &mut TestAppContext) {
++        assert_eq!(type_in_search(true, "a space b", cx), ("a b".to_owned(), 0, 0));
++    }
++
++    #[gpui_kit::test]
++    fn enter_in_the_search_field_does_not_open_the_selected_file(cx: &mut TestAppContext) {
++        assert_eq!(type_in_search(true, "a enter", cx), ("a".to_owned(), 0, 0));
++    }
+ 
+     #[test]
+     fn down_leaves_the_search_field_of_the_main_search() {
