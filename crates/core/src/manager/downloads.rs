@@ -665,6 +665,7 @@ impl Manager {
         // media job's is final.
         let naming = NameChoice {
             settled: media_job.is_some(),
+            writing: false,
             name: wanted.file_name,
             folder: wanted.folder.map(|f| f.to_string_lossy().into_owned()),
         };

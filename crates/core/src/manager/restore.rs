@@ -209,11 +209,11 @@ fn restore_entry(
         entry.row.status,
         DownloadStatus::Completed | DownloadStatus::Cancelled
     );
-    // A provisional path has no file of this download's yet; whatever is there
-    // is someone else's.
+    // Until a run began writing, whatever is at the path is someone else's. One of another size than the server's is not this download's either.
     if !done_with
-        && entry.naming.settled
+        && entry.naming.writing
         && let Some(size) = (around.finished_size)(entry.path())
+        && entry.row.total.is_none_or(|total| total == size)
     {
         mark_completed(&mut entry, size, around.now_millis);
         fixed = true;
@@ -262,15 +262,22 @@ mod tests {
 
     #[test]
     fn a_download_whose_file_finished_is_completed_not_rerun() {
+        let writing = |id, status| {
+            let mut row = stored(id, 1, status);
+            row.naming.writing = true;
+            row.summary.total = None;
+            row
+        };
         let snapshot = Snapshot {
             downloads: vec![
-                stored(1, 1, DownloadStatus::Downloading),
-                stored(2, 1, DownloadStatus::Cancelled),
-                stored(3, 1, DownloadStatus::Paused),
+                writing(1, DownloadStatus::Downloading),
+                writing(2, DownloadStatus::Cancelled),
+                writing(3, DownloadStatus::Paused),
+                stored(4, 1, DownloadStatus::Queued),
             ],
             ..Snapshot::default()
         };
-        // Every path looks finished; only unsettled downloads may be marked.
+        // Every path looks finished; only a download whose run began writing may be marked.
         let restored = restore(snapshot, &nowhere(&|_| Some(42)));
         let row = |id| &restored.state.downloads[&DownloadId(id)].row;
         for id in [1, 3] {
@@ -279,8 +286,25 @@ mod tests {
             assert_eq!(row(id).completed_at, Some(UnixMillis(7)));
         }
         assert_eq!(row(2).status, DownloadStatus::Cancelled);
+        assert_eq!(row(4).status, DownloadStatus::Queued);
         assert!(!restored.state.downloads[&DownloadId(1)].resume_first);
         assert_eq!(restored.changed.len(), 2);
+    }
+
+    #[test]
+    fn a_file_of_another_size_than_the_servers_does_not_finish_a_download() {
+        let mut row = stored(1, 1, DownloadStatus::Paused);
+        row.naming.writing = true;
+        row.summary.total = Some(42);
+        let snapshot = Snapshot {
+            downloads: vec![row],
+            ..Snapshot::default()
+        };
+        let restored = restore(snapshot, &nowhere(&|_| Some(5)));
+        assert_eq!(
+            restored.state.downloads[&DownloadId(1)].row.status,
+            DownloadStatus::Paused
+        );
     }
 
     /// The scheduler visits only unfinished downloads: a finished one is never in the set, and one that finishes leaves it at the next prune.
