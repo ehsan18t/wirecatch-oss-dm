@@ -562,7 +562,7 @@ async fn collect(
     let mut sink = tokio::io::sink();
     let rest = tokio::select! {
         rest = tokio::io::copy(&mut out, &mut sink) => rest,
-        () = stop.cancelled() => return (bytes, false),
+        () = stop.cancelled() => return (bytes, true),
     };
     match rest {
         Ok(0) => (bytes, false),
@@ -687,6 +687,24 @@ mod tests {
         assert_eq!((bytes.as_slice(), truncated), (&b"0123"[..], true));
         let (bytes, truncated) = collect(&b"0123"[..], 4, &stop).await;
         assert_eq!((bytes.as_slice(), truncated), (&b"0123"[..], false));
+    }
+
+    /// Stopped at the limit, it cannot be told whether more was coming: a cut answer is never taken for a whole one.
+    #[tokio::test]
+    async fn output_stopped_at_the_limit_counts_as_cut_short() {
+        use tokio::io::AsyncWriteExt as _;
+        let (mut held, out) = tokio::io::duplex(64);
+        held.write_all(b"0123456789").await.unwrap();
+        let stop = CancellationToken::new();
+        let collecting = tokio::spawn({
+            let stop = stop.clone();
+            async move { collect(out, 4, &stop).await }
+        });
+        tokio::task::yield_now().await;
+        stop.cancel();
+        let (bytes, truncated) = collecting.await.unwrap();
+        assert_eq!((bytes.as_slice(), truncated), (&b"0123"[..], true));
+        drop(held);
     }
 
     /// An output something else holds open never ends; what it wrote is still the program's answer.
