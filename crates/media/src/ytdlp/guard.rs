@@ -565,11 +565,19 @@ mod tests {
             peer.read_to_end(&mut body).await.unwrap();
             body
         });
-        answer(
-            &guard,
-            &format!("POST http://{target}/ HTTP/1.1\r\nContent-Length: 4\r\n\r\nbodyGET http://other.example/ HTTP/1.1\r\n\r\n"),
-        )
-        .await;
+        let mut client = TcpStream::connect(guard.address).await.unwrap();
+        client
+            .write_all(
+                format!(
+                    "POST http://{target}/ HTTP/1.1\r\nContent-Length: 4\r\n\r\nbodyGET http://other.example/ HTTP/1.1\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        read_head(&mut client, Vec::new()).await.unwrap();
+        // Told to close, as a client does.
+        drop(client);
         assert_eq!(heard.await.unwrap(), b"body");
     }
 
