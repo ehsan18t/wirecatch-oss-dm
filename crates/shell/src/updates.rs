@@ -1,5 +1,5 @@
 //! Installing a newer version of the app (D111) once the core has downloaded and checked it. On
-//! Windows the setup runs without questions and starts the new version itself; an AppImage
+//! Windows the setup asks only for approval and starts the new version itself; an AppImage
 //! takes the place of the one running. A `.deb` or `.rpm` install needs the system's package
 //! manager, so the app offers the release page instead.
 
@@ -22,6 +22,12 @@ pub enum InstallError {
     AppImageElsewhere,
     #[error("The update could not be started (error {0}).")]
     Start(usize),
+    #[error(
+        "Setup ended without installing the update. When Windows asks for approval, choose Yes, then try again."
+    )]
+    SetupEnded,
+    #[error("The update's setup could not be followed ({0}).")]
+    Follow(#[source] std::io::Error),
     #[error("The app is not running from an AppImage.")]
     NotAppImage,
     #[error("The update could not be put in place of {} ({source}).", .current.display())]
@@ -45,11 +51,13 @@ pub fn install_kind() -> Option<FileKind> {
 
 /// Starts installing the checked installer at `installer`; the caller quits the app next, so
 /// the installer can replace it. A setup starts the new version itself; an AppImage does not, and
-/// the caller starts it again after it has exited.
+/// the caller starts it again after it has exited. Blocks, on Windows until the setup has its
+/// approval.
 ///
 /// # Errors
 ///
-/// The installer could not be started, or the AppImage could not take the old one's place.
+/// The installer could not be started or ended without its approval, or the AppImage could not
+/// take the old one's place.
 pub fn install(installer: &Path, kind: FileKind) -> Result<(), InstallError> {
     match kind {
         FileKind::Setup => run_setup(installer),
@@ -58,35 +66,98 @@ pub fn install(installer: &Path, kind: FileKind) -> Result<(), InstallError> {
     }
 }
 
-/// Runs the setup through the shell, which asks for an administrator's approval as the setup
-/// requires; a plain process start cannot. `/SILENT` shows progress and asks nothing, and the
-/// setup starts the new version when it is done.
+/// `/SILENT` shows progress and asks nothing, and the setup starts the new version when it is done.
+#[cfg(windows)]
+const SETUP_SWITCHES: &str = "/SILENT /SUPPRESSMSGBOXES /NORESTART";
+/// Names this process to the setup, whose `{param:UPDATEFROM}` in `installer.iss` reads it.
+#[cfg(windows)]
+const UPDATE_FROM_SWITCH: &str = "/UPDATEFROM";
+/// With this process's id, the event the setup sets from `installer.iss` once it is approved.
+#[cfg(windows)]
+const APPROVED_EVENT_PREFIX: &str = r"Local\AppUpdateApproved-";
+
+/// Runs the setup and waits until it has its administrator's approval, or has ended without. The
+/// setup asks for approval itself after it has started (it is `asInvoker`), so the shell's answer
+/// says nothing about it, and the app has to stay to show a refusal.
 #[cfg(windows)]
 fn run_setup(installer: &Path) -> Result<(), InstallError> {
-    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    let pid = std::process::id();
+    let approved = approved_event(pid).map_err(InstallError::Follow)?;
+    let arguments = format!("{SETUP_SWITCHES} {UPDATE_FROM_SWITCH}={pid}");
+    let setup = start_through_shell(installer.as_os_str(), &arguments)?;
+    wait_for_approval(&approved, &setup)
+}
+
+#[cfg(windows)]
+fn approved_event(pid: u32) -> std::io::Result<std::os::windows::io::OwnedHandle> {
+    use std::os::windows::io::FromRawHandle as _;
+    use windows_sys::Win32::System::Threading::CreateEventW;
+    use wirecatch_ipc::wide;
+
+    let name = wide(format!("{APPROVED_EVENT_PREFIX}{pid}"));
+    // SAFETY: the name is NUL-terminated UTF-16 that outlives the call; null security attributes
+    // are allowed.
+    let event = unsafe { CreateEventW(std::ptr::null(), 1, 0, name.as_ptr()) };
+    if event.is_null() {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: `event` is a handle just opened here and owned by nothing else.
+    Ok(unsafe { std::os::windows::io::OwnedHandle::from_raw_handle(event) })
+}
+
+/// Starts `file` through the shell and returns its process.
+#[cfg(windows)]
+fn start_through_shell(
+    file: &std::ffi::OsStr,
+    arguments: &str,
+) -> Result<std::os::windows::io::OwnedHandle, InstallError> {
+    use std::os::windows::io::FromRawHandle as _;
+    use windows_sys::Win32::UI::Shell::{
+        SEE_MASK_FLAG_NO_UI, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
     use wirecatch_ipc::wide;
 
-    let file = wide(installer);
-    let arguments = wide("/SILENT /SUPPRESSMSGBOXES /NORESTART");
+    let file = wide(file);
+    let arguments = wide(arguments);
     let verb = wide("open");
-    // SAFETY: every buffer is NUL-terminated UTF-16 that outlives the call; a null window and
-    // folder are allowed.
-    let started = unsafe {
-        ShellExecuteW(
-            std::ptr::null_mut(),
-            verb.as_ptr(),
-            file.as_ptr(),
-            arguments.as_ptr(),
-            std::ptr::null(),
-            SW_SHOWNORMAL,
-        )
-    };
-    // ShellExecuteW reports success as a value above 32.
-    if started as usize > 32 {
+    // SAFETY: all zeros is a valid value of this plain struct: null pointers and no flags.
+    let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
+    info.cbSize = u32::try_from(size_of::<SHELLEXECUTEINFOW>()).unwrap_or(u32::MAX);
+    // No error box from the shell: the app shows the failure itself.
+    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI;
+    info.lpVerb = verb.as_ptr();
+    info.lpFile = file.as_ptr();
+    info.lpParameters = arguments.as_ptr();
+    info.nShow = SW_SHOWNORMAL;
+    // SAFETY: `info` has its size set and is valid for the call; every buffer it points to is
+    // NUL-terminated UTF-16 that outlives the call.
+    let started = unsafe { ShellExecuteExW(&raw mut info) };
+    if started == 0 || info.hProcess.is_null() {
+        return Err(InstallError::Start(info.hInstApp as usize));
+    }
+    // SAFETY: SEE_MASK_NOCLOSEPROCESS hands this process handle to the caller to close.
+    Ok(unsafe { std::os::windows::io::OwnedHandle::from_raw_handle(info.hProcess) })
+}
+
+#[cfg(windows)]
+fn wait_for_approval(
+    approved: &std::os::windows::io::OwnedHandle,
+    setup: &std::os::windows::io::OwnedHandle,
+) -> Result<(), InstallError> {
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+    use windows_sys::Win32::System::Threading::{INFINITE, WaitForMultipleObjects};
+
+    let handles = [approved.as_raw_handle(), setup.as_raw_handle()];
+    // SAFETY: both handles are open for the whole call, and the count is the array's length.
+    let woken = unsafe { WaitForMultipleObjects(2, handles.as_ptr(), 0, INFINITE) };
+    if woken == WAIT_OBJECT_0 {
         Ok(())
+    } else if woken == WAIT_OBJECT_0 + 1 {
+        Err(InstallError::SetupEnded)
     } else {
-        Err(InstallError::Start(started as usize))
+        Err(InstallError::Follow(std::io::Error::last_os_error()))
     }
 }
 
@@ -191,5 +262,53 @@ mod tests {
                 assert_eq!(install_kind(), None);
             }
         }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    const SETUP_SCRIPT: &str = include_str!("../../desktop/packaging/windows/installer.iss");
+
+    fn finished_program() -> std::os::windows::io::OwnedHandle {
+        start_through_shell(std::ffi::OsStr::new("cmd.exe"), "/c exit 1")
+            .unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    #[test]
+    fn a_setup_that_ends_unapproved_is_a_failure() {
+        // Event names are shared by every process, so each test has its own.
+        let approved = approved_event(u32::MAX - 1).unwrap();
+        assert!(matches!(
+            wait_for_approval(&approved, &finished_program()),
+            Err(InstallError::SetupEnded)
+        ));
+    }
+
+    #[test]
+    fn a_setup_that_sets_the_event_is_approved() {
+        use std::os::windows::io::AsRawHandle as _;
+        use windows_sys::Win32::System::Threading::SetEvent;
+
+        let approved = approved_event(u32::MAX - 2).unwrap();
+        // SAFETY: the handle is open for the whole call.
+        assert_ne!(unsafe { SetEvent(approved.as_raw_handle()) }, 0);
+        assert!(wait_for_approval(&approved, &finished_program()).is_ok());
+    }
+
+    #[test]
+    fn a_program_that_cannot_be_started_is_reported() {
+        assert!(matches!(
+            start_through_shell(std::ffi::OsStr::new(r"C:\no\such\setup.exe"), ""),
+            Err(InstallError::Start(_))
+        ));
+    }
+
+    #[test]
+    fn the_setup_script_uses_the_names_the_app_gives_it() {
+        let switch = UPDATE_FROM_SWITCH.trim_start_matches('/');
+        assert!(SETUP_SCRIPT.contains(&format!("{{param:{switch}|")));
+        assert!(SETUP_SCRIPT.contains(APPROVED_EVENT_PREFIX));
     }
 }
