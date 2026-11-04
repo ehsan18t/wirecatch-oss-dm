@@ -85,6 +85,7 @@ Everything is in the run's folder. Commit after every finished row of `## Progre
 - `verdicts/<batch>.md`: each batch's verdicts.
 - `proofs/<id>.patch`: a failing test or reproduction against the recorded commit, with one line on how to run it and the output it gave.
 - `AUDIT-LOG.md`: the final ordered list.
+- `WORK-LIST.md`: the fix items grouped into pull requests, in the order to work them.
 
 ## Stage 0: Prepare
 
@@ -249,13 +250,19 @@ Turn the valid findings into one exact fix order. This is a stage of its own bec
    - under each item, its findings: ID, verdict, one line on the failure, and the file holding the full text
    - the suggestions, apart from the fix order; include one only if it clearly helps the person using the app, not because another app differs
    - the chunks found clean, the files read, and what could not be tested, stated as untested rather than as passing
-6. **Show the order and wait.** The person may move items. Record the approval. Suggestions get no severity and no place in the order until the person accepts one, one by one.
-7. **Finish.** Add the fix items to `docs/ROADMAP.md`, update any docs the audit affects, and run `node scripts/gate.mjs text docs commits`; CI runs the other checks on the pull request.
+6. **Group the items into `WORK-LIST.md`.** Group by judgement from what each item really touches, not by a script or by item number.
+   - A pull request has one clear scope and one title in `type(scope): what it does` form, at most 50 characters counting type and scope: one idea, no "and", everyday words, nothing personal, no audit IDs.
+   - Each P0 and P1 item is its own pull request, unless two are truly one change; say why if they are merged.
+   - P2 and P3 items group only when they touch the same code or the same behaviour, so a fix is cheaper together. P3 test, dead-code and wording cleanups may group by area. Unrelated items never group just to cut the count, a large risky item never sits with unrelated small cleanups, and a group stays a size one reviewer can review.
+   - A pull request comes after any that holds a blocker of its items: P0 and P1 first in the log's order, then by the log's order of the group's highest item. Where a whole pull request sits noticeably away from the log's order, say why in a few words.
+   - The file starts with how to use it, a table of every pull request, and the lanes that touch separate code and can run side by side. Each pull request then has a section: branch, items with severity, effort, why they belong together, real dependencies, what it touches, proofs to start from, checks sized to the change, and status.
+7. **Show the order and wait.** The person may move items. Record the approval. Suggestions get no severity and no place in the order until the person accepts one, one by one.
+8. **Finish.** Add the fix items to `docs/ROADMAP.md`, update any docs the audit affects, and run `node scripts/gate.mjs text docs commits`; CI runs the other checks on the pull request.
 
 ## After the audit: fixing
 
-Fixes work down the numbered list, one item at a time, each in its own pull request and starting from its proof.
+Fixes work from `WORK-LIST.md`: take the first open pull request whose dependencies are merged, make its branch from main and start from its proof.
 
-- **Status** is `open`, `fixed` or `won't fix (reason)`. When an item is finished, mark it in `AUDIT-LOG.md` and in `docs/ROADMAP.md`. Items fixed together are marked together.
-- **Before starting an item,** check that it still applies, since an earlier fix may have resolved or changed it. If so, mark it and move on.
+- **Status** of an item is `open`, `fixed` or `won't fix (reason)`. In the pull request that finishes an item, mark it in `AUDIT-LOG.md` and in `docs/ROADMAP.md`, and mark the pull request `merged` in `WORK-LIST.md`. Items fixed together are marked together.
+- **Before starting a pull request,** check that each of its items still applies, since an earlier fix may have resolved or changed it. If one does not, mark it in the log rather than fixing it.
 - **No new audit starts** until every item is fixed or marked won't fix.

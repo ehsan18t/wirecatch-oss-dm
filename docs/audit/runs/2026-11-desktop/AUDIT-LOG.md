@@ -21,7 +21,7 @@ The result of the code audit of the `desktop` scope, on branch `docs/record-open
 
 ## Fix order
 
-Work down this list. Each item is one pull request, starting from its proof if it has one. Items marked with a reason in "Why here" sit above their severity only because they clear the way for something below. Status is `open`, `fixed` or `won't fix (reason)`.
+This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, and fixing works from that list, starting from each proof. Items marked with a reason in "Why here" sit above their severity only because they clear the way for something below. Status is `open`, `fixed` or `won't fix (reason)`.
 
 | #   | Item                                                                                              | Findings                                                                                           | Severity | Effort | Why here                                                                                                         | Proof                                         | Status |
 | --- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------- | ------ | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ------ |
