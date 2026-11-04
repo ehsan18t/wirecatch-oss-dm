@@ -283,6 +283,9 @@ impl Unavailable {
             IpcError::WrongOwner { .. } | IpcError::EndpointTaken { .. } => Self::new(
                 "Wirecatch's connection point belongs to another user account on this computer, so nothing was sent to it. Another signed-in user may be trying to intercept your downloads. Ask the other users to sign out (or restart the computer), then open Wirecatch again.",
             ),
+            IpcError::LowerRightsServer { .. } => Self::new(
+                "Wirecatch's connection point was made by a program running with fewer rights, so nothing was sent to it. That program may be trying to intercept your downloads. Open Wirecatch, then try again.",
+            ),
             IpcError::NoEndpointKey { .. } => Self::new(error.to_string()),
             IpcError::UnsafeDirectory { .. } => Self::new(format!(
                 "Wirecatch could not be reached safely, so nothing was sent to it. {error}"
@@ -307,7 +310,7 @@ pub(crate) enum Start {
 ///
 /// `endpoint` is asked for the endpoint at every attempt: its key may not exist until the
 /// app has started, and the app writes a new one when its name is taken (D41.6).
-/// No key yet counts as "not running"; if there is still none when the budget runs out, the error says so, with its advice for a browser that sees other folders than the app. A server owned by another user counts as not running too, since the app takes a new name when it starts and finds its name held. Nothing is ever sent to it, and any other error than these is never retried and never causes a launch.
+/// No key yet counts as "not running"; if there is still none when the budget runs out, the error says so, with its advice for a browser that sees other folders than the app. A server owned by another user, or made by a program with fewer rights, counts as not running too, since the app takes a new name when it starts and finds its name held. Nothing is ever sent to it, and any other error than these is never retried and never causes a launch.
 pub(crate) async fn connect_or_launch(
     endpoint: &dyn Fn() -> Result<Endpoint, IpcError>,
     launcher: &dyn Launcher,
@@ -369,7 +372,7 @@ async fn attempt(
         Ok(Ok(conn)) => Attempt::Connected(conn),
         Ok(Err(IpcError::NotRunning { .. })) => Attempt::NotYet(None),
         Ok(Err(error @ IpcError::NoEndpointKey { .. })) => Attempt::NotYet(Some(error)),
-        Ok(Err(error @ IpcError::WrongOwner { .. })) => {
+        Ok(Err(error @ (IpcError::WrongOwner { .. } | IpcError::LowerRightsServer { .. }))) => {
             tracing::warn!(
                 "{error} Nothing was sent; starting Wirecatch, which moves to a new name."
             );
@@ -535,9 +538,26 @@ mod tests {
         }
     }
 
-    // Only the app moves a keyed name away from another account that holds it, by writing a new key when it starts; the bridge gave up instead of starting it, so the name stayed taken until the person opened Wirecatch (W4I review R2-L1).
+    /// What the connector answers at a name a program with fewer rights holds.
+    fn stood_in_for() -> IpcError {
+        IpcError::LowerRightsServer {
+            endpoint: "the keyed name".into(),
+            level: 4096,
+        }
+    }
+
+    // Only the app moves a keyed name away from whoever holds it, by writing a new key when it starts.
     #[tokio::test]
     async fn a_keyed_name_another_account_holds_starts_the_app_and_reads_the_new_key() {
+        assert_held_name_starts_the_app_and_reads_the_new_key(squatted).await;
+    }
+
+    #[tokio::test]
+    async fn a_keyed_name_a_program_with_fewer_rights_holds_starts_the_app_and_reads_the_new_key() {
+        assert_held_name_starts_the_app_and_reads_the_new_key(stood_in_for).await;
+    }
+
+    async fn assert_held_name_starts_the_app_and_reads_the_new_key(held: fn() -> IpcError) {
         let dir = private_dir("bridge-keyed-taken").unwrap();
         let folders = keyed_in(dir.path().join("Wirecatch"));
         let launches = Arc::new(Mutex::new(0));
@@ -549,7 +569,7 @@ mod tests {
         // Until the app starts, the name its old key gives is held by someone else.
         let find = || {
             if *launches.lock().unwrap() == 0 {
-                Err(squatted())
+                Err(held())
             } else {
                 wirecatch_ipc::endpoint_in(Channel::Dev, &folders)
             }
@@ -750,6 +770,9 @@ mod tests {
         let message = Unavailable::from_ipc(&squatted).message;
         assert!(message.contains("another user account"), "{message}");
         assert!(!message.contains("Restart the computer, open"), "{message}");
+        let message = Unavailable::from_ipc(&stood_in_for()).message;
+        assert!(message.contains("fewer rights"), "{message}");
+        assert!(message.contains("nothing was sent"), "{message}");
         assert!(
             Unavailable::timed_out(START_BUDGET)
                 .message

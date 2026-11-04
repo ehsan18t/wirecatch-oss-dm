@@ -23,7 +23,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-15  | fix(desktop): let text fields keep their own keys  | `fix/field-keys-first`           | 15                           | P1       | small  | none         | open   |
 | PR-16  | fix(streams): limit the qualities of HLS playlists | `fix/limit-hls-qualities`        | 16                           | P1       | small  | none         | merged |
 | PR-17  | fix(streams): refuse segments that are not media   | `fix/check-segment-bodies`       | 17                           | P1       | medium | none         | merged |
-| PR-18  | fix(ipc): refuse a lower-integrity stand-in pipe   | `fix/pipe-integrity-check`       | 18                           | P1       | medium | none         | open   |
+| PR-18  | fix(ipc): refuse a lower-integrity stand-in pipe   | `fix/pipe-integrity-check`       | 18                           | P1       | medium | none         | merged |
 | PR-19  | fix(streams): limit DASH addresses while building  | `fix/dash-address-limit`         | 19                           | P1       | small  | none         | merged |
 | PR-20  | fix(engine): fail a run when a flush fails         | `fix/keep-failed-flush`          | 20                           | P1       | small  | none         | merged |
 | PR-21  | fix(engine): renew an expired redirect target      | `fix/expired-redirect-target`    | 21                           | P1       | small  | none         | merged |
@@ -364,7 +364,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/ipc`
 - **Proof:** `08-1.patch`, run at high and again at medium integrity. `B04-p2-checks.patch` holds 5 tests: only the two `audit_08_2_` ones belong here, the others are for PR-34.
 - **Checks:** `cargo test -p wirecatch-ipc`, `cargo clippy -p wirecatch-ipc`
-- **Status:** open
+- **Status:** merged
 
 ### PR-19 fix(streams): limit DASH addresses while building
 
