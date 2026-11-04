@@ -971,3 +971,70 @@ async fn a_segment_longer_than_a_day_counts_as_unknown() {
     .unwrap();
     assert_eq!(info.duration, Some(Duration::from_secs(4)));
 }
+
+const SIGN_IN_PAGE: &[u8] =
+    b"<!doctype html><html><body>Your session expired. Sign in.</body></html>";
+
+/// A media playlist of `count` two-second segments named `0.ts` and up.
+fn numbered_playlist(server: &FileServer, count: usize) -> TestResult {
+    let mut text = String::from("#EXTM3U\n#EXT-X-TARGETDURATION:2\n");
+    for i in 0..count {
+        write!(text, "#EXTINF:2,\n{i}.ts\n")?;
+    }
+    text.push_str("#EXT-X-ENDLIST\n");
+    server.put_typed("index.m3u8", text, MPEGURL);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_web_page_in_place_of_a_segment_is_not_a_finished_video() -> TestResult {
+    let server = FileServer::start().await;
+    server.put("0.ts", ts_segment(1, 1500));
+    server.put("1.ts", SIGN_IN_PAGE.to_vec());
+    server.put("2.ts", ts_segment(3, 1500));
+    numbered_playlist(&server, 3)?;
+    let dir = private_dir("segment-is-a-page")?;
+    let output = dir.join("clip.ts");
+    let got = run(request(server.url("index.m3u8"), &output)).await;
+    assert!(
+        matches!(
+            got,
+            Err(Error::NotMedia {
+                number: 2,
+                total: 3
+            })
+        ),
+        "{got:?}"
+    );
+    assert!(!output.exists());
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_empty_segment_is_not_a_finished_video() -> TestResult {
+    let server = FileServer::start().await;
+    server.put("0.ts", Vec::new());
+    numbered_playlist(&server, 1)?;
+    let dir = private_dir("segment-is-empty")?;
+    let got = run(request(server.url("index.m3u8"), dir.join("clip"))).await;
+    assert!(matches!(got, Err(Error::NotMedia { .. })), "{got:?}");
+    Ok(())
+}
+
+/// A key that decrypts a page into a page: what counts is what the segment holds once decrypted.
+#[tokio::test]
+async fn an_encrypted_web_page_is_not_a_finished_video() -> TestResult {
+    let key = *b"0123456789abcdef";
+    let server = FileServer::start().await;
+    server.put("k", key.to_vec());
+    server.put("0.ts", encrypt(SIGN_IN_PAGE, &key, &[0; 16]));
+    server.put_typed(
+        "index.m3u8",
+        "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k\",IV=0x0\n#EXTINF:2,\n0.ts\n#EXT-X-ENDLIST\n",
+        MPEGURL,
+    );
+    let dir = private_dir("segment-is-an-encrypted-page")?;
+    let got = run(request(server.url("index.m3u8"), dir.join("clip"))).await;
+    assert!(matches!(got, Err(Error::NotMedia { .. })), "{got:?}");
+    Ok(())
+}

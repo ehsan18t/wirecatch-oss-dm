@@ -1,6 +1,7 @@
 //! Adding downloads and moving them through their life: pause, resume, cancel,
 //! retry, refresh link, remove, and their place in queues.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use tracing::warn;
@@ -299,6 +300,7 @@ impl Manager {
             if removed.is_empty() {
                 return Ok(());
             }
+            finished_files = files_no_row_lists(&state, finished_files);
             self.inner.store.delete_downloads(removed.clone());
             self.emit(UiEvent::DownloadsRemoved(removed));
             // Their queue may be done now; the ticker says so.
@@ -712,6 +714,21 @@ pub(super) fn parse_web_url(raw: &str) -> Result<Url> {
         .ok()
         .filter(|url| matches!(url.scheme(), "http" | "https"))
         .ok_or_else(|| CoreError::InvalidUrl(raw.trim().to_string()))
+}
+
+/// `files` of removed finished downloads, each once, without those another finished row lists or another download holds (D118).
+fn files_no_row_lists(state: &State, mut files: Vec<PathBuf>) -> Vec<PathBuf> {
+    if files.is_empty() {
+        return files;
+    }
+    let mut seen: HashSet<String> = state
+        .downloads
+        .values()
+        .filter(|e| e.row.status == DownloadStatus::Completed)
+        .map(|e| naming::key(e.path()))
+        .collect();
+    files.retain(|file| !state.claimed.contains(file) && seen.insert(naming::key(file)));
+    files
 }
 
 #[cfg(test)]

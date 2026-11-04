@@ -365,13 +365,14 @@ fn complete(
     path: Option<PathBuf>,
     now: UnixMillis,
 ) {
+    let id = entry.row.id;
     // The finished file now holds the name on disk.
-    claimed.remove(entry.path());
+    claimed.remove(entry.path(), id);
     if let Some(path) = path {
         entry.row.file_name = crate::naming::file_name_of(&path);
         entry.row.path = path.to_string_lossy().into_owned();
         // Reserved by the media job while it put the file in place.
-        claimed.remove(entry.path());
+        claimed.remove(entry.path(), id);
     }
     // Already marked as downloaded from the internet: the run did that before it reported the
     // file (see `download_marked` and the media job's `finish`).
