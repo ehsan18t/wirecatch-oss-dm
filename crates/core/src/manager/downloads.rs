@@ -579,6 +579,14 @@ impl Manager {
             {
                 return Ok(None);
             }
+            // Two captures of one link can both have found no download to join, off the lock.
+            if let Some(handover) = new.kind.handover()
+                && self
+                    .join_unfinished_locked(&mut state, handover, new.fetch.url.as_str())
+                    .is_some()
+            {
+                return Ok(None);
+            }
             if state.claimed.contains(&path) {
                 continue;
             }
