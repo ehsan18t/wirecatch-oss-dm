@@ -1,0 +1,31 @@
+# Run: git apply this, then cargo test -p wirecatch-store --lib proof_03_3. Output at 02284bbd0: FAILED, left: 3 right: 1, ["no such table: downloads" three times]: each batch reports again.
+diff --git a/crates/store/src/lib.rs b/crates/store/src/lib.rs
+index 35f34186c..145aa6aa2 100644
+--- a/crates/store/src/lib.rs
++++ b/crates/store/src/lib.rs
+@@ -2953,4 +2953,25 @@ mod tests {
+         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+         assert_eq!(snapshot.downloads, vec![download(1)]);
+     }
++
++    /// 03-3: a write that can never pass, in two batches, is one spell of failures.
++    #[tokio::test]
++    async fn proof_03_3_one_spell_of_failures_is_reported_once() {
++        let dir = tempfile::tempdir().unwrap();
++        let reports = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
++        let sink = reports.clone();
++        let (store, _) = Store::open(
++            dir.path(),
++            Box::new(move |reason| sink.lock().unwrap().push(reason)),
++        )
++        .unwrap();
++        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
++        other.execute("DROP TABLE downloads", []).unwrap();
++        for id in 1..=3 {
++            store.save_downloads(vec![download(id)]);
++            store.flush().await;
++        }
++        let reports = reports.lock().unwrap();
++        assert_eq!(reports.len(), 1, "{reports:?}");
++    }
+ }

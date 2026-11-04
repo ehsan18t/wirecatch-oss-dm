@@ -1,0 +1,69 @@
+# Run: git apply this, then cargo test -p wirecatch-store --lib proof_03_1. Output at 02284bbd0: both FAILED; flipped bit: PRAGMA integrity_check said ok, then 'start 1 refused: The download list could not be read or saved (invalid utf-8 sequence of 1 bytes from index 0 at index 1)...'; the other test lists all 6 forms refused (BLOB path, text done, text added_at, bad UTF-8 settings, bad UTF-8 queue, user_version -1).
+diff --git a/crates/store/src/lib.rs b/crates/store/src/lib.rs
+index 35f34186c..832d0ad8f 100644
+--- a/crates/store/src/lib.rs
++++ b/crates/store/src/lib.rs
+@@ -2953,4 +2953,63 @@ mod tests {
+         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+         assert_eq!(snapshot.downloads, vec![download(1)]);
+     }
++
++    /// 03-1: one flipped bit in one stored cell, which no page checksum or integrity check sees.
++    #[tokio::test]
++    async fn proof_03_1_a_flipped_bit_in_a_cell_does_not_stop_every_start() {
++        let dir = tempfile::tempdir().unwrap();
++        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
++        store.save_downloads(vec![download(1)]);
++        store.close(PATIENCE).await;
++        let db = dir.path().join(DATABASE_FILE);
++        let mut bytes = std::fs::read(&db).unwrap();
++        let url = b"https://example.com/a.zip";
++        let at = bytes
++            .windows(url.len())
++            .position(|cell| cell == url)
++            .expect("the link is on disk");
++        bytes[at] ^= 0x80;
++        std::fs::write(&db, &bytes).unwrap();
++        let verdict: String = Connection::open(&db)
++            .unwrap()
++            .query_row("PRAGMA integrity_check(1)", [], |row| row.get(0))
++            .unwrap();
++        assert_eq!(verdict, "ok", "SQLite sees nothing wrong with the file");
++        for start in 1..=2 {
++            match Store::open(dir.path(), ignore_failures()) {
++                Ok((store, _)) => store.close(PATIENCE).await,
++                Err(e) => panic!("start {start} refused: {e}"),
++            }
++        }
++    }
++
++    /// 03-1: each other form of a cell that cannot convert.
++    #[tokio::test]
++    async fn proof_03_1_every_unconvertible_cell_is_survived() {
++        let mut refused = Vec::new();
++        for damage in [
++            "UPDATE downloads SET path = x'00' WHERE id = 1",
++            "UPDATE downloads SET done = 'x' WHERE id = 1",
++            "UPDATE downloads SET added_at = 'x' WHERE id = 1",
++            "UPDATE settings SET value = CAST(x'FF' AS TEXT) WHERE key = 'app'",
++            "UPDATE queues SET settings = CAST(x'FF' AS TEXT)",
++            "PRAGMA user_version = -1",
++        ] {
++            let dir = tempfile::tempdir().unwrap();
++            let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
++            store.save_downloads(vec![download(1)]);
++            store.save_settings(sample_settings());
++            store.save_queues(vec![sample_queue()]);
++            store.close(PATIENCE).await;
++            Connection::open(dir.path().join(DATABASE_FILE))
++                .unwrap()
++                .execute_batch(damage)
++                .unwrap();
++            match Store::open(dir.path(), ignore_failures()) {
++                Ok((store, _)) => store.close(PATIENCE).await,
++                Err(e) => refused.push(format!("{damage}: {e}")),
++            }
++        }
++        assert!(refused.is_empty(), "{}", refused.join("\n"));
++    }
+ }

@@ -1,0 +1,33 @@
+# Run: git apply this, then cargo test -p wirecatch-store --lib proof_03_5. Output at 02284bbd0: FAILED, 'deleted at the very next start'. Also proves Xdatabase-migrations-1.
+diff --git a/crates/store/src/lib.rs b/crates/store/src/lib.rs
+index 35f34186c..c1655d751 100644
+--- a/crates/store/src/lib.rs
++++ b/crates/store/src/lib.rs
+@@ -2953,4 +2953,27 @@ mod tests {
+         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+         assert_eq!(snapshot.downloads, vec![download(1)]);
+     }
++
++    /// 03-5: a list last written over a month ago, found damaged today, is kept a month from today.
++    #[test]
++    fn proof_03_5_a_list_set_aside_survives_the_next_start() {
++        let dir = tempfile::tempdir().unwrap();
++        let db = dir.path().join(DATABASE_FILE);
++        std::fs::write(&db, vec![b'x'; 8192]).unwrap();
++        std::fs::File::options()
++            .write(true)
++            .open(&db)
++            .unwrap()
++            .set_modified(std::time::SystemTime::now() - KEEP_COPIES_FOR - Duration::from_secs(60))
++            .unwrap();
++        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
++        let Some(Recovery::Damaged { kept_at }) = snapshot.recoveries.first() else {
++            panic!("not set aside: {:?}", snapshot.recoveries);
++        };
++        assert!(kept_at.exists(), "kept at the first start");
++        close(&store);
++        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
++        close(&store);
++        assert!(kept_at.exists(), "deleted at the very next start");
++    }
+ }
