@@ -101,10 +101,30 @@ impl Backend {
         let backend = cx.global::<Self>();
         let core = Arc::clone(&backend.core);
         backend.runtime.spawn(async move {
-            let manager = core.opened().await.map_err(Unopened::clone)?.clone();
+            let manager = core.opened().await?.clone();
             Ok(work(manager).await)
         })
     }
+}
+
+/// Runs `work` once the manager has opened, however late; this alone does not open it.
+pub fn once_opened<F, Fut>(cx: &App, work: F)
+where
+    F: FnOnce(Manager) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    let backend = cx.global::<Backend>();
+    let core = Arc::clone(&backend.core);
+    // Ends with the runtime, as the app quits.
+    drop(backend.runtime.spawn(async move {
+        let manager = core.when_opened().await.clone();
+        work(manager).await;
+    }));
+}
+
+/// Lets the next use of the manager open it again, after an open failed.
+pub fn try_opening_again(cx: &App) {
+    cx.global::<Backend>().core.try_again();
 }
 
 /// Runs a command on the manager; a refusal shows as a notification in `window`.
@@ -180,7 +200,7 @@ async fn serve(core: Arc<Core>, listener: Option<Listener>, launch: Launch) {
         }
         Err(unopened) => {
             if let Some(listener) = listener {
-                bridge::serve_unavailable(listener, unopened.reason.message.clone()).await;
+                bridge::serve_once_opened(&core, listener, unopened.reason.message.clone()).await;
             }
         }
     }
