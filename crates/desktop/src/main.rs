@@ -140,7 +140,7 @@ fn main() {
             notices::start(cx);
             download_windows::init(&library, cx);
             sign_in::start(cx);
-            app_update::start(cx);
+            app_update::start(&library, cx);
             main_window::run(library, cx);
             if launch.shows_window() {
                 let asked = if launch.links.is_empty() {

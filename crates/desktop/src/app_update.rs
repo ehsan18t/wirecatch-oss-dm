@@ -13,6 +13,7 @@ use wirecatch_shell::{api, host, updates};
 use wirecatch_shell::host::Unopened;
 
 use crate::backend::Backend;
+use crate::library::{Library, SettingsChanged};
 use crate::lifecycle;
 
 /// How long after the app starts it first looks, so a start is never slowed by a check.
@@ -83,8 +84,9 @@ pub fn set_up() -> bool {
     no_updates().is_none()
 }
 
-/// Keeps the update's stage and looks for one in the background.
-pub fn start(cx: &mut App) {
+/// Keeps the update's stage and looks for one in the background, and again when the choice of
+/// pre-release versions changes.
+pub fn start(library: &Entity<Library>, cx: &mut App) {
     let updates = cx.new(|_| Updates {
         stage: Stage::Unchecked,
         dismissed: None,
@@ -93,6 +95,18 @@ pub fn start(cx: &mut App) {
     if !set_up() {
         return;
     }
+    let mut prereleases = None;
+    cx.subscribe(library, move |library, _: &SettingsChanged, cx| {
+        let chosen = library
+            .read(cx)
+            .settings
+            .as_ref()
+            .map(|s| s.prerelease_updates);
+        if changed(&mut prereleases, chosen) {
+            check(false, cx);
+        }
+    })
+    .detach();
     cx.spawn(async move |cx| {
         let mut wait = FIRST_CHECK;
         loop {
@@ -102,6 +116,12 @@ pub fn start(cx: &mut App) {
         }
     })
     .detach();
+}
+
+/// Whether `now` differs from the last value seen; the first value is not a change.
+fn changed(last: &mut Option<bool>, now: Option<bool>) -> bool {
+    let was = std::mem::replace(last, now.or(*last));
+    matches!((was, now), (Some(was), Some(now)) if was != now)
 }
 
 /// The update's stage, which views observe.
@@ -168,7 +188,7 @@ pub fn install_label(update: &AppUpdate) -> &'static str {
 /// package, which the app cannot install, opens the release page instead.
 pub fn install(update: &AppUpdate, cx: &mut App) {
     let (Some(download), Some(kind)) = (update.download.clone(), updates::install_kind()) else {
-        cx.open_url(&update.page);
+        cx.open_url(update.page.as_str());
         return;
     };
     let progress = Arc::new(Progress::default());
@@ -270,6 +290,16 @@ fn answered<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_later_different_choice_is_a_change() {
+        let mut last = None;
+        assert!(!changed(&mut last, None), "the settings have not arrived");
+        assert!(!changed(&mut last, Some(false)), "the first value");
+        assert!(!changed(&mut last, Some(false)), "the same value");
+        assert!(changed(&mut last, Some(true)));
+        assert!(changed(&mut last, Some(false)));
+    }
 
     #[test]
     fn a_download_of_unknown_size_has_no_percent() {
