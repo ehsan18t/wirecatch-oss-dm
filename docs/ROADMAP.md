@@ -188,7 +188,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 127. Settings, Media shows an empty Resolution after a rarer quality (open)
 128. The Add dialog says By file type for downloads going to a queue's folder (open)
 129. scripts/linux-test.sh can never pass (open)
-130. A second running copy of one CLI download takes over the first one's files (open)
+130. A second running copy of one CLI download takes over the first one's files (fixed)
 131. A launch handed over while the list is opening pops a box and loses links (open)
 132. A typed extension picks a container ffmpeg refuses, with no way out (open)
 133. A stream whose placing fails is downloaded again (open)
