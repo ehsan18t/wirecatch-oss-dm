@@ -412,6 +412,7 @@ impl Manager {
             load_beside_the_list(&mut restored.state, &dir, &addons_at, computer);
             // Cookies files left by a crash: nothing may keep them.
             wirecatch_files::discard::dir(&temp_at);
+            app_update::discard_installers(&dir);
             Ok((store, restored, recoveries, not_private))
         })
         .await?;

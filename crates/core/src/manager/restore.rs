@@ -202,6 +202,7 @@ fn restore_entry(
         cleanup: None,
         hold: Hold::Free,
         on_existing: None,
+        offered_file: false,
         stranded: stored.stranded,
     };
     let mut fixed = false;

@@ -233,7 +233,9 @@ async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<I
     if ran.stdout_truncated {
         return Err(YtDlpError::OutputTooLarge.into());
     }
-    serde_json::from_slice::<Info>(&ran.stdout).map_err(|e| YtDlpError::BadOutput(e).into())
+    serde_json::from_slice::<Info>(&ran.stdout)
+        .map(Info::single_video)
+        .map_err(|e| YtDlpError::BadOutput(e).into())
 }
 
 /// Makes the folder yt-dlp runs in.
@@ -263,6 +265,9 @@ fn common_args(ctx: &Context<'_>, cookies: Option<&CookiesFile>) -> Vec<OsString
     let mut args: Vec<OsString> = ISOLATION.iter().map(OsString::from).collect();
     args.extend([
         "--no-playlist".into(),
+        // A page with several videos is a list even so: D120.
+        "--playlist-items".into(),
+        "1".into(),
         "--no-update".into(),
         "--no-js-runtimes".into(),
         "--js-runtimes".into(),

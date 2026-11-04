@@ -710,6 +710,7 @@ impl Manager {
             cleanup: None,
             hold: Hold::Free,
             on_existing: None,
+            offered_file: false,
             stranded: None,
             media_job,
             video_check,
