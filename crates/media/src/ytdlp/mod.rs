@@ -18,6 +18,7 @@ use std::time::Duration;
 
 use tracing::debug;
 use wirecatch_engine::{CancellationToken, Url};
+use wirecatch_protocol::hosts::host_on_site;
 use wirecatch_streams::process::{self, Ran, RunError, RunOptions};
 
 use crate::MediaTools;
@@ -52,10 +53,9 @@ pub(crate) fn cookies_first(page: &Url) -> bool {
     let Some(host) = page.host_str() else {
         return true;
     };
-    let host = host.trim_end_matches('.').to_ascii_lowercase();
     let youtube = ["youtube.com", "youtu.be", "youtube-nocookie.com"]
         .iter()
-        .any(|site| host == *site || host.ends_with(&format!(".{site}")));
+        .any(|site| host_on_site(host, site));
     !youtube
 }
 
@@ -233,7 +233,9 @@ async fn extract_once(ctx: &Context<'_>, cancel: &CancellationToken) -> Result<I
     if ran.stdout_truncated {
         return Err(YtDlpError::OutputTooLarge.into());
     }
-    serde_json::from_slice::<Info>(&ran.stdout).map_err(|e| YtDlpError::BadOutput(e).into())
+    serde_json::from_slice::<Info>(&ran.stdout)
+        .map(Info::single_video)
+        .map_err(|e| YtDlpError::BadOutput(e).into())
 }
 
 /// Makes the folder yt-dlp runs in.
@@ -263,6 +265,9 @@ fn common_args(ctx: &Context<'_>, cookies: Option<&CookiesFile>) -> Vec<OsString
     let mut args: Vec<OsString> = ISOLATION.iter().map(OsString::from).collect();
     args.extend([
         "--no-playlist".into(),
+        // A page with several videos is a list even so: D120.
+        "--playlist-items".into(),
+        "1".into(),
         "--no-update".into(),
         "--no-js-runtimes".into(),
         "--js-runtimes".into(),

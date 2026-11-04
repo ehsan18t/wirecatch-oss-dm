@@ -659,6 +659,89 @@ async fn an_added_link_that_answers_with_a_web_page_is_read_for_its_video() -> T
     Ok(())
 }
 
+/// A name typed for a link that turns out to be a page without a video reaches the file.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_typed_name_survives_a_page_without_a_video() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(&h, "fail.txt", "[generic] Unsupported URL")?;
+    server.put_typed("about", "<html></html>", "text/html");
+    let mut request = added(&server.url("about"));
+    request.file_name = Some("report.html".into());
+    h.manager.add_download(request).await?;
+    let row = wait_until("the page's own download", || {
+        h.manager
+            .list_downloads()
+            .into_iter()
+            .find(|r| r.status == DownloadStatus::Completed)
+    })
+    .await;
+    assert_eq!(row.file_name, "report.html");
+    Ok(())
+}
+
+/// A name typed for a link that turns out to be a video names the video, whichever way the link was read.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_typed_name_names_the_video() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(
+        &h,
+        "info.json",
+        &page_info(&server, &mp4_data(1024), &mp4_data(1024)),
+    )?;
+    server.put_typed("clip/9", "<html><video></video></html>", "text/html");
+    let mut ui = h.manager.subscribe();
+    let mut request = added(&server.url("clip/9"));
+    request.file_name = Some("holiday.mp4".into());
+    h.manager.add_download(request).await?;
+    assert_eq!(choice_requested(&mut ui).await.title, "holiday");
+
+    let mut request = added(&server.url("watch/40"));
+    request.file_name = Some("Dr. Who".into());
+    h.manager.add_video_page(request)?;
+    assert_eq!(choice_requested(&mut ui).await.title, "Dr. Who");
+    Ok(())
+}
+
+/// A download that gave way to reading its page keeps its link until the video is decided: a quit before the question is answered loses nothing, and answering it leaves one row.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_download_that_gave_way_to_its_page_survives_a_restart() -> TestResult {
+    let server = FileServer::start().await;
+    let mut h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tell_tool(
+        &h,
+        "info.json",
+        &page_info(&server, &mp4_data(1024), &mp4_data(1024)),
+    )?;
+    server.put_typed("clip/9", "<html><video></video></html>", "text/html");
+    let mut ui = h.manager.subscribe();
+    let mut request = added(&server.url("clip/9"));
+    request.file_name = Some("holiday.mp4".into());
+    h.manager.add_download(request).await?;
+    choice_requested(&mut ui).await;
+
+    h.restart().await?;
+
+    let choice = wait_until("the question asked again", || {
+        h.manager.pending_media_choices().pop()
+    })
+    .await;
+    assert_eq!(choice.title, "holiday");
+    let id = h.manager.choose_media(choice.id, select("137+140")).await?;
+    h.wait_status(id, DownloadStatus::Completed).await;
+
+    h.restart().await?;
+
+    assert_eq!(h.manager.pending_media_choices().len(), 0);
+    let rows = h.manager.list_downloads();
+    assert_eq!(rows.iter().map(|r| r.id).collect::<Vec<_>>(), [id]);
+    Ok(())
+}
+
 /// D51: a page with no video on it downloads as the page it is, without a
 /// failed row; without the media add-on it is not read at all.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1159,12 +1242,10 @@ async fn page_media_is_read_again_after_a_restart_and_continues() -> TestResult 
     // Read at the choice, at the first start and again after the restart.
     assert!(ytdlp_calls(&h)?.len() >= 3, "{}", ytdlp_calls(&h)?.len());
     // The video continued where it stopped instead of starting over.
-    let resumed = server.seen_at("fmt/video.mp4").iter().any(|s| {
-        s.headers
-            .get("range")
-            .and_then(|r| r.to_str().ok())
-            .is_some_and(|r| r != "bytes=0-")
-    });
+    let resumed = server
+        .seen_at("fmt/video.mp4")
+        .iter()
+        .any(|s| s.header("range").is_some_and(|r| r != "bytes=0-"));
     assert!(resumed, "the video was downloaded again from the start");
     Ok(())
 }
@@ -1839,5 +1920,60 @@ async fn a_password_in_a_video_link_is_never_shown() -> TestResult {
             "{text}"
         );
     }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stream_for_later_whose_name_is_taken_is_not_completed_by_a_restart() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let mut h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    let capture = media_capture(
+        server.url("hls/master.m3u8"),
+        MediaKind::Hls,
+        Some("Holiday clip"),
+    );
+    h.manager
+        .add_capture(NewDownload {
+            handover_id: "first".into(),
+            ..capture.clone()
+        })
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    h.manager
+        .choose_media(choice.id, select(&choice.options[0].id))
+        .await?;
+    let first = h.manager.list_downloads().remove(0);
+    let first = h.wait_status(first.id, DownloadStatus::Completed).await;
+    h.manager
+        .remove(&[first.id], wirecatch_core::RemoveFiles::Keep)
+        .await?;
+    std::fs::write(&first.path, b"an older video")?;
+
+    h.manager
+        .add_capture(NewDownload {
+            handover_id: "second".into(),
+            ..capture
+        })
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    let later = MediaSelection {
+        later: true,
+        ..select(&choice.options[0].id)
+    };
+    h.manager.choose_media(choice.id, later).await?;
+    let second = h.manager.list_downloads().remove(0);
+    assert_eq!(second.status, DownloadStatus::Paused);
+    assert_eq!(second.path, first.path);
+
+    h.restart().await?;
+
+    let after = h.row(second.id);
+    assert_ne!(
+        after.status,
+        DownloadStatus::Completed,
+        "completed on a file it never downloaded"
+    );
     Ok(())
 }

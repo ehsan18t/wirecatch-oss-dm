@@ -139,18 +139,22 @@ fn file_name_rule(rules: &QueueRules, file_name: &str) -> Option<Rule> {
         .map(|written| Rule::FileName(written.clone()))
 }
 
-/// The longest extension rule the name ends with, so `tar.gz` wins over `gz`.
 fn file_type_rule(rules: &QueueRules, file_name: &str) -> Option<Rule> {
     let name = file_name.to_lowercase();
     rules
         .file_types
         .iter()
-        .filter(|ext| {
-            name.strip_suffix(ext.as_str())
-                .is_some_and(|stem| stem.len() > 1 && stem.ends_with('.'))
-        })
+        .filter(|ext| is_of_type(&name, ext))
+        // Longest first, so `tar.gz` wins over `gz`.
         .max_by_key(|ext| ext.len())
         .map(|ext| Rule::FileType(ext.clone()))
+}
+
+/// Whether the lower-case `name` has the file type `ext` at its end, after something other than the dot: `tar.gz` and `gz` for `a.tar.gz`, neither for `.gz`.
+#[must_use]
+pub fn is_of_type(name: &str, ext: &str) -> bool {
+    name.strip_suffix(ext)
+        .is_some_and(|stem| stem.len() > 1 && stem.ends_with('.'))
 }
 
 fn protocol_of(url: &Url) -> Option<LinkProtocol> {
@@ -186,18 +190,23 @@ fn name_matcher(written: &str, syntax: NameSyntax) -> Result<Regex, regex::Error
 
 /// `rules` as they are kept: each rule trimmed, empty and repeated ones dropped, file types in their stored form; or why they cannot be kept, in words for the person.
 pub fn checked(mut rules: QueueRules) -> Result<QueueRules, String> {
-    rules.sites = cleaned(&rules.sites, "sites", |site| {
+    rules.sites = cleaned(&rules.sites, "sites", Same::AnyCase, |site| {
         SitePattern::read(site)
             .map(|_| site.to_string())
             .ok_or_else(|| format!("\"{site}\" is not a site, an address, a range or <local>."))
     })?;
     let syntax = rules.file_name_syntax;
-    rules.file_names = cleaned(&rules.file_names, "file names", |name| {
+    let same_name = match syntax {
+        // `\d` and `\D` are opposites.
+        NameSyntax::Regex => Same::AsWritten,
+        NameSyntax::Wildcards => Same::AnyCase,
+    };
+    rules.file_names = cleaned(&rules.file_names, "file names", same_name, |name| {
         name_matcher(name, syntax)
             .map(|_| name.to_string())
             .map_err(|_| format!("\"{name}\" is not a regular expression Wirecatch can use."))
     })?;
-    rules.file_types = cleaned(&rules.file_types, "file types", |kind| {
+    rules.file_types = cleaned(&rules.file_types, "file types", Same::AnyCase, |kind| {
         normalize_file_type(kind).ok_or_else(|| format!("\"{kind}\" is not a file type."))
     })?;
     rules.categories = dedupe(rules.categories);
@@ -205,9 +214,17 @@ pub fn checked(mut rules: QueueRules) -> Result<QueueRules, String> {
     Ok(rules)
 }
 
+/// When two written rules count as one.
+#[derive(Clone, Copy)]
+enum Same {
+    AnyCase,
+    AsWritten,
+}
+
 fn cleaned(
     written: &[String],
     what: &str,
+    same: Same,
     read: impl Fn(&str) -> Result<String, String>,
 ) -> Result<Vec<String>, String> {
     let mut seen = BTreeSet::new();
@@ -223,7 +240,11 @@ fn cleaned(
             ));
         }
         let read = read(rule)?;
-        if seen.insert(read.to_lowercase()) {
+        let key = match same {
+            Same::AnyCase => read.to_lowercase(),
+            Same::AsWritten => read.clone(),
+        };
+        if seen.insert(key) {
             kept.push(read);
         }
     }
@@ -435,6 +456,22 @@ mod tests {
             result.switched_off,
             Some(found(2, Rule::Site("example.com".into())))
         );
+    }
+
+    #[test]
+    fn regular_expressions_differing_in_case_are_two_rules_and_wildcards_one() {
+        let kept = checked(auto(|c| {
+            c.file_name_syntax = NameSyntax::Regex;
+            c.file_names = strings(&[r"\d+\.mkv", r"\D+\.mkv", r"\d+\.mkv"]);
+        }))
+        .unwrap();
+        assert_eq!(kept.file_names, strings(&[r"\d+\.mkv", r"\D+\.mkv"]));
+        let kept = checked(auto(|c| {
+            c.file_name_syntax = NameSyntax::Wildcards;
+            c.file_names = strings(&["*.MKV", "*.mkv"]);
+        }))
+        .unwrap();
+        assert_eq!(kept.file_names, strings(&["*.MKV"]));
     }
 
     #[test]

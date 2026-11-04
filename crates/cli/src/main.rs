@@ -13,7 +13,7 @@ use clap::Parser;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use wirecatch_engine::header::{HeaderName, HeaderValue};
 use wirecatch_engine::{
-    CancellationToken, DownloadOptions, DownloadRequest, ManualProxies, Outcome, Progress,
+    CancellationToken, DownloadOptions, DownloadRequest, Error, ManualProxies, Outcome, Progress,
     ProxyChoice, Url, download,
 };
 
@@ -120,9 +120,31 @@ async fn main() -> anyhow::Result<ExitCode> {
         bar.finish_and_clear();
     }
 
-    let (ending, summary) = summary(&result?);
+    let (ending, summary) = report(result)?;
     let written = writeln!(io::stdout().lock(), "{summary}");
     Ok(exit_code(ending, written))
+}
+
+/// How the download ended and the line that says so, or the error to end with. Ctrl+C before the server answered is a stop like any other.
+fn report(result: Result<Outcome, Error>) -> Result<(Ending, String), Error> {
+    match result {
+        Ok(outcome) => Ok(summary(&outcome)),
+        Err(Error::Cancelled) => Ok((
+            Ending::Stopped,
+            "Stopped before the server answered. Run the same command again to start the download."
+                .to_owned(),
+        )),
+        Err(error) => Err(error),
+    }
+}
+
+/// Writes a line on stderr. `eprintln!` panics when stderr is closed, and a panic aborts the process in a release build.
+fn say(line: &str) {
+    stderr_may_be_closed(&writeln!(io::stderr().lock(), "{line}"));
+}
+
+fn stderr_may_be_closed(written: &io::Result<()>) {
+    let (Ok(()) | Err(_)) = written;
 }
 
 /// The exit status once the summary was written, or failed to be. A reader that went away
@@ -134,7 +156,9 @@ fn exit_code(ending: Ending, written: io::Result<()>) -> ExitCode {
         Ok(()) => ending.exit_code(),
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ending.exit_code(),
         Err(e) => {
-            eprintln!("wirecatch: could not write the result to standard output: {e}");
+            say(&format!(
+                "wirecatch: could not write the result to standard output: {e}"
+            ));
             ExitCode::FAILURE
         }
     }
@@ -243,11 +267,8 @@ async fn stop_on_ctrl_c(cancel: CancellationToken) {
     if tokio::signal::ctrl_c().await.is_err() {
         return;
     }
-    eprintln!(
-        "
-Pausing... (press Ctrl+C again to quit immediately)"
-    );
     cancel.cancel();
+    say("\nPausing... (press Ctrl+C again to quit immediately)");
     if tokio::signal::ctrl_c().await.is_ok() {
         std::process::exit(i32::from(EXIT_INTERRUPTED));
     }
@@ -311,6 +332,12 @@ fn summary(outcome: &Outcome) -> (Ending, String) {
     }
 }
 
+/// Moves the bar to what an earlier run kept. The estimator would read that jump as bytes just received, and show the wrong speed and time left for about half a minute.
+fn start_at(bar: &ProgressBar, kept: u64) {
+    bar.set_position(kept);
+    bar.reset_eta();
+}
+
 /// Draws a progress bar from the shared counters until the returned task is aborted.
 fn spawn_progress_bar(
     progress: Arc<Progress>,
@@ -324,6 +351,7 @@ fn spawn_progress_bar(
         let bar = bar.clone();
         tokio::spawn(async move {
             let mut has_total = false;
+            let mut started = false;
             let mut ticks = tokio::time::interval(PROGRESS_REFRESH);
             loop {
                 ticks.tick().await;
@@ -334,6 +362,10 @@ fn spawn_progress_bar(
                     bar.set_style(known.clone());
                     bar.set_length(total);
                     has_total = true;
+                }
+                if !started && progress.file_name().is_some() {
+                    start_at(&bar, progress.done());
+                    started = true;
                 }
                 bar.set_position(progress.done());
                 let connections = progress.connections();
@@ -463,6 +495,24 @@ mod tests {
         );
         let full = Err(io::Error::other("disk full"));
         assert_eq!(exit_code(Ending::Saved, full), ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn ctrl_c_before_the_server_answered_is_a_stop_and_other_errors_stay_errors() {
+        let (ending, line) = report(Err(Error::Cancelled)).unwrap();
+        assert_eq!(ending, Ending::Stopped);
+        assert!(line.contains("again"), "{line}");
+        assert!(report(Err(Error::PrematureEof { at: 1, end: 2 })).is_err());
+    }
+
+    #[test]
+    fn what_an_earlier_run_kept_does_not_count_as_speed() {
+        const KEPT: u64 = 1 << 40;
+        let bar = ProgressBar::hidden();
+        bar.set_length(2 * KEPT);
+        start_at(&bar, KEPT);
+        bar.tick();
+        assert!(bar.per_sec() < 1.0, "{} bytes per second", bar.per_sec());
     }
 
     #[test]

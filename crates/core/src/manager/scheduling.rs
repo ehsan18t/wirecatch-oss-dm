@@ -45,17 +45,29 @@ impl Manager {
                 open: g.closed.is_none(),
             })
             .collect();
+        // A download that fails to start leaves its slot free, and nothing else would plan again. Ends: each round with a failure has one waiting download fewer.
+        while self.plan_round(state, &queues) {}
+        self.update_wait_reasons(state, &gates);
+    }
+
+    /// Carries out one plan; whether a download failed to start.
+    fn plan_round(&self, state: &mut State, queues: &[QueueView]) -> bool {
         let downloads: Vec<DownloadView> = state.unfinished().filter_map(view_of).collect();
-        let plan = plan::plan(&queues, &downloads, state.settings.max_concurrent_downloads);
+        let plan = plan::plan(queues, &downloads, state.settings.max_concurrent_downloads);
         for id in plan.stop {
             if let Some(entry) = state.downloads.get_mut(&id) {
                 self.stop_run(entry, Stop::Requeue);
             }
         }
+        let mut failed = false;
         for id in plan.start {
             self.start_run(state, id);
+            failed |= state
+                .downloads
+                .get(&id)
+                .is_some_and(|entry| entry.row.status == DownloadStatus::Failed);
         }
-        self.update_wait_reasons(state, &gates);
+        failed
     }
 
     /// Works out whether each queue may start downloads, and ends a "start now"

@@ -388,3 +388,28 @@ async fn a_file_another_download_holds_is_kept_when_a_finished_row_of_it_goes() 
     assert_eq!(std::fs::read(&done.path)?, second.data);
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_replace_still_waiting_is_not_completed_by_a_restart() -> TestResult {
+    let server = server().await;
+    let mut h = Harness::new().await?;
+    let dir = folder_with(&h, b"the older file")?;
+    let mut events = h.manager.subscribe();
+    let row = add_into(&h, server.url("report").as_str(), &dir).await?;
+    let question = asked(&mut events).await?;
+    h.wait_status(row.id, DownloadStatus::Paused).await;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)?;
+    h.manager
+        .answer_file_exists(question.id, answer(FileExistsChoice::Replace, false))?;
+    h.wait_status(row.id, DownloadStatus::Queued).await;
+
+    h.restart().await?;
+
+    assert_ne!(
+        h.row(row.id).status,
+        DownloadStatus::Completed,
+        "completed on the file it was to replace"
+    );
+    Ok(())
+}

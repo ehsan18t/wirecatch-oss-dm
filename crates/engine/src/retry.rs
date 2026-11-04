@@ -17,8 +17,7 @@ use crate::proxy::Proxies;
 /// Consecutive refused attempts, while other connections of the same download
 /// are receiving data, after which a connection gives up its part to them.
 /// One refusal can be a fluke; two in a row mean the server allows no more
-/// connections than are already open. A refusal that asks for a long wait
-/// (`Retry-After`, or a delay beyond the normal backoff) steps back at once,
+/// connections than are already open. A refusal with a `Retry-After` steps back at once,
 /// so the segment is not held hostage while the others could finish it.
 const REFUSALS_BEFORE_STEPPING_BACK: u32 = 2;
 
@@ -211,7 +210,7 @@ impl Attempts {
         };
         let backoff = self.retries.backoff;
         let delay = backoff.delay(self.failures, retry_after);
-        let long_wait = retry_after.is_some() || delay > backoff.max;
+        let long_wait = retry_after.is_some();
         if self.refusals > 0 && (self.refusals >= REFUSALS_BEFORE_STEPPING_BACK || long_wait) {
             Next::StepBackOrRetry(delay)
         } else {

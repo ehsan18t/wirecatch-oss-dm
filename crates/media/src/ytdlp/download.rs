@@ -18,6 +18,9 @@ use crate::output::Container;
 /// The longest extension a finished file of yt-dlp's may have.
 const MAX_RESULT_EXT: usize = 10;
 
+/// Where yt-dlp saves the finished file, inside the folder it runs in.
+const OUTPUT_TEMPLATE: &str = "media.%(ext)s";
+
 /// How a download by yt-dlp itself ended without failing.
 #[derive(Debug)]
 pub enum Fetched {
@@ -68,7 +71,7 @@ async fn download_once(
     cancel: &CancellationToken,
 ) -> Result<Fetched, Attempt> {
     let cookies = CookiesFile::create(ctx).await?;
-    let args = download_args(ctx, cookies.as_ref(), format, merge_into, work);
+    let args = download_args(ctx, cookies.as_ref(), format, merge_into);
     let mut printed = None::<PathBuf>;
     let result = process::run(
         &ctx.tools.ytdlp,
@@ -116,14 +119,13 @@ async fn download_once(
         .ok_or_else(|| YtDlpError::NothingSaved.into())
 }
 
-/// yt-dlp's arguments to download `format` of the page into `work` as
+/// yt-dlp's arguments to download `format` of the page into the folder it runs in as
 /// `media.<ext>`, reporting progress and printing the finished file's path.
 fn download_args(
     ctx: &Context<'_>,
     cookies: Option<&CookiesFile>,
     format: &str,
     merge_into: Option<Container>,
-    work: &Path,
 ) -> Vec<OsString> {
     let mut args = common_args(ctx, cookies);
     if let Some(container) = merge_into {
@@ -145,7 +147,8 @@ fn download_args(
     ] {
         args.push(arg.into());
     }
-    args.push(work.join("media.%(ext)s").into_os_string());
+    // Relative: yt-dlp runs in `work`, and reads `%` and `$` in a full path as its own fields and variables.
+    args.push(OUTPUT_TEMPLATE.into());
     args.push("--".into());
     args.push(ctx.page.as_str().into());
     args
@@ -169,18 +172,17 @@ fn progress_report(report: &str) -> Option<(u64, Option<u64>)> {
 
 /// The path of the finished file in a line yt-dlp printed (`--print
 /// after_move:filepath`): from standard output only (a site's text in a
-/// warning on standard error is never taken for it), a full path straight
-/// inside `work` named `media.<ext>`, as the output template asks, with no
+/// warning on standard error is never taken for it), a path straight
+/// inside `work` (or the name alone, which is relative to it) named `media.<ext>`, as the output template asks, with no
 /// `..` in it. Anything else is not taken for the result.
 fn printed_output(output: Output, line: &str, work: &Path) -> Option<PathBuf> {
     if output != Output::Stdout {
         return None;
     }
-    let path = PathBuf::from(line.trim());
-    let plain = path.is_absolute()
-        && !path
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir));
+    let path = work.join(line.trim());
+    let plain = !path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir));
     (plain && path.parent() == Some(work) && is_result_name(&path)).then_some(path)
 }
 
@@ -224,6 +226,28 @@ fn largest_result(work: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
+    /// yt-dlp reads `%` and `$` anywhere in its output template, so no folder or title may reach it.
+    #[test]
+    fn the_output_template_names_no_folder() {
+        let tools = crate::MediaTools::for_test(Path::new("ffmpeg"));
+        let page = wirecatch_engine::Url::parse("https://example.com/watch").unwrap();
+        let ctx = Context {
+            tools: &tools,
+            page: &page,
+            cookies: None,
+            user_agent: None,
+            temp_dir: Path::new("temp"),
+            timeout: std::time::Duration::from_secs(1),
+            proxy: None,
+        };
+        let args = download_args(&ctx, None, "best", None);
+        let template = args
+            .iter()
+            .position(|a| a == "-o")
+            .and_then(|o| args.get(o + 1));
+        assert_eq!(template.and_then(|t| t.to_str()), Some("media.%(ext)s"));
+    }
+
     #[test]
     fn the_result_path_is_taken_only_from_stdout_and_only_inside_the_work_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -237,6 +261,11 @@ mod tests {
         );
         // Standard error never names the result.
         assert_eq!(printed_output(Output::Stderr, &line, &work), None);
+        // The output template is relative, so yt-dlp may print the name alone.
+        assert_eq!(
+            printed_output(Output::Stdout, "media.mp4", &work),
+            Some(work.join("media.mp4"))
+        );
         let outside = dir.path().join("media.mp4");
         let climbing = work.join("..").join("media.mp4");
         let nested = work.join("sub").join("media.mp4");
@@ -247,7 +276,6 @@ mod tests {
             work.join("media.mp4.part").to_string_lossy().into_owned(),
             work.join("media.f137.mp4").to_string_lossy().into_owned(),
             work.join("secret.txt").to_string_lossy().into_owned(),
-            "media.mp4".to_string(),
             "WARNING: see https://example.com".to_string(),
         ] {
             assert_eq!(printed_output(Output::Stdout, &bad, &work), None, "{bad}");
