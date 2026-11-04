@@ -172,7 +172,7 @@ impl Manager {
         let question = FileExistsQuestion {
             id: state.ids.pending(),
             download: id,
-            url: entry.row.url.clone(),
+            url: wirecatch_logging::redact::url_for_display(&entry.row.url),
             file_name: naming::file_name_of(&found.path),
             folder: found
                 .path

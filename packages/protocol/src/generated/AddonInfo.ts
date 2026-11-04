@@ -23,6 +23,10 @@ export type AddonInfo = {
    */
   state: AddonState;
   /**
+   * Whether what is on this machine works now, whatever `state` says is being done to it: an update under way or failed leaves it working (D133).
+   */
+  usable: boolean;
+  /**
    * The version on this machine, when installed.
    */
   installed_version: string | null;

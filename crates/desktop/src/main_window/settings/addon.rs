@@ -136,7 +136,12 @@ fn nothing_to_update(addons: &[AddonInfo], id: AddonId) -> Option<String> {
 fn buttons(addon: &AddonInfo, cx: &App) -> Vec<Button> {
     let id = addon.id;
     let mut buttons: Vec<Button> = main_button(addon).into_iter().collect();
-    if addon.state == AddonState::Installed {
+    if addon.usable
+        && matches!(
+            addon.state,
+            AddonState::Installed | AddonState::Failed { .. }
+        )
+    {
         buttons.push(
             Button::new("check-addon-updates")
                 .small()
@@ -152,10 +157,7 @@ fn buttons(addon: &AddonInfo, cx: &App) -> Vec<Button> {
                 }),
         );
     }
-    if matches!(
-        addon.state,
-        AddonState::Installed | AddonState::UpdateAvailable
-    ) {
+    if addon.usable && !matches!(addon.state, AddonState::Installing { .. }) {
         let name = addon.name.to_lowercase();
         buttons.push(
             Button::new("remove-addon")
@@ -280,6 +282,7 @@ mod tests {
             name: "Media add-on".to_owned(),
             description: String::new(),
             state,
+            usable: true,
             installed_version: None,
             latest_version: None,
             size: None,

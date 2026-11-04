@@ -33,7 +33,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-23  | fix(media): offer only sources ffmpeg can read     | `fix/offer-readable-sources`     | 23                           | P1       | medium | none         | merged |
 | PR-24  | fix(media): fetch cookie-gated formats with yt-dlp | `fix/cookie-formats-ytdlp`       | 24                           | P1       | medium | none         | merged |
 | PR-25  | fix(store): say when saving fails or recovers      | `fix/save-failure-signal`        | 25, 84, 233                  | P2       | medium | none         | open   |
-| PR-26  | fix(store): keep values it cannot read             | `fix/keep-unreadable-values`     | 26                           | P2       | medium | none         | open   |
+| PR-26  | fix(store): keep values it cannot read             | `fix/keep-unreadable-values`     | 26                           | P2       | medium | none         | merged |
 | PR-27  | fix(core): keep a removal's record until it ends   | `fix/durable-removal`            | 27, 176                      | P2       | medium | none         | merged |
 | PR-28  | fix(engine): carry whether a download can resume   | `fix/can-resume-fact`            | 28                           | P2       | medium | none         | open   |
 | PR-29  | fix(desktop): show suffix list state in Settings   | `fix/suffix-list-settings`       | 29, 107                      | P2       | medium | none         | open   |
@@ -47,13 +47,13 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-37  | fix(core): keep a name when a link becomes a page  | `fix/page-keeps-name`            | 37, 175                      | P2       | medium | none         | merged |
 | PR-38  | fix(media): read all of yt-dlp's page description  | `fix/read-whole-page-info`       | 38, 61                       | P2       | medium | none         | merged |
 | PR-39  | fix(engine): reuse part files under other names    | `fix/find-own-part-file`         | 39                           | P2       | medium | PR-93        | merged |
-| PR-40  | fix(core): report whether the add-on works         | `fix/addon-usable`               | 40, 53                       | P2       | medium | none         | open   |
+| PR-40  | fix(core): report whether the add-on works         | `fix/addon-usable`               | 40, 53                       | P2       | medium | none         | merged |
 | PR-41  | fix(desktop): keep notices in step with downloads  | `fix/notices-follow-downloads`   | 41, 123, 232                 | P2       | medium | none         | open   |
 | PR-42  | fix(engine): hold FTP to the local network rule    | `fix/ftp-local-network`          | 42, 43                       | P2       | medium | none         | merged |
 | PR-43  | refactor(sites): merge the host-under-site checks  | `refactor/one-host-under-site`   | 44                           | P3       | medium | none         | merged |
 | PR-44  | fix(engine): normalise ftps hosts when parsing     | `fix/normal-ftps-hosts`          | 45                           | P2       | small  | PR-43        | merged |
 | PR-45  | fix: hide only what is secret in a log line        | `fix/log-redaction-edges`        | 46, 222                      | P2       | small  | none         | merged |
-| PR-46  | fix(core): keep link passwords out of questions    | `fix/question-link-password`     | 47                           | P2       | medium | PR-45        | open   |
+| PR-46  | fix(core): keep link passwords out of questions    | `fix/question-link-password`     | 47                           | P2       | medium | PR-45        | merged |
 | PR-47  | fix(core): see finished files beside resume files  | `fix/finished-beside-resume`     | 48, 174                      | P2       | small  | PR-04        | merged |
 | PR-48  | fix(media): make any video title safe as a name    | `fix/safe-video-titles`          | 49, 95                       | P2       | small  | none         | merged |
 | PR-49  | fix(messages): give advice that fits the failure   | `fix/advice-fits-failure`        | 51, 105, 106, 206            | P2       | medium | none         | merged |
@@ -90,12 +90,12 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-80  | fix(core): correct how the add-on updates itself   | `fix/addon-updates`              | 108, 109, 110, 159, 208, 209 | P2       | medium | none         | merged |
 | PR-81  | fix(desktop): act on the rows the view shows       | `fix/selection-commands`         | 111, 136, 212                | P2       | medium | none         | merged |
 | PR-82  | fix(desktop): tidy navigation after a page opens   | `fix/navigation-state`           | 112, 162                     | P2       | small  | none         | merged |
-| PR-83  | fix(desktop): offer only actions that apply        | `fix/offers-that-apply`          | 113, 163, 166                | P2       | medium | none         | open   |
+| PR-83  | fix(desktop): offer only actions that apply        | `fix/offers-that-apply`          | 113, 163, 166                | P2       | medium | none         | merged |
 | PR-84  | fix(sites): correct what counts as a local page    | `fix/what-counts-local`          | 114, 215, 244                | P2       | small  | none         | merged |
-| PR-85  | fix(desktop): say what the proxy form will save    | `fix/proxy-form-truth`           | 116, 221                     | P2       | small  | none         | open   |
+| PR-85  | fix(desktop): say what the proxy form will save    | `fix/proxy-form-truth`           | 116, 221                     | P2       | small  | none         | merged |
 | PR-86  | fix(queues): hold queue slots to the real limit    | `fix/queue-slots`                | 117, 118                     | P2       | small  | none         | merged |
 | PR-87  | fix(queues): make rules match the way they read    | `fix/rules-match-text`           | 119, 223, 224                | P2       | small  | none         | merged |
-| PR-88  | fix(desktop): fix small faults in queue dialogs    | `fix/queue-dialogs`              | 120, 121, 165                | P2       | small  | none         | open   |
+| PR-88  | fix(desktop): fix small faults in queue dialogs    | `fix/queue-dialogs`              | 120, 121, 165                | P2       | small  | none         | merged |
 | PR-89  | fix(desktop): make tray actions answer correctly   | `fix/tray-actions`               | 124, 160                     | P2       | small  | none         | open   |
 | PR-90  | fix(desktop): show a processing step as it is      | `fix/processing-step`            | 125, 228                     | P2       | small  | none         | open   |
 | PR-91  | fix(desktop): correct wording of app messages      | `fix/app-message-wording`        | 126, 161                     | P2       | small  | none         | open   |
@@ -116,7 +116,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-106 | refactor(desktop): share repeated form logic       | `refactor/share-form-logic`      | 168                          | P3       | medium | none         | open   |
 | PR-107 | fix: write kept files whole before replacing       | `fix/write-kept-files-whole`     | 170, 171                     | P3       | small  | none         | open   |
 | PR-108 | refactor(engine): remove code with no effect       | `refactor/engine-no-op-code`     | 179, 181                     | P3       | small  | none         | merged |
-| PR-109 | refactor(streams): remove leftovers from the crate | `refactor/streams-leftovers`     | 192, 193, 194                | P3       | small  | none         | open   |
+| PR-109 | refactor(streams): remove leftovers from the crate | `refactor/streams-leftovers`     | 192, 193, 194                | P3       | small  | none         | merged |
 | PR-110 | test(core): repair media run tests, doc comments   | `test/media-run-tidy`            | 195, 196                     | P3       | small  | none         | open   |
 | PR-111 | fix(streams): stop media programs on a signal      | `fix/media-programs-on-signal`   | 199                          | P3       | medium | none         | open   |
 | PR-112 | fix(desktop): correct system registration details  | `fix/system-registration`        | 202, 203, 204                | P3       | small  | none         | merged |
@@ -473,7 +473,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/store`, `crates/core`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-store -p wirecatch-core`, `cargo clippy -p wirecatch-store -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-27 fix(core): keep a removal's record until it ends
 
@@ -641,7 +641,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/protocol`, `packages/protocol`, `crates/core`, `crates/desktop/src/download_windows`, `crates/desktop/src/main_window/settings`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core -p wirecatch-desktop`, `cargo clippy -p wirecatch-core -p wirecatch-desktop`, `pnpm protocol:generate`, `pnpm gate` once on the final tree, since `crates/protocol` is a wide change.
-- **Status:** open
+- **Status:** merged
 
 ### PR-41 fix(desktop): keep notices in step with downloads
 
@@ -714,7 +714,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`, `crates/desktop/src/text.rs`, `crates/desktop/src/main_window`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core -p wirecatch-desktop`, `cargo clippy -p wirecatch-core -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-47 fix(core): see finished files beside resume files
 
@@ -1159,7 +1159,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/main_window`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-84 fix(sites): correct what counts as a local page
 
@@ -1183,7 +1183,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/main_window/proxy_dialog.rs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-86 fix(queues): hold queue slots to the real limit
 
@@ -1219,7 +1219,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/main_window`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-89 fix(desktop): make tray actions answer correctly
 
@@ -1472,7 +1472,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/streams`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-streams`, `cargo clippy -p wirecatch-streams`, `node scripts/gate.mjs unused-deps`
-- **Status:** open
+- **Status:** merged
 
 ### PR-110 test(core): repair media run tests, doc comments
 

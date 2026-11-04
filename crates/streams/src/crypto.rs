@@ -75,7 +75,7 @@ fn decrypt_in_chunks(
 }
 
 /// Reads until `buf` is full or the input ends; returns how much was read.
-fn fill(input: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {
+pub(crate) fn fill(input: &mut impl Read, buf: &mut [u8]) -> io::Result<usize> {
     let mut filled = 0;
     while filled < buf.len() {
         match input.read(&mut buf[filled..]) {

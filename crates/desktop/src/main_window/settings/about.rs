@@ -15,7 +15,7 @@ use wirecatch_product::{
     ISSUES_URL, PRODUCT_LICENSE, PRODUCT_VERSION, PUBLISHER_NAME, REPOSITORY_URL, SUPPORT_EMAIL,
     WEBSITE_URL,
 };
-use wirecatch_protocol::app::{AddonId, AddonState};
+use wirecatch_protocol::app::AddonId;
 use wirecatch_shell::host;
 
 use crate::library::Library;
@@ -231,16 +231,9 @@ fn addon_versions(library: &Entity<Library>, cx: &App) -> String {
         .find(|addon| addon.id == AddonId::Media)
         .cloned();
     match addon {
-        Some(addon)
-            if matches!(
-                addon.state,
-                AddonState::Installed | AddonState::UpdateAvailable
-            ) =>
-        {
-            addon
-                .installed_version
-                .unwrap_or_else(|| "Installed".to_owned())
-        }
+        Some(addon) if addon.usable => addon
+            .installed_version
+            .unwrap_or_else(|| "Installed".to_owned()),
         Some(_) => "Not installed".to_owned(),
         None => "Checking".to_owned(),
     }

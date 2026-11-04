@@ -801,6 +801,8 @@ pub struct AddonInfo {
     pub description: String,
     /// Whether it is installed, being installed or out of date.
     pub state: AddonState,
+    /// Whether what is on this machine works now, whatever `state` says is being done to it: an update under way or failed leaves it working (D133).
+    pub usable: bool,
     /// The version on this machine, when installed.
     pub installed_version: Option<String>,
     /// The newest version Wirecatch may install, when known.
@@ -1188,6 +1190,38 @@ pub(crate) mod known_or_default {
     }
 }
 
+/// The category rules, leaving out one for a category this build does not know, so that it costs only that rule. Any other fault in a rule fails the whole value.
+mod known_rules {
+    use serde::de::Error as _;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde_json::Value;
+
+    use super::{Category, CategoryRule};
+
+    pub fn serialize<S: Serializer>(
+        rules: &[CategoryRule],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        rules.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<CategoryRule>, D::Error> {
+        let mut rules = Vec::new();
+        for rule in Vec::<Value>::deserialize(deserializer)? {
+            let unknown = matches!(
+                rule.get("category"),
+                Some(name @ Value::String(_)) if Category::deserialize(name).is_err()
+            );
+            if !unknown {
+                rules.push(serde_json::from_value(rule).map_err(D::Error::custom)?);
+            }
+        }
+        Ok(rules)
+    }
+}
+
 /// A change to some of [`AppSettings`]: only the fields that are present change, and a group (`extension`, `media`) changes only in the fields its own patch holds. A window sends only what the person changed, applied to the app's current settings, so two windows changing different settings never undo each other.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -1436,6 +1470,8 @@ pub struct AppSettings {
     /// Where downloads no [`CategoryRule`] matches are saved.
     pub default_folder: PortablePath,
     /// Which files go to which folder, one rule per category.
+    #[serde(with = "known_rules")]
+    #[ts(as = "Vec<CategoryRule>")]
     pub categories: Vec<CategoryRule>,
     /// Most connections per download, 1 to [`MAX_CONNECTIONS_PER_DOWNLOAD`].
     pub connections_per_download: u8,
