@@ -3,7 +3,7 @@
 #
 # Usage: bash scripts/ci/linux-package-check.sh deb|rpm|appimage FILE APP NOTICES
 #
-# Runs as root, in a container of the system the format is for (Ubuntu for deb, Fedora for rpm), or on the runner for an AppImage. The package must install its third-party notices (D117); its dependencies must cover every library the app loads; the app must start under a virtual display and stay up, registering the browser bridge for its user; and removing a deb or rpm must take that registration away again.
+# Runs as root, in a container of the system the format is for (Ubuntu for deb, Fedora for rpm), or on the runner for an AppImage. The package must install its third-party notices (D117); a deb or rpm must state the C library version it needs; an AppImage's app must find the libraries it carries (D142); its dependencies must cover every library the app loads; the app must start under a virtual display and stay up, registering the browser bridge for its user; and removing a deb or rpm must take that registration away again.
 set -euo pipefail
 
 KIND=$1
@@ -46,6 +46,27 @@ fi
 if [ "$KIND" = appimage ] && ! grep -q 'Applies to: libxkbcommon' "$NOTICES_ROOT"/usr/share/licenses/*/"$NOTICES"; then
   echo "The AppImage's notices leave out the libraries it carries." >&2
   exit 1
+fi
+
+case "$KIND" in
+  deb) states_glibc=$(dpkg-deb -f "$FILE" Depends | grep -c 'libc6 (>= ' || true) ;;
+  rpm) states_glibc=$(rpm -qp --requires "$FILE" | grep -c '^glibc >= ' || true) ;;
+  appimage) states_glibc=1 ;;
+esac
+if [ "$states_glibc" -eq 0 ]; then
+  echo "The package does not state the C library version it needs." >&2
+  exit 1
+fi
+
+if [ "$KIND" = appimage ]; then
+  linked=$(ldd "$NOTICES_ROOT/usr/bin/$APP")
+  for library in "$NOTICES_ROOT"/usr/lib/*; do
+    if ! grep -qF "$(basename "$library") => $NOTICES_ROOT/" <<<"$linked"; then
+      echo "The AppImage's app does not load the $(basename "$library") it carries:" >&2
+      echo "$linked" >&2
+      exit 1
+    fi
+  done
 fi
 
 id "$USER_NAME" >/dev/null 2>&1 || useradd -m -u 1500 "$USER_NAME"
