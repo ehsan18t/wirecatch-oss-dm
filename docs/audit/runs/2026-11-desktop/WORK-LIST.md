@@ -86,7 +86,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-76  | fix(media): track, limit yt-dlp's own downloads    | `fix/ytdlp-progress-limit`       | 96, 98                       | P2       | small  | none         | merged |
 | PR-77  | fix(media): make quality offers match downloads    | `fix/quality-offers`             | 97, 99, 197                  | P2       | medium | none         | merged |
 | PR-78  | fix(streams): read HLS masters, keys correctly     | `fix/hls-masters-keys`           | 100, 101, 102, 198           | P2       | medium | none         | merged |
-| PR-79  | fix(desktop): tell loading from a failed list      | `fix/list-open-states`           | 103, 135, 211                | P2       | medium | none         | open   |
+| PR-79  | fix(desktop): tell loading from a failed list      | `fix/list-open-states`           | 103, 135, 211                | P2       | medium | none         | merged |
 | PR-80  | fix(core): correct how the add-on updates itself   | `fix/addon-updates`              | 108, 109, 110, 159, 208, 209 | P2       | medium | none         | merged |
 | PR-81  | fix(desktop): act on the rows the view shows       | `fix/selection-commands`         | 111, 136, 212                | P2       | medium | none         | open   |
 | PR-82  | fix(desktop): tidy navigation after a page opens   | `fix/navigation-state`           | 112, 162                     | P2       | small  | none         | open   |
@@ -1106,7 +1106,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/main_window/empty.rs`, `crates/desktop/src/main_window/mod.rs`, `crates/shell/src/host.rs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop -p wirecatch-shell`, `cargo clippy -p wirecatch-desktop -p wirecatch-shell`; look at the loading and failed states in both themes.
-- **Status:** open
+- **Status:** merged
 
 ### PR-80 fix(core): correct how the add-on updates itself
 
