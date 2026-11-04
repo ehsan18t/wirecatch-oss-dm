@@ -230,7 +230,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 165. New queue and New proxy do not put the cursor in the Name field (fixed)
 166. The row, the menu and the details decide offers and words on their own (fixed)
 167. Two test files depend on an order only timing decides (open)
-168. The same small pieces of logic are written many times in the forms (open)
+168. The same small pieces of logic are written many times in the forms (fixed)
 169. Dying between placing a video and deleting its work folder gives a second copy (fixed)
 170. Exporting settings over an earlier file is not written whole (fixed)
 171. The bridge's manifest write has no flush (fixed)
