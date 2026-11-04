@@ -120,9 +120,9 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 93  | Uninstalling while the app runs leaves its program behind                                         | `29-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 94  | The AppImage's library folder leaks into programs the app starts                                  | `29-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 95  | A video's title is cut at its last slash                                                          | `16-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | fixed  |
-| 96  | yt-dlp progress goes backwards for a video with separate audio                                    | `16-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 96  | yt-dlp progress goes backwards for a video with separate audio                                    | `16-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 97  | A quality says 60 fps but may download 30 fps                                                     | `16-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | fixed  |
-| 98  | Speed limits do not reach yt-dlp                                                                  | `17-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 98  | Speed limits do not reach yt-dlp                                                                  | `17-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 99  | The best audio is picked by rate alone, so a dubbed track can replace the original                | `B07-2`                                                                                            | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | fixed  |
 | 100 | HLS key addresses count against no memory budget                                                  | `14-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 101 | Automatic audio picks another language when the default is inside the video                       | `14-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `14-4-and-14-5`                               | open   |
@@ -1942,7 +1942,7 @@ The title reaches `sanitize`, which treats it as a server's path and cuts at the
 
 ### 96. yt-dlp progress goes backwards for a video with separate audio
 
-P2, small, open.
+P2, small, fixed.
 
 yt-dlp's counts are per format, never the sum, and `set_own` replaces the last report. So a video with separate audio shows the bar going backwards when the audio starts.
 
@@ -1974,7 +1974,7 @@ A quality row labelled "1080p, 60 fps" takes its frame rate from another format 
 
 ### 98. Speed limits do not reach yt-dlp
 
-P2, small, open.
+P2, small, fixed.
 
 `Context` has no limit and `download_args` no `--limit-rate`, so limits reach only the engine and streams. No decision records an exception. A yt-dlp process takes one fixed rate, so it cannot share the queue's limiter exactly.
 
