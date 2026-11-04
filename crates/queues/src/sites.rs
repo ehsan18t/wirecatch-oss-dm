@@ -1,9 +1,10 @@
 //! Site rules (D72.10): what a pattern covers, and how specific it is.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr};
 
 use url::{Host, Url};
 use wirecatch_protocol::extension::read_site;
+use wirecatch_protocol::hosts::{host_on_site, host_under_site, is_address};
 
 const LOCAL: &str = "<local>";
 /// Covers only the names under the name that follows.
@@ -48,8 +49,8 @@ impl SitePattern {
     pub(crate) fn covers(&self, url: &Url, is_local: &dyn Fn(&Url) -> bool) -> bool {
         match (self, url.host()) {
             (Self::Local, Some(_)) => is_local(url),
-            (Self::Name(name), Some(Host::Domain(host))) => host == name || is_under(host, name),
-            (Self::Under(name), Some(Host::Domain(host))) => is_under(host, name),
+            (Self::Name(name), Some(Host::Domain(host))) => host_on_site(host, name),
+            (Self::Under(name), Some(Host::Domain(host))) => host_under_site(host, name),
             (Self::Range { network, bits }, Some(Host::Ipv4(ip))) => {
                 in_range(IpAddr::V4(ip), *network, *bits)
             }
@@ -74,12 +75,7 @@ impl SitePattern {
 /// A host name as the site lists keep it (lower case, international names in ASCII form), when `input` names one and is not an address.
 fn read_name(input: &str) -> Option<String> {
     let name = read_site(input).ok().flatten()?;
-    let is_address = name.parse::<IpAddr>().is_ok()
-        || name
-            .strip_prefix('[')
-            .and_then(|n| n.strip_suffix(']'))
-            .is_some_and(|n| n.parse::<Ipv6Addr>().is_ok());
-    (!is_address).then_some(name)
+    (!is_address(&name)).then_some(name)
 }
 
 /// An address, an address range (`10.0.0.0/8`) or an IPv4 address with trailing `*` parts.
@@ -149,12 +145,6 @@ fn same_prefix(a: u128, b: u128, bits: u8, width: u8) -> bool {
     a.checked_shr(ignored).unwrap_or(0) == b.checked_shr(ignored).unwrap_or(0)
 }
 
-/// Whether `host` is a name under `name` (`a.example.com` under `example.com`).
-fn is_under(host: &str, name: &str) -> bool {
-    host.strip_suffix(name)
-        .is_some_and(|rest| rest.len() > 1 && rest.ends_with('.'))
-}
-
 fn labels(name: &str) -> u16 {
     u16::try_from(name.split('.').count()).unwrap_or(u16::MAX / 2)
 }
@@ -189,6 +179,15 @@ mod tests {
     fn a_star_pattern_covers_only_the_names_under_it() {
         assert!(covers("*.corp.example", "https://wiki.corp.example/"));
         assert!(!covers("*.corp.example", "https://corp.example/"));
+    }
+
+    #[test]
+    fn a_trailing_dot_or_capitals_on_the_host_change_nothing() {
+        assert!(covers("example.com", "https://example.com./a"));
+        assert!(covers("example.com", "https://cdn.example.com./a"));
+        assert!(covers("*.example.com", "https://cdn.example.com./a"));
+        assert!(!covers("*.example.com", "https://example.com./a"));
+        assert!(covers("example.com", "ftps://FILES.Example.COM/a"));
     }
 
     #[test]

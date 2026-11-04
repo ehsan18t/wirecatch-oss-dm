@@ -14,7 +14,7 @@ pub mod archive;
 pub mod manifest;
 pub mod signature;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -121,33 +121,67 @@ pub fn ytdlp_cache(dir: &Path) -> PathBuf {
 /// The add-on's programs if every recorded file is there with its recorded size, so nothing half-installed or damaged is ever run, and with [`Check::Hashes`] its SHA-256. Each program must be one of those files: a record naming any other (written by hand, or by a bug) runs nothing. Blocks on the disk.
 #[must_use]
 pub fn tools(dir: &Path, record: &Record, check: Check) -> Option<ToolPaths> {
-    let program = |id: ComponentId| -> Option<PathBuf> {
-        let component = record.components.get(&id)?;
-        if !component.files.iter().any(|f| f.path == component.program) {
-            warn!(part = id.as_str(), program = %component.program, "the media add-on's program is not one of its checked files");
+    scan(dir, record, check).tools
+}
+
+/// What a look at the add-on's files found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scan {
+    /// The programs, when every part is there and intact.
+    pub tools: Option<ToolPaths>,
+    /// The parts of the record whose files are missing or changed.
+    pub damaged: BTreeSet<ComponentId>,
+}
+
+/// Looks at every part's files once. Blocks on the disk.
+#[must_use]
+pub fn scan(dir: &Path, record: &Record, check: Check) -> Scan {
+    let program = |id| intact_program(dir, record, id, check);
+    let ytdlp = program(ComponentId::YtDlp);
+    let ffmpeg = program(ComponentId::Ffmpeg);
+    let deno = program(ComponentId::Deno);
+    let damaged = [
+        (ComponentId::YtDlp, ytdlp.is_none()),
+        (ComponentId::Ffmpeg, ffmpeg.is_none()),
+        (ComponentId::Deno, deno.is_none()),
+    ]
+    .into_iter()
+    .filter(|(id, missing)| *missing && record.components.contains_key(id))
+    .map(|(id, _)| id)
+    .collect();
+    let tools = match (ytdlp, ffmpeg, deno) {
+        (Some(ytdlp), Some(ffmpeg), Some(deno)) => Some(ToolPaths {
+            ytdlp,
+            ffmpeg,
+            deno,
+            ytdlp_cache: ytdlp_cache(dir),
+        }),
+        _ => None,
+    };
+    Scan { tools, damaged }
+}
+
+/// The program of part `id`, if every file of the part is as recorded.
+fn intact_program(dir: &Path, record: &Record, id: ComponentId, check: Check) -> Option<PathBuf> {
+    let component = record.components.get(&id)?;
+    if !component.files.iter().any(|f| f.path == component.program) {
+        warn!(part = id.as_str(), program = %component.program, "the media add-on's program is not one of its checked files");
+        return None;
+    }
+    let folder = dir.join(id.as_str());
+    for file in &component.files {
+        let path = archive::safe_join(&folder, &file.path).ok()?;
+        let meta = std::fs::metadata(&path).ok()?;
+        let intact = meta.is_file()
+            && meta.len() == file.size
+            && (check == Check::Sizes
+                || archive::sha256_file(&path).is_ok_and(|h| h == file.sha256));
+        if !intact {
+            warn!(path = %path.display(), "a media add-on file is missing or changed");
             return None;
         }
-        let folder = dir.join(id.as_str());
-        for file in &component.files {
-            let path = archive::safe_join(&folder, &file.path).ok()?;
-            let meta = std::fs::metadata(&path).ok()?;
-            let intact = meta.is_file()
-                && meta.len() == file.size
-                && (check == Check::Sizes
-                    || archive::sha256_file(&path).is_ok_and(|h| h == file.sha256));
-            if !intact {
-                warn!(path = %path.display(), "a media add-on file is missing or changed");
-                return None;
-            }
-        }
-        archive::safe_join(&folder, &component.program).ok()
-    };
-    Some(ToolPaths {
-        ytdlp: program(ComponentId::YtDlp)?,
-        ffmpeg: program(ComponentId::Ffmpeg)?,
-        deno: program(ComponentId::Deno)?,
-        ytdlp_cache: ytdlp_cache(dir),
-    })
+    }
+    archive::safe_join(&folder, &component.program).ok()
 }
 
 /// Whether yt-dlp version `candidate` is newer than `installed`. Versions are

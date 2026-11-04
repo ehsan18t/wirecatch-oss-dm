@@ -83,6 +83,14 @@ impl Handovers {
         }
     }
 
+    /// The downloads of handovers still waiting for the server.
+    pub fn undecided_downloads(&self) -> impl Iterator<Item = DownloadId> {
+        self.known.values().filter_map(|known| match known.target {
+            Target::Download(id) if known.deciding.is_some() => Some(id),
+            _ => None,
+        })
+    }
+
     /// Points a handover at what it became, keeping its first answer.
     pub fn retarget(&mut self, id: &str, target: Target) {
         if let Some(handover) = self.known.get_mut(id) {

@@ -2,7 +2,9 @@
 //! it, and its window comes to the front, instead of a second question or download (D89).
 
 use wirecatch_engine::units::{KIB, KIB_USIZE};
-use wirecatch_protocol::app::{Repeated, UiEvent};
+use wirecatch_protocol::app::{
+    DownloadStatus, FileExistsAnswer, FileExistsChoice, Repeated, UiEvent,
+};
 use wirecatch_protocol::extension::{AddAction, CaptureSource, NewDownload};
 
 use crate::common::{Config, Harness, PATIENCE, TestResult, TestServer, test_data, tune};
@@ -147,5 +149,101 @@ async fn a_withdrawal_while_confirming_finds_it_taken() -> TestResult {
         wirecatch_protocol::extension::WithdrawOutcome::AlreadyStarted
     );
     assert_eq!(h.manager.list_downloads().len(), 1);
+    Ok(())
+}
+
+/// Two clicks of one link at the same moment, with no question first, make one download. The join is decided when the path is taken, so it holds however the two interleave.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn two_clicks_at_once_make_one_download() -> TestResult {
+    let server = slow_server().await;
+    for round in 0..20 {
+        let h = Harness::new().await?;
+        let url = format!("{}?round={round}", server.url("report.pdf"));
+        let (one, two) = tokio::join!(
+            h.manager.add_capture(click(&url, 1)),
+            h.manager.add_capture(click(&url, 2))
+        );
+        one?;
+        two?;
+        assert_eq!(h.manager.list_downloads().len(), 1, "round {round}");
+        h.manager.shutdown().await;
+    }
+    Ok(())
+}
+
+/// The browser's copy may only go once a server has answered (`AddAction::Started`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn joining_a_download_no_server_has_answered_is_not_called_started() -> TestResult {
+    let server = slow_server().await;
+    let h = Harness::new().await?;
+    let url = server.url("report.pdf").to_string();
+    server.hold();
+    let first = {
+        let (manager, click) = (h.manager.clone(), click(&url, 1));
+        tokio::spawn(async move { manager.add_capture(click).await })
+    };
+    crate::common::wait_until("the first run's request", || {
+        (server.arrived("report.pdf") > 0).then_some(())
+    })
+    .await;
+
+    let joined = h.manager.add_capture(click(&url, 2)).await?;
+    assert_eq!(joined.action, AddAction::Queued);
+
+    server.release();
+    assert_eq!(first.await??.action, AddAction::Started);
+    Ok(())
+}
+
+/// The same link with another fragment joins the question already showing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn another_fragment_joins_the_open_question() -> TestResult {
+    let h = Harness::new().await?;
+    tune(&h.manager, |s| s.extension.ask_before_download = true)?;
+    h.manager
+        .add_capture(click("https://example.com/report.pdf#page=1", 1))
+        .await?;
+    h.manager
+        .add_capture(click("https://example.com/report.pdf#page=2", 2))
+        .await?;
+    assert_eq!(h.manager.pending_confirmations().len(), 1);
+    Ok(())
+}
+
+/// With no confirmation window, a captured file already in the folder is asked about; the attempt stays and the browser's copy is not needed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_finished_file_captured_again_keeps_its_question() -> TestResult {
+    let server = TestServer::start(
+        test_data(16 * KIB_USIZE),
+        Config {
+            ranges: true,
+            content_disposition: Some("attachment; filename=\"report.pdf\"".into()),
+            ..Config::default()
+        },
+    )
+    .await;
+    let h = Harness::new().await?;
+    let url = server.url("get").to_string();
+    let first = h.manager.add_capture(click(&url, 1)).await?;
+    let first = h
+        .wait_status(first.id.ok_or("no id")?, DownloadStatus::Completed)
+        .await;
+
+    let again = h.manager.add_capture(click(&url, 2)).await?;
+
+    let [question] = &h.manager.pending_file_exists()[..] else {
+        return Err("the question closed itself".into());
+    };
+    let id = again.id.ok_or("no id")?;
+    assert_eq!(question.download, id);
+    h.manager.answer_file_exists(
+        question.id,
+        FileExistsAnswer {
+            choice: FileExistsChoice::KeepBoth,
+            remember: false,
+        },
+    )?;
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+    assert_ne!(done.path, first.path);
     Ok(())
 }
