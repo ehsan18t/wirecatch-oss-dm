@@ -1102,7 +1102,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 2     | Batch B02                               | done        |
 | 2     | Batch B03                               | done        |
 | 2     | Batch B04                               | done        |
-| 2     | Batch B05                               | pending     |
+| 2     | Batch B05                               | done        |
 | 2     | Batch B06                               | done        |
 | 2     | Batch B07                               | done        |
 | 2     | Batch B08                               | done        |
