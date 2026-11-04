@@ -28,7 +28,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-20  | fix(engine): fail a run when a flush fails         | `fix/keep-failed-flush`          | 20                           | P1       | small  | none         | merged |
 | PR-21  | fix(engine): renew an expired redirect target      | `fix/expired-redirect-target`    | 21                           | P1       | small  | none         | merged |
 | PR-22  | fix(store): open a list with an unreadable value   | `fix/unreadable-value-opens`     | 22                           | P1       | medium | none         | open   |
-| PR-23  | fix(media): offer only sources ffmpeg can read     | `fix/offer-readable-sources`     | 23                           | P1       | medium | none         | open   |
+| PR-23  | fix(media): offer only sources ffmpeg can read     | `fix/offer-readable-sources`     | 23                           | P1       | medium | none         | merged |
 | PR-24  | fix(media): fetch cookie-gated formats with yt-dlp | `fix/cookie-formats-ytdlp`       | 24                           | P1       | medium | none         | merged |
 | PR-25  | fix(store): say when saving fails or recovers      | `fix/save-failure-signal`        | 25, 84, 233                  | P2       | medium | none         | open   |
 | PR-26  | fix(store): keep values it cannot read             | `fix/keep-unreadable-values`     | 26                           | P2       | medium | none         | open   |
@@ -424,7 +424,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/media`, `crates/streams/src/ffmpeg.rs`
 - **Proof:** `Xpath-media-download-1.patch`
 - **Checks:** `cargo test -p wirecatch-media -p wirecatch-streams`, `cargo test -p wirecatch-core --test manager`, `cargo clippy -p wirecatch-media -p wirecatch-streams`. The log proposes one test that ties every offered source to `InputFormat`.
-- **Status:** open
+- **Status:** merged
 
 ### PR-24 fix(media): fetch cookie-gated formats with yt-dlp
 
