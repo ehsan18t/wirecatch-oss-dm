@@ -16,6 +16,9 @@ const LINK_FIELD_NAMES: [&str; 3] = ["username", "query", "fragment"];
 /// Command-line flags, matched without their dashes and with `-` removed, whose value is a secret besides those with a secret name: yt-dlp's `-p` (`--password`) and `--add-header`, ffmpeg's `-headers`.
 const SECRET_FLAGS: [&str; 4] = ["p", "addheader", "addheaders", "headers"];
 
+/// Last parts of a dotted name that mean the secret's own value, unlike a file's extension or a host's domain: `session.id`, `cookie.value`, `token.hash`.
+const NAMED_VALUE_PARTS: [&str; 3] = ["id", "value", "hash"];
+
 /// The key of a header object's value, `{"name": "Cookie", "value": ".."}`.
 const VALUE_KEY: &[u8] = b"value";
 
@@ -270,6 +273,31 @@ fn value_named_after(bytes: &[u8], key_end: usize) -> Option<(usize, usize)> {
     (kind != Kind::LinkField && close > inside).then_some((inside, close))
 }
 
+/// Whether the name before a `:` is a file or a host whose name only holds a secret's word, and what follows is the reason of a `path: reason` line or a port (D40.10): a dotted name whose last part names no secret (`session-01.mp4`, `auth.example.com`, and not `auth.token` or `session.id`), a dotted name right after a `/` (`/enc.key`), or a link's host before its port (`https://auth:8443`).
+fn names_a_place(bytes: &[u8], name_start: usize, name_end: usize) -> bool {
+    let Some(name) = bytes
+        .get(name_start..name_end)
+        .and_then(|name| std::str::from_utf8(name).ok())
+    else {
+        return false;
+    };
+    let before = |back: usize| {
+        name_start
+            .checked_sub(back)
+            .and_then(|at| bytes.get(at..name_start))
+    };
+    let Some((_, last)) = name.rsplit_once('.') else {
+        return before(3) == Some(b"://")
+            && bytes.get(name_end + 1).is_some_and(u8::is_ascii_digit);
+    };
+    !last.is_empty()
+        && (before(1) == Some(b"/")
+            || !(is_secret_name(last)
+                || NAMED_VALUE_PARTS
+                    .iter()
+                    .any(|part| last.eq_ignore_ascii_case(part))))
+}
+
 /// Where the value after the secret name ending at `name_end` starts and ends: past a closing quote of the name, blanks (newlines too after a quoted name, as pretty-printed JSON has them), the separator (or a header object's `value` key, `"Cookie", "value": ..`), blanks, and `Debug` wrappers such as `Some(`; then inside its quotes, to its closing bracket, or else to the end of its field (after `:`, and for a [`Kind::WholeField`] name) or of its word. `None` when no value follows, or it is `None`.
 fn secret_value(
     bytes: &[u8],
@@ -307,6 +335,13 @@ fn secret_value(
         },
     };
     if kind == Kind::LinkField && separator != Separator::Colon {
+        return None;
+    }
+    if separator == Separator::Colon
+        && !quoted_name
+        && matches!(kind, Kind::Value | Kind::Password)
+        && names_a_place(bytes, name_start, name_end)
+    {
         return None;
     }
     // Not `https://`: a link is no name and value.
