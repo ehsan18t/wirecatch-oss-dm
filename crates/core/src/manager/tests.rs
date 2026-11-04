@@ -1091,3 +1091,52 @@ async fn a_quit_during_a_move_of_a_partial_download_keeps_its_progress() {
         naming::partial_files(&chosen.join(old_path.file_name().unwrap()))[0].display()
     );
 }
+
+/// A run that fails after its server answered, before any data, leaves the older file standing as what it is: the row must not read it as its own after a restart.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_replace_that_failed_at_its_start_is_not_completed_by_a_restart() {
+    let engine = |run: FakeRun| -> EngineFuture {
+        Box::pin(async move {
+            let settle = run.settle.expect("nothing was written yet");
+            let path = settle(&answer("report.pdf"))
+                .map_err(|reason| EngineError::TargetRejected(PathRejected::new(reason)))?;
+            let folder = path.parent().unwrap().display().to_string();
+            Err(EngineError::TargetRejected(PathRejected::new(format!(
+                "{folder} refused the part file"
+            ))))
+        })
+    };
+    let (manager, dir) =
+        manager_with(engine, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let mut request = add_request("https://example.com/report.pdf");
+    request.start = false;
+    let id = manager.add_download(request).await.unwrap();
+    let path = PathBuf::from(&manager.lock().downloads[&id].row.path);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, b"the older file").unwrap();
+    {
+        let mut state = manager.lock();
+        let entry = state.downloads.get_mut(&id).unwrap();
+        entry.naming.settled = true;
+        entry.on_existing = Some(super::state::OnExisting::Replace);
+    }
+    manager.resume(id).unwrap();
+    wait_until("the run's failure", || {
+        manager.lock().downloads[&id].row.status == DownloadStatus::Failed
+    })
+    .await;
+    manager.shutdown().await;
+    drop(manager);
+
+    let reopened = Manager::open(ManagerConfig::for_tests(
+        dir.path().join("data"),
+        KnownFolders::under_home(dir.path().join("home")),
+    ))
+    .await
+    .unwrap();
+    assert_ne!(
+        reopened.lock().downloads[&id].row.status,
+        DownloadStatus::Completed
+    );
+    reopened.shutdown().await;
+}

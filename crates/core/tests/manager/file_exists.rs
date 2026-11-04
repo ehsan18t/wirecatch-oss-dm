@@ -619,3 +619,40 @@ fn ranged() -> Config {
         ..Config::default()
     }
 }
+
+/// An answer stays an answer across a restart.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_answered_replace_survives_a_restart() -> TestResult {
+    let server = TestServer::start(
+        // Far slower than any wait below: it cannot finish before the pause.
+        test_data(4096 * KIB_USIZE),
+        Config {
+            ranges: true,
+            per_connection_bps: Some(16 * KIB),
+            ..Config::default()
+        },
+    )
+    .await;
+    let mut h = Harness::new().await?;
+    let dir = folder_with(&h, b"the older file")?;
+    let mut events = h.manager.subscribe();
+    let row = add_into(&h, server.url("report").as_str(), &dir).await?;
+    let question = asked(&mut events).await?;
+    h.manager
+        .answer_file_exists(question.id, answer(FileExistsChoice::Replace, false))?;
+    h.wait_for(row.id, "some progress", |r| r.done > 0).await;
+    h.manager.pause(row.id)?;
+    h.wait_status(row.id, DownloadStatus::Paused).await;
+
+    h.restart().await?;
+    server.configure(|c| c.per_connection_bps = None);
+    h.manager.resume(row.id)?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+
+    assert_eq!(
+        Path::new(&done.path),
+        dir.join(NAME),
+        "the Replace was forgotten"
+    );
+    Ok(())
+}
