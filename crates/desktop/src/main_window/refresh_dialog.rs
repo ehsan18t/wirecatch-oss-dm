@@ -12,6 +12,7 @@ use gpui_kit::{
 };
 use wirecatch_core::LinkFrom;
 use wirecatch_protocol::DownloadId;
+use wirecatch_protocol::extension::MediaKind;
 use wirecatch_shell::api;
 
 use crate::backend::Backend;
@@ -154,7 +155,18 @@ impl Render for RefreshForm {
         } else if wrong {
             "Paste the whole link, starting with https://.".to_owned()
         } else {
-            "Links from some sites stop working after a while. Start the download again on its page, copy the new link and paste it here. What is already downloaded is kept.".to_owned()
+            let page_video = row
+                .as_ref()
+                .and_then(|row| row.media.as_ref())
+                .is_some_and(|media| media.source == MediaKind::Page);
+            let kept = if page_video {
+                "A video read from a page starts over if the link is a different one."
+            } else {
+                "What is already downloaded is kept."
+            };
+            format!(
+                "Links from some sites stop working after a while. Start the download again on its page, copy the new link and paste it here. {kept}"
+            )
         };
         v_flex()
             .gap_4()

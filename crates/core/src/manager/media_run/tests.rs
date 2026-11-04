@@ -625,3 +625,107 @@ fn a_video_a_scanner_holds_is_still_put_in_place() {
     assert_eq!(placed, Placed::At(planned.clone()));
     assert_eq!(std::fs::read(&planned).unwrap(), b"video");
 }
+
+fn job_at(dir: &Path, output: &Path, url: &str, taken: Taken) -> Job {
+    let tools: wirecatch_media::MediaTools = wirecatch_addons::ToolPaths {
+        ytdlp: dir.join("no-such-yt-dlp"),
+        ffmpeg: dir.join("no-such-ffmpeg"),
+        deno: dir.join("no-such-deno"),
+        ytdlp_cache: dir.join("cache"),
+    }
+    .into();
+    Job {
+        output: output.to_path_buf(),
+        url: Url::parse(url).unwrap(),
+        origin: Origin::default(),
+        chosen_by: ChosenBy::Person,
+        tools: Some(tools),
+        options: DownloadOptions::default(),
+        temp_dir: dir.to_path_buf(),
+        timeout: Duration::from_secs(1),
+        refresh_delays: Arc::new([]),
+        clock: Arc::new(crate::clock::SystemClock),
+        reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
+        file_work: FileWork::new(),
+        taken,
+    }
+}
+
+/// A list another download left in the work folder of the same name is never saved as this download.
+#[tokio::test]
+async fn a_new_link_does_not_take_a_list_another_link_left() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("Clip.mp4");
+    std::fs::write(&output, b"the person's file").unwrap();
+    let work = wirecatch_media::work_dir(&output);
+    std::fs::create_dir(&work).unwrap();
+    let old = work.join("video.mp4");
+    std::fs::write(&old, b"the earlier download's video").unwrap();
+    workdir::Downloaded::of_media(std::slice::from_ref(&old))
+        .write(&work)
+        .await
+        .unwrap();
+    let job = job_at(
+        dir.path(),
+        &output,
+        "https://example.com/another-video",
+        Taken::Replace,
+    );
+    let what = MediaJob::Page {
+        video: None,
+        audio: None,
+        output: None,
+        keep_ext: None,
+        conversion_failed: false,
+    };
+    let end = run(
+        job,
+        what,
+        &MediaProgress::default(),
+        &CancellationToken::new(),
+    )
+    .await;
+    assert_eq!(
+        std::fs::read(&output).unwrap(),
+        b"the person's file",
+        "completed as {end:?} with another link's video"
+    );
+    assert!(!old.exists());
+}
+
+/// Parts in the work folder belong to the link that left them: its next run keeps them, and another link's run never sees them.
+#[tokio::test]
+async fn a_work_folder_keeps_its_parts_only_for_its_own_link() {
+    let dir = tempfile::tempdir().unwrap();
+    let work = dir.path().join("Clip.mp4.wcmedia");
+    let part = work.join(workdir::marker("video"));
+    let link = |u: &str| Url::parse(u).unwrap();
+    workdir::claim_for_link(&work, &link("https://example.com/first"))
+        .await
+        .unwrap();
+    std::fs::write(&part, "video.mp4").unwrap();
+    workdir::claim_for_link(&work, &link("https://example.com/first"))
+        .await
+        .unwrap();
+    assert!(part.exists());
+    workdir::claim_for_link(&work, &link("https://example.com/second"))
+        .await
+        .unwrap();
+    assert!(!part.exists());
+    assert!(work.is_dir());
+}
+
+/// A folder that names no link, as one a crash left early, belongs to no one.
+#[tokio::test]
+async fn a_work_folder_that_names_no_link_is_cleared() {
+    let dir = tempfile::tempdir().unwrap();
+    let work = dir.path().join("Clip.mp4.wcmedia");
+    std::fs::create_dir(&work).unwrap();
+    let part = work.join(workdir::marker("video"));
+    std::fs::write(&part, "video.mp4").unwrap();
+    workdir::claim_for_link(&work, &Url::parse("https://example.com/v").unwrap())
+        .await
+        .unwrap();
+    assert!(!part.exists());
+}

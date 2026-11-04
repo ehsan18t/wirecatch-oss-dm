@@ -4,7 +4,10 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use wirecatch_engine::Url;
 use wirecatch_media::output::{ImageFormat, SubtitleFormat, SubtitlePick};
+
+use super::placement::link_digest;
 
 pub(super) const COVER: &str = "cover.image";
 pub(super) const METADATA: &str = "metadata.txt";
@@ -30,6 +33,27 @@ pub(super) fn output(ext: &str) -> String {
 /// The video and audio joined into one file.
 pub(super) fn joined(ext: &str) -> String {
     format!("joined.{ext}")
+}
+
+/// The digest of the link the folder's contents came from (a token in a link stays out of the folder).
+const LINK: &str = "link.digest";
+
+/// Makes `work` the folder of `url`: what another link left there, or a folder that names no link, is cleared, so a name shared by two downloads never gives one the other's video.
+pub(super) async fn claim_for_link(work: &Path, url: &Url) -> std::io::Result<()> {
+    let digest = link_digest(url.as_str());
+    let named = work.join(LINK);
+    if tokio::fs::read_to_string(&named)
+        .await
+        .is_ok_and(|text| text == digest)
+    {
+        return Ok(());
+    }
+    match tokio::fs::remove_dir_all(work).await {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
+    tokio::fs::create_dir_all(work).await?;
+    tokio::fs::write(named, digest).await
 }
 
 /// Names the file a finished part (`role`) was saved as.

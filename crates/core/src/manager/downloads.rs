@@ -361,7 +361,8 @@ impl Manager {
 
     /// Gives a download a fresh link, for example after the old one expired, from `from`, which
     /// decides whose link it is and so whether it may reach the local network (D39, D43.5). What
-    /// was already downloaded is kept as long as the server still serves the same file.
+    /// was already downloaded is kept as long as the server still serves the same file, except for
+    /// a video read from a page, whose work folder belongs to one link and is cleared for another.
     /// A link to another site (scheme, host or port) does not get the browser's
     /// cookies and credentials for the old one; the user agent and harmless
     /// headers such as the preferred language are kept.
