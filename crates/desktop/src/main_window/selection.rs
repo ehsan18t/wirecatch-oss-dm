@@ -58,10 +58,7 @@ impl DerefMut for Selected {
 /// What the selection comes to in the list, kept until the lines, the selection or the queues
 /// change: status and queue, all it reads, move only with the lines.
 pub(super) struct Facts {
-    laid: Rc<Laid>,
-    selected: u64,
-    picked: bool,
-    queue_list: u64,
+    from: FactsFrom,
     count: usize,
     can: Applicable,
     ids: Rc<[DownloadId]>,
@@ -71,6 +68,23 @@ pub(super) struct Facts {
     pub dragged: Rc<[DownloadId]>,
     /// How much of each heading's rows is ticked, by the kept list of those rows.
     picks: RefCell<HashMap<*const DownloadId, Picked>>,
+}
+
+/// All that [`Facts`] depend on.
+struct FactsFrom {
+    laid: Rc<Laid>,
+    selected: u64,
+    picked: bool,
+    queue_list: u64,
+}
+
+impl PartialEq for FactsFrom {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.laid, &other.laid)
+            && self.selected == other.selected
+            && self.picked == other.picked
+            && self.queue_list == other.queue_list
+    }
 }
 
 /// Where the cursor goes.
@@ -113,23 +127,19 @@ impl MainWindow {
 
     /// The selection's facts, worked out again only when they may differ.
     pub(super) fn selection_facts(&self, cx: &App) -> Rc<Facts> {
-        let laid = self.laid(cx);
         let library = self.library.read(cx);
-        let queue_list = library.revisions.queues;
-        let mut kept = self.selection_facts.borrow_mut();
-        if let Some(facts) = kept.as_ref().filter(|facts| {
-            Rc::ptr_eq(&facts.laid, &laid)
-                && facts.selected == self.selected.revision
-                && facts.picked == self.picked
-                && facts.queue_list == queue_list
-        }) {
-            return facts.clone();
-        }
-        let rows = self.chosen(&laid, cx);
-        let facts = Rc::new(Facts {
+        let from = FactsFrom {
+            laid: self.laid(cx),
             selected: self.selected.revision,
             picked: self.picked,
-            queue_list,
+            queue_list: library.revisions.queues,
+        };
+        let mut kept = self.selection_facts.borrow_mut();
+        if let Some(facts) = kept.as_ref().filter(|facts| facts.from == from) {
+            return facts.clone();
+        }
+        let rows = self.chosen(&from.laid, cx);
+        let facts = Rc::new(Facts {
             count: rows.len(),
             can: Applicable::to(&rows),
             ids: rows.iter().map(|row| row.id).collect(),
@@ -146,7 +156,7 @@ impl MainWindow {
                 Rc::from([])
             },
             picks: RefCell::default(),
-            laid,
+            from,
         });
         *kept = Some(facts.clone());
         facts
@@ -491,4 +501,79 @@ pub(super) fn each(
         }
         refused.map_or(Ok(()), Err)
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::laid::Asked;
+    use super::super::{View, sort};
+    use super::*;
+
+    #[test]
+    fn every_change_of_the_selection_moves_its_revision() {
+        let mut selected = Selected::default();
+        let changes: [fn(&mut Selected); 5] = [
+            |selected| {
+                selected.insert(DownloadId(1));
+            },
+            |selected| {
+                selected.remove(&DownloadId(1));
+            },
+            |selected| selected.extend([DownloadId(2)]),
+            |selected| **selected = [DownloadId(3)].into_iter().collect(),
+            |selected| selected.clear(),
+        ];
+        for change in changes {
+            let before = selected.revision;
+            change(&mut selected);
+            assert_ne!(selected.revision, before);
+        }
+        let before = selected.revision;
+        assert!(!selected.contains(&DownloadId(3)));
+        assert_eq!(selected.revision, before, "reading moves nothing");
+    }
+
+    fn laid() -> Rc<Laid> {
+        let asked = Asked {
+            revision: 0,
+            view: View::All,
+            needle: String::new(),
+            sort: sort::Sort::default(),
+            folded: Asked::folded(&HashSet::new()),
+        };
+        Rc::new(Laid::of(asked, &[], &mut sort::Frozen::default()))
+    }
+
+    #[test]
+    fn facts_hold_only_while_all_they_depend_on_holds() {
+        let lines = laid();
+        let from = || FactsFrom {
+            laid: lines.clone(),
+            selected: 1,
+            picked: false,
+            queue_list: 1,
+        };
+        assert!(from() == from());
+        let others = [
+            FactsFrom {
+                laid: laid(),
+                ..from()
+            },
+            FactsFrom {
+                selected: 2,
+                ..from()
+            },
+            FactsFrom {
+                picked: true,
+                ..from()
+            },
+            FactsFrom {
+                queue_list: 2,
+                ..from()
+            },
+        ];
+        for other in others {
+            assert!(other != from());
+        }
+    }
 }
