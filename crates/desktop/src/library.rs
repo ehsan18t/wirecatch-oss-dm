@@ -33,12 +33,21 @@ pub struct Library {
     pub addons: Vec<AddonInfo>,
     pub settings: Option<AppSettings>,
     pub revisions: Revisions,
+    order: OrderReading,
     /// Why the download list could not be saved, until it saves again or is dismissed.
     pub storage_problem: Option<String>,
     /// What the person must know about this start, such as a damaged list set aside.
     pub startup_notices: Vec<StartupNotice>,
     /// The questions the core asks about browser downloads, oldest first.
     pub open_questions: Vec<QuestionId>,
+}
+
+/// Reading the manager's order, one read at a time.
+#[derive(Default)]
+struct OrderReading {
+    running: bool,
+    /// The order changed again during the read.
+    stale: bool,
 }
 
 /// Moves as each part changes. Every change notifies, up to ten times a second while downloads
@@ -96,6 +105,7 @@ impl Library {
             addons: Vec::new(),
             settings: None,
             revisions: Revisions::default(),
+            order: OrderReading::default(),
             storage_problem: None,
             startup_notices: Vec::new(),
             open_questions: Vec::new(),
@@ -198,14 +208,26 @@ impl Library {
                 self.open_questions.retain(|open| *open != id);
             }
             UiEvent::DownloadsChanged(rows) => {
+                let mut moved = false;
                 for row in rows {
-                    self.downloads.put(row);
+                    moved |= self.downloads.put(row);
+                }
+                if moved {
+                    self.read_order(cx);
                 }
             }
             UiEvent::DownloadsRemoved(ids) => self.downloads.remove(&ids),
             UiEvent::QueuesChanged(queues) => {
+                let same_order = self
+                    .queues
+                    .iter()
+                    .map(|queue| queue.id)
+                    .eq(queues.iter().map(|queue| queue.id));
                 self.queues = queues;
                 self.revisions.queues += 1;
+                if !same_order {
+                    self.read_order(cx);
+                }
             }
             UiEvent::ProxyServersChanged(proxies) => {
                 self.proxies = proxies;
@@ -228,6 +250,33 @@ impl Library {
             _ => return,
         }
         cx.notify();
+    }
+
+    /// Reads the manager's order of the downloads, which no event carries.
+    fn read_order(&mut self, cx: &mut Context<'_, Self>) {
+        if self.order.running {
+            self.order.stale = true;
+            return;
+        }
+        self.order.running = true;
+        let read = Backend::run(cx, |manager| async move {
+            let rows = api::list_downloads(&manager);
+            rows.iter().map(|row| row.id).collect::<Vec<DownloadId>>()
+        });
+        cx.spawn(async move |this, cx| {
+            let read = read.await;
+            _ = this.update(cx, |library, cx| {
+                library.order.running = false;
+                if let Ok(Ok(ids)) = read {
+                    library.downloads.take_order(&ids);
+                    cx.notify();
+                }
+                if std::mem::take(&mut library.order.stale) {
+                    library.read_order(cx);
+                }
+            });
+        })
+        .detach();
     }
 
     /// Puts `ids_in_order` in that order among the places they hold, once the manager took the
