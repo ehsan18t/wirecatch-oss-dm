@@ -694,6 +694,43 @@ fn by_name(mut url: wirecatch_engine::Url) -> TestResult<wirecatch_engine::Url> 
     Ok(url)
 }
 
+/// A failed update takes nothing away, and Try again ends the failure once no update is left to try.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_update_leaves_the_add_on_usable() -> TestResult {
+    let (server, h, new_ytdlp) = updatable("fu").await?;
+    let mut settings = h.manager.get_settings();
+    settings.auto_update_addons = false;
+    h.manager.update_settings(settings)?;
+    serve_release(
+        &server,
+        "2026.09.30",
+        &new_ytdlp,
+        new_ytdlp.len() as u64,
+        &sha256(&new_ytdlp),
+        None,
+        OLD,
+    )?;
+    h.manager.check_addon_updates().await?;
+    assert!(h.manager.list_addons()[0].usable);
+    server.fail(&format!("rel/2026.09.30/{}", ytdlp_asset()), 100, 500);
+    h.manager.update_addon(AddonId::Media).await?;
+    let failed = crate::common::wait_until("the update to fail", || {
+        let info = h.manager.list_addons().remove(0);
+        matches!(info.state, AddonState::Failed { .. }).then_some(info)
+    })
+    .await;
+    assert!(failed.usable, "{failed:?}");
+
+    // The release is withdrawn, so nothing is left to install.
+    server.put("api/releases", "[]");
+    h.manager.check_addon_updates().await?;
+    h.manager.install_addon(AddonId::Media).await?;
+    let info = h.manager.list_addons().remove(0);
+    assert_eq!(info.state, AddonState::Installed);
+    assert!(info.usable);
+    Ok(())
+}
+
 /// GitHub is never on the local network: an add-on release whose name answers with a local address is not fetched.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_release_whose_name_answers_local_is_not_fetched() -> TestResult {
@@ -715,6 +752,7 @@ async fn a_release_whose_name_answers_local_is_not_fetched() -> TestResult {
         "{:?}",
         info.state
     );
+    assert!(!info.usable);
     assert_eq!(
         server.requests("lan/ffmpeg.zip"),
         0,
