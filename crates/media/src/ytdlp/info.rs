@@ -31,11 +31,11 @@ pub struct Info {
     #[serde(default, deserialize_with = "readable_formats")]
     pub formats: Vec<Format>,
     /// For a page with one format, yt-dlp may describe it at the top level.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub url: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub ext: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "lenient")]
     pub format_id: Option<String>,
     /// Length in seconds.
     #[serde(default, deserialize_with = "lenient")]
@@ -61,6 +61,26 @@ pub struct Info {
     pub automatic_captions: HashMap<String, Vec<SubtitleFile>>,
     #[serde(default, deserialize_with = "lenient")]
     pub chapters: Vec<Chapter>,
+    /// For a page with several videos, each described on its own.
+    #[serde(default, deserialize_with = "lenient")]
+    entries: Vec<serde_json::Value>,
+    /// What yt-dlp names `_type`, which says what `url` is.
+    #[serde(default, rename = "_type", deserialize_with = "lenient")]
+    kind: Option<String>,
+    /// The fields not named here, which describe the one format of a page that has no list of them.
+    #[serde(flatten)]
+    top_level: TopLevel,
+}
+
+/// A page's top-level fields, which hold its headers and so are never printed.
+#[derive(Clone, Default, Deserialize)]
+#[serde(transparent)]
+struct TopLevel(serde_json::Map<String, serde_json::Value>);
+
+impl std::fmt::Debug for TopLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} fields", self.0.len())
+    }
 }
 
 /// Reads a field that yt-dlp may leave out, set to `null` or fill with something
@@ -86,7 +106,8 @@ where
     };
     Ok(values
         .into_iter()
-        .filter_map(|value| match serde_json::from_value(value) {
+        .filter_map(|value| match serde_json::from_value::<Format>(value) {
+            Ok(format) if format.id.to_string().is_empty() => None,
             Ok(format) => Some(format),
             Err(e) => {
                 debug!(error = %e, "left out a format yt-dlp described oddly");
@@ -181,7 +202,7 @@ pub fn ids(video: Option<&FormatId>, audio: Option<&FormatId>) -> String {
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Format {
     /// yt-dlp's `format_id`, which names the format in a `-f` selection.
-    #[serde(rename = "format_id")]
+    #[serde(rename = "format_id", default)]
     pub id: FormatId,
     #[serde(default, deserialize_with = "lenient")]
     pub url: Option<String>,
@@ -239,11 +260,20 @@ const MIN_REQUEST_LIMIT: u64 = 64 * KIB;
 /// asking for less than a server allows is always fine.
 const MAX_REQUEST_LIMIT: u64 = GIB;
 
+/// Extensions that say a format holds no video when yt-dlp names no video codec.
+const NOT_VIDEO_EXTENSIONS: [&str; 10] = [
+    "mhtml", "mp3", "m4a", "aac", "opus", "ogg", "flac", "wav", "mka", "weba",
+];
+
 impl Format {
     #[must_use]
     pub fn has_video(&self) -> bool {
-        self.vcodec.as_deref().is_none_or(|c| c != "none")
-            && !matches!(self.ext.as_deref(), Some("mhtml"))
+        let ext = self.ext.as_deref().map(str::to_ascii_lowercase);
+        match self.vcodec.as_deref() {
+            Some("none") => false,
+            Some(_) => ext.as_deref() != Some("mhtml"),
+            None => !ext.is_some_and(|e| NOT_VIDEO_EXTENSIONS.contains(&e.as_str())),
+        }
     }
 
     #[must_use]
@@ -321,20 +351,58 @@ impl Info {
             return Cow::Borrowed(&self.formats);
         }
         match &self.url {
-            Some(url) => Cow::Owned(vec![Format {
-                id: self
-                    .format_id
-                    .clone()
-                    .and_then(|id| FormatId::try_from(id).ok())
-                    .unwrap_or_else(|| {
-                        FormatId::try_from(TOP_LEVEL_FORMAT_ID.to_owned()).unwrap_or_default()
-                    }),
-                url: Some(url.clone()),
-                ext: self.ext.clone(),
-                ..Format::default()
-            }]),
+            Some(url) => Cow::Owned(vec![self.top_level_format(url)]),
             None => Cow::Borrowed(&[]),
         }
+    }
+
+    /// The one format a page describes at the top level, from the same fields a listed format has.
+    fn top_level_format(&self, url: &str) -> Format {
+        let id = self
+            .format_id
+            .clone()
+            .and_then(|id| FormatId::try_from(id).ok())
+            .unwrap_or_else(|| {
+                FormatId::try_from(TOP_LEVEL_FORMAT_ID.to_owned()).unwrap_or_default()
+            });
+        let fields = serde_json::Value::Object(self.top_level.0.clone());
+        let read: Format = serde_json::from_value(fields).unwrap_or_default();
+        Format {
+            id,
+            url: Some(url.to_owned()),
+            ext: self.ext.clone(),
+            ..read
+        }
+    }
+
+    /// What a page with several videos is read as: its first with something to download (D119). Any other page is itself.
+    #[must_use]
+    pub fn single_video(self) -> Info {
+        if self.entries.is_empty() {
+            return self;
+        }
+        let first = self
+            .entries
+            .iter()
+            .filter_map(|entry| serde_json::from_value::<Info>(entry.clone()).ok())
+            .find(Info::has_something_to_download);
+        match first {
+            Some(video) => Info {
+                title: video.title.or(self.title),
+                ..video
+            },
+            None => Info {
+                entries: Vec::new(),
+                ..self
+            },
+        }
+    }
+
+    /// Whether this describes a video, rather than a link to one yt-dlp would read next.
+    fn has_something_to_download(&self) -> bool {
+        !self.formats.is_empty()
+            || (self.url.is_some()
+                && !matches!(self.kind.as_deref(), Some("url" | "url_transparent")))
     }
 }
 
@@ -364,6 +432,76 @@ mod tests {
         assert_eq!(f[3].transport(), Transport::YtDlp);
         assert!(!f[3].has_video() && !f[3].has_audio());
         assert!(f.iter().all(|f| f.request_limit().is_none()));
+    }
+
+    #[test]
+    fn a_page_described_at_the_top_level_keeps_its_protocol_headers_and_codecs() {
+        let info: Info = serde_json::from_str(
+            r#"{"title":"T","url":"https://x.example/p.m3u8","ext":"mp4","protocol":"m3u8_native","format_id":"7","vcodec":"none","acodec":"aac","height":720,"http_headers":{"Referer":"https://x.example/"}}"#,
+        )
+        .unwrap();
+        let all = info.all_formats();
+        assert_eq!(all[0].transport(), Transport::Hls);
+        assert_eq!(all[0].id.to_string(), "7");
+        assert!(all[0].http_headers.contains_key("Referer"));
+        assert!(!all[0].has_video());
+        assert!(all[0].has_audio());
+        assert_eq!(all[0].height, Some(720));
+    }
+
+    #[test]
+    fn a_page_described_at_the_top_level_never_prints_its_headers() {
+        let info: Info = serde_json::from_str(
+            r#"{"url":"https://x.example/v","http_headers":{"Cookie":"sid=cookie-that-must-not-print"}}"#,
+        )
+        .unwrap();
+        let printed = format!("{info:?}");
+        assert!(!printed.contains("must-not-print"), "{printed}");
+    }
+
+    #[test]
+    fn a_top_level_field_that_reads_oddly_leaves_the_format_alone() {
+        let info: Info = serde_json::from_str(
+            r#"{"url":"https://x.example/v.mp4","ext":"mp4","format_id":7,"height":"tall","http_headers":3}"#,
+        )
+        .unwrap();
+        let all = info.all_formats();
+        assert_eq!(all[0].id.to_string(), TOP_LEVEL_FORMAT_ID);
+        assert_eq!(all[0].height, None);
+    }
+
+    #[test]
+    fn a_page_with_several_videos_is_read_as_its_first() {
+        let info: Info = serde_json::from_str(
+            r#"{"_type":"playlist","title":"The page","entries":[
+            null,
+            {"_type":"url","url":"https://x.example/elsewhere"},
+            {"id":"a","formats":[{"format_id":"0","ext":"mp4","url":"https://x.example/a.mp4"}]},
+            {"title":"B","formats":[{"format_id":"0","ext":"mp4","url":"https://x.example/b.mp4"}]}]}"#,
+        )
+        .unwrap();
+        let first = info.single_video();
+        assert_eq!(first.title.as_deref(), Some("The page"));
+        assert_eq!(first.id.as_deref(), Some("a"));
+        assert_eq!(
+            first.formats[0].url.as_deref(),
+            Some("https://x.example/a.mp4")
+        );
+        let plain: Info =
+            serde_json::from_str(r#"{"title":"T","url":"https://x.example/v"}"#).unwrap();
+        assert_eq!(plain.single_video().all_formats().len(), 1);
+        let none: Info = serde_json::from_str(r#"{"_type":"playlist","entries":[]}"#).unwrap();
+        assert!(none.single_video().all_formats().is_empty());
+    }
+
+    #[test]
+    fn an_audio_file_with_no_codec_named_is_not_a_video() {
+        let format = |json: &str| serde_json::from_str::<Format>(json).unwrap();
+        assert!(!format(r#"{"format_id":"a","ext":"mp3"}"#).has_video());
+        assert!(!format(r#"{"format_id":"a","ext":"M4A"}"#).has_video());
+        assert!(format(r#"{"format_id":"a","ext":"m4a","vcodec":"mjpeg"}"#).has_video());
+        assert!(format(r#"{"format_id":"v","ext":"mp4"}"#).has_video());
+        assert!(format(r#"{"format_id":"v"}"#).has_video());
     }
 
     #[test]

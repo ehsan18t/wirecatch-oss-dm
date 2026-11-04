@@ -1183,3 +1183,7 @@ Decided on 2026-11-04. It amends D88.3 and D96.
 1. Every claim on a path names the download holding it (`Claimed`). Only the holder can give the path up, and a path another download holds is never taken over, so no two downloads ever write one file.
 2. An open "already in the folder" question reserves the path it asks about until it closes. Another download that wants that name meanwhile takes the next free name, without a question of its own, as it does for any name another download holds. The same goes for a download whose setting or answer would act on a path another download took first.
 3. Two finished rows can still list one file: Keep the existing file, or Replace over a finished download. A file has one place, so moving it through either row moves both rows. Removing a row with its file deletes the file only when no other finished row lists it and no other download holds its path; otherwise the file stays.
+
+### D119. A page with several videos is read as its first
+
+A page with several `<video>` tags reaches yt-dlp as a list, and a quality window asks about one video. Wirecatch reads and downloads the first video that has something to download (`Info::single_video`, `--playlist-items 1`), under the page's title when that video has none, and says nothing about the others. Offering the others would be a new window, not part of this choice.

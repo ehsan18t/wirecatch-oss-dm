@@ -172,7 +172,8 @@ fn add_maps(args: &mut Vec<OsString>, job: &OutputJob, numbers: &InputNumbers<'_
     if job.audio != AudioAction::None {
         match (numbers.audio, numbers.video) {
             (Some(a), _) => map(format!("{a}:a:0")),
-            (None, Some(v)) => map(format!("{v}:a:0")),
+            // Whether the video's own file has audio is only what yt-dlp said, or left unsaid.
+            (None, Some(v)) => map(format!("{v}:a:0?")),
             (None, None) => {}
         }
     }
@@ -336,6 +337,31 @@ mod tests {
     }
 
     /// Every input, subtitles and the metadata file included, is read as its own format from a local file only, and the output is one `file:` path.
+    /// A silent video stops ffmpeg with a map that must match, whatever yt-dlp said about its audio.
+    #[test]
+    fn audio_inside_the_video_file_is_mapped_only_if_it_is_there() {
+        let j = job(Container::Mkv, VideoAction::Copy, AudioAction::Copy);
+        let inputs = Inputs {
+            video: Some((InputFormat::WebM, PathBuf::from("/w/video.webm"))),
+            audio: None,
+            subtitles: Vec::new(),
+            metadata: None,
+            cover: None,
+        };
+        let args = text(
+            &arguments(
+                &j,
+                &inputs,
+                VideoPlan::new(j.video, None).unwrap(),
+                audio_encoder(AudioCodec::Aac, None),
+                Path::new("/w/output.mkv"),
+            )
+            .unwrap(),
+        );
+        assert!(args.iter().any(|a| a == "0:a:0?"), "{args:?}");
+        assert!(args.iter().any(|a| a == "0:v:0"), "{args:?}");
+    }
+
     #[test]
     fn every_input_of_a_conversion_is_a_named_local_file() {
         let mut j = job(Container::Mkv, VideoAction::Copy, AudioAction::Copy);
