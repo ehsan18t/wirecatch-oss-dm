@@ -419,7 +419,7 @@ fn state_buttons(can: &Applicable, cx: &mut Context<'_, MainWindow>) -> Vec<Butt
         Offer {
             shown: can.retry,
             id: "sel-retry",
-            label: "Try again",
+            label: can.retry_word,
             icon: IconName::RotateCw,
             takes: applies::can_retry,
             command: api::retry,

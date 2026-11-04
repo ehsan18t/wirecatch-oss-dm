@@ -25,10 +25,12 @@ use wirecatch_protocol::app::{
 use wirecatch_shell::activity::format_bytes;
 use wirecatch_shell::api;
 
+use super::applies::RowAction;
 use super::drag::{self, DraggedRows};
 use super::laid::{Asked, Day, Laid, Line};
 use super::{Group, MainWindow, View, fixes, row_menu};
 use crate::backend::act;
+use crate::rows::Tally;
 use crate::ui::select_circle::{Picked, SelectCircle};
 use crate::ui::{FileTile, Role, Typed as _, icon, tokens};
 use crate::{files, text};
@@ -83,6 +85,19 @@ impl GroupCommand {
             Self::ResumeAll => api::resume_all,
         };
         act(window.window_handle(), cx, work);
+    }
+}
+
+/// The command over `group`, while it has downloads.
+fn command_for(group: Group, tally: &Tally) -> Option<(&'static str, GroupCommand)> {
+    if tally.in_group(group) == 0 {
+        return None;
+    }
+    match group {
+        Group::Downloading => Some(("Pause all", GroupCommand::PauseAll)),
+        Group::UpNext if tally.running.is_empty() => Some(("Pause all", GroupCommand::PauseAll)),
+        Group::Paused => Some(("Resume all", GroupCommand::ResumeAll)),
+        _ => None,
     }
 }
 
@@ -224,13 +239,7 @@ impl MainWindow {
         group: Group,
         cx: &App,
     ) -> Option<(&'static str, GroupCommand)> {
-        let running = !self.library.read(cx).downloads.tally().running.is_empty();
-        match group {
-            Group::Downloading => Some(("Pause all", GroupCommand::PauseAll)),
-            Group::UpNext if !running => Some(("Pause all", GroupCommand::PauseAll)),
-            Group::Paused => Some(("Resume all", GroupCommand::ResumeAll)),
-            _ => None,
-        }
+        command_for(group, self.library.read(cx).downloads.tally())
     }
 
     /// How much of `ids` is ticked; a row only clicked is not.
@@ -762,51 +771,6 @@ fn progress_line(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<impl Int
     )
 }
 
-/// What a row's hover buttons do.
-#[derive(Clone, Copy)]
-enum RowAction {
-    Pause,
-    Resume,
-    Retry,
-    Open,
-    ShowInFolder,
-}
-
-impl RowAction {
-    /// The buttons a download in `status` offers on hover.
-    fn offered(status: DownloadStatus) -> &'static [(Self, &'static str, IconName)] {
-        match status {
-            DownloadStatus::Queued
-            | DownloadStatus::Connecting
-            | DownloadStatus::Downloading
-            | DownloadStatus::Processing => &[(Self::Pause, "Pause", IconName::Pause)],
-            DownloadStatus::Paused => &[(Self::Resume, "Resume", IconName::Play)],
-            DownloadStatus::Failed => &[(Self::Retry, "Try again", IconName::RotateCw)],
-            DownloadStatus::Cancelled => &[(Self::Retry, "Start over", IconName::RotateCw)],
-            DownloadStatus::Completed => &[
-                (Self::Open, "Open", IconName::ExternalLink),
-                (Self::ShowInFolder, "Show in folder", IconName::FolderOpen),
-            ],
-        }
-    }
-
-    fn run(self, id: DownloadId, window: &mut Window, cx: &mut Context<'_, MainWindow>) {
-        match self {
-            Self::Pause => act(window.window_handle(), cx, move |manager| {
-                api::pause(manager, id)
-            }),
-            Self::Resume => act(window.window_handle(), cx, move |manager| {
-                api::resume(manager, id)
-            }),
-            Self::Retry => act(window.window_handle(), cx, move |manager| {
-                api::retry(manager, id)
-            }),
-            Self::Open => files::open(id, window, cx),
-            Self::ShowInFolder => files::show_in_folder(id, window, cx),
-        }
-    }
-}
-
 /// Records where the cursor's row is drawn, for the menu the keyboard opens.
 fn marker(
     bounds: std::rc::Rc<std::cell::Cell<Option<gpui_kit::Bounds<gpui_kit::Pixels>>>>,
@@ -905,6 +869,27 @@ fn row_id(part: &'static str, id: DownloadId) -> ElementId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wirecatch_test_support::downloads::download;
+
+    #[test]
+    fn a_group_without_downloads_offers_no_command() {
+        let row = |status| DownloadSummary {
+            status,
+            ..download(1)
+        };
+        let label = |group, rows: &[DownloadSummary]| {
+            command_for(group, &rows.iter().collect::<Tally>()).map(|(label, _)| label)
+        };
+        assert_eq!(label(Group::Downloading, &[]), None);
+        assert_eq!(label(Group::Paused, &[]), None);
+        assert_eq!(label(Group::UpNext, &[]), None);
+        let paused = [row(DownloadStatus::Paused)];
+        assert_eq!(label(Group::Paused, &paused), Some("Resume all"));
+        let waiting = [row(DownloadStatus::Queued)];
+        assert_eq!(label(Group::UpNext, &waiting), Some("Pause all"));
+        let running = [row(DownloadStatus::Downloading)];
+        assert_eq!(label(Group::Downloading, &running), Some("Pause all"));
+    }
 
     #[test]
     fn a_fix_stays_when_its_row_is_hovered() {
