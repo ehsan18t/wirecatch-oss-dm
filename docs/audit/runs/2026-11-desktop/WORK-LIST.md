@@ -33,7 +33,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-23  | fix(media): offer only sources ffmpeg can read     | `fix/offer-readable-sources`     | 23                           | P1       | medium | none         | merged |
 | PR-24  | fix(media): fetch cookie-gated formats with yt-dlp | `fix/cookie-formats-ytdlp`       | 24                           | P1       | medium | none         | merged |
 | PR-25  | fix(store): say when saving fails or recovers      | `fix/save-failure-signal`        | 25, 84, 233                  | P2       | medium | none         | open   |
-| PR-26  | fix(store): keep values it cannot read             | `fix/keep-unreadable-values`     | 26                           | P2       | medium | none         | open   |
+| PR-26  | fix(store): keep values it cannot read             | `fix/keep-unreadable-values`     | 26                           | P2       | medium | none         | merged |
 | PR-27  | fix(core): keep a removal's record until it ends   | `fix/durable-removal`            | 27, 176                      | P2       | medium | none         | merged |
 | PR-28  | fix(engine): carry whether a download can resume   | `fix/can-resume-fact`            | 28                           | P2       | medium | none         | open   |
 | PR-29  | fix(desktop): show suffix list state in Settings   | `fix/suffix-list-settings`       | 29, 107                      | P2       | medium | none         | open   |
@@ -473,7 +473,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/store`, `crates/core`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-store -p wirecatch-core`, `cargo clippy -p wirecatch-store -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-27 fix(core): keep a removal's record until it ends
 

@@ -8,6 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use rusqlite::config::DbConfig;
+use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -196,8 +197,9 @@ const BATCHES_KEY: &str = "queue_batches";
 const PROXY_LOGINS_KEY: &str = "proxy_passwords";
 const PROXY_SERVERS_KEY: &str = "proxy_servers";
 
-/// The highest download, queue and proxy server ids ever handed out. Kept so an id is never
-/// reused, even after the newest one was deleted.
+/// The highest download, queue and proxy server ids ever handed out, so an id is not reused after
+/// the newest one was deleted. When this value cannot be read, ids go on from the highest still in
+/// the list, so a deleted one's can come back.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LastIds {
     pub download: i64,
@@ -285,8 +287,25 @@ pub enum Recovery {
         /// Downloads whose size or downloaded count was reset.
         downloads: usize,
     },
+    /// A stored value could not be read and is read as absent. Its bytes are kept under a key of their own, so saving over it loses nothing (D148). Counted once.
+    ValueKept(KeptValue),
 }
 
+/// What a kept value was ([`Recovery::ValueKept`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum KeptValue {
+    Settings,
+    Queue,
+    ProxyServers,
+    ProxyPasswords,
+    QueueBatches,
+}
+
+/// Before the key of a value in the key-value table that could not be read, kept for a build or a person that can.
+const KEPT_PREFIX: &str = "kept:";
+/// Where a queue's settings are in the row [`load_queues`] selects.
+const QUEUE_SETTINGS_COLUMN: usize = 4;
 /// Suffix of a damaged database moved aside, followed by the Unix time in milliseconds.
 const DAMAGED_SUFFIX: &str = ".damaged-";
 /// Suffix of the copy taken before a schema upgrade, followed by the schema version it holds.
@@ -1146,26 +1165,74 @@ fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// A JSON value from the key-value table, or `None` if it is missing or unreadable.
-fn read_value<T: DeserializeOwned>(
-    conn: &Connection,
-    key: &str,
-    what: &str,
-) -> rusqlite::Result<Option<T>> {
-    let stored = conn
-        .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
-            row.get::<_, String>(0)
-        })
-        .optional();
-    let json = match stored {
-        Ok(json) => json,
-        Err(e) if cannot_convert(&e) => {
-            warn!(error = %e, "stored {what} is unreadable");
-            None
+/// A stored cell as it is on disk, whatever it holds. `Value` is not used: it panics on text that is not UTF-8.
+fn cell_bytes(cell: ValueRef<'_>) -> Vec<u8> {
+    match cell {
+        ValueRef::Text(bytes) | ValueRef::Blob(bytes) => bytes.to_vec(),
+        ValueRef::Null => Vec::new(),
+        ValueRef::Integer(number) => number.to_string().into_bytes(),
+        ValueRef::Real(number) => number.to_string().into_bytes(),
+    }
+}
+
+/// The bytes stored under `key` in the key-value table.
+fn stored_bytes(conn: &Connection, key: &str) -> rusqlite::Result<Option<Vec<u8>>> {
+    conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+        Ok(cell_bytes(row.get_ref(0)?))
+    })
+    .optional()
+}
+
+fn parsed_bytes<T: DeserializeOwned>(bytes: &[u8], what: &str) -> Option<T> {
+    let text = std::str::from_utf8(bytes)
+        .inspect_err(|e| warn!(error = %e, "stored {what} is unreadable"))
+        .ok()?;
+    from_json(text, what)
+}
+
+/// What could not be read while loading, each to be told once.
+#[derive(Default)]
+struct Kept(Vec<KeptValue>);
+
+impl Kept {
+    /// Keeps `bytes` under `kept:<key>`, the old value's key, telling of `which` only when they are new there.
+    fn keep(
+        &mut self,
+        conn: &Connection,
+        key: &str,
+        bytes: &[u8],
+        which: KeptValue,
+    ) -> rusqlite::Result<()> {
+        let kept_key = format!("{KEPT_PREFIX}{key}");
+        if stored_bytes(conn, &kept_key)?.as_deref() != Some(bytes) {
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+                params![kept_key, bytes],
+            )?;
+            if !self.0.contains(&which) {
+                self.0.push(which);
+            }
         }
-        Err(e) => return Err(e),
-    };
-    Ok(json.and_then(|json| from_json(&json, what)))
+        Ok(())
+    }
+
+    /// A JSON value from the key-value table, or `None` if it is missing or unreadable, in which case its bytes are kept.
+    fn read<T: DeserializeOwned>(
+        &mut self,
+        conn: &Connection,
+        key: &str,
+        what: &str,
+        which: KeptValue,
+    ) -> rusqlite::Result<Option<T>> {
+        let Some(bytes) = stored_bytes(conn, key)? else {
+            return Ok(None);
+        };
+        let parsed = parsed_bytes(&bytes, what);
+        if parsed.is_none() {
+            self.keep(conn, key, &bytes, which)?;
+        }
+        Ok(parsed)
+    }
 }
 
 fn write_value<T: Serialize>(tx: &Transaction<'_>, key: &str, value: &T) -> rusqlite::Result<()> {
@@ -1174,49 +1241,85 @@ fn write_value<T: Serialize>(tx: &Transaction<'_>, key: &str, value: &T) -> rusq
     Ok(())
 }
 
-/// One by one, so a profile that cannot be read loses only itself.
-fn load_proxy_servers(conn: &Connection) -> rusqlite::Result<Vec<SavedProxyServer>> {
-    Ok(
-        read_value::<Vec<serde_json::Value>>(conn, PROXY_SERVERS_KEY, "proxy servers")?
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|profile| {
-                serde_json::from_value(profile)
-                    .inspect_err(|e| warn!(error = %e, "a stored proxy server is unreadable"))
-                    .ok()
-            })
-            .collect(),
-    )
+/// One by one, so a profile that cannot be read loses only itself here. The stored list is kept whole.
+fn load_proxy_servers(
+    conn: &Connection,
+    kept: &mut Kept,
+) -> rusqlite::Result<Vec<SavedProxyServer>> {
+    let which = KeptValue::ProxyServers;
+    let stored: Vec<serde_json::Value> = kept
+        .read(conn, PROXY_SERVERS_KEY, "proxy servers", which)?
+        .unwrap_or_default();
+    let count = stored.len();
+    let profiles: Vec<SavedProxyServer> = stored
+        .into_iter()
+        .filter_map(|profile| {
+            serde_json::from_value(profile)
+                .inspect_err(|e| warn!(error = %e, "a stored proxy server is unreadable"))
+                .ok()
+        })
+        .collect();
+    if profiles.len() != count
+        && let Some(bytes) = stored_bytes(conn, PROXY_SERVERS_KEY)?
+    {
+        kept.keep(conn, PROXY_SERVERS_KEY, &bytes, which)?;
+    }
+    Ok(profiles)
 }
 
-/// In sidebar order, without queues whose settings cannot be read.
-fn load_queues(conn: &Connection) -> Result<Vec<Queue>> {
+/// In sidebar order, without queues that cannot be read, whose settings are kept.
+fn load_queues(conn: &Connection, kept: &mut Kept) -> Result<Vec<Queue>> {
     let mut stmt = conn.prepare(
         "SELECT id, is_default, paused, running_outside_schedule, settings
          FROM queues ORDER BY position",
     )?;
     let mut queues = Vec::new();
     let read = stmt.query_map([], |row| match read_queue(row) {
+        Ok(Some(queue)) => Ok(Ok(queue)),
+        Ok(None) => unreadable_queue(row),
         Err(e) if cannot_convert(&e) => {
             warn!(error = %e, "a stored queue cannot be read");
-            Ok(None)
+            unreadable_queue(row)
         }
-        other => other,
+        Err(e) => Err(e),
     })?;
     for row in read {
-        queues.extend(row?);
+        match row? {
+            Ok(queue) => queues.push(queue),
+            Err((id, bytes)) => {
+                kept.keep(conn, &format!("queue:{id}"), &bytes, KeptValue::Queue)?;
+            }
+        }
     }
     Ok(queues)
 }
 
-fn load(conn: &Connection) -> Result<Snapshot> {
-    let settings = read_value(conn, SETTINGS_KEY, "settings")?;
-    let last_ids = read_value(conn, LAST_IDS_KEY, "id counters")?.unwrap_or_default();
-    let batches = read_value(conn, BATCHES_KEY, "queue batches")?.unwrap_or_default();
-    let proxy_logins = read_value(conn, PROXY_LOGINS_KEY, "proxy passwords")?.unwrap_or_default();
-    let proxy_servers = load_proxy_servers(conn)?;
+/// The id of a stored queue that cannot be read, and its settings as they are.
+fn unreadable_queue(row: &Row<'_>) -> rusqlite::Result<std::result::Result<Queue, (i64, Vec<u8>)>> {
+    Ok(Err((
+        row.get(0)?,
+        cell_bytes(row.get_ref(QUEUE_SETTINGS_COLUMN)?),
+    )))
+}
 
-    let queues = load_queues(conn)?;
+/// The counters, never below an id still in the list: hidden rows and unreadable queues hold theirs too, and a reused id would replace a hidden row.
+fn load_last_ids(conn: &Connection) -> rusqlite::Result<LastIds> {
+    let stored = stored_bytes(conn, LAST_IDS_KEY)?;
+    let mut ids: LastIds = stored
+        .and_then(|bytes| parsed_bytes(&bytes, "id counters"))
+        .unwrap_or_default();
+    let highest = |sql: &str| conn.query_row(sql, [], |row| row.get::<_, Option<i64>>(0));
+    ids.download = ids
+        .download
+        .max(highest("SELECT MAX(id) FROM downloads")?.unwrap_or(0));
+    ids.queue = ids
+        .queue
+        .max(highest("SELECT MAX(id) FROM queues")?.unwrap_or(0));
+    Ok(ids)
+}
+
+/// The rows this build can read, repaired as they are read, and how many rows were newly found unreadable and how many had values reset.
+fn load_downloads(conn: &Connection) -> Result<(Vec<StoredDownload>, usize, usize)> {
     let mut downloads_reset = 0;
 
     let mut stmt = conn.prepare(
@@ -1267,6 +1370,28 @@ fn load(conn: &Connection) -> Result<Snapshot> {
             }
         }
     }
+    Ok((downloads, newly_unreadable, downloads_reset))
+}
+
+fn load(conn: &Connection) -> Result<Snapshot> {
+    let mut kept = Kept::default();
+    let settings = kept.read(conn, SETTINGS_KEY, "settings", KeptValue::Settings)?;
+    let last_ids = load_last_ids(conn)?;
+    let batches = kept
+        .read(conn, BATCHES_KEY, "queue batches", KeptValue::QueueBatches)?
+        .unwrap_or_default();
+    let proxy_logins = kept
+        .read(
+            conn,
+            PROXY_LOGINS_KEY,
+            "proxy passwords",
+            KeptValue::ProxyPasswords,
+        )?
+        .unwrap_or_default();
+    let proxy_servers = load_proxy_servers(conn, &mut kept)?;
+
+    let queues = load_queues(conn, &mut kept)?;
+    let (downloads, newly_unreadable, downloads_reset) = load_downloads(conn)?;
 
     Ok(Snapshot {
         settings,
@@ -1284,6 +1409,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
         ]
         .into_iter()
         .flatten()
+        .chain(kept.0.into_iter().map(Recovery::ValueKept))
         .collect(),
         not_private: None,
     })
@@ -1342,7 +1468,10 @@ fn stored_count(value: i64) -> Option<u64> {
 
 fn read_queue(row: &Row<'_>) -> rusqlite::Result<Option<Queue>> {
     let id = QueueId(row.get(0)?);
-    let Some(settings) = from_json(&row.get::<_, String>(4)?, "queue settings") else {
+    let Some(settings) = from_json(
+        &row.get::<_, String>(QUEUE_SETTINGS_COLUMN)?,
+        "queue settings",
+    ) else {
         return Ok(None);
     };
     Ok(Some(Queue {
@@ -3191,6 +3320,207 @@ mod tests {
         assert_eq!(settings.connections_per_download, 3, "as stored");
         assert!(settings.extension.ask_before_download, "switched on once");
         assert!(settings.show_progress_windows, "a new setting's default");
+        store.close(PATIENCE).await;
+    }
+
+    /// Opens the list in `dir` with `damage` done to it after everything was saved once.
+    async fn opened_after(dir: &Path, damage: &str) -> (Store, Snapshot) {
+        let (store, _) = Store::open(dir, ignore_failures()).unwrap();
+        store.save_downloads(vec![download(1)]);
+        store.save_settings(sample_settings());
+        store.save_queues(vec![sample_queue()]);
+        store.close(PATIENCE).await;
+        Connection::open(dir.join(DATABASE_FILE))
+            .unwrap()
+            .execute_batch(damage)
+            .unwrap();
+        Store::open(dir, ignore_failures()).unwrap()
+    }
+
+    fn kept_bytes(dir: &Path, key: &str) -> Vec<u8> {
+        Connection::open(dir.join(DATABASE_FILE))
+            .unwrap()
+            .query_row(
+                "SELECT CAST(value AS BLOB) FROM settings WHERE key = ?1",
+                [key],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn settings_that_cannot_be_read_survive_being_saved_over_and_are_told_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, first) = opened_after(
+            dir.path(),
+            "UPDATE settings SET value = '{\"from\":\"a newer build\"}' WHERE key = 'app'",
+        )
+        .await;
+        assert_eq!(first.settings, None);
+        assert_eq!(
+            first.recoveries,
+            vec![Recovery::ValueKept(KeptValue::Settings)]
+        );
+        store.save_settings(sample_settings());
+        store.close(PATIENCE).await;
+        assert_eq!(
+            kept_bytes(dir.path(), "kept:app"),
+            b"{\"from\":\"a newer build\"}"
+        );
+
+        let (store, second) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(second.settings, Some(sample_settings()));
+        assert_eq!(second.recoveries, Vec::new());
+        store.close(PATIENCE).await;
+    }
+
+    #[tokio::test]
+    async fn settings_that_are_not_text_are_kept_byte_for_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, first) = opened_after(
+            dir.path(),
+            "UPDATE settings SET value = CAST(x'FF00' AS TEXT) WHERE key = 'app'",
+        )
+        .await;
+        assert_eq!(first.settings, None);
+        store.close(PATIENCE).await;
+        assert_eq!(kept_bytes(dir.path(), "kept:app").first(), Some(&0xFF));
+    }
+
+    #[tokio::test]
+    async fn a_queue_that_cannot_be_read_is_kept_when_the_queues_are_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let id = sample_queue().id.0;
+        let (store, first) =
+            opened_after(dir.path(), "UPDATE queues SET settings = '{\"new\":1}'").await;
+        assert_eq!(first.queues, Vec::new());
+        assert_eq!(
+            first.recoveries,
+            vec![Recovery::ValueKept(KeptValue::Queue)]
+        );
+        store.save_queues(Vec::new());
+        store.close(PATIENCE).await;
+        assert_eq!(
+            kept_bytes(dir.path(), &format!("kept:queue:{id}")),
+            b"{\"new\":1}"
+        );
+    }
+
+    #[tokio::test]
+    async fn one_proxy_server_that_cannot_be_read_keeps_them_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let stored = "[{\"from\":\"a newer build\"}]";
+        let (store, first) = opened_after(
+            dir.path(),
+            &format!("INSERT OR REPLACE INTO settings (key, value) VALUES ('{PROXY_SERVERS_KEY}', '{stored}')"),
+        )
+        .await;
+        assert_eq!(first.proxy_servers, Vec::new());
+        assert_eq!(
+            first.recoveries,
+            vec![Recovery::ValueKept(KeptValue::ProxyServers)]
+        );
+        store.close(PATIENCE).await;
+        assert_eq!(
+            kept_bytes(dir.path(), &format!("kept:{PROXY_SERVERS_KEY}")),
+            stored.as_bytes()
+        );
+    }
+
+    #[tokio::test]
+    async fn unreadable_passwords_and_batches_are_kept_and_told() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, first) = opened_after(
+            dir.path(),
+            &format!(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('{PROXY_LOGINS_KEY}', 'x'), ('{BATCHES_KEY}', 'x')"
+            ),
+        )
+        .await;
+        assert_eq!(
+            first.recoveries,
+            vec![
+                Recovery::ValueKept(KeptValue::QueueBatches),
+                Recovery::ValueKept(KeptValue::ProxyPasswords),
+            ]
+        );
+        store.close(PATIENCE).await;
+    }
+
+    /// Reusing a hidden row's id would replace the row when the new download is saved.
+    #[tokio::test]
+    async fn unreadable_id_counters_never_reuse_an_id_still_in_the_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let queue = sample_queue().id.0;
+        let (store, first) = opened_after(
+            dir.path(),
+            &format!(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('{LAST_IDS_KEY}', 'x');
+                 UPDATE downloads SET status = 'from_a_newer_build', id = 9 WHERE id = 1;"
+            ),
+        )
+        .await;
+        assert_eq!(first.downloads, Vec::new());
+        assert_eq!(first.last_ids.download, 9);
+        assert_eq!(first.last_ids.queue, queue);
+        store.close(PATIENCE).await;
+    }
+
+    #[tokio::test]
+    async fn a_rule_with_a_bad_folder_is_kept_with_the_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = serde_json::to_value(sample_settings()).unwrap();
+        settings["categories"] =
+            serde_json::json!([{ "category": "video", "extensions": [], "folder": 5 }]);
+        let (store, first) = opened_after(
+            dir.path(),
+            &format!("UPDATE settings SET value = '{settings}' WHERE key = 'app'"),
+        )
+        .await;
+        assert_eq!(first.settings, None);
+        assert_eq!(
+            first.recoveries,
+            vec![Recovery::ValueKept(KeptValue::Settings)]
+        );
+        store.close(PATIENCE).await;
+        assert_eq!(
+            kept_bytes(dir.path(), "kept:app"),
+            settings.to_string().as_bytes()
+        );
+    }
+
+    #[tokio::test]
+    async fn several_unreadable_queues_are_told_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, first) = opened_after(
+            dir.path(),
+            "UPDATE queues SET settings = '{\"new\":1}';
+             INSERT INTO queues (id, position, is_default, paused, running_outside_schedule, settings)
+             VALUES (77, 9, 0, 0, 0, '{\"new\":2}');",
+        )
+        .await;
+        assert_eq!(
+            first.recoveries,
+            vec![Recovery::ValueKept(KeptValue::Queue)]
+        );
+        store.close(PATIENCE).await;
+        assert_eq!(kept_bytes(dir.path(), "kept:queue:77"), b"{\"new\":2}");
+    }
+
+    #[tokio::test]
+    async fn a_category_this_build_does_not_know_costs_only_its_rule() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = serde_json::to_value(sample_settings()).unwrap();
+        let rule = |category: &str| serde_json::json!({ "category": category, "extensions": [], "folder": "x" });
+        settings["categories"] = serde_json::json!([rule("video"), rule("from_a_newer_build")]);
+        let (store, first) = opened_after(
+            dir.path(),
+            &format!("UPDATE settings SET value = '{settings}' WHERE key = 'app'"),
+        )
+        .await;
+        let read = first.settings.expect("the rest of the settings still read");
+        assert_eq!(read.categories.len(), 1);
+        assert_eq!(first.recoveries, Vec::new());
         store.close(PATIENCE).await;
     }
 }
