@@ -10,7 +10,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-02  | fix(core): keep folders when removing a download   | `fix/remove-keeps-folders`       | 2                            | P0       | small  | none         | merged |
 | PR-03  | fix(engine): stop calling a cut-off file complete  | `fix/cut-off-unknown-size`       | 3                            | P0       | small  | none         | merged |
 | PR-04  | fix(core): save whether a row wrote its own file   | `fix/row-wrote-its-file`         | 4                            | P1       | medium | none         | merged |
-| PR-05  | fix(core): keep a browser capture that asks first  | `fix/capture-meets-ask`          | 5                            | P1       | small  | none         | open   |
+| PR-05  | fix(core): keep a browser capture that asks first  | `fix/capture-meets-ask`          | 5                            | P1       | small  | none         | merged |
 | PR-06  | fix(desktop): trust APPIMAGE only for this program | `fix/appimage-variable`          | 6                            | P1       | small  | none         | merged |
 | PR-07  | fix(desktop): name the official online sources     | `fix/official-sources`           | 7                            | P1       | small  | PR-06        | merged |
 | PR-08  | fix(core): copy moved files under a temporary name | `fix/staged-move-copy`           | 8, 104                       | P2       | medium | none         | merged |
@@ -206,7 +206,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`
 - **Proof:** `05-3.patch`. `Xconcurrency-3-and-6.patch` holds 2 tests: only `a_finished_file_captured_again_keeps_its_question` belongs here, the other is for PR-70.
 - **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-06 fix(desktop): trust APPIMAGE only for this program
 
