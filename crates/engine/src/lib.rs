@@ -139,7 +139,10 @@
 //! `Cache-Control`, `DNT`, `Pragma`, and `Referer` cut down to its origin). A
 //! `user:password@` in the URL is handled the same way, as an `Authorization`
 //! header for its own origin. A redirect from `https` to `http` is refused
-//! unless [`DownloadOptions::allow_insecure_redirects`] is set.
+//! unless [`DownloadOptions::allow_insecure_redirects`] is set. A redirect
+//! target that starts refusing requests (a signed address past its time) sends
+//! the download back through the URL it was given, once per refusal; the new
+//! target must serve the same file.
 //!
 //! # Busy servers
 //!

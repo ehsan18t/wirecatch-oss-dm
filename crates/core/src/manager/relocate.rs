@@ -12,9 +12,12 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, PortablePath, UserError};
 
 use super::Manager;
-use super::state::Stop;
+use super::state::{State, Stop};
 use crate::error::{CoreError, Result};
 use crate::naming::{self, partial_files};
+
+/// Starts the name of a copy on its way to its final name.
+const STAGED_PREFIX: &str = ".wirecatch-move-";
 
 impl Manager {
     /// Moves a download to `folder` (a full path or a `{Downloads}`-style path).
@@ -100,13 +103,14 @@ impl Manager {
         let mut state = self.lock();
         let Some(entry) = state.downloads.get_mut(&id) else {
             if let Ok(new_path) = &moved {
-                state.claimed.release(new_path);
+                state.claimed.release(new_path, id);
             }
             return moved.map(|_| ());
         };
         entry.hold.end_move();
         match moved {
             Ok(new_path) => {
+                let finished = entry.row.status == DownloadStatus::Completed;
                 let new_name = naming::file_name_of(&new_path);
                 if !entry.naming.settled {
                     // The server has not answered yet, so its answer will choose the
@@ -126,8 +130,13 @@ impl Manager {
                 // The new path was reserved while moving and is the download's
                 // own now; the old one is free.
                 if new_path != old_path {
-                    state.claimed.remove(old_path);
-                    state.claimed.settle(&new_path);
+                    state.claimed.remove(old_path, id);
+                    if !finished {
+                        state.claimed.insert(&new_path, id);
+                    }
+                }
+                if finished {
+                    self.move_rows_of_one_file(&mut state, id, old_path, &new_path);
                 }
                 self.save(&mut state, id);
                 self.reconcile(&mut state);
@@ -147,6 +156,33 @@ impl Manager {
                 self.reconcile(&mut state);
                 Err(e)
             }
+        }
+    }
+
+    /// The file of finished download `id` went from `old_path` to `new_path`: the other finished rows of that file go with it (D118).
+    fn move_rows_of_one_file(
+        &self,
+        state: &mut State,
+        id: DownloadId,
+        old_path: &Path,
+        new_path: &Path,
+    ) {
+        let others: Vec<DownloadId> = state
+            .downloads
+            .values()
+            .filter(|e| {
+                e.row.id != id
+                    && e.row.status == DownloadStatus::Completed
+                    && naming::same_path(e.path(), old_path)
+            })
+            .map(|e| e.row.id)
+            .collect();
+        for other in others {
+            if let Some(entry) = state.downloads.get_mut(&other) {
+                entry.row.path = new_path.to_string_lossy().into_owned();
+                entry.row.file_name = naming::file_name_of(new_path);
+            }
+            self.save(state, other);
         }
     }
 
@@ -170,17 +206,20 @@ impl Manager {
             .await?;
         let completed = {
             let mut state = self.lock();
-            if state.claimed.contains(&new_path) {
-                return Err(CoreError::WrongState(
-                    "Another download just took that name in the new folder. Try again.",
-                ));
-            }
             let completed = state
                 .downloads
                 .get(&id)
                 .is_some_and(|e| e.row.status == DownloadStatus::Completed);
-            if !completed {
-                state.claimed.reserve(&new_path);
+            // A finished file holds its name on disk, with no claim.
+            let free = if completed {
+                !state.claimed.contains(&new_path)
+            } else {
+                state.claimed.reserve(&new_path, id)
+            };
+            if !free {
+                return Err(CoreError::WrongState(
+                    "Another download just took that name in the new folder. Try again.",
+                ));
             }
             completed
         };
@@ -200,7 +239,7 @@ impl Manager {
                     entry.stranded = Some(new_path.clone());
                 }
             } else if !completed {
-                state.claimed.release(&new_path);
+                state.claimed.release(&new_path, id);
             }
         }
         result.map(|()| new_path)
@@ -279,29 +318,54 @@ fn move_together(
     Ok(())
 }
 
-/// Moves a file to `to`, never over a file there (CORE-9): renamed in one step where it can be,
-/// else copied to a new file and the original deleted. When the original cannot be deleted (open
-/// in another program, say), the copy goes again, so the file is never left in two places.
+/// Moves a file to `to`, never over a file there (CORE-9): renamed in one step where it can be, else copied.
 fn move_file(from: &Path, to: &Path) -> io::Result<()> {
     match wirecatch_engine::naming::rename_no_replace(from, to) {
-        Ok(()) => return Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => return Err(e),
-        // Another drive, or a file that cannot be renamed: copied instead.
-        Err(_) => {}
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(e),
+        // Another drive, or a file that cannot be renamed.
+        Err(_) => move_by_copy(from, to, &|source, copy| io::copy(source, copy).map(|_| ())),
     }
-    {
-        let mut source = std::fs::File::open(from)?;
-        let mut copy = std::fs::OpenOptions::new()
+}
+
+/// Copies one open file to another.
+type CopyBytes<'a> = dyn Fn(&mut std::fs::File, &mut std::fs::File) -> io::Result<()> + 'a;
+
+/// Copies `from` under a temporary name beside `to` and renames it there when whole, so a file under the final name is always a whole one, even after a kill. When the original cannot be deleted (open in another program, say), the copy goes again, so the file is never left in two places.
+fn move_by_copy(from: &Path, to: &Path, copy_bytes: &CopyBytes<'_>) -> io::Result<()> {
+    let mut source = std::fs::File::open(from)?;
+    let (staged, mut copy) = create_staged(to)?;
+    let whole = copy_bytes(&mut source, &mut copy)
+        .and_then(|()| copy.sync_all())
+        .and_then(|()| {
+            drop(copy);
+            wirecatch_files::zone::copy_mark(from, &staged);
+            wirecatch_engine::naming::rename_no_replace(&staged, to)
+        });
+    if let Err(e) = whole {
+        discard(&staged);
+        return Err(e);
+    }
+    drop(source);
+    std::fs::remove_file(from).inspect_err(|_| discard(to))
+}
+
+/// A new temporary file in the folder of `to`. Short, so a name near the system's limit still moves, and its own, so two moves to one folder never share it.
+fn create_staged(to: &Path) -> io::Result<(PathBuf, std::fs::File)> {
+    let dir = to.parent().unwrap_or(Path::new(""));
+    let mut n = 0u64;
+    loop {
+        let staged = dir.join(format!("{STAGED_PREFIX}{n}"));
+        match std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(to)?;
-        if let Err(e) = io::copy(&mut source, &mut copy).and_then(|_| copy.sync_all()) {
-            drop(copy);
-            discard(to);
-            return Err(e);
+            .open(&staged)
+        {
+            Ok(file) => return Ok((staged, file)),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => n += 1,
+            Err(e) => return Err(e),
         }
     }
-    std::fs::remove_file(from).inspect_err(|_| discard(to))
 }
 
 /// Deletes the copy `move_file` made, which must not stay beside the original.
@@ -347,6 +411,92 @@ mod tests {
         assert!(move_file(&from, &to).is_err());
         assert!(!to.exists(), "a second copy was left at the target");
         assert!(from.exists());
+        assert_eq!(names_in(dir.path()), ["a.zip"]);
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn a_copy_takes_its_final_name_only_when_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let (from, to) = (dir.path().join("a.zip"), dir.path().join("b.zip"));
+        std::fs::write(&from, b"downloaded").unwrap();
+        move_by_copy(&from, &to, &|source, copy| {
+            // Where a kill would leave it.
+            io::copy(source, copy)?;
+            assert!(
+                !to.exists(),
+                "the final name appeared before the copy was whole"
+            );
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(std::fs::read(&to).unwrap(), b"downloaded");
+        assert_eq!(names_in(dir.path()), ["b.zip"]);
+    }
+
+    #[test]
+    fn a_copy_that_fails_leaves_only_the_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let (from, to) = (dir.path().join("a.zip"), dir.path().join("b.zip"));
+        std::fs::write(&from, b"downloaded").unwrap();
+        let error = move_by_copy(&from, &to, &|_, copy| {
+            use std::io::Write;
+            copy.write_all(b"down")?;
+            Err(io::ErrorKind::StorageFull.into())
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::StorageFull);
+        assert_eq!(names_in(dir.path()), ["a.zip"]);
+    }
+
+    #[test]
+    fn a_copy_never_replaces_a_file_saved_at_its_target_meanwhile() {
+        let dir = tempfile::tempdir().unwrap();
+        let (from, to) = (dir.path().join("a.zip"), dir.path().join("b.zip"));
+        std::fs::write(&from, b"downloaded").unwrap();
+        std::fs::write(&to, b"someone else's").unwrap();
+        let error = move_by_copy(&from, &to, &|source, copy| {
+            io::copy(source, copy).map(|_| ())
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&to).unwrap(), b"someone else's");
+        assert_eq!(std::fs::read(&from).unwrap(), b"downloaded");
+        let mut names = names_in(dir.path());
+        names.sort();
+        assert_eq!(names, ["a.zip", "b.zip"]);
+    }
+
+    #[test]
+    fn two_copies_to_one_folder_each_get_their_own_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let to = dir.path().join("b.zip");
+        let (one, _held) = create_staged(&to).unwrap();
+        let (two, _also_held) = create_staged(&to).unwrap();
+        assert_ne!(one, two);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_copy_keeps_the_mark_of_the_web() {
+        let dir = tempfile::tempdir().unwrap();
+        let (from, to) = (dir.path().join("setup.exe"), dir.path().join("moved.exe"));
+        std::fs::write(&from, b"MZ").unwrap();
+        wirecatch_files::zone::mark(&from, "https://example.com/setup.exe", None);
+        let stream = |path: &Path| format!("{}:Zone.Identifier", path.display());
+        let mark = std::fs::read(stream(&from)).unwrap();
+        move_by_copy(&from, &to, &|source, copy| {
+            io::copy(source, copy).map(|_| ())
+        })
+        .unwrap();
+        assert_eq!(std::fs::read(&to).unwrap(), b"MZ");
+        assert_eq!(std::fs::read(stream(&to)).unwrap(), mark);
     }
 
     #[test]

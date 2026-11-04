@@ -91,13 +91,14 @@ impl Progress {
         total: Option<u64>,
         already_done: u64,
     ) {
+        self.total
+            .store(total.unwrap_or(UNKNOWN), Ordering::Relaxed);
+        self.done.store(already_done, Ordering::Relaxed);
+        // Last: a reader that sees the name also sees what an earlier run kept.
         *self.target() = Some(Target {
             file_name: file_name.to_string(),
             path: path.to_path_buf(),
         });
-        self.total
-            .store(total.unwrap_or(UNKNOWN), Ordering::Relaxed);
-        self.done.store(already_done, Ordering::Relaxed);
     }
 
     pub(crate) fn add(&self, bytes: u64) {

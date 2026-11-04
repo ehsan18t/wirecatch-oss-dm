@@ -260,14 +260,10 @@ pub fn register_on_start(data_dir: &Path) {
             .ok()?;
         // An AppImage's bundled bridge sits in a mount that goes away when the app exits.
         #[cfg(unix)]
-        let chosen = match std::env::var_os(crate::appimage::APPIMAGE_VAR) {
+        let chosen = match crate::appimage::running_appimage() {
             Some(appimage) => bundled_bridge(&app_exe).and_then(|bundled| {
-                crate::appimage::install_private_bridge(
-                    &bundled,
-                    Path::new(&appimage),
-                    &private_dir,
-                )
-                .map_err(BridgeError::from)
+                crate::appimage::install_private_bridge(&bundled, &appimage, &private_dir)
+                    .map_err(BridgeError::from)
             }),
             None => bridge_to_register(&app_exe),
         };

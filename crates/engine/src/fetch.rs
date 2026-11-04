@@ -22,7 +22,7 @@ use crate::net_guard::{PrivateNetwork, private_guard};
 use crate::numeric::clamp_to_len;
 use crate::options::DownloadOptions;
 use crate::proxy::Proxies;
-use crate::receive::{Received, receive, skip_start};
+use crate::receive::{Received, ended_while_skipping, receive, skip_start};
 use crate::retry::{Attempts, Backoff, Next, Refusals, Retries};
 use crate::units::KIB_USIZE;
 
@@ -403,6 +403,15 @@ impl Fetcher {
             .open(client, url, from, position.end, position.first.as_ref())
             .await?;
         let total = known_end(&response, from, skip);
+        if let Some(total) = total
+            && total < from
+        {
+            return Err(Error::PrematureEof {
+                at: total,
+                end: from,
+            }
+            .into());
+        }
         if position.end.is_none() {
             // The size, once known, lets a later retry ask for exactly the rest
             // and tells a complete body from one cut short.
@@ -432,6 +441,7 @@ impl Fetcher {
             let next = async { response.chunk().await.map_err(Error::network) };
             let chunk = match receive(&self.inner.cancel, stall, next).await? {
                 Received::Data(chunk) => chunk,
+                Received::End if skip > 0 => return Err(ended_while_skipping(from, skip).into()),
                 Received::End => break,
                 Received::Cancelled => return Err(Error::Cancelled.into()),
             };
