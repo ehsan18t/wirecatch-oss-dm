@@ -104,10 +104,15 @@ pub(super) async fn join_original(
     match files {
         [single] => Ok(Some(single.clone())),
         [video, audio] => {
-            let container = joined_container(ext, job);
-            let joined = work.join(workdir::joined(container.ext()));
+            let wanted = joined_container(ext, job);
             progress.set_step(Some(ProcessingStep::Joining));
-            let result = merge::join(tools, (video, audio), &joined, container, cancel).await;
+            let mut joined = work.join(workdir::joined(wanted.ext()));
+            let mut result = merge::join(tools, (video, audio), &joined, wanted, cancel).await;
+            // A typed extension can name a container the tracks do not fit; Matroska holds them all.
+            if wanted != Container::Mkv && matches!(result, Err(FfmpegError::Failed { .. })) {
+                joined = work.join(workdir::joined(Container::Mkv.ext()));
+                result = merge::join(tools, (video, audio), &joined, Container::Mkv, cancel).await;
+            }
             progress.set_step(None);
             match result.map_err(|e| describe::join(&e, tools))? {
                 Finished::Done => Ok(Some(joined)),

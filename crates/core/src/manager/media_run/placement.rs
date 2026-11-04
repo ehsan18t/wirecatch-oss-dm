@@ -200,7 +200,7 @@ pub(super) fn final_path(file: &Path, planned: &Path) -> PathBuf {
                 .and_then(|p| p.to_str())
                 .is_some_and(|p| p.eq_ignore_ascii_case(&ext)) =>
         {
-            planned.with_extension(ext)
+            wirecatch_streams::extension::with_extension(planned, &ext)
         }
         _ => planned.to_path_buf(),
     }
