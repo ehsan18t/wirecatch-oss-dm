@@ -1053,7 +1053,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Chunk 03: saved-state                   | pending     |
 | 1     | Chunk 04: core-run-lifecycle            | pending     |
 | 1     | Chunk 05: core-final-path               | pending     |
-| 1     | Chunk 06: bridge-and-frames             | pending     |
+| 1     | Chunk 06: bridge-and-frames             | done        |
 | 1     | Chunk 07: browser-handover              | pending     |
 | 1     | Chunk 08: local-endpoint                | done        |
 | 1     | Chunk 09: request-routing               | pending     |
