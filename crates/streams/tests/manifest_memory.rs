@@ -2,12 +2,14 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use wirecatch_engine::{CancellationToken, DownloadOptions};
-use wirecatch_streams::{Error, PrivateNetwork, StreamInfo, inspect};
-use wirecatch_test_support::TestResult;
+use wirecatch_streams::{
+    Error, PrivateNetwork, StreamInfo, StreamProgress, StreamRequest, download, inspect,
+};
 use wirecatch_test_support::files::FileServer;
+use wirecatch_test_support::{TestResult, private_dir};
 
 /// The bytes the process has allocated and not yet freed, on every thread, so a reading moved to another thread is still measured.
 static NOW: AtomicUsize = AtomicUsize::new(0);
@@ -230,4 +232,45 @@ fn representations_share_the_segment_list_they_inherit() -> TestResult {
         manifest("", VIDEO, &(list + &reps.concat()), 0, "")
     };
     check("a long segment list", text, true)
+}
+
+/// A template repeating a long representation id asks for one address of far more than the manifest's own length, refused while it is built.
+#[test]
+fn planning_a_template_stops_at_the_longest_address() -> TestResult {
+    let _alone = ALONE.lock().unwrap_or_else(PoisonError::into_inner);
+    let id = "a".repeat(MIB);
+    let media = "$RepresentationID$".repeat(256);
+    let set = format!(
+        r#"<SegmentTemplate duration="1" media="{media}"/><Representation id="{id}" bandwidth="1"/>"#
+    );
+    let text = manifest("", VIDEO, &set, 0, "");
+    let len = text.len();
+    let dir = private_dir("template-long-address")?;
+    let output = dir.join("v.mp4");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let (outcome, peak) = runtime.block_on(async {
+        let server = FileServer::start().await;
+        server.put_typed("manifest.mpd", text, "application/dash+xml");
+        let request = StreamRequest::new(server.url("manifest.mpd"), output, PrivateNetwork::Auto);
+        let start = measure();
+        let outcome = download(
+            request,
+            Arc::new(StreamProgress::default()),
+            CancellationToken::new(),
+        )
+        .await;
+        (outcome, peak_since(start))
+    });
+    assert!(
+        peak <= allowed(len),
+        "planning a manifest of {len} bytes held {peak} bytes at once, more than {}",
+        allowed(len)
+    );
+    assert!(
+        matches!(outcome, Err(Error::Manifest { .. })),
+        "{outcome:?}"
+    );
+    Ok(())
 }

@@ -224,11 +224,19 @@ pub(super) fn place(
         .filter(std::fs::Metadata::is_file)
         .map(|m| m.len())
     {
+        // Only the planned path is this download's own: another name, from the file's real type, may be another download's.
+        let other_name = wanted != planned;
         match taken {
             Taken::KeepBoth => {}
+            Taken::Replace | Taken::KeepExisting if other_name && !reserve(&wanted, true) => {}
             // Rename replaces a file at the target on both systems.
             Taken::Replace => {
-                std::fs::rename(file, &wanted)?;
+                if let Err(e) = std::fs::rename(file, &wanted) {
+                    if other_name {
+                        reserve(&wanted, false);
+                    }
+                    return Err(e);
+                }
                 return Ok(Placed::At(wanted));
             }
             Taken::KeepExisting => {

@@ -11,7 +11,7 @@ use crate::http::Validators;
 /// What every request of one download needs, and all the protocol layers get
 /// of it.
 pub(crate) struct RequestContext {
-    /// Where requests go: the URL after redirects, without credentials.
+    /// Where requests go first: the URL after redirects, without credentials.
     pub url: Url,
     /// Whether the server accepts byte ranges.
     pub ranged: bool,

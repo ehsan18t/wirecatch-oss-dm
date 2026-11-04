@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::HashSet;
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
@@ -102,8 +103,9 @@ impl Source {
             .cloned()
             .chain(info.video.iter().map(|v| v.id.clone()));
         let mut audio_with = Vec::new();
+        let mut seen = HashSet::new();
         for video_id in videos {
-            if audio_with.iter().any(|(v, _)| *v == video_id) {
+            if !seen.insert(video_id.clone()) {
                 continue;
             }
             let audio = id(picked(&Choice::Track(video_id.clone()), &Choice::Auto).audio);
