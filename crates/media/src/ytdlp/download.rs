@@ -226,6 +226,28 @@ fn largest_result(work: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
+    /// yt-dlp reads `%` and `$` anywhere in its output template, so no folder or title may reach it.
+    #[test]
+    fn the_output_template_names_no_folder() {
+        let tools = crate::MediaTools::for_test(Path::new("ffmpeg"));
+        let page = wirecatch_engine::Url::parse("https://example.com/watch").unwrap();
+        let ctx = Context {
+            tools: &tools,
+            page: &page,
+            cookies: None,
+            user_agent: None,
+            temp_dir: Path::new("temp"),
+            timeout: std::time::Duration::from_secs(1),
+            proxy: None,
+        };
+        let args = download_args(&ctx, None, "best", None);
+        let template = args
+            .iter()
+            .position(|a| a == "-o")
+            .and_then(|o| args.get(o + 1));
+        assert_eq!(template.and_then(|t| t.to_str()), Some("media.%(ext)s"));
+    }
+
     #[test]
     fn the_result_path_is_taken_only_from_stdout_and_only_inside_the_work_folder() {
         let dir = tempfile::tempdir().unwrap();
