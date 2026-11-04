@@ -1059,7 +1059,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Chunk 09: request-routing               | done        |
 | 1     | Chunk 10: site-rules                    | done        |
 | 1     | Chunk 11: media-addon                   | pending     |
-| 1     | Chunk 12: app-updates                   | pending     |
+| 1     | Chunk 12: app-updates                   | done        |
 | 1     | Chunk 13: program-running               | pending     |
 | 1     | Chunk 14: stream-manifests              | pending     |
 | 1     | Chunk 15: stream-download               | pending     |
