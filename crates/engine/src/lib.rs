@@ -98,7 +98,9 @@
 //! # Pausing and resuming
 //!
 //! Cancelling the [`CancellationToken`] stops every connection, writes what has
-//! arrived, saves the resume file and returns [`Outcome::Paused`]. Running the
+//! arrived, saves the resume file and returns [`Outcome::Paused`], or the error
+//! when the part file could not be flushed to the disk, which also stops a
+//! running download by itself. Running the
 //! same request again continues from there, as long as the server still reports
 //! the same size, `ETag` and `Last-Modified`; if the file changed on the server,
 //! the download starts over cleanly instead of mixing old and new bytes. A killed
@@ -137,7 +139,10 @@
 //! `Cache-Control`, `DNT`, `Pragma`, and `Referer` cut down to its origin). A
 //! `user:password@` in the URL is handled the same way, as an `Authorization`
 //! header for its own origin. A redirect from `https` to `http` is refused
-//! unless [`DownloadOptions::allow_insecure_redirects`] is set.
+//! unless [`DownloadOptions::allow_insecure_redirects`] is set. A redirect
+//! target that starts refusing requests (a signed address past its time) sends
+//! the download back through the URL it was given, once per refusal; the new
+//! target must serve the same file.
 //!
 //! # Busy servers
 //!

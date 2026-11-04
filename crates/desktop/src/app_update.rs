@@ -199,7 +199,11 @@ pub fn install(update: &AppUpdate, cx: &mut App) {
             match result.and_then(|path| updates::install(&path, kind).map_err(|e| e.to_string())) {
                 Ok(()) => {
                     set(Stage::Installing, cx);
-                    lifecycle::quit(cx);
+                    if kind == updates::FileKind::AppImage {
+                        lifecycle::quit_and_start_again(cx);
+                    } else {
+                        lifecycle::quit(cx);
+                    }
                 }
                 Err(message) => set(Stage::InstallFailed { update, message }, cx),
             }

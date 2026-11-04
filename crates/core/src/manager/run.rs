@@ -138,9 +138,8 @@ impl Manager {
             self.start_media_run(state, id, run_id, answered, job, policy);
             return;
         }
-        // Until the server has answered once, the path is only a guess: let the
-        // server's answer decide it. Afterwards it is fixed.
-        let settle = (!entry.naming.settled).then(|| self.settler(id, run_id, answered.clone()));
+        // Until the server has answered once, the path is only a guess: let the server's answer decide it. Until a run begins writing, its answer also records that it did.
+        let settle = (!entry.naming.writing).then(|| self.settler(id, run_id, answered.clone()));
         let target = match &settle {
             None => Target::Exact,
             Some(settle) => Target::Resolve(path_resolver(settle.clone())),
@@ -316,7 +315,10 @@ impl Manager {
                 entry.row.error = Some(wirecatch_messages::stopped_unexpectedly());
             }
         }
-        if let Some(found) = found {
+        // Whatever stopped it since the duplicate was found decides instead; a later run finds it again.
+        if let Some(found) = found
+            && matches!(run.stop, None | Some(Stop::FileExists))
+        {
             self.on_found(state, id, &found);
         }
         self.save(state, id);
@@ -362,13 +364,14 @@ fn complete(
     path: Option<PathBuf>,
     now: UnixMillis,
 ) {
+    let id = entry.row.id;
     // The finished file now holds the name on disk.
-    claimed.remove(entry.path());
+    claimed.remove(entry.path(), id);
     if let Some(path) = path {
         entry.row.file_name = crate::naming::file_name_of(&path);
         entry.row.path = path.to_string_lossy().into_owned();
         // Reserved by the media job while it put the file in place.
-        claimed.remove(entry.path());
+        claimed.remove(entry.path(), id);
     }
     // Already marked as downloaded from the internet: the run did that before it reported the
     // file (see `download_marked` and the media job's `finish`).
@@ -391,6 +394,7 @@ pub(super) fn mark_completed(entry: &mut Entry, bytes: u64, now: UnixMillis) {
 /// Puts a download in the cancelled state, with nothing kept.
 pub(super) fn mark_cancelled(entry: &mut Entry) {
     entry.row.status = DownloadStatus::Cancelled;
+    entry.naming.writing = false;
     entry.row.error = None;
     entry.row.done = 0;
 }

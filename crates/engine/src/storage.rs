@@ -48,6 +48,52 @@ pub fn open_for_write(path: &Path) -> io::Result<File> {
     OpenOptions::new().write(true).open(path)
 }
 
+/// A run's hold on its part file, for as long as this lives: another run of this process or another sees it and leaves the file alone, and the system lets go of it when the process dies, however it dies. Where the file system has no such locks (some network drives) it holds nothing.
+#[derive(Default)]
+pub(crate) struct PartLock(Option<File>);
+
+impl PartLock {
+    /// Takes the lock on `file`. `None` when another run holds it.
+    pub fn hold(file: File) -> Option<Self> {
+        match try_lock(&file) {
+            Ok(true) => Some(Self(Some(file))),
+            Ok(false) => None,
+            Err(e) => {
+                let error = crate::error::Chain(&e);
+                tracing::debug!(%error, "the file system offers no lock on a part file");
+                Some(Self(None))
+            }
+        }
+    }
+
+    /// Takes the lock on the part file at `path`, if it can be opened. `None` when another run holds it.
+    pub fn open(path: &Path) -> Option<Self> {
+        match open_for_write(path) {
+            Ok(file) => Self::hold(file),
+            Err(_) => Some(Self::default()),
+        }
+    }
+
+    pub fn is_held(&self) -> bool {
+        self.0.is_some()
+    }
+}
+
+#[cfg(windows)]
+fn try_lock(file: &File) -> io::Result<bool> {
+    windows::try_lock_far_byte(file)
+}
+
+#[cfg(target_os = "linux")]
+fn try_lock(file: &File) -> io::Result<bool> {
+    linux::try_flock(file)
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+fn try_lock(_file: &File) -> io::Result<bool> {
+    Err(io::ErrorKind::Unsupported.into())
+}
+
 /// Writes all of `buf` at `offset` without touching any shared cursor.
 pub fn write_all_at(file: &File, mut buf: &[u8], mut offset: u64) -> io::Result<()> {
     while !buf.is_empty() {
@@ -241,10 +287,46 @@ mod windows {
     use std::path::Path;
     use std::ptr;
 
-    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_WRITE_THROUGH, MoveFileExW};
+    use windows_sys::Win32::Foundation::{ERROR_IO_PENDING, ERROR_LOCK_VIOLATION};
+    use windows_sys::Win32::Storage::FileSystem::{
+        LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx, MOVEFILE_WRITE_THROUGH,
+        MoveFileExW,
+    };
 
-    use windows_sys::Win32::System::IO::DeviceIoControl;
+    use windows_sys::Win32::System::IO::{DeviceIoControl, OVERLAPPED};
     use windows_sys::Win32::System::Ioctl::{FILE_SET_SPARSE_BUFFER, FSCTL_SET_SPARSE};
+
+    /// Past any real file's end. Not the file's own bytes: a Windows lock stops other handles' writes, and each connection writes through a handle of its own. The top bit stays clear, since the system reads the offset as signed.
+    const LOCK_OFFSET_LOW: u32 = u32::MAX - 1;
+    const LOCK_OFFSET_HIGH: u32 = u32::MAX >> 1;
+    const LOCK_BYTES: u32 = 1;
+
+    /// Locks one byte far past the end of `file`: `false` when another handle holds it.
+    pub fn try_lock_far_byte(file: &File) -> io::Result<bool> {
+        // SAFETY: OVERLAPPED is plain data, for which all zeros is a valid value.
+        let mut at: OVERLAPPED = unsafe { std::mem::zeroed() };
+        at.Anonymous.Anonymous.Offset = LOCK_OFFSET_LOW;
+        at.Anonymous.Anonymous.OffsetHigh = LOCK_OFFSET_HIGH;
+        // SAFETY: the handle is valid for the lifetime of `file`, and `at` lives until the call returns, which it does at once on a file not opened for overlapped use.
+        let ok = unsafe {
+            LockFileEx(
+                file.as_raw_handle().cast(),
+                LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                0,
+                LOCK_BYTES,
+                0,
+                &raw mut at,
+            )
+        };
+        if ok != 0 {
+            return Ok(true);
+        }
+        let error = io::Error::last_os_error();
+        let busy = [ERROR_LOCK_VIOLATION, ERROR_IO_PENDING]
+            .iter()
+            .any(|&code| error.raw_os_error() == i32::try_from(code).ok());
+        if busy { Ok(false) } else { Err(error) }
+    }
 
     /// `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`: fails with
     /// `ERROR_ALREADY_EXISTS` when `to` exists, in one step on NTFS, `ReFS` and
@@ -368,6 +450,21 @@ mod linux {
         }
     }
 
+    /// `flock`, not `fcntl`: an `fcntl` lock belongs to the process, so a second run in this process would not see it, and closing any handle of the file would drop it. `false` when another open file holds it.
+    pub fn try_flock(file: &File) -> io::Result<bool> {
+        // SAFETY: plain syscall on a valid descriptor.
+        let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if rc == 0 {
+            return Ok(true);
+        }
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::EWOULDBLOCK) {
+            Ok(false)
+        } else {
+            Err(error)
+        }
+    }
+
     pub fn fallocate(file: &File, len: u64) -> io::Result<()> {
         let len =
             libc::off_t::try_from(len).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
@@ -385,6 +482,21 @@ mod linux {
 mod tests {
     use super::*;
     use crate::abandon::Abandonment;
+
+    #[test]
+    fn a_held_part_file_refuses_another_run_and_still_takes_writes() {
+        let dir = wirecatch_test_support::private_dir("part-lock").unwrap();
+        let path = dir.join("f.bin.wcpart");
+        create_part(&path, Some(8)).unwrap();
+        let held = PartLock::open(&path).expect("a free part file");
+        assert!(PartLock::open(&path).is_none(), "taken twice");
+        // Each connection writes through a handle of its own.
+        write_all_at(&open_for_write(&path).unwrap(), b"data", 0).unwrap();
+        assert_eq!(&std::fs::read(&path).unwrap()[..4], b"data");
+        drop(held);
+        assert!(PartLock::open(&path).is_some(), "free once the run ended");
+        dir.remove().unwrap();
+    }
 
     #[test]
     fn a_rename_that_must_not_replace_leaves_a_taken_name_alone() {
