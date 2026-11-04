@@ -35,6 +35,11 @@ pub fn is_media(ext: &str) -> bool {
     read_as(ext).is_some()
 }
 
+/// Every extension a saved video or audio file may have.
+pub fn media() -> impl Iterator<Item = &'static str> {
+    MEDIA.iter().map(|(ext, _)| *ext)
+}
+
 /// The format ffmpeg reads a file with the media extension `ext` (without the dot, any case) as.
 #[must_use]
 pub fn read_as(ext: &str) -> Option<InputFormat> {

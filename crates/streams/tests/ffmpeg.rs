@@ -471,6 +471,10 @@ async fn real_ffmpeg_never_sees_a_page_in_place_of_a_segment() -> TestResult {
             matches!(got, Err(Error::NotMedia { .. })),
             "{segment}: {got:?}"
         );
+    }
+    Ok(())
+}
+
 /// Every extension a saved file may have is recognised as the format the list names, and a real ffmpeg reads such a file with that format's demuxer, the only one it is allowed.
 #[test]
 fn real_ffmpeg_reads_every_media_extension_as_the_format_listed() -> TestResult {
@@ -507,6 +511,14 @@ fn real_ffmpeg_reads_every_media_extension_as_the_format_listed() -> TestResult 
         ("flv", VIDEO, &["-c:v", "flv1"]),
         ("avi", VIDEO, &["-c:v", "mpeg4"]),
     ];
+    let mut with_sample: Vec<&str> = samples.iter().map(|(ext, _, _)| *ext).collect();
+    let mut listed: Vec<&str> = extension::media().collect();
+    with_sample.sort_unstable();
+    listed.sort_unstable();
+    assert_eq!(
+        with_sample, listed,
+        "every media extension needs a sample here"
+    );
     let dir = private_dir("every-media-extension")?;
     for (ext, input, output) in samples {
         let listed = extension::read_as(ext).ok_or(format!("{ext} is not listed"))?;
