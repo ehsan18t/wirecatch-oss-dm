@@ -373,22 +373,29 @@ pub fn profile_url(profile: &ProxyServerSettings, password: Option<&Secret>) -> 
 /// not; and directly for a page on the exceptions, whose hosts then all go directly (D73.6).
 #[must_use]
 pub fn ytdlp_proxy(choice: &ProxyChoice, page: &Url) -> Option<String> {
-    let route = choice.route(page);
     match choice {
-        _ if route == ProxyRoute::Excepted => Some(String::new()),
         ProxyChoice::Manual(manual) => {
             let own = match page.scheme() {
                 "http" => &manual.http,
                 "https" => &manual.https,
                 _ => &manual.ftp,
             };
-            let set = [own, &manual.https, &manual.all, &manual.http]
+            let set = [own, &manual.all, &manual.https, &manual.http]
                 .into_iter()
                 .flatten()
                 .find(|proxy| !proxy.trim().is_empty());
-            Some(set.cloned().unwrap_or_default())
+            let Some(set) = set else {
+                return Some(String::new());
+            };
+            // Asked of the proxy picked: the route of `manual` says `Direct`, not `Excepted`, when none is set for the page's protocol.
+            let mut picked = ManualProxies::default();
+            picked.all = Some(set.clone());
+            picked.exceptions.clone_from(&manual.exceptions);
+            let excepted = ProxyChoice::Manual(picked).route(page) == ProxyRoute::Excepted;
+            Some(if excepted { String::new() } else { set.clone() })
         }
         ProxyChoice::Direct => Some(String::new()),
+        _ if choice.route(page) == ProxyRoute::Excepted => Some(String::new()),
         _ => None,
     }
 }

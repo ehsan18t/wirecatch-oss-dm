@@ -14,7 +14,7 @@ pub const PROXY_TEST_URL: &str = "https://github.com/";
 /// How long a test may take in all.
 const TEST_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Sends one request to `url` through `choice`, whatever its exceptions, and says how it went (D71.5).
+/// Sends one request to `url` through `choice` and says how it went (D71.5).
 pub(crate) async fn test(
     choice: ProxyChoice,
     url: &Url,
