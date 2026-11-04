@@ -1,5 +1,6 @@
 //! HTTP requests: client setup, the first request, and ranged requests.
 
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use base64::Engine as _;
@@ -30,6 +31,9 @@ pub(crate) use status::{MAX_REDIRECTS, is_busy};
 
 /// Longest `Retry-After` the engine waits for; a longer one is cut to this.
 pub(crate) const MAX_RETRY_AFTER: Duration = Duration::from_secs(300);
+
+/// How a signed address past its time answers: `400`, `403` or `410` by storage service, `401` and `404` on some file hosts.
+const EXPIRED_TARGET_STATUSES: [u16; 5] = [400, 401, 403, 404, 410];
 
 /// Headers that carry no credentials, so they may follow a redirect to another
 /// origin. Everything else the caller supplied (cookies, authorization, API keys,
@@ -270,6 +274,10 @@ pub(crate) struct Session {
     cancel: CancellationToken,
     /// Checked before every request and every redirect hop; see [`Guard`].
     pub guard: Option<Guard>,
+    /// The URL the download was asked for, without credentials.
+    link: Url,
+    /// Where the link leads since its first target refused a request, if it did.
+    renewed_target: Mutex<Option<Url>>,
 }
 
 impl Session {
@@ -283,8 +291,26 @@ impl Session {
             answer_timeout: opts.stall_timeout,
             cancel,
             guard: None,
+            link: url.clone(),
+            renewed_target: Mutex::new(None),
         };
         (session, url)
+    }
+
+    /// Where a TCP request goes: `first`, the target of the first answer, until it is renewed. HTTP/3 keeps `first`: a refusal there gives up HTTP/3 before any renewal.
+    fn target(&self, first: &Url) -> Url {
+        self.renewed_target
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .unwrap_or_else(|| first.clone())
+    }
+
+    fn renew_target(&self, target: &Url) {
+        *self
+            .renewed_target
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(target.clone());
     }
 }
 
@@ -471,6 +497,8 @@ async fn probe_range(
 /// support the whole body is requested and the first `from` bytes must be
 /// skipped; the returned number says how many. Either way the answer must be
 /// of the same file the first answer was about.
+///
+/// A redirect target that refuses the request may have expired while its link still works, so the link is followed again once, and every later request of the download goes to where it leads now. The answer must still be about the same file.
 pub(crate) async fn fetch(
     client: &Client,
     request: &RequestContext,
@@ -478,8 +506,35 @@ pub(crate) async fn fetch(
     from: u64,
     to: u64,
 ) -> Result<(Response, u64), Failure> {
+    let target = session.target(&request.url);
+    let answer = fetch_from(client, &target, request, session, from, to).await;
+    let refused = matches!(
+        answer,
+        Err(Failure {
+            error: Error::HttpStatus { status, .. },
+            ..
+        }) if EXPIRED_TARGET_STATUSES.contains(&status)
+    );
+    if !refused || target == session.link {
+        return answer;
+    }
+    debug!(target = %target, "the redirect target refused the request; following the link again");
+    let (response, skip) = fetch_from(client, &session.link, request, session, from, to).await?;
+    session.renew_target(response.url());
+    Ok((response, skip))
+}
+
+/// [`fetch`] from `url`.
+async fn fetch_from(
+    client: &Client,
+    url: &Url,
+    request: &RequestContext,
+    session: &Session,
+    from: u64,
+    to: u64,
+) -> Result<(Response, u64), Failure> {
     if !request.ranged {
-        let response = send(client, &request.url, session, None).await?;
+        let response = send(client, url, session, None).await?;
         check_status(&response, StatusCode::OK)?;
         check_whole(
             response.headers(),
@@ -491,7 +546,7 @@ pub(crate) async fn fetch(
     }
 
     let range = RequestRange::new(from, to).ok_or_else(|| empty_range(from, to))?;
-    let response = send(client, &request.url, session, Some(range)).await?;
+    let response = send(client, url, session, Some(range)).await?;
     if response.status() == StatusCode::OK {
         return Err(Error::RangeNotHonored {
             expected: from,
