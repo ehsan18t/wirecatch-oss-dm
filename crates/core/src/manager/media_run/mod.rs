@@ -61,6 +61,8 @@ struct Job {
     /// Reserves a path for the finished file among the paths other downloads
     /// hold; `false` if one of them holds it already.
     reserve: Reserve,
+    /// Called before its finished file is put in place, so a restart after that knows the file is this download's.
+    placing: Arc<dyn Fn() + Send + Sync>,
     /// The run's, shared by its engine downloads.
     file_work: FileWork,
     /// What happens when its name is taken by a file in the folder (D96).
@@ -119,16 +121,21 @@ impl Manager {
                 Arc::new(move |path: &Path, take: bool| {
                     Manager::from_weak(&manager).is_some_and(|m| {
                         let mut state = m.lock();
-                        if !take {
-                            state.claimed.release(path);
-                            true
-                        } else if state.claimed.contains(path) {
-                            false
+                        if take {
+                            state.claimed.reserve(path, id)
                         } else {
-                            state.claimed.reserve(path);
+                            state.claimed.release(path, id);
                             true
                         }
                     })
+                })
+            },
+            placing: {
+                let manager = Arc::downgrade(&self.inner);
+                Arc::new(move || {
+                    if let Some(manager) = Manager::from_weak(&manager) {
+                        manager.begin_placing(id);
+                    }
                 })
             },
             file_work: FileWork::new(),

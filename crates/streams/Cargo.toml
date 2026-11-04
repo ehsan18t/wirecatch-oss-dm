@@ -12,6 +12,7 @@ publish = false
 
 [dependencies]
 wirecatch-engine.workspace = true
+wirecatch-files.workspace = true
 # Hiding secrets in what the add-on's programs print.
 wirecatch-logging.workspace = true
 # HLS "METHOD=AES-128" is AES-128 in CBC mode with PKCS#7 padding. The aes pgp uses (core's add-on
