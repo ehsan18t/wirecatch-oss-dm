@@ -1,6 +1,8 @@
 //! What a launch asks for, read from its command line, and handing it to the copy of the app
 //! that already runs for this user (D103).
 
+use std::ffi::OsString;
+use std::future::Future;
 use std::time::Duration;
 
 use wirecatch_engine::units::KIB_USIZE;
@@ -27,6 +29,19 @@ pub enum HandOverError {
     Unexpected(String),
     #[error("{}", .0.message)]
     Refused(ProtocolError),
+}
+
+impl HandOverError {
+    /// Nothing listens at the endpoint any more, so this launch may claim it after all.
+    #[must_use]
+    pub fn copy_has_gone(&self) -> bool {
+        matches!(self, Self::Reach(IpcError::NotRunning { .. }))
+    }
+
+    /// The running copy may answer later: it answers nothing until its list has opened.
+    fn may_pass(&self) -> bool {
+        matches!(self, Self::Timeout | Self::Closed | Self::Frame(_))
+    }
 }
 
 /// Shown by a copy of the app that finds another one already serving this user and cannot hand
@@ -57,6 +72,26 @@ const LINK_SCHEMES: [&str; 5] = ["http://", "https://", "ftp://", "ftps://", "ft
 
 /// How long a second launch waits for each answer from the running copy.
 const ANSWER_WAIT: Duration = Duration::from_millis(BRIDGE_START_BUDGET_MS);
+
+/// How long a launch keeps trying a running copy that does not answer. Opening a long list, or
+/// repairing one, takes this copy no window and the person no action, so it may wait.
+const HAND_OVER_PATIENCE: Duration = Duration::from_mins(1);
+
+/// The pause before trying again a running copy that closed the connection at once.
+const TRY_AGAIN_AFTER: Duration = Duration::from_millis(200);
+
+/// This process's command line. An argument that is not valid text, which a link never is, keeps
+/// its readable part: `std::env::args` would abort the app on it.
+#[must_use]
+pub fn command_line() -> Vec<String> {
+    readable(std::env::args_os())
+}
+
+fn readable(args: impl IntoIterator<Item = OsString>) -> Vec<String> {
+    args.into_iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect()
+}
 
 /// True when the command line asks to start without a window. `args` includes the program name.
 pub fn wants_background<I, S>(args: I) -> bool
@@ -140,12 +175,38 @@ impl Launch {
 ///
 /// # Errors
 ///
-/// The running copy could not be reached, refused the hello, or did not answer in time; the
-/// message says which.
+/// The running copy could not be reached, refused the hello, or did not answer within
+/// [`HAND_OVER_PATIENCE`]; the message says which.
 pub async fn hand_over(launch: &Launch) -> Result<(), HandOverError> {
     let endpoint = crate::host::endpoint()?;
-    let mut stream = wirecatch_ipc::connect(&endpoint).await?;
-    hand_over_on(&mut stream, launch).await
+    hand_over_patiently(launch, || wirecatch_ipc::connect(&endpoint)).await
+}
+
+/// A launch that asks for nothing visible contacts no one, so it has nothing to fail at.
+async fn hand_over_patiently<S, C, F>(launch: &Launch, mut connect: C) -> Result<(), HandOverError>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    C: FnMut() -> F,
+    F: Future<Output = Result<S, IpcError>>,
+{
+    if !launch.shows_window() {
+        return Ok(());
+    }
+    let deadline = tokio::time::Instant::now() + HAND_OVER_PATIENCE;
+    loop {
+        let result = match connect().await {
+            Ok(mut stream) => hand_over_on(&mut stream, launch).await,
+            Err(e) => Err(e.into()),
+        };
+        match result {
+            Err(e) if e.may_pass() && tokio::time::Instant::now() < deadline => {
+                tracing::debug!("the running copy cannot take this launch yet: {e}");
+                // Another process: there is no event to wait on.
+                tokio::time::sleep(TRY_AGAIN_AFTER).await;
+            }
+            other => return other,
+        }
+    }
 }
 
 /// [`hand_over`] on a connection already open.
@@ -203,6 +264,72 @@ mod tests {
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(ToString::to_string).collect()
+    }
+
+    /// A connection to a running copy that never answers: `held` keeps the other end open.
+    fn unanswered(held: &mut Vec<tokio::io::DuplexStream>) -> tokio::io::DuplexStream {
+        let (stream, server_side) = tokio::io::duplex(64 * KIB_USIZE);
+        held.push(server_side);
+        stream
+    }
+
+    #[tokio::test]
+    async fn a_launch_asking_for_nothing_visible_contacts_no_one() {
+        let launch = Launch::from_args(&args(&["app", "--background"]));
+        let mut tries = 0;
+        let handed = hand_over_patiently(&launch, || {
+            tries += 1;
+            std::future::ready(Err::<tokio::io::DuplexStream, _>(IpcError::NotRunning {
+                endpoint: "test".into(),
+            }))
+        })
+        .await;
+        assert!(handed.is_ok(), "{handed:?}");
+        assert_eq!(tries, 0);
+    }
+
+    #[tokio::test]
+    async fn a_copy_that_has_gone_is_reported_at_once_so_the_launch_can_claim_its_place() {
+        let launch = Launch::from_args(&args(&["app"]));
+        let mut tries = 0;
+        let handed = hand_over_patiently(&launch, || {
+            tries += 1;
+            std::future::ready(Err::<tokio::io::DuplexStream, _>(IpcError::NotRunning {
+                endpoint: "test".into(),
+            }))
+        })
+        .await;
+        assert!(handed.is_err_and(|e| e.copy_has_gone()));
+        assert_eq!(tries, 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_copy_that_never_answers_is_tried_until_the_patience_runs_out() {
+        let launch = Launch::from_args(&args(&["app", "https://x.example/f"]));
+        let mut held = Vec::new();
+        let handed = hand_over_patiently(&launch, || {
+            std::future::ready(Ok::<_, IpcError>(unanswered(&mut held)))
+        })
+        .await;
+        assert!(matches!(handed, Err(HandOverError::Timeout)), "{handed:?}");
+        assert!(held.len() > 1, "tried once only");
+    }
+
+    #[test]
+    fn an_argument_that_is_not_text_is_read_without_harm() {
+        #[cfg(windows)]
+        let odd = {
+            use std::os::windows::ffi::OsStringExt as _;
+            OsString::from_wide(&[0xD800])
+        };
+        #[cfg(unix)]
+        let odd = {
+            use std::os::unix::ffi::OsStringExt as _;
+            OsString::from_vec(vec![0xFF])
+        };
+        let line = readable(["app".into(), odd, "https://x.example/f".into()]);
+        assert_eq!(line.len(), 3);
+        assert_eq!(links_from_args(&line), ["https://x.example/f"]);
     }
 
     #[test]
@@ -316,13 +443,40 @@ mod tests {
         let manager = core.opened().await.unwrap().clone();
         let mut ui = manager.subscribe();
         let (mut stream, server_side) = tokio::io::duplex(64 * KIB_USIZE);
-        tokio::spawn(wirecatch_server::serve_connection(manager, server_side));
+        tokio::spawn(wirecatch_server::serve_connection(
+            manager.clone(),
+            server_side,
+        ));
 
         let launch = Launch::from_args(&args(&["app", "https://x.example/f"]));
         hand_over_on(&mut stream, &launch).await.unwrap();
         loop {
             if let UiEvent::LinksRequested(links) = ui.recv().await.unwrap() {
                 assert_eq!(links, ["https://x.example/f"]);
+                break;
+            }
+        }
+
+        // A copy not ready for the first try, which ends at once, takes the second.
+        let launch = Launch::from_args(&args(&["app", "https://y.example/f"]));
+        let mut tries = 0;
+        let handed = hand_over_patiently(&launch, || {
+            tries += 1;
+            let (stream, server_side) = tokio::io::duplex(64 * KIB_USIZE);
+            if tries > 1 {
+                tokio::spawn(wirecatch_server::serve_connection(
+                    manager.clone(),
+                    server_side,
+                ));
+            }
+            std::future::ready(Ok::<_, IpcError>(stream))
+        })
+        .await;
+        assert!(handed.is_ok(), "{handed:?}");
+        assert_eq!(tries, 2);
+        loop {
+            if let UiEvent::LinksRequested(links) = ui.recv().await.unwrap() {
+                assert_eq!(links, ["https://y.example/f"]);
                 break;
             }
         }
