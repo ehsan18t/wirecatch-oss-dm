@@ -292,7 +292,7 @@ impl Manager {
             dir
         };
         let discarded = self
-            .blocking(move || match std::fs::remove_dir_all(&target) {
+            .blocking(move || match wirecatch_files::remove_own_folder(&target) {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
                 Err(source) => Err(CoreError::AddonFilesLeft { source }),
@@ -332,7 +332,7 @@ impl Manager {
         }
         let dir = self.inner.addon_dir.clone();
         let removed = self
-            .blocking(move || match std::fs::remove_dir_all(&dir) {
+            .blocking(move || match wirecatch_files::remove_own_folder(&dir) {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
                 Err(source) => Err(CoreError::AddonNotRemoved { source }),

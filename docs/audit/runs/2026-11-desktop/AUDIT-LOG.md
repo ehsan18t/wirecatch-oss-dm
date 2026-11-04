@@ -38,8 +38,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 11  | "If the file is already in the folder" is skipped for names from the link or browser              | `05-2` `Xpath-normal-download-1` `B01-1`                                                           | P1       | medium | P1, 3 findings; after the items its fix would otherwise make common                                              | `05-2`                                        | open   |
 | 12  | A settings file can send downloads into folders whose programs the app runs                       | `Xsecurity-path-handling-2` `Xsecurity-addon-unpacking-1` `B12-1`                                  | P1       | medium | P1, 3 findings, medium                                                                                           | `Xsecurity-path-handling-2`                   | fixed  |
 | 13  | Replace on a file with another extension downloads everything again and strands the old folder    | `17-2` `Xpath-media-download-5`                                                                    | P2       | medium | P2 placed early: it strands the folders that the next item trusts                                                | `17-2`                                        | fixed  |
-| 14  | A new media download can save another download's video                                            | `17-1` `Xsecond-review-resume-2` `Xpath-media-download-6`                                          | P1       | medium | P1, 3 findings, medium; after item 13                                                                            | `17-1`                                        | open   |
-| 15  | Typing a space in search pauses downloads, and Enter can open a file                              | `25-1` `B13-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `25-1`                                        | open   |
+| 14  | A new media download can save another download's video                                            | `17-1` `Xsecond-review-resume-2` `Xpath-media-download-6`                                          | P1       | medium | P1, 3 findings, medium; after item 13                                                                            | `17-1`                                        | fixed  |
+| 15  | Typing a space in search pauses downloads, and Enter can open a file                              | `25-1` `B13-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `25-1`                                        | fixed  |
 | 16  | A very large HLS playlist freezes inspection for minutes to hours                                 | `14-2` `B08-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `14-2`                                        | fixed  |
 | 17  | A video with a web page or nothing in place of a segment is reported as complete                  | `15-1` `B06-1`                                                                                     | P1       | medium | P1, 2 findings, medium                                                                                           | `15-1`                                        | fixed  |
 | 18  | A lower-integrity program can stand in for the app and receive downloads' cookies                 | `08-1` `08-2`                                                                                      | P1       | medium | P1, 2 findings, medium                                                                                           | `08-1` `B04-p2-checks`                        | fixed  |
@@ -54,7 +54,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 27  | A removal under way at quit comes back, and a capture is downloaded twice                         | `04-5` `Xconcurrency-2` `Xshutdown-2` `B02-3`                                                      | P2       | medium | P2, 4 findings, medium                                                                                           | `Xconcurrency-2` `Xshutdown-2`                | fixed  |
 | 28  | Nothing knows whether a download can continue, so messages promise what will not happen           | `01-6` `32-1` `28-1` `B03-1`                                                                       | P2       | medium | P2, 4 findings, medium                                                                                           | none                                          | open   |
 | 29  | The Public Suffix List's date and Check now were never put in Settings                            | `23-5` `30-3` `Xfeature-behaviour-4` `B19-4`                                                       | P2       | medium | P2, 4 findings, medium                                                                                           | none                                          | open   |
-| 30  | The window redoes whole-list work on every frame and progress tick                                | `25-6` `26-7` `27-8` `B13-3`                                                                       | P2       | large  | P2, 4 findings, large                                                                                            | none                                          | open   |
+| 30  | The window redoes whole-list work on every frame and progress tick                                | `25-6` `26-7` `27-8` `B13-3`                                                                       | P2       | large  | P2, 4 findings, large                                                                                            | none                                          | fixed  |
 | 31  | The Add dialog's link rule leaves out ftpes, so such links cannot be added                        | `22-2` `Xrepeated-logic-1` `Xpath-normal-download-4`                                               | P2       | small  | P2, 3 findings, small                                                                                            | none                                          | open   |
 | 32  | A raw non-ASCII byte or another charset in a header loses the file name or fails a redirect       | `02-2` `B11-1` `01-7`                                                                              | P2       | small  | P2, 3 findings, small                                                                                            | `02-2` `B11-1` `01-7`                         | fixed  |
 | 33  | Failing to delete a temporary file turns a saved video into a failure                             | `15-2` `Xsecond-review-disk-writes-6` `B06-2`                                                      | P2       | small  | P2, 3 findings, small                                                                                            | none                                          | fixed  |
@@ -118,7 +118,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 91  | CLI speed and ETA are wrong for half a minute after a resume                                      | `32-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 92  | A command-line argument that is not valid Unicode aborts the app                                  | `22-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 93  | Uninstalling while the app runs leaves its program behind                                         | `29-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 94  | The AppImage's library folder leaks into programs the app starts                                  | `29-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 94  | The AppImage's library folder leaks into programs the app starts                                  | `29-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 95  | A video's title is cut at its last slash                                                          | `16-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | fixed  |
 | 96  | yt-dlp progress goes backwards for a video with separate audio                                    | `16-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 97  | A quality says 60 fps but may download 30 fps                                                     | `16-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `B07-p2-tests`                                | open   |
@@ -212,9 +212,9 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 185 | The unsigned release page address reaches the system shell unchecked                              | `Xsecurity-update-signatures-4`                                                                    | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 186 | Turning off pre-release versions keeps offering the one already found                             | `Xpath-app-update-7`                                                                               | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 187 | No test holds a manifest's version and size rules                                                 | `12-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 188 | The packaging example for ARM64 on x64 cannot work                                                | `29-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 189 | ARM64 Linux packages are drafted without the fresh-system check                                   | `29-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 190 | The .deb and .rpm state no C library version                                                      | `29-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 188 | The packaging example for ARM64 on x64 cannot work                                                | `29-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 189 | ARM64 Linux packages are drafted without the fresh-system check                                   | `29-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 190 | The .deb and .rpm state no C library version                                                      | `29-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 191 | The icon holds its own unchecked copy of the mark                                                 | `29-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 192 | Two copies of the read-until-full loop have drifted                                               | `15-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 193 | Code keeps work folders of a layout that was never released                                       | `15-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -271,11 +271,11 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 244 | The `<local>` queue rule is never tested against the real network check                           | `M-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 245 | A crash can save a download twice under a second name                                             | found while fixing                                                                                 | P2       | medium | Found by the fault tests while fixing.                                                                           | open                                          |
 | 246 | A killed copy leaves its temporary file behind                                                    | found while fixing                                                                                 | P2       | small  | Found by review of PR-08.                                                                                        | open                                          |
-| 247 | Test comments carry history and review labels                                                     | found while fixing                                                                                 | P3       | small  | Found while fixing PR-18.                                                                                        | open                                          |
-| 248 | Nothing stops new code deleting a whole folder                                                    | found while fixing                                                                                 | P3       | medium | Left out of PR-02.                                                                                               | open                                          |
+| 247 | Test comments carry history and review labels                                                     | found while fixing                                                                                 | P3       | small  | Found while fixing PR-18.                                                                                        | fixed                                         |
+| 248 | Nothing stops new code deleting a whole folder                                                    | found while fixing                                                                                 | P3       | medium | Left out of PR-02.                                                                                               | fixed                                         |
 | 249 | The timing check misses a throttled server racing an action                                       | found while fixing                                                                                 | P3       | medium | Found by review of PR-01 and PR-47.                                                                              | open                                          |
 | 250 | The capture reply's doc contradicts the extension                                                 | found while fixing                                                                                 | P3       | small  | Found by review of PR-70.                                                                                        | open                                          |
-| 251 | The layout test can fail on a font that did not load                                              | found while fixing                                                                                 | P3       | small  | Seen once on CI, on a change with no extension code.                                                             | open                                          |
+| 251 | The layout test can fail on a font that did not load                                              | found while fixing                                                                                 | P3       | small  | Seen once on CI, on a change with no extension code.                                                             | fixed                                         |
 | 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | open                                          |
 
 ## Items
@@ -523,7 +523,7 @@ P2, medium, fixed.
 
 ### 14. A new media download can save another download's video
 
-P1, medium, open.
+P1, medium, fixed.
 
 **Left to do:** A page video's work folder is now tied to its link. A stream's folder still relies on the fingerprint alone, so this is left to PR-122.
 
@@ -543,7 +543,7 @@ P1, medium, open.
 
 ### 15. Typing a space in search pauses downloads, and Enter can open a file
 
-P1, small, open.
+P1, small, fixed.
 
 The `space` and `enter` bindings sit on the window root, so they reach a focused field. Typing "a b" in the main search leaves "ab" and runs Pause or Resume on selected rows. Enter in the same field opens a selected finished file (a program still asks first). On Windows a handled key never becomes `WM_CHAR`.
 
@@ -805,7 +805,7 @@ D44.4 promises the Public Suffix List's date, last check and Check now, and only
 
 ### 30. The window redoes whole-list work on every frame and progress tick
 
-P2, large, open.
+P2, large, fixed.
 
 `Library::apply` notifies for each `DownloadsChanged`, up to ten times a second, and everything that observes it does list-sized work. `render` runs `lines` at least twice a frame, `selected_rows` is quadratic for a large selection, the tray rebuilds a whole-list map, and the sidebar walks the list seven times. The queue editor's proxy list also loses its cursor on each notify (`27-8`). The figures come from a bench of the same shape at 5,000 rows and up, not from the app.
 
@@ -1910,7 +1910,7 @@ P2, small, fixed.
 
 ### 94. The AppImage's library folder leaks into programs the app starts
 
-P2, small, open.
+P2, small, fixed.
 
 `appRun` exports `LD_LIBRARY_PATH` and nothing removes it, so what `xdg-open` starts inherits the bundle's libraries. A program needing a newer libxkbcommon would fail, which is plausible on a rolling distribution. It is harmless for yt-dlp and ffmpeg. Not run.
 
@@ -3471,7 +3471,7 @@ P3, small, fixed.
 
 ### 188. The packaging example for ARM64 on x64 cannot work
 
-P3, small, open.
+P3, small, fixed.
 
 `arch` from the triple also picks the tool, so x64 runs an arm64 `nfpm`. `release.yml` passes no `--target`, so only the documented example breaks.
 
@@ -3487,7 +3487,7 @@ P3, small, open.
 
 ### 189. ARM64 Linux packages are drafted without the fresh-system check
 
-P3, small, open.
+P3, small, fixed.
 
 `linux-packages` downloads `desktop-Linux-X64` only, while `draft` merges every artifact. PACKAGING.md says it checks each Linux package.
 
@@ -3503,7 +3503,7 @@ P3, small, open.
 
 ### 190. The .deb and .rpm state no C library version
 
-P3, small, open.
+P3, small, fixed.
 
 Neither list names a C library or version, and nfpm computes none, so a package installs where the app cannot start. Which symbols the binary needs was not read. `29-S1` suggests a named older base.
 
@@ -4409,7 +4409,7 @@ A move across drives copies to `.wirecatch-move-N` beside the target. A kill dur
 
 ### 247. Test comments carry history and review labels
 
-P3, small, open.
+P3, small, fixed.
 
 Test comments near the integrity checks hold labels such as "W4I review" and "IPB-9", which the comment rule forbids.
 
@@ -4421,7 +4421,7 @@ Test comments near the integrity checks hold labels such as "W4I review" and "IP
 
 ### 248. Nothing stops new code deleting a whole folder
 
-P3, medium, open.
+P3, medium, fixed.
 
 PR-02 fixed the path that could delete a folder, but a lint on `remove_dir_all` was left out because about 20 callers would each need an exception, and it would not cover `discard::dir` callers anyway.
 
@@ -4457,7 +4457,7 @@ The `Started` doc says only then may the extension erase its copy, but `apps/ext
 
 ### 251. The layout test can fail on a font that did not load
 
-P3, small, open.
+P3, small, fixed.
 
 `e2e/layout.spec.ts` failed because DejaVu Sans was not loaded. The cause was not looked into, and it has not been seen again.
 

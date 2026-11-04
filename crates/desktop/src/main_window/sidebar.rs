@@ -14,7 +14,7 @@ use gpui_kit::{
     div, px, relative,
 };
 use wirecatch_protocol::QueueId;
-use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, Queue, Setting};
+use wirecatch_protocol::app::{Queue, Setting};
 use wirecatch_protocol::proxy::ProxyUse;
 use wirecatch_queues::schedule;
 use wirecatch_shell::api;
@@ -22,6 +22,7 @@ use wirecatch_shell::api;
 use super::drag::{self, DraggedQueue, DraggedRows};
 use super::{Group, MainWindow, Screen, View, queue_header};
 use crate::backend::act;
+use crate::rows::Tally;
 use crate::text;
 use crate::ui::speed_graph::{SpeedHistory, speed_graph};
 use crate::ui::{QueueTile, Role, Typed as _, tokens};
@@ -49,16 +50,9 @@ pub(super) fn update_waiting(cx: &App) -> bool {
 
 impl MainWindow {
     pub(super) fn sidebar(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let library = self.library.read(cx);
-        let count = |view: View| {
-            library
-                .downloads
-                .iter()
-                .filter(|row| view.shows(row))
-                .count()
-        };
-        let all = count(View::All);
-        let counts = Group::ALL.map(|group| (group, count(View::Group(group))));
+        let tally = self.library.read(cx).downloads.tally();
+        let all = tally.count;
+        let counts = Group::ALL.map(|group| (group, tally.in_group(group)));
         let mut downloads = vec![self.nav_item(
             "view-all",
             Icon::new(Lucide::Layers),
@@ -228,13 +222,7 @@ impl MainWindow {
             })
             .collect();
         let hidden = queues.len() - shown.len();
-        let speed: u64 = self
-            .library
-            .read(cx)
-            .downloads
-            .iter()
-            .map(|row| row.speed)
-            .sum();
+        let speed = self.library.read(cx).downloads.tally().speed;
         let toggle = (queues.len() > QUEUES_SHOWN).then(|| {
             Button::new("more-queues")
                 .xsmall()
@@ -352,7 +340,7 @@ impl MainWindow {
         let view = View::Queue(id);
         let current = self.view == view;
         let library = self.library.read(cx);
-        let facts = QueueFacts::of(library.downloads.iter().filter(|row| row.queue == id));
+        let facts = QueueFacts::of(library.downloads.tally_of(id));
         let order: Vec<QueueId> = library.queues.iter().map(|q| q.id).collect();
         let (rules, proxy) = self.marks(queue, cx);
         let (alarm, line) = summary(queue, &facts, proxy.as_deref());
@@ -434,25 +422,10 @@ impl MainWindow {
     /// What a queue is doing right now, and when idle how many it may run at once when it has
     /// its own limit.
     pub(super) fn describe(&self, queue: &Queue, cx: &App) -> String {
-        let rows: Vec<_> = self
-            .library
-            .read(cx)
-            .downloads
-            .iter()
-            .filter(|row| row.queue == queue.id)
-            .collect();
-        let running = rows
-            .iter()
-            .filter(|row| Group::of(row.status) == Group::Downloading)
-            .count();
-        let waiting = rows
-            .iter()
-            .filter(|row| row.status == DownloadStatus::Queued)
-            .count();
-        let paused = rows
-            .iter()
-            .filter(|row| row.status == DownloadStatus::Paused)
-            .count();
+        let tally = self.library.read(cx).downloads.tally_of(queue.id);
+        let running = tally.in_group(Group::Downloading);
+        let waiting = tally.in_group(Group::UpNext);
+        let paused = tally.in_group(Group::Paused);
         let at_once = match queue.settings.max_concurrent {
             Setting::Own(limit) => Some(limit),
             Setting::Global => None,
@@ -615,35 +588,20 @@ struct QueueFacts {
 }
 
 impl QueueFacts {
-    fn of<'a>(rows: impl Iterator<Item = &'a DownloadSummary>) -> Self {
-        let mut facts = Self::default();
-        let (mut done, mut size, mut sized) = (0_u64, 0_u64, true);
-        for row in rows {
-            facts.count += 1;
-            facts.speed += row.speed;
-            let group = Group::of(row.status);
-            match row.status {
-                DownloadStatus::Completed => facts.completed += 1,
-                DownloadStatus::Failed => facts.failed += 1,
-                DownloadStatus::Queued => facts.waiting += 1,
-                _ if group == Group::Downloading => facts.running += 1,
-                _ => {}
-            }
-            if group == Group::Downloading || row.status == DownloadStatus::Queued {
-                match row.total {
-                    Some(total) => {
-                        size += total;
-                        done += row.done.min(total);
-                    }
-                    None => sized = false,
-                }
-            }
+    fn of(tally: &Tally) -> Self {
+        let sized = tally.unsized_rows == 0 && tally.size > 0;
+        Self {
+            count: tally.count,
+            running: tally.in_group(Group::Downloading),
+            waiting: tally.in_group(Group::UpNext),
+            completed: tally.in_group(Group::Finished),
+            failed: tally.in_group(Group::Attention),
+            speed: tally.speed,
+            left: sized.then(|| tally.size - tally.done),
+            per_mille: sized
+                .then(|| u16::try_from(u128::from(tally.done) * 1000 / u128::from(tally.size)).ok())
+                .flatten(),
         }
-        if sized && size > 0 {
-            facts.left = Some(size - done);
-            facts.per_mille = u16::try_from(u128::from(done) * 1000 / u128::from(size)).ok();
-        }
-        facts
     }
 }
 
