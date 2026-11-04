@@ -535,6 +535,14 @@ impl Proxies {
         }
     }
 
+    /// Whether the HTTP client may go through a SOCKS4 proxy (names resolved here).
+    pub(crate) fn may_use_socks4(&self) -> bool {
+        [&self.http, &self.https, &self.all]
+            .into_iter()
+            .flatten()
+            .any(|proxy| proxy.url().is_some_and(|url| url.scheme() == "socks4"))
+    }
+
     /// These settings as the HTTP client's only proxy, so it reads none of
     /// its own.
     pub(crate) fn client(self: &Arc<Self>) -> reqwest::Proxy {
@@ -577,7 +585,8 @@ fn first_set(names: &[&'static str], env: Env<'_>) -> Option<(&'static str, Stri
 /// application gives them (by commas, as in `NO_PROXY`), in `NO_PROXY` form,
 /// and whether they hold `<local>`. `*.corp.example` becomes `corp.example`, which covers its
 /// subdomains (and the name itself), an IPv4 wildcard becomes the network it
-/// covers, and `*` (or `*.*`) covers every name, as in `NO_PROXY`; any other
+/// covers, `[::1]` loses its brackets, which the matcher would read as part of a
+/// name, and `*` (or `*.*`) covers every name, as in `NO_PROXY`; any other
 /// pattern stays as it is and matches nothing, so its hosts keep the proxy.
 fn exceptions(list: &str) -> (String, bool) {
     let mut local = false;
@@ -591,6 +600,8 @@ fn exceptions(list: &str) -> (String, bool) {
             local = true;
         } else if let Some(network) = ipv4_wildcard(entry) {
             entries.push(network);
+        } else if let Some(address) = entry.strip_prefix('[').and_then(|e| e.strip_suffix(']')) {
+            entries.push(address.to_string());
         } else {
             entries.push(entry.strip_prefix("*.").unwrap_or(entry).to_string());
         }

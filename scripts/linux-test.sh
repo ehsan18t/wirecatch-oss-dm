@@ -16,7 +16,7 @@ docker volume create "$VOLUME" >/dev/null
 tar -C "$ROOT" \
   --exclude=./.git --exclude=./target --exclude=./node_modules --exclude='./apps/*/node_modules' \
   --exclude='./packages/*/node_modules' --exclude=./.claude --exclude=./.cache \
-  --exclude='./apps/extension/.output' --exclude='./apps/desktop/build' \
+  --exclude='./apps/extension/.output' \
   -cf - . |
 docker run --rm -i \
   -v "$VOLUME:/target" \
@@ -35,6 +35,8 @@ docker run --rm -i \
       export PATH=/usr/local/cargo/bin:\$PATH CARGO_HOME=/target/cargo-home CARGO_TARGET_DIR=/target RUSTUP_HOME=/usr/local/rustup
       export WIRECATCH_TEST_FFMPEG=\$(command -v ffmpeg) WIRECATCH_REQUIRE_FFMPEG=1
       cd /work
+      # The gate searches the source with git grep; .git stays outside the container.
+      git init -q
       node scripts/gate.mjs --no-desktop --no-fail-fast rust
     "
   '

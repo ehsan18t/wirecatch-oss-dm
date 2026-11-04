@@ -7,6 +7,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use wirecatch_engine::{AddressKind, PrivateNetwork, Url};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload, read_site};
+use wirecatch_protocol::hosts::host_on_site;
 
 use crate::public_suffix::SuffixList;
 
@@ -138,10 +139,12 @@ pub fn is_local_by_itself(url: &Url, suffixes: &SuffixList) -> bool {
     if !name.contains('.') {
         return !suffixes.is_public_suffix(name);
     }
-    LOCAL_SUFFIXES.iter().any(|suffix| is_under(name, suffix))
+    LOCAL_SUFFIXES
+        .iter()
+        .any(|suffix| host_on_site(name, suffix))
         || UNRESERVED_LOCAL_SUFFIXES
             .iter()
-            .any(|suffix| is_under(name, suffix) && !suffixes.is_public_suffix(suffix))
+            .any(|suffix| host_on_site(name, suffix) && !suffixes.is_public_suffix(suffix))
 }
 
 /// Why an entry cannot be one of the person's sites on their network.
@@ -191,17 +194,9 @@ fn is_listed(url: &Url, sites: &[String], suffixes: &SuffixList) -> bool {
     let Some(name) = url.host_str() else {
         return false;
     };
-    let name = name.trim_end_matches('.');
     sites
         .iter()
-        .any(|site| is_under(name, site) && suffixes.registrable_domain(site).is_some())
-}
-
-/// Whether host `name` is `domain` or a name under it. Both are lower case:
-/// the URL parser and the settings store them so.
-fn is_under(name: &str, domain: &str) -> bool {
-    name.strip_suffix(domain)
-        .is_some_and(|rest| rest.is_empty() || rest.ends_with('.'))
+        .any(|site| host_on_site(name, site) && suffixes.registrable_domain(site).is_some())
 }
 
 /// How long the check of a captured link waits for its name to resolve. It
@@ -431,6 +426,19 @@ mod tests {
         .unwrap();
         assert_eq!(
             ChosenBy::of_capture(&page(), &listed, &newer),
+            ChosenBy::Website
+        );
+    }
+
+    #[test]
+    fn an_address_is_not_taken_for_a_name_under_a_listed_site() {
+        let listed = ["0.0.1".to_string()];
+        assert_eq!(
+            ChosenBy::of_capture(
+                &capture(Some("http://8.0.0.1/"), None),
+                &listed,
+                &SuffixList::built_in()
+            ),
             ChosenBy::Website
         );
     }

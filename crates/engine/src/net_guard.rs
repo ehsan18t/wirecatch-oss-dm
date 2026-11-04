@@ -62,6 +62,12 @@ const LOOKUP_PORT: u16 = 0;
 ///   even if its answer changes between a check and the connection (DNS
 ///   rebinding).
 ///
+/// # FTP
+///
+/// The same rule holds for FTP links. A name is looked up once, leaving out
+/// local addresses, and every connection of the download goes to the address
+/// that answered, so nothing resolves it again.
+///
 /// # With a proxy
 ///
 /// When a proxy is set (`HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` in the
@@ -325,6 +331,7 @@ pub(crate) fn guard_from(url: &Url, timeout: Duration, proxies: &Proxies) -> Pri
         })),
         resolver: Arc::new(FilteringResolver {
             proxies: proxies.host_names(),
+            ipv4_first: proxies.may_use_socks4(),
         }),
     }
 }
@@ -362,24 +369,18 @@ impl NetworkGuard {
         if url.origin() == self.origin && !matches!(url.host(), Some(Host::Domain(_))) {
             return Ok(());
         }
-        let refused = match url.host() {
-            Some(Host::Ipv4(ip)) => is_private(IpAddr::V4(ip)),
-            Some(Host::Ipv6(ip)) => is_private(IpAddr::V6(ip)),
-            Some(Host::Domain(name)) => {
-                let known = self.names().get(name).copied();
-                if let Some(refused) = known {
-                    refused
-                } else {
-                    let addrs = resolve(name, self.timeout).await;
-                    // Refused when no address outside the local network
-                    // is left, the same rule the resolver applies.
-                    let refused = !addrs.is_empty() && addrs.into_iter().all(is_private);
-                    self.names().insert(name.to_string(), refused);
-                    refused
-                }
-            }
-            None => false,
+        let name = match url.host() {
+            Some(Host::Domain(name)) => Some(name),
+            _ => None,
         };
+        let known = name.and_then(|name| self.names().get(name).copied());
+        let refused = match known {
+            Some(refused) => refused,
+            None => all_private(&host_addresses(url, self.timeout).await),
+        };
+        if let Some(name) = name {
+            self.names().insert(name.to_string(), refused);
+        }
         if refused {
             Err(Error::PrivateNetwork {
                 url: url.to_string(),
@@ -398,14 +399,17 @@ pub(crate) struct FilteringResolver {
     /// filter: the connection to a proxy is the user's choice, and a request
     /// that names one as its target is still checked by the [`NetworkGuard`].
     proxies: Vec<String>,
+    /// See [`ipv4_first`].
+    ipv4_first: bool,
 }
 
 impl Resolve for FilteringResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let host = name.as_str().to_string();
         let trusted = self.proxies.iter().any(|p| p.eq_ignore_ascii_case(&host));
+        let in_ipv4_order = self.ipv4_first;
         Box::pin(async move {
-            let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), LOOKUP_PORT))
+            let mut addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), LOOKUP_PORT))
                 .await?
                 .filter(|a| trusted || !is_private(a.ip()))
                 .collect();
@@ -415,15 +419,78 @@ impl Resolve for FilteringResolver {
                 )
                 .into());
             }
+            if in_ipv4_order {
+                ipv4_first(&mut addrs);
+            }
             Ok(Box::new(addrs.into_iter()) as Addrs)
         })
     }
+}
+
+/// Resolves names like the system does, in [`ipv4_first`] order.
+pub(crate) struct Ipv4FirstResolver;
+
+impl Resolve for Ipv4FirstResolver {
+    fn resolve(&self, name: Name) -> Resolving {
+        let host = name.as_str().to_string();
+        Box::pin(async move {
+            let mut addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), LOOKUP_PORT))
+                .await?
+                .collect();
+            ipv4_first(&mut addrs);
+            Ok(Box::new(addrs.into_iter()) as Addrs)
+        })
+    }
+}
+
+/// reqwest gives a SOCKS4 proxy only the first address of a name, and SOCKS4 cannot carry an IPv6 one. Reordered, not filtered: a direct connection from the same client may need the IPv6 address.
+fn ipv4_first(addrs: &mut [SocketAddr]) {
+    addrs.sort_by_key(SocketAddr::is_ipv6);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn the_guards_resolver_puts_ipv4_first_only_for_a_socks4_proxy() {
+        let of = |proxy: &str| {
+            let manual = crate::ManualProxies {
+                all: Some(proxy.into()),
+                ..Default::default()
+            };
+            let proxies = Proxies::of(&crate::ProxyChoice::Manual(manual));
+            let url = Url::parse("https://example.com/").unwrap();
+            guard_from(&url, Duration::from_secs(1), &proxies)
+                .resolver
+                .ipv4_first
+        };
+        assert!(of("socks4://proxy.example:1080"));
+        assert!(!of("socks5://proxy.example:1080"));
+        assert!(!of("http://proxy.example:8080"));
+    }
+
+    #[test]
+    fn ipv4_addresses_come_first_in_the_order_they_had() {
+        let addr = |text: &str| text.parse::<SocketAddr>().unwrap();
+        let mut addrs = [
+            addr("[2001:db8::1]:0"),
+            addr("192.0.2.1:0"),
+            addr("[2001:db8::2]:0"),
+            addr("192.0.2.2:0"),
+        ];
+        ipv4_first(&mut addrs);
+        assert_eq!(
+            addrs,
+            [
+                addr("192.0.2.1:0"),
+                addr("192.0.2.2:0"),
+                addr("[2001:db8::1]:0"),
+                addr("[2001:db8::2]:0"),
+            ]
+        );
+    }
 
     /// Addresses at the edges of each range and inside the IPv6 forms that
     /// carry an IPv4 address, with their kinds.
@@ -622,6 +689,7 @@ mod tests {
         use std::str::FromStr;
         let resolver = FilteringResolver {
             proxies: Vec::new(),
+            ipv4_first: false,
         };
         // `localhost` resolves only to loopback addresses, all filtered out.
         let error = match resolver.resolve(Name::from_str("localhost").unwrap()).await {
@@ -714,6 +782,7 @@ mod tests {
         use std::str::FromStr;
         let resolver = FilteringResolver {
             proxies: vec!["localhost".into()],
+            ipv4_first: false,
         };
         let addrs: Vec<_> = resolver
             .resolve(Name::from_str("localhost").unwrap())

@@ -10,6 +10,7 @@ const VALUES = [CONSTANTS, VALIDATORS];
 /** Files written by hand next to the generated folder, in src, exported whole: what TypeScript needs beyond the types and constants, such as the constructors of branded ids. */
 export const HAND_WRITTEN = [
   'extension-settings',
+  'hosts',
   'ids',
   'media-choices',
   'media-start',

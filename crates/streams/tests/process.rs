@@ -63,6 +63,29 @@ async fn run(
     Ok(ran)
 }
 
+/// A program whose library is missing dies as it loads, having never run: it counts as not started, so the add-on gets a fresh look.
+#[tokio::test]
+async fn a_program_that_cannot_load_a_library_counts_as_not_started() -> TestResult {
+    let dll_not_found_or_loader_failure = if cfg!(windows) { "-1073741515" } else { "127" };
+    let ran = run(
+        &["exit-with", dll_not_found_or_loader_failure],
+        RunOptions::lines(),
+        &CancellationToken::new(),
+        |_, _| {},
+    )
+    .await?;
+    assert!(matches!(ran, Err(RunError::Start { .. })), "{ran:?}");
+    let ran = run(
+        &["exit-with", "3"],
+        RunOptions::lines(),
+        &CancellationToken::new(),
+        |_, _| {},
+    )
+    .await??;
+    assert!(!ran.success());
+    Ok(())
+}
+
 #[tokio::test]
 async fn a_program_that_stops_writing_is_stopped_as_stalled() -> TestResult {
     let options = RunOptions::lines().with_idle_timeout(SHORT);
@@ -217,18 +240,42 @@ async fn a_failure_is_logged_with_what_the_program_wrote() -> TestResult {
     Ok(())
 }
 
-/// A program stopped for writing nothing still says what it last wrote, in the error and in the log.
-#[tokio::test]
+/// A program stopped for writing nothing still says what it last wrote, in the error and in the log. The idle limit runs out only once the line is read, on a paused clock the test moves.
+#[tokio::test(start_paused = true)]
 async fn a_stalled_program_keeps_what_it_wrote() -> TestResult {
     let (logs, _capturing) = Logs::capture();
-    let options = RunOptions::lines().with_idle_timeout(SHORT);
-    let ran = run(
-        &["hang", "Opening input https://h/live.m3u8?token=T0K"],
-        options,
-        &CancellationToken::new(),
-        |_, _| {},
-    )
-    .await?;
+    let frozen = Frozen::clock();
+    let program = fake_program()?;
+    let (heard, mut lines) = tokio::sync::mpsc::unbounded_channel();
+    let ran = tokio::spawn(async move {
+        let dir = std::env::temp_dir();
+        let words = args(&["hang", "Opening input https://h/live.m3u8?token=T0K"]);
+        let options = RunOptions::lines().with_idle_timeout(SHORT);
+        let on_line = |_, line: &str| test_may_have_ended(&heard.send(line.to_owned()));
+        process::run(
+            &program,
+            &words,
+            &dir,
+            options,
+            &CancellationToken::new(),
+            on_line,
+        )
+        .await
+    });
+    within_patience(async {
+        while let Some(line) = lines.recv().await {
+            if line.starts_with("Opening input") {
+                break;
+            }
+        }
+    })
+    .await
+    .map_err(|_| format!("the program wrote nothing within {PATIENCE:?}"))?;
+    tokio::time::advance(SHORT).await;
+    let ran = within_patience(ran)
+        .await
+        .map_err(|_| format!("the run did not end within {PATIENCE:?}"))??;
+    frozen.thaw();
     let Err(RunError::Stalled { stderr, .. }) = ran else {
         return Err(format!("{ran:?}").into());
     };
@@ -577,6 +624,7 @@ async fn what_a_program_leaves_running_ends_with_it() -> TestResult {
 #[cfg(unix)]
 #[tokio::test]
 async fn a_child_that_left_the_group_does_not_hold_the_run() -> TestResult {
+    let (logs, _capturing) = Logs::capture();
     let ran = run(
         &["leave-detached-child"],
         RunOptions::lines(),
@@ -585,6 +633,11 @@ async fn a_child_that_left_the_group_does_not_hold_the_run() -> TestResult {
     )
     .await??;
     assert!(ran.success());
+    assert!(
+        logs.text().contains("outputs stayed open"),
+        "{}",
+        logs.text()
+    );
     Ok(())
 }
 

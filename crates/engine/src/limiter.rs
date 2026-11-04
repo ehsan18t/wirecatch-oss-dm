@@ -46,6 +46,9 @@ struct Bucket {
     /// so later callers queue up behind them instead of starving.
     tokens: f64,
     last: Instant,
+    /// Tests: every byte accounted for.
+    #[cfg(test)]
+    taken: u64,
 }
 
 impl Bucket {
@@ -67,6 +70,8 @@ impl RateLimiter {
                 limit: normalize(limit),
                 tokens: 0.0,
                 last: Instant::now(),
+                #[cfg(test)]
+                taken: 0,
             }),
             changed: Notify::new(),
         }
@@ -136,6 +141,10 @@ impl RateLimiter {
     /// if any.
     fn take(&self, bytes: u64) -> Option<Debt> {
         let mut bucket = self.bucket();
+        #[cfg(test)]
+        {
+            bucket.taken += bytes;
+        }
         let rate = approx_f64(bucket.limit?);
         let now = Instant::now();
         bucket.tokens = bucket.refilled(rate, now) - approx_f64(bytes);
@@ -210,6 +219,68 @@ fn normalize(limit: Option<u64>) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// High enough that no test waits on it.
+    const NO_WAIT: u64 = 1 << 40;
+    const SKIPPED_AT_LEAST: u64 = 1;
+    const FILE_LEN: usize = 4 * crate::units::MIB_USIZE;
+    const CUT_AFTER: u64 = crate::units::MIB;
+
+    /// A server without ranges that cuts its first answer short, so the retry skips what arrived.
+    async fn cut_once() -> wirecatch_test_support::http::TestServer {
+        wirecatch_test_support::http::TestServer::start(
+            wirecatch_test_support::test_data(FILE_LEN),
+            wirecatch_test_support::http::Config {
+                drop_first: Some((1, CUT_AFTER)),
+                ..Default::default()
+            },
+        )
+        .await
+    }
+
+    fn assert_skipped_bytes_counted(limiter: &RateLimiter) {
+        let taken = limiter.bucket().taken;
+        assert!(
+            taken >= FILE_LEN as u64 + SKIPPED_AT_LEAST,
+            "only {taken} bytes of a {FILE_LEN} byte file and a retry counted"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_download_retry_counts_skipped_bytes_against_the_limit() {
+        let server = cut_once().await;
+        let dir = wirecatch_test_support::private_dir("limit-skip-download").unwrap();
+        let limiter = std::sync::Arc::new(RateLimiter::new(Some(NO_WAIT)));
+        let mut request =
+            crate::download::DownloadRequest::new(server.url("f.bin"), dir.to_path_buf());
+        request.options.connections = 1;
+        request.options.rate_limiters = vec![limiter.clone()];
+        crate::download::download(
+            request,
+            std::sync::Arc::new(crate::progress::Progress::default()),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_skipped_bytes_counted(&limiter);
+        dir.remove().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_fetcher_retry_counts_skipped_bytes_against_the_limit() {
+        let server = cut_once().await;
+        let limiter = std::sync::Arc::new(RateLimiter::new(Some(NO_WAIT)));
+        let options = crate::options::DownloadOptions {
+            rate_limiters: vec![limiter.clone()],
+            ..Default::default()
+        };
+        let url = server.url("f.bin");
+        let fetcher = crate::fetch::Fetcher::new(&url, &options, CancellationToken::new())
+            .await
+            .unwrap();
+        fetcher.get(&url, None, u64::MAX).await.unwrap();
+        assert_skipped_bytes_counted(&limiter);
+    }
 
     #[tokio::test(start_paused = true)]
     async fn holds_throughput_to_the_limit() {

@@ -12,6 +12,7 @@ publish = false
 
 [dependencies]
 wirecatch-engine.workspace = true
+wirecatch-files.workspace = true
 # Hiding secrets in what the add-on's programs print.
 wirecatch-logging.workspace = true
 # HLS "METHOD=AES-128" is AES-128 in CBC mode with PKCS#7 padding. The aes pgp uses (core's add-on
@@ -36,6 +37,7 @@ libc.workspace = true
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_System_Diagnostics_Debug",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_JobObjects",
     "Win32_System_Threading",

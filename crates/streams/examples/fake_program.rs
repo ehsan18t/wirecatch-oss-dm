@@ -11,6 +11,7 @@
 //! - `hold <address>`: connects to the TCP listener at `address`, writes `holding`, and keeps the connection open until the listener closes it, so the listener learns when this process ends, and it never ends by itself while a test waits for that.
 //! - `linger`: does nothing for a minute, then exits.
 //! - `env <name>...`: writes `<name>=<value>` for each variable that is set and `<name> unset` for each that is not, one per line, to standard output.
+//! - `exit-with <code>`: exits with `code`, whole, as a program the system refused to load does.
 //! - `fail`: writes `ERROR: it went wrong` to standard error and exits with failure.
 //! - `fail-after <count> <bytes> <code> <line>`: writes `count` lines of `bytes` bytes of `x`, then `<line>`, to standard error, and exits with `code`.
 
@@ -29,11 +30,19 @@ const STEP_TIME: Duration = Duration::from_secs(1);
 /// What `write-quietly` appends, and `rewrite-quietly` writes over, at each step.
 const CHUNK: [u8; 1024] = [0; 1024];
 
+fn exit_with(code: Option<&String>) -> ! {
+    std::process::exit(code.and_then(|c| c.parse().ok()).unwrap_or(1))
+}
+
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
     let number = |i: usize| args.get(i).and_then(|n| n.parse::<u64>().ok()).unwrap_or(0);
     let mut out = std::io::stdout();
     let done = match args.first().map(String::as_str) {
+        Some("exit-with") => exit_with(args.get(1)),
         Some("hang") => args
             .get(1)
             .map_or(Ok(()), |line| writeln!(std::io::stderr(), "{line}"))
