@@ -1072,11 +1072,11 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Chunk 22: app-start-and-quit            | done        |
 | 1     | Chunk 23: interface-commands-and-ui-kit | done        |
 | 1     | Chunk 24: download-windows              | done        |
-| 1     | Chunk 25: main-window                   | pending     |
+| 1     | Chunk 25: main-window                   | done        |
 | 1     | Chunk 26: notifications-and-tray        | done        |
 | 1     | Chunk 27: settings-and-queue-forms      | done        |
 | 1     | Chunk 28: failure-messages              | done        |
-| 1     | Chunk 29: packaging-and-release         | pending     |
+| 1     | Chunk 29: packaging-and-release         | done        |
 | 1     | Chunk 30: protocol-types                | done        |
 | 1     | Chunk 31: test-servers                  | done        |
 | 1     | Chunk 32: cli                           | done        |
