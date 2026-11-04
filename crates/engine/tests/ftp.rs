@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use wirecatch_engine::units::{MIB, MIB_USIZE};
 use wirecatch_engine::{
-    CancellationToken, DownloadRequest, Error, Outcome, Progress, Url, download,
+    CancellationToken, DownloadRequest, Error, Outcome, PrivateNetwork, Progress, Url, download,
 };
 use wirecatch_test_support::ftp::{FtpConfig, FtpServer, Quirk, Refuse};
 use wirecatch_test_support::{PATIENCE, TestResult, files_in, private_dir, test_data};
@@ -43,6 +43,50 @@ fn completed(outcome: Outcome) -> (PathBuf, u64, u64) {
         } => (path, bytes, resumed_from),
         other => panic!("expected Completed, got {other:?}"),
     }
+}
+
+async fn with_rule(
+    url: &Url,
+    rule: PrivateNetwork,
+    tag: &str,
+) -> TestResult<Result<Outcome, Error>> {
+    let dir = private_dir(tag)?;
+    let mut req = request(url, &dir, 1);
+    req.options.private_network = rule;
+    let ended = run(req).await;
+    dir.remove()?;
+    Ok(ended)
+}
+
+/// A website's link: `localhost` answers only with local addresses.
+#[tokio::test]
+async fn a_name_on_the_local_network_is_refused_under_block_before_any_connection() -> TestResult {
+    let server = FtpServer::start(serving(b"data")).await;
+    let mut url = server.url("ftp", "", "pub/file.bin");
+    url.set_host(Some("localhost")).unwrap();
+    let ended = with_rule(&url, PrivateNetwork::Block, "ftp-block-name").await?;
+    assert!(
+        matches!(ended, Err(Error::PrivateNetwork { .. })),
+        "{ended:?}"
+    );
+    assert!(
+        server.stats.commands().is_empty(),
+        "a connection reached the local server"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_chosen_link_to_the_local_network_goes_through() -> TestResult {
+    let server = FtpServer::start(serving(b"data")).await;
+    let mut named = server.url("ftp", "", "pub/file.bin");
+    named.set_host(Some("localhost")).unwrap();
+    let auto = with_rule(&named, PrivateNetwork::Auto, "ftp-auto-name").await?;
+    assert!(matches!(auto, Ok(Outcome::Completed { .. })), "{auto:?}");
+    let written = server.url("ftp", "", "pub/file.bin");
+    let block = with_rule(&written, PrivateNetwork::Block, "ftp-block-address").await?;
+    assert!(matches!(block, Ok(Outcome::Completed { .. })), "{block:?}");
+    Ok(())
 }
 
 #[tokio::test]

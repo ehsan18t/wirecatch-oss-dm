@@ -62,6 +62,12 @@ const LOOKUP_PORT: u16 = 0;
 ///   even if its answer changes between a check and the connection (DNS
 ///   rebinding).
 ///
+/// # FTP
+///
+/// The same rule holds for FTP links. A name is looked up once, leaving out
+/// local addresses, and every connection of the download goes to the address
+/// that answered, so nothing resolves it again.
+///
 /// # With a proxy
 ///
 /// When a proxy is set (`HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` in the
@@ -362,24 +368,18 @@ impl NetworkGuard {
         if url.origin() == self.origin && !matches!(url.host(), Some(Host::Domain(_))) {
             return Ok(());
         }
-        let refused = match url.host() {
-            Some(Host::Ipv4(ip)) => is_private(IpAddr::V4(ip)),
-            Some(Host::Ipv6(ip)) => is_private(IpAddr::V6(ip)),
-            Some(Host::Domain(name)) => {
-                let known = self.names().get(name).copied();
-                if let Some(refused) = known {
-                    refused
-                } else {
-                    let addrs = resolve(name, self.timeout).await;
-                    // Refused when no address outside the local network
-                    // is left, the same rule the resolver applies.
-                    let refused = !addrs.is_empty() && addrs.into_iter().all(is_private);
-                    self.names().insert(name.to_string(), refused);
-                    refused
-                }
-            }
-            None => false,
+        let name = match url.host() {
+            Some(Host::Domain(name)) => Some(name),
+            _ => None,
         };
+        let known = name.and_then(|name| self.names().get(name).copied());
+        let refused = match known {
+            Some(refused) => refused,
+            None => all_private(&host_addresses(url, self.timeout).await),
+        };
+        if let Some(name) = name {
+            self.names().insert(name.to_string(), refused);
+        }
         if refused {
             Err(Error::PrivateNetwork {
                 url: url.to_string(),

@@ -287,18 +287,13 @@ pub(crate) async fn download_with(
     clients: Clients,
 ) -> Result<Outcome> {
     request.options.validate()?;
-    let guard = match request.url.scheme() {
-        "http" | "https" => {
-            private_guard(
-                &request.url,
-                request.options.private_network,
-                request.options.stall_timeout,
-                clients.proxies(),
-            )
-            .await
-        }
-        _ => None,
-    };
+    let guard = private_guard(
+        &request.url,
+        request.options.private_network,
+        request.options.stall_timeout,
+        clients.proxies(),
+    )
+    .await;
     download_guarded(request, progress, cancel, clients, guard).await
 }
 
