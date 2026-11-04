@@ -68,7 +68,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-60  | fix(core): apply proxy exceptions to yt-dlp        | `fix/ytdlp-proxy-exceptions`     | 68, 69                       | P2       | small  | none         | open   |
 | PR-61  | fix(core): move path checks off async threads      | `fix/path-checks-off-async`      | 70                           | P2       | medium | none         | open   |
 | PR-62  | fix(engine): handle resume files more safely       | `fix/safer-resume-files`         | 71, 88, 89, 158              | P2       | medium | none         | open   |
-| PR-63  | fix(desktop): make an AppImage restart reliable    | `fix/appimage-restart`           | 73, 184                      | P2       | medium | none         | open   |
+| PR-63  | fix(desktop): make an AppImage restart reliable    | `fix/appimage-restart`           | 73, 184                      | P2       | medium | none         | merged |
 | PR-64  | fix(core): read the page again after a refusal     | `fix/reread-refused-page`        | 75, 134, 145                 | P2       | medium | none         | open   |
 | PR-65  | fix(desktop): show all an import will change       | `fix/full-import-preview`        | 76, 148, 207                 | P2       | medium | none         | open   |
 | PR-66  | fix(desktop): show moved downloads in their place  | `fix/moved-row-position`         | 78                           | P2       | medium | none         | open   |
@@ -905,7 +905,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/shell/src/updates.rs`, `crates/desktop/src/lifecycle.rs`, `crates/desktop/src/main.rs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-shell -p wirecatch-desktop`, `cargo clippy -p wirecatch-shell -p wirecatch-desktop`, `node scripts/gate.mjs clippy-linux`. This is Linux only and has not been run.
-- **Status:** open
+- **Status:** merged
 
 ### PR-64 fix(core): read the page again after a refusal
 

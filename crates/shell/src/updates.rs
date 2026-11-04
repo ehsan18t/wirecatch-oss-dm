@@ -7,6 +7,10 @@ use std::path::{Path, PathBuf};
 
 pub use wirecatch_updates::FileKind;
 
+/// The new AppImage's name beside the running one until it takes its place.
+#[cfg(unix)]
+const STAGED_APPIMAGE: &str = ".wirecatch-update.AppImage";
+
 /// Why an update could not be installed.
 #[derive(Debug, thiserror::Error)]
 pub enum InstallError {
@@ -25,8 +29,6 @@ pub enum InstallError {
         current: PathBuf,
         source: std::io::Error,
     },
-    #[error("The updated app could not be started ({0}).")]
-    Restart(#[source] std::io::Error),
 }
 
 /// The installer the app can install itself, as it was installed; `None` for a system package.
@@ -42,7 +44,8 @@ pub fn install_kind() -> Option<FileKind> {
 }
 
 /// Starts installing the checked installer at `installer`; the caller quits the app next, so
-/// the installer can replace it.
+/// the installer can replace it. A setup starts the new version itself; an AppImage does not, and
+/// the caller starts it again after it has exited.
 ///
 /// # Errors
 ///
@@ -92,25 +95,34 @@ fn run_setup(_installer: &Path) -> Result<(), InstallError> {
     Err(InstallError::SetupElsewhere)
 }
 
-/// Moves the new AppImage over the running one, in one step on the same folder, and starts it.
+/// Moves the new AppImage over the running one. Not started here: a copy started while this one
+/// still holds the endpoint would hand its launch over and leave, and nothing would be running.
 #[cfg(unix)]
 fn replace_appimage(installer: &Path) -> Result<(), InstallError> {
+    let current = crate::appimage::running_appimage().ok_or(InstallError::NotAppImage)?;
+    put_in_place(installer, &current)
+}
+
+/// Copies `installer` beside `current`, flushed so a crash leaves one whole program or the other,
+/// and renames it over `current`, in one step on the same folder. A failure leaves `current` as it
+/// was, and no copy behind.
+#[cfg(unix)]
+fn put_in_place(installer: &Path, current: &Path) -> Result<(), InstallError> {
     use std::os::unix::fs::PermissionsExt as _;
 
-    let current = crate::appimage::running_appimage().ok_or(InstallError::NotAppImage)?;
     let folder = current.parent().ok_or(InstallError::NotAppImage)?;
-    let staged = folder.join(".wirecatch-update.AppImage");
-    let failed = |source: std::io::Error| InstallError::Replace {
-        current: current.clone(),
-        source,
-    };
-    std::fs::copy(installer, &staged).map_err(failed)?;
-    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755)).map_err(failed)?;
-    std::fs::rename(&staged, &current).map_err(failed)?;
-    std::process::Command::new(&current)
-        .spawn()
-        .map_err(InstallError::Restart)?;
-    Ok(())
+    let staged = folder.join(STAGED_APPIMAGE);
+    let placed = std::fs::copy(installer, &staged)
+        .and_then(|_| std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755)))
+        .and_then(|()| std::fs::File::open(&staged)?.sync_all())
+        .and_then(|()| std::fs::rename(&staged, current));
+    placed.map_err(|source| {
+        wirecatch_files::discard::file(&staged);
+        InstallError::Replace {
+            current: current.to_owned(),
+            source,
+        }
+    })
 }
 
 #[cfg(not(unix))]
@@ -123,6 +135,37 @@ mod tests {
     use super::*;
 
     const OTHER_PROGRAM: &[u8] = b"#!/bin/sh\n# another program\n";
+    const UPDATE: &[u8] = b"#!/bin/sh\n# the update\n";
+
+    #[test]
+    fn the_new_appimage_takes_the_old_ones_place_and_can_run() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = tempfile::tempdir().unwrap();
+        let (current, installer) = (dir.path().join("App.AppImage"), dir.path().join("new"));
+        std::fs::write(&current, OTHER_PROGRAM).unwrap();
+        std::fs::write(&installer, UPDATE).unwrap();
+        put_in_place(&installer, &current).unwrap();
+        assert_eq!(std::fs::read(&current).unwrap(), UPDATE);
+        let mode = std::fs::metadata(&current).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o755);
+        assert!(!dir.path().join(STAGED_APPIMAGE).exists());
+    }
+
+    #[test]
+    fn a_failed_replacement_leaves_no_copy_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        // A folder cannot be renamed over by a file.
+        let current = dir.path().join("App.AppImage");
+        std::fs::create_dir(&current).unwrap();
+        let installer = dir.path().join("new");
+        std::fs::write(&installer, UPDATE).unwrap();
+        assert!(matches!(
+            put_in_place(&installer, &current),
+            Err(InstallError::Replace { .. })
+        ));
+        assert!(!dir.path().join(STAGED_APPIMAGE).exists());
+    }
 
     #[test]
     fn an_update_does_not_overwrite_the_program_named_by_an_inherited_variable() {
@@ -133,7 +176,7 @@ mod tests {
                 let dir = tempfile::tempdir().unwrap();
                 let other = dir.path().join("Other.AppImage");
                 std::fs::write(&other, OTHER_PROGRAM).unwrap();
-                std::fs::write(installer_beside(&other), b"#!/bin/sh\n# the update\n").unwrap();
+                std::fs::write(installer_beside(&other), UPDATE).unwrap();
                 assert!(crate::appimage::passes_with_inherited_appimage(
                     NAME, &other
                 ));
