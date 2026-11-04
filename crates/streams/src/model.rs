@@ -260,6 +260,8 @@ pub struct StreamRequest {
     pub options: DownloadOptions,
     /// The download's file work, to wait for after dropping it; see [`FileWork`].
     pub file_work: FileWork,
+    /// Who the temporary folder's segments belong to: a folder left under another owner is cleared, because two sites can serve the same paths. By default the link's host and port. A caller that knows the link's site passes that instead, so a link refreshed to another host of the site keeps its segments.
+    pub work_owner: String,
 }
 
 impl StreamRequest {
@@ -268,6 +270,11 @@ impl StreamRequest {
     /// and default options. The rule is asked for here because only the caller
     /// knows who chose the link.
     pub fn new(url: Url, output: impl Into<PathBuf>, private_network: PrivateNetwork) -> Self {
+        let work_owner = format!(
+            "{}:{}",
+            url.host_str().unwrap_or_default(),
+            url.port_or_known_default().unwrap_or_default()
+        );
         Self {
             url,
             output: output.into(),
@@ -277,6 +284,7 @@ impl StreamRequest {
             private_network,
             options: DownloadOptions::default(),
             file_work: FileWork::new(),
+            work_owner,
         }
     }
 }

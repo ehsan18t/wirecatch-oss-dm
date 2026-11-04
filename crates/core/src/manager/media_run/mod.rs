@@ -49,6 +49,8 @@ struct Job {
     origin: Origin,
     /// Who chose the link, which decides the rule for the local network.
     chosen_by: ChosenBy,
+    /// Whose segments a stream's work folder holds, for [`StreamRequest::work_owner`].
+    work_owner: String,
     tools: Option<MediaTools>,
     options: DownloadOptions,
     temp_dir: PathBuf,
@@ -107,9 +109,10 @@ impl Manager {
         let manager = Arc::downgrade(&self.inner);
         let work = Job {
             output: entry.path().to_path_buf(),
-            url,
+            url: url.clone(),
             origin: entry.origin.clone(),
             chosen_by: entry.chosen_by,
+            work_owner: workdir::stream_owner(&url, &state.suffixes),
             tools: state.addon.tools.clone(),
             options,
             temp_dir: self.inner.temp_dir.clone(),
@@ -242,6 +245,7 @@ fn stream_request(job: &Job, staged: &Path, video: Pick, audio: Pick) -> StreamR
     request.ffmpeg = job.tools.as_ref().map(|t| t.ffmpeg.clone());
     request.options = job.options.clone();
     request.file_work = job.file_work.clone();
+    request.work_owner.clone_from(&job.work_owner);
     request
 }
 
