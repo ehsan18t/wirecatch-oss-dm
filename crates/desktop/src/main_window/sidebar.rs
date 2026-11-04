@@ -144,6 +144,7 @@ impl MainWindow {
                 item.bg(theme.sidebar_accent)
                     .text_color(theme.sidebar_accent_foreground)
                     .font_weight(FontWeight::MEDIUM)
+                    .hover(|item| item.bg(theme.sidebar_accent))
             })
             .when(!on_settings, |item| {
                 item.text_color(theme.muted_foreground)
@@ -183,7 +184,9 @@ impl MainWindow {
             .rounded(theme.radius)
             .cursor_pointer()
             .when(current, |item| {
-                item.bg(theme.sidebar_accent).text_color(theme.primary)
+                item.bg(theme.sidebar_accent)
+                    .text_color(theme.primary)
+                    .hover(|item| item.bg(theme.sidebar_accent))
             })
             .when(!current, |item| {
                 item.text_color(theme.muted_foreground)
@@ -296,10 +299,12 @@ impl MainWindow {
             .gap_2()
             .rounded(theme.radius)
             .cursor_pointer()
+            // GPUI keeps a hover's look until the mouse moves if the style first appears on leaving.
             .when(current, |item| {
                 item.bg(theme.sidebar_accent)
                     .text_color(theme.sidebar_accent_foreground)
                     .font_weight(FontWeight::MEDIUM)
+                    .hover(|item| item.bg(theme.sidebar_accent))
             })
             .when(!current, |item| {
                 item.text_color(theme.muted_foreground)
@@ -374,7 +379,7 @@ impl MainWindow {
             .cursor_pointer()
             .bg(behind)
             .when(!first, |item| item.border_t_1().border_color(theme.border))
-            .when(!current, |item| item.hover(move |item| item.bg(hovered)))
+            .hover(move |item| item.bg(if current { behind } else { hovered }))
             .when(current, |item| {
                 item.child(
                     div()

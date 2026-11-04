@@ -364,6 +364,7 @@ impl MainWindow {
             page: Some(page),
         };
         self.screen = Screen::Settings;
+        self.drawer = false;
         cx.notify();
     }
 
@@ -514,6 +515,7 @@ impl MainWindow {
 
     pub(super) fn open_screen(&mut self, screen: Screen, cx: &mut Context<'_, Self>) {
         self.screen = screen;
+        self.drawer = false;
         cx.notify();
     }
 
