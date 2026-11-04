@@ -77,7 +77,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 16. A very large HLS playlist freezes inspection for minutes to hours (open)
 17. A video with a web page or nothing in place of a segment is reported as complete (open)
 18. A lower-integrity program can stand in for the app and receive downloads' cookies (open)
-19. A DASH template can ask for an address of hundreds of gigabytes and abort the app (open)
+19. A DASH template can ask for an address of hundreds of gigabytes and abort the app (fixed)
 20. A failed flush while saving progress is forgotten (open)
 21. An expired redirect target fails a download whose link still works (fixed)
 22. One unreadable value in the list stops the app opening at every start (open)
