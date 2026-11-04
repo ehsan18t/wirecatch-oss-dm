@@ -35,8 +35,28 @@ pub enum AppImageError {
     },
 }
 
-/// Set by the AppImage runtime to the path of the `.AppImage` file.
-pub const APPIMAGE_VAR: &str = "APPIMAGE";
+/// Set by the AppImage runtime to the path of the `.AppImage` file. Every program it starts
+/// inherits this, a system package included, so it never proves this process runs from that file.
+pub(crate) const APPIMAGE_VAR: &str = "APPIMAGE";
+
+/// Set by the AppImage runtime to the folder the AppImage is mounted on.
+const APPDIR_VAR: &str = "APPDIR";
+
+/// The `.AppImage` file this process runs from, `None` when it runs from anything else.
+#[must_use]
+pub fn running_appimage() -> Option<PathBuf> {
+    let appimage = std::env::var_os(APPIMAGE_VAR)?;
+    // Canonical: the runtime's path may pass through a link, `current_exe` never does.
+    let mount = std::fs::canonicalize(std::env::var_os(APPDIR_VAR)?).ok()?;
+    let exe = std::env::current_exe()
+        .map_err(|e| tracing::warn!("could not find the app's own file: {e}"))
+        .ok()?;
+    appimage_of(&exe, &mount, appimage.into())
+}
+
+fn appimage_of(exe: &Path, mount: &Path, appimage: PathBuf) -> Option<PathBuf> {
+    (exe.starts_with(mount) && !appimage.as_os_str().is_empty()).then_some(appimage)
+}
 
 /// File name of the launcher script next to the private bridge: the app's, which the bridge
 /// starts from its own folder.
@@ -168,9 +188,58 @@ fn write_private(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::rename(&tmp, dest)
 }
 
+/// Runs one test of this binary in a child that inherited `APPIMAGE=other` and has no `APPDIR`,
+/// so no test changes this process's environment. Whether that test passed.
+#[cfg(test)]
+pub(crate) fn passes_with_inherited_appimage(test: &str, other: &Path) -> bool {
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", test])
+        .env(APPIMAGE_VAR, other)
+        .env_remove(APPDIR_VAR)
+        .output()
+        .unwrap();
+    // A misspelt name runs nothing and still exits with success.
+    output.status.success() && String::from_utf8_lossy(&output.stdout).contains("1 passed")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_program_inside_the_mount_runs_from_the_appimage() {
+        let appimage = PathBuf::from("/home/ana/Apps/Wirecatch.AppImage");
+        let mount = Path::new("/tmp/.mount_WirecaXYZ");
+        assert_eq!(
+            appimage_of(
+                Path::new("/tmp/.mount_WirecaXYZ/usr/bin/wirecatch-app"),
+                mount,
+                appimage.clone()
+            ),
+            Some(appimage.clone())
+        );
+        assert_eq!(
+            appimage_of(Path::new("/usr/bin/wirecatch-app"), mount, appimage.clone()),
+            None
+        );
+        // A folder whose name only starts the same is another folder.
+        assert_eq!(
+            appimage_of(
+                Path::new("/tmp/.mount_WirecaXYZ2/usr/bin/wirecatch-app"),
+                mount,
+                appimage
+            ),
+            None
+        );
+        assert_eq!(
+            appimage_of(
+                Path::new("/tmp/.mount_WirecaXYZ/usr/bin/wirecatch-app"),
+                mount,
+                PathBuf::new()
+            ),
+            None
+        );
+    }
 
     #[test]
     fn mounts_and_temporary_folders_are_never_registered() {

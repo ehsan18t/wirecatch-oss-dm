@@ -171,10 +171,7 @@ pub fn remove(name: &str) -> io::Result<()> {
 ///
 /// The system could not say where the running program is.
 pub fn program() -> io::Result<PathBuf> {
-    match std::env::var_os(crate::appimage::APPIMAGE_VAR) {
-        Some(appimage) if !appimage.is_empty() => Ok(PathBuf::from(appimage)),
-        _ => std::env::current_exe(),
-    }
+    crate::appimage::running_appimage().map_or_else(std::env::current_exe, Ok)
 }
 
 #[cfg(windows)]
@@ -429,5 +426,17 @@ mod tests {
         assert!(!desktop_entry_turned_off(
             "[Desktop Entry]\nExec=wirecatch-app --background"
         ));
+    }
+
+    #[test]
+    fn an_inherited_appimage_is_not_taken_as_this_program() {
+        if std::env::var_os(crate::appimage::APPIMAGE_VAR).is_some() {
+            assert_eq!(super::program().unwrap(), std::env::current_exe().unwrap());
+        } else {
+            assert!(crate::appimage::passes_with_inherited_appimage(
+                "autostart::tests::an_inherited_appimage_is_not_taken_as_this_program",
+                std::path::Path::new("/home/ana/Apps/Other.AppImage"),
+            ));
+        }
     }
 }

@@ -61,10 +61,10 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 
 1. Two downloads can end up writing the same file (open)
 2. Removing a finished download can delete a whole folder (open)
-3. A cut-off download of unknown size is reported as complete (open)
+3. A cut-off download of unknown size is reported as complete (fixed)
 4. A restart can mark a download finished on a file it never downloaded (open)
 5. A browser download that meets Ask is dropped and goes back to the browser (open)
-6. An inherited APPIMAGE variable can make the app overwrite or start another program (open)
+6. An inherited APPIMAGE variable can make the app overwrite or start another program (fixed)
 7. The app never looks for updates, and every proxy test fails (open)
 8. A move across drives can leave a cut-off file under the final name (open)
 9. Quitting during a move leaves the list pointing at the wrong place (open)
