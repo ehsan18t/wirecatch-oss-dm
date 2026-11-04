@@ -439,10 +439,7 @@ async fn a_waiting_file_belongs_to_its_link() {
     std::fs::write(dir.path().join("outside.ts"), b"x").unwrap();
     std::fs::write(
         work.join(workdir::PLACING),
-        format!(
-            "{mine}
-../outside.ts"
-        ),
+        format!("{}\n../outside.ts", placement::link_digest(mine.as_str())),
     )
     .unwrap();
     assert_eq!(waiting_to_place(&work, &mine).await, None);
