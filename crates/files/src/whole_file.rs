@@ -21,6 +21,19 @@ pub fn replace(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
+/// Puts what was written to the file at `path` on the disk, however it got there: a program that wrote it may have left it in memory. Blocks on the file system.
+///
+/// # Errors
+///
+/// When the file cannot be opened or flushed.
+pub fn flush(path: &Path) -> io::Result<()> {
+    // Write access: Windows refuses to flush a read-only handle.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)?
+        .sync_all()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
