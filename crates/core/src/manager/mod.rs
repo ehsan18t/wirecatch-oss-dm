@@ -151,9 +151,10 @@ pub const DEFAULT_MEDIA_REFRESH_DELAYS: [Duration; 6] = [
 impl ManagerConfig {
     /// A configuration using the real clock.
     pub fn new(data_dir: impl Into<PathBuf>, folders: KnownFolders) -> Self {
+        let data_dir = data_dir.into();
         Self {
-            data_dir: data_dir.into(),
-            folders,
+            folders: folders.protecting(data_dir.clone()),
+            data_dir,
             clock: Arc::new(SystemClock),
             stop_timeout: DEFAULT_STOP_TIMEOUT,
             capture_timeout: DEFAULT_CAPTURE_TIMEOUT,
