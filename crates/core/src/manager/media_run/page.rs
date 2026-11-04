@@ -118,6 +118,14 @@ pub(super) async fn page_attempt(
         // A format Wirecatch cannot fetch itself, or the page changed: yt-dlp
         // downloads the same selection. Its own requests are not covered by the
         // local network rule below (see `network_rule`); yt-dlp makes them.
+        // The engine would have taken a format with cookies but for them, so its address gets that rule's early check.
+        for url in found
+            .iter()
+            .filter(|f| f.cookies.is_some())
+            .filter_map(|f| Url::parse(f.url.as_deref()?).ok())
+        {
+            network_rule(job.chosen_by, &job.url, &url).await?;
+        }
         // yt-dlp joins two formats into the container its own table picks (AV1 with AAC into MP4); the offer named the shared policy's.
         let merge_into = (video.is_some() && audio.is_some())
             .then(|| joined_container(stored_kept_ext(page), job));

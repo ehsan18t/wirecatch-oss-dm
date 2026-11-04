@@ -1207,6 +1207,38 @@ async fn a_page_waits_for_the_add_on_and_continues_once_it_is_installed() -> Tes
     Ok(())
 }
 
+/// A format whose address needs cookies goes to yt-dlp, which holds them: the engine, which is never given a page's cookies, would only be refused.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_format_that_needs_cookies_is_left_to_yt_dlp() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    server.put("fmt/gated.mp4", mp4_data(64 * KIB_USIZE));
+    let info = serde_json::json!({
+        "title": "Signed in only",
+        "formats": [{"format_id": "0", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
+            "protocol": "https", "url": server.url("fmt/gated.mp4").as_str(),
+            "cookies": "sid=abc123; Domain=127.0.0.1; Path=/"}],
+    });
+    tell_tool(&h, "info.json", &info.to_string())?;
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(server.url("watch/91"), MediaKind::Page, None))
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    h.manager.choose_media(choice.id, select("0")).await?;
+    let id = h.manager.list_downloads()[0].id;
+
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+
+    assert_eq!(server.requests("fmt/gated.mp4"), 0);
+    assert_eq!(
+        std::fs::read_to_string(&done.path)?,
+        r#"downloaded by fake yt-dlp: b*[format_id="0"]"#
+    );
+    Ok(())
+}
+
 /// Runs a page whose two formats only yt-dlp can fetch, the video in `vcodec`, and returns the arguments yt-dlp downloaded with.
 async fn left_to_yt_dlp(vcodec: &str, page: &str) -> TestResult<Vec<String>> {
     let server = FileServer::start().await;
@@ -1549,6 +1581,40 @@ async fn a_page_on_the_internet_cannot_send_wirecatch_into_the_local_network() -
     );
     assert_eq!(server.requests("fmt/video.mp4"), 0);
     assert_eq!(server.requests("fmt/audio.m4a"), 0);
+    Ok(())
+}
+
+/// Cookies on a format send it to yt-dlp, whose requests the engine's block cannot reach, but never let a website's page name a local address.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_format_with_cookies_on_a_websites_page_cannot_name_the_local_network() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let info = serde_json::json!({
+        "title": "Signed in only",
+        "formats": [{"format_id": "0", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
+            "protocol": "https", "url": server.url("fmt/gated.mp4").as_str(),
+            "cookies": "sid=abc123; Domain=127.0.0.1; Path=/"}],
+    });
+    tell_tool(&h, "info.json", &info.to_string())?;
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(from_website(media_capture(
+            "http://93.184.215.14/watch?v=1",
+            MediaKind::Page,
+            None,
+        )))
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    h.manager.choose_media(choice.id, select("0")).await?;
+    let id = h.manager.list_downloads()[0].id;
+
+    let failed = h.wait_status(id, DownloadStatus::Failed).await;
+
+    let message = failed.error.ok_or("no error")?.message;
+    assert!(message.contains("your own network"), "{message}");
+    // Read for the choice and at the start; never run to download.
+    assert_eq!(ytdlp_calls(&h)?.len(), 2);
     Ok(())
 }
 
