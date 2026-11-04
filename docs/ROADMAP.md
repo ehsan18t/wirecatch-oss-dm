@@ -49,11 +49,15 @@ To fix:
 
 Not tested yet:
 
-- **A real update.** A successful download, install and restart has never run; the banner was only seen up to a failed checksum, with its stage seeded by a temporary change. It needs a signed release to test against.
+- **A real update.** A successful download, install and restart has never run; the banner was only seen up to a failed checksum, with its stage seeded by a temporary change. It needs a signed release to test against. The setup's side (its approval prompt, the wait and the restart after a failure, D111) has only been compiled.
 - **Real installers.** None has been built with the third-party notices (D117), so the first run of the release workflow is the first test of its Linux steps.
 - **Certificates on Linux (D116).** The change has run only in CI, not on a Linux computer.
 - **A video that fails before its window first reads the question.** The logic has a test; the timing was not reproduced.
 - **Light theme.** Of the screens changed on 2026-11-04, only the update banner, the list and the failed video note were seen in light theme.
+- **Uninstalling the real app.** Closing the app before an uninstall ran only with stand-in programs, for one account; not with the real app, administrator rights or programs of another account.
+- **A real yt-dlp.** It is not on the machine the fixes were made on, so `--playlist-items 1` (D120) and the `webm/mkv` merge fallback rest on its documentation and argument tests.
+- **A real SOCKS4 server.** Only a stub server was used, and its test can only catch the fault where `localhost` answers IPv6 first.
+- **A full disk and a real Ctrl+C.** Both are covered only by unit tests.
 
 Audit fixes, in the order to fix them. Findings, proofs and fix directions are in `docs/audit/runs/2026-11-desktop/AUDIT-LOG.md`.
 
@@ -67,12 +71,12 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 6. An inherited APPIMAGE variable can make the app overwrite or start another program (fixed)
 7. The app never looks for updates, and every proxy test fails (fixed)
 8. A move across drives can leave a cut-off file under the final name (fixed)
-9. Quitting during a move leaves the list pointing at the wrong place (fixed)
+9. Quitting during a move leaves the list pointing at the wrong place, partly fixed, a copy longer than the quit limit needs PR-10 (open)
 10. The quit time limit does not end the process (open)
 11. "If the file is already in the folder" is skipped for names from the link or browser (open)
 12. A settings file can send downloads into folders whose programs the app runs (fixed)
 13. Replace on a file with another extension downloads everything again and strands the old folder (fixed)
-14. A new media download can save another download's video (fixed)
+14. A new media download can save another download's video, partly fixed, streams still rely on the fingerprint (open)
 15. Typing a space in search pauses downloads, and Enter can open a file (open)
 16. A very large HLS playlist freezes inspection for minutes to hours (fixed)
 17. A video with a web page or nothing in place of a segment is reported as complete (fixed)
@@ -303,6 +307,14 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 242. Two test helpers wait for progress with no deadline (open)
 243. A roaming data folder that could not be deleted keeps the list with its cookies (fixed)
 244. The `<local>` queue rule is never tested against the real network check (fixed)
+245. A crash can save a download twice under a second name (open)
+246. A killed copy leaves its temporary file behind (open)
+247. Test comments carry history and review labels (open)
+248. Nothing stops new code deleting a whole folder (open)
+249. The timing check misses a throttled server racing an action (open)
+250. The capture reply's doc contradicts the extension (open)
+251. The layout test can fail on a font that did not load (open)
+252. A quit during a removal can leave part files behind (open)
 
 Done before the release:
 

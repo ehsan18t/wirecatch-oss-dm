@@ -9,7 +9,7 @@ The result of the code audit of the `desktop` scope, on branch `docs/record-open
 - **Disproved:** 2 (`12-5`, `B01-2`), listed at the end.
 - **Downgraded:** 29. Also, 10 reports were raised to match the severity of the bug they repeat.
 - **Final severity of the 401 reports left:** 4 P0, 34 P1, 180 P2, 183 P3.
-- **Fix items:** 244. 3 P0, 19 P1, 116 P2, 106 P3. An item takes the highest severity of its findings.
+- **Fix items:** 244. 3 P0, 19 P1, 116 P2, 106 P3. An item takes the highest severity of its findings. 8 more were found while fixing (245 to 252).
 
 **What the audit established.** Every chunk and flow was read by one reader and checked by a second who tried to disprove each finding. All 25 patches behind the P0 and P1 findings were rerun in one clean build at `5cb4b35f5`, with the same code the verdicts judged, and each failed as claimed. The real downloader survived dropped connections, ranges that stop working, lying sizes, a file changing mid-download, files over 4 GiB and killed processes, with two small exceptions (`F-1`, `F-2`).
 
@@ -33,12 +33,12 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 6   | An inherited APPIMAGE variable can make the app overwrite or start another program                | `12-1` `Xpath-app-update-4` `Xsecurity-update-signatures-2` `B05-1`                                | P1       | small  | P1, 4 findings; must land before item 7 switches updates on                                                      | `12-1`                                        | fixed  |
 | 7   | The app never looks for updates, and every proxy test fails                                       | `Xfeature-behaviour-1` `Xpath-app-update-1` `Xsecurity-update-signatures-1` `Xfeature-behaviour-2` | P1       | small  | P1, 4 findings; right after the item that makes updates safe to switch on                                        | `Xfeature-behaviour-1` `Xfeature-behaviour-2` | fixed  |
 | 8   | A move across drives can leave a cut-off file under the final name                                | `Xsecond-review-disk-writes-7` `Xcrash-and-resume-4`                                               | P2       | medium | P2 placed early: ending the process at the quit limit would make this cut-off file reachable on an ordinary quit | none                                          | fixed  |
-| 9   | Quitting during a move leaves the list pointing at the wrong place                                | `Xshutdown-1` `Xconcurrency-4`                                                                     | P1       | medium | P1; needs the staged copy, and shapes what the quit limit waits for                                              | `Xshutdown-1`                                 | fixed  |
+| 9   | Quitting during a move leaves the list pointing at the wrong place                                | `Xshutdown-1` `Xconcurrency-4`                                                                     | P1       | medium | P1; needs the staged copy, and shapes what the quit limit waits for                                              | `Xshutdown-1`                                 | open   |
 | 10  | The quit time limit does not end the process                                                      | `Xshutdown-3` `22-1` `B10-2` `22-7`                                                                | P1       | medium | P1, 4 findings; its two blockers sit just above it                                                               | `Xshutdown-3`                                 | open   |
 | 11  | "If the file is already in the folder" is skipped for names from the link or browser              | `05-2` `Xpath-normal-download-1` `B01-1`                                                           | P1       | medium | P1, 3 findings; after the items its fix would otherwise make common                                              | `05-2`                                        | open   |
 | 12  | A settings file can send downloads into folders whose programs the app runs                       | `Xsecurity-path-handling-2` `Xsecurity-addon-unpacking-1` `B12-1`                                  | P1       | medium | P1, 3 findings, medium                                                                                           | `Xsecurity-path-handling-2`                   | fixed  |
 | 13  | Replace on a file with another extension downloads everything again and strands the old folder    | `17-2` `Xpath-media-download-5`                                                                    | P2       | medium | P2 placed early: it strands the folders that the next item trusts                                                | `17-2`                                        | fixed  |
-| 14  | A new media download can save another download's video                                            | `17-1` `Xsecond-review-resume-2` `Xpath-media-download-6`                                          | P1       | medium | P1, 3 findings, medium; after item 13                                                                            | `17-1`                                        | fixed  |
+| 14  | A new media download can save another download's video                                            | `17-1` `Xsecond-review-resume-2` `Xpath-media-download-6`                                          | P1       | medium | P1, 3 findings, medium; after item 13                                                                            | `17-1`                                        | open   |
 | 15  | Typing a space in search pauses downloads, and Enter can open a file                              | `25-1` `B13-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `25-1`                                        | open   |
 | 16  | A very large HLS playlist freezes inspection for minutes to hours                                 | `14-2` `B08-1`                                                                                     | P1       | small  | P1, 2 findings, small                                                                                            | `14-2`                                        | fixed  |
 | 17  | A video with a web page or nothing in place of a segment is reported as complete                  | `15-1` `B06-1`                                                                                     | P1       | medium | P1, 2 findings, medium                                                                                           | `15-1`                                        | fixed  |
@@ -269,6 +269,14 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 242 | Two test helpers wait for progress with no deadline                                               | `01-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 243 | A roaming data folder that could not be deleted keeps the list with its cookies                   | `Xdatabase-migrations-4`                                                                           | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 244 | The `<local>` queue rule is never tested against the real network check                           | `M-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 245 | A crash can save a download twice under a second name                                             | found while fixing                                                                                 | P2       | medium | Found by the fault tests while fixing.                                                                           | open                                          |
+| 246 | A killed copy leaves its temporary file behind                                                    | found while fixing                                                                                 | P2       | small  | Found by review of PR-08.                                                                                        | open                                          |
+| 247 | Test comments carry history and review labels                                                     | found while fixing                                                                                 | P3       | small  | Found while fixing PR-18.                                                                                        | open                                          |
+| 248 | Nothing stops new code deleting a whole folder                                                    | found while fixing                                                                                 | P3       | medium | Left out of PR-02.                                                                                               | open                                          |
+| 249 | The timing check misses a throttled server racing an action                                       | found while fixing                                                                                 | P3       | medium | Found by review of PR-01 and PR-47.                                                                              | open                                          |
+| 250 | The capture reply's doc contradicts the extension                                                 | found while fixing                                                                                 | P3       | small  | Found by review of PR-70.                                                                                        | open                                          |
+| 251 | The layout test can fail on a font that did not load                                              | found while fixing                                                                                 | P3       | small  | Seen once on CI, on a change with no extension code.                                                             | open                                          |
+| 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | open                                          |
 
 ## Items
 
@@ -424,7 +432,9 @@ P2, medium, fixed.
 
 ### 9. Quitting during a move leaves the list pointing at the wrong place
 
-P1, medium, fixed.
+P1, medium, open.
+
+**Left to do:** A copy shorter than the quit limit now finishes first. A copy longer than `QUIT_PATIENCE` still ends with the row naming a file that is gone, because the timeout drops `shutdown` and `finish_move` never runs. PR-10 finishes this.
 
 `shutdown` collects only `run.exited` and does not wait for `Hold::Moving`, and `finish_move`'s save reaches a closed store. The reopened row names a path with no file (finished) or the old folder with its part file in the new one (partial). The file still exists.
 
@@ -513,7 +523,9 @@ P2, medium, fixed.
 
 ### 14. A new media download can save another download's video
 
-P1, medium, fixed.
+P1, medium, open.
+
+**Left to do:** A page video's work folder is now tied to its link. A stream's folder still relies on the fingerprint alone, so this is left to PR-122.
 
 `downloaded.json` and `.done` markers name no link, and `unclaimed_path` allows the name. A link never read completed by using what another download left in `Clip.mp4.wcmedia`, with no yt-dlp call or request, and overwrote the file at that name under Replace. A stream's fingerprint has the same gap, though it needs two sites with the same paths, piece count and final name.
 
@@ -4370,6 +4382,115 @@ All three mutants of `is_on_own_network` survive: `queues` tests `<local>` with 
 **Findings:**
 
 - `M-4`: real gap, P3. The <local> queue rule is never tested against the real network check. Full text in `verdicts/mutation.md`, verdict in `verdicts/mutation.md`.
+
+### 245. A crash can save a download twice under a second name
+
+P2, medium, open.
+
+Row saves are queued. A kill after a run renames its file but before its `writing` record reaches disk leaves the file looking like another program's, so the restart saves a second copy such as `f11 (1).bin`. Nothing is lost, and it has only shown on CI. `kills_during_a_burst_of_short_downloads_lose_or_double_nothing` accepts a doubled name until this is fixed.
+
+**Fix:** Put the record on disk before the rename, then make the test refuse a doubled name again.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/manager, the run's `writing` record and the rename that finishes a download; crates/core/tests/fault_kill.rs.
+
+### 246. A killed copy leaves its temporary file behind
+
+P2, small, open.
+
+A move across drives copies to `.wirecatch-move-N` beside the target. A kill during the copy leaves that file, which can be many GB. Nothing reads it and names never collide, so only the space is lost.
+
+**Fix:** Clean these files up at the next start, with the record PR-97 adds.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/manager, move_files; crates/files.
+
+### 247. Test comments carry history and review labels
+
+P3, small, open.
+
+Test comments near the integrity checks hold labels such as "W4I review" and "IPB-9", which the comment rule forbids.
+
+**Fix:** Rewrite them as facts in the present tense, or delete them.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/ipc/src/windows.rs, tests; crates/bridge/src/app.rs, tests.
+
+### 248. Nothing stops new code deleting a whole folder
+
+P3, medium, open.
+
+PR-02 fixed the path that could delete a folder, but a lint on `remove_dir_all` was left out because about 20 callers would each need an exception, and it would not cover `discard::dir` callers anyway.
+
+**Fix:** Route the callers through one helper, then forbid the direct call, or record why not.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/files; callers in crates/addons, crates/shell, crates/streams, tests and examples.
+
+### 249. The timing check misses a throttled server racing an action
+
+P3, medium, open.
+
+A test that lets a throttled server finish while it waits to act fails on correct code on a busy runner, and `test-timing` does not see it. `crates/core/tests/manager/lifecycle.rs` still has this pattern.
+
+**Fix:** Add the check to `test-timing`, and hold the server in the tests it finds.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** scripts/gate; crates/core/tests/manager/lifecycle.rs.
+
+### 250. The capture reply's doc contradicts the extension
+
+P3, small, open.
+
+The `Started` doc says only then may the extension erase its copy, but `apps/extension/src/lib/capture/handover.ts` erases it on `queued` as well.
+
+**Fix:** Say what the extension does, or make it wait, and record which.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/protocol/src/extension.rs, Started; apps/extension/src/lib/capture/handover.ts.
+
+### 251. The layout test can fail on a font that did not load
+
+P3, small, open.
+
+`e2e/layout.spec.ts` failed because DejaVu Sans was not loaded. The cause was not looked into, and it has not been seen again.
+
+**Fix:** Find why the font can be missing, and have the test wait for it or refuse to run without it.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** apps/extension/e2e/layout.spec.ts.
+
+### 252. A quit during a removal can leave part files behind
+
+P3, small, open.
+
+`shutdown` does not wait for a removal's file deletion, so a quit or crash during it leaves part files with no row. The record of the removal is kept until it ends, so no row comes back.
+
+**Fix:** Finish the deletion at the next start from that record, or have `shutdown` wait for it.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/manager/downloads.rs, finish_removing; manager/mod.rs, shutdown.
+
+## Fixed beyond the items
+
+Faults found while fixing and fixed in the same pull request:
+
+- A retry `200` longer than the kept bytes, with nothing to compare, was spliced on and ended Completed with mixed content. It now restarts from byte 0 (#313).
+- A failed flush kept downloading to the end and lost all of it; the run now stops (#322).
+- Replace could resume a part file another link left beside the target (#297).
+- A saved video could fail while a virus scanner held the file open (#306).
+- A failed add-on update check dropped the existing offer (#311).
+- An HLS playlist at the track limit could still take quadratic work (#271).
+- A direct local address with cookies skipped the local network check (#287). The same address reached by a redirect under yt-dlp is left to PR-95.
+- yt-dlp's single proxy followed the first page, so a scheme with no proxy went direct (#324). A page on the exceptions still goes direct with everything it fetches, as D73.6 records.
 
 ## Suggestions
 

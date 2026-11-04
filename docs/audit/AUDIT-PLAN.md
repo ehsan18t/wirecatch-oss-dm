@@ -264,5 +264,7 @@ Turn the valid findings into one exact fix order. This is a stage of its own bec
 Fixes work from `WORK-LIST.md`: take the first open pull request whose dependencies are merged, make its branch from main and start from its proof.
 
 - **Status** of an item is `open`, `fixed` or `won't fix (reason)`. In the pull request that finishes an item, mark it in `AUDIT-LOG.md` and in `docs/ROADMAP.md`, and mark the pull request `merged` in `WORK-LIST.md`. Items fixed together are marked together.
+- **An item fixed only in part stays open,** with what is left written under it and in `WORK-LIST.md`. A fault found while fixing, and not fixed in that pull request, becomes a new item.
+- **Merging several pull requests at once:** compile them combined with main first, since two that each pass alone can still break main together.
 - **Before starting a pull request,** check that each of its items still applies, since an earlier fix may have resolved or changed it. If one does not, mark it in the log rather than fixing it.
 - **No new audit starts** until every item is fixed or marked won't fix.
