@@ -1070,7 +1070,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Chunk 20: logging-and-secrets           | done        |
 | 1     | Chunk 21: engine-ftp                    | done        |
 | 1     | Chunk 22: app-start-and-quit            | pending     |
-| 1     | Chunk 23: interface-commands-and-ui-kit | pending     |
+| 1     | Chunk 23: interface-commands-and-ui-kit | done        |
 | 1     | Chunk 24: download-windows              | pending     |
 | 1     | Chunk 25: main-window                   | pending     |
 | 1     | Chunk 26: notifications-and-tray        | pending     |
