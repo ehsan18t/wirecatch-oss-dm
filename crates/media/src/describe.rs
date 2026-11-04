@@ -46,7 +46,7 @@ pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
             limit.as_secs()
         )),
         YtDlpError::Stalled(_) => retry("The media add-on stopped answering. Try again.".into()),
-        YtDlpError::Refused { reason } => retry(format!(
+        YtDlpError::Refused { reason } | YtDlpError::AddressRefused { reason, .. } => retry(format!(
             "The media add-on could not get the video from this page ({reason}). Check that the video plays in your browser; if it does, update the media add-on in Settings > Media, then try again."
         )),
         YtDlpError::BadOutput(e) => {
@@ -197,6 +197,17 @@ pub fn refused_after_refreshing(status: Option<u16>) -> UserError {
     retry(format!(
         "The video's server kept refusing to send the video{answered}, even though Wirecatch tried again automatically several times with fresh addresses from the page. Sites sometimes refuse one video for a while. Try again later; what was already downloaded is kept."
     ))
+}
+
+/// The page stopped listing a download's formats and offers nothing else of the `quality` chosen. Trying again cannot help.
+#[must_use]
+pub fn quality_gone(quality: &str) -> UserError {
+    UserError {
+        message: format!(
+            "This page no longer offers this video at {quality}. Remove this download and add the video again from its page to choose another quality."
+        ),
+        fix: None,
+    }
 }
 
 /// The page gave a format an address that is not a valid link.

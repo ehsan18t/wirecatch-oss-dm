@@ -116,6 +116,14 @@ pub enum YtDlpError {
         /// What yt-dlp said, without its `ERROR:` prefix.
         reason: String,
     },
+    /// While downloading, the server refused an address, or the page no longer had the format: a fresh read of the page may give ones that work.
+    #[error("yt-dlp could not get the video: {reason}")]
+    AddressRefused {
+        /// The status the server answered, when yt-dlp says one.
+        status: Option<u16>,
+        /// What yt-dlp said, without its `ERROR:` prefix.
+        reason: String,
+    },
     /// yt-dlp printed something that is not a page description.
     #[error("yt-dlp printed something that is not a page description")]
     BadOutput(#[source] serde_json::Error),
@@ -142,6 +150,26 @@ impl YtDlpError {
             },
         }
     }
+}
+
+/// The answers that say an address stopped leading to its file, whoever downloads it: a fresh one from the page usually works.
+pub const REFUSED_ADDRESS_STATUSES: [u16; 4] = [401, 403, 404, 410];
+
+/// How yt-dlp says a selection names no format the page lists now. yt-dlp reports causes only as text.
+const FORMAT_GONE: &str = "requested format is not available";
+
+/// A download's address stopped working, with the status the server answered, if any.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RefusedAddress(Option<u16>);
+
+/// What `line`, yt-dlp's error while downloading, says about the address; `None` when it is about something else.
+fn refused_address(line: &str) -> Option<RefusedAddress> {
+    let line = line.to_ascii_lowercase();
+    REFUSED_ADDRESS_STATUSES
+        .iter()
+        .find(|status| line.contains(&format!("http error {status}")))
+        .map(|status| RefusedAddress(Some(*status)))
+        .or_else(|| line.contains(FORMAT_GONE).then_some(RefusedAddress(None)))
 }
 
 /// Why one run of yt-dlp gave no result.
@@ -197,6 +225,18 @@ impl Attempt {
     fn into_error(self) -> YtDlpError {
         match self {
             Attempt::NeedsSignIn(e) | Attempt::Failed(e) => e,
+        }
+    }
+
+    /// The same attempt, its refusal naming a refused address with `status`.
+    fn of_address(self, RefusedAddress(status): RefusedAddress) -> Self {
+        let named = |error| match error {
+            YtDlpError::Refused { reason } => YtDlpError::AddressRefused { status, reason },
+            other => other,
+        };
+        match self {
+            Attempt::NeedsSignIn(e) => Attempt::NeedsSignIn(named(e)),
+            Attempt::Failed(e) => Attempt::Failed(named(e)),
         }
     }
 }
@@ -326,6 +366,28 @@ pub(crate) fn proxy_environment(ctx: &Context<'_>) -> Vec<(OsString, Option<OsSt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_download_error_names_a_refused_address_only_when_it_says_so() {
+        for (line, read) in [
+            (
+                "ERROR: unable to download: HTTP Error 403: Forbidden",
+                Some(RefusedAddress(Some(403))),
+            ),
+            (
+                "ERROR: HTTP Error 410: Gone",
+                Some(RefusedAddress(Some(410))),
+            ),
+            (
+                "ERROR: [site] x: Requested format is not available. Use --list-formats",
+                Some(RefusedAddress(None)),
+            ),
+            ("ERROR: HTTP Error 500: Internal Server Error", None),
+            ("ERROR: unable to write the file", None),
+        ] {
+            assert_eq!(refused_address(line), read, "{line}");
+        }
+    }
 
     #[test]
     fn youtube_is_read_without_the_browser_sign_in_first() {

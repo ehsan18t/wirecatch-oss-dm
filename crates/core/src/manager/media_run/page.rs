@@ -8,9 +8,8 @@ use wirecatch_engine::{
     CancellationToken, DownloadOptions, DownloadRequest, Error as EngineError, Outcome,
     PrivateNetwork, Progress, Url,
 };
-use wirecatch_media::describe;
-use wirecatch_media::ytdlp::{self, Fetched, Format, FormatId, Transport};
-use wirecatch_media::{Content, MediaProgress, safe_ext};
+use wirecatch_media::ytdlp::{self, Fetched, Format, FormatId, Info, Transport, YtDlpError};
+use wirecatch_media::{Content, MediaProgress, choice, describe, safe_ext};
 use wirecatch_protocol::app::UserError;
 use wirecatch_protocol::extension::Header;
 use wirecatch_streams::{StreamProgress, StreamRequest};
@@ -79,8 +78,6 @@ pub(super) async fn page_attempt(
         progress.add_done(bytes);
         return Ok(save(job, page, tools, &downloaded, &work, progress, cancel).await?);
     }
-    let (video, audio) = (&page.video, &page.audio);
-    let format = &ytdlp::selection(video.as_ref(), audio.as_ref());
     let cookies = cookie_header(&job.origin);
     let proxy = wirecatch_settings::proxy::ytdlp_proxy(&job.options.proxy, &job.url);
     let ctx = ytdlp::Context {
@@ -98,6 +95,7 @@ pub(super) async fn page_attempt(
         .map_err(|e| describe::ytdlp(&e, tools))?;
     // What an earlier attempt showed goes; this one adds its own parts.
     progress.start_over();
+    let (video, audio) = &formats_now(job, page, &info, &work).await?;
     let formats = info.all_formats();
     let wanted: Vec<&FormatId> = [video, audio].into_iter().flatten().collect();
     let found: Vec<&Format> = wanted
@@ -115,8 +113,8 @@ pub(super) async fn page_attempt(
             None => return Ok(MediaDone::Paused),
         }
     } else {
-        // A format Wirecatch cannot fetch itself, or the page changed: yt-dlp
-        // downloads the same selection. Its own requests are not covered by the
+        // A format Wirecatch cannot fetch itself: yt-dlp downloads the same
+        // selection. Its own requests are not covered by the
         // local network rule below (see `network_rule`); yt-dlp makes them.
         // The engine would have taken a format with cookies but for them, so its address gets that rule's early check.
         for url in found
@@ -129,12 +127,14 @@ pub(super) async fn page_attempt(
         // yt-dlp joins two formats into the container its own table picks (AV1 with AAC into MP4); the offer named the shared policy's.
         let merge_into = (video.is_some() && audio.is_some())
             .then(|| joined_container(stored_kept_ext(page), job));
-        match ytdlp::download(&ctx, format, merge_into, &work, progress, cancel)
-            .await
-            .map_err(|e| describe::ytdlp(&e, tools))?
-        {
-            Fetched::Done(file) => vec![file],
-            Fetched::Cancelled => return Ok(MediaDone::Paused),
+        let format = ytdlp::selection(video.as_ref(), audio.as_ref());
+        match ytdlp::download(&ctx, &format, merge_into, &work, progress, cancel).await {
+            Ok(Fetched::Done(file)) => vec![file],
+            Ok(Fetched::Cancelled) => return Ok(MediaDone::Paused),
+            Err(YtDlpError::AddressRefused { status, .. }) => {
+                return Err(PageError::Refused { status });
+            }
+            Err(e) => return Err(describe::ytdlp(&e, tools).into()),
         }
     };
     let mut downloaded = Downloaded::of_media(&files);
@@ -148,6 +148,28 @@ pub(super) async fn page_attempt(
         .await
         .map_err(|e| disk(&e, &job.output))?;
     Ok(save(job, page, tools, &downloaded, &work, progress, cancel).await?)
+}
+
+/// The formats this attempt downloads: the saved ones while the page lists them, else what it offers now at the row's quality. A page with none of that quality ends the download, since no try can change it.
+async fn formats_now(
+    job: &Job,
+    page: &PageJob,
+    info: &Info,
+    work: &Path,
+) -> Result<(Option<FormatId>, Option<FormatId>), PageError> {
+    let listed = info.all_formats();
+    let lists = |id: &FormatId| listed.iter().any(|f| &f.id == id);
+    if [&page.video, &page.audio].into_iter().flatten().all(lists) {
+        return Ok((page.video.clone(), page.audio.clone()));
+    }
+    let (video, audio) = choice::formats_of_quality(info, &job.quality)
+        .ok_or_else(|| describe::quality_gone(&job.quality))?;
+    let ids = ytdlp::ids(video.as_ref(), audio.as_ref());
+    warn!(%ids, "the page no longer lists the saved formats; taking its formats of the same quality");
+    workdir::claim_for_formats(work, &job.url, &ids)
+        .await
+        .map_err(|e| disk(&e, &job.output))?;
+    Ok((video, audio))
 }
 
 /// Downloads the formats `found` side by side into `work`: their files, in the
@@ -232,6 +254,7 @@ pub(super) async fn fetch_part(
         request.options = options;
         // A format's address moves between CDNs when the page is read again; the page's link stays.
         request.work_owner.clone_from(&job.work_owner);
+        request.file_work = job.file_work.clone();
         let stream = Arc::new(StreamProgress::default());
         progress.add_stream(stream.clone());
         // Boxed: a download's state is tens of kilobytes, which every future
@@ -239,6 +262,9 @@ pub(super) async fn fetch_part(
         match Box::pin(wirecatch_streams::download(request, stream, cancel.clone())).await {
             Ok(wirecatch_streams::Outcome::Completed { path, .. }) => path,
             Ok(_) | Err(wirecatch_streams::Error::Cancelled) => return Ok(None),
+            Err(wirecatch_streams::Error::Request(e)) if address_gone(&e) => {
+                return Err(refused(&e));
+            }
             Err(e) => {
                 return Err(describe::stream(&e, work, job.tools.as_ref(), job.chosen_by).into());
             }
@@ -262,13 +288,7 @@ pub(super) async fn fetch_part(
             Err(EngineError::PrivateNetwork { .. }) => {
                 return Err(wirecatch_messages::private_network(job.chosen_by).into());
             }
-            Err(e) if address_gone(&e) => {
-                let status = match e {
-                    EngineError::HttpStatus { status, .. } => Some(status),
-                    _ => None,
-                };
-                return Err(PageError::Refused { status });
-            }
+            Err(e) if address_gone(&e) => return Err(refused(&e)),
             Err(e) => {
                 let folder = job.output.parent().unwrap_or(Path::new(""));
                 let error =
@@ -304,16 +324,23 @@ async fn holds_no_media(job: &Job, path: &Path) -> Result<bool, PageError> {
 /// A format address the server refused, or one that no longer leads to the file: a fresh one
 /// from the page usually works.
 pub(super) fn address_gone(e: &EngineError) -> bool {
-    matches!(
-        e,
-        EngineError::HttpStatus {
-            status: 401 | 403 | 404 | 410,
-            ..
-        } | EngineError::InvalidUrl(_)
-            | EngineError::TooManyRedirects { .. }
-            | EngineError::RedirectWithoutLocation { .. }
-            | EngineError::TargetRejected(_)
-    )
+    match e {
+        EngineError::HttpStatus { status, .. } => ytdlp::REFUSED_ADDRESS_STATUSES.contains(status),
+        EngineError::InvalidUrl(_)
+        | EngineError::TooManyRedirects { .. }
+        | EngineError::RedirectWithoutLocation { .. }
+        | EngineError::TargetRejected(_) => true,
+        _ => false,
+    }
+}
+
+/// The attempt's end for `e`, an [`address_gone`] error.
+fn refused(e: &EngineError) -> PageError {
+    let status = match e {
+        EngineError::HttpStatus { status, .. } => Some(*status),
+        _ => None,
+    };
+    PageError::Refused { status }
 }
 
 /// The request options for one format: the format's own headers only (the
