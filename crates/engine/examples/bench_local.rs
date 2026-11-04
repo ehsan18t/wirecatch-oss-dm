@@ -19,7 +19,7 @@ use std::error::Error;
 use std::io::Write;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use wirecatch_engine::numeric::{approx_f64, saturating_cast};
 use wirecatch_engine::units::{MIB, MIB_USIZE};
@@ -256,7 +256,6 @@ async fn serve(port: u16, cap_mib: u64) -> Result<()> {
                 );
             }
         });
-        tokio::time::sleep(Duration::ZERO).await;
     }
 }
 
