@@ -406,6 +406,50 @@ async fn a_path_another_download_took_is_not_replaced_kept_or_asked_about() {
     }
 }
 
+/// A folder that is slow to answer holds only its own download: other work on the runtime goes on.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn names_are_checked_on_disk_off_the_async_threads() {
+    let gate = Arc::new(Notify::new());
+    let engine = answers_on_cue(gate.clone(), "report.pdf");
+    let (manager, _dir) =
+        manager_with(engine, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/get?id=1"))
+        .await
+        .unwrap();
+    let run_id = manager.lock().downloads[&id].run.as_ref().unwrap().id;
+
+    let (told, entered) = tokio::sync::oneshot::channel::<()>();
+    let told = std::sync::Mutex::new(Some(told));
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    let settling = {
+        let manager = manager.clone();
+        tokio::spawn(async move {
+            let free_on_disk = move |_: &Path| {
+                if let Some(told) = told.lock().unwrap().take() {
+                    told.send(()).unwrap();
+                }
+                // The disk answers only once the runtime's one worker has run the task below.
+                held.lock()
+                    .unwrap()
+                    .recv_timeout(PATIENCE)
+                    .expect("the runtime stalled while the disk was checked");
+                true
+            };
+            manager.settle_path_checking(id, run_id, &answer("report.pdf"), &free_on_disk)
+        })
+    };
+    entered.await.unwrap();
+    let other_work = tokio::spawn(async move { release.send(()) });
+    let path = settling.await.unwrap();
+    other_work.await.unwrap().unwrap();
+    assert!(
+        path.is_ok(),
+        "the runtime stalled while the disk was checked"
+    );
+}
+
 /// A client sending a list longer than the list may hold is answered while the manager's lock is held elsewhere: the list is refused before the lock is taken, so such a request never waits for it nor holds it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_list_of_sites_too_long_is_refused_without_the_lock() {
