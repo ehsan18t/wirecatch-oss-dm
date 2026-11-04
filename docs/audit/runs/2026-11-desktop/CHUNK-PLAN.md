@@ -1046,7 +1046,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 0     | Feature map (`FEATURES.md`)             | done        |
 | 0     | Tool: `cargo llvm-cov`                  | done        |
 | 0     | Tool: `jscpd`                           | done        |
-| 0     | Tool: `cargo-mutants`                   | in progress |
+| 0     | Tool: `cargo-mutants`                   | done        |
 | 0     | Fault tests (`fault-tests.md`)          | done        |
 | 1     | Chunk 01: engine-disk-resume (pilot)    | done        |
 | 1     | Chunk 02: engine-http                   | done        |
