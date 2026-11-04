@@ -34,7 +34,7 @@ pub enum InstallError {
 pub fn install_kind() -> Option<FileKind> {
     if cfg!(windows) {
         Some(FileKind::Setup)
-    } else if std::env::var_os(crate::appimage::APPIMAGE_VAR).is_some() {
+    } else if crate::appimage::running_appimage().is_some() {
         Some(FileKind::AppImage)
     } else {
         None
@@ -97,9 +97,7 @@ fn run_setup(_installer: &Path) -> Result<(), InstallError> {
 fn replace_appimage(installer: &Path) -> Result<(), InstallError> {
     use std::os::unix::fs::PermissionsExt as _;
 
-    let current = std::env::var_os(crate::appimage::APPIMAGE_VAR)
-        .map(PathBuf::from)
-        .ok_or(InstallError::NotAppImage)?;
+    let current = crate::appimage::running_appimage().ok_or(InstallError::NotAppImage)?;
     let folder = current.parent().ok_or(InstallError::NotAppImage)?;
     let staged = folder.join(".wirecatch-update.AppImage");
     let failed = |source: std::io::Error| InstallError::Replace {
@@ -118,4 +116,37 @@ fn replace_appimage(installer: &Path) -> Result<(), InstallError> {
 #[cfg(not(unix))]
 fn replace_appimage(_installer: &Path) -> Result<(), InstallError> {
     Err(InstallError::AppImageElsewhere)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    const OTHER_PROGRAM: &[u8] = b"#!/bin/sh\n# another program\n";
+
+    #[test]
+    fn an_update_does_not_overwrite_the_program_named_by_an_inherited_variable() {
+        const NAME: &str = "updates::tests::an_update_does_not_overwrite_the_program_named_by_an_inherited_variable";
+        let installer_beside = |other: &Path| other.with_file_name("new.AppImage");
+        match std::env::var_os(crate::appimage::APPIMAGE_VAR) {
+            None => {
+                let dir = tempfile::tempdir().unwrap();
+                let other = dir.path().join("Other.AppImage");
+                std::fs::write(&other, OTHER_PROGRAM).unwrap();
+                std::fs::write(installer_beside(&other), b"#!/bin/sh\n# the update\n").unwrap();
+                assert!(crate::appimage::passes_with_inherited_appimage(
+                    NAME, &other
+                ));
+                assert_eq!(std::fs::read(&other).unwrap(), OTHER_PROGRAM);
+            }
+            Some(other) => {
+                let installer = installer_beside(Path::new(&other));
+                assert!(matches!(
+                    replace_appimage(&installer),
+                    Err(InstallError::NotAppImage)
+                ));
+                assert_eq!(install_kind(), None);
+            }
+        }
+    }
 }
