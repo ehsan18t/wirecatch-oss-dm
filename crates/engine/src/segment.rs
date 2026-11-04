@@ -164,6 +164,13 @@ impl SegmentTable {
         seg.claimed = seg.flushed;
     }
 
+    /// Makes segment `index` of a file of unknown size start again from byte 0.
+    pub fn start_over(&mut self, index: usize) {
+        let seg = &mut self.segments[index];
+        seg.claimed = 0;
+        seg.flushed = 0;
+    }
+
     /// Hands a segment back. Bytes claimed but never flushed are forgotten so the
     /// next owner fetches them again.
     pub fn release(&mut self, index: usize) {

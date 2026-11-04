@@ -142,6 +142,16 @@ impl Body {
         }
     }
 
+    /// Where the bytes of this answer end, when its headers say. HTTP/3 and FTP bodies do not.
+    pub fn answer_end(&self) -> Option<u64> {
+        match self {
+            Body::Http { response, .. } => http::content_range(response.headers())?.end,
+            Body::Ftp(_) => None,
+            #[cfg(feature = "http3")]
+            Body::Http3(_) => None,
+        }
+    }
+
     /// For a body arriving over HTTP/3: gives up HTTP/3 for the rest of the
     /// download because of `why`, and returns true, so the caller carries on
     /// over TCP. False for any other body.
