@@ -262,15 +262,14 @@ async fn a_stalled_program_keeps_what_it_wrote() -> TestResult {
         )
         .await
     });
+    // Both lines, in either order: its outputs are read apart, and a line heard after the clock moved would put the limit out of reach of a clock nothing moves again.
     within_patience(async {
-        while let Some(line) = lines.recv().await {
-            if line.starts_with("Opening input") {
-                break;
-            }
+        for _ in ["Opening input", "ready"] {
+            lines.recv().await;
         }
     })
     .await
-    .map_err(|_| format!("the program wrote nothing within {PATIENCE:?}"))?;
+    .map_err(|_| format!("the program did not write its lines within {PATIENCE:?}"))?;
     tokio::time::advance(SHORT).await;
     let ran = within_patience(ran)
         .await
