@@ -1086,12 +1086,12 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Flow `path-app-update`                  | done        |
 | 1     | Flow `feature-behaviour`                | pending     |
 | 1     | Flow `crash-and-resume`                 | done        |
-| 1     | Flow `shutdown`                         | pending     |
+| 1     | Flow `shutdown`                         | done        |
 | 1     | Flow `concurrency`                      | pending     |
 | 1     | Flow `database-migrations`              | done        |
 | 1     | Flow `security-bridge-and-pipe-input`   | pending     |
 | 1     | Flow `security-path-handling`           | pending     |
-| 1     | Flow `security-update-signatures`       | pending     |
+| 1     | Flow `security-update-signatures`       | done        |
 | 1     | Flow `security-addon-unpacking`         | pending     |
 | 1     | Flow `repeated-logic`                   | pending     |
 | 1     | Flow `second-review-resume`             | pending     |
