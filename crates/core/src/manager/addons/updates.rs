@@ -193,6 +193,7 @@ impl Manager {
         let cancel = self.inner.stopped.child_token();
         let proxy = self.lock().app_proxy();
         let mut options = crate::headers::download_options(ADDON_NETWORK, proxy);
+        options.retry_backoff = self.inner.retry_backoff;
         options.headers.insert(
             ACCEPT,
             HeaderValue::from_static("application/vnd.github+json"),
