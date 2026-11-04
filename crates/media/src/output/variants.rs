@@ -61,6 +61,18 @@ pub(crate) fn kept_ext(video: Option<&Format>, audio: Option<&Format>) -> String
     }
 }
 
+/// Whether ffmpeg may read what `format` downloads: a format that names no extension is judged by its bytes once it is on disk.
+pub(crate) fn ffmpeg_may_read(format: &Format) -> bool {
+    format.ext.as_deref().is_none_or(is_media_ext)
+}
+
+/// The only choice for a source ffmpeg may not read: the Original, kept as it came, with nothing put inside.
+fn as_it_comes(mut original: Variant) -> Vec<Variant> {
+    original.fit.embeds_subtitles = false;
+    original.fit.chapters = false;
+    vec![original]
+}
+
 /// The lowest video bit rate a re-encode is given, in kbps.
 const MIN_VIDEO_KBPS: u32 = 300;
 /// The highest video bit rate a re-encode is given, in kbps.
@@ -178,7 +190,7 @@ pub(crate) fn video_variants(
     let mut variants = Vec::with_capacity(4);
     // Original: the streams of the Original choice, in their own container.
     let own = Container::from_ext(original_ext);
-    variants.push(variant(
+    let kept = variant(
         OutputFormat::Original,
         own.unwrap_or(Container::Mkv),
         original,
@@ -186,13 +198,19 @@ pub(crate) fn video_variants(
         original_ext,
         own,
         duration_ms,
-    ));
+    );
+    if !ffmpeg_may_read(original.0) {
+        return as_it_comes(kept);
+    }
+    variants.push(kept);
     for (format, container) in [
         (OutputFormat::Mp4, Container::Mp4),
         (OutputFormat::Mkv, Container::Mkv),
         (OutputFormat::Webm, Container::Webm),
     ] {
-        let fits = |f: &&Format| video_codec(f).is_some_and(|c| container.holds_video(c));
+        let fits = |f: &&Format| {
+            ffmpeg_may_read(f) && video_codec(f).is_some_and(|c| container.holds_video(c))
+        };
         let audio_fits = |f: &&Format| audio_codec(f).is_some_and(|c| container.holds_audio(c));
         // MKV holds anything, so it keeps the original streams.
         let video = if container == Container::Mkv {
@@ -326,7 +344,15 @@ pub(crate) fn audio_variants(
         duration_ms,
     );
     first.fit.chapters = own.is_some_and(Container::chapters);
+    if !ffmpeg_may_read(original) {
+        return as_it_comes(first);
+    }
     variants.push(first);
+    let audios: Vec<&Format> = audios
+        .iter()
+        .copied()
+        .filter(|a| ffmpeg_may_read(a))
+        .collect();
     let best = best_by_rate(audios.iter().copied()).unwrap_or(original);
     for (format, container) in [
         (OutputFormat::Mp3, Container::Mp3),

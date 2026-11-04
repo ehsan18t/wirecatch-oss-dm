@@ -1,10 +1,11 @@
 //! HTTP requests: client setup, the first request, and ranged requests.
 
+use std::borrow::Cow;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use base64::Engine as _;
-use percent_encoding::percent_decode_str;
+use percent_encoding::{CONTROLS, percent_decode_str, percent_encode};
 use reqwest::header::{
     ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE, DATE,
     DNT, ETAG, HeaderMap, HeaderName, HeaderValue, LAST_MODIFIED, LOCATION, PRAGMA, RANGE, REFERER,
@@ -49,6 +50,15 @@ const PORTABLE_HEADERS: [HeaderName; 7] = [
     USER_AGENT,
 ];
 
+/// A header value as text: UTF-8 when its bytes are, otherwise Latin-1, which HTTP once specified. `HeaderValue::to_str` refuses any raw byte above 126, which servers send.
+pub(crate) fn header_text(value: &HeaderValue) -> Cow<'_, str> {
+    let bytes = value.as_bytes();
+    match std::str::from_utf8(bytes) {
+        Ok(text) => Cow::Borrowed(text),
+        Err(_) => Cow::Owned(bytes.iter().copied().map(char::from).collect()),
+    }
+}
+
 /// Values that change when the file on the server changes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Validators {
@@ -63,12 +73,7 @@ pub struct Validators {
 
 impl Validators {
     pub(crate) fn from_headers(headers: &HeaderMap) -> Self {
-        let text = |name| {
-            headers
-                .get(name)
-                .and_then(|v: &HeaderValue| v.to_str().ok())
-                .map(str::to_string)
-        };
+        let text = |name| headers.get(name).map(|v| header_text(v).into_owned());
         let time = |name| httpdate::parse_http_date(text(name)?.trim()).ok();
         let strong_modified = match (time(LAST_MODIFIED), time(DATE)) {
             (Some(modified), Some(sent)) if modified + Duration::from_secs(1) <= sent => {
@@ -149,8 +154,7 @@ impl Failure {
         let retry_after = is_busy(status)
             .then(|| headers.get(RETRY_AFTER))
             .flatten()
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| parse_retry_after(v, SystemTime::now()));
+            .and_then(|v| parse_retry_after(&header_text(v), SystemTime::now()));
         // Only a proxy answers 407; a server asking for a login answers 401.
         let error = if status == StatusCode::PROXY_AUTHENTICATION_REQUIRED {
             Error::ProxyLoginRefused
@@ -233,7 +237,7 @@ impl RequestHeaders {
 /// `https://site.example/page?x` becomes `https://site.example/`, the form
 /// browsers send to other origins. Anything unparsable is dropped.
 fn referer_origin(value: &HeaderValue) -> Option<HeaderValue> {
-    let url = Url::parse(value.to_str().ok()?).ok()?;
+    let url = Url::parse(&header_text(value)).ok()?;
     if !matches!(url.scheme(), "http" | "https") {
         return None;
     }
@@ -373,10 +377,10 @@ pub(crate) async fn send(
             .into());
         }
         hops += 1;
-        let next = location
-            .to_str()
+        // Raw bytes go back as they came: read as text and encoded again, a Latin-1 path would name another address.
+        let next = url
+            .join(&percent_encode(location.as_bytes(), CONTROLS).to_string())
             .ok()
-            .and_then(|l| url.join(l).ok())
             .filter(|next| matches!(next.scheme(), "http" | "https"))
             .ok_or_else(|| {
                 Error::InvalidUrl(format!(
@@ -451,12 +455,10 @@ async fn probe_range(
     let validators = Validators::from_headers(response_headers);
     let file_name = response_headers
         .get(CONTENT_DISPOSITION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(naming::from_content_disposition);
+        .and_then(|v| naming::from_content_disposition(&header_text(v)));
     let content_type = response_headers
         .get(CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
+        .map(|v| header_text(v).into_owned());
 
     let mut limited_without_size = false;
     let (ranged, total) = match status {

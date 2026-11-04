@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use wirecatch_streams::{Error, Outcome, Role};
+use wirecatch_streams::{Error, InputFormat, Outcome, Role, extension, ffmpeg_input_args};
 use wirecatch_test_support::files::FileServer;
 use wirecatch_test_support::{PrivateDir, TestResult, private_dir, real_ffmpeg, ts_segment};
 
@@ -342,8 +342,8 @@ fn one_segment(server: &FileServer, payload: impl Into<bytes::Bytes>) {
 async fn a_track_in_an_unknown_format_is_never_given_to_ffmpeg() {
     let ffmpeg = fake_ffmpeg().unwrap();
     let server = FileServer::start().await;
-    // An ffconcat script would make ffmpeg read whatever files it names.
-    one_segment(&server, "ffconcat version 1.0\nfile secret.mp4\n");
+    // An ffconcat script would make ffmpeg read whatever files it names. A control byte, which no text has, leaves it to the format check.
+    one_segment(&server, "ffconcat version 1.0\u{1}\nfile secret.mp4\n");
     let dir = private_dir("ffmpeg-unknown").unwrap();
     let output = dir.join("clip.mp4");
     let mut request = request(server.url("index.m3u8"), &output);
@@ -386,12 +386,10 @@ async fn real_ffmpeg_does_not_follow_a_manifest_disguised_as_a_segment() {
         status.success(),
         "ffmpeg could not generate the secret file"
     );
-    // A DASH manifest naming that file. The leading comment puts `free` at
-    // bytes 4 to 8, so the segment looks like MP4 and passes the format check;
-    // ffmpeg left to guess would read it as DASH and copy the file in.
+    // A DASH manifest naming that file. The leading comment puts `free` at bytes 4 to 8 and a control byte, which no text has, so the segment passes as MP4; ffmpeg left to guess would read it as DASH and copy the file in.
     let target = secret.to_string_lossy().replace('\\', "/");
     let payload = format!(
-        "<!--free--><MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" \
+        "<!--free\u{1}--><MPD xmlns=\"urn:mpeg:dash:schema:mpd:2011\" \
          profiles=\"urn:mpeg:dash:profile:isoff-on-demand:2011\" type=\"static\" \
          mediaPresentationDuration=\"PT1S\" minBufferTime=\"PT1S\"><Period>\
          <AdaptationSet mimeType=\"video/mp4\" contentType=\"video\">\
@@ -415,4 +413,134 @@ async fn real_ffmpeg_does_not_follow_a_manifest_disguised_as_a_segment() {
     }
     dir.remove().unwrap();
     elsewhere.remove().unwrap();
+}
+
+/// A real ffmpeg copies past a damaged part and reports success, so a page in place of a segment has to be caught before it runs.
+#[tokio::test]
+async fn real_ffmpeg_never_sees_a_page_in_place_of_a_segment() -> TestResult {
+    const SEGMENT_TYPES: [(&str, &[&str]); 2] = [
+        ("s%d.ts", &[]),
+        (
+            "s%d.m4s",
+            &[
+                "-hls_segment_type",
+                "fmp4",
+                "-hls_fmp4_init_filename",
+                "init.mp4",
+            ],
+        ),
+    ];
+    let Some(ffmpeg) = real_ffmpeg() else {
+        return Ok(());
+    };
+    for (n, (segment, extra)) in SEGMENT_TYPES.into_iter().enumerate() {
+        let source = private_dir(&format!("page-in-a-track-source-{n}"))?;
+        let made = Command::new(&ffmpeg)
+            .current_dir(source.path())
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi"])
+            .args(["-i", "testsrc=duration=6:size=160x120:rate=10"])
+            .args(["-c:v", "mpeg4", "-bsf:v", "dump_extra", "-g", "10"])
+            .args(["-f", "hls", "-hls_time", "2", "-hls_playlist_type", "vod"])
+            .args(extra)
+            .args(["-hls_segment_filename", segment, "index.m3u8"])
+            .status()?;
+        assert!(made.success());
+        let page = segment.replace("%d", "1");
+        let server = FileServer::start().await;
+        for entry in std::fs::read_dir(source.path())? {
+            let path = entry?.path();
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or("a file without a name")?
+                .to_owned();
+            let bytes = std::fs::read(&path)?;
+            if name == page {
+                server.put(&name, b"<!doctype html><html>Sign in.</html>".to_vec());
+            } else if path.extension().is_some_and(|e| e == "m3u8") {
+                server.put_typed(&name, bytes, MPEGURL);
+            } else {
+                server.put(&name, bytes);
+            }
+        }
+        let dir = private_dir(&format!("page-in-a-track-{n}"))?;
+        let mut asked = request(server.url("index.m3u8"), dir.join("clip"));
+        asked.ffmpeg = Some(ffmpeg.clone());
+        let got = run(asked).await;
+        assert!(
+            matches!(got, Err(Error::NotMedia { .. })),
+            "{segment}: {got:?}"
+        );
+    }
+    Ok(())
+}
+
+/// Every extension a saved file may have is recognised as the format the list names, and a real ffmpeg reads such a file with that format's demuxer, the only one it is allowed.
+#[test]
+fn real_ffmpeg_reads_every_media_extension_as_the_format_listed() -> TestResult {
+    const VIDEO: &[&str] = &["-f", "lavfi", "-i", "testsrc=duration=1:size=64x48:rate=5"];
+    const AUDIO: &[&str] = &["-f", "lavfi", "-i", "sine=duration=1"];
+    let Some(ffmpeg) = real_ffmpeg() else {
+        return Ok(());
+    };
+    let samples: [(&str, &[&str], &[&str]); 18] = [
+        ("mp4", VIDEO, &["-c:v", "mpeg4"]),
+        ("m4v", VIDEO, &["-c:v", "mpeg4", "-f", "mp4"]),
+        ("mkv", VIDEO, &["-c:v", "mpeg4"]),
+        ("mka", AUDIO, &["-c:a", "aac"]),
+        ("webm", VIDEO, &["-c:v", "libvpx", "-b:v", "100k"]),
+        ("mov", VIDEO, &["-c:v", "mpeg4"]),
+        ("ts", VIDEO, &["-c:v", "mpeg4"]),
+        (
+            "m2ts",
+            VIDEO,
+            &["-c:v", "mpeg4", "-f", "mpegts", "-mpegts_m2ts_mode", "1"],
+        ),
+        ("mp3", AUDIO, &["-c:a", "libmp3lame"]),
+        ("m4a", AUDIO, &["-c:a", "aac"]),
+        ("aac", AUDIO, &["-c:a", "aac", "-f", "adts"]),
+        ("opus", AUDIO, &["-c:a", "libopus"]),
+        ("ogg", AUDIO, &["-c:a", "libvorbis"]),
+        ("flac", AUDIO, &["-c:a", "flac"]),
+        ("wav", AUDIO, &["-c:a", "pcm_s16le"]),
+        (
+            "3gp",
+            VIDEO,
+            &["-c:v", "h263", "-s", "176x144", "-f", "3gp"],
+        ),
+        ("flv", VIDEO, &["-c:v", "flv1"]),
+        ("avi", VIDEO, &["-c:v", "mpeg4"]),
+    ];
+    let mut with_sample: Vec<&str> = samples.iter().map(|(ext, _, _)| *ext).collect();
+    let mut listed: Vec<&str> = extension::media().collect();
+    with_sample.sort_unstable();
+    listed.sort_unstable();
+    assert_eq!(
+        with_sample, listed,
+        "every media extension needs a sample here"
+    );
+    let dir = private_dir("every-media-extension")?;
+    for (ext, input, output) in samples {
+        let listed = extension::read_as(ext).ok_or(format!("{ext} is not listed"))?;
+        let file = dir.join(format!("sample.{ext}"));
+        let made = Command::new(&ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error", "-y"])
+            .args(input)
+            .args(output)
+            .arg(&file)
+            .status()?;
+        // Some builds of ffmpeg leave out an encoder; the sample then says nothing.
+        if !made.success() {
+            eprintln!("skipped {ext}: this ffmpeg could not make a sample");
+            continue;
+        }
+        assert_eq!(InputFormat::detect(&file)?, Some(listed), "{ext}");
+        let read = Command::new(&ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error"])
+            .args(ffmpeg_input_args(listed, &file)?)
+            .args(["-c", "copy", "-f", "null", "-"])
+            .status()?;
+        assert!(read.success(), "{ext}");
+    }
+    Ok(())
 }

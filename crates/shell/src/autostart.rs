@@ -318,19 +318,27 @@ fn desktop_entry(name: &str, program: &Path) -> String {
 
 /// `text` as one word of a `.desktop` file's `Exec` line (the Desktop Entry Specification):
 /// quoted when it holds a reserved character, and `%` doubled, which the line reads as a field code.
+/// The file's own string escape comes on top of the quoting, so every backslash is doubled.
 #[cfg(any(not(windows), test))]
 fn exec_word(text: &str) -> String {
-    const RESERVED: &str = " \t\n\"'\\><~|&;$*?#()`";
+    const RESERVED: &str = " \t\n\r\"'\\><~|&;$*?#()`";
     let text = text.replace('%', "%%");
     if !text.chars().any(|c| RESERVED.contains(c)) {
         return text;
     }
     let mut quoted = String::from('"');
     for c in text.chars() {
-        if matches!(c, '"' | '`' | '$' | '\\') {
-            quoted.push('\\');
+        match c {
+            '\\' => quoted.push_str(r"\\\\"),
+            // A raw line break would end the entry's line.
+            '\n' => quoted.push_str(r"\n"),
+            '\r' => quoted.push_str(r"\r"),
+            '"' | '`' | '$' => {
+                quoted.push_str(r"\\");
+                quoted.push(c);
+            }
+            _ => quoted.push(c),
         }
-        quoted.push(c);
     }
     quoted.push('"');
     quoted
@@ -338,6 +346,8 @@ fn exec_word(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn the_uninstaller_asks_the_app_to_remove_its_entry() {
         let installer = include_str!("../../desktop/packaging/windows/installer.iss");
@@ -345,14 +355,99 @@ mod tests {
         assert!(!installer.contains("StartupApproved"));
     }
 
-    use super::*;
-
     #[test]
     fn the_windows_entry_quotes_the_program() {
         assert_eq!(
             windows_command(Path::new(r"C:\Program Files\Wirecatch\wirecatch.exe")),
             r#""C:\Program Files\Wirecatch\wirecatch.exe" --background"#
         );
+    }
+
+    /// Records what it was asked to do, and fails when told to.
+    #[derive(Default)]
+    struct FakeLauncher {
+        fails: bool,
+        calls: std::cell::RefCell<Vec<&'static str>>,
+    }
+
+    impl FakeLauncher {
+        fn answer(&self, call: &'static str) -> std::io::Result<()> {
+            self.calls.borrow_mut().push(call);
+            if self.fails {
+                Err(std::io::Error::other("refused"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    impl Launcher for FakeLauncher {
+        fn enable(&self) -> std::io::Result<()> {
+            self.answer("enable")
+        }
+
+        fn disable(&self) -> std::io::Result<()> {
+            self.answer("disable")
+        }
+    }
+
+    async fn manager(dir: &std::path::Path) -> Manager {
+        let mut config = wirecatch_core::ManagerConfig::new(
+            dir.join("data"),
+            wirecatch_core::KnownFolders::under_home(dir),
+        );
+        config.addon_sources.ytdlp_releases = None;
+        Manager::open(config).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn applying_a_step_writes_or_removes_the_entry() {
+        let dir = wirecatch_test_support::private_dir("autostart").unwrap();
+        let manager = manager(dir.path()).await;
+        let launcher = FakeLauncher::default();
+        let wrote = apply(&launcher, &manager, EntryState::Missing, true, false).unwrap();
+        let removed = apply(&launcher, &manager, EntryState::On, false, false).unwrap();
+        let idle = apply(&launcher, &manager, EntryState::Missing, false, false).unwrap();
+        assert_eq!(
+            [wrote, removed, idle],
+            [Action::Write, Action::Remove, Action::Nothing]
+        );
+        assert_eq!(*launcher.calls.borrow(), ["enable", "disable"]);
+    }
+
+    #[tokio::test]
+    async fn an_entry_turned_off_elsewhere_turns_the_setting_off_and_stays() {
+        let dir = wirecatch_test_support::private_dir("autostart").unwrap();
+        let manager = manager(dir.path()).await;
+        manager
+            .change_settings(AppSettingsPatch {
+                start_with_system: Some(true),
+                ..AppSettingsPatch::default()
+            })
+            .unwrap();
+        let launcher = FakeLauncher::default();
+        let action = apply(&launcher, &manager, EntryState::TurnedOff, true, false).unwrap();
+        assert_eq!(action, Action::TurnSettingOff);
+        assert!(!manager.get_settings().start_with_system);
+        assert!(launcher.calls.borrow().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_refused_step_says_which_one() {
+        let dir = wirecatch_test_support::private_dir("autostart").unwrap();
+        let manager = manager(dir.path()).await;
+        let launcher = FakeLauncher {
+            fails: true,
+            ..FakeLauncher::default()
+        };
+        assert!(matches!(
+            apply(&launcher, &manager, EntryState::Missing, true, false),
+            Err(AutostartError::Write(_))
+        ));
+        assert!(matches!(
+            apply(&launcher, &manager, EntryState::On, false, false),
+            Err(AutostartError::Remove(_))
+        ));
     }
 
     #[test]
@@ -363,8 +458,10 @@ mod tests {
         );
         assert_eq!(
             exec_word("/home/a b/Wirecatch $1 \"x\".AppImage"),
-            r#""/home/a b/Wirecatch \$1 \"x\".AppImage""#
+            r#""/home/a b/Wirecatch \\$1 \\"x\\".AppImage""#
         );
+        assert_eq!(exec_word(r"/opt/a\b"), r#""/opt/a\\\\b""#);
+        assert_eq!(exec_word("/opt/a\nb\rc"), r#""/opt/a\nb\rc""#);
         assert_eq!(exec_word("/opt/100%/w"), "/opt/100%%/w");
     }
 
