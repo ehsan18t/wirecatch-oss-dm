@@ -71,7 +71,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 10. The quit time limit does not end the process (open)
 11. "If the file is already in the folder" is skipped for names from the link or browser (open)
 12. A settings file can send downloads into folders whose programs the app runs (open)
-13. Replace on a file with another extension downloads everything again and strands the old folder (open)
+13. Replace on a file with another extension downloads everything again and strands the old folder (fixed)
 14. A new media download can save another download's video (open)
 15. Typing a space in search pauses downloads, and Enter can open a file (open)
 16. A very large HLS playlist freezes inspection for minutes to hours (fixed)
