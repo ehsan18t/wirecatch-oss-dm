@@ -287,6 +287,22 @@ async fn removing_an_unfinished_download_never_deletes_someone_elses_file() -> T
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removing_an_unfinished_download_leaves_a_folder_named_like_its_part_file() -> TestResult {
+    let h = Harness::new().await?;
+    let row = h
+        .add_with("https://example.com/report.pdf", |r| r.start = false)
+        .await?;
+    let [part, _] = partial_files(&row.path);
+    std::fs::create_dir_all(&part)?;
+    std::fs::write(part.join("thesis.docx"), b"their work")?;
+
+    h.manager.remove(&[row.id], RemoveFiles::Delete).await?;
+
+    assert!(part.join("thesis.docx").exists(), "the folder was deleted");
+    Ok(())
+}
+
 /// A download window cancels by removing without the file, so a download that finished before
 /// the window heard keeps its file.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -710,5 +726,22 @@ async fn a_download_without_a_browser_agent_names_the_app() -> TestResult {
             expected.as_str()
         );
     }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removing_a_finished_download_with_its_file_leaves_a_folder_at_that_path() -> TestResult {
+    let server = fast_server(8 * KIB).await?;
+    let h = Harness::new().await?;
+    let row = h.add(&server.url("data")).await?;
+    let row = h.wait_status(row.id, DownloadStatus::Completed).await;
+    let path = std::path::PathBuf::from(&row.path);
+    std::fs::rename(&path, path.with_extension("zip"))?;
+    std::fs::create_dir(&path)?;
+    std::fs::write(path.join("thesis.docx"), b"their work")?;
+
+    h.manager.remove(&[row.id], RemoveFiles::Delete).await?;
+
+    assert!(path.join("thesis.docx").exists(), "the folder was deleted");
     Ok(())
 }
