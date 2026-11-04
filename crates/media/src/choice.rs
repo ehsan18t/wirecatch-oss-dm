@@ -686,6 +686,15 @@ mod tests {
     }
 
     #[test]
+    fn top_level_audio_is_offered_as_audio() {
+        let offers = from_page(&info(
+            r#"{"title":"T","url":"https://x.example/a.mp3","ext":"mp3","vcodec":"none","acodec":"mp3","protocol":"https"}"#,
+        ))
+        .unwrap();
+        assert!(offers[0].0.audio_only, "{}", offers[0].0.label);
+    }
+
+    #[test]
     fn separate_video_and_audio_are_paired_best_first() {
         let info = info(
             r#"{"title":"T","formats":[
