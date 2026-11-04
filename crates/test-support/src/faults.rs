@@ -644,6 +644,19 @@ impl Running {
         self.child.wait().unwrap();
     }
 
+    /// [`wait`](Self::wait), for a test.
+    ///
+    /// # Panics
+    ///
+    /// It did not end in time.
+    #[must_use]
+    pub fn ended(self, bound: Duration) -> Ran {
+        match self.wait(bound) {
+            Ok(ran) => ran,
+            Err(e) => panic!("the run hung: {e}"),
+        }
+    }
+
     /// Waits for the process to end by itself, under `bound`.
     ///
     /// # Errors
