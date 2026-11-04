@@ -242,8 +242,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 215 | A top-level domain held only through a wildcard counts as a local name                            | `10-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 216 | direct_uses_no_proxy passes whatever Direct does                                                  | `09-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 217 | Module docs describe proxy behaviour that has changed                                             | `09-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 218 | A proxy test cancelled by quitting is saved as its last result                                    | `19-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 219 | A test named for keeping the last result does not check it                                        | `19-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 218 | A proxy test cancelled by quitting is saved as its last result                                    | `19-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 219 | A test named for keeping the last result does not check it                                        | `19-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 220 | Copy from system turns a SOCKS4 server into a SOCKS5 profile                                      | `B15-2`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 221 | An impossible port is saved as the usual port without a word                                      | `27-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 222 | A file name or host holding a secret word loses the rest of its log line                          | `20-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -3941,7 +3941,7 @@ The `proxy.rs` header says FTP is refused while `ftp_route` carries it, and the 
 
 ### 218. A proxy test cancelled by quitting is saved as its last result
 
-P3, small, open.
+P3, small, fixed.
 
 `test_one` turns `Cancelled` into `Unreachable`, and `keep_test` saves it with no check of `closed`. It is a race with the store closing.
 
@@ -3957,7 +3957,7 @@ P3, small, open.
 
 ### 219. A test named for keeping the last result does not check it
 
-P3, small, open.
+P3, small, fixed.
 
 The last assertion reads only the return of `test_proxy_server`, so removing that `keep_test` call leaves every test passing.
 
