@@ -1157,3 +1157,34 @@ async fn a_key_error_names_only_the_host() {
     assert!(!error.to_string().contains("SECRET"), "{error}");
     dir.remove().unwrap();
 }
+
+/// A refused key and a refused segment name their address in the engine's error, whose signature must not reach what a person reads.
+#[tokio::test]
+async fn a_refused_address_shows_no_signature() {
+    let server = FileServer::start().await;
+    for (name, playlist, refused) in [
+        (
+            "key.m3u8",
+            "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k?token=SECRET\"\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n",
+            "k",
+        ),
+        (
+            "seg.m3u8",
+            "#EXTM3U\n#EXTINF:1,\ngone.ts?token=SECRET\n#EXT-X-ENDLIST\n",
+            "gone.ts",
+        ),
+    ] {
+        server.put_typed(name, playlist, MPEGURL);
+        server.put(refused, b"never sent".to_vec());
+        server.fail(refused, 100, 403);
+        server.put("s.ts", ts_segment(1, 1000));
+        let dir = private_dir("hls-no-signature").unwrap();
+        let error = run(request(server.url(name), dir.join("v.ts")))
+            .await
+            .unwrap_err();
+        let shown = error.to_string();
+        assert!(!shown.contains("SECRET"), "{shown}");
+        assert!(shown.contains("403"), "{shown}");
+        dir.remove().unwrap();
+    }
+}

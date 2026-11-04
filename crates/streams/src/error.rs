@@ -247,13 +247,15 @@ struct Chain<'a>(&'a dyn std::error::Error);
 
 impl std::fmt::Display for Chain<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)?;
+        let mut whole = self.0.to_string();
         let mut cause = self.0.source();
         while let Some(error) = cause {
-            write!(f, ": {error}")?;
+            whole.push_str(": ");
+            whole.push_str(&error.to_string());
             cause = error.source();
         }
-        Ok(())
+        // Shown to a person, and an engine error names the signed address it fetched.
+        f.write_str(&wirecatch_logging::redact::text_for_log(&whole))
     }
 }
 
