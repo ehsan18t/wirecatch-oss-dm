@@ -57,7 +57,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 30  | The window redoes whole-list work on every frame and progress tick                                | `25-6` `26-7` `27-8` `B13-3`                                                                       | P2       | large  | P2, 4 findings, large                                                                                            | none                                          | open   |
 | 31  | The Add dialog's link rule leaves out ftpes, so such links cannot be added                        | `22-2` `Xrepeated-logic-1` `Xpath-normal-download-4`                                               | P2       | small  | P2, 3 findings, small                                                                                            | none                                          | open   |
 | 32  | A raw non-ASCII byte or another charset in a header loses the file name or fails a redirect       | `02-2` `B11-1` `01-7`                                                                              | P2       | small  | P2, 3 findings, small                                                                                            | `02-2` `B11-1` `01-7`                         | fixed  |
-| 33  | Failing to delete a temporary file turns a saved video into a failure                             | `15-2` `Xsecond-review-disk-writes-6` `B06-2`                                                      | P2       | small  | P2, 3 findings, small                                                                                            | none                                          | open   |
+| 33  | Failing to delete a temporary file turns a saved video into a failure                             | `15-2` `Xsecond-review-disk-writes-6` `B06-2`                                                      | P2       | small  | P2, 3 findings, small                                                                                            | none                                          | fixed  |
 | 34  | A damaged or squatted key does not lead the bridge to start the app and renew it                  | `06-1` `08-3` `B04-2`                                                                              | P2       | small  | P2, 3 findings, small                                                                                            | `B04-p2-checks`                               | open   |
 | 35  | An open file-exists question outlives the download state it asked about                           | `04-4` `05-7` `Xconcurrency-8`                                                                     | P2       | medium | P2, 3 findings, medium                                                                                           | `04-4`                                        | open   |
 | 36  | Proxy exceptions are accepted that can never match                                                | `09-3` `19-3` `19-5`                                                                               | P2       | medium | P2, 3 findings, medium                                                                                           | none                                          | open   |
@@ -91,10 +91,10 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 64  | No test covers control characters in names or a part file that cannot be created                  | `M-1` `M-3`                                                                                        | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 65  | Ctrl+C in the CLI can exit with the wrong code or abort                                           | `32-2` `32-3`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 66  | Keep existing, Replace and captures leave the wrong category on the row                           | `05-11` `07-4`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
-| 67  | A finished media file is not flushed before its sources are deleted                               | `Xsecond-review-disk-writes-3` `Xsecond-review-resume-7`                                           | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
+| 67  | A finished media file is not flushed before its sources are deleted                               | `Xsecond-review-disk-writes-3` `Xsecond-review-resume-7`                                           | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 68  | Leftover proxy code from the earlier form has no caller                                           | `19-8` `Xrepeated-logic-7` `B05-2`                                                                 | P3       | small  | P3 placed here: removing the third copy comes before the fix to the live one                                     | none                                          | open   |
 | 69  | yt-dlp ignores proxy exceptions and the page's scheme                                             | `19-4` `B15-1`                                                                                     | P2       | small  | P2, 2 findings, small; after item 68                                                                             | none                                          | open   |
-| 70  | Choosing a path blocks an async thread on the disk, so a dead share stalls every command          | `05-9` `Xconcurrency-5`                                                                            | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
+| 70  | Choosing a path blocks an async thread on the disk, so a dead share stalls every command          | `05-9` `Xconcurrency-5`                                                                            | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 71  | A passing read error or a failed rename deletes a download's data                                 | `Xsecond-review-resume-4` `Xsecond-review-disk-writes-5`                                           | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
 | 72  | The app quits before the Windows setup has asked for approval, so a refusal reaches no one        | `Xpath-app-update-2` `Xsecurity-update-signatures-5`                                               | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
 | 73  | An AppImage restart can be lost while the old copy exits                                          | `12-3` `Xpath-app-update-3`                                                                        | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
@@ -224,7 +224,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 197 | Sizes and bit rates a page chooses are added without a check                                      | `16-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | `B07-p2-tests`                                | open   |
 | 198 | The key error prints the whole signed address                                                     | `14-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 199 | On Linux, media programs may outlive an app ended by a signal                                     | `Xshutdown-4`                                                                                      | P3       | medium | P3, 1 finding, medium                                                                                            | none                                          | open   |
-| 200 | Placing a finished video has its own weaker no-replace move                                       | `Xrepeated-logic-4`                                                                                | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 200 | Placing a finished video has its own weaker no-replace move                                       | `Xrepeated-logic-4`                                                                                | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 201 | Moving a finished video leaves its subtitle files behind                                          | `B10-1`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 202 | A failed browser registration logs no reason                                                      | `22-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 203 | The autostart Exec line escapes reserved characters once                                          | `22-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -852,7 +852,7 @@ P2, small, fixed.
 
 ### 33. Failing to delete a temporary file turns a saved video into a failure
 
-P2, small, open.
+P2, small, fixed.
 
 `work.remove()?` follows the move, so failing to delete the temporary folder after a video is saved turns the row Failed. Failing to delete a decrypted segment's part file also stops the download with a disk error (`B06-2`). The likely trigger on Windows is a scanner holding a file.
 
@@ -1447,7 +1447,7 @@ P2, small, open.
 
 ### 67. A finished media file is not flushed before its sources are deleted
 
-P2, small, open.
+P2, small, fixed.
 
 No `sync_all` appears in the path after `ffmpeg::run`, `merge::join` or yt-dlp, and `finish` and `join` delete the sources at once. A power cut can lose both the output and its sources. The engine and `concat` do flush. Not run, since it needs a power cut.
 
@@ -1499,7 +1499,7 @@ P2, small, open.
 
 ### 70. Choosing a path blocks an async thread on the disk, so a dead share stalls every command
 
-P2, medium, open.
+P2, medium, fixed.
 
 `Destination::choose` calls the resolver directly and documents that it must not block, but `settle_path` and `found_existing` touch the disk there. An unreachable share would stall the runtime that serves every command. The blocking is certain; the stall was not measured.
 
@@ -3653,7 +3653,7 @@ No `crates/` code outside the CLI handles a signal, and `Tree::kill` runs only f
 
 ### 200. Placing a finished video has its own weaker no-replace move
 
-P3, small, open.
+P3, small, fixed.
 
 `place` falls to `std::fs::rename` on any `hard_link` error other than `AlreadyExists`, and that replaces. It needs a drive without hard links, and a short window.
 
