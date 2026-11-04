@@ -12,7 +12,7 @@ use crate::abandon::{Abandoned, Abandonment};
 use crate::checkpoint::{Checkpoints, ResumeSaver};
 use crate::error::{Chain, Error, IoAction, IoContext, Result};
 use crate::file_work::FileWork;
-use crate::http::Clients;
+use crate::http::{Clients, Validators};
 use crate::net_guard::{PrivateGuard, guard_from, private_guard};
 use crate::numeric::saturating_cast;
 use crate::options::DownloadOptions;
@@ -203,15 +203,19 @@ pub enum Outcome {
         /// Bytes kept from an earlier run instead of downloaded again.
         resumed_from: u64,
     },
-    /// Cancelled; running the same request again continues where it stopped.
+    /// Cancelled. Running the same request again continues where it stopped when
+    /// `can_continue` says so, and otherwise starts from the beginning.
     #[non_exhaustive]
     Paused {
         /// Where the file will be saved once complete. The data so far is in
         /// this path plus [`PART_EXT`](crate::PART_EXT), next to the resume
         /// file (plus [`STATE_EXT`](crate::STATE_EXT)).
         path: PathBuf,
-        /// Bytes still to download.
-        remaining: u64,
+        /// Bytes still to download, if the server gave the size.
+        remaining: Option<u64>,
+        /// Whether the server takes byte ranges and gave the size, so that a later
+        /// run can continue from what is on disk.
+        can_continue: bool,
     },
 }
 
@@ -253,7 +257,8 @@ impl Shared {
 /// Cancelling `cancel` stops all connections, writes what has arrived, saves the
 /// resume file and returns [`Outcome::Paused`], or the error when the part file
 /// could not be flushed to the disk. Running the same request again later
-/// resumes it. See the [crate documentation](crate) for an example.
+/// resumes it, when the server takes byte ranges and gave the size. See the
+/// [crate documentation](crate) for an example.
 ///
 /// # Errors
 ///
@@ -369,7 +374,6 @@ pub(crate) async fn download_guarded(
         &request.file_work,
     )
     .await?;
-    progress.start(&target.file, &target.name(), total, resumed_from);
 
     let retries = Retries::for_link(&opts, clients.proxies(), &final_url);
     let shared = Arc::new(Shared {
@@ -390,17 +394,14 @@ pub(crate) async fn download_guarded(
         receiving: worker::Receivers::default(),
         file_work: request.file_work.clone(),
     });
-    let saver = Arc::new(ResumeSaver::new(
-        shared.clone(),
-        saved_url,
-        target.state.clone(),
-        validators,
-        abandoned.clone(),
-    ));
-    {
-        let saver = saver.clone();
-        storage::blocking(&shared.file_work, move || saver.save_or_fail()).await?;
-    }
+    shared.progress.start(
+        &target.file,
+        &target.name(),
+        total,
+        resumed_from,
+        shared.request.can_continue(),
+    );
+    let saver = first_save(&shared, saved_url, &target, validators, &abandoned).await?;
 
     let first = first_work(&shared, resumed, &mut connection, body).await;
     let workers = spawn_workers(&shared, &clients, connection, first).await?;
@@ -408,6 +409,26 @@ pub(crate) async fn download_guarded(
     let first_error = join_workers(workers).await;
     drop(checkpoints);
     end(shared, saver, target, resumed_from, first_error).await
+}
+
+/// The saver of a download's resume file, with the file saved a first time before anything is fetched.
+async fn first_save(
+    shared: &Arc<Shared>,
+    saved_url: String,
+    target: &Target,
+    validators: Validators,
+    abandoned: &Abandoned,
+) -> Result<Arc<ResumeSaver>> {
+    let saver = Arc::new(ResumeSaver::new(
+        shared.clone(),
+        saved_url,
+        target.state.clone(),
+        validators,
+        abandoned.clone(),
+    ));
+    let saving = saver.clone();
+    storage::blocking(&shared.file_work, move || saving.save_or_fail()).await?;
+    Ok(saver)
 }
 
 /// [`finish`] on the blocking pool.
@@ -579,7 +600,8 @@ fn finish(
     if shared.request.cancel.is_cancelled() {
         return Ok(Outcome::Paused {
             path: target.file,
-            remaining,
+            remaining: shared.request.total.map(|_| remaining),
+            can_continue: shared.request.can_continue(),
         });
     }
     Err(first_error.unwrap_or(Error::PrematureEof {

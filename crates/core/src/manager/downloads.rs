@@ -22,7 +22,7 @@ use super::file_exists::give_up_the_name;
 use super::handovers::{Handover, Target};
 use super::placement::{Candidate, QueueRequest};
 use super::run::mark_cancelled;
-use super::state::{AfterCancel, Entry, Hold, State, Stop};
+use super::state::{AfterCancel, Entry, Hold, NextRun, State, Stop};
 use crate::error::{CoreError, Result};
 use crate::headers;
 use crate::naming;
@@ -403,7 +403,7 @@ impl Manager {
 
     /// Gives a download a fresh link, for example after the old one expired, from `from`, which
     /// decides whose link it is and so whether it may reach the local network (D39, D43.5). What
-    /// was already downloaded is kept as long as the server still serves the same file, except for
+    /// was already downloaded is kept as long as the server can continue a download and still serves the same file, except for
     /// a video read from a page, whose work folder belongs to one link and is cleared for another.
     /// A link to another site (scheme, host or port) does not get the browser's
     /// cookies and credentials for the old one; the user agent and harmless
@@ -751,6 +751,7 @@ impl Manager {
             hold: Hold::Free,
             on_existing: None,
             plain_name: None,
+            next_run: NextRun::Continues,
             offered_file: false,
             stranded: None,
             files: DownloadFiles::default(),
