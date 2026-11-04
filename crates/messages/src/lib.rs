@@ -15,6 +15,12 @@ const DISK_FULL_CODES: &[i32] = &[28, 122]; // ENOSPC, EDQUOT
 #[cfg(not(any(windows, unix)))]
 const DISK_FULL_CODES: &[i32] = &[];
 
+/// Raw OS codes for a file another program holds open.
+#[cfg(windows)]
+const HELD_FILE_CODES: &[i32] = &[32, 33]; // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
+#[cfg(not(windows))]
+const HELD_FILE_CODES: &[i32] = &[];
+
 /// Whether the link delivered data before it failed, which turns a refusal into an expired link.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Worked {
@@ -131,14 +137,16 @@ fn too_large() -> UserError {
 
 /// What `action` on `path` failing with `source` comes to, while saving into `folder`.
 fn io_failure(action: IoAction, path: &Path, source: &io::Error, folder: &Path) -> UserError {
-    let existing = matches!(
-        action,
-        IoAction::OpenFile
-            | IoAction::Write
-            | IoAction::Resize
-            | IoAction::Flush
-            | IoAction::Finish
-    )
+    // Windows only: a held file refuses other programs there. On Unix nothing holds a file, and a refused rename means the folder cannot be written.
+    let existing = (cfg!(windows)
+        && matches!(
+            action,
+            IoAction::OpenFile
+                | IoAction::Write
+                | IoAction::Resize
+                | IoAction::Flush
+                | IoAction::Finish
+        ))
     .then_some(path);
     let what = format!("{action} ({})", path.display());
     disk_failure(source, folder, &what, existing)
@@ -443,9 +451,11 @@ fn disk_failure(
             FixAction::FreeDiskSpace,
         );
     }
-    if error.kind() == io::ErrorKind::PermissionDenied
-        && let Some(file) = existing
-    {
+    let held = error.kind() == io::ErrorKind::PermissionDenied
+        || error
+            .raw_os_error()
+            .is_some_and(|code| HELD_FILE_CODES.contains(&code));
+    if held && let Some(file) = existing {
         return fix(
             format!(
                 "Wirecatch could not use {}. Another program may have it open, or it may be read-only. Close that program, then try again.",
@@ -541,16 +551,36 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_rename_on_unix_asks_for_another_folder() {
+        let error = EngineError::Io {
+            action: wirecatch_engine::IoAction::Finish,
+            path: "/d/f.bin".into(),
+            source: io::ErrorKind::PermissionDenied.into(),
+        };
+        let told = describe(&error, Path::new("/d"), Worked::Before);
+        assert_eq!(told.fix, Some(FixAction::ChooseFolder), "{}", told.message);
+    }
+
+    #[cfg(windows)]
     #[test]
     fn a_file_held_by_another_program_is_not_blamed_on_the_folder() {
-        for action in [
-            wirecatch_engine::IoAction::Finish,
-            wirecatch_engine::IoAction::OpenFile,
+        const ERROR_SHARING_VIOLATION: i32 = 32;
+        for (action, source) in [
+            (
+                wirecatch_engine::IoAction::Finish,
+                io::Error::from(io::ErrorKind::PermissionDenied),
+            ),
+            (
+                wirecatch_engine::IoAction::OpenFile,
+                io::Error::from_raw_os_error(ERROR_SHARING_VIOLATION),
+            ),
         ] {
             let error = EngineError::Io {
                 action,
                 path: "/d/f.bin".into(),
-                source: io::ErrorKind::PermissionDenied.into(),
+                source,
             };
             let told = describe(&error, Path::new("/d"), Worked::Before);
             assert_eq!(told.fix, Some(FixAction::Retry), "{}", told.message);
