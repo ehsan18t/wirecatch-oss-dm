@@ -43,7 +43,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-35  | fix(core): keep rows right through file questions  | `fix/rows-through-questions`     | 35, 66, 85                   | P2       | medium | none         | open   |
 | PR-36  | fix(settings): read proxy values so they can work  | `fix/usable-proxy-values`        | 36, 115, 220                 | P2       | medium | none         | open   |
 | PR-37  | fix(core): keep a name when a link becomes a page  | `fix/page-keeps-name`            | 37, 175                      | P2       | medium | none         | merged |
-| PR-38  | fix(media): read all of yt-dlp's page description  | `fix/read-whole-page-info`       | 38, 61                       | P2       | medium | none         | open   |
+| PR-38  | fix(media): read all of yt-dlp's page description  | `fix/read-whole-page-info`       | 38, 61                       | P2       | medium | none         | merged |
 | PR-39  | fix(engine): reuse part files under other names    | `fix/find-own-part-file`         | 39                           | P2       | medium | none         | merged |
 | PR-40  | fix(core): report whether the add-on works         | `fix/addon-usable`               | 40, 53                       | P2       | medium | none         | open   |
 | PR-41  | fix(desktop): keep notices in step with downloads  | `fix/notices-follow-downloads`   | 41, 123, 232                 | P2       | medium | none         | open   |
@@ -60,7 +60,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-52  | fix(desktop): give download windows the right fix  | `fix/window-fix-buttons`         | 55, 81                       | P2       | medium | none         | open   |
 | PR-53  | fix(desktop): make settings actions answer back    | `fix/settings-answers`           | 57, 127, 230                 | P2       | medium | none         | open   |
 | PR-54  | fix(core): handle typed names in media downloads   | `fix/typed-media-names`          | 58, 132                      | P2       | medium | none         | open   |
-| PR-55  | fix(desktop): follow an installer through setup    | `fix/installer-lifecycle`        | 59, 72                       | P2       | medium | none         | open   |
+| PR-55  | fix(desktop): follow an installer through setup    | `fix/installer-lifecycle`        | 59, 72                       | P2       | medium | none         | merged |
 | PR-56  | fix(core): offer updates only when they can work   | `fix/honest-update-offers`       | 60, 185, 186, 187            | P2       | medium | none         | open   |
 | PR-57  | fix(streams): stop trusting bad work folder data   | `fix/work-folder-trust`          | 62, 74                       | P2       | medium | none         | open   |
 | PR-58  | fix(streams): report how a program really ended    | `fix/program-end-report`         | 63, 77, 157                  | P2       | medium | none         | open   |
@@ -85,7 +85,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-77  | fix(media): make quality offers match downloads    | `fix/quality-offers`             | 97, 99, 197                  | P2       | medium | none         | open   |
 | PR-78  | fix(streams): read HLS masters, keys correctly     | `fix/hls-masters-keys`           | 100, 101, 102, 198           | P2       | medium | none         | open   |
 | PR-79  | fix(desktop): tell loading from a failed list      | `fix/list-open-states`           | 103, 135, 211                | P2       | medium | none         | open   |
-| PR-80  | fix(core): correct how the add-on updates itself   | `fix/addon-updates`              | 108, 109, 110, 159, 208, 209 | P2       | medium | none         | open   |
+| PR-80  | fix(core): correct how the add-on updates itself   | `fix/addon-updates`              | 108, 109, 110, 159, 208, 209 | P2       | medium | none         | merged |
 | PR-81  | fix(desktop): act on the rows the view shows       | `fix/selection-commands`         | 111, 136, 212                | P2       | medium | none         | open   |
 | PR-82  | fix(desktop): tidy navigation after a page opens   | `fix/navigation-state`           | 112, 162                     | P2       | small  | none         | open   |
 | PR-83  | fix(desktop): offer only actions that apply        | `fix/offers-that-apply`          | 113, 163, 166                | P2       | medium | none         | open   |
@@ -604,7 +604,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/media`
 - **Proof:** `B07-p2-tests.patch` holds 10 tests for several PRs: take the two `audit_top_level_` HLS and headers tests, `audit_top_level_audio_is_offered_as_audio` and `audit_a_page_with_several_videos_is_not_nothing`.
 - **Checks:** `cargo test -p wirecatch-media`, `cargo clippy -p wirecatch-media`
-- **Status:** open
+- **Status:** merged
 
 ### PR-39 fix(engine): reuse part files under other names
 
@@ -809,7 +809,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`, `crates/shell/src/updates.rs`, `crates/desktop/src/app_update.rs`, `crates/desktop/packaging/windows`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core -p wirecatch-shell -p wirecatch-desktop`, `cargo clippy -p wirecatch-core -p wirecatch-shell -p wirecatch-desktop`. A real update has never run, so say what could not be tested.
-- **Status:** open
+- **Status:** merged
 
 ### PR-56 fix(core): offer updates only when they can work
 
@@ -1109,7 +1109,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-81 fix(desktop): act on the rows the view shows
 
