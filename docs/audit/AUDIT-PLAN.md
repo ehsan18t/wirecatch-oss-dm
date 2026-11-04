@@ -246,7 +246,7 @@ Turn the valid findings into one exact fix order. This is a stage of its own bec
 4. **Add a check where it pays.** Where a lint or gate check could catch that kind of bug automatically, name it on the item, so the kind cannot come back.
 5. **Write `AUDIT-LOG.md`:**
    - the fix order as a numbered table: number, item, finding IDs, severity, effort, why it sits here in one line, proof, status
-   - the findings in full, grouped under their items
+   - under each item, its findings: ID, verdict, one line on the failure, and the file holding the full text
    - the suggestions, apart from the fix order; include one only if it clearly helps the person using the app, not because another app differs
    - the chunks found clean, the files read, and what could not be tested, stated as untested rather than as passing
 6. **Show the order and wait.** The person may move items. Record the approval. Suggestions get no severity and no place in the order until the person accepts one, one by one.
