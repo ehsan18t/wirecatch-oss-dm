@@ -23,6 +23,9 @@ clap.workspace = true
 indicatif.workspace = true
 tokio.workspace = true
 
+[dev-dependencies]
+wirecatch-test-support = { path = "../test-support", features = ["faults"] }
+
 [features]
 default = []
 # Experimental HTTP/3 (`--http3`). Off by default, like the engine's feature.

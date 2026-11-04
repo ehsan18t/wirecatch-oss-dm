@@ -428,8 +428,7 @@ impl Fetcher {
         let content_type = response
             .headers()
             .get(CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_string);
+            .map(|v| http::header_text(v).into_owned());
 
         let stall = self.inner.stall_timeout;
         let mut response = response;
