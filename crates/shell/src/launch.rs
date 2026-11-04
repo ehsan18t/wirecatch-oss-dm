@@ -473,17 +473,17 @@ mod tests {
         let mut listener = Listener::bind(&endpoint).unwrap();
         let holder = wirecatch_ipc::connect(&endpoint).await.unwrap();
 
-        let (counter, mut counted) = tokio::sync::watch::channel(0_u32);
+        let (bump, mut total) = tokio::sync::watch::channel(0_u32);
         let launch = Launch::from_args(&args(&["app", "https://x.example/f"]));
         let client = endpoint.clone();
         let handing = tokio::spawn(async move {
             hand_over_patiently(&launch, || {
-                counter.send_modify(|count| *count += 1);
+                bump.send_modify(|count| *count += 1);
                 wirecatch_ipc::connect(&client)
             })
             .await
         });
-        tokio::time::timeout(PATIENCE, counted.wait_for(|count| *count >= 2))
+        tokio::time::timeout(PATIENCE, total.wait_for(|count| *count >= 2))
             .await
             .unwrap()
             .unwrap();
