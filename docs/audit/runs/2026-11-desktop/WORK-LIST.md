@@ -132,7 +132,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-122 | fix(core): tie a stream's work folder to its link  | `fix/stream-work-identity`       | 14                           | P1       | medium | none         | open   |
 | PR-123 | fix(core): finish removals a quit cut short        | `fix/removal-after-quit`         | 252                          | P3       | small  | none         | open   |
 | PR-124 | test: tidy test comments in ipc and bridge         | `test/ipc-bridge-comments`       | 247                          | P3       | small  | none         | open   |
-| PR-125 | chore: guard whole-folder deletes with a lint      | `chore/folder-delete-lint`       | 248                          | P3       | medium | none         | open   |
+| PR-125 | chore: guard whole-folder deletes with a lint      | `chore/folder-delete-lint`       | 248                          | P3       | medium | none         | merged |
 | PR-126 | test: catch server races in the timing check       | `test/timing-server-races`       | 249                          | P3       | medium | PR-100       | open   |
 | PR-127 | fix(protocol): correct when a capture may erase    | `fix/capture-erase-doc`          | 250                          | P3       | small  | none         | open   |
 | PR-128 | test(extension): make the layout test's font load  | `test/layout-font`               | 251                          | P3       | small  | none         | open   |
@@ -1659,7 +1659,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/files and its callers, clippy.toml
 - **Proof:** none
 - **Checks:** `cargo clippy for the crates touched`
-- **Status:** open
+- **Status:** merged
 
 ### PR-126 test: catch server races in the timing check
 

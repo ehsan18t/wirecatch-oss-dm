@@ -59,5 +59,8 @@ async fn a_channels_endpoint_carries_the_key_its_listener_wrote() {
     drop(listener);
     // The socket's folder in `/tmp` outlives the listener.
     #[cfg(unix)]
-    std::fs::remove_dir_all(std::path::Path::new(endpoint.as_os_str()).parent().unwrap()).unwrap();
+    wirecatch_test_support::remove_test_folder(
+        std::path::Path::new(endpoint.as_os_str()).parent().unwrap(),
+    )
+    .unwrap();
 }
