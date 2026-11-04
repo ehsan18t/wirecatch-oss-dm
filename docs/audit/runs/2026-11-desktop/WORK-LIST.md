@@ -6,7 +6,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 
 | PR     | Title                                              | Branch                           | Items                        | Severity | Effort | Depends on   | Status |
 | ------ | -------------------------------------------------- | -------------------------------- | ---------------------------- | -------- | ------ | ------------ | ------ |
-| PR-01  | fix(core): stop two downloads writing one file     | `fix/one-writer-per-file`        | 1                            | P0       | large  | none         | open   |
+| PR-01  | fix(core): stop two downloads writing one file     | `fix/one-writer-per-file`        | 1                            | P0       | large  | none         | merged |
 | PR-02  | fix(core): keep folders when removing a download   | `fix/remove-keeps-folders`       | 2                            | P0       | small  | none         | merged |
 | PR-03  | fix(engine): stop calling a cut-off file complete  | `fix/cut-off-unknown-size`       | 3                            | P0       | small  | none         | merged |
 | PR-04  | fix(core): save whether a row wrote its own file   | `fix/row-wrote-its-file`         | 4                            | P1       | medium | none         | open   |
@@ -158,7 +158,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/core`
 - **Proof:** `05-1.patch`. `Xconcurrency-1.patch` shows the same bug but sleeps a fixed time, against ENGINEERING section 7, so do not keep it.
 - **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-02 fix(core): keep folders when removing a download
 
