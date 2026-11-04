@@ -88,7 +88,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 23. Sources are offered that ffmpeg then refuses after the whole download (fixed)
 24. A video format that needs cookies always fails when the engine fetches it (fixed)
 25. The could-not-save banner is wrong both ways, and its Try again saves nothing (open)
-26. Settings, queues and proxies that cannot be read are silently replaced (open)
+26. Settings, queues and proxies that cannot be read are silently replaced (fixed)
 27. A removal under way at quit comes back, and a capture is downloaded twice (fixed)
 28. Nothing knows whether a download can continue, so messages promise what will not happen (open)
 29. The Public Suffix List's date and Check now were never put in Settings (open)
