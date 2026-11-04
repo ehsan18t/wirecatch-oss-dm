@@ -188,10 +188,10 @@ pub(crate) fn partial_files(path: &Path) -> [PathBuf; 2] {
     [part, state]
 }
 
-/// The size of the file at `path` if it is a finished download: the file is there
-/// and neither its part file nor its resume file is. Touches the file system.
+/// The size of the file at `path` if it is a finished download: the file is there and its part file is not. A resume file alone does not count: the engine renames the part file first and deletes the resume file after. Touches the file system.
 pub(crate) fn finished_size(path: &Path) -> Option<u64> {
-    if partial_files(path).iter().any(|p| p.exists()) {
+    let [part, _] = partial_files(path);
+    if part.exists() {
         return None;
     }
     // A media download still has its work folders until its file is complete.
@@ -201,6 +201,11 @@ pub(crate) fn finished_size(path: &Path) -> Option<u64> {
     {
         return None;
     }
+    file_size(path)
+}
+
+/// The size of the file at `path`, if one is there. Touches the file system.
+pub(crate) fn file_size(path: &Path) -> Option<u64> {
     std::fs::metadata(path)
         .ok()
         .filter(std::fs::Metadata::is_file)
@@ -216,7 +221,21 @@ pub(crate) fn left_by(path: &Path, url: &str) -> bool {
     if path.exists() || !part.is_file() {
         return false;
     }
-    wirecatch_engine::resume_file_url(&state)
+    // A kill before its resume file was saved: nothing of it can continue, and the engine starts over.
+    !state.exists() || resumes_link(&state, url)
+}
+
+/// Deletes the part and resume files beside `path` unless they are a run of `url`. The engine continues whatever part file is at its exact path, so another link's would end up in this download's file. Touches the file system.
+pub(crate) fn discard_partials_of_other_links(path: &Path, url: &str) {
+    let [part, state] = partial_files(path);
+    if !resumes_link(&state, url) {
+        wirecatch_files::discard::file(&part);
+        wirecatch_files::discard::file(&state);
+    }
+}
+
+fn resumes_link(state: &Path, url: &str) -> bool {
+    wirecatch_engine::resume_file_url(state)
         .is_some_and(|saved| normalized_url(&saved) == normalized_url(url))
 }
 
@@ -263,6 +282,22 @@ pub(crate) fn key(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_part_file_with_no_resume_file_leaves_its_name_usable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.bin");
+        let [part, state] = partial_files(&path);
+        std::fs::write(&part, b"cut off by a kill").unwrap();
+        assert!(left_by(&path, "https://example.com/a.bin"));
+
+        std::fs::write(&state, b"not a resume file").unwrap();
+        assert!(!left_by(&path, "https://example.com/a.bin"));
+        std::fs::remove_file(&state).unwrap();
+
+        std::fs::write(&path, b"a finished file").unwrap();
+        assert!(!left_by(&path, "https://example.com/a.bin"));
+    }
 
     #[test]
     fn only_the_holder_gives_up_a_path() {

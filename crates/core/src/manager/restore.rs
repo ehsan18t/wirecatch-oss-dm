@@ -222,6 +222,8 @@ fn restore_entry(
         && entry.row.total.is_none_or(|total| total == size)
     {
         mark_completed(&mut entry, size, around.now_millis);
+        let [_, resume_file] = crate::naming::partial_files(entry.path());
+        wirecatch_files::discard::file(&resume_file);
         fixed = true;
     }
     if matches!(

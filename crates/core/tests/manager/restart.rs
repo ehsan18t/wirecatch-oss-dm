@@ -5,7 +5,8 @@ use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_protocol::app::QueueSettings;
 
 use crate::common::{
-    Harness, TestResult, fast_server, is_running, partial_files, throttled_server,
+    Config, Harness, TestResult, TestServer, fast_server, is_running, partial_files, test_data,
+    throttled_server, wait_until,
 };
 use wirecatch_engine::units::{KIB, KIB_USIZE};
 use wirecatch_test_support::resume::{asked_again, kept_ranges};
@@ -231,5 +232,46 @@ async fn a_removal_in_progress_at_quit_stays_removed() -> TestResult {
         h.manager.get_download(row.id).is_err(),
         "the removed download came back"
     );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_finished_file_beside_its_resume_file_is_not_downloaded_again() -> TestResult {
+    // Its first bytes never come, so it cannot finish before the pause.
+    let held = TestServer::start(
+        test_data(256 * KIB_USIZE),
+        Config {
+            ranges: true,
+            hold_bodies_from: Some(0),
+            ..Config::default()
+        },
+    )
+    .await;
+    let mut h = Harness::new().await?;
+    let row = h.add(&held.url("f.bin")).await?;
+    wait_until("the run's resume file", || {
+        let row = h.row(row.id);
+        partial_files(&row.path)[1].exists().then_some(())
+    })
+    .await;
+    h.manager.pause(row.id).unwrap();
+    let row = h.wait_status(row.id, DownloadStatus::Paused).await;
+    h.shutdown().await;
+    let [part, state] = partial_files(&row.path);
+    assert!(state.exists());
+    std::fs::remove_file(&part)?;
+    std::fs::write(&row.path, &held.data)?;
+
+    h.reopen().await?;
+    let status = h.row(row.id).status;
+    if status != DownloadStatus::Completed {
+        h.manager.resume(row.id).unwrap();
+    }
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+    assert_eq!(
+        done.path, row.path,
+        "a second copy of the file was downloaded"
+    );
+    assert!(!state.exists(), "the leftover resume file stayed");
     Ok(())
 }
