@@ -231,6 +231,10 @@ impl WorkDir {
         remove_dir(&track_dir(&self.dir, track))
     }
 
+    pub fn folder(&self) -> &Path {
+        &self.dir
+    }
+
     /// Removes the whole folder. Blocks on the file system.
     pub fn remove(&self) -> io::Result<()> {
         // The log must be closed first: Windows cannot delete an open file.

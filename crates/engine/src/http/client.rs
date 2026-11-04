@@ -9,7 +9,7 @@ use reqwest::{Client, redirect};
 use tracing::{debug, warn};
 
 use crate::error::{Error, Result};
-use crate::net_guard::FilteringResolver;
+use crate::net_guard::{FilteringResolver, Ipv4FirstResolver};
 use crate::options::DownloadOptions;
 use crate::proxy::Proxies;
 
@@ -138,7 +138,12 @@ impl Clients {
         // cannot differ from the engine's decisions, whatever reqwest
         // features another crate in the build turns on.
         let builder = if self.apply_proxies {
-            Client::builder().proxy(self.proxies.client())
+            let builder = Client::builder().proxy(self.proxies.client());
+            if self.proxies.may_use_socks4() {
+                builder.dns_resolver(Arc::new(Ipv4FirstResolver))
+            } else {
+                builder
+            }
         } else {
             Client::builder().no_proxy()
         };

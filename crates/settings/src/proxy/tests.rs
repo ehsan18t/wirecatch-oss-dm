@@ -117,6 +117,72 @@ fn exceptions_are_cleaned_and_bounded() {
         panic!("a queue's own exceptions stay its own");
     };
     assert_eq!(kept.hosts, ["a.example"]);
+
+    let mut proxy = ProxySettings::default();
+    proxy.exceptions.hosts = vec!["http://x.example/".into(); MAX_PROXY_EXCEPTIONS + 1];
+    assert_eq!(validate(proxy).unwrap().exceptions.hosts, ["x.example"]);
+}
+
+#[test]
+fn an_exception_is_kept_in_the_form_the_matcher_reads() {
+    let mut proxy = ProxySettings::default();
+    proxy.exceptions.hosts = [
+        "https://Intranet.Example/page",
+        "host.example:8443",
+        "bücher.example",
+        "[::1]",
+        "[fd00::1]:8080",
+        "http://10.0.0.1:8080/",
+        ".dotted.example",
+        "*.corp.example",
+        "10.*",
+        "192.168.*.*",
+        "10.0.0.0/8",
+        "FD00::/8",
+        "<LOCAL>",
+        "*",
+    ]
+    .map(String::from)
+    .to_vec();
+    assert_eq!(
+        validate(proxy).unwrap().exceptions.hosts,
+        [
+            "intranet.example",
+            "host.example",
+            "xn--bcher-kva.example",
+            "::1",
+            "fd00::1",
+            "10.0.0.1",
+            "dotted.example",
+            "*.corp.example",
+            "10.*",
+            "192.168.*.*",
+            "10.0.0.0/8",
+            "fd00::/8",
+            "<local>",
+            "*",
+        ]
+    );
+}
+
+#[test]
+fn an_exception_that_names_no_host_is_refused() {
+    for bad in ["10.*.1", "10.0.0.0/33", "fd00::/129", "*.", "a,b", "a;b"] {
+        let mut proxy = ProxySettings::default();
+        proxy.exceptions.hosts = vec![bad.into()];
+        assert!(validate(proxy).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn the_exception_limit_stops_the_scan_of_a_long_list() {
+    let mut proxy = ProxySettings::default();
+    proxy.exceptions.hosts = (0..=MAX_PROXY_EXCEPTIONS)
+        .map(|n| format!("h{n}.example"))
+        .chain(std::iter::once("a b".to_owned()))
+        .collect();
+    let refused = validate(proxy).unwrap_err().to_string();
+    assert!(refused.contains("at most"), "{refused}");
 }
 
 #[test]
@@ -347,32 +413,100 @@ fn a_given_computers_proxy_is_used_in_place_of_reading_it() {
         choice(ProxyUse::Server(ProxyServerId(9)), &plain, &nothing),
         ProxyChoice::Direct
     );
-    assert_eq!(from_system(&nothing), Vec::new());
-    assert_eq!(from_system(&given).len(), 1);
+    assert_eq!(from_system(&nothing).unwrap(), Vec::new());
+    assert_eq!(from_system(&given).unwrap().len(), 1);
 }
 
 #[test]
-fn yt_dlp_and_the_updater_take_the_proxy_for_https() {
+fn a_socks4_server_is_not_copied_as_a_profile() {
+    let computer = |all: &str, https: Option<&str>| {
+        let mut manual = ManualProxies::default();
+        manual.all = Some(all.into());
+        manual.https = https.map(str::to_owned);
+        ComputerProxy::Given(Some(manual))
+    };
+    for server in ["socks4://user:secret@s.corp:1080", "socks4a://s.corp:1080"] {
+        let refused = from_system(&computer(server, None))
+            .unwrap_err()
+            .to_string();
+        assert!(refused.contains("SOCKS4"), "{refused}");
+        assert!(refused.contains("s.corp:1080"), "{refused}");
+        assert!(!refused.contains("secret"), "{refused}");
+    }
+    let others = from_system(&computer(
+        "socks4://s.corp:1080",
+        Some("http://web.corp:3128"),
+    ))
+    .unwrap();
+    assert_eq!(others, [profile(ProxyKind::Http, "web.corp", 3128)]);
+}
+
+#[test]
+fn yt_dlp_takes_the_proxy_for_the_pages_protocol() {
     let mut manual = ManualProxies::default();
     manual.http = Some("http://web:80".into());
     manual.all = Some("socks5h://socks:1080".into());
+    let https_page = Url::parse("https://video.example/watch").unwrap();
+    let plain_page = Url::parse("http://video.example/watch").unwrap();
     let choice = ProxyChoice::Manual(manual.clone());
     assert_eq!(
-        ytdlp_proxy(&choice).as_deref(),
+        ytdlp_proxy(&choice, &https_page).as_deref(),
         Some("socks5h://socks:1080")
     );
     assert_eq!(
-        updater_proxy(&choice),
-        UpdaterProxy::Url(Url::parse("socks5h://socks:1080").unwrap())
+        ytdlp_proxy(&choice, &plain_page).as_deref(),
+        Some("http://web:80")
     );
-    manual.https = Some("http://secure:3128".into());
+    manual.https = Some("http://user:secret@secure:3128".into());
     let choice = ProxyChoice::Manual(manual);
-    assert_eq!(ytdlp_proxy(&choice).as_deref(), Some("http://secure:3128"));
+    assert_eq!(
+        ytdlp_proxy(&choice, &https_page).as_deref(),
+        Some("http://user:secret@secure:3128")
+    );
 
-    assert_eq!(ytdlp_proxy(&ProxyChoice::Direct).as_deref(), Some(""));
-    assert_eq!(ytdlp_proxy(&ProxyChoice::System), None);
-    assert_eq!(updater_proxy(&ProxyChoice::Direct), UpdaterProxy::Direct);
-    assert_eq!(updater_proxy(&ProxyChoice::System), UpdaterProxy::System);
+    assert_eq!(
+        ytdlp_proxy(&ProxyChoice::Direct, &https_page).as_deref(),
+        Some("")
+    );
+}
+
+#[test]
+fn yt_dlp_goes_directly_only_for_a_page_on_the_exceptions_or_with_no_proxy_set() {
+    let page = Url::parse("https://video.example/watch").unwrap();
+
+    let mut excepted = ManualProxies::default();
+    excepted.all = Some("http://proxy:3128".into());
+    excepted.exceptions = "video.example".into();
+    assert_eq!(
+        ytdlp_proxy(&ProxyChoice::Manual(excepted), &page).as_deref(),
+        Some("")
+    );
+
+    let mut only_http = ManualProxies::default();
+    only_http.http = Some("http://web:80".into());
+    assert_eq!(
+        ytdlp_proxy(&ProxyChoice::Manual(only_http.clone()), &page).as_deref(),
+        Some("http://web:80")
+    );
+
+    // The exception holds for the proxy picked, though none is set for the page's protocol.
+    only_http.exceptions = "video.example".into();
+    assert_eq!(
+        ytdlp_proxy(&ProxyChoice::Manual(only_http), &page).as_deref(),
+        Some("")
+    );
+}
+
+#[test]
+fn yt_dlp_takes_the_proxy_for_every_protocol_before_one_for_another() {
+    let page = Url::parse("http://video.example/watch").unwrap();
+    let mut manual = ManualProxies::default();
+    manual.all = Some("socks5h://socks:1080".into());
+    manual.https = Some("http://secure:3128".into());
+    assert_eq!(
+        ytdlp_proxy(&ProxyChoice::Manual(manual), &page).as_deref(),
+        Some("socks5h://socks:1080")
+    );
 }
 
 #[test]
@@ -386,10 +520,6 @@ fn a_proxy_the_computer_sets_reads_as_a_profile_without_its_password() {
         }
     );
     assert_eq!(parse_server("proxy:8080").unwrap().kind, ProxyKind::Http);
-    assert_eq!(
-        parse_server("socks4://s:1080").unwrap().kind,
-        ProxyKind::Socks5
-    );
     assert_eq!(
         parse_server("socks5://[::1]").unwrap(),
         profile(ProxyKind::Socks5, "::1", 1080)

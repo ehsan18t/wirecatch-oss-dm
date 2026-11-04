@@ -138,9 +138,8 @@ impl Manager {
             self.start_media_run(state, id, run_id, answered, job, policy);
             return;
         }
-        // Until the server has answered once, the path is only a guess: let the
-        // server's answer decide it. Afterwards it is fixed.
-        let settle = (!entry.naming.settled).then(|| self.settler(id, run_id, answered.clone()));
+        // Until the server has answered once, the path is only a guess: let the server's answer decide it. Until a run begins writing, its answer also records that it did.
+        let settle = (!entry.naming.writing).then(|| self.settler(id, run_id, answered.clone()));
         let target = match &settle {
             None => Target::Exact,
             Some(settle) => Target::Resolve(path_resolver(settle.clone())),
@@ -395,6 +394,7 @@ pub(super) fn mark_completed(entry: &mut Entry, bytes: u64, now: UnixMillis) {
 /// Puts a download in the cancelled state, with nothing kept.
 pub(super) fn mark_cancelled(entry: &mut Entry) {
     entry.row.status = DownloadStatus::Cancelled;
+    entry.naming.writing = false;
     entry.row.error = None;
     entry.row.done = 0;
 }

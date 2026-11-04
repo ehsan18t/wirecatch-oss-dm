@@ -7,7 +7,7 @@ use wirecatch_protocol::app::QueueSettings;
 use crate::common::{
     Harness, TestResult, fast_server, is_running, partial_files, throttled_server,
 };
-use wirecatch_engine::units::KIB;
+use wirecatch_engine::units::{KIB, KIB_USIZE};
 use wirecatch_test_support::resume::{asked_again, kept_ranges};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -41,14 +41,15 @@ async fn a_file_that_finished_before_the_restart_is_not_downloaded_again() -> Te
     for row in [finished, unfinished, &guessed] {
         let path = std::path::Path::new(&row.path);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, b"12345").unwrap();
+        std::fs::write(path, vec![0; 512 * KIB_USIZE]).unwrap();
     }
 
     h.restart().await?;
 
     let row = h.row(finished.id);
     assert_eq!(row.status, DownloadStatus::Completed);
-    assert_eq!((row.done, row.total), (5, Some(5)));
+    let size = 512 * KIB;
+    assert_eq!((row.done, row.total), (size, Some(size)));
     // Still has its partial files: not finished.
     assert_eq!(h.row(unfinished.id).status, DownloadStatus::Paused);
     // A file at a guessed path is not this download's.
@@ -208,6 +209,27 @@ async fn a_damaged_download_list_is_set_aside_and_the_person_is_told() -> TestRe
     assert_eq!(
         h.manager.list_downloads(),
         [] as [wirecatch_protocol::app::DownloadSummary; 0]
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_removal_in_progress_at_quit_stays_removed() -> TestResult {
+    let slow = throttled_server(4096 * KIB, 64 * KIB).await?;
+    let mut h = Harness::new().await?;
+    let row = h.add(&slow.url("gone.bin")).await?;
+    h.wait_for(row.id, "the server's answer", |r| r.done > 0)
+        .await;
+    let ids = [row.id];
+    let (removed, ()) = tokio::join!(
+        h.manager.remove(&ids, wirecatch_core::RemoveFiles::Keep),
+        h.manager.shutdown()
+    );
+    removed?;
+    h.reopen().await?;
+    assert!(
+        h.manager.get_download(row.id).is_err(),
+        "the removed download came back"
     );
     Ok(())
 }

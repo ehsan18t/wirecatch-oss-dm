@@ -69,7 +69,7 @@ pub(crate) struct ContentRange {
 
 /// The `Content-Range` of an answer, if it has one that can be read.
 pub(crate) fn content_range(headers: &HeaderMap) -> Option<ContentRange> {
-    parse_content_range(headers.get(CONTENT_RANGE)?.to_str().ok()?)
+    parse_content_range(&super::header_text(headers.get(CONTENT_RANGE)?))
 }
 
 /// Parses `bytes 0-99/1000`, `bytes 0-99/*` and `bytes */1000` (RFC 9110,

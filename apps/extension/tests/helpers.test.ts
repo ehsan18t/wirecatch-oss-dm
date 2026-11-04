@@ -24,7 +24,7 @@ import {
 import { patchOf } from '../src/lib/settings-patch';
 import { BADGE_TOKEN, cssColor } from '../src/lib/theme';
 import { originPattern } from '../src/lib/site-access';
-import { hostMatchesSite, matchingSite, siteForPage } from '../src/lib/sites';
+import { matchingSite, siteForPage } from '../src/lib/sites';
 import { TOKENS_CSS } from '../build-values';
 import { DEFAULT_SETTINGS } from './fakes';
 
@@ -37,9 +37,11 @@ describe('sites', () => {
   });
 
   it('matches a host and its subdomains only', () => {
-    expect(hostMatchesSite('example.com', 'example.com')).toBe(true);
-    expect(hostMatchesSite('a.example.com', 'example.com')).toBe(true);
-    expect(hostMatchesSite('badexample.com', 'example.com')).toBe(false);
+    const sites = ['example.com'];
+    expect(matchingSite('https://example.com/a', sites)).toBe('example.com');
+    expect(matchingSite('https://a.example.com/a', sites)).toBe('example.com');
+    expect(matchingSite('https://example.com./a', sites)).toBe('example.com');
+    expect(matchingSite('https://badexample.com/a', sites)).toBeNull();
   });
 
   // The browser reports a host outside ASCII in punycode, whatever form the site was typed in.

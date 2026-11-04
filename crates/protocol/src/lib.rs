@@ -9,6 +9,7 @@
 //! - [`media_start`]: where a video's quality window starts, and whether it opens at all.
 //! - [`desktop`]: the commands and events between the desktop UI and its Rust shell.
 //! - [`frame`]: length-prefixed JSON framing used on every local connection.
+//! - [`hosts`]: whether a host is covered by a site.
 //! - [`version`]: the protocol versions each end speaks, and the one a connection agrees on.
 //! - [`secret`]: values that grant access, which cross the wire but never print.
 //! - [`secrets`]: what a secret is, for the log's redaction and the extension's.
@@ -19,6 +20,7 @@ pub mod app;
 pub mod desktop;
 pub mod extension;
 pub mod frame;
+pub mod hosts;
 pub mod languages;
 pub mod media_start;
 pub mod proxy;

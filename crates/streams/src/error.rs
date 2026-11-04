@@ -114,7 +114,7 @@ pub enum Error {
     /// ffmpeg would have to guess what it is, and a crafted file could then
     /// make it open other files or addresses. The track is thrown away, so the next try fetches it again.
     #[error(
-        "The downloaded {} is not in a format Wirecatch can join (MPEG-TS, MP4, Matroska, WebM, AAC, MP3, AC-3 or E-AC-3), so it was not passed to ffmpeg. The link may not point to a real video; open the video page again to get a fresh one.", .role.name()
+        "The downloaded {} is not in a format Wirecatch can join (MPEG-TS, MP4, Matroska, WebM, AAC, MP3, AC-3, E-AC-3, FLAC, Ogg, WAV, FLV or AVI), so it was not passed to ffmpeg. The link may not point to a real video; open the video page again to get a fresh one.", .role.name()
     )]
     UnknownFormat {
         /// Which track it is.

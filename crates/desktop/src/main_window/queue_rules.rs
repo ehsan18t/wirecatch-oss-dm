@@ -21,7 +21,7 @@ use crate::library::Library;
 use crate::text;
 use crate::ui::{Role, SwitchRow, Typed as _, choice};
 
-const HELP: &str = "New downloads that match any rule below go to this queue. Rules are checked in this order: site, file name, file type, category, protocol; if several queues match, the one highest in the sidebar wins.";
+const HELP: &str = "New downloads that match any rule below go to this queue. Rules are checked in this order: site, file name, file type, category, protocol. If several queues match a site, the most specific site wins; otherwise the queue highest in the sidebar wins.";
 const CATEGORIES: [Category; 7] = [
     Category::Video,
     Category::Audio,
