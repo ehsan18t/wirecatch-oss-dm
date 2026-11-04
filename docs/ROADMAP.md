@@ -74,7 +74,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 13. Replace on a file with another extension downloads everything again and strands the old folder (open)
 14. A new media download can save another download's video (open)
 15. Typing a space in search pauses downloads, and Enter can open a file (open)
-16. A very large HLS playlist freezes inspection for minutes to hours (open)
+16. A very large HLS playlist freezes inspection for minutes to hours (fixed)
 17. A video with a web page or nothing in place of a segment is reported as complete (open)
 18. A lower-integrity program can stand in for the app and receive downloads' cookies (open)
 19. A DASH template can ask for an address of hundreds of gigabytes and abort the app (fixed)

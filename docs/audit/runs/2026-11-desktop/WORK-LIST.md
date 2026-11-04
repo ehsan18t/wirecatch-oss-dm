@@ -21,7 +21,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-13  | fix(core): tie a media work folder to its run      | `fix/work-folder-follows-run`    | 13                           | P2       | medium | none         | open   |
 | PR-14  | fix(core): stop reusing another link's media parts | `fix/media-work-identity`        | 14                           | P1       | medium | PR-13        | open   |
 | PR-15  | fix(desktop): let text fields keep their own keys  | `fix/field-keys-first`           | 15                           | P1       | small  | none         | open   |
-| PR-16  | fix(streams): limit the qualities of HLS playlists | `fix/limit-hls-qualities`        | 16                           | P1       | small  | none         | open   |
+| PR-16  | fix(streams): limit the qualities of HLS playlists | `fix/limit-hls-qualities`        | 16                           | P1       | small  | none         | merged |
 | PR-17  | fix(streams): refuse segments that are not media   | `fix/check-segment-bodies`       | 17                           | P1       | medium | none         | open   |
 | PR-18  | fix(ipc): refuse a lower-integrity stand-in pipe   | `fix/pipe-integrity-check`       | 18                           | P1       | medium | none         | open   |
 | PR-19  | fix(streams): limit DASH addresses while building  | `fix/dash-address-limit`         | 19                           | P1       | small  | none         | merged |
@@ -340,7 +340,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/streams`
 - **Proof:** `14-2.patch`. The wall-time test in it is ignored by default; use the allocation test.
 - **Checks:** `cargo test -p wirecatch-streams`, `cargo clippy -p wirecatch-streams`
-- **Status:** open
+- **Status:** merged
 
 ### PR-17 fix(streams): refuse segments that are not media
 
