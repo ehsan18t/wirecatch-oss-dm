@@ -2351,3 +2351,34 @@ async fn reading_a_page_on_the_local_network_goes_without_the_guard() -> TestRes
     assert!(call["all_proxy"].is_null(), "{call}");
     Ok(())
 }
+
+/// yt-dlp's own download of a website's format goes through the guard as well.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn yt_dlps_own_download_goes_through_the_local_network_guard() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    tune(&h.manager, |s| {
+        s.proxy.proxy = wirecatch_protocol::proxy::ProxyUse::Direct;
+    })?;
+    let info = serde_json::json!({
+        "title": "Dash only",
+        "formats": [{"format_id": "dash", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 720,
+            "protocol": "http_dash_segments", "url": "https://cdn.example.com/x.mpd"}],
+    });
+    tell_tool(&h, "info.json", &info.to_string())?;
+    let mut ui = h.manager.subscribe();
+    let page = "https://videos.example.com/watch/98";
+    let mut capture = media_capture(page, MediaKind::Page, None);
+    capture.page_url = Some(page.into());
+    capture.referrer = Some(page.into());
+    h.manager.add_capture(capture).await?;
+    let choice = choice_requested(&mut ui).await;
+    let id = h.manager.choose_media(choice.id, select("dash")).await?;
+    h.wait_status(id, DownloadStatus::Completed).await;
+    let call = ytdlp_calls(&h)?.pop().ok_or("yt-dlp was not run")?;
+    assert!(args(&call)?.iter().any(|a| a == "-f"), "{call}");
+    let guard = call["all_proxy"].as_str().unwrap_or_default();
+    assert!(guard.starts_with("http://127.0.0.1:"), "{call}");
+    Ok(())
+}

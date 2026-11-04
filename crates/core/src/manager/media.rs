@@ -891,12 +891,10 @@ impl Manager {
         token: &CancellationToken,
     ) -> std::result::Result<Found, UserError> {
         let cookies = cookie_header(&source.fetch.origin);
-        let choice = proxy;
-        let proxy = wirecatch_settings::proxy::ytdlp_proxy(&choice, &source.fetch.url);
+        let proxy = wirecatch_settings::proxy::ytdlp_proxy(&proxy, &source.fetch.url);
         let off_local_network = super::media_run::ytdlp_off_local_network(
             source.fetch.chosen_by,
             &source.fetch.url,
-            &choice,
             proxy.as_deref(),
         )
         .await;

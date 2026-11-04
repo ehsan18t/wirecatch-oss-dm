@@ -20,6 +20,18 @@ const MAX_HEAD: usize = 64 * KIB_USIZE;
 /// How long a name may take to resolve and a connection to open.
 const REACH_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How much of a response is held on its way.
+const RELAY_BUFFER: usize = 16 * KIB_USIZE;
+/// How long to wait after a connection could not be accepted, which can repeat while the system is out of handles.
+const ACCEPT_RETRY: Duration = Duration::from_millis(100);
+/// Headers about this connection, not the request.
+const HOP_BY_HOP: [&str; 4] = [
+    "connection",
+    "keep-alive",
+    "proxy-connection",
+    "proxy-authorization",
+];
+
 const TUNNEL_OPEN: &[u8] = b"HTTP/1.1 200 Connection established\r\n\r\n";
 const REFUSED: &[u8] = b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
 const BAD_REQUEST: &[u8] =
@@ -78,7 +90,10 @@ async fn serve(listener: TcpListener, kept_off: fn(IpAddr) -> bool, refused: Arc
                 Ok((client, _)) => {
                     connections.spawn(carry(client, kept_off, refused.clone()));
                 }
-                Err(e) => tracing::debug!(error = %e, "the local network guard missed a connection"),
+                Err(e) => {
+                    tracing::debug!(error = %e, "the local network guard missed a connection");
+                    tokio::time::sleep(ACCEPT_RETRY).await;
+                }
             },
             Some(_) = connections.join_next() => {}
         }
@@ -90,11 +105,29 @@ async fn serve(listener: TcpListener, kept_off: fn(IpAddr) -> bool, refused: Arc
 struct Destination {
     host: String,
     port: u16,
-    /// The head to send on; `None` for a tunnel, which sends nothing of its own.
-    head: Option<Vec<u8>>,
+    /// What a plain request sends on; `None` for a tunnel, which sends nothing of its own.
+    request: Option<PlainRequest>,
 }
 
-/// The head of a request that is about to go on: first line, then its lines without what is for a proxy, and asking the server to close, so the client's next request comes back through here.
+#[derive(Debug, PartialEq, Eq)]
+struct PlainRequest {
+    head: Vec<u8>,
+    body_len: u64,
+}
+
+/// The request line's target as a server reads it, exactly as the client wrote it: only its scheme and host go.
+fn origin_form(target: &str) -> Option<String> {
+    let (_, rest) = target.split_once("://")?;
+    Some(match rest.find(['/', '?']) {
+        Some(at) => match rest.get(at..)? {
+            query if query.starts_with('?') => format!("/{query}"),
+            path => path.to_owned(),
+        },
+        None => "/".to_owned(),
+    })
+}
+
+/// Reads a request head. A body whose length the head does not give is refused: only the bytes of one request ever go on, so the end of it has to be known.
 fn read_request(head: &[u8]) -> Option<Destination> {
     let text = std::str::from_utf8(head).ok()?;
     let mut lines = text.split("\r\n");
@@ -111,24 +144,24 @@ fn read_request(head: &[u8]) -> Option<Destination> {
                 .trim_end_matches(']')
                 .to_owned(),
             port: port.parse().ok()?,
-            head: None,
+            request: None,
         });
     }
     let url = Url::parse(target).ok()?;
     if url.scheme() != "http" {
         return None;
     }
-    let path = match url.query() {
-        Some(query) => format!("{}?{query}", url.path()),
-        None => url.path().to_owned(),
-    };
-    let mut sent = format!("{method} {path} {version}\r\n");
+    let mut sent = format!("{method} {} {version}\r\n", origin_form(target)?);
+    let mut body_len = 0;
     for line in lines.take_while(|line| !line.is_empty()) {
-        let name = line.split(':').next().unwrap_or_default();
-        let dropped = ["connection", "proxy-connection", "proxy-authorization"]
-            .iter()
-            .any(|n| name.eq_ignore_ascii_case(n));
-        if !dropped {
+        let (name, value) = line.split_once(':').unwrap_or((line, ""));
+        if name.eq_ignore_ascii_case("transfer-encoding") {
+            return None;
+        }
+        if name.eq_ignore_ascii_case("content-length") {
+            body_len = value.trim().parse().ok()?;
+        }
+        if !HOP_BY_HOP.iter().any(|n| name.eq_ignore_ascii_case(n)) {
             sent.push_str(line);
             sent.push_str("\r\n");
         }
@@ -141,19 +174,43 @@ fn read_request(head: &[u8]) -> Option<Destination> {
             .trim_end_matches(']')
             .to_owned(),
         port: url.port_or_known_default()?,
-        head: Some(sent.into_bytes()),
+        request: Some(PlainRequest {
+            head: sent.into_bytes(),
+            body_len,
+        }),
     })
 }
 
-/// Reads up to the end of a request head: the head and what came after it. `None` when it ends first or runs past [`MAX_HEAD`].
-async fn read_head(client: &mut TcpStream) -> Option<(Vec<u8>, Vec<u8>)> {
+/// A response head that tells the client to close, so its next request comes through a new connection and is checked: this one carries no more.
+fn closing_response(head: &[u8]) -> Vec<u8> {
+    const END: &[u8] = b"\r\n";
+    let mut sent = Vec::with_capacity(head.len());
+    let mut lines = head
+        .split(|b| *b == b'\n')
+        .map(|l| l.strip_suffix(b"\r").unwrap_or(l));
+    if let Some(status) = lines.next() {
+        sent.extend_from_slice(status);
+        sent.extend_from_slice(END);
+    }
+    for line in lines.take_while(|line| !line.is_empty()) {
+        let name = line.split(|b| *b == b':').next().unwrap_or_default();
+        if !HOP_BY_HOP
+            .iter()
+            .any(|n| name.eq_ignore_ascii_case(n.as_bytes()))
+        {
+            sent.extend_from_slice(line);
+            sent.extend_from_slice(END);
+        }
+    }
+    sent.extend_from_slice(b"Connection: close\r\n\r\n");
+    sent
+}
+
+/// Reads on from `bytes` up to the end of a head: the head and what came after it. `None` when the input ends first or the head runs past [`MAX_HEAD`].
+async fn read_head(input: &mut TcpStream, mut bytes: Vec<u8>) -> Option<(Vec<u8>, Vec<u8>)> {
     const END: &[u8] = b"\r\n\r\n";
-    let mut bytes = Vec::with_capacity(KIB_USIZE);
     let mut chunk = [0_u8; KIB_USIZE];
     loop {
-        let read = client.read(&mut chunk).await.ok()?;
-        let new = chunk.get(..read).filter(|new| !new.is_empty())?;
-        bytes.extend_from_slice(new);
         if let Some(at) = bytes.windows(END.len()).position(|w| w == END) {
             let rest = bytes.split_off(at + END.len());
             return Some((bytes, rest));
@@ -161,6 +218,9 @@ async fn read_head(client: &mut TcpStream) -> Option<(Vec<u8>, Vec<u8>)> {
         if bytes.len() > MAX_HEAD {
             return None;
         }
+        let read = input.read(&mut chunk).await.ok()?;
+        let new = chunk.get(..read).filter(|new| !new.is_empty())?;
+        bytes.extend_from_slice(new);
     }
 }
 
@@ -200,7 +260,7 @@ async fn connect(addresses: &[SocketAddr]) -> Option<TcpStream> {
 
 /// Carries one connection of yt-dlp's to where its request asks, if that is allowed.
 async fn carry(mut client: TcpStream, kept_off: fn(IpAddr) -> bool, refused: Arc<AtomicBool>) {
-    let Some((head, rest)) = read_head(&mut client).await else {
+    let Some((head, rest)) = read_head(&mut client, Vec::new()).await else {
         client_may_have_gone(&client.write_all(BAD_REQUEST).await);
         return;
     };
@@ -225,19 +285,73 @@ async fn carry(mut client: TcpStream, kept_off: fn(IpAddr) -> bool, refused: Arc
         client_may_have_gone(&client.write_all(UNREACHABLE).await);
         return;
     };
-    let opened = match &destination.head {
-        Some(sent) => server.write_all(sent).await,
-        None => client.write_all(TUNNEL_OPEN).await,
-    };
-    let carried = match opened {
-        Ok(()) => match server.write_all(&rest).await {
-            Ok(()) => copy_bidirectional(&mut client, &mut server).await.map(drop),
-            Err(e) => Err(e),
-        },
-        Err(e) => Err(e),
+    let carried = match &destination.request {
+        Some(request) => carry_request(&mut client, &mut server, request, &rest).await,
+        None => carry_tunnel(&mut client, &mut server, &rest).await,
     };
     if let Err(e) = carried {
         tracing::debug!(error = %e, "a connection through the local network guard ended early");
+    }
+}
+
+async fn carry_tunnel(
+    client: &mut TcpStream,
+    server: &mut TcpStream,
+    rest: &[u8],
+) -> io::Result<()> {
+    client.write_all(TUNNEL_OPEN).await?;
+    server.write_all(rest).await?;
+    copy_bidirectional(client, server).await.map(drop)
+}
+
+/// Carries one plain request and its response. Nothing the client sends past the request's body reaches the server: it can name another host, and its cookies would go with it.
+async fn carry_request(
+    client: &mut TcpStream,
+    server: &mut TcpStream,
+    request: &PlainRequest,
+    rest: &[u8],
+) -> io::Result<()> {
+    server.write_all(&request.head).await?;
+    let held = usize::try_from(request.body_len).map_or(rest.len(), |len| len.min(rest.len()));
+    server
+        .write_all(rest.get(..held).unwrap_or_default())
+        .await?;
+    let left = request.body_len.saturating_sub(held as u64);
+    tokio::io::copy(&mut (&mut *client).take(left), server).await?;
+    carry_response(client, server).await
+}
+
+/// Passes on the response, told to close. It ends when either side closes; what the client sends meanwhile is dropped.
+async fn carry_response(client: &mut TcpStream, server: &mut TcpStream) -> io::Result<()> {
+    const INFORMATIONAL: &[u8] = b"1";
+    const STATUS_AT: usize = "HTTP/1.1 ".len();
+    let mut bytes = Vec::new();
+    let body = loop {
+        let Some((head, after)) = read_head(server, bytes).await else {
+            return client.write_all(UNREACHABLE).await;
+        };
+        // Answers before the final one say nothing about closing; the client reads on past them.
+        if head.get(STATUS_AT..=STATUS_AT) == Some(INFORMATIONAL) {
+            client.write_all(&head).await?;
+            bytes = after;
+        } else {
+            client.write_all(&closing_response(&head)).await?;
+            break after;
+        }
+    };
+    client.write_all(&body).await?;
+    let mut from_server = vec![0_u8; RELAY_BUFFER];
+    let mut from_client = [0_u8; KIB_USIZE];
+    loop {
+        tokio::select! {
+            read = server.read(&mut from_server) => match read? {
+                0 => return Ok(()),
+                n => client.write_all(from_server.get(..n).unwrap_or_default()).await?,
+            },
+            read = client.read(&mut from_client) => if read? == 0 {
+                return Ok(());
+            },
+        }
     }
 }
 
@@ -371,7 +485,7 @@ mod tests {
         let target = server.local_addr().unwrap();
         let heard = tokio::spawn(async move {
             let (mut peer, _) = server.accept().await.unwrap();
-            let (head, _) = read_head(&mut peer).await.unwrap();
+            let (head, _) = read_head(&mut peer, Vec::new()).await.unwrap();
             peer.write_all(b"HTTP/1.1 204 No Content\r\n\r\n")
                 .await
                 .unwrap();
@@ -389,5 +503,95 @@ mod tests {
             heard.await.unwrap(),
             format!("GET /a?b=c HTTP/1.1\r\nHost: {target}\r\nConnection: close\r\n\r\n")
         );
+    }
+
+    /// A server that keeps its connection open never gets a later request sent down this one, which could name another host and carry its cookies.
+    #[tokio::test]
+    async fn a_keep_alive_server_sees_one_request_only() {
+        let guard = Guard::keeping_off(nothing_kept_off).await.unwrap();
+        let server = local_server().await;
+        let target = server.local_addr().unwrap();
+        let later = tokio::spawn(async move {
+            let (mut peer, _) = server.accept().await.unwrap();
+            let (_, _) = read_head(&mut peer, Vec::new()).await.unwrap();
+            peer.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\nKeep-Alive: timeout=60\r\n\r\nok",
+            )
+            .await
+            .unwrap();
+            let mut rest = Vec::new();
+            peer.read_to_end(&mut rest).await.unwrap();
+            rest
+        });
+        let mut client = TcpStream::connect(guard.address).await.unwrap();
+        client
+            .write_all(
+                format!("GET http://{target}/a HTTP/1.1\r\nHost: {target}\r\n\r\n").as_bytes(),
+            )
+            .await
+            .unwrap();
+        let (response, mut body) = read_head(&mut client, Vec::new()).await.unwrap();
+        let response = String::from_utf8(response).unwrap();
+        assert_eq!(
+            response,
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n"
+        );
+        while body.len() < 2 {
+            let mut more = [0_u8; 2];
+            let n = client.read(&mut more).await.unwrap();
+            body.extend_from_slice(more.get(..n).unwrap());
+        }
+        assert_eq!(body, b"ok");
+        client
+            .write_all(b"GET http://other.example/ HTTP/1.1\r\nCookie: session=SECRET\r\n\r\n")
+            .await
+            .unwrap();
+        client.shutdown().await.unwrap();
+        assert_eq!(later.await.unwrap(), Vec::<u8>::new());
+    }
+
+    /// A request's body goes on to its stated length, and what follows it does not.
+    #[tokio::test]
+    async fn only_a_requests_own_body_goes_on() {
+        let guard = Guard::keeping_off(nothing_kept_off).await.unwrap();
+        let server = local_server().await;
+        let target = server.local_addr().unwrap();
+        let heard = tokio::spawn(async move {
+            let (mut peer, _) = server.accept().await.unwrap();
+            let (_, mut body) = read_head(&mut peer, Vec::new()).await.unwrap();
+            peer.write_all(b"HTTP/1.1 204 No Content\r\n\r\n")
+                .await
+                .unwrap();
+            peer.read_to_end(&mut body).await.unwrap();
+            body
+        });
+        answer(
+            &guard,
+            &format!("POST http://{target}/ HTTP/1.1\r\nContent-Length: 4\r\n\r\nbodyGET http://other.example/ HTTP/1.1\r\n\r\n"),
+        )
+        .await;
+        assert_eq!(heard.await.unwrap(), b"body");
+    }
+
+    #[tokio::test]
+    async fn a_body_of_unstated_length_goes_nowhere() {
+        let guard = Guard::keeping_off(nothing_kept_off).await.unwrap();
+        let said = answer(
+            &guard,
+            "POST http://127.0.0.1:9/ HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n",
+        )
+        .await;
+        assert!(said.starts_with("HTTP/1.1 400"), "{said}");
+    }
+
+    #[test]
+    fn the_target_goes_on_as_the_client_wrote_it() {
+        for (target, sent) in [
+            ("http://a.example/p%20q?x=a%2fb&y=|", "/p%20q?x=a%2fb&y=|"),
+            ("http://a.example?q=1", "/?q=1"),
+            ("http://a.example", "/"),
+        ] {
+            assert_eq!(origin_form(target).as_deref(), Some(sent), "{target}");
+        }
     }
 }

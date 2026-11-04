@@ -204,7 +204,7 @@ async fn cookie_formats_pass_the_rule(
 }
 
 async fn off_local_network(job: &Job, proxy: Option<&str>) -> bool {
-    ytdlp_off_local_network(job.chosen_by, &job.url, &job.options.proxy, proxy).await
+    ytdlp_off_local_network(job.chosen_by, &job.url, proxy).await
 }
 
 /// Downloads the formats `found` side by side into `work`: their files, in the

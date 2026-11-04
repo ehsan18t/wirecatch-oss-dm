@@ -3,7 +3,7 @@
 use std::net::IpAddr;
 use std::time::Duration;
 
-use wirecatch_engine::{PrivateNetwork, ProxyChoice, ProxyRoute, Url};
+use wirecatch_engine::{ManualProxies, PrivateNetwork, Url};
 use wirecatch_media::describe;
 use wirecatch_protocol::app::UserError;
 use wirecatch_sites::local_network::{self, ChosenBy};
@@ -32,12 +32,14 @@ pub(super) async fn network_rule(
 pub(in crate::manager) async fn ytdlp_off_local_network(
     chosen_by: ChosenBy,
     page: &Url,
-    choice: &ProxyChoice,
     proxy: Option<&str>,
 ) -> bool {
-    let direct = match proxy {
-        Some(proxy) => proxy.is_empty(),
-        None => choice.route(page) == ProxyRoute::Direct,
+    let direct = if let Some(proxy) = proxy {
+        proxy.is_empty()
+    } else {
+        // Any proxy the computer has: `proxy_environment` would replace them all, the page's scheme or not (D136.2).
+        let system = tokio::task::spawn_blocking(ManualProxies::from_system).await;
+        matches!(system, Ok(None))
     };
     direct && !page_is_local(chosen_by, page).await
 }
