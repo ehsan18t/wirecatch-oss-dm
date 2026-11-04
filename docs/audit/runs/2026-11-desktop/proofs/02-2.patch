@@ -1,0 +1,96 @@
+Run: git apply this, then CARGO_TARGET_DIR=<dir> cargo test -p wirecatch-engine --test audit_raw_headers a_raw_byte. Output: FAILED, left "get.php", right "résumé.pdf".
+diff --git a/crates/engine/tests/audit_raw_headers.rs b/crates/engine/tests/audit_raw_headers.rs
+new file mode 100644
+index 000000000..bb874ea58
+--- /dev/null
++++ b/crates/engine/tests/audit_raw_headers.rs
+@@ -0,0 +1,89 @@
++//! Proofs of 02-2 and B11-1: raw bytes above 126 in a response header.
++
++use std::sync::Arc;
++
++use tokio::io::{AsyncReadExt, AsyncWriteExt};
++use tokio::net::TcpListener;
++use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Url, download};
++use wirecatch_test_support::{PATIENCE, private_dir};
++
++const BODY: &[u8] = b"the file";
++
++/// Answers every request with `first` for `/start` and the file, with `extra` header bytes, for anything else.
++async fn serve(extra: &'static [u8], first: &'static [u8]) -> (u16, tokio::task::JoinHandle<()>) {
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let port = listener.local_addr().unwrap().port();
++    let server = tokio::spawn(async move {
++        loop {
++            let (mut socket, _) = listener.accept().await.unwrap();
++            tokio::spawn(async move {
++                let mut head = Vec::new();
++                let mut byte = [0u8; 1];
++                while !head.ends_with(b"\r\n\r\n") && socket.read(&mut byte).await.unwrap() == 1 {
++                    head.push(byte[0]);
++                }
++                if head.starts_with(b"GET /start ") && !first.is_empty() {
++                    socket.write_all(first).await.unwrap();
++                    return;
++                }
++                let start = format!("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: {}\r\n", BODY.len());
++                socket.write_all(start.as_bytes()).await.unwrap();
++                socket.write_all(extra).await.unwrap();
++                socket.write_all(b"\r\n").await.unwrap();
++                socket.write_all(BODY).await.unwrap();
++            });
++        }
++    });
++    (port, server)
++}
++
++async fn fetch(port: u16, path: &str, dir: &std::path::Path) -> wirecatch_engine::Result<Outcome> {
++    let url = Url::parse(&format!("http://127.0.0.1:{port}/{path}")).unwrap();
++    let mut request = DownloadRequest::new(url, dir);
++    request.options.connections = 1;
++    request.options.max_retries = 0;
++    tokio::time::timeout(
++        PATIENCE,
++        download(request, Arc::new(Progress::default()), CancellationToken::new()),
++    )
++    .await
++    .expect("the download hung")
++}
++
++/// 02-2
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn a_raw_byte_in_the_plain_name_does_not_lose_the_encoded_name() {
++    let (port, server) = serve(
++        b"Content-Disposition: attachment; filename=\"r\xC3\xA9sum\xC3\xA9.pdf\"; filename*=UTF-8''r%C3%A9sum%C3%A9.pdf\r\n",
++        b"",
++    )
++    .await;
++    let dir = private_dir("audit-02-2").unwrap();
++    let ended = fetch(port, "get.php", &dir).await;
++    server.abort();
++    match ended {
++        Ok(Outcome::Completed { path, .. }) => {
++            assert_eq!(path.file_name().unwrap().to_str().unwrap(), "résumé.pdf");
++        }
++        other => panic!("{other:?}"),
++    }
++}
++
++/// B11-1
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn a_redirect_to_an_address_in_raw_utf8_is_followed() {
++    let (port, server) = serve(
++        b"",
++        b"HTTP/1.1 302 Found\r\nLocation: /caf\xC3\xA9.zip\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
++    )
++    .await;
++    let dir = private_dir("audit-b11-1").unwrap();
++    let ended = fetch(port, "start", &dir).await;
++    server.abort();
++    match ended {
++        Ok(Outcome::Completed { path, .. }) => {
++            assert_eq!(path.file_name().unwrap().to_str().unwrap(), "café.zip");
++        }
++        other => panic!("{other:?}"),
++    }
++}

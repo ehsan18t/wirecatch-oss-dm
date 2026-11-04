@@ -1,0 +1,105 @@
+Run: git apply this, then CARGO_TARGET_DIR=<dir> cargo test -p wirecatch-engine --test audit_02_1. Output: FAILED, panic 'the link still works, but: Err(HttpStatus { status: 403, url: "http://127.0.0.1:55581/old" }) (the link was asked 1 time)'.
+diff --git a/crates/engine/tests/audit_02_1.rs b/crates/engine/tests/audit_02_1.rs
+new file mode 100644
+index 000000000..00d856a8a
+--- /dev/null
++++ b/crates/engine/tests/audit_02_1.rs
+@@ -0,0 +1,98 @@
++//! Proof of 02-1: the link still works, but its redirect target has expired.
++
++use std::sync::Arc;
++use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
++
++use tokio::io::{AsyncReadExt, AsyncWriteExt};
++use tokio::net::TcpListener;
++use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Url, download};
++use wirecatch_test_support::{PATIENCE, private_dir, test_data};
++
++const SIZE: usize = 256 * 1024;
++
++#[derive(Default)]
++struct Host {
++    expired: AtomicBool,
++    link_visits: AtomicUsize,
++}
++
++async fn request_head(socket: &mut tokio::net::TcpStream) -> String {
++    let mut head = Vec::new();
++    let mut byte = [0u8; 1];
++    while !head.ends_with(b"\r\n\r\n") && socket.read(&mut byte).await.unwrap() == 1 {
++        head.push(byte[0]);
++    }
++    String::from_utf8(head).unwrap()
++}
++
++/// `/link` sends the client to `/old`, then to `/new` once `/old` has expired. `/old` breaks off its first answer halfway and refuses everything after that, as a signed address past its time does.
++async fn answer(mut socket: tokio::net::TcpStream, host: Arc<Host>, data: Arc<Vec<u8>>) {
++    let head = request_head(&mut socket).await;
++    let path = head.split_whitespace().nth(1).unwrap_or_default().to_owned();
++    let from: usize = head
++        .lines()
++        .find_map(|l| l.to_ascii_lowercase().strip_prefix("range: bytes=").map(str::to_owned))
++        .and_then(|r| r.split('-').next().and_then(|n| n.parse().ok()))
++        .unwrap_or(0);
++    if path == "/link" {
++        let visit = host.link_visits.fetch_add(1, Ordering::SeqCst);
++        let to = if visit == 0 { "/old" } else { "/new" };
++        let reply = format!("HTTP/1.1 302 Found\r\nLocation: {to}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
++        socket.write_all(reply.as_bytes()).await.unwrap();
++        return;
++    }
++    if path == "/old" && host.expired.load(Ordering::SeqCst) {
++        let reply = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
++        socket.write_all(reply.as_bytes()).await.unwrap();
++        return;
++    }
++    let reply = format!(
++        "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {from}-{}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
++        data.len() - 1,
++        data.len(),
++        data.len() - from
++    );
++    socket.write_all(reply.as_bytes()).await.unwrap();
++    if path == "/old" {
++        socket.write_all(&data[from..from + (data.len() - from) / 2]).await.unwrap();
++        socket.flush().await.unwrap();
++        host.expired.store(true, Ordering::SeqCst);
++        return;
++    }
++    socket.write_all(&data[from..]).await.unwrap();
++}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn a_download_survives_its_redirect_target_expiring() {
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let port = listener.local_addr().unwrap().port();
++    let host = Arc::new(Host::default());
++    let data = Arc::new(test_data(SIZE));
++    let server = {
++        let (host, data) = (host.clone(), data.clone());
++        tokio::spawn(async move {
++            loop {
++                let (socket, _) = listener.accept().await.unwrap();
++                tokio::spawn(answer(socket, host.clone(), data.clone()));
++            }
++        })
++    };
++    let dir = private_dir("audit-02-1").unwrap();
++    let url = Url::parse(&format!("http://127.0.0.1:{port}/link")).unwrap();
++    let mut request = DownloadRequest::new(url, &*dir);
++    request.options.connections = 1;
++    let ended = tokio::time::timeout(
++        PATIENCE,
++        download(request, Arc::new(Progress::default()), CancellationToken::new()),
++    )
++    .await
++    .expect("the download hung");
++    server.abort();
++    let visits = host.link_visits.load(Ordering::SeqCst);
++    match ended {
++        Ok(Outcome::Completed { path, .. }) => {
++            assert!(std::fs::read(path).unwrap() == *data, "bytes differ");
++        }
++        other => panic!("the link still works, but: {other:?} (the link was asked {visits} time)"),
++    }
++}

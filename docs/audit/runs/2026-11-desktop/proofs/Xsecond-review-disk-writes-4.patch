@@ -1,0 +1,43 @@
+Run: cargo test --profile b06 --config 'profile.b06.inherits="dev"' -p wirecatch-streams --lib -- proof_a_torn. Output: FAILED, left: Some(Appended { next: 5, size: 12 }), right: Some(Appended { next: 3, size: 1000000 }).
+diff --git a/crates/streams/src/workdir.rs b/crates/streams/src/workdir.rs
+index ee97d7dff..3e00489c6 100644
+--- a/crates/streams/src/workdir.rs
++++ b/crates/streams/src/workdir.rs
+@@ -319,6 +319,37 @@ mod tests {
+         dir.remove().unwrap();
+     }
+ 
++    /// Xsecond-review-disk-writes-4: a last line with no newline does not count.
++    #[test]
++    fn proof_a_torn_appended_line_does_not_count() {
++        let dir = wirecatch_test_support::private_dir("workdir-torn").unwrap();
++        let out = dir.path().join("video.mp4");
++        let work = WorkDir::open(&out, 1, &[8]).unwrap();
++        fs::write(work.track_path(0), vec![0u8; 1_234_567]).unwrap();
++        work.record_appended(
++            0,
++            Appended {
++                next: 3,
++                size: 1_000_000,
++            },
++        )
++        .unwrap();
++        // The write of "A 0 5 1234567" and its newline came back short.
++        work.append("A 0 5 12", Sync::No).unwrap();
++        drop(work);
++        let work = WorkDir::open(&out, 1, &[8]).unwrap();
++        assert_eq!(
++            work.appended.get(&0),
++            Some(&Appended {
++                next: 3,
++                size: 1_000_000
++            }),
++            "concat would cut the track to this size and skip the segments before `next`"
++        );
++        work.remove().unwrap();
++        dir.remove().unwrap();
++    }
++
+     /// A download paused by the build before (layout 1, which had no `A` lines) resumes with its segments and joined tracks.
+     #[test]
+     fn a_folder_of_the_layout_before_is_kept() {

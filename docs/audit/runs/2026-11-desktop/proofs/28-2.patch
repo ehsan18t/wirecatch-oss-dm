@@ -1,0 +1,33 @@
+Run (Windows): git apply this, then CARGO_TARGET_DIR=<dir> cargo test -p wirecatch-messages audit_28_2 -- --nocapture. Output: FAILED, told 'Wirecatch is not allowed to save files in <folder>. Choose another folder.' with Some(ChooseFolder).
+diff --git a/crates/messages/src/lib.rs b/crates/messages/src/lib.rs
+index 2fc03912c..2ff84643a 100644
+--- a/crates/messages/src/lib.rs
++++ b/crates/messages/src/lib.rs
+@@ -764,3 +764,27 @@ mod tests {
+         }
+     }
+ }
++
++#[cfg(all(test, windows))]
++mod audit_28_2 {
++    use super::*;
++    use std::os::windows::fs::OpenOptionsExt;
++
++    #[test]
++    fn replacing_a_file_another_program_holds_does_not_blame_the_folder() {
++        let dir = std::env::temp_dir().join(format!("audit-28-2-{}", std::process::id()));
++        std::fs::create_dir_all(&dir).unwrap();
++        let (part, target) = (dir.join("f.bin.wcpart"), dir.join("f.bin"));
++        std::fs::write(&part, b"new").unwrap();
++        std::fs::write(&target, b"old").unwrap();
++        const FILE_SHARE_READ: u32 = 1;
++        let held = std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(&target).unwrap();
++        let source = std::fs::rename(&part, &target).unwrap_err();
++        println!("kind={:?} raw={:?}", source.kind(), source.raw_os_error());
++        drop(held);
++        let error = EngineError::Io { action: wirecatch_engine::IoAction::Finish, path: target.clone(), source };
++        let told = describe(&error, &dir, Worked::Before);
++        std::fs::remove_dir_all(&dir).unwrap();
++        assert_ne!(told.fix, Some(FixAction::ChooseFolder), "{}", told.message);
++    }
++}

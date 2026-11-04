@@ -1,0 +1,130 @@
+Run: CARGO_TARGET_DIR=target/audit-proofs cargo test --profile b06 --config 'profile.b06.inherits="dev"' -p wirecatch-streams --no-fail-fast --test proof_15_1 -- --test-threads=1 --nocapture. Output: all 4 FAILED: middle page "reported as Ok(Completed { .. bytes: 3071 })"; "pages: .. bytes: 142", "empty: .. bytes: 0"; "ts: reported Completed from a 6 s source, 56140 bytes; Duration: 00:00:06.00" (middle 2 s a hole); "fmp4: reported Completed from a 6 s source, 26954 bytes; Duration: 00:00:02.00".
+diff --git a/crates/streams/tests/proof_15_1.rs b/crates/streams/tests/proof_15_1.rs
+new file mode 100644
+index 000000000..0bc3aab6b
+--- /dev/null
++++ b/crates/streams/tests/proof_15_1.rs
+@@ -0,0 +1,123 @@
++//! 15-1: a plain segment answered with a page or nothing, status 200.
++
++use std::process::Command;
++
++use wirecatch_streams::Outcome;
++use wirecatch_test_support::files::FileServer;
++use wirecatch_test_support::{private_dir, real_ffmpeg, ts_segment};
++
++mod common;
++use common::{request, run};
++
++const MPEGURL: &str = "application/vnd.apple.mpegurl";
++const PAGE: &[u8] = b"<!doctype html><html><body>Your session expired. Sign in.</body></html>";
++
++fn playlist(server: &FileServer, count: usize) {
++    let mut text = String::from("#EXTM3U\n#EXT-X-TARGETDURATION:2\n");
++    for i in 0..count {
++        text.push_str(&format!("#EXTINF:2,\n{i}.ts\n"));
++    }
++    text.push_str("#EXT-X-ENDLIST\n");
++    server.put_typed("index.m3u8", text, MPEGURL);
++}
++
++/// No ffmpeg: a page in the middle of a track is reported as a finished video.
++#[tokio::test]
++async fn proof_a_page_in_the_middle_is_not_a_finished_video() {
++    let server = FileServer::start().await;
++    server.put("0.ts", ts_segment(1, 1500));
++    server.put("1.ts", PAGE.to_vec());
++    server.put("2.ts", ts_segment(3, 1500));
++    playlist(&server, 3);
++    let dir = private_dir("proof-15-1-middle").unwrap();
++    let got = run(request(server.url("index.m3u8"), dir.join("clip.ts"))).await;
++    assert!(got.is_err(), "reported as {got:?}");
++}
++
++/// No ffmpeg: a track of nothing but pages, or of empty bodies, is saved as a video.
++#[tokio::test]
++async fn proof_a_track_of_pages_or_nothing_is_not_a_finished_video() {
++    let mut reports = Vec::new();
++    for (name, body) in [("pages", PAGE), ("empty", &b""[..])] {
++        let server = FileServer::start().await;
++        server.put("0.ts", body.to_vec());
++        server.put("1.ts", body.to_vec());
++        playlist(&server, 2);
++        let dir = private_dir(&format!("proof-15-1-{name}")).unwrap();
++        let got = run(request(server.url("index.m3u8"), dir.join("clip"))).await;
++        if got.is_ok() {
++            reports.push(format!("{name}: reported as {got:?}"));
++        }
++    }
++    assert!(reports.is_empty(), "{reports:?}");
++}
++
++/// Real ffmpeg: a page in place of the middle segment gives a video that is cut.
++async fn with_real_ffmpeg(segment: &str, extra: &[&str], tag: &str) {
++    let Some(ffmpeg) = real_ffmpeg() else {
++        panic!("no ffmpeg")
++    };
++    let source = private_dir(&format!("proof-15-1-source-{tag}")).unwrap();
++    let status = Command::new(&ffmpeg)
++        .current_dir(source.path())
++        .args(["-hide_banner", "-loglevel", "error", "-y"])
++        .args([
++            "-f",
++            "lavfi",
++            "-i",
++            "testsrc=duration=6:size=160x120:rate=10",
++        ])
++        .args(["-c:v", "mpeg4", "-bsf:v", "dump_extra", "-g", "10"])
++        .args(["-f", "hls", "-hls_time", "2", "-hls_playlist_type", "vod"])
++        .args(extra)
++        .arg("-hls_segment_filename")
++        .arg(segment)
++        .arg("index.m3u8")
++        .status()
++        .unwrap();
++    assert!(status.success());
++    let bad = segment.replace("%d", "1");
++    let server = FileServer::start().await;
++    for entry in std::fs::read_dir(source.path()).unwrap() {
++        let path = entry.unwrap().path();
++        let name = path.file_name().unwrap().to_string_lossy().into_owned();
++        let bytes = std::fs::read(&path).unwrap();
++        if name == bad {
++            server.put(&name, PAGE.to_vec());
++        } else if name.ends_with(".m3u8") {
++            server.put_typed(&name, bytes, MPEGURL);
++        } else {
++            server.put(&name, bytes);
++        }
++    }
++    let dir = private_dir(&format!("proof-15-1-ffmpeg-{tag}")).unwrap();
++    let mut request = request(server.url("index.m3u8"), dir.join("clip"));
++    request.ffmpeg = Some(ffmpeg.clone());
++    let got = run(request).await;
++    if let Ok(Outcome::Completed { path, bytes, .. }) = &got {
++        let probe = Command::new(&ffmpeg)
++            .args(["-hide_banner", "-i"])
++            .arg(path)
++            .output()
++            .unwrap();
++        let text = String::from_utf8_lossy(&probe.stderr).into_owned();
++        let line = text.lines().find(|l| l.contains("Duration")).unwrap_or("");
++        panic!("{tag}: reported Completed from a 6 s source, {bytes} bytes; {}", line.trim());
++    }
++    panic!("{tag}: ffmpeg refused it, as it should: {got:?}");
++}
++
++#[tokio::test]
++async fn proof_real_ffmpeg_does_not_hide_a_page_in_mpeg_ts() {
++    with_real_ffmpeg("s%d.ts", &[], "ts").await;
++}
++
++#[tokio::test]
++async fn proof_real_ffmpeg_does_not_hide_a_page_in_fragmented_mp4() {
++    with_real_ffmpeg(
++        "s%d.m4s",
++        &["-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", "init.mp4"],
++        "fmp4",
++    )
++    .await;
++}

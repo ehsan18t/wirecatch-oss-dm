@@ -1,0 +1,98 @@
+# Run: git apply this file at the repository root, then cargo test -p wirecatch-engine --lib proof_tests -- --nocapture. The patch injects one failed flush in flush_then, so it proves only the engine half (a failed flush is forgotten); the system half (later flushes pass with the bytes gone) was not reproduced. Output on Windows at 02284bbd0: test result: FAILED. 0 passed; 1 failed ("reported complete after a failed flush: Ok(Completed { ..., bytes: 4194304, resumed_from: 0 })").
+diff --git a/crates/engine/src/checkpoint.rs b/crates/engine/src/checkpoint.rs
+index dd5b1b313..9efa350c7 100644
+--- a/crates/engine/src/checkpoint.rs
++++ b/crates/engine/src/checkpoint.rs
+@@ -120,6 +120,10 @@ fn flush_then(
+     abandoned: &Abandoned,
+     write: impl FnOnce() -> Result<()>,
+ ) -> Result<()> {
++    #[cfg(test)]
++    if proof::flush_fails(path) {
++        return Err(std::io::Error::other("write-back failed")).context(IoAction::Flush, path);
++    }
+     part.sync_data().context(IoAction::Flush, path)?;
+     #[cfg(test)]
+     abandoned.slow_step_done();
+@@ -187,6 +191,81 @@ impl Drop for Checkpoints {
+     }
+ }
+ 
++/// Fails one flush of one part file, as a write-back error reported once would.
++#[cfg(test)]
++mod proof {
++    use std::path::{Path, PathBuf};
++    use std::sync::Mutex;
++
++    /// The part file, how many flushes of it pass first, and whether the failure happened.
++    pub static PLAN: Mutex<Option<(PathBuf, u32, bool)>> = Mutex::new(None);
++
++    pub fn flush_fails(path: &Path) -> bool {
++        let mut plan = PLAN.lock().unwrap();
++        let Some((part, passes, failed)) = plan.as_mut() else {
++            return false;
++        };
++        if part != path || *failed {
++            return false;
++        }
++        if *passes > 0 {
++            *passes -= 1;
++            return false;
++        }
++        *failed = true;
++        true
++    }
++}
++
++#[cfg(test)]
++mod proof_tests {
++    use std::sync::Arc;
++    use std::time::Duration;
++
++    use tokio_util::sync::CancellationToken;
++    use wirecatch_test_support::http::{Config, TestServer};
++    use wirecatch_test_support::{PATIENCE, private_dir, test_data};
++
++    use super::proof::PLAN;
++    use crate::download::{DownloadRequest, Outcome, download};
++    use crate::progress::Progress;
++    use crate::units::{KIB_USIZE, MIB_USIZE};
++
++    /// The flush at the second checkpoint fails; every later one passes. Bytes that flush was to protect may be gone, so no later save or finish may trust them.
++    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++    async fn a_download_whose_flush_failed_is_not_reported_complete() {
++        let server = TestServer::start(
++            test_data(4 * MIB_USIZE),
++            Config {
++                per_connection_bps: Some(8 * MIB_USIZE as u64),
++                ..Default::default()
++            },
++        )
++        .await;
++        let dir = private_dir("proof-failed-flush").unwrap();
++        *PLAN.lock().unwrap() = Some((dir.join("f.bin.wcpart"), 2, false));
++        let mut request = DownloadRequest::new(server.url("f.bin"), dir.to_path_buf());
++        request.options.connections = 1;
++        request.options.buffer_size = 64 * KIB_USIZE;
++        request.options.checkpoint_interval = Duration::from_millis(20);
++        let run = download(
++            request,
++            Arc::new(Progress::default()),
++            CancellationToken::new(),
++        );
++        let result = tokio::time::timeout(PATIENCE, run)
++            .await
++            .expect("the download hung");
++        let failed = PLAN.lock().unwrap().as_ref().is_some_and(|plan| plan.2);
++        assert!(failed, "the download ended before the planned failure");
++        assert!(
++            !matches!(result, Ok(Outcome::Completed { .. })),
++            "reported complete after a failed flush: {result:?}"
++        );
++        dir.remove().unwrap();
++    }
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;

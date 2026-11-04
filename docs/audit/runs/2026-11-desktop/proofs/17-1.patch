@@ -1,0 +1,112 @@
+Run: cargo test --profile b06 --config 'profile.b06.inherits="dev"' -p wirecatch-core --lib -- proof_a. Output: both FAILED: "a link that was never read or downloaded completed as Ok(Completed { .. Clip.mp4, bytes: 28 }) with another link's video", and "the part of another page was reused without any request: Some(Some(..Clip.mp4.wcmedia\\video.mp4))". The stranding that leads here is proved by 17-2.patch.
+diff --git a/crates/core/src/manager/media_run/tests.rs b/crates/core/src/manager/media_run/tests.rs
+index c29a202c5..01652ffa6 100644
+--- a/crates/core/src/manager/media_run/tests.rs
++++ b/crates/core/src/manager/media_run/tests.rs
+@@ -561,3 +561,106 @@ async fn a_small_file_past_its_limit_is_never_written() {
+     assert!(matches!(fetched, super::extras::Fetch::Failed(_)));
+     assert!(!path.exists(), "the file past its limit was written");
+ }
++
++fn proof_job(dir: &Path, output: &Path, url: &str, taken: Taken) -> Job {
++    let tools: MediaTools = wirecatch_addons::ToolPaths {
++        ytdlp: dir.join("no-such-yt-dlp"),
++        ffmpeg: dir.join("no-such-ffmpeg"),
++        deno: dir.join("no-such-deno"),
++        ytdlp_cache: dir.join("cache"),
++    }
++    .into();
++    Job {
++        output: output.to_path_buf(),
++        url: Url::parse(url).unwrap(),
++        origin: Origin::default(),
++        chosen_by: ChosenBy::Person,
++        tools: Some(tools),
++        options: DownloadOptions::default(),
++        temp_dir: dir.to_path_buf(),
++        timeout: Duration::from_secs(1),
++        refresh_delays: Arc::new([]),
++        clock: Arc::new(crate::clock::SystemClock),
++        reserve: Arc::new(|_: &Path, _| true),
++        file_work: FileWork::new(),
++        taken,
++    }
++}
++
++/// 17-1: a list another download left in the work folder is saved as this download.
++#[tokio::test]
++async fn proof_a_new_link_does_not_take_a_list_another_link_left() {
++    let dir = tempfile::tempdir().unwrap();
++    let output = dir.path().join("Clip.mp4");
++    std::fs::write(&output, b"the person's file").unwrap();
++    let work = wirecatch_media::work_dir(&output);
++    std::fs::create_dir(&work).unwrap();
++    let old = work.join("video.mp4");
++    std::fs::write(&old, b"the earlier download's video").unwrap();
++    workdir::Downloaded::of_media(std::slice::from_ref(&old))
++        .write(&work)
++        .await
++        .unwrap();
++    let job = proof_job(
++        dir.path(),
++        &output,
++        "https://example.com/another-video",
++        Taken::Replace,
++    );
++    let what = MediaJob::Page {
++        video: None,
++        audio: None,
++        output: None,
++        keep_ext: None,
++        conversion_failed: false,
++    };
++    let end = run(
++        job,
++        what,
++        &MediaProgress::default(),
++        &CancellationToken::new(),
++    )
++    .await;
++    let saved = std::fs::read(&output).unwrap();
++    assert_ne!(
++        saved, b"the earlier download's video",
++        "a link that was never read or downloaded completed as {end:?} with another link's video"
++    );
++}
++
++/// 17-1: a marker names no link, so one page's part is joined with another's.
++#[tokio::test]
++async fn proof_a_part_marker_belongs_to_its_link() {
++    let dir = tempfile::tempdir().unwrap();
++    let output = dir.path().join("Clip.mp4");
++    let work = wirecatch_media::work_dir(&output);
++    std::fs::create_dir(&work).unwrap();
++    std::fs::write(work.join("video.mp4"), b"the earlier page's video").unwrap();
++    std::fs::write(work.join(workdir::marker("video")), "video.mp4").unwrap();
++    let job = proof_job(
++        dir.path(),
++        &output,
++        "https://example.com/another-video",
++        Taken::Replace,
++    );
++    let format: Format = serde_json::from_value(serde_json::json!({
++        "format_id": "137", "ext": "mp4", "vcodec": "avc1", "acodec": "none",
++        "url": "http://127.0.0.1:9/another-video.mp4", "protocol": "https"
++    }))
++    .unwrap();
++    let got = super::page::fetch_part(
++        &job,
++        &format,
++        "video",
++        PrivateNetwork::Allow,
++        &work,
++        &MediaProgress::default(),
++        &CancellationToken::new(),
++    )
++    .await;
++    assert!(
++        !matches!(got, Ok(Some(_))),
++        "the part of another page was reused without any request: {:?}",
++        got.ok()
++    );
++}

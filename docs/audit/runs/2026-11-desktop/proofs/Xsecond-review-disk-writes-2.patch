@@ -1,0 +1,116 @@
+# Run: git apply this file at the repository root, then cargo test -p wirecatch-engine --test proof_short_retry -- --nocapture. Output on Windows at 02284bbd0: test result: FAILED. 0 passed; 2 failed ("reported complete: 1048576 bytes ... after the server's last answer was a 20 byte page"; "saved as whole: 1048576 bytes, 1048576 on disk, after the server's last answer was a 20 byte page").
+diff --git a/crates/engine/tests/proof_short_retry.rs b/crates/engine/tests/proof_short_retry.rs
+new file mode 100644
+index 000000000..6d66b43db
+--- /dev/null
++++ b/crates/engine/tests/proof_short_retry.rs
+@@ -0,0 +1,109 @@
++//! A body of unknown size is cut, and the retry's answer ends before the bytes already kept.
++
++use std::path::Path;
++use std::sync::Arc;
++use std::sync::atomic::{AtomicUsize, Ordering};
++
++use tokio::io::{AsyncReadExt, AsyncWriteExt};
++use tokio::net::TcpListener;
++use wirecatch_engine::units::{KIB_USIZE, MIB_USIZE};
++use wirecatch_engine::{
++    CancellationToken, DownloadOptions, DownloadRequest, Fetcher, Outcome, Progress, Url, download,
++};
++use wirecatch_test_support::{PATIENCE, private_dir};
++
++const KEPT: usize = MIB_USIZE;
++const SHORT_PAGE: &[u8] = b"<html>sign in</html>";
++
++/// First answer: chunked, `KEPT` bytes, then the connection ends with no last chunk. Every later answer: a `200` with a short body.
++async fn cut_then_short() -> (Url, Arc<AtomicUsize>) {
++    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let port = listener.local_addr().unwrap().port();
++    let answers = Arc::new(AtomicUsize::new(0));
++    let counted = answers.clone();
++    tokio::spawn(async move {
++        loop {
++            let (mut socket, _) = listener.accept().await.unwrap();
++            let number = counted.fetch_add(1, Ordering::SeqCst);
++            tokio::spawn(async move {
++                let mut head = Vec::new();
++                let mut buf = [0u8; KIB_USIZE];
++                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
++                    let n = socket.read(&mut buf).await.unwrap();
++                    if n == 0 {
++                        return;
++                    }
++                    head.extend_from_slice(&buf[..n]);
++                }
++                if number == 0 {
++                    let mut answer =
++                        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
++                            .to_vec();
++                    answer.extend_from_slice(format!("{KEPT:x}\r\n").as_bytes());
++                    answer.extend(std::iter::repeat_n(b'A', KEPT));
++                    answer.extend_from_slice(b"\r\n");
++                    socket.write_all(&answer).await.unwrap();
++                } else {
++                    let head = format!(
++                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
++                        SHORT_PAGE.len()
++                    );
++                    socket.write_all(head.as_bytes()).await.unwrap();
++                    socket.write_all(SHORT_PAGE).await.unwrap();
++                }
++                socket.shutdown().await.unwrap();
++            });
++        }
++    });
++    let url = Url::parse(&format!("http://127.0.0.1:{port}/f.bin")).unwrap();
++    (url, answers)
++}
++
++fn saved_len(path: &Path) -> u64 {
++    std::fs::metadata(path).unwrap().len()
++}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn a_retry_answer_shorter_than_the_bytes_kept_is_not_the_end_of_the_file() {
++    let (url, answers) = cut_then_short().await;
++    let dir = private_dir("proof-short-retry").unwrap();
++    let request = DownloadRequest::new(url, dir.to_path_buf());
++    let run = download(
++        request,
++        Arc::new(Progress::default()),
++        CancellationToken::new(),
++    );
++    let result = tokio::time::timeout(PATIENCE, run).await.expect("the download hung");
++    assert!(answers.load(Ordering::SeqCst) >= 2, "no retry was made");
++    if let Ok(Outcome::Completed { path, bytes, .. }) = &result {
++        panic!(
++            "reported complete: {} bytes at {}, {} on disk, after the server's last answer was a {} byte page",
++            bytes,
++            path.display(),
++            saved_len(path),
++            SHORT_PAGE.len()
++        );
++    }
++    dir.remove().unwrap();
++}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
++async fn a_fetcher_retry_answer_shorter_than_the_bytes_kept_is_not_the_end_of_the_file() {
++    let (url, answers) = cut_then_short().await;
++    let dir = private_dir("proof-short-retry-fetcher").unwrap();
++    let path = dir.join("segment.ts");
++    let fetcher = Fetcher::new(&url, &DownloadOptions::default(), CancellationToken::new())
++        .await
++        .unwrap();
++    let run = fetcher.save(&url, None, &path, |_| {});
++    let result = tokio::time::timeout(PATIENCE, run).await.expect("the save hung");
++    assert!(answers.load(Ordering::SeqCst) >= 2, "no retry was made");
++    if let Ok(written) = result {
++        panic!(
++            "saved as whole: {written} bytes, {} on disk, after the server's last answer was a {} byte page",
++            saved_len(&path),
++            SHORT_PAGE.len()
++        );
++    }
++    dir.remove().unwrap();
++}
