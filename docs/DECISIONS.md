@@ -1217,3 +1217,11 @@ Decided on 2026-11-04. It amends D41.4 and D41.6.
 3. The bridge starts the app for `WrongOwner`, `LowerRightsServer`, `EndpointBusy`, `UnsafeDirectory` and `BadEndpointKey`, and reads the key again until the budget runs out. A running app that was only busy takes the launch through its lock and hands it over, with no harm done.
 4. `BadEndpointKey` starts the app even for a key the app will not replace (a link, a folder, another account's file, D41.4), since a client cannot tell these from a damaged one without repeating the listener's rule. The app then starts without its endpoint, and the bridge reports the key's own advice alone: close Wirecatch, delete the file, open it again. `UnsafeDirectory` in the runtime folder, which has no key to renew, starts the app the same way and reports its own advice. Such an app holds the download list, so every later bridge connection starts a copy that finds the list taken. A launch that shows no window, as the bridge's and the one at sign-in are, closes without a word; only a launch that would show a window says "already running", so the person gets no message per connection.
 5. A link, a folder or a file the user may not read in the key's place is `BadEndpointKey` on both systems, for clients and the listener, which refuses it rather than replacing it.
+
+### D142. An AppImage finds its libraries from its own binaries
+
+Decided on 2026-11-04. It amends D110.1.
+
+1. The app and the bridge are linked with an `RPATH` of `$ORIGIN/../lib`, and `AppRun` only starts the app. `LD_LIBRARY_PATH` is never set, since every program the app starts would inherit it and load the build machine's keyboard libraries instead of the system's.
+2. It is an `RPATH`, not the newer `RUNPATH`: a `RUNPATH` does not reach what a library loads, and `libxkbcommon-x11` loads `libxcb-xkb`. The same binaries go in the `.deb` and `.rpm`, where the folder is `/usr/lib`, which holds nothing of the app's.
+3. The release workflow's check reads with `ldd` that the app in the AppImage resolves each carried library to its own copy.

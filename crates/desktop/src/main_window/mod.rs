@@ -90,7 +90,7 @@ actions!(
     ]
 );
 
-/// The key context the main window's shortcuts work in; a text field's own keys come first.
+/// The main window's key context.
 const KEY_CONTEXT: &str = "MainWindow";
 
 /// The search field's context, where Down leaves the field for the list.

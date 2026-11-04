@@ -1,5 +1,5 @@
 //! The endpoint a channel's app listens at and the one its clients look for, both found from
-//! the channel alone, as the app and the bridge find them (IPB-10, D41.4).
+//! the channel alone, as the app and the bridge find them (D41.4).
 //!
 //! This binary runs this one test, since it points the user's local data folder at a folder
 //! of its own through the environment.
@@ -7,9 +7,8 @@
 use wirecatch_ipc::{Channel, Folders, IpcError, Listener, endpoint_for};
 use wirecatch_test_support::private_dir;
 
-// The app listened at a name worked out from the user's SID (Windows) or uid (the `/tmp`
-// fallback on Linux) alone, so another account could take it first and keep Wirecatch from
-// starting (IPB-10).
+// A name worked out from the user's SID (Windows) or uid (the `/tmp` fallback on Linux) alone
+// could be taken first by another account, which would keep Wirecatch from starting.
 #[tokio::test(flavor = "current_thread")]
 async fn a_channels_endpoint_carries_the_key_its_listener_wrote() {
     let dir = private_dir("ipc-channel").unwrap();
@@ -59,5 +58,8 @@ async fn a_channels_endpoint_carries_the_key_its_listener_wrote() {
     drop(listener);
     // The socket's folder in `/tmp` outlives the listener.
     #[cfg(unix)]
-    std::fs::remove_dir_all(std::path::Path::new(endpoint.as_os_str()).parent().unwrap()).unwrap();
+    wirecatch_test_support::remove_test_folder(
+        std::path::Path::new(endpoint.as_os_str()).parent().unwrap(),
+    )
+    .unwrap();
 }

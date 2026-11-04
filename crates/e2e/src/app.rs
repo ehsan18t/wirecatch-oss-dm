@@ -79,7 +79,7 @@ impl Sandbox {
     async fn delete(&self) {
         let deadline = Instant::now() + DELETE_PATIENCE;
         loop {
-            match std::fs::remove_dir_all(self.path()) {
+            match wirecatch_test_support::remove_test_folder(self.path()) {
                 Ok(()) => return,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
                 Err(e) if Instant::now() >= deadline => {

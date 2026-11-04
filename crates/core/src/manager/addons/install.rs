@@ -390,7 +390,7 @@ pub(super) fn verify_and_unpack(
             component.id()
         ));
     }
-    match std::fs::remove_dir_all(stage) {
+    match wirecatch_files::remove_own_folder(stage) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => {

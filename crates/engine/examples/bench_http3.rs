@@ -22,10 +22,10 @@ use bytes::Bytes;
 use wirecatch_engine::numeric::{approx_f64, saturating_cast};
 use wirecatch_engine::units::MIB_USIZE;
 use wirecatch_engine::{CancellationToken, DownloadRequest, Outcome, Progress, Url, download};
-use wirecatch_test_support::TestCertificate;
 use wirecatch_test_support::http3::{self as servers, Counts};
+use wirecatch_test_support::{TestCertificate, private_dir};
 
-type Result<T> = std::result::Result<T, Box<dyn Error>>;
+type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 /// The file the benchmark downloads.
 const SIZE: usize = 256 * MIB_USIZE;
 /// Connection counts to compare.
@@ -107,12 +107,8 @@ fn bytes(counts: &Counts) -> u64 {
 
 /// Wall time and process CPU time of one download, in seconds.
 async fn timed(url: &Url, data: &Bytes, connections: usize, http3: bool) -> Result<(f64, f64)> {
-    let dir = std::env::temp_dir().join(format!("wirecatch-bench-h3-{}", std::process::id()));
-    // Left over from an interrupted run, if it exists at all.
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir)?;
-    }
-    let mut request = DownloadRequest::new(url.clone(), &dir);
+    let dir = private_dir("bench-h3")?;
+    let mut request = DownloadRequest::new(url.clone(), dir.path());
     request.options.connections = connections;
     request.options.http3 = http3;
 
@@ -133,7 +129,7 @@ async fn timed(url: &Url, data: &Bytes, connections: usize, http3: bool) -> Resu
     if std::fs::read(&path)? != data[..] {
         return Err("downloaded bytes differ from the source".into());
     }
-    std::fs::remove_dir_all(&dir)?;
+    dir.remove()?;
     Ok((secs, cpu))
 }
 

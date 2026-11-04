@@ -79,10 +79,11 @@ async fn run(
     let counts: Vec<usize> = plan.tracks.iter().map(|t| t.pieces.len()).collect();
     let total: usize = counts.iter().sum();
     let work = {
-        let (output, fingerprint, counts) = (output.clone(), plan.fingerprint(), counts.clone());
+        let identity = plan.work_identity(&request.work_owner);
+        let (output, counts) = (output.clone(), counts.clone());
         Arc::new(
             blocking(&request.file_work, move || {
-                WorkDir::open(&output, fingerprint, &counts)
+                WorkDir::open(&output, identity, &counts)
             })
             .await?,
         )
