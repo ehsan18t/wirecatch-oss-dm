@@ -144,8 +144,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 117 | A download that fails to start leaves its slot empty                                              | `04-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 118 | A closing queue's slots are given away at once, exceeding the limit                               | `18-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 119 | Regular expressions differing only in case count as one rule                                      | `18-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 120 | Enter in the delete-queue field closes the question and deletes nothing                           | `27-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 121 | Saving a queue changes its speed limit                                                            | `27-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 120 | Enter in the delete-queue field closes the question and deletes nothing                           | `27-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
+| 121 | Saving a queue changes its speed limit                                                            | `27-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 122 | Confirming a file unedited stops the server from naming it                                        | `24-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 123 | A failure notice in the browser loses its buttons after 32 later notices                          | `26-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 124 | A tray action that fails tells the person nothing                                                 | `26-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
@@ -189,7 +189,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 162 | A navigation item left behind keeps its hover colour until the mouse moves                        | `U-1` `B18-2`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 163 | Empty pages offer Pause all or Resume all                                                         | `U-3` `B13-2`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 164 | A failed video or conversion shows the program's raw output                                       | `U-9` `B18-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
-| 165 | New queue and New proxy do not put the cursor in the Name field                                   | `U-13` `B16-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
+| 165 | New queue and New proxy do not put the cursor in the Name field                                   | `U-13` `B16-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 166 | The row, the menu and the details decide offers and words on their own                            | `25-11` `U-10`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 167 | Two test files depend on an order only timing decides                                             | `05-14` `21-3`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 168 | The same small pieces of logic are written many times in the forms                                | `27-12` `B19-3`                                                                                    | P3       | medium | P3, 2 findings, medium                                                                                           | none                                          | open   |
@@ -2326,7 +2326,7 @@ P2, small, fixed.
 
 ### 120. Enter in the delete-queue field closes the question and deletes nothing
 
-P2, small, open.
+P2, small, fixed.
 
 `ask` installs no `on_ok`, the input propagates Enter, and the dialog's default handler closes. So Enter closes the question and deletes nothing; only the typed name is lost.
 
@@ -2342,7 +2342,7 @@ P2, small, open.
 
 ### 121. Saving a queue changes its speed limit
 
-P2, small, open.
+P2, small, fixed.
 
 `read` always sends the field's text through `speed_limit`, and `in_unit` rounds to a tenth of the unit. 1075 KB/s shows "1" and saves 1,048,576 bytes. The drift is at most 0.05 MB/s and does not grow on later saves.
 
@@ -3097,7 +3097,7 @@ P3, small, open.
 
 ### 165. New queue and New proxy do not put the cursor in the Name field
 
-P3, small, open.
+P3, small, fixed.
 
 `queue_dialog::open` and the proxy dialog never call `focus_after_opening`, which `add_dialog`, `refresh_dialog` and `queue_delete` do. Typing at once puts nothing in the field. `B16-1` is read, not run.
 
