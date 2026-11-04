@@ -206,7 +206,7 @@ impl PrivateDir {
     /// The folder or something in it could not be removed; the error names the
     /// folder.
     pub fn remove(mut self) -> std::io::Result<()> {
-        std::fs::remove_dir_all(&self.path).map_err(|error| {
+        remove_test_folder(&self.path).map_err(|error| {
             std::io::Error::new(
                 error.kind(),
                 format!(
@@ -241,12 +241,25 @@ impl Drop for PrivateDir {
         }
         // A drop cannot fail the test, so a folder that cannot be removed is only
         // reported; one the test already removed by hand is fine.
-        if let Err(error) = std::fs::remove_dir_all(&self.path)
+        if let Err(error) = remove_test_folder(&self.path)
             && error.kind() != std::io::ErrorKind::NotFound
         {
             eprintln!("could not remove {}: {error}", self.path.display());
         }
     }
+}
+
+/// Deletes a folder a test made, with everything in it. Not `wirecatch_files`: it would bring the engine into crates that need only the plain helpers.
+///
+/// # Errors
+///
+/// The folder or something in it cannot be deleted, or there is no such folder.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "this is the one call tests go through; what they delete is their own"
+)]
+pub fn remove_test_folder(path: &Path) -> std::io::Result<()> {
+    std::fs::remove_dir_all(path)
 }
 
 /// The names of the entries in `dir`, sorted.
@@ -325,7 +338,7 @@ mod tests {
         assert!(error.contains("still be open"), "{error}");
         assert!(path.exists());
         drop(held);
-        std::fs::remove_dir_all(&path).unwrap();
+        remove_test_folder(&path).unwrap();
     }
 
     #[test]

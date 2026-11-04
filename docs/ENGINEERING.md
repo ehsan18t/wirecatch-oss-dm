@@ -173,5 +173,6 @@ Enforced by: review, and the store tests that measure how much one progress batc
 
 - Anything that handles cookies, credentials, paths from outside, downloaded executables or another process's messages gets tests for the hostile case.
 - Paths built from outside input are joined with the safe-join helper so they cannot leave their folder.
+- A whole folder is deleted only through `wirecatch_files::remove_own_folder` or `discard::dir`, on a folder the app made, or `wirecatch_test_support::remove_test_folder` in a test. A path from a record, a setting or a person may be their own folder. Gate for the direct call (`disallowed_methods` in `clippy.toml`); review for what is passed to the helpers.
 - Other programs are started with an argument list, never through a shell, and only from a path Wirecatch verified.
 - Every message from another process is size-limited and validated before use.
