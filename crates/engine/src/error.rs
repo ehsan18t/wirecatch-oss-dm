@@ -8,6 +8,7 @@ use std::time::Duration;
 use reqwest::StatusCode;
 
 use crate::ftp::reply;
+use crate::net_guard::NameRefused;
 use crate::proxy::ProxySetting;
 
 /// Errors a download can end with.
@@ -170,9 +171,9 @@ pub enum Error {
         limit: u64,
     },
 
-    /// A [`Fetcher`](crate::Fetcher) refused to send a request to an address
-    /// on the local network (loopback, private, link-local or unspecified),
-    /// because a resource from the internet pointed there; see
+    /// A request to an address on the local network (loopback, private,
+    /// link-local or unspecified) was refused before it was sent or as it
+    /// connected, because a resource from the internet pointed there; see
     /// [`PrivateNetwork`](crate::PrivateNetwork).
     #[error("{url} points to a device on your own network, which is blocked for safety")]
     PrivateNetwork {
@@ -274,6 +275,13 @@ impl Error {
         if let Some(reason) = certificate_problem(&error) {
             return Error::Certificate { reason };
         }
+        if let Some(refused) = refused_name(&error) {
+            return Error::PrivateNetwork {
+                url: error
+                    .url()
+                    .map_or_else(|| refused.host.clone(), ToString::to_string),
+            };
+        }
         Error::Network(NetworkError(Inner::Http(error)))
     }
 
@@ -309,6 +317,18 @@ impl Error {
     pub(crate) fn task(error: &tokio::task::JoinError) -> Self {
         Error::Internal(format!("a background task failed: {error}"))
     }
+}
+
+/// The local network guard's refusal among `error`'s causes.
+fn refused_name(error: &reqwest::Error) -> Option<&NameRefused> {
+    let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(c) = cause {
+        if let Some(refused) = c.downcast_ref::<NameRefused>() {
+            return Some(refused);
+        }
+        cause = c.source();
+    }
+    None
 }
 
 /// How hyper-util says it could not connect to a SOCKS proxy.

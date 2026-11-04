@@ -13,9 +13,11 @@ use super::placement::link_digest;
 
 pub(super) const COVER: &str = "cover.image";
 pub(super) const METADATA: &str = "metadata.txt";
-/// Kept for an answer about a taken name, so the next run places the file without downloading it again:
+/// Written before a file is placed, so a next run after a failure, an answer about a taken name or a crash places it without downloading it again:
 /// the link's digest (a token in a link stays out of the folder), the file, then each subtitle and its language.
 pub(super) const PLACING: &str = "placing.done";
+/// Written just before each move of the finished file: how it moves, then the name it moves to.
+pub(super) const PLACING_TO: &str = "placing.to";
 
 /// A subtitle as the site sent it.
 pub(super) fn subtitle(n: usize, ext: &str) -> String {
