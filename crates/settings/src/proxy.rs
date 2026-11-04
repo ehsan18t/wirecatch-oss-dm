@@ -3,7 +3,7 @@
 
 use std::net::IpAddr;
 
-use wirecatch_engine::{ManualProxies, ProxyChoice, Url};
+use wirecatch_engine::{ManualProxies, ProxyChoice, ProxyRoute, Url};
 use wirecatch_protocol::Secret;
 use wirecatch_protocol::app::{Setting, Update};
 use wirecatch_protocol::proxy::{
@@ -366,48 +366,30 @@ pub fn profile_url(profile: &ProxyServerSettings, password: Option<&Secret>) -> 
     Some(url.into())
 }
 
-/// The proxy yt-dlp is given for `choice` (a URL, or `""` for none), `None` to leave it to read
-/// the computer's proxy itself. yt-dlp takes one proxy for everything and has no exceptions, so a manual
-/// setting gives it the proxy for `https`, which video sites use.
+/// The proxy yt-dlp is given to read `page` under `choice` (a URL, or `""` for none), `None` to
+/// leave it to read the computer's proxy itself. yt-dlp takes one proxy for everything and has no
+/// exceptions, so the page decides: the proxy the engine would use for it, or none when the engine
+/// would go directly.
 #[must_use]
-pub fn ytdlp_proxy(choice: &ProxyChoice) -> Option<String> {
-    match choice {
-        ProxyChoice::Manual(manual) => Some(
-            manual
-                .https
-                .clone()
-                .or_else(|| manual.all.clone())
-                .or_else(|| manual.http.clone())
-                .unwrap_or_default(),
-        ),
-        ProxyChoice::Direct => Some(String::new()),
+pub fn ytdlp_proxy(choice: &ProxyChoice, page: &Url) -> Option<String> {
+    match (choice, choice.route(page)) {
+        (ProxyChoice::Manual(manual), ProxyRoute::Through(_)) => {
+            let own = match page.scheme() {
+                "http" => &manual.http,
+                "https" => &manual.https,
+                _ => &manual.ftp,
+            };
+            Some(
+                own.clone()
+                    .filter(|proxy| !proxy.trim().is_empty())
+                    .or_else(|| manual.all.clone())
+                    .unwrap_or_default(),
+            )
+        }
+        (ProxyChoice::Manual(_) | ProxyChoice::Direct, _) | (_, ProxyRoute::Excepted) => {
+            Some(String::new())
+        }
         _ => None,
-    }
-}
-
-/// The proxy the app updater uses for `choice`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UpdaterProxy {
-    /// The computer's proxy, read by the updater.
-    System,
-    /// No proxy.
-    Direct,
-    /// This proxy.
-    Url(Url),
-}
-
-/// The proxy the app updater uses: the one for `https`.
-#[must_use]
-pub fn updater_proxy(choice: &ProxyChoice) -> UpdaterProxy {
-    match choice {
-        ProxyChoice::Manual(manual) => manual
-            .https
-            .as_ref()
-            .or(manual.all.as_ref())
-            .and_then(|proxy| Url::parse(proxy).ok())
-            .map_or(UpdaterProxy::Direct, UpdaterProxy::Url),
-        ProxyChoice::Direct => UpdaterProxy::Direct,
-        _ => UpdaterProxy::System,
     }
 }
 
