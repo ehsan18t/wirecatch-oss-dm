@@ -40,7 +40,7 @@ After stage 3 the audit is finished. Fixing works down the list, one item at a t
 
 ## Roles
 
-- **Coordinator:** the session the person talks to. It gives out work, updates `CHUNK-PLAN.md`, commits, and gets approvals. It holds only the short replies, not the findings.
+- **Coordinator:** the session the person talks to. It gives out work, updates `CHUNK-PLAN.md`, commits, and gets approvals. It holds only the short replies, not the findings. The person sets how many workers run at once and on which model; record that in `## Bar corrections`.
 - **Worker:** an agent given one unit: a chunk, a flow, a set of UI states or a batch. It writes only that unit's files. It does not delegate, commit, edit `CHUNK-PLAN.md` or wait for approval. It replies in at most 10 lines: counts by severity, titles of P0 and P1 findings, and any file it could not read.
 
 ## Ground rules
