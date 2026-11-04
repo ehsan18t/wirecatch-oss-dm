@@ -119,6 +119,16 @@ async fn download_once(
         .ok_or_else(|| YtDlpError::NothingSaved.into())
 }
 
+/// The containers yt-dlp may merge into, first that fits: `container`, else Matroska, which holds anything.
+fn merge_formats(container: Container) -> String {
+    let wanted = container.ext();
+    if container == Container::Mkv {
+        wanted.to_owned()
+    } else {
+        format!("{wanted}/{}", Container::Mkv.ext())
+    }
+}
+
 /// yt-dlp's arguments to download `format` of the page into the folder it runs in as
 /// `media.<ext>`, reporting progress and printing the finished file's path.
 fn download_args(
@@ -130,7 +140,7 @@ fn download_args(
     let mut args = common_args(ctx, cookies);
     if let Some(container) = merge_into {
         args.push("--merge-output-format".into());
-        args.push(container.ext().into());
+        args.push(merge_formats(container).into());
     }
     let progress_template = format!("download:{PROGRESS_MARK} {PROGRESS_FIELDS}");
     for arg in [
@@ -226,9 +236,8 @@ fn largest_result(work: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    /// yt-dlp reads `%` and `$` anywhere in its output template, so no folder or title may reach it.
-    #[test]
-    fn the_output_template_names_no_folder() {
+    /// The value yt-dlp is given for `option` when it merges into `merge_into`.
+    fn value_of(option: &str, merge_into: Option<Container>) -> Option<String> {
         let tools = crate::MediaTools::for_test(Path::new("ffmpeg"));
         let page = wirecatch_engine::Url::parse("https://example.com/watch").unwrap();
         let ctx = Context {
@@ -240,12 +249,27 @@ mod tests {
             timeout: std::time::Duration::from_secs(1),
             proxy: None,
         };
-        let args = download_args(&ctx, None, "best", None);
-        let template = args
-            .iter()
-            .position(|a| a == "-o")
-            .and_then(|o| args.get(o + 1));
-        assert_eq!(template.and_then(|t| t.to_str()), Some("media.%(ext)s"));
+        let args = download_args(&ctx, None, "best", merge_into);
+        args.iter()
+            .position(|a| a == option)
+            .and_then(|at| args.get(at + 1))
+            .and_then(|a| a.to_str())
+            .map(str::to_owned)
+    }
+
+    /// yt-dlp reads `%` and `$` anywhere in its output template, so no folder or title may reach it.
+    #[test]
+    fn the_output_template_names_no_folder() {
+        assert_eq!(value_of("-o", None).as_deref(), Some("media.%(ext)s"));
+    }
+
+    /// A typed extension can name a container the tracks do not fit, and yt-dlp would refuse it on every retry: Matroska holds them all.
+    #[test]
+    fn a_merge_may_always_fall_back_to_matroska() {
+        let merged_as = |container| value_of("--merge-output-format", Some(container));
+        assert_eq!(merged_as(Container::Webm).as_deref(), Some("webm/mkv"));
+        assert_eq!(merged_as(Container::Mp4).as_deref(), Some("mp4/mkv"));
+        assert_eq!(merged_as(Container::Mkv).as_deref(), Some("mkv"));
     }
 
     #[test]

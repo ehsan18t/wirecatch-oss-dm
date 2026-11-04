@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -10,7 +10,6 @@ use url::Url;
 use wirecatch_engine::{DownloadOptions, FileWork, PrivateNetwork};
 
 use crate::codec::{Codec, Container};
-use crate::extension;
 use crate::ffmpeg::InputFormat;
 
 /// The streaming format of a link.
@@ -379,25 +378,11 @@ impl StreamProgress {
     }
 }
 
-/// `output` with its extension set to `ext`; see [`StreamRequest::output`].
-pub(crate) fn with_extension(output: &Path, ext: &str) -> PathBuf {
-    let known = output
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(extension::is_replaceable);
-    if known {
-        output.with_extension(ext)
-    } else {
-        let mut name = output.as_os_str().to_owned();
-        name.push(".");
-        name.push(ext);
-        PathBuf::from(name)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::extension::with_extension;
+    use std::path::Path;
 
     #[test]
     fn output_extension_is_replaced_only_when_it_is_a_media_one() {

@@ -10,7 +10,7 @@ use std::time::Duration;
 use bytes::{Bytes, BytesMut};
 use reqwest::header::CONTENT_TYPE;
 use reqwest::{Client, Response, StatusCode};
-use tokio::io::{AsyncWriteExt, BufWriter};
+use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 use url::Url;
@@ -302,9 +302,10 @@ impl Fetcher {
     /// with the number of new bytes each time some arrive; bytes are never
     /// counted twice, even when a retry has to ask for the resource again.
     ///
-    /// Cancelling (by the token or by dropping this future) keeps what arrived
-    /// in the file; once the future has been polled, the file may already have
-    /// been created or truncated even if no byte arrived.
+    /// Cancelling by the token keeps what arrived in the file. Dropping this
+    /// future loses what was still buffered, up to 256 KiB, and the rest is
+    /// kept. Once the future has been polled, the file may already have been
+    /// created or truncated even if no byte arrived.
     ///
     /// # Errors
     ///
@@ -357,6 +358,7 @@ impl Fetcher {
             base: range.as_ref().map_or(0, |r| r.start),
             end: range.map(|r| r.end),
             written: 0,
+            counted: 0,
             first: None,
         };
         let retries = Retries {
@@ -366,7 +368,7 @@ impl Fetcher {
         };
         let mut attempts = Attempts::new(Refusals::AsFailures, retries);
         loop {
-            let before = position.written;
+            let before = position.counted;
             let attempt = self
                 .attempt(client, url, &mut position, sink, on_bytes)
                 .await;
@@ -375,7 +377,7 @@ impl Fetcher {
                 Err(_) if self.inner.cancel.is_cancelled() => return Err(Error::Cancelled),
                 Err(f) => f,
             };
-            let progressed = position.written > before;
+            let progressed = position.counted > before;
             let delay = match attempts.after_failure(&f.error, f.retry_after, progressed) {
                 Next::GiveUp => return Err(f.error),
                 Next::Retry(delay) | Next::StepBackOrRetry(delay) => delay,
@@ -398,6 +400,7 @@ impl Fetcher {
         sink: &mut Sink,
         on_bytes: &mut (dyn FnMut(u64) + Send),
     ) -> Result<Answer, Failure> {
+        position.start_over_if_unprovable(sink).await?;
         let from = position.base + position.written;
         let (response, mut skip) = self
             .open(client, url, from, position.end, position.first.as_ref())
@@ -418,6 +421,7 @@ impl Fetcher {
             position.end = total;
         }
         position.first.get_or_insert_with(|| FirstAnswer {
+            whole: response.status() == StatusCode::OK,
             total,
             validators: Validators::from_headers(response.headers()),
         });
@@ -445,6 +449,13 @@ impl Fetcher {
                 Received::Cancelled => return Err(Error::Cancelled.into()),
             };
             let mut data = skip_start(&chunk, &mut skip);
+            let skipped = (chunk.len() - data.len()) as u64;
+            if skipped > 0
+                && pace(&self.inner.rate_limiters, skipped, &self.inner.cancel).await
+                    == Paced::Cancelled
+            {
+                return Err(Error::Cancelled.into());
+            }
             if let Some(end) = position.end {
                 data = &data[..clamp_to_len(end.saturating_sub(at), data.len())];
             }
@@ -454,7 +465,7 @@ impl Fetcher {
             sink.write(data).await?;
             let n = data.len() as u64;
             position.written += n;
-            on_bytes(n);
+            position.count_new_bytes(on_bytes);
             if pace(&self.inner.rate_limiters, n, &self.inner.cancel).await == Paced::Cancelled {
                 return Err(Error::Cancelled.into());
             }
@@ -518,17 +529,47 @@ struct Position {
     end: Option<u64>,
     /// Bytes delivered to the sink so far.
     written: u64,
+    /// The most `written` has reached, which a transfer started over stays below for a while.
+    counted: u64,
     /// What the first answer said about the resource, once it came.
     first: Option<FirstAnswer>,
+}
+
+impl Position {
+    /// Nothing ties a new answer to what was kept when the first said nothing to compare, so its tail must not be joined to it.
+    async fn start_over_if_unprovable(&mut self, sink: &mut Sink) -> Result<()> {
+        if self.written > 0 && self.first.as_ref().is_some_and(FirstAnswer::is_unprovable) {
+            sink.start_over().await?;
+            self.written = 0;
+            self.first = None;
+        }
+        Ok(())
+    }
+
+    fn count_new_bytes(&mut self, on_bytes: &mut (dyn FnMut(u64) + Send)) {
+        if self.written > self.counted {
+            on_bytes(self.written - self.counted);
+            self.counted = self.written;
+        }
+    }
 }
 
 /// What the first answer of a transfer said about the resource; every answer
 /// that continues the transfer must be about the same one.
 #[derive(Default)]
 struct FirstAnswer {
+    /// A `200`, not a part of the resource that says where it starts.
+    whole: bool,
     /// Its size, if the answer said.
     total: Option<u64>,
     validators: Validators,
+}
+
+impl FirstAnswer {
+    /// Whether nothing in it could show a later answer to be about another resource.
+    fn is_unprovable(&self) -> bool {
+        self.whole && self.total.is_none() && !self.validators.can_compare()
+    }
 }
 
 /// What a finished transfer learned.
@@ -596,6 +637,22 @@ impl Sink {
             }
             Sink::File { file, path } => file.write_all(data).await.context(IoAction::Write, path),
         }
+    }
+
+    /// Throws away what was delivered, for a transfer that starts over.
+    async fn start_over(&mut self) -> Result<()> {
+        match self {
+            Sink::Memory { buf, .. } => buf.clear(),
+            Sink::File { file, path } => {
+                file.flush().await.context(IoAction::Write, path)?;
+                file.get_mut()
+                    .set_len(0)
+                    .await
+                    .context(IoAction::Resize, path)?;
+                file.rewind().await.context(IoAction::Write, path)?;
+            }
+        }
+        Ok(())
     }
 
     async fn finish(&mut self) -> Result<()> {

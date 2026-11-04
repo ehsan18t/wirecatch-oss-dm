@@ -16,6 +16,7 @@ use crate::http::Failure;
 use crate::limiter::{Paced, pace};
 use crate::numeric::clamp_to_len;
 use crate::receive::{Received, ended_while_skipping, receive, skip_start};
+use crate::request::RequestContext;
 use crate::retry::{Attempts, Next, Refusals};
 use crate::segment::{Assignment, SharedTable, UNKNOWN_END};
 use crate::transport::{Body, Connection};
@@ -115,13 +116,21 @@ async fn run_assignment(
     mut response: Option<Body>,
 ) -> Result<Ended> {
     let mut attempts = Attempts::new(Refusals::StepBack, shared.retries);
+    // The furthest a failed attempt got: one that started over gains nothing until it passes this.
+    let mut furthest = 0;
     loop {
         if shared.request.cancel.is_cancelled() {
             return Ok(Ended::Cancelled);
         }
-        let (from, to) = shared.table.lock().position(index);
+        let (mut from, to) = shared.table.lock().position(index);
         if from >= to {
             return Ok(Ended::Done);
+        }
+        if from > 0 && response.is_none() && retry_is_unprovable(&shared.request) {
+            info!("nothing ties a new answer to the bytes kept; starting over");
+            shared.table.lock().start_over(index);
+            shared.progress.take_back(from);
+            from = 0;
         }
         // A response handed over with the assignment (the first request's)
         // asked for the same: it started at `from` with the same limit.
@@ -152,7 +161,9 @@ async fn run_assignment(
             Err(_) if shared.request.cancel.is_cancelled() => return Ok(Ended::Cancelled),
             Err(f) => {
                 let (now, _) = shared.table.lock().position(index);
-                let next = attempts.after_failure(&f.error, f.retry_after, now > from);
+                let next =
+                    attempts.after_failure(&f.error, f.retry_after, now > from.max(furthest));
+                furthest = furthest.max(now);
                 let delay = match next {
                     Next::GiveUp => return Err(f.error),
                     Next::StepBackOrRetry(_)
@@ -185,10 +196,16 @@ async fn run_assignment(
     }
 }
 
+/// Whether nothing in the first answer could show a later whole answer to be about another file, so its tail must not be joined to the bytes kept.
+fn retry_is_unprovable(request: &RequestContext) -> bool {
+    !request.ranged && request.total.is_none() && !request.validators.can_compare()
+}
+
 /// Streams a response body into the segment until it is fully claimed, the body
 /// ends, or the download is cancelled. Whatever arrived is written before returning.
-/// `request_end` is where the request for the body ended; a body that ends there
-/// before the segment does is complete ([`Ended::RequestDone`]), not cut short.
+/// `request_end` is where the request for the body ended; a body that ends there,
+/// or where its own headers say, before the segment does is complete
+/// ([`Ended::RequestDone`]), not cut short.
 async fn stream(
     shared: &Shared,
     writer: &mut Writer,
@@ -201,13 +218,27 @@ async fn stream(
     let _connection = shared.progress.connection_opened();
     let _receiving = shared.receiving.start();
     writer.start(index, from);
+    // A server may answer with less than was asked (RFC 9110, section 15.3.7): its own headers say.
+    let request_end = body
+        .answer_end()
+        .map_or(request_end, |end| end.min(request_end));
     let stall = shared.request.stall_timeout;
     // Whether receiving failed (rather than, say, writing to disk).
     let mut body_failed = false;
 
     let outcome: Result<Ended> = loop {
         let data = match receive(&shared.request.cancel, stall, body.next()).await {
-            Ok(Received::Data(data)) => skip_start(data, &mut skip),
+            Ok(Received::Data(data)) => {
+                let kept = skip_start(data, &mut skip);
+                let skipped = (data.len() - kept.len()) as u64;
+                if skipped > 0
+                    && pace(&shared.opts.rate_limiters, skipped, &shared.request.cancel).await
+                        == Paced::Cancelled
+                {
+                    break Ok(Ended::Cancelled);
+                }
+                kept
+            }
             Ok(Received::End) if skip > 0 => break Err(ended_while_skipping(from, skip)),
             Ok(Received::End) => break Ok(Ended::Eof),
             Ok(Received::Cancelled) => break Ok(Ended::Cancelled),
@@ -223,10 +254,11 @@ async fn stream(
         let (allowed, done) = shared.table.lock().claim(index, data.len() as u64);
         if allowed > 0 {
             let allowed_len = clamp_to_len(allowed, data.len());
+            // Counted first: a failed push is taken back with all it dropped, these bytes too.
+            shared.progress.add(allowed);
             if let Err(e) = writer.push(&data[..allowed_len], &shared.table).await {
                 break Err(e);
             }
-            shared.progress.add(allowed);
             if pace(&shared.opts.rate_limiters, allowed, &shared.request.cancel).await
                 == Paced::Cancelled
             {

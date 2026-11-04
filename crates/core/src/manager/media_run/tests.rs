@@ -17,6 +17,21 @@ use super::workdir;
 use super::*;
 use crate::headers::Origin;
 
+#[test]
+fn a_typed_name_keeps_the_words_after_its_dot() {
+    for (typed, wanted) in [
+        ("/v/Dr. Who", "/v/Dr. Who.mp4"),
+        ("/v/Episode 1.5 - Finale", "/v/Episode 1.5 - Finale.mp4"),
+        ("/v/clip.webm", "/v/clip.mp4"),
+        ("/v/clip.MP4", "/v/clip.MP4"),
+    ] {
+        assert_eq!(
+            final_path(Path::new("/w/media.mp4"), Path::new(typed)),
+            Path::new(wanted)
+        );
+    }
+}
+
 /// The page is read again for a refused or broken format address, whatever the person is told.
 #[test]
 fn a_refused_format_address_is_fetched_again_from_the_page() {

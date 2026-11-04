@@ -583,7 +583,7 @@ async fn a_long_numbered_name_finishes_in_the_container_the_join_picks() -> Test
     let folder = Path::new(&choice.folder);
     std::fs::create_dir_all(folder)?;
     let planned = folder.join(wirecatch_engine::naming::sanitize(&typed));
-    let taken = planned.with_extension("mkv");
+    let taken = wirecatch_streams::extension::with_extension(&planned, "mkv");
     std::fs::write(&taken, b"theirs")?;
     let mut selection = select(&video.id);
     selection.file_name = Some(typed);
@@ -1431,7 +1431,7 @@ async fn formats_wirecatch_cannot_fetch_are_left_to_yt_dlp() -> TestResult {
     assert!(argv.contains(&"--progress-template".to_string()));
     assert!(
         argv.windows(2)
-            .any(|w| w == ["--merge-output-format", "mp4"]),
+            .any(|w| w == ["--merge-output-format", "mp4/mkv"]),
         "{argv:?}"
     );
     Ok(())
@@ -1544,6 +1544,21 @@ async fn a_direct_media_file_downloads_like_any_file() -> TestResult {
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert_eq!(done.category, Category::Video);
     assert_eq!(done.media.unwrap().source, MediaKind::Direct);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_direct_file_the_browser_calls_audio_stays_audio() -> TestResult {
+    let server = FileServer::start().await;
+    server.put("clips/talk.webm", test_data(10 * KIB_USIZE));
+    let h = Harness::new().await?;
+    let mut capture = media_capture(server.url("clips/talk.webm"), MediaKind::Direct, None);
+    capture.mime = Some("audio/webm".into());
+    let added = h.manager.add_capture(capture).await?;
+    let done = h
+        .wait_status(added.id.ok_or("no id")?, DownloadStatus::Completed)
+        .await;
+    assert_eq!(done.category, Category::Audio);
     Ok(())
 }
 
@@ -2041,6 +2056,60 @@ async fn a_stream_for_later_whose_name_is_taken_is_not_completed_by_a_restart() 
         after.status,
         DownloadStatus::Completed,
         "completed on a file it never downloaded"
+    );
+    Ok(())
+}
+
+/// A typed extension can name a container the tracks do not fit: real ffmpeg refuses MPEG-4 video in WebM, and the video is saved in the one container that holds anything rather than failing on every retry.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_typed_extension_ffmpeg_refuses_falls_back_to_a_container_that_fits() -> TestResult {
+    let Some(ffmpeg) = real_ffmpeg() else {
+        return Ok(());
+    };
+    let scratch = tempfile::tempdir()?;
+    let make = |args: &[&str], out: &str| -> TestResult<Vec<u8>> {
+        let path = scratch.path().join(out);
+        let status = std::process::Command::new(&ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error", "-y"])
+            .args(args)
+            .arg(&path)
+            .status()?;
+        assert!(status.success(), "could not make {out}");
+        Ok(std::fs::read(path)?)
+    };
+    let video = make(
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=1:size=64x64:rate=10",
+            "-c:v",
+            "mpeg4",
+            "-an",
+        ],
+        "v.mp4",
+    )?;
+    let audio = make(
+        &["-f", "lavfi", "-i", "sine=duration=1", "-c:a", "aac", "-vn"],
+        "a.m4a",
+    )?;
+    let server = FileServer::start().await;
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    use_real_ffmpeg(&h, &ffmpeg)?;
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(server.url("watch/60"), MediaKind::Page, None))
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    let mut selection = select("137+140");
+    selection.file_name = Some("clip.webm".into());
+    let id = h.manager.choose_media(choice.id, selection).await?;
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+    assert_eq!(
+        Path::new(&done.path).file_name().and_then(|n| n.to_str()),
+        Some("clip.mkv")
     );
     Ok(())
 }

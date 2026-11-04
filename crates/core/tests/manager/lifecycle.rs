@@ -736,7 +736,7 @@ async fn removing_a_finished_download_with_its_file_leaves_a_folder_at_that_path
     let row = h.add(&server.url("data")).await?;
     let row = h.wait_status(row.id, DownloadStatus::Completed).await;
     let path = std::path::PathBuf::from(&row.path);
-    std::fs::rename(&path, path.with_extension("zip"))?;
+    std::fs::rename(&path, path.with_file_name("moved.zip"))?;
     std::fs::create_dir(&path)?;
     std::fs::write(path.join("thesis.docx"), b"their work")?;
 

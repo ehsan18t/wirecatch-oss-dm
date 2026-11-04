@@ -384,6 +384,8 @@ impl Manager {
             ));
         }
         entry.refuse_if_stranded()?;
+        self.close_file_exists(&mut state, id);
+        let entry = state.entry_mut(id)?;
         let same_site = Url::parse(&entry.row.url).is_ok_and(|old| old.origin() == url.origin());
         if !same_site {
             entry.origin.headers = headers::for_another_site(&entry.origin.headers);
@@ -524,6 +526,7 @@ impl Manager {
             }
         }
         for id in paused {
+            self.close_file_exists(&mut state, id);
             self.save(&mut state, id);
         }
         self.reconcile(&mut state);
