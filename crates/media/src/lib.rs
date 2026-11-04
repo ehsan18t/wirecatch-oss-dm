@@ -53,9 +53,40 @@ struct State {
     /// What ffmpeg does now, and how far it is in tenths of a percent when known.
     step: Option<(ProcessingStep, Option<u16>)>,
     /// yt-dlp's own report when it downloads by itself: bytes so far and the total, when known.
-    own: Option<(u64, Option<u64>)>,
+    own: Option<OwnProgress>,
     /// When the next try with fresh addresses from the page starts, in Unix milliseconds.
     retry_at: Option<UnixMillis>,
+}
+
+/// What yt-dlp reported of its own download. It counts each format from nothing.
+#[derive(Debug, Default)]
+struct OwnProgress {
+    format: String,
+    done: u64,
+    total: Option<u64>,
+    earlier_done: u64,
+    earlier_total: u64,
+}
+
+impl OwnProgress {
+    fn report(&mut self, format: &str, done: u64, total: Option<u64>) {
+        if self.format != format {
+            self.earlier_done = self.earlier_done.saturating_add(self.done);
+            self.earlier_total = self
+                .earlier_total
+                .saturating_add(self.total.unwrap_or(self.done));
+            format.clone_into(&mut self.format);
+        }
+        self.done = done;
+        self.total = total;
+    }
+
+    fn sum(&self) -> (u64, Option<u64>) {
+        (
+            self.earlier_done.saturating_add(self.done),
+            self.total.map(|t| self.earlier_total.saturating_add(t)),
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -122,9 +153,12 @@ impl MediaProgress {
         *self.lock() = State::default();
     }
 
-    /// yt-dlp's own report: bytes so far and the total, if known.
-    pub fn set_own(&self, done: u64, total: Option<u64>) {
-        self.lock().own = Some((done, total));
+    /// yt-dlp's own report on `format`: bytes so far and the total, if known. What it reported of other formats stays counted.
+    pub fn set_own(&self, format: &str, done: u64, total: Option<u64>) {
+        self.lock()
+            .own
+            .get_or_insert_default()
+            .report(format, done, total);
     }
 
     /// Locks the state. A lock poisoned by a panic in another holder is taken
@@ -187,7 +221,7 @@ impl MediaProgress {
         if parts.is_empty() {
             total = None;
         }
-        if let Some((own_done, own_total)) = state.own {
+        if let Some((own_done, own_total)) = state.own.as_ref().map(OwnProgress::sum) {
             reading.answered = true;
             reading.done = reading.done.saturating_add(own_done);
             total = match (parts.is_empty(), own_total) {
@@ -344,10 +378,28 @@ mod tests {
                 per_mille: Some(PER_MILLE_DONE),
             })
         );
-        progress.set_own(10, Some(20));
+        progress.set_own("", 10, Some(20));
         let reading = progress.read();
         assert_eq!((reading.done, reading.total), (10, Some(20)));
         progress.start_over();
         assert_eq!(progress.read(), Reading::default());
+    }
+
+    /// yt-dlp counts each format from nothing, so the audio after a video must add to it.
+    #[test]
+    fn yt_dlps_counts_add_up_over_its_formats() {
+        let progress = MediaProgress::default();
+        progress.set_own("137", 90, Some(100));
+        progress.set_own("137", 100, Some(100));
+        progress.set_own("140", 1, Some(20));
+        let reading = progress.read();
+        assert_eq!((reading.done, reading.total), (101, Some(120)));
+        // A format begun again replaces its own count.
+        progress.set_own("140", 0, Some(20));
+        assert_eq!(progress.read().done, 100);
+        // A format whose total is unknown leaves the sum unknown, but its bytes count.
+        progress.set_own("141", 5, None);
+        let reading = progress.read();
+        assert_eq!((reading.done, reading.total), (105, None));
     }
 }

@@ -88,6 +88,13 @@ pub(super) async fn page_attempt(
         temp_dir: &job.temp_dir,
         timeout: job.timeout,
         proxy: proxy.as_deref(),
+        // A process takes one fixed rate: D135.
+        rate_limit: job
+            .options
+            .rate_limiters
+            .iter()
+            .filter_map(|limiter| limiter.limit())
+            .min(),
     };
     // Format addresses expire: read the page again on every start.
     let info = ytdlp::extract(&ctx, cancel)
