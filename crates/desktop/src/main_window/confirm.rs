@@ -2,7 +2,7 @@
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex};
+use gpui_kit::component::{WindowExt as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
@@ -13,6 +13,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_shell::api;
 
+use super::{applies, selection};
 use crate::backend::command;
 use crate::library::Library;
 use crate::ui::{Role, Typed as _};
@@ -27,6 +28,19 @@ struct Asked {
     finished: usize,
     started: bool,
     running: bool,
+}
+
+/// Those of `ids` that can be cancelled: a selection may hold finished rows too.
+fn cancellable(library: &Entity<Library>, ids: &[DownloadId], cx: &App) -> Vec<DownloadId> {
+    let downloads = &library.read(cx).downloads;
+    ids.iter()
+        .copied()
+        .filter(|id| {
+            downloads
+                .iter()
+                .any(|row| row.id == *id && applies::can_cancel(row))
+        })
+        .collect()
 }
 
 impl Asked {
@@ -67,7 +81,6 @@ struct RemoveForm {
 
 impl Render for RemoveForm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let _theme = cx.theme();
         let asked = &self.asked;
         let unfinished = asked.count() - asked.finished;
         let consequence = if unfinished == 0 {
@@ -187,7 +200,7 @@ pub(super) fn cancel(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let asked = Asked::read(library, ids, cx);
+    let asked = Asked::read(library, &cancellable(library, ids, cx), cx);
     if asked.count() == 0 {
         return;
     }
@@ -220,7 +233,6 @@ pub(super) fn cancel(
     let ids = asked.ids;
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let ids = ids.clone();
-        let _theme = cx.theme();
         dialog
             .title(title.clone())
             .w(px(WIDTH))
@@ -249,10 +261,7 @@ pub(super) fn cancel(
                             .label("Cancel download")
                             .on_click(move |_, window, cx| {
                                 window.close_dialog(cx);
-                                let ids = ids.clone();
-                                command(window.window_handle(), cx, move |manager| async move {
-                                    ids.iter().try_for_each(|id| api::cancel(&manager, *id))
-                                });
+                                selection::each_id(ids.clone(), api::cancel, window, cx);
                             }),
                     ),
             )

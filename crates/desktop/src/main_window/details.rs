@@ -126,7 +126,6 @@ impl Render for Details {
 
 /// The name, its status and where it comes from.
 fn header(row: &DownloadSummary, cx: &mut Context<'_, Details>) -> impl IntoElement {
-    let _theme = cx.theme();
     let tone = status_tone(row, cx);
     layout::bar(Rule::Below, cx).items_start().child(
         v_flex()
