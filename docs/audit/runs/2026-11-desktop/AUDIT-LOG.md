@@ -203,9 +203,9 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 176 | A removal gives up the path before it deletes the files                                           | `Xconcurrency-10`                                                                                  | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 177 | A failed write takes too much back from the progress count                                        | `01-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 178 | A range past the end of a shrunken file is reported as a server error                             | `02-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 179 | The step-back rule's long-wait test is true only because of jitter                                | `02-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 179 | The step-back rule's long-wait test is true only because of jitter                                | `02-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 180 | Fetcher::save promises data survives a drop, but up to 256 KiB is lost                            | `02-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 181 | bench_local sleeps for no time after each accept                                                  | `02-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 181 | bench_local sleeps for no time after each accept                                                  | `02-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 182 | A redirect error tells the CLI user to allow something the CLI cannot                             | `32-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 183 | async_and_blocking_reads_agree never does a blocking read                                         | `06-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 184 | The AppImage replacement is renamed into place without a flush                                    | `12-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -3315,7 +3315,7 @@ P3, small, open.
 
 ### 179. The step-back rule's long-wait test is true only because of jitter
 
-P3, small, open.
+P3, small, fixed.
 
 `pause` is capped at `max` before jitter, so `delay > backoff.max` is true only at the cap with jitter. `retry_after.is_some()` already covers D69.1, and the branch is close to dead at defaults.
 
@@ -3347,7 +3347,7 @@ P3, small, open.
 
 ### 181. bench_local sleeps for no time after each accept
 
-P3, small, open.
+P3, small, fixed.
 
 `sleep(Duration::ZERO)` in `bench_local serve` does nothing, since `accept` is the await point.
 
