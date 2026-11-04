@@ -125,7 +125,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-115 | fix(core): keep only finished proxy test results   | `fix/proxy-test-results`         | 218, 219                     | P3       | small  | none         | merged |
 | PR-116 | fix(desktop): correct what queue pages say         | `fix/queue-page-text`            | 225, 226, 227                | P3       | small  | none         | open   |
 | PR-117 | fix(desktop): keep a system accent readable        | `fix/system-accent-contrast`     | 229                          | P3       | small  | none         | open   |
-| PR-118 | fix(protocol): correct two language names          | `fix/language-names`             | 234                          | P3       | small  | none         | open   |
+| PR-118 | fix(protocol): correct two language names          | `fix/language-names`             | 234                          | P3       | small  | none         | merged |
 | PR-119 | fix(desktop): retry deleting a roaming data folder | `fix/roaming-folder-retry`       | 243                          | P3       | small  | none         | merged |
 | PR-120 | test(engine): keep the download fault tests        | `test/keep-fault-tests`          | none                         | none     | medium | PR-39        | merged |
 | PR-121 | fix(core): save a run's record before its rename   | `fix/record-before-rename`       | 245                          | P2       | medium | none         | merged |
@@ -1575,7 +1575,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/protocol`, `packages/protocol`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-protocol`, `cargo clippy -p wirecatch-protocol`, `pnpm protocol:generate`, `pnpm gate` once on the final tree, since `crates/protocol` is a wide change.
-- **Status:** open
+- **Status:** merged
 
 ### PR-119 fix(desktop): retry deleting a roaming data folder
 
