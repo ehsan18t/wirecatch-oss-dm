@@ -1017,6 +1017,35 @@ async fn a_format_address_refused_every_time_ends_with_a_plain_error() -> TestRe
     Ok(())
 }
 
+/// A format address that answers with a sign-in page has stopped working as surely as one that answers 403: the page is read again, and the page is never saved as the video.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_web_page_in_place_of_a_single_format_is_not_a_finished_video() -> TestResult {
+    let server = FileServer::start().await;
+    let h = harness_refreshing(publish(&server, &Releases::fake()?, "r")?, QUICK.to_vec()).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let (video, audio) = (mp4_data(KIB_USIZE), mp4_data(KIB_USIZE));
+    tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
+    server.put(
+        "fmt/small.mp4",
+        b"<!doctype html><html><body>Sign in.</body></html>".to_vec(),
+    );
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(server.url("watch/30"), MediaKind::Page, None))
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    h.manager.choose_media(choice.id, select("18")).await?;
+    let id = h.manager.list_downloads()[0].id;
+
+    let failed = h.wait_status(id, DownloadStatus::Failed).await;
+
+    // The choice, the first attempt and three more, each with a fresh read.
+    assert_eq!(ytdlp_calls(&h)?.len(), 1 + 1 + QUICK.len());
+    assert!(!Path::new(&failed.path).exists(), "{}", failed.path);
+    assert_eq!(failed.error.unwrap().fix, Some(FixAction::Retry));
+    Ok(())
+}
+
 /// Pausing while the download waits to read the page again stops the wait at
 /// once; resuming later goes on with the finished parts kept.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1443,7 +1472,7 @@ async fn a_page_cannot_save_a_program() -> TestResult {
     tune(&h.manager, |s| {
         s.when_file_exists = WhenFileExists::KeepBoth;
     })?;
-    server.put("fmt/payload.exe", b"MZ not a video".to_vec());
+    server.put("fmt/payload.exe", b"MZ\x90\0 not a video".to_vec());
     let info = serde_json::json!({
         "title": "Invoice",
         "formats": [

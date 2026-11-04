@@ -250,7 +250,12 @@ pub(super) async fn fetch_part(
         let file = Arc::new(Progress::default());
         progress.add_file(file.clone(), format.size());
         match Box::pin(wirecatch_engine::download(request, file, cancel.clone())).await {
-            Ok(Outcome::Completed { .. }) => path,
+            Ok(Outcome::Completed { .. }) => {
+                if holds_no_media(job, &path).await? {
+                    return Err(PageError::Refused { status: None });
+                }
+                path
+            }
             Ok(_) | Err(EngineError::Cancelled) => return Ok(None),
             Err(EngineError::PrivateNetwork { .. }) => {
                 return Err(wirecatch_messages::private_network(job.chosen_by).into());
@@ -275,6 +280,23 @@ pub(super) async fn fetch_part(
         .await
         .map_err(|e| disk(&e, &job.output))?;
     Ok(Some(file))
+}
+
+/// Whether the format saved at `path` is nothing or a web page, as an address that stopped working can answer; such a file is removed, so a fresh address starts over. Refusing the other formats here would turn away what ffmpeg is never asked to read.
+async fn holds_no_media(job: &Job, path: &Path) -> Result<bool, PageError> {
+    let file = path.to_path_buf();
+    let checked = job
+        .file_work
+        .spawn_blocking(move || {
+            let empty = wirecatch_streams::holds_no_media(&file)?;
+            if empty {
+                std::fs::remove_file(&file)?;
+            }
+            Ok::<bool, std::io::Error>(empty)
+        })
+        .await
+        .unwrap_or_else(|e| Err(std::io::Error::other(e)));
+    checked.map_err(|e| disk(&e, &job.output).into())
 }
 
 /// A format address the server refused, or one that no longer leads to the file: a fresh one

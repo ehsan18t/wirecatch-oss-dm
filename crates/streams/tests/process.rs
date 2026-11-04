@@ -217,18 +217,42 @@ async fn a_failure_is_logged_with_what_the_program_wrote() -> TestResult {
     Ok(())
 }
 
-/// A program stopped for writing nothing still says what it last wrote, in the error and in the log.
-#[tokio::test]
+/// A program stopped for writing nothing still says what it last wrote, in the error and in the log. The idle limit runs out only once the line is read, on a paused clock the test moves.
+#[tokio::test(start_paused = true)]
 async fn a_stalled_program_keeps_what_it_wrote() -> TestResult {
     let (logs, _capturing) = Logs::capture();
-    let options = RunOptions::lines().with_idle_timeout(SHORT);
-    let ran = run(
-        &["hang", "Opening input https://h/live.m3u8?token=T0K"],
-        options,
-        &CancellationToken::new(),
-        |_, _| {},
-    )
-    .await?;
+    let frozen = Frozen::clock();
+    let program = fake_program()?;
+    let (heard, mut lines) = tokio::sync::mpsc::unbounded_channel();
+    let ran = tokio::spawn(async move {
+        let dir = std::env::temp_dir();
+        let words = args(&["hang", "Opening input https://h/live.m3u8?token=T0K"]);
+        let options = RunOptions::lines().with_idle_timeout(SHORT);
+        let on_line = |_, line: &str| test_may_have_ended(&heard.send(line.to_owned()));
+        process::run(
+            &program,
+            &words,
+            &dir,
+            options,
+            &CancellationToken::new(),
+            on_line,
+        )
+        .await
+    });
+    within_patience(async {
+        while let Some(line) = lines.recv().await {
+            if line.starts_with("Opening input") {
+                break;
+            }
+        }
+    })
+    .await
+    .map_err(|_| format!("the program wrote nothing within {PATIENCE:?}"))?;
+    tokio::time::advance(SHORT).await;
+    let ran = within_patience(ran)
+        .await
+        .map_err(|_| format!("the run did not end within {PATIENCE:?}"))??;
+    frozen.thaw();
     let Err(RunError::Stalled { stderr, .. }) = ran else {
         return Err(format!("{ran:?}").into());
     };
