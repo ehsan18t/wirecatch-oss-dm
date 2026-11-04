@@ -55,7 +55,7 @@ pub(crate) mod files {
         let mut temp_name = path.file_name().unwrap_or_default().to_os_string();
         temp_name.push(format!(".{}.tmp", std::process::id()));
         let temp = dir.join(temp_name);
-        let result = fs::write(&temp, contents).and_then(|()| fs::rename(&temp, path));
+        let result = write_flushed(&temp, contents).and_then(|()| fs::rename(&temp, path));
         if result.is_err()
             && let Err(e) = fs::remove_file(&temp)
         {
@@ -65,6 +65,15 @@ pub(crate) mod files {
             );
         }
         result
+    }
+
+    /// On the disk, so the rename after it never puts a cut file in place after a power cut.
+    fn write_flushed(path: &Path, contents: &[u8]) -> io::Result<()> {
+        use std::io::Write as _;
+
+        let mut file = fs::File::create(path)?;
+        file.write_all(contents)?;
+        file.sync_all()
     }
 
     pub(crate) fn remove_dir_if_empty(path: &Path) -> io::Result<bool> {
