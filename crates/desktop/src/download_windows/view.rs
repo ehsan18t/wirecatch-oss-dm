@@ -571,10 +571,10 @@ impl DownloadWindow {
     }
 
     fn confirm(&mut self, id: QuestionId, later: bool, cx: &mut Context<'_, Self>) {
-        let name = self.name.read(cx).value().trim().to_owned();
+        let name = self.name.read(cx).value();
         let confirmation = CaptureConfirmation {
             folder: self.folder.clone(),
-            file_name: (!name.is_empty()).then_some(name),
+            file_name: chosen_name(&name, self.core_name.as_deref()),
             queue: self.queue,
             later,
         };
@@ -646,10 +646,7 @@ impl DownloadWindow {
         v_flex()
             .gap_4()
             .child(heading(&question.file_name, &question.url, None, cx))
-            .child(div().child(format!(
-                "A file with this name is already in {}.",
-                text::folder(&question.folder)
-            )))
+            .child(div().child(text::file_exists_said(question)))
             .child(
                 Checkbox::new("file-exists-remember")
                     .label("Do the same every time")
@@ -842,7 +839,7 @@ impl DownloadWindow {
                         .flex_shrink_0()
                         .px_2p5()
                         .text_role(Role::Meta, cx)
-                        .child("The partial file was removed. Try again starts over."),
+                        .child("Anything downloaded so far was removed. Try again starts over."),
                 )
             })
             .child(div().relative().mt_1p5().flex_1().min_h_0().children(graph))
@@ -1449,6 +1446,13 @@ fn button(id: &'static str, label: &'static str, variant: ButtonVariant, busy: b
 }
 
 /// Whether the core's name replaces what the field holds: never a name the person typed.
+/// The name the person chose in the field: a name left as proposed is no choice, so the server's
+/// answer may still improve it.
+fn chosen_name(field: &str, proposed: Option<&str>) -> Option<String> {
+    let name = field.trim();
+    (!name.is_empty() && Some(name) != proposed).then(|| name.to_owned())
+}
+
 fn core_name_applies(field: &str, last: Option<&str>, core: &str) -> bool {
     last.is_none_or(|last| last != core && field == last)
 }
@@ -1543,6 +1547,20 @@ mod tests {
         ) -> impl gpui_kit::IntoElement {
             gpui_kit::div()
         }
+    }
+
+    #[test]
+    fn only_a_name_the_person_changed_counts_as_chosen() {
+        use super::chosen_name;
+
+        assert_eq!(chosen_name("get", Some("get")), None);
+        assert_eq!(chosen_name(" get ", Some("get")), None);
+        assert_eq!(chosen_name("", Some("get")), None);
+        assert_eq!(
+            chosen_name("report.pdf", Some("get")).as_deref(),
+            Some("report.pdf")
+        );
+        assert_eq!(chosen_name("get", None).as_deref(), Some("get"));
     }
 
     #[test]

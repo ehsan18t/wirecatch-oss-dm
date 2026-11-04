@@ -5,8 +5,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::{Datelike as _, Local, NaiveDate, NaiveTime, TimeZone as _};
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
-    Category, ClockFormat, DownloadStatus, DownloadSummary, FixAction, MediaSummary, OutputFormat,
-    PER_MILLE_DONE, ProcessingStep, QueueSettings, Schedule, TimeOfDay, WaitReason, Weekday,
+    Category, ClockFormat, DownloadStatus, DownloadSummary, FileExistsQuestion, FixAction,
+    MediaSummary, OutputFormat, PER_MILLE_DONE, ProcessingStep, QueueSettings, Schedule, TimeOfDay,
+    WaitReason, Weekday,
 };
 use wirecatch_protocol::extension::MediaKind;
 use wirecatch_protocol::rules::{AddDownloads, LinkProtocol, Rule};
@@ -509,6 +510,41 @@ fn earlier_notice_on(row: &DownloadSummary, today: NaiveDate, clock: ClockFormat
     }
 }
 
+/// What a row says of a paused download: where it got to, once it got anywhere.
+pub fn paused_at(row: &DownloadSummary) -> String {
+    if row.done == 0 {
+        status_label(DownloadStatus::Paused).to_owned()
+    } else {
+        format!("Paused at {}", size(row))
+    }
+}
+
+/// What the question about a file already in the folder says of that file (D96).
+pub fn file_exists_said(question: &FileExistsQuestion) -> String {
+    file_exists_said_on(question, Local::now().date_naive(), clock_format())
+}
+
+fn file_exists_said_on(
+    question: &FileExistsQuestion,
+    today: NaiveDate,
+    clock: ClockFormat,
+) -> String {
+    let which = if question.same_file {
+        "A file that looks like the same one"
+    } else {
+        "A different file with this name"
+    };
+    let bytes = format_bytes(question.size);
+    let facts = match question.saved_at {
+        Some(at) => format!("{bytes}, saved {}", when_said(at, today, clock)),
+        None => bytes,
+    };
+    format!(
+        "{which} is already in {} ({facts}).",
+        folder(&question.folder)
+    )
+}
+
 /// A moment in a sentence: `today at 6:38 PM`, `yesterday at 7:05 AM` or `on 3 Sep 2026`.
 fn when_said(at: UnixMillis, today: NaiveDate, clock: ClockFormat) -> String {
     let Some(at) = Local.timestamp_millis_opt(at.0).single() else {
@@ -718,6 +754,60 @@ mod tests {
         assert_eq!(
             format_time(morning, false, ClockFormat::TwentyFourHour),
             "07:05"
+        );
+    }
+
+    #[test]
+    fn a_paused_row_says_where_it_got_to_only_once_it_got_anywhere() {
+        let paused = |done, total| DownloadSummary {
+            status: DownloadStatus::Paused,
+            done,
+            total,
+            ..wirecatch_test_support::downloads::download(1)
+        };
+        assert_eq!(paused_at(&paused(0, None)), "Paused");
+        assert_eq!(paused_at(&paused(0, Some(2048))), "Paused");
+        assert_eq!(paused_at(&paused(1024, None)), "Paused at 1.00 KB");
+        assert_eq!(
+            paused_at(&paused(1024, Some(2048))),
+            "Paused at 1.00 KB of 2.00 KB"
+        );
+    }
+
+    #[test]
+    fn the_file_exists_question_says_which_case_it_is() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 10).unwrap();
+        let saved = Local
+            .with_ymd_and_hms(2026, 10, 10, 18, 38, 0)
+            .unwrap()
+            .timestamp_millis();
+        let question = |same_file, saved_at| FileExistsQuestion {
+            id: wirecatch_protocol::QuestionId(1),
+            download: wirecatch_protocol::DownloadId(1),
+            url: "https://example.com/report.pdf".to_owned(),
+            file_name: "report.pdf".to_owned(),
+            folder: "Downloads".to_owned(),
+            size: 2048,
+            same_file,
+            saved_at,
+        };
+        let said = |same_file, saved_at| {
+            file_exists_said_on(
+                &question(same_file, saved_at),
+                today,
+                ClockFormat::TwentyFourHour,
+            )
+        };
+        let folder = folder("Downloads");
+        assert_eq!(
+            said(true, Some(UnixMillis(saved))),
+            format!(
+                "A file that looks like the same one is already in {folder} (2.00 KB, saved today at 18:38)."
+            )
+        );
+        assert_eq!(
+            said(false, None),
+            format!("A different file with this name is already in {folder} (2.00 KB).")
         );
     }
 
