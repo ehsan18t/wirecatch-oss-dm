@@ -288,15 +288,7 @@ async fn kills_during_a_burst_of_short_downloads_lose_or_double_nothing() -> Tes
         let asked = done.url.rsplit('/').next().unwrap_or_default();
         check_file(Path::new(&done.path), seeds[asked], LEN)?;
     }
-    // A kill can outrun the list's save of a run that began writing, and the next run then keeps that file as another program's and saves its own beside it, so a name may be there twice but never missing.
-    let found = names(&scratch);
-    for name in seeds.keys() {
-        assert!(found.contains(name), "{name} is missing from {found:?}");
-    }
-    assert!(
-        found.iter().all(|name| !name.ends_with(".wcpart")),
-        "partial files left behind: {found:?}"
-    );
+    assert_eq!(names(&scratch), seeds.keys().cloned().collect::<Vec<_>>());
     manager.shutdown().await;
     Ok(())
 }

@@ -293,12 +293,7 @@ impl DownloadWindow {
     }
 
     fn download(&self, id: DownloadId, cx: &App) -> Option<DownloadSummary> {
-        self.library
-            .read(cx)
-            .downloads
-            .iter()
-            .find(|row| row.id == id)
-            .cloned()
+        self.library.read(cx).downloads.find(id).cloned()
     }
 
     /// Makes the window as tall as its content, within the screen.
