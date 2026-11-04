@@ -454,6 +454,24 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     #[test]
+    fn the_guards_resolver_puts_ipv4_first_only_for_a_socks4_proxy() {
+        let of = |proxy: &str| {
+            let manual = crate::ManualProxies {
+                all: Some(proxy.into()),
+                ..Default::default()
+            };
+            let proxies = Proxies::of(&crate::ProxyChoice::Manual(manual));
+            let url = Url::parse("https://example.com/").unwrap();
+            guard_from(&url, Duration::from_secs(1), &proxies)
+                .resolver
+                .ipv4_first
+        };
+        assert!(of("socks4://proxy.example:1080"));
+        assert!(!of("socks5://proxy.example:1080"));
+        assert!(!of("http://proxy.example:8080"));
+    }
+
+    #[test]
     fn ipv4_addresses_come_first_in_the_order_they_had() {
         let addr = |text: &str| text.parse::<SocketAddr>().unwrap();
         let mut addrs = [

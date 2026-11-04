@@ -75,8 +75,8 @@ impl SitePattern {
 #[must_use]
 pub fn normal_site_rule(input: &str) -> Option<String> {
     let input = input.trim();
-    // Without a scheme, what follows `/` is a network's bits, whose bad value must not fall through to the address.
-    let pasted = input.contains("://") || !input.contains('/');
+    // Without a scheme, what follows `/` is a network's bits, whose bad value must not fall through to the address. A leading `*.` or `.` asks for names under it, and an address has none.
+    let pasted = input.contains("://") || !(input.contains('/') || input.starts_with(['*', '.']));
     let pasted_address = || {
         pasted
             .then(|| SitePattern::read(&read_site(input).ok().flatten()?))
@@ -251,7 +251,9 @@ mod tests {
                 "{written}"
             );
         }
-        assert_eq!(normal_site_rule("10.*.1"), None);
+        for names_nothing in ["10.*.1", "*.10", "*.1.2.3.4", ".10", ".1.2.3.4"] {
+            assert_eq!(normal_site_rule(names_nothing), None, "{names_nothing}");
+        }
     }
 
     #[test]
