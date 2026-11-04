@@ -106,8 +106,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 79  | The window and a restart disagree with what a queue's run really is                               | `18-2` `18-3`                                                                                      | P2       | medium | P2, 2 findings, medium; clears the way for item 138                                                              | none                                          | open   |
 | 80  | Answering the file-exists question opens a second window for the same download                    | `24-6` `U-7`                                                                                       | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
 | 81  | Download windows offer only Try again, whatever fix the failure needs                             | `30-2` `Xfeature-behaviour-5`                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
-| 82  | Refreshing the link cannot clear the check against what the browser saw                           | `Xpath-normal-download-3`                                                                          | P2       | small  | P2 with one finding; placed here because saving this check alone would remove the only way out of it             | `Xpath-normal-download-3`                     | open   |
-| 83  | An answered Replace and a capture's size check are lost at a restart                              | `05-6` `Xcrash-and-resume-5`                                                                       | P2       | medium | P2, 2 findings, medium; after items 4, 82                                                                        | `05-6` `Xcrash-and-resume-5`                  | open   |
+| 82  | Refreshing the link cannot clear the check against what the browser saw                           | `Xpath-normal-download-3`                                                                          | P2       | small  | P2 with one finding; placed here because saving this check alone would remove the only way out of it             | `Xpath-normal-download-3`                     | fixed  |
+| 83  | An answered Replace and a capture's size check are lost at a restart                              | `05-6` `Xcrash-and-resume-5`                                                                       | P2       | medium | P2, 2 findings, medium; after items 4, 82                                                                        | `05-6` `Xcrash-and-resume-5`                  | fixed  |
 | 84  | A write that can never pass raises a notification for every batch                                 | `03-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `03-3`                                        | open   |
 | 85  | Choosing the folder the guess already points at is not remembered                                 | `05-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 86  | A capture joining an unfinished download is answered Started too early                            | `07-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -1703,7 +1703,7 @@ P2, medium, open.
 
 ### 82. Refreshing the link cannot clear the check against what the browser saw
 
-P2, small, open.
+P2, small, fixed.
 
 `expect` is never cleared by a refresh, so a fresh link still fails with "The server sent a different file than the browser saw". Today a restart is the only way out, because `expect` is not saved.
 
@@ -1719,7 +1719,7 @@ P2, small, open.
 
 ### 83. An answered Replace and a capture's size check are lost at a restart
 
-P2, medium, open.
+P2, medium, fixed.
 
 `on_existing`, `expect` and `video_check` are not in the saved row, though `settled` is. So an answered Replace finishes as `report (1).pdf` after a restart with the old file kept, and a captured download finishes at 2048 bytes where the browser saw 1024. The doc on `on_existing` is wrong for a plain download.
 
