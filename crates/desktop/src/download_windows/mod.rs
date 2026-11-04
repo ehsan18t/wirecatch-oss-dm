@@ -49,7 +49,13 @@ pub fn init(library: &Entity<Library>, cx: &mut App) {
 pub fn follow(event: &UiEvent, cx: &mut App) {
     match event {
         UiEvent::ConfirmationRequested(capture) => ask(capture.id, cx),
-        UiEvent::MediaAnalysing { id, .. } | UiEvent::AddonRequired { id, .. } => ask(*id, cx),
+        UiEvent::MediaAnalysing { id, url } => {
+            ask(*id, cx);
+            if let Some(view) = view_showing(Shows::Question(*id), cx) {
+                _ = view.update(cx, |view, cx| view.reading_from(url, cx));
+            }
+        }
+        UiEvent::AddonRequired { id, .. } => ask(*id, cx),
         UiEvent::MediaChoiceRequested(choice) => ask(choice.id, cx),
         UiEvent::FileExistsRequested(question) => ask(question.id, cx),
         UiEvent::ConfirmationClosed { id } => closed(*id, cx),
@@ -121,14 +127,16 @@ fn update<T>(cx: &mut App, change: impl FnOnce(&mut Registry) -> T) -> T {
 
 /// Asks the window showing `shows`, if one is open, to read its question again.
 fn refresh(shows: Shows, cx: &mut App) {
+    if let Some(view) = view_showing(shows, cx) {
+        _ = view.update(cx, view::DownloadWindow::reload);
+    }
+}
+
+fn view_showing(shows: Shows, cx: &App) -> Option<WeakEntity<view::DownloadWindow>> {
     let windows = cx.global::<Windows>();
-    let Some(window) = windows.registry.window_showing(shows) else {
-        return;
-    };
-    let Some((_, view)) = windows.open.get(&window.label).cloned() else {
-        return;
-    };
-    _ = view.update(cx, view::DownloadWindow::reload);
+    let window = windows.registry.window_showing(shows)?;
+    let (_, view) = windows.open.get(&window.label)?;
+    Some(view.clone())
 }
 
 fn run(steps: Vec<Step>, cx: &mut App) {
