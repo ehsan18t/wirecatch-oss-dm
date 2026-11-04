@@ -51,7 +51,7 @@ impl Clients {
         let tls = if let Some(tls) = SHARED_TLS.get() {
             tls
         } else {
-            let config = tls_config(native_roots())?;
+            let config = tls_config(trusted_roots())?;
             SHARED_TLS.get_or_init(|| config)
         };
         Ok(Self::with_config(
@@ -180,21 +180,33 @@ fn tls_config(roots: rustls::RootCertStore) -> Result<rustls::ClientConfig> {
     Ok(config)
 }
 
-/// The operating system's trusted root certificates. Unreadable entries are
+/// The operating system's trusted roots and the bundled ones (D116). Unreadable entries are
 /// skipped; with none at all, HTTPS requests fail with a certificate error.
-fn native_roots() -> rustls::RootCertStore {
+fn trusted_roots() -> rustls::RootCertStore {
     let loaded = rustls_native_certs::load_native_certs();
     for error in &loaded.errors {
         // Its message already includes its source.
         debug!(%error, "skipped part of the system certificate store");
     }
+    // Named files replace the system's roots in `load_native_certs`, and so the bundled ones too.
+    let named_files = ["SSL_CERT_FILE", "SSL_CERT_DIR"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some());
+    let roots = merged_roots(loaded.certs, !named_files);
+    if roots.is_empty() {
+        warn!("no usable root certificates found; HTTPS downloads will fail");
+    }
+    roots
+}
+
+pub(super) fn merged_roots(
+    certificates: Vec<rustls::pki_types::CertificateDer<'static>>,
+    bundled: bool,
+) -> rustls::RootCertStore {
     let mut roots = rustls::RootCertStore::empty();
-    let (added, ignored) = roots.add_parsable_certificates(loaded.certs);
-    if added == 0 {
-        warn!(
-            ignored,
-            "no usable root certificates found; HTTPS downloads will fail"
-        );
+    roots.add_parsable_certificates(certificates);
+    if bundled {
+        roots.add_parsable_certificates(webpki_root_certs::TLS_SERVER_ROOT_CERTS.iter().cloned());
     }
     roots
 }

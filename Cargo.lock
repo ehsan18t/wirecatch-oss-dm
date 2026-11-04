@@ -10054,6 +10054,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "url",
+ "webpki-root-certs",
  "windows-registry 0.6.1",
  "windows-sys 0.61.2",
  "wirecatch-test-support",

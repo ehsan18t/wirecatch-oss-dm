@@ -333,6 +333,28 @@ mod tls {
         );
     }
 
+    #[test]
+    fn the_bundled_roots_cover_what_a_system_may_not_have_fetched() {
+        let bundled = webpki_root_certs::TLS_SERVER_ROOT_CERTS;
+        for name in [
+            "ISRG Root X2",
+            "Amazon Root CA 3",
+            "SSL.com TLS ECC Root CA 2022",
+        ] {
+            let named = |der: &rustls::pki_types::CertificateDer<'_>| {
+                der.windows(name.len())
+                    .any(|bytes| bytes == name.as_bytes())
+            };
+            assert!(bundled.iter().any(named), "{name}");
+        }
+        assert!(!super::super::client::merged_roots(Vec::new(), true).is_empty());
+    }
+
+    #[test]
+    fn certificate_files_named_by_the_environment_replace_the_bundled_roots() {
+        assert!(super::super::client::merged_roots(Vec::new(), false).is_empty());
+    }
+
     #[tokio::test]
     async fn separate_tls_configs_cannot_resume() {
         // Control: proves the test above detects the difference.
