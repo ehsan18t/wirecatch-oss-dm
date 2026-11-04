@@ -1137,9 +1137,8 @@ mod tests {
         assert!(!hosts.exists(), "the manifests and their folder are gone");
     }
 
-    // Under a per-machine install the app used to register the bridge for each user too. An uninstall
-    // only cleans up the account that runs it, so every other user kept a registration pointing at
-    // removed files.
+    // An uninstall only cleans up the account that runs it, so a per-user registration under a
+    // per-machine install would leave every other user pointing at removed files.
     #[test]
     fn a_user_install_steps_aside_for_the_machine_registration() {
         let temp = temp_dir();

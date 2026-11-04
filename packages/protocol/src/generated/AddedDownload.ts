@@ -11,8 +11,8 @@ export type AddedDownload = {
    */
   id: DownloadId | null;
   /**
-   * What the app did with it, which tells the extension whether it may erase the
-   * browser's copy yet.
+   * What the app did with it. Every action means the app has it, so the extension removes
+   * the browser's copy (D145).
    */
   action: AddAction;
 };

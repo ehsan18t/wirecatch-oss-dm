@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Builds the GPUI desktop app's installers (D106): on Windows the Inno Setup installer, on Linux the .deb, the .rpm and the AppImage. They land in target/packages, named <product>-<version>-<system>-<architecture>.
 //
-// Usage: node scripts/package.mjs [--target <rust target triple>]. The default target is this machine's.
+// Usage: node scripts/package.mjs [--target <rust target triple>]. The default target is this machine's; Linux packages can only be made for it.
 //
 // The app and the bridge are built in release with the product identity checked first (D29, D49). The Linux tools (nfpm, appimagetool and the AppImage runtime) are downloaded at pinned versions and checked against their SHA-256 before use. Inno Setup is installed beforehand (CI installs the pinned version; locally, Inno Setup 6.7 or later).
 
@@ -24,6 +24,13 @@ import { join } from 'node:path';
 import { GateError, ROOT } from './gate/process.mjs';
 import { INSTALLER_CRATES, installerPackages } from './notices/cargo.mjs';
 import { noticeSection, renderNotices } from './notices/render.mjs';
+import {
+  appRun,
+  BUNDLED_LIBRARY_SEARCH,
+  canPackageLinux,
+  linuxDepends,
+  newestGlibc,
+} from './package/linux.mjs';
 import { fillTemplate } from './product/manifests.mjs';
 import { readProduct } from './product/read.mjs';
 
@@ -70,30 +77,6 @@ const LINUX_TOOLS = {
   },
 };
 
-/** What the app needs from the system on Linux: the libraries GPUI loads, by package name. */
-const LINUX_DEPENDS = {
-  deb: [
-    'libfontconfig1',
-    'libfreetype6',
-    'libxkbcommon0',
-    'libxkbcommon-x11-0',
-    'libwayland-client0',
-    'libx11-xcb1',
-    'libxcb1',
-    'libvulkan1',
-  ],
-  rpm: [
-    'fontconfig',
-    'freetype',
-    'libxkbcommon',
-    'libxkbcommon-x11',
-    'libwayland-client',
-    'libX11-xcb',
-    'libxcb',
-    'vulkan-loader',
-  ],
-};
-
 const ICON_SIZES = [32, 64, 128, 256, 512];
 
 /**
@@ -130,15 +113,6 @@ function bundleLibraries(binary, folder, notices) {
   }
 }
 
-/** The AppImage's entry point: the app, finding the libraries the AppImage carries first. */
-function appRun(app) {
-  return `#!/bin/sh
-HERE="$(dirname "$(readlink -f "$0")")"
-export LD_LIBRARY_PATH="$HERE/usr/lib\${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-exec "$HERE/usr/bin/${app}" "$@"
-`;
-}
-
 function fail(message) {
   console.error(message);
   process.exit(1);
@@ -172,6 +146,9 @@ function build(triple) {
   // The Visual C++ runtime is linked in, so the app runs on a Windows without it installed (D33).
   if (triple.endsWith('-windows-msvc')) {
     env.RUSTFLAGS = `${env.RUSTFLAGS ?? ''} -C target-feature=+crt-static`.trim();
+  }
+  if (triple.includes('-linux-')) {
+    env.RUSTFLAGS = `${env.RUSTFLAGS ?? ''} ${BUNDLED_LIBRARY_SEARCH}`.trim();
   }
   // No cargo feature: the bridge's one feature, test-overrides, is for tests only (D22).
   const crates = INSTALLER_CRATES.flatMap((name) => ['-p', name]);
@@ -238,6 +215,15 @@ function windows(product, built, arch, triple) {
     ...Object.entries(defines).map(([key, value]) => `/D${key}=${value}`),
     join(PACKAGING, 'windows', 'installer.iss'),
   ]);
+}
+
+/** The C library version the app and the bridge in `folder` need, read from the binaries so it follows the machine that built them. */
+function glibcNeeded(product, folder) {
+  const binaries = [product.executables.app, product.executables.bridge].map((name) =>
+    join(folder, name),
+  );
+  const versionInfo = execFileSync('readelf', ['-V', ...binaries], { encoding: 'utf8' });
+  return newestGlibc(versionInfo) ?? fail('The binaries name no C library version.');
 }
 
 /** A pinned download in target/tools, checked against its SHA-256. */
@@ -311,6 +297,7 @@ async function linux(product, built, arch, triple) {
   const nfpmArchive = await tool('nfpm', arch);
   const nfpmDir = join(nfpmArchive, '..');
   run('tar', ['-xzf', nfpmArchive, '-C', nfpmDir, 'nfpm']);
+  const depends = linuxDepends(glibcNeeded(product, join(root, 'usr', 'bin')));
   // JSON is YAML, which nfpm reads.
   const config = {
     name: slug,
@@ -333,7 +320,7 @@ async function linux(product, built, arch, triple) {
       { src: `${join(root, 'usr', 'share')}/`, dst: '/usr/share', type: 'tree' },
     ],
     scripts: { preremove: prerm },
-    overrides: { deb: { depends: LINUX_DEPENDS.deb }, rpm: { depends: LINUX_DEPENDS.rpm } },
+    overrides: { deb: { depends: depends.deb }, rpm: { depends: depends.rpm } },
   };
   const configFile = join(OUT, `nfpm-${arch}.yaml`);
   writeFileSync(configFile, JSON.stringify(config, null, 2));
@@ -405,6 +392,10 @@ async function appImage(product, root, arch) {
 const product = readProduct(readFileSync(join(ROOT, 'config', 'product.toml'), 'utf8'));
 const triple = targetTriple();
 const arch = architecture(triple);
+if (triple.includes('-linux-') && !canPackageLinux(arch))
+  fail(
+    `Linux packages are made on a Linux machine of their own architecture, so ${triple} cannot be made here.`,
+  );
 mkdirSync(OUT, { recursive: true });
 const built = build(triple);
 if (triple.includes('-windows-')) windows(product, built, arch, triple);

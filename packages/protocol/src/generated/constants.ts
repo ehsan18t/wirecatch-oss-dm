@@ -1169,7 +1169,7 @@ export const SUBTITLE_LANGUAGES: readonly {
   {
     also_called: 'Ossetic',
     code: 'os',
-    name: 'Ossetic',
+    name: 'Ossetian',
   },
   {
     also_called: 'Panjabi',
@@ -1379,7 +1379,7 @@ export const SUBTITLE_LANGUAGES: readonly {
   {
     also_called: null,
     code: 'tw',
-    name: 'Akan',
+    name: 'Twi',
   },
   {
     also_called: null,
