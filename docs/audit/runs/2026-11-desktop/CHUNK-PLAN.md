@@ -1098,7 +1098,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 1     | Flow `second-review-disk-writes`        | done        |
 | 1     | UI review (`ui.md`)                     | done        |
 | 2     | Grouping (`GROUPS.md`)                  | done        |
-| 2     | Batch B01                               | pending     |
+| 2     | Batch B01                               | done        |
 | 2     | Batch B02                               | done        |
 | 2     | Batch B03                               | done        |
 | 2     | Batch B04                               | done        |
@@ -1112,7 +1112,7 @@ Stage 2 batches are added once `GROUPS.md` exists, and UI windows once `ui.md` l
 | 2     | Batch B12                               | done        |
 | 2     | Batch B13                               | done        |
 | 2     | Batch B14                               | done        |
-| 2     | Batch B15                               | pending     |
+| 2     | Batch B15                               | done        |
 | 2     | Batch B16                               | done        |
 | 2     | Batch B17                               | done        |
 | 2     | Batch B18                               | done        |

@@ -1,0 +1,49 @@
+Run: git apply 05-3.patch, then cargo test -p wirecatch-core --test manager a_finished_file_captured_again -- --nocapture. Output: AGAIN Err(NotStarted("It stopped before the server answered.")); EVENT asked QuestionId(1); EVENT closed QuestionId(1); EVENT removed [DownloadId(2)]; OPEN 0 ROWS 1; FAILED "the question closed itself".
+diff --git a/crates/core/tests/manager/again.rs b/crates/core/tests/manager/again.rs
+index bc7a67cae..d107256b9 100644
+--- a/crates/core/tests/manager/again.rs
++++ b/crates/core/tests/manager/again.rs
+@@ -149,3 +149,43 @@ async fn a_withdrawal_while_confirming_finds_it_taken() -> TestResult {
+     assert_eq!(h.manager.list_downloads().len(), 1);
+     Ok(())
+ }
++
++/// 05-3: a browser download that meets a file in the folder, with the setting on Ask, waits for the answer.
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn a_finished_file_captured_again_keeps_its_question() -> TestResult {
++    let server = TestServer::start(
++        test_data(16 * KIB_USIZE),
++        Config {
++            ranges: true,
++            content_disposition: Some("attachment; filename=\"report.pdf\"".into()),
++            ..Config::default()
++        },
++    )
++    .await;
++    let h = Harness::new().await?;
++    let url = server.url("get").to_string();
++    let first = h.manager.add_capture(click(&url, 1)).await?;
++    h.wait_status(first.id.ok_or("no id")?, wirecatch_protocol::app::DownloadStatus::Completed).await;
++    let mut events = h.manager.subscribe();
++    let again = h.manager.add_capture(click(&url, 2)).await;
++    println!("AGAIN {again:?}");
++    if again.is_err() {
++        tokio::time::timeout(PATIENCE, async {
++            loop {
++                match events.recv().await {
++                    Ok(UiEvent::FileExistsRequested(q)) => println!("EVENT asked {:?}", q.id),
++                    Ok(UiEvent::ConfirmationClosed { id }) => println!("EVENT closed {id:?}"),
++                    Ok(UiEvent::DownloadsRemoved(ids)) => {
++                        println!("EVENT removed {ids:?}");
++                        return;
++                    }
++                    _ => {}
++                }
++            }
++        })
++        .await?;
++    }
++    println!("OPEN {} ROWS {}", h.manager.pending_file_exists().len(), h.manager.list_downloads().len());
++    assert_eq!(h.manager.pending_file_exists().len(), 1, "the question closed itself");
++    Ok(())
++}
