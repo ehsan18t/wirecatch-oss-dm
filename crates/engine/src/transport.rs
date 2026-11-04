@@ -230,7 +230,7 @@ pub(crate) async fn open(
                 .proxies()
                 .ftp_route(host)
                 .map_err(|setting| Error::FtpProxyUnsupported { setting })?;
-            let target = ftp::Target::new(url, opts, clients.tls(), via)?;
+            let target = ftp::Target::new(url, opts, clients.tls(), via, guard)?;
             let retries = Retries::for_link(opts, clients.proxies(), url);
             let probe = with_retries(retries, cancel, || ftp::probe(&target, cancel)).await?;
             Ok(Opened {

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-# New crates under crates/ join automatically. The desktop app's Rust side is listed explicitly.
+# New crates under crates/ join automatically.
 members = ["crates/*"]
 
 [workspace.package]

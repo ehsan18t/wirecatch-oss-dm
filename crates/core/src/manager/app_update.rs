@@ -2,7 +2,7 @@
 //! only through its manifest signed with the key the build carries, and its installer
 //! downloaded and checked against that manifest before the shell may run it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tracing::info;
@@ -114,7 +114,8 @@ impl Manager {
 
     /// Downloads `download` into the data folder's updates folder, reporting to `progress`, and
     /// returns its path once its size and SHA-256 match the signed manifest. A file that does not
-    /// match is deleted.
+    /// match is deleted; one already there that matches is used as it is, so trying an install
+    /// again downloads nothing.
     ///
     /// # Errors
     ///
@@ -141,6 +142,13 @@ impl Manager {
             }))
         })
         .await??;
+        let checked = target.clone();
+        if self
+            .blocking(move || Ok(installer_matches(&checked, size, &expected)))
+            .await?
+        {
+            return Ok(target);
+        }
         let mut request = DownloadRequest::new(download.url.clone(), &folder);
         let named = target.clone();
         request.resolve_path = Some(Arc::new(move |remote: &RemoteFile| {
@@ -170,10 +178,7 @@ impl Manager {
         }
         let checked = target.clone();
         let matches = self
-            .blocking(move || {
-                Ok(std::fs::metadata(&checked).is_ok_and(|m| m.len() == size)
-                    && archive::sha256_file(&checked).is_ok_and(|hash| hash == expected))
-            })
+            .blocking(move || Ok(installer_matches(&checked, size, &expected)))
             .await?;
         if !matches {
             let wrong = target.clone();
@@ -233,6 +238,17 @@ impl Manager {
         let proxy = self.lock().app_proxy();
         crate::headers::download_options(UPDATE_NETWORK, proxy)
     }
+}
+
+fn installer_matches(path: &Path, size: u64, expected: &Sha256Digest) -> bool {
+    std::fs::metadata(path).is_ok_and(|m| m.len() == size)
+        && archive::sha256_file(path).is_ok_and(|hash| hash == *expected)
+}
+
+/// Removes the installers of earlier runs. The setup that started this run may still hold its own
+/// file, which then goes at the next start.
+pub(super) fn discard_installers(data_dir: &Path) {
+    wirecatch_files::discard::dir(&data_dir.join(UPDATES_FOLDER));
 }
 
 fn unreachable_releases(reason: &str) -> CoreError {
@@ -404,6 +420,43 @@ mod tests {
             .unwrap();
         assert_eq!(update.version, "0.2.0-beta.1");
         assert_eq!(update.download, None, "no installer was asked for");
+    }
+
+    #[tokio::test]
+    async fn trying_again_uses_the_checked_installer_already_downloaded() {
+        let h = Harness::new().await;
+        h.publish("v0.2.0", false, &key(), INSTALLER);
+        let update = h
+            .manager
+            .check_app_update("0.1.0", Some(FileKind::Setup))
+            .await
+            .unwrap()
+            .unwrap();
+        let download = update.download.unwrap();
+        let fetch = || {
+            h.manager.fetch_app_update(
+                &download,
+                Arc::new(Progress::default()),
+                CancellationToken::new(),
+            )
+        };
+        let first = fetch().await.unwrap();
+        let sent = h.server.requests(download.url.path());
+        assert_eq!(fetch().await.unwrap(), first);
+        assert_eq!(h.server.requests(download.url.path()), sent);
+    }
+
+    #[tokio::test]
+    async fn installers_from_an_earlier_run_are_removed_when_the_app_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        let updates = data.join(UPDATES_FOLDER);
+        std::fs::create_dir_all(&updates).unwrap();
+        std::fs::write(updates.join("Wirecatch-0.1.0-setup.exe"), INSTALLER).unwrap();
+        let config =
+            ManagerConfig::for_tests(data, KnownFolders::under_home(dir.path().join("home")));
+        let _manager = Manager::open(config).await.unwrap();
+        assert!(!updates.exists());
     }
 
     #[tokio::test]

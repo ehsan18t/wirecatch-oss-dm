@@ -858,4 +858,27 @@ mod tests {
         assert_eq!(flagged.reason, None);
         assert!(flagged.outside_user_folders);
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_file_cannot_send_downloads_beside_the_add_ons_programs() {
+        let mut settings = default_settings();
+        settings.default_folder =
+            PortablePath("{Home}/AppData/Local/Wirecatch/addons/media/ffmpeg".into());
+        let profile = SettingsFile {
+            format_version: SETTINGS_FILE_FORMAT_VERSION,
+            app_version: "0.1.0".into(),
+            exported_at: UnixMillis(0),
+            settings,
+            queues: vec![],
+            proxy_servers: Vec::new(),
+            addons: vec![],
+        };
+        let imported = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap();
+        let downloads = PortablePath("{Downloads}".into());
+        assert_eq!(imported.settings.default_folder, downloads);
+        let first = &imported.summary.folders[0];
+        assert_eq!(first.used, downloads);
+        assert!(first.reason.is_some(), "{first:?}");
+    }
 }

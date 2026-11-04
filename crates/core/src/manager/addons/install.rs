@@ -35,7 +35,36 @@ pub(super) const MAX_SHOWN_VERSION: usize = 40;
 
 /// A part's release file while it downloads, in the work folder.
 pub(super) fn release_file(id: ComponentId, version: &str) -> String {
-    format!("{}-{}.download", id.as_str(), file_safe(version))
+    format!(
+        "{}{}{RELEASE_FILE_EXT}",
+        release_file_prefix(id),
+        file_safe(version)
+    )
+}
+
+fn release_file_prefix(id: ComponentId) -> String {
+    format!("{}-", id.as_str())
+}
+
+/// Deletes every release file of part `id` in the work folder: the one just installed, and those of versions never installed, which nothing else would.
+fn discard_release_files(work: &Path, id: ComponentId) {
+    let prefix = release_file_prefix(id);
+    let names = match std::fs::read_dir(work) {
+        Ok(names) => names,
+        Err(error) => {
+            warn!(%error, "could not look through the add-on's work folder");
+            return;
+        }
+    };
+    for entry in names.flatten() {
+        let name = entry.file_name();
+        if name
+            .to_str()
+            .is_some_and(|n| n.starts_with(&prefix) && n.ends_with(RELEASE_FILE_EXT))
+        {
+            wirecatch_files::discard::file(&entry.path());
+        }
+    }
 }
 
 /// Where a part is unpacked before it is swapped in, in the work folder.
@@ -47,6 +76,8 @@ pub(super) fn stage_folder(id: ComponentId) -> String {
 pub(super) fn old_folder(id: ComponentId) -> String {
     format!("old-{}", id.as_str())
 }
+
+const RELEASE_FILE_EXT: &str = ".download";
 
 impl Manager {
     /// Downloads, checks and unpacks every part of `plan` in parallel, then swaps
@@ -437,11 +468,7 @@ pub(super) fn swap_in(
         record
             .save(dir)
             .map_err(|e| format!("The add-on could not record what it installed ({e})."))?;
-        wirecatch_files::discard::file(&work.join(format!(
-            "{}-{}.download",
-            id.as_str(),
-            file_safe(component.version())
-        )));
+        discard_release_files(work, id);
         // What another version cached (player code, signatures) is a known cause of failed reads.
         if id == ComponentId::YtDlp {
             wirecatch_files::discard::dir(&addons::ytdlp_cache(dir));

@@ -681,6 +681,29 @@ async fn every_way_a_link_arrives_runs_under_its_own_rule() {
 }
 
 #[tokio::test]
+async fn a_download_that_fails_to_start_gives_its_slot_to_the_next() {
+    let (manager, _dir) = manager_with(deaf, PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
+    let mut settings = manager.get_settings();
+    settings.max_concurrent_downloads = 1;
+    manager.update_settings(settings).unwrap();
+    manager.set_queue_paused(DEFAULT_QUEUE_ID, true).unwrap();
+    let mut ids = Vec::new();
+    for name in ["broken", "second", "third"] {
+        let link = format!("https://example.com/{name}.bin");
+        ids.push(manager.add_download(add_request(&link)).await.unwrap());
+    }
+    let (broken, second, third) = (ids[0], ids[1], ids[2]);
+    manager.lock().downloads.get_mut(&broken).unwrap().row.url = "not a link".into();
+
+    manager.set_queue_paused(DEFAULT_QUEUE_ID, false).unwrap();
+
+    let state = manager.lock();
+    assert_eq!(state.downloads[&broken].row.status, DownloadStatus::Failed);
+    assert!(state.downloads[&second].is_running());
+    assert!(!state.downloads[&third].is_running());
+}
+
+#[tokio::test]
 async fn a_download_runs_under_the_apps_limits_and_its_queues() {
     const CONNECTIONS: u8 = 3;
     const GONE: wirecatch_protocol::QueueId = wirecatch_protocol::QueueId(99);
@@ -913,4 +936,43 @@ async fn a_found_duplicate_does_not_override_a_stop_the_person_chose() {
         assert_eq!(manager.get_download(id).unwrap().status, ended);
         assert_eq!(manager.pending_file_exists(), vec![]);
     }
+}
+
+/// A new download never takes a name whose old files are still being deleted.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_removal_keeps_the_path_until_its_files_are_deleted() {
+    let (manager, _dir) =
+        manager_with(obedient, Duration::from_secs(5), DEFAULT_CAPTURE_TIMEOUT).await;
+    let mut request = add_request("https://example.com/big.iso");
+    request.start = false;
+    let id = manager.add_download(request).await.unwrap();
+    let path = PathBuf::from(&manager.lock().downloads[&id].row.path);
+
+    let entered = Arc::new(Notify::new());
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    let told = entered.clone();
+    manager.use_before_deleting(Arc::new(move || {
+        told.notify_one();
+        assert!(
+            held.lock().unwrap().recv().is_err(),
+            "ends when the sender is dropped"
+        );
+    }));
+    let removing = {
+        let manager = manager.clone();
+        tokio::spawn(async move { manager.remove(&[id], RemoveFiles::Keep).await })
+    };
+    tokio::time::timeout(PATIENCE, entered.notified())
+        .await
+        .expect("the deletion never began");
+    assert!(manager.lock().claimed.contains(&path));
+    drop(release);
+    tokio::time::timeout(PATIENCE, removing)
+        .await
+        .expect("the removal never ended")
+        .unwrap()
+        .unwrap();
+    assert!(!manager.lock().claimed.contains(&path));
+    manager.lock().assert_consistent();
 }
