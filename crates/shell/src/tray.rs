@@ -79,6 +79,15 @@ pub trait Shell {
     fn quit(&mut self);
 }
 
+/// What a command answers while the manager has not opened.
+#[must_use]
+pub fn still_starting() -> ProtocolError {
+    ProtocolError {
+        code: ErrorCode::AppUnavailable,
+        message: "Wirecatch is still starting. Try again in a moment.".to_owned(),
+    }
+}
+
 /// Runs a tray action. `manager` is `None` while the manager is still opening (or could not
 /// open); pausing and resuming then explain that.
 ///
@@ -91,12 +100,7 @@ pub fn perform(
     manager: Option<&Manager>,
     shell: &mut impl Shell,
 ) -> CommandResult<()> {
-    let ready = || {
-        manager.ok_or_else(|| ProtocolError {
-            code: ErrorCode::AppUnavailable,
-            message: "Wirecatch is still starting. Try again in a moment.".to_owned(),
-        })
-    };
+    let ready = || manager.ok_or_else(still_starting);
     match action {
         TrayAction::Open => shell.open_window(),
         TrayAction::NewDownload => shell.new_download(),

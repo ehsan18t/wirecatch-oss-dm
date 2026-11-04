@@ -924,7 +924,7 @@ async fn youtube_is_not_read_again_with_the_sign_in_for_other_failures() -> Test
     assert!(
         row.error
             .as_ref()
-            .is_some_and(|e| e.message.contains("Video unavailable")),
+            .is_some_and(|e| e.message.contains("no longer available")),
         "{:?}",
         row.error
     );
@@ -1511,7 +1511,7 @@ async fn a_page_yt_dlp_cannot_read_explains_why_in_the_list() -> TestResult {
     assert_eq!(row.status, DownloadStatus::Failed);
     let error = row.error.unwrap();
     assert!(
-        error.message.contains("[site] 42: Video unavailable"),
+        error.message.contains("no longer available") && !error.message.contains("[site]"),
         "{}",
         error.message
     );

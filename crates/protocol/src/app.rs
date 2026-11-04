@@ -801,6 +801,8 @@ pub struct AddonInfo {
     pub description: String,
     /// Whether it is installed, being installed or out of date.
     pub state: AddonState,
+    /// Whether what is on this machine works now, whatever `state` says is being done to it: an update under way or failed leaves it working (D133).
+    pub usable: bool,
     /// The version on this machine, when installed.
     pub installed_version: Option<String>,
     /// The newest version Wirecatch may install, when known.

@@ -37,12 +37,9 @@ pub(super) fn not_private(folder: &Path, reason: &str) -> StartupNotice {
 /// The notice for one repair.
 fn recovered(recovery: &Recovery) -> StartupNotice {
     match recovery {
-        Recovery::Damaged { kept_at } => StartupNotice {
+        Recovery::Damaged { .. } => StartupNotice {
             title: "Wirecatch started a new download list".to_owned(),
-            message: format!(
-                "The download list was damaged, so Wirecatch set it aside and started an empty one. Files you already downloaded are still in their folders. The damaged list is kept at {}.",
-                kept_at.display()
-            ),
+            message: "The download list was damaged, so Wirecatch set it aside and started an empty one. Files you already downloaded are still in their folders.".to_owned(),
             set_aside: true,
         },
         Recovery::UnreadableKept(count) => StartupNotice {
@@ -118,6 +115,11 @@ mod tests {
             Recovery::ValueKept(KeptValue::ProxyPasswords),
             Recovery::ValueKept(KeptValue::QueueBatches),
         ];
+        let damaged = list_recovered(&recoveries[..1]).expect("a notice for the damaged list");
+        assert!(
+            !damaged.message.contains("damaged-1"),
+            "the path breaks the notice's text, and Show the old list reveals it"
+        );
         let notices = recoveries
             .iter()
             .map(|r| list_recovered(std::slice::from_ref(r)))

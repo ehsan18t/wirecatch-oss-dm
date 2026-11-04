@@ -429,6 +429,7 @@ impl Store {
             Err(StoreError::Database(e)) if is_damage(&e) => {
                 error!(error = %e, "the download list is damaged; setting it aside and starting a new one");
                 let kept_at = set_aside(&path)?;
+                tracing::warn!(kept_at = %kept_at.display(), "the damaged download list is kept here");
                 let conn = open_database(&path)?;
                 (load(&conn)?, conn, Some(Recovery::Damaged { kept_at }))
             }

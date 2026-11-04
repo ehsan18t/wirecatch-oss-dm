@@ -314,7 +314,7 @@ pub fn storage_failed(reason: &str, cx: &mut App) {
         .show(notifications::plain(title, reason.to_owned()), true);
 }
 
-fn could_not(refused: ProtocolError, cx: &mut App) {
+pub fn could_not(refused: ProtocolError, cx: &mut App) {
     let title = format!("{} could not do that", host::CHANNEL.name());
     let (manager, _) = Backend::now(cx);
     let through = manager.is_none_or(|m| m.get_settings().notify_during_do_not_disturb);

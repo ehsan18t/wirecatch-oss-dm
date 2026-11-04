@@ -99,6 +99,10 @@ pub(super) fn open(
     cx: &mut App,
 ) {
     let form = cx.new(|cx| QueueForm::new(library, queue, main, window, cx));
+    if queue.is_none() {
+        let name = form.read(cx).name.clone();
+        crate::ui::dialog::focus_after_opening(&name, window, cx);
+    }
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
         let saving = form.clone();
         let title = match &form.read(cx).original {
@@ -179,6 +183,8 @@ pub struct QueueForm {
     own: Vec<Own>,
     concurrent: Entity<InputState>,
     limit: Entity<InputState>,
+    /// The limit the field opened on, kept exact while its shown value stays.
+    opened_limit: u64,
     unit: Unit,
     connections: Entity<InputState>,
     start: Entity<TimeFieldState>,
@@ -268,6 +274,7 @@ impl QueueForm {
             own: owned(&opened),
             concurrent,
             limit,
+            opened_limit: limit_bytes,
             unit,
             connections,
             start,
@@ -319,9 +326,9 @@ impl QueueForm {
             };
         settings.speed_limit = if self.is_own(Own::Speed) {
             Setting::Own(
-                speed_limit(&self.limit.read(cx).value(), self.unit).ok_or_else(|| {
-                    "Enter a speed limit above zero, or turn the limit off.".to_owned()
-                })?,
+                limit_from(&self.limit.read(cx).value(), self.unit, self.opened_limit).ok_or_else(
+                    || "Enter a speed limit above zero, or turn the limit off.".to_owned(),
+                )?,
             )
         } else {
             Setting::Global
@@ -447,7 +454,7 @@ impl QueueForm {
         if unit == self.unit {
             return;
         }
-        let bytes = speed_limit(&self.limit.read(cx).value(), self.unit);
+        let bytes = limit_from(&self.limit.read(cx).value(), self.unit, self.opened_limit);
         self.unit = unit;
         self.limit.update(cx, |state, cx| {
             if let Some(bytes) = bytes {
@@ -790,6 +797,14 @@ fn speed_limit(typed: &str, unit: Unit) -> Option<u64> {
     (bytes > 0).then_some(bytes)
 }
 
+/// The limit in the field: `opened` while it still reads as shown, as showing it may round it.
+fn limit_from(typed: &str, unit: Unit, opened: u64) -> Option<u64> {
+    if typed.trim() == in_unit(opened, unit) {
+        return Some(opened);
+    }
+    speed_limit(typed, unit)
+}
+
 /// `bytes` in `unit` to one decimal, without a trailing `.0`.
 fn in_unit(bytes: u64, unit: Unit) -> String {
     let tenths = bytes.saturating_mul(10).saturating_add(unit.bytes() / 2) / unit.bytes();
@@ -833,6 +848,17 @@ fn saved_days(pressed: &[Weekday]) -> Vec<Weekday> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_limit_left_as_shown_is_saved_unchanged() {
+        const ROUNDED: u64 = 1075 * 1024;
+        assert_eq!(in_unit(ROUNDED, Unit::Mb), "1");
+        assert_eq!(limit_from("1", Unit::Mb, ROUNDED), Some(ROUNDED));
+        assert_eq!(limit_from(" 1 ", Unit::Mb, ROUNDED), Some(ROUNDED));
+        assert_eq!(limit_from("1075", Unit::Kb, ROUNDED), Some(ROUNDED));
+        assert_eq!(limit_from("2", Unit::Mb, ROUNDED), Some(2 * 1024 * 1024));
+        assert_eq!(limit_from("", Unit::Mb, ROUNDED), None);
+    }
 
     #[test]
     fn a_typed_speed_limit_reads_in_its_unit() {

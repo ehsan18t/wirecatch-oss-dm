@@ -173,7 +173,7 @@ impl Manager {
             serde_json::to_vec_pretty(&profile).map_err(|e| CoreError::Internal(e.to_string()))?;
         let path = path.to_path_buf();
         self.blocking(move || {
-            std::fs::write(&path, json)
+            wirecatch_files::whole_file::replace_chosen(&path, &json)
                 .map_err(|source| CoreError::File(FileError::new(&path, source)))
         })
         .await

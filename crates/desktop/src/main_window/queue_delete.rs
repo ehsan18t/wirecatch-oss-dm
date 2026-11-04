@@ -169,10 +169,15 @@ pub(super) fn ask(
         let confirmed = form.read(cx).confirmed(cx);
         let deleting = form.clone();
         let main = main.clone();
+        let entered = (form.clone(), main.clone());
         dialog
             .title(title.clone())
             .w(px(WIDTH))
             .child(form.clone())
+            .on_ok(move |_, window, cx| {
+                delete(&entered.0, &entered.1, window, cx);
+                false
+            })
             .footer(
                 h_flex()
                     .w_full()
