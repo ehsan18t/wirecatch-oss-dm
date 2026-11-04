@@ -171,5 +171,21 @@ fn config() -> ManagerConfig {
     let roaming = dirs::data_dir().unwrap_or_else(|| local.clone());
     let data_dir = host::data_dir(&local, &roaming);
     let home = dirs::home_dir().unwrap_or_else(|| data_dir.clone());
-    ManagerConfig::new(data_dir, host::known_folders(&home)).with_official_suffix_list()
+    ManagerConfig::new(data_dir, host::known_folders(&home))
+        .with_official_suffix_list()
+        .with_official_app_releases()
+        .with_official_proxy_test()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::config;
+
+    #[test]
+    fn the_app_names_every_official_online_source() {
+        let config = config();
+        assert!(config.suffix_list_source.is_some());
+        assert!(config.app_releases.is_some());
+        assert!(config.proxy_test_url.is_some());
+    }
 }
