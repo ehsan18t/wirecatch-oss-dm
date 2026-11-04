@@ -66,8 +66,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 39  | The CLI strands files under another name when a resume file is damaged or the name is numbered    | `01-1` `F-1` `M-2`                                                                                 | P2       | medium | P2, 3 findings, medium                                                                                           | `FT-kill`                                     | fixed  |
 | 40  | The add-on's state mixes an operation with whether the tools work                                 | `24-3` `27-4` `B12-2`                                                                              | P2       | medium | P2, 3 findings, medium; clears the way for item 53                                                               | none                                          | open   |
 | 41  | A download retried or removed just after it ended is still told as ended                          | `26-5` `26-8` `B17-2`                                                                              | P2       | medium | P2, 3 findings, medium                                                                                           | none                                          | open   |
-| 42  | The network guard's local-address rule is written twice                                           | `09-8`                                                                                             | P3       | small  | P3 placed here: merging the copies comes before the FTP fix that needs the rule                                  | none                                          | open   |
-| 43  | The local network rule does not apply to FTP                                                      | `09-1` `21-1` `Xsecurity-bridge-and-pipe-input-1`                                                  | P2       | medium | P2, 3 findings, medium; after item 42                                                                            | none                                          | open   |
+| 42  | The network guard's local-address rule is written twice                                           | `09-8`                                                                                             | P3       | small  | P3 placed here: merging the copies comes before the FTP fix that needs the rule                                  | none                                          | fixed  |
+| 43  | The local network rule does not apply to FTP                                                      | `09-1` `21-1` `Xsecurity-bridge-and-pipe-input-1`                                                  | P2       | medium | P2, 3 findings, medium; after item 42                                                                            | none                                          | fixed  |
 | 44  | "This host is under that site" is written four times, and the copies differ                       | `10-4` `Xrepeated-logic-3`                                                                         | P3       | medium | P3 placed here: merging the copies comes before the host fix in the next item                                    | none                                          | fixed  |
 | 45  | ftps and ftpes hosts are read raw by every check                                                  | `21-1` `Xsecurity-bridge-and-pipe-input-1` `Xrepeated-logic-3` `B14-1`                             | P2       | small  | P2, 4 findings, small; after item 44                                                                             | none                                          | open   |
 | 46  | An apostrophe in a link leaves its password or signed query in the log                            | `20-1`                                                                                             | P2       | small  | P2; must land before item 47 removes the mask that hides this today                                              | none                                          | fixed  |
@@ -1014,7 +1014,7 @@ P2, medium, open.
 
 ### 42. The network guard's local-address rule is written twice
 
-P3, small, open.
+P3, small, fixed.
 
 `check` and `all_private` in `net_guard.rs` hold the same rule, and `check` repeats the host match of `host_addresses`.
 
@@ -1030,7 +1030,7 @@ P3, small, open.
 
 ### 43. The local network rule does not apply to FTP
 
-P2, medium, open.
+P2, medium, fixed.
 
 `download_with` makes a guard for `http` and `https` only, and `Target::resolve` uses a bare `lookup_host`. So a website's FTP link that rebinds or mixes answers reaches the local network, logs in and saves, while the doc of `refuses` promises otherwise. Nothing read goes back to the site. D34.9 and D39.1 state the rule for every start.
 
