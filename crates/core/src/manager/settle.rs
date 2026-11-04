@@ -259,9 +259,12 @@ impl Manager {
         };
         let mut state = self.lock();
         current_run(&state, id, run_id)?;
-        if let Some(run) = state.downloads.get_mut(&id).and_then(|e| e.run.as_mut()) {
-            run.stop = Some(Stop::FileExists);
-            run.found = Some(found);
+        if let Some(entry) = state.downloads.get_mut(&id) {
+            entry.offered_file = true;
+            if let Some(run) = entry.run.as_mut() {
+                run.stop = Some(Stop::FileExists);
+                run.found = Some(found);
+            }
         }
         Err(FILE_EXISTS.into())
     }

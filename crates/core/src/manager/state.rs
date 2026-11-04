@@ -211,6 +211,8 @@ pub(super) struct Entry {
     /// What the person chose for the file already in its folder (D88), for its next run. Not
     /// saved: after a restart a duplicate is judged again.
     pub on_existing: Option<OnExisting>,
+    /// A server answered with the file, and the run stopped there for the one already in the folder, before a path was settled.
+    pub offered_file: bool,
     /// Added in the app itself: if the server first answers with a web page while
     /// the media add-on is installed, that page is read for its video instead
     /// (D51). Not saved, so a download restored after a restart is not checked.
@@ -737,7 +739,7 @@ impl Entry {
     /// Whether a server has answered the app with this file at some point, so the
     /// browser's copy is no longer needed.
     pub fn server_answered(&self) -> bool {
-        self.naming.settled || self.row.status == DownloadStatus::Completed
+        self.naming.settled || self.offered_file || self.row.status == DownloadStatus::Completed
     }
 
     pub fn stored(&self) -> StoredDownload {
@@ -834,6 +836,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         cleanup: None,
         hold: Hold::Free,
         on_existing: None,
+        offered_file: false,
         stranded: None,
         media_job: None,
         video_check: false,
@@ -872,6 +875,7 @@ mod tests {
             cleanup: None,
             hold: Hold::Free,
             on_existing: None,
+            offered_file: false,
             stranded: None,
             media_job: None,
             video_check: false,

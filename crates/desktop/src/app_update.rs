@@ -1,6 +1,6 @@
 //! Updates of the app itself (D111): a check a minute after the app starts and once a day, or
 //! when the person asks, and installing the update the person chose: the core downloads and
-//! checks it, the shell starts it, and the app quits so it can be replaced.
+//! checks it, the shell starts it, and the app quits once the setup can replace it.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -35,7 +35,7 @@ pub enum Stage {
         progress: Arc<Progress>,
         cancel: CancellationToken,
     },
-    /// Started; the app is quitting so the installer can replace it.
+    /// Started; the app runs on until the setup has its approval, then quits for it.
     Installing,
     /// The check the person asked for failed.
     Failed(String),
@@ -163,7 +163,8 @@ pub fn install_label(update: &AppUpdate) -> &'static str {
     }
 }
 
-/// Installs `update`: downloads and checks its installer, starts it and quits. A system
+/// Installs `update`: downloads and checks its installer, starts it, and quits once it can go
+/// ahead; a setup refused its approval leaves the app running with the failure shown. A system
 /// package, which the app cannot install, opens the release page instead.
 pub fn install(update: &AppUpdate, cx: &mut App) {
     let (Some(download), Some(kind)) = (update.download.clone(), updates::install_kind()) else {
@@ -191,21 +192,29 @@ pub fn install(update: &AppUpdate, cx: &mut App) {
         });
         let result = answered(fetched.await);
         drop(shown);
-        cx.update(|cx| {
-            if cancel.is_cancelled() {
-                set(Stage::Available(update), cx);
+        if cancel.is_cancelled() {
+            cx.update(|cx| set(Stage::Available(update), cx));
+            return;
+        }
+        let path = match result {
+            Ok(path) => path,
+            Err(message) => {
+                cx.update(|cx| set(Stage::InstallFailed { update, message }, cx));
                 return;
             }
-            match result.and_then(|path| updates::install(&path, kind).map_err(|e| e.to_string())) {
-                Ok(()) => {
-                    set(Stage::Installing, cx);
-                    if kind == updates::FileKind::AppImage {
-                        lifecycle::quit_and_start_again(cx);
-                    } else {
-                        lifecycle::quit(cx);
-                    }
-                }
-                Err(message) => set(Stage::InstallFailed { update, message }, cx),
+        };
+        cx.update(|cx| set(Stage::Installing, cx));
+        // Blocks until the setup has its approval, which waits on the person.
+        let started = cx
+            .background_executor()
+            .spawn(async move { updates::install(&path, kind) })
+            .await;
+        cx.update(|cx| match started {
+            Ok(()) if kind == updates::FileKind::AppImage => lifecycle::quit_and_start_again(cx),
+            Ok(()) => lifecycle::quit(cx),
+            Err(e) => {
+                let message = e.to_string();
+                set(Stage::InstallFailed { update, message }, cx);
             }
         });
     })
