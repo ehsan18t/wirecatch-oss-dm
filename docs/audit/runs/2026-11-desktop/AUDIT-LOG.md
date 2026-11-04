@@ -75,7 +75,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 48  | A finished file with a leftover resume file is downloaded again                                   | `Xcrash-and-resume-2` `Xpath-normal-download-6`                                                    | P2       | small  | P2, 2 findings, small; after item 4; clears the way for item 174                                                 | `Xcrash-and-resume-2`                         | fixed  |
 | 49  | A title holding % or $ sends yt-dlp's file to another folder or stops it                          | `16-1` `Xsecurity-path-handling-3`                                                                 | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 50  | Path parameters such as ;type=i or ;jsessionid end up in the file name                            | `21-2` `B11-2`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | `21-2` `B11-2`                                | fixed  |
-| 51  | Add-on installs and app updates get advice about links and folders they do not have               | `28-3` `B11-3`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
+| 51  | Add-on installs and app updates get advice about links and folders they do not have               | `28-3` `B11-3`                                                                                     | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | fixed  |
 | 52  | A damaged list set aside can be deleted at the next start                                         | `03-5` `Xdatabase-migrations-1`                                                                    | P2       | small  | P2, 2 findings, small                                                                                            | `03-5`                                        | open   |
 | 53  | The quality form loses the person's choice or says nothing around an add-on install               | `24-1` `24-2`                                                                                      | P2       | small  | P2, 2 findings, small; after item 40                                                                             | none                                          | open   |
 | 54  | The file-exists question never says whether it is the same file                                   | `24-4` `30-1`                                                                                      | P2       | small  | P2, 2 findings, small                                                                                            | none                                          | open   |
@@ -129,8 +129,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 102 | A subtitle codec turns an MP4-ready video into MKV                                                | `14-5`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `14-4-and-14-5`                               | fixed  |
 | 103 | While the list loads, the window says nothing was ever downloaded                                 | `25-9`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 104 | Moving a file to another drive drops its Mark of the Web                                          | `05-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `05-4`                                        | fixed  |
-| 105 | Replacing a file another program has open blames the folder                                       | `28-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `28-2`                                        | open   |
-| 106 | A stream manifest over the limit offers a retry that cannot help                                  | `28-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 105 | Replacing a file another program has open blames the folder                                       | `28-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | `28-2`                                        | fixed  |
+| 106 | A stream manifest over the limit offers a retry that cannot help                                  | `28-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 107 | A suffix list that could not be saved blames the internet connection                              | `10-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 108 | An add-on repair downloads everything and puts yt-dlp back to the pinned version                  | `11-1`                                                                                             | P2       | small  | P2, small; the next item's damaged-record route needs it                                                         | none                                          | fixed  |
 | 109 | The add-on check acts on what it read before its wait, so a removed add-on comes back             | `11-2`                                                                                             | P2       | small  | P2, 1 finding, small; after item 108                                                                             | none                                          | fixed  |
@@ -230,7 +230,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 203 | The autostart Exec line escapes reserved characters once                                          | `22-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 204 | The autostart Launcher trait has one implementation and no test                                   | `22-8`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 205 | Every window has an empty native title                                                            | `U-2`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 206 | invalid_link ignores its argument, and its doc and test claim otherwise                           | `28-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 206 | invalid_link ignores its argument, and its doc and test claim otherwise                           | `28-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 207 | An import can leave two queues with the same name                                                 | `19-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | `19-2`                                        | open   |
 | 208 | An update offer names a yt-dlp older than the one installed                                       | `11-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 209 | swap_in spells out the release file's name                                                        | `11-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -276,7 +276,11 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 249 | The timing check misses a throttled server racing an action                                       | found while fixing                                                                                 | P3       | medium | Found by review of PR-01 and PR-47.                                                                              | open                                          |
 | 250 | The capture reply's doc contradicts the extension                                                 | found while fixing                                                                                 | P3       | small  | Found by review of PR-70.                                                                                        | fixed                                         |
 | 251 | The layout test can fail on a font that did not load                                              | found while fixing                                                                                 | P3       | small  | Seen once on CI, on a change with no extension code.                                                             | fixed                                         |
-| 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | fixed                                         |
+| 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | open                                          |
+| 253 | A quit right after a cancel can leave a part file                                                 | found while fixing                                                                                 | P3       | small  | Found while fixing PR-123.                                                                                       | open                                          |
+| 254 | Ticking a folded group does nothing the person can act on                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-81.                                                                                        | open                                          |
+| 255 | A page read can outlive the app after a quit past the limit                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10. Read from the code, not run.                                                        | open                                          |
+| 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | open                                          |
 
 ## Items
 
@@ -434,8 +438,6 @@ P2, medium, fixed.
 
 P1, medium, fixed.
 
-**Left to do:** A copy shorter than the quit limit now finishes first. A copy longer than `QUIT_PATIENCE` still ends with the row naming a file that is gone, because the timeout drops `shutdown` and `finish_move` never runs. PR-10 finishes this.
-
 `shutdown` collects only `run.exited` and does not wait for `Hold::Moving`, and `finish_move`'s save reaches a closed store. The reopened row names a path with no file (finished) or the old folder with its part file in the new one (partial). The file still exists.
 
 **Fix:** Make `shutdown` wait for moves. This needs a decision on what the quit limit does to a long copy, which is why the staged copy comes first.
@@ -524,8 +526,6 @@ P2, medium, fixed.
 ### 14. A new media download can save another download's video
 
 P1, medium, fixed.
-
-**Left to do:** A page video's work folder is now tied to its link. A stream's folder still relies on the fingerprint alone, so this is left to PR-122.
 
 `downloaded.json` and `.done` markers name no link, and `unclaimed_path` allows the name. A link never read completed by using what another download left in `Clip.mp4.wcmedia`, with no yt-dlp call or request, and overwrote the file at that name under Replace. A stream's fingerprint has the same gap, though it needs two sites with the same paths, piece count and final name.
 
@@ -1183,7 +1183,7 @@ P2, small, fixed.
 
 ### 51. Add-on installs and app updates get advice about links and folders they do not have
 
-P2, small, open.
+P2, small, fixed.
 
 `describe` writes advice for a row with a Get a new link button. Add-on installs and app updates keep only `.message`, so a 404 tells them to refresh a link, and a folder they cannot write says "Choose another folder" (`B11-3`).
 
@@ -2086,7 +2086,7 @@ P2, small, fixed.
 
 ### 105. Replacing a file another program has open blames the folder
 
-P2, small, open.
+P2, small, fixed.
 
 `disk_failure` decides from the error kind alone. A rename over a file held open gives `PermissionDenied`, so the person reads "Wirecatch is not allowed to save files in <folder>. Choose another folder." with `ChooseFolder`. Any held file reaches the same arm.
 
@@ -2102,7 +2102,7 @@ P2, small, open.
 
 ### 106. A stream manifest over the limit offers a retry that cannot help
 
-P2, small, open.
+P2, small, fixed.
 
 `Source::load` and `media_playlist` reach `describe`'s catch-all through `map_engine`, so a manifest over the limit offers a retry that cannot help.
 
@@ -3645,7 +3645,7 @@ P3, small, open.
 
 - `14-6`: confirmed, P3. The key error prints the whole signed address to the person and into what is saved. Full text in `chunks/14.md`, verdict in `verdicts/B08.md`.
 
-**Left to do:** Query values are hidden, but a token in a key's path still shows on a refused key.
+**Left to do:** Query values are hidden, but a token in a key's path still shows on a refused key. PR-133 finishes this.
 
 ### 199. On Linux, media programs may outlive an app ended by a signal
 
@@ -3763,7 +3763,7 @@ P3, small, fixed.
 
 ### 206. invalid_link ignores its argument, and its doc and test claim otherwise
 
-P3, small, open.
+P3, small, fixed.
 
 The `InvalidUrl` arm drops the text callers format, the test compares the function with its own body, and the doc is untrue.
 
@@ -4471,7 +4471,9 @@ P3, small, fixed.
 
 ### 252. A quit during a removal can leave part files behind
 
-P3, small, fixed.
+P3, small, open.
+
+**Left to do:** `shutdown` now waits for a removal, so a plain quit finishes it. A kill or crash during a removal, or a quit past `QUIT_PATIENCE`, still leaves part files with no row. PR-129 finishes this.
 
 `shutdown` does not wait for a removal's file deletion, so a quit or crash during it leaves part files with no row. The record of the removal is kept until it ends, so no row comes back.
 
@@ -4480,6 +4482,54 @@ P3, small, fixed.
 **Blocks:** nothing. **Blocked by:** nothing.
 
 **Touches:** crates/core/src/manager/downloads.rs, finish_removing; manager/mod.rs, shutdown.
+
+### 253. A quit right after a cancel can leave a part file
+
+P3, small, open.
+
+`shutdown` does not wait for `entry.cleanup`, the background delete after a cancel, so a process exit can cut it short. The part file stays under the Cancelled row until a retry or a removal deletes it, so only disk space is lost.
+
+**Fix:** Have `shutdown` wait for the cleanup.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/manager/mod.rs, shutdown; manager/downloads.rs, cancel.
+
+### 254. Ticking a folded group does nothing the person can act on
+
+P3, small, open.
+
+A folded group's heading circle ticks ids that `laid.rows` leaves out. The circle shows all ticked, but no selection bar appears, and Space and Delete do nothing.
+
+**Fix:** Decide whether commands act on folded rows, then make the circle and the commands agree.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/desktop/src/main_window/list.rs, selection.rs.
+
+### 255. A page read can outlive the app after a quit past the limit
+
+P3, small, open.
+
+A yt-dlp page read still running at exit is no longer killed by dropping the runtime, because its token at `crates/shell/src/media.rs:617` does not come from `stopped`. On Linux it should end on a closed pipe or at its time limit.
+
+**Fix:** Tie the read's token to `stopped`.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/shell/src/media.rs.
+
+### 256. A retry on the best format can move the bar backwards
+
+P3, small, open.
+
+A row with no saved formats runs the best selection with nothing to seed the total, so if yt-dlp takes two formats the total grows and the bar drops when the second starts.
+
+**Fix:** Show no total until the last format has reported on such a row.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/media/src/lib.rs, crates/core/src/manager/media_run/page.rs.
 
 ## Fixed beyond the items
 

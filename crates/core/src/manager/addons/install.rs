@@ -200,9 +200,8 @@ impl Manager {
                 }
                 Err(e) => {
                     return Err(format!(
-                        "{id} could not be downloaded: {}",
-                        wirecatch_messages::describe(&e, work, wirecatch_messages::Worked::Never)
-                            .message
+                        "{id} could not be downloaded. {}",
+                        wirecatch_messages::describe_app_file(&e, work)
                     )
                     .into());
                 }
