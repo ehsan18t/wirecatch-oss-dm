@@ -4,7 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
-use wirecatch_protocol::app::{AppSettings, QueueSettings, UserError};
+use wirecatch_protocol::app::{AppSettings, Category, DownloadStatus, QueueSettings, UserError};
+use wirecatch_protocol::rules::QueueReason;
 use wirecatch_records::answers::Answers;
 use wirecatch_records::batch::StoredBatch;
 use wirecatch_records::files::DownloadFiles;
@@ -12,6 +13,7 @@ use wirecatch_records::media::output::{Container, Extras, OutputJob};
 use wirecatch_records::media::{FormatId, MediaJob, StoredMedia};
 use wirecatch_records::origin::Origin;
 use wirecatch_records::proxy::{Logins, SavedProxyServer};
+use wirecatch_sites::local_network::ChosenBy;
 use wirecatch_store::LastIds;
 
 type Check = fn(&str) -> Result<(), String>;
@@ -29,6 +31,10 @@ const KINDS: &[(&str, Check)] = &[
     ("media", loads::<StoredMedia>),
     ("answers", loads::<Answers>),
     ("files", loads::<DownloadFiles>),
+    ("status", loads::<Vec<DownloadStatus>>),
+    ("category", loads::<Vec<Category>>),
+    ("chosen_by", loads::<Vec<ChosenBy>>),
+    ("queue_reason", loads::<Vec<QueueReason>>),
 ];
 
 fn loads<T: DeserializeOwned>(json: &str) -> Result<(), String> {
