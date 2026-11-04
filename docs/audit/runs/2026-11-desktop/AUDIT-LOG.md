@@ -194,8 +194,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 167 | Two test files depend on an order only timing decides                                             | `05-14` `21-3`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
 | 168 | The same small pieces of logic are written many times in the forms                                | `27-12` `B19-3`                                                                                    | P3       | medium | P3, 2 findings, medium                                                                                           | none                                          | open   |
 | 169 | Dying between placing a video and deleting its work folder gives a second copy                    | `Xcrash-and-resume-3` `Xsecond-review-resume-8`                                                    | P3       | medium | P3, 2 findings, medium; after item 4                                                                             | none                                          | fixed  |
-| 170 | Exporting settings over an earlier file is not written whole                                      | `19-6` `Xrepeated-logic-6`                                                                         | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
-| 171 | The bridge's manifest write has no flush                                                          | `Xrepeated-logic-6`                                                                                | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 170 | Exporting settings over an earlier file is not written whole                                      | `19-6` `Xrepeated-logic-6`                                                                         | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
+| 171 | The bridge's manifest write has no flush                                                          | `Xrepeated-logic-6`                                                                                | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 172 | Pause all while a cancel is stopping keeps the download                                           | `Xconcurrency-7`                                                                                   | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 173 | The same link with another #fragment opens a second question                                      | `07-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 174 | A file beside a leftover part or resume file is never asked about                                 | `B02-1`                                                                                            | P3       | small  | P3, 1 finding, small; after item 48                                                                              | none                                          | fixed  |
@@ -3182,7 +3182,7 @@ Media placing has no durable step between `place` and `discard::dir`. A crash or
 
 ### 170. Exporting settings over an earlier file is not written whole
 
-P3, small, open.
+P3, small, fixed.
 
 `export_settings` uses `std::fs::write` over the chosen file, and the save prompt offers an existing one, so a failure leaves it cut.
 
@@ -3201,7 +3201,7 @@ P3, small, open.
 
 ### 171. The bridge's manifest write has no flush
 
-P3, small, open.
+P3, small, fixed.
 
 `files::write` does `fs::write` then `rename` with no `sync_all`, while `Host::write_file` documents an atomic replace. It takes a power cut right after a rewrite, and the next start repairs it.
 
