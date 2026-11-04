@@ -288,6 +288,33 @@ mod tls {
         assert_eq!(plain_requests.load(Ordering::SeqCst), 1);
     }
 
+    /// Where `localhost` answers IPv6 first (Windows does), a client that took the first address would fail: SOCKS4 cannot carry it.
+    #[tokio::test]
+    async fn a_socks4_proxy_is_given_the_ipv4_address_of_a_name() {
+        let (plain, _requests) = start_plain_server().await;
+        let port = plain.port().unwrap();
+        let socks = wirecatch_test_support::proxy::Socks4Server::start().await;
+        let manual = crate::ManualProxies {
+            all: Some(socks.url()),
+            ..Default::default()
+        };
+        let proxies = crate::proxy::Proxies::of(&crate::ProxyChoice::Manual(manual));
+        let client =
+            Clients::with_roots(&DownloadOptions::default(), rustls::RootCertStore::empty())
+                .with_proxies(proxies)
+                .build()
+                .unwrap();
+
+        let request = client.get(format!("http://localhost:{port}/")).send();
+        let response = tokio::time::timeout(wirecatch_test_support::PATIENCE, request)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(response.bytes().await.unwrap(), "ok");
+        assert_eq!(socks.destinations(), [format!("127.0.0.1:{port}")]);
+    }
+
     /// `bytes */10` names no bytes at all: a `206` carrying it is not the
     /// start of the file, whatever offset was asked for.
     #[tokio::test]
@@ -329,6 +356,40 @@ mod tls {
                 })
             ),
             "fetch: {:?}",
+            fetched.map(|(_, skip)| skip).map_err(|f| f.error)
+        );
+    }
+
+    /// A range past the end of a file that shrank is a changed file, whichever connection meets it.
+    #[tokio::test]
+    async fn a_range_past_the_end_reads_as_a_changed_file() {
+        let server = wirecatch_test_support::http::TestServer::start(
+            wirecatch_test_support::test_data(10),
+            wirecatch_test_support::http::Config {
+                ranges: true,
+                ..wirecatch_test_support::http::Config::default()
+            },
+        )
+        .await;
+        let opts = DownloadOptions::default();
+        let url = server.url("f.bin");
+        let (session, url) = Session::new(&url, &opts, CancellationToken::new());
+        let client = Clients::new(&opts).unwrap().build().unwrap();
+        let request = RequestContext {
+            url,
+            ranged: true,
+            total: Some(100),
+            validators: Validators::default(),
+            cancel: CancellationToken::new(),
+            stall_timeout: opts.stall_timeout,
+        };
+        let fetched = fetch(&client, &request, &session, 50, 60).await;
+        assert!(
+            matches!(
+                fetched.as_ref().map_err(|f| &f.error),
+                Err(Error::RemoteChanged)
+            ),
+            "{:?}",
             fetched.map(|(_, skip)| skip).map_err(|f| f.error)
         );
     }

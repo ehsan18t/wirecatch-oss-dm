@@ -98,8 +98,12 @@ async function productCurrent() {
 
 /** A placeholder value: the mark and the first letter of its name, so the code and docs that name the mark itself do not count. */
 const PLACEHOLDER_VALUE = `${PLACEHOLDER_MARK}[A-Z]`;
-/** Where a placeholder may be written by hand: the identity itself, and the tests that use one as an example. */
-const PLACEHOLDER_HOMES = [':!config/product.toml', ':!scripts/**/*.test.mjs'];
+/** Where a placeholder may be written by hand: the identity itself, and the tests that use one as an example with their shared samples. */
+const PLACEHOLDER_HOMES = [
+  ':!config/product.toml',
+  ':!scripts/**/*.test.mjs',
+  ':!scripts/product/identity-samples.mjs',
+];
 
 /** Every line of the repository's tracked and untracked files holding a placeholder value, as `path:line:text`. */
 export function placeholderHits() {

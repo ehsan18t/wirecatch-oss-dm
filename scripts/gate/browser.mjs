@@ -1,7 +1,7 @@
 // The checks that need a real browser, since jsdom computes no styles and does no layout:
 // - e2e-extension: the extension's popup on sample data with every word pseudo-translated longer, laid out by apps/extension/e2e/layout.spec.ts (`pnpm e2e`). It catches a label or a name that sticks out of the popup, scrolls a page sideways, or squeezes text into a sliver.
 //
-// They need a Chromium-family browser Playwright can drive: Edge by default (installed with Windows), or the one PW_CHANNEL names (on Linux, `PW_CHANNEL=chromium` after `pnpm --filter @wirecatch/extension exec playwright install chromium`). Only a browser that is not installed skips them, and they say so; any other failure to start it fails. CI's Browser jobs set WIRECATCH_REQUIRE_BROWSER=1, since GitHub's Windows and Ubuntu runners both have Edge, so there a skip fails too (docs/ENGINEERING.md section 7: no silent skips).
+// They need a Chromium-family browser Playwright can drive: Edge by default (installed with Windows), or the one PW_CHANNEL names (on Linux, `PW_CHANNEL=chromium` after `pnpm --filter @wirecatch/extension exec playwright install chromium`). Only a browser that is not installed skips them, and they say so; any other failure to start it fails. CI's Browser job sets WIRECATCH_REQUIRE_BROWSER=1, since GitHub's Windows runners have Edge, so there a skip fails too (docs/ENGINEERING.md section 7: no silent skips).
 import { capture, GateError, pnpm } from './process.mjs';
 
 const PROBE = 'apps/extension/scripts/browser-available.mjs';

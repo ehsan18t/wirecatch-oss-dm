@@ -44,8 +44,9 @@ OutputBaseFilename={#OutputName}
 Name: desktopicon; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Files]
-Source: "{#Stage}\{#AppExe}.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#Stage}\{#BridgeExe}.exe"; DestDir: "{app}"; Flags: ignoreversion
+; If one still cannot be closed at uninstall, it goes at the next restart.
+Source: "{#Stage}\{#AppExe}.exe"; DestDir: "{app}"; Flags: ignoreversion uninsrestartdelete
+Source: "{#Stage}\{#BridgeExe}.exe"; DestDir: "{app}"; Flags: ignoreversion uninsrestartdelete
 Source: "{#Stage}\LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Stage}\{#NoticesFile}"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -60,6 +61,63 @@ Filename: "{app}\{#AppExe}.exe"; Description: "Start {#AppName}"; Flags: nowait 
 Filename: "{app}\{#AppExe}.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [Code]
+const
+  EVENT_MODIFY_STATE = $0002;
+  SYNCHRONIZE = $00100000;
+  // Longer than QUIT_PATIENCE in crates/shell/src/quit.rs, the most the app takes to quit.
+  APP_QUIT_WAIT_MS = 20000;
+
+var
+  // Set while this setup replaces the app that started it (D111).
+  UpdatingFromApp: Boolean;
+  Installed: Boolean;
+
+function OpenEvent(Access: DWORD; Inherit: BOOL; Name: String): THandle;
+  external 'OpenEventW@kernel32.dll stdcall';
+function SetEvent(Handle: THandle): BOOL;
+  external 'SetEvent@kernel32.dll stdcall';
+function OpenProcess(Access: DWORD; Inherit: BOOL; ProcessId: DWORD): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(Handle: THandle; Milliseconds: DWORD): DWORD;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(Handle: THandle): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+// This setup has its approval: tells the app, which waits until now to quit, and gives it time,
+// since Restart Manager would otherwise end it while its downloads stop.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Pid: Longint;
+  Handle: THandle;
+begin
+  Result := '';
+  Pid := StrToIntDef(ExpandConstant('{param:UPDATEFROM|0}'), 0);
+  if Pid = 0 then
+    exit;
+  UpdatingFromApp := True;
+  Handle := OpenEvent(EVENT_MODIFY_STATE, False, 'Local\AppUpdateApproved-' + IntToStr(Pid));
+  if Handle <> 0 then
+  begin
+    SetEvent(Handle);
+    CloseHandle(Handle);
+  end;
+  Handle := OpenProcess(SYNCHRONIZE, False, Pid);
+  if Handle <> 0 then
+  begin
+    WaitForSingleObject(Handle, APP_QUIT_WAIT_MS);
+    CloseHandle(Handle);
+  end;
+end;
+
+// The app quit for an update that failed: Setup has rolled back, so the old version starts again.
+procedure DeinitializeSetup();
+var
+  Code: Integer;
+begin
+  if UpdatingFromApp and not Installed then
+    ExecAsOriginalUser(ExpandConstant('{app}\{#AppExe}.exe'), '', '', SW_SHOWNORMAL, ewNoWait, Code);
+end;
+
 function RunProgram(Exe: String; Params: String): Integer;
 var
   Code: Integer;
@@ -80,6 +138,7 @@ var
 begin
   if CurStep <> ssPostInstall then
     exit;
+  Installed := True;
   // Every user's browsers reach the bridge in Program Files, which only administrators can change (D25.2).
   Code := RunBridge('install --all-users');
   if Code <> 0 then
@@ -87,6 +146,26 @@ begin
     Log(Format('%s install --all-users exited with %d', ['{#BridgeExe}', Code]));
     SuppressibleMsgBox('{#AppName} is installed, but the browser extension could not be connected to it for every user of this computer. Run this installer again to try once more.', mbError, MB_OK, IDOK);
   end;
+end;
+
+// CloseApplications covers Setup only. By path, not by name: a copy run from elsewhere is not this install.
+// The bridge first, since a bridge left running starts the app again.
+procedure StopInstalledPrograms();
+var
+  Folder: String;
+  Code: Integer;
+begin
+  Folder := ExpandConstant('{app}\');
+  StringChangeEx(Folder, '''', '''''', True);
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' +
+    'foreach ($name in ''{#BridgeExe}'', ''{#AppExe}'') { ' +
+    '$found = Get-Process -Name $name -ErrorAction SilentlyContinue | ' +
+    'Where-Object { $_.Path -and $_.Path.StartsWith(''' + Folder + ''', [StringComparison]::OrdinalIgnoreCase) }; ' +
+    'if ($found) { $found | Stop-Process -Force -ErrorAction SilentlyContinue; ' +
+    '$found | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue } }"',
+    '', SW_HIDE, ewWaitUntilTerminated, Code) then
+    Log('PowerShell could not be started to close the running programs');
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -99,4 +178,5 @@ begin
   RunBridge('uninstall');
   // The app owns where its start-at-sign-in entry is kept.
   RunProgram('{#AppExe}', '--remove-start-entry');
+  StopInstalledPrograms();
 end;
