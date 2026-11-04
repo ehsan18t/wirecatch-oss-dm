@@ -160,13 +160,16 @@ async fn formats_now(
     let listed = info.all_formats();
     let lists = |id: &FormatId| listed.iter().any(|f| &f.id == id);
     if [&page.video, &page.audio].into_iter().flatten().all(lists) {
+        workdir::claim_for_formats(work, &job.url, None)
+            .await
+            .map_err(|e| disk(&e, &job.output))?;
         return Ok((page.video.clone(), page.audio.clone()));
     }
     let (video, audio) = choice::formats_of_quality(info, &job.quality)
         .ok_or_else(|| describe::quality_gone(&job.quality))?;
     let ids = ytdlp::ids(video.as_ref(), audio.as_ref());
     warn!(%ids, "the page no longer lists the saved formats; taking its formats of the same quality");
-    workdir::claim_for_formats(work, &job.url, &ids)
+    workdir::claim_for_formats(work, &job.url, Some(&ids))
         .await
         .map_err(|e| disk(&e, &job.output))?;
     Ok((video, audio))

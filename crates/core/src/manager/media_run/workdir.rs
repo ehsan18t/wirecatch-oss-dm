@@ -71,18 +71,23 @@ pub(super) fn stream_owner(url: &Url, suffixes: &SuffixList) -> String {
 /// The formats a download took when its saved ones were gone, written here so its next attempt keeps what this one finished.
 const CHOSEN_AGAIN: &str = "chosen-again.txt";
 
-/// Makes `work` the folder of formats `ids`, chosen again because the page stopped listing the saved ones: parts of any others are cleared, since a part's marker does not say which format it holds.
-pub(super) async fn claim_for_formats(work: &Path, url: &Url, ids: &str) -> std::io::Result<()> {
+/// Makes `work` the folder of the formats `chosen` again because the page stopped listing the saved ones, or with `None` of the saved ones: parts of any others are cleared, since a part's marker does not say which format it holds.
+pub(super) async fn claim_for_formats(
+    work: &Path,
+    url: &Url,
+    chosen: Option<&str>,
+) -> std::io::Result<()> {
     let named = work.join(CHOSEN_AGAIN);
-    if tokio::fs::read_to_string(&named)
-        .await
-        .is_ok_and(|text| text == ids)
-    {
+    let held = tokio::fs::read_to_string(&named).await.ok();
+    if held.as_deref() == chosen {
         return Ok(());
     }
     tokio::fs::remove_dir_all(work).await?;
     claim_for_link(work, url).await?;
-    tokio::fs::write(named, ids).await
+    match chosen {
+        Some(ids) => tokio::fs::write(named, ids).await,
+        None => Ok(()),
+    }
 }
 
 /// Names the file a finished part (`role`) was saved as.
