@@ -320,10 +320,8 @@ enum Op {
     SaveBatches(Vec<StoredBatch>),
     SaveProxyLogins(Logins),
     SaveProxyServers(Vec<SavedProxyServer>),
-    /// Answers once every write sent before it is on disk; only tests wait
-    /// for that.
-    #[cfg(test)]
-    Flush(oneshot::Sender<()>),
+    /// Answers once every write sent before it has been tried.
+    Flush(mpsc::Sender<()>),
     /// Saves everything sent before it, closes the database and stops the thread.
     Close(oneshot::Sender<()>),
 }
@@ -346,7 +344,6 @@ impl std::fmt::Debug for Op {
             Op::SaveBatches(_) => "SaveBatches",
             Op::SaveProxyLogins(_) => "SaveProxyLogins",
             Op::SaveProxyServers(_) => "SaveProxyServers",
-            #[cfg(test)]
             Op::Flush(_) => "Flush",
             Op::Close(_) => "Close",
         })
@@ -486,13 +483,21 @@ impl Store {
         self.send(Op::SaveProxyServers(profiles));
     }
 
-    /// Waits until every write sent so far is on disk.
-    #[cfg(test)]
-    pub async fn flush(&self) {
-        let (done, wait) = oneshot::channel();
+    /// Blocks until every write sent so far has been tried, for at most `timeout`, and says whether that happened. A write that failed is kept for a later try and goes to the failure handler. Call it without holding anything the failure handler needs.
+    #[must_use]
+    pub fn wait_for_writes(&self, timeout: Duration) -> bool {
+        let (done, wait) = mpsc::channel();
         self.send(Op::Flush(done));
-        wait.await
-            .expect("the database thread stopped before saving every write");
+        wait.recv_timeout(timeout).is_ok()
+    }
+
+    /// Waits until every write sent so far has been tried.
+    #[cfg(test)]
+    pub fn flush(&self) {
+        assert!(
+            self.wait_for_writes(wirecatch_test_support::PATIENCE),
+            "the database thread stopped before saving every write"
+        );
     }
 
     /// Saves every write sent so far, closes the database file and stops the
@@ -571,13 +576,11 @@ fn write_until_closed(
         };
         let mut writes = std::mem::take(&mut kept);
         let retried = writes.len();
-        #[cfg(test)]
         let mut flushed = Vec::new();
         let mut closing = None;
         let early = std::mem::take(&mut inbox.arrived);
         for op in early.into_iter().chain(first).chain(ops.try_iter()) {
             match op {
-                #[cfg(test)]
                 Op::Flush(done) => flushed.push(done),
                 Op::Close(done) => {
                     // Writes sent after the close are not taken.
@@ -604,9 +607,10 @@ fn write_until_closed(
                 on_failure(e.to_string());
             }
         }
-        #[cfg(test)]
         for done in flushed {
-            wake(done);
+            if done.send(()).is_err() {
+                debug!("the writes were tried after their caller stopped waiting");
+            }
         }
         if let Some(done) = closing {
             last_try(&mut conn, kept);
@@ -756,9 +760,7 @@ fn target_of(op: &Op) -> Target {
         Op::SaveBatches(_) => Target::Batches,
         Op::SaveProxyLogins(_) => Target::ProxyLogins,
         Op::SaveProxyServers(_) => Target::ProxyServers,
-        #[cfg(test)]
-        Op::Flush(_) => Target::Nothing,
-        Op::Close(_) => Target::Nothing,
+        Op::Flush(_) | Op::Close(_) => Target::Nothing,
     }
 }
 
@@ -871,9 +873,7 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
             Op::SaveBatches(batches) => write_value(&tx, BATCHES_KEY, batches)?,
             Op::SaveProxyLogins(logins) => write_value(&tx, PROXY_LOGINS_KEY, logins)?,
             Op::SaveProxyServers(profiles) => write_value(&tx, PROXY_SERVERS_KEY, profiles)?,
-            #[cfg(test)]
-            Op::Flush(_) => {}
-            Op::Close(_) => {}
+            Op::Flush(_) | Op::Close(_) => {}
         }
     }
     tx.commit()
@@ -1668,14 +1668,14 @@ mod tests {
         )
         .unwrap();
         store.save_downloads(vec![download(1)]);
-        store.flush().await;
+        store.flush();
         assert!(reports.lock().unwrap().is_empty());
 
         // Something outside the app breaks the database.
         let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         other.execute("DROP TABLE downloads", []).unwrap();
         store.save_downloads(vec![download(2)]);
-        store.flush().await;
+        store.flush();
         let reports = reports.lock().unwrap();
         assert_eq!(reports.len(), 1, "{reports:?}");
         assert!(reports[0].contains("downloads"), "{reports:?}");
@@ -1785,7 +1785,7 @@ mod tests {
         )
         .unwrap();
         store.save_downloads(vec![download(3)]);
-        store.flush().await;
+        store.flush();
 
         // Something outside the app makes saving download 2 fail, the same way every time.
         let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
@@ -1797,7 +1797,7 @@ mod tests {
             .unwrap();
         store.save_downloads(vec![download(1), download(2)]);
         store.delete_downloads(vec![DownloadId(3)]);
-        store.flush().await;
+        store.flush();
         assert_eq!(stored_ids(&other), vec![1], "the other writes were lost");
         assert!(
             reports.lock().unwrap()[0].contains("injected failure"),
@@ -1807,7 +1807,7 @@ mod tests {
         // It is not kept to fail every later batch: gone, it is not tried again.
         other.execute_batch("DROP TRIGGER refuse_two").unwrap();
         store.save_last_ids(LastIds::default());
-        store.flush().await;
+        store.flush();
         assert_eq!(stored_ids(&other), vec![1]);
     }
 
@@ -1822,21 +1822,21 @@ mod tests {
         )
         .unwrap();
         store.save_downloads(vec![download(3)]);
-        store.flush().await;
+        store.flush();
 
         let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         other.execute_batch("BEGIN EXCLUSIVE").unwrap();
         store.save_downloads(vec![download(1), download(2)]);
-        store.flush().await;
+        store.flush();
         // A second batch failing in the same spell is not reported again.
         store.delete_downloads(vec![DownloadId(3)]);
-        store.flush().await;
+        store.flush();
         assert_eq!(reports.lock().unwrap().len(), 1, "{reports:?}");
 
         // Once the database is free, the kept writes land, in their order.
         other.execute_batch("COMMIT").unwrap();
         store.save_last_ids(LastIds::default());
-        store.flush().await;
+        store.flush();
         assert_eq!(stored_ids(&other), vec![1, 2]);
     }
 
@@ -2971,7 +2971,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
         store.save_downloads(vec![download(1), download(2)]);
-        store.flush().await;
+        store.flush();
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         conn.execute("UPDATE downloads SET status = 'exploded' WHERE id = 2", [])
             .unwrap();
