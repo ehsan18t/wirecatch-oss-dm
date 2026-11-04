@@ -366,7 +366,7 @@ fn places(
 ) -> impl IntoElement {
     let theme = cx.theme();
     let id = row.id;
-    let link = text::link_for_display(&row.url);
+    let link = row.url.clone();
     let copied = link.clone();
     layout::section(Rule::None, cx)
         .text_sm()
