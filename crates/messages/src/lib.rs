@@ -170,6 +170,13 @@ pub fn describe_run(
             ),
             FixAction::ChangeQueue,
         ),
+        // The proxy's own certificate, or one it put in the site's place.
+        (EngineError::Certificate { .. }, Some(proxy)) => fix(
+            format!(
+                "A security certificate on this connection could not be verified, and the proxy {proxy} may be the cause. Move the download to a queue with another proxy, or check the proxy in Settings > Network."
+            ),
+            FixAction::ChangeQueue,
+        ),
         (other, _) => describe(other, folder, worked),
     }
 }
@@ -666,6 +673,24 @@ mod tests {
             "This site's security certificate could not be verified, so Wirecatch did not download from it. Check that your computer's date and time are right. If they are, the site needs to fix its certificate."
         );
         assert_eq!(told.fix, Some(FixAction::Retry));
+    }
+
+    #[test]
+    fn an_untrusted_certificate_through_a_proxy_names_the_proxy() {
+        let told = describe_run(
+            &EngineError::Certificate {
+                reason: "UnknownIssuer".into(),
+            },
+            Path::new("/d"),
+            Worked::Never,
+            ChosenBy::Person,
+            Some("proxy.example:8080"),
+        );
+        assert_eq!(
+            told.message,
+            "A security certificate on this connection could not be verified, and the proxy proxy.example:8080 may be the cause. Move the download to a queue with another proxy, or check the proxy in Settings > Network."
+        );
+        assert_eq!(told.fix, Some(FixAction::ChangeQueue));
     }
 
     #[test]

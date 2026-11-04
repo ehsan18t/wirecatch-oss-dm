@@ -39,7 +39,10 @@ pub enum Error {
     /// The server's TLS certificate failed the check, so nothing was sent to it. Waiting does not
     /// change that, so it is not retried.
     #[error("the server's certificate is not trusted: {reason}")]
-    Certificate { reason: String },
+    Certificate {
+        /// What the check said, for the log.
+        reason: String,
+    },
 
     /// The server answered with a status that is not a success, such as `404`.
     #[error("server answered {status} for {url}")]
