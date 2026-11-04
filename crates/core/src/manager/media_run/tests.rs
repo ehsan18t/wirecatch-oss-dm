@@ -581,3 +581,26 @@ async fn a_small_file_past_its_limit_is_never_written() {
     assert!(matches!(fetched, super::extras::Fetch::Failed(_)));
     assert!(!path.exists(), "the file past its limit was written");
 }
+
+/// A scanner often holds a finished file without sharing its deletion or its writing. The video still reaches its place; what stays behind goes with the work folder.
+#[cfg(windows)]
+#[test]
+fn a_video_a_scanner_holds_is_still_put_in_place() {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_SHARE_READ: u32 = 1;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("media.mp4");
+    std::fs::write(&file, b"video").unwrap();
+    let _scanner = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .open(&file)
+        .unwrap();
+    let planned = dir.path().join("out").join("video.mp4");
+    std::fs::create_dir_all(planned.parent().unwrap()).unwrap();
+    let reserve: super::placement::Reserve = Arc::new(|_: &Path, _| true);
+    wirecatch_files::whole_file::flush(&file).unwrap();
+    let placed = place(&file, &planned, &reserve, super::placement::Taken::KeepBoth).unwrap();
+    assert_eq!(placed, Placed::At(planned.clone()));
+    assert_eq!(std::fs::read(&planned).unwrap(), b"video");
+}

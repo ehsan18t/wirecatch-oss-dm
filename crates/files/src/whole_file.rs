@@ -21,23 +21,38 @@ pub fn replace(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-/// Puts what was written to the file at `path` on the disk, however it got there: a program that wrote it may have left it in memory. Blocks on the file system.
+/// Windows' `ERROR_SHARING_VIOLATION`.
+#[cfg(windows)]
+const SHARING_VIOLATION: i32 = 32;
+
+/// Puts what was written to the file at `path` on the disk, however it got there: a program that wrote it may have left it in memory. A file another program holds without sharing its writing (a scanner, on Windows) cannot be flushed from here, which is no failure. Blocks on the file system.
 ///
 /// # Errors
 ///
 /// When the file cannot be opened or flushed.
 pub fn flush(path: &Path) -> io::Result<()> {
     // Write access: Windows refuses to flush a read-only handle.
-    std::fs::OpenOptions::new()
-        .write(true)
-        .open(path)?
-        .sync_all()
+    match std::fs::OpenOptions::new().write(true).open(path) {
+        Ok(file) => file.sync_all(),
+        #[cfg(windows)]
+        Err(e) if e.raw_os_error() == Some(SHARING_VIOLATION) => Ok(()),
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use wirecatch_test_support::private_dir;
+
+    #[test]
+    fn a_missing_file_cannot_be_flushed() {
+        let dir = private_dir("flush-missing").unwrap();
+        assert!(flush(&dir.path().join("missing")).is_err());
+        let there = dir.path().join("there");
+        std::fs::write(&there, b"x").unwrap();
+        flush(&there).unwrap();
+    }
 
     #[test]
     fn a_failed_replace_leaves_the_file_as_it_was() {

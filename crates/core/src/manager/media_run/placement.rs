@@ -268,11 +268,19 @@ pub(super) fn place(
         if reserved && !reserve(&candidate, true) {
             continue;
         }
-        let moved = match wirecatch_engine::naming::rename_no_replace(file, &candidate) {
-            Ok(()) => Ok(true),
-            // A file that appeared since the check is left alone.
+        // A hard link first, not a rename: a scanner holding the file on Windows refuses a rename, not a link. Neither replaces a file that appeared since the check.
+        let moved = match std::fs::hard_link(file, &candidate) {
+            Ok(()) => {
+                wirecatch_files::discard::file(file);
+                Ok(true)
+            }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
-            Err(e) => Err(e),
+            // A drive without hard links (FAT, exFAT).
+            Err(_) => match wirecatch_engine::naming::rename_no_replace(file, &candidate) {
+                Ok(()) => Ok(true),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+                Err(e) => Err(e),
+            },
         };
         match moved {
             Ok(true) => return Ok(Placed::At(candidate)),
