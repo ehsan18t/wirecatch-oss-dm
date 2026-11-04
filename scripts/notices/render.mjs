@@ -15,7 +15,7 @@ const PLAIN_LICENCE_NAME =
   /^(?:licen[cs]e|copying|unlicense)(?:[-_.](?:mit|apache[-_.v\d]*|bsd[-_.v\d]*|0bsd|isc|zlib|bsl[-_.v\d]*|boost|cc0[-_.v\d]*|mpl[-_.v\d]*|gpl[-_.v\d]*|unlicense|txt|md|rst))*$/i;
 /** What a package ships but no build compiles, so its licences do not reach the build. */
 const UNBUILT_FOLDER =
-  /^(?:(?:[\w.]+-)*tests?|examples?|benches|fuzz|fixtures?|test-?data|scripts|target|node_modules|\.git(?:hub)?)$/i;
+  /^(?:(?:[\w.]+-)*tests?|examples?|benches|fuzz|fixtures?|test-?data|target|node_modules|\.git(?:hub)?)$/i;
 /** Not a licence, whatever its name: code, or an icon such as `copyright.svg`. */
 const SOURCE_FILE = /\.(?:rs|toml|json|js|ts|py|sh|c|h|html|svg|png)$/i;
 
