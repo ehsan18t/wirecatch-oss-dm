@@ -12,7 +12,7 @@ use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, PortablePath, UserError};
 
 use super::Manager;
-use super::state::Stop;
+use super::state::{State, Stop};
 use crate::error::{CoreError, Result};
 use crate::naming::{self, partial_files};
 
@@ -103,13 +103,14 @@ impl Manager {
         let mut state = self.lock();
         let Some(entry) = state.downloads.get_mut(&id) else {
             if let Ok(new_path) = &moved {
-                state.claimed.release(new_path);
+                state.claimed.release(new_path, id);
             }
             return moved.map(|_| ());
         };
         entry.hold.end_move();
         match moved {
             Ok(new_path) => {
+                let finished = entry.row.status == DownloadStatus::Completed;
                 let new_name = naming::file_name_of(&new_path);
                 if !entry.naming.settled {
                     // The server has not answered yet, so its answer will choose the
@@ -129,8 +130,13 @@ impl Manager {
                 // The new path was reserved while moving and is the download's
                 // own now; the old one is free.
                 if new_path != old_path {
-                    state.claimed.remove(old_path);
-                    state.claimed.settle(&new_path);
+                    state.claimed.remove(old_path, id);
+                    if !finished {
+                        state.claimed.insert(&new_path, id);
+                    }
+                }
+                if finished {
+                    self.move_rows_of_one_file(&mut state, id, old_path, &new_path);
                 }
                 self.save(&mut state, id);
                 self.reconcile(&mut state);
@@ -150,6 +156,33 @@ impl Manager {
                 self.reconcile(&mut state);
                 Err(e)
             }
+        }
+    }
+
+    /// The file of finished download `id` went from `old_path` to `new_path`: the other finished rows of that file go with it (D118).
+    fn move_rows_of_one_file(
+        &self,
+        state: &mut State,
+        id: DownloadId,
+        old_path: &Path,
+        new_path: &Path,
+    ) {
+        let others: Vec<DownloadId> = state
+            .downloads
+            .values()
+            .filter(|e| {
+                e.row.id != id
+                    && e.row.status == DownloadStatus::Completed
+                    && naming::same_path(e.path(), old_path)
+            })
+            .map(|e| e.row.id)
+            .collect();
+        for other in others {
+            if let Some(entry) = state.downloads.get_mut(&other) {
+                entry.row.path = new_path.to_string_lossy().into_owned();
+                entry.row.file_name = naming::file_name_of(new_path);
+            }
+            self.save(state, other);
         }
     }
 
@@ -173,17 +206,20 @@ impl Manager {
             .await?;
         let completed = {
             let mut state = self.lock();
-            if state.claimed.contains(&new_path) {
-                return Err(CoreError::WrongState(
-                    "Another download just took that name in the new folder. Try again.",
-                ));
-            }
             let completed = state
                 .downloads
                 .get(&id)
                 .is_some_and(|e| e.row.status == DownloadStatus::Completed);
-            if !completed {
-                state.claimed.reserve(&new_path);
+            // A finished file holds its name on disk, with no claim.
+            let free = if completed {
+                !state.claimed.contains(&new_path)
+            } else {
+                state.claimed.reserve(&new_path, id)
+            };
+            if !free {
+                return Err(CoreError::WrongState(
+                    "Another download just took that name in the new folder. Try again.",
+                ));
             }
             completed
         };
@@ -203,7 +239,7 @@ impl Manager {
                     entry.stranded = Some(new_path.clone());
                 }
             } else if !completed {
-                state.claimed.release(&new_path);
+                state.claimed.release(&new_path, id);
             }
         }
         result.map(|()| new_path)

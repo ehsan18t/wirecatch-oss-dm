@@ -102,6 +102,7 @@ pub fn stream(
         | E::Manifest { .. }
         | E::Key { .. }
         | E::Decrypt { .. }
+        | E::NotMedia { .. }
         | E::NoSuchTrack { .. } => with(Some(FixAction::RefreshLink)),
         _ => with(Some(FixAction::Retry)),
     }
@@ -341,6 +342,13 @@ mod tests {
                     host: Some("cdn.example".into()),
                     line: Some(3),
                     cause: wirecatch_streams::ManifestError::NoSegments,
+                },
+                Some(FixAction::RefreshLink),
+            ),
+            (
+                E::NotMedia {
+                    number: 2,
+                    total: 3,
                 },
                 Some(FixAction::RefreshLink),
             ),

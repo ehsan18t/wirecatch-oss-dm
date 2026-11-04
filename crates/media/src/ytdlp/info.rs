@@ -210,6 +210,9 @@ pub struct Format {
     pub filesize_approx: Option<f64>,
     #[serde(default, deserialize_with = "text_map")]
     pub http_headers: HashMap<String, Secret>,
+    /// The cookies the format's address needs, which yt-dlp lists here and not in `http_headers`. Never given to the engine: a page's cookies stay with the page.
+    #[serde(default, deserialize_with = "lenient")]
+    pub cookies: Option<Secret>,
     /// `true`, `false` or `"maybe"`.
     #[serde(default)]
     pub has_drm: Option<serde_json::Value>,
@@ -285,6 +288,9 @@ impl Format {
     /// the engine, HLS playlists with `wirecatch-streams`.
     #[must_use]
     pub fn transport(&self) -> Transport {
+        if self.cookies.is_some() {
+            return Transport::YtDlp;
+        }
         match self.protocol.as_deref().unwrap_or("https") {
             "http" | "https" => Transport::File,
             "m3u8" | "m3u8_native" => Transport::Hls,
@@ -360,16 +366,31 @@ mod tests {
         assert!(f.iter().all(|f| f.request_limit().is_none()));
     }
 
-    // yt-dlp hands each format the page's cookies in its headers.
     #[test]
-    fn a_format_never_prints_its_header_values() {
+    fn a_format_never_prints_its_cookies_or_header_values() {
         let info: Info = serde_json::from_str(
-            r#"{"title":"T","formats":[{"format_id":"a","http_headers":{"Cookie":"sid=cookie-that-must-not-print"}}]}"#,
+            r#"{"title":"T","formats":[{"format_id":"a","cookies":"sid=cookie-that-must-not-print","http_headers":{"Cookie":"sid=header-that-must-not-print"}}]}"#,
         )
         .unwrap();
         let printed = format!("{:?}", info.all_formats());
         assert!(!printed.contains("must-not-print"), "{printed}");
         assert!(printed.contains("Cookie"), "{printed}");
+    }
+
+    #[test]
+    fn a_format_that_needs_cookies_is_left_to_yt_dlp_whatever_its_protocol() {
+        let info: Info = serde_json::from_str(
+            r#"{"title":"T","formats":[
+                {"format_id":"a","protocol":"https","cookies":"sid=1; Domain=example.com; Path=/"},
+                {"format_id":"b","protocol":"m3u8","cookies":"sid=1; Domain=example.com; Path=/"},
+                {"format_id":"c","protocol":"https","cookies":7}
+            ]}"#,
+        )
+        .unwrap();
+        let formats = info.all_formats();
+        assert_eq!(formats[0].transport(), Transport::YtDlp);
+        assert_eq!(formats[1].transport(), Transport::YtDlp);
+        assert_eq!(formats[2].transport(), Transport::File);
     }
 
     /// One extractor writing a number where yt-dlp usually writes another kind never makes the whole page unreadable, and a format that cannot be read at all is left out alone.

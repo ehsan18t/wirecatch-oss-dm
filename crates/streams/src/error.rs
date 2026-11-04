@@ -6,7 +6,7 @@ use std::io;
 use std::path::PathBuf;
 
 use crate::model::Role;
-use crate::plan::{MAX_REPRESENTATIONS, MAX_SEGMENTS};
+use crate::plan::{MAX_SEGMENTS, MAX_TRACKS};
 
 /// Errors from [`inspect`](crate::inspect) and [`download`](crate::download).
 ///
@@ -121,6 +121,17 @@ pub enum Error {
         role: Role,
     },
 
+    /// A segment holds no video or audio: nothing at all, or text such as a web page. A server answers this way when a link has expired or asks for a sign-in.
+    #[error(
+        "Part {number} of {total} of the video came back as a web page or as nothing instead of video. The link may have expired; open the video page again to get a fresh one."
+    )]
+    NotMedia {
+        /// The segment's position, counting from 1.
+        number: usize,
+        /// How many segments the download has.
+        total: usize,
+    },
+
     /// The decryption key could not be used.
     #[error(
         "The decryption key at {url} is not usable: {}. The link may have expired; open the video page again to get a fresh one.",
@@ -220,8 +231,7 @@ impl Error {
         match located.cause {
             ManifestError::TooManySegments => Error::TooManySegments,
             ManifestError::AddressesTooLong
-            | ManifestError::TooManyEntries
-            | ManifestError::TooManyRepresentations
+            | ManifestError::TooManyTracks
             | ManifestError::NamesTooLong => Error::TooLarge,
             cause => Error::Manifest {
                 host: url.host_str().map(str::to_string),
@@ -439,12 +449,9 @@ pub enum ManifestError {
     /// A track's addresses are, together, longer than any real stream's.
     #[error("its addresses are far longer than any video's")]
     AddressesTooLong,
-    /// It holds more pieces, qualities and renditions, together, than any real stream's.
-    #[error("it lists far more than any video's")]
-    TooManyEntries,
-    /// A DASH manifest offers more representations than any real stream's.
-    #[error("it offers more than {MAX_REPRESENTATIONS} tracks, far more than any video's")]
-    TooManyRepresentations,
+    /// A DASH manifest or an HLS master playlist offers more tracks than any real stream's.
+    #[error("it offers more than {MAX_TRACKS} tracks, far more than any video's")]
+    TooManyTracks,
     /// The names, languages and codecs of a DASH manifest's representations, as each keeps them, are together longer than any real stream's: a long name on an adaptation set is repeated for every representation in it.
     #[error("its track names are far longer than any video's")]
     NamesTooLong,

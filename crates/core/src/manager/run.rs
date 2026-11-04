@@ -316,7 +316,10 @@ impl Manager {
                 entry.row.error = Some(wirecatch_messages::stopped_unexpectedly());
             }
         }
-        if let Some(found) = found {
+        // Whatever stopped it since the duplicate was found decides instead; a later run finds it again.
+        if let Some(found) = found
+            && matches!(run.stop, None | Some(Stop::FileExists))
+        {
             self.on_found(state, id, &found);
         }
         self.save(state, id);
@@ -331,11 +334,11 @@ impl Manager {
     /// the deletion has finished waits for it, so it never writes into a file that
     /// is being deleted.
     pub(super) fn discard_partial(&self, entry: &mut Entry) {
-        let files = entry.partial_paths();
+        let partial = entry.partial();
         let deleted = CancellationToken::new();
         entry.cleanup = Some(deleted.clone());
         self.inner.runtime.spawn_blocking(move || {
-            delete_files(&files);
+            partial.delete();
             deleted.cancel();
         });
     }
@@ -362,13 +365,14 @@ fn complete(
     path: Option<PathBuf>,
     now: UnixMillis,
 ) {
+    let id = entry.row.id;
     // The finished file now holds the name on disk.
-    claimed.remove(entry.path());
+    claimed.remove(entry.path(), id);
     if let Some(path) = path {
         entry.row.file_name = crate::naming::file_name_of(&path);
         entry.row.path = path.to_string_lossy().into_owned();
         // Reserved by the media job while it put the file in place.
-        claimed.remove(entry.path());
+        claimed.remove(entry.path(), id);
     }
     // Already marked as downloaded from the internet: the run did that before it reported the
     // file (see `download_marked` and the media job's `finish`).
@@ -395,23 +399,12 @@ pub(super) fn mark_cancelled(entry: &mut Entry) {
     entry.row.done = 0;
 }
 
-/// Deletes files and folders, ignoring ones already gone. Blocks on the disk.
 /// A run that got an answer, or a download that had data from an earlier run, had a link that worked.
 fn worked_before(answered: bool, done: u64) -> Worked {
     if answered || done > 0 {
         Worked::Before
     } else {
         Worked::Never
-    }
-}
-
-pub(super) fn delete_files(paths: &[PathBuf]) {
-    for path in paths {
-        if path.is_dir() {
-            wirecatch_files::discard::dir(path);
-        } else {
-            wirecatch_files::discard::file(path);
-        }
     }
 }
 

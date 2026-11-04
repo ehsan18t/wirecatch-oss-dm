@@ -139,6 +139,27 @@ impl InputFormat {
     }
 }
 
+/// Whether the file at `path` holds no media at all: it is empty, or it starts as text, as a web page, an error message or a JSON answer does. Every media format starts with bytes no text has, so this never refuses a real file, whatever its format. Not [`InputFormat::detect`]: a saved file may be in a format ffmpeg is not asked to read, and a piece from the middle of a file starts with no signature.
+///
+/// Blocks on the file system, so call it off async threads.
+///
+/// # Errors
+///
+/// When the file cannot be opened or read.
+pub fn holds_no_media(path: &Path) -> io::Result<bool> {
+    let mut head = [0u8; DETECT_HEAD_BYTES];
+    let len = read_up_to(&mut File::open(path)?, &mut head)?;
+    Ok(head.get(..len).is_none_or(is_empty_or_text))
+}
+
+/// Whether `head`, the start of a file, is empty or reads as text in any encoding: no control byte but white space. Not a test of valid UTF-8, since a page may be in Latin-1 or Shift-JIS. Audio frames are looked for first, since a bare frame header has no control byte either.
+fn is_empty_or_text(head: &[u8]) -> bool {
+    audio_frame(head).is_none()
+        && head
+            .iter()
+            .all(|b| !b.is_ascii_control() || matches!(b, b'\t' | b'\n' | b'\r' | 0x0C))
+}
+
 /// The ffmpeg arguments that open `path` as one input read as `format`, and nothing else: `-protocol_whitelist file -format_whitelist <demuxer> -f <demuxer> -i file:<path>`.
 ///
 /// Use this for every input of an ffmpeg run that reads downloaded bytes, before the output options. ffmpeg then reads the file with exactly the demuxer named, refuses to read it as anything else, and may open no other address (no network, no `concat:` or `subfile:`), so a crafted file cannot make ffmpeg fetch something or copy another local file into the result. Find `format` with [`InputFormat::detect`] and refuse the file when that returns `None`. Keep the run to stream copy (`-c copy`), so no decoder ever parses the downloaded bytes.
@@ -350,6 +371,39 @@ const SUMMARY_LINES: usize = 3;
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn only_what_is_empty_or_text_holds_no_media() {
+        let holds_none: [&[u8]; 8] = [
+            b"",
+            b"<!doctype html><html><body>Sign in</body></html>\r\n",
+            b"\xEF\xBB\xBF<?xml version=\"1.0\"?><Error/>",
+            b"{\"error\":\"expired\"}",
+            "Der Zugriff wurde verweigert \u{2026}".as_bytes(),
+            // A page cut off by the head in the middle of a character.
+            b"<p>caf\xC3",
+            // Latin-1 and Shift-JIS, which are not valid UTF-8.
+            b"<p>Acc\xE8s refus\xE9</p>",
+            b"<p>\x83\x8D\x83\x4F\x83\x43\x83\x93</p>",
+        ];
+        for body in holds_none {
+            assert!(is_empty_or_text(body), "{body:?}");
+        }
+        let holds_some: [&[u8]; 8] = [
+            b"\x47\x40\x11\x10\x00\x42\xF0",
+            b"\0\0\0\x18ftypmp42",
+            b"\x1A\x45\xDF\xA3\x01\0\0\0",
+            b"\xFF\xF1\x50\x80\x2E\x7F\xFC",
+            b"\xFF\xFB\x90\x64",
+            b"\x0B\x77\x12\x34",
+            b"ID3\x04\0\0\0\0\0\x20",
+            // A format this crate does not name, a piece from inside a file.
+            b"OggS\0\x02\0\0",
+        ];
+        for body in holds_some {
+            assert!(!is_empty_or_text(body), "{body:?}");
+        }
+    }
 
     fn absolute(name: &str) -> PathBuf {
         std::env::temp_dir().join(name)
