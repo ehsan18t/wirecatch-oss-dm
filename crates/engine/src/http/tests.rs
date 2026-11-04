@@ -334,6 +334,26 @@ mod tls {
     }
 
     #[tokio::test]
+    async fn an_untrusted_certificate_is_its_own_error_and_not_retried() {
+        let server = start_tls_server().await;
+        let clients =
+            Clients::with_roots(&DownloadOptions::default(), rustls::RootCertStore::empty());
+        let refused = clients
+            .build()
+            .unwrap()
+            .get(server.url.clone())
+            .send()
+            .await
+            .unwrap_err();
+        let error = crate::error::Error::network(refused);
+        assert!(
+            matches!(error, crate::error::Error::Certificate { .. }),
+            "{error:?}"
+        );
+        assert!(!error.is_retryable());
+    }
+
+    #[tokio::test]
     async fn separate_tls_configs_cannot_resume() {
         // Control: proves the test above detects the difference.
         let server = start_tls_server().await;
