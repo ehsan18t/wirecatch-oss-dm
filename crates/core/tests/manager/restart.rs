@@ -212,3 +212,24 @@ async fn a_damaged_download_list_is_set_aside_and_the_person_is_told() -> TestRe
     );
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_removal_in_progress_at_quit_stays_removed() -> TestResult {
+    let slow = throttled_server(4096 * KIB, 64 * KIB).await?;
+    let mut h = Harness::new().await?;
+    let row = h.add(&slow.url("gone.bin")).await?;
+    h.wait_for(row.id, "the server's answer", |r| r.done > 0)
+        .await;
+    let ids = [row.id];
+    let (removed, ()) = tokio::join!(
+        h.manager.remove(&ids, wirecatch_core::RemoveFiles::Keep),
+        h.manager.shutdown()
+    );
+    removed?;
+    h.reopen().await?;
+    assert!(
+        h.manager.get_download(row.id).is_err(),
+        "the removed download came back"
+    );
+    Ok(())
+}

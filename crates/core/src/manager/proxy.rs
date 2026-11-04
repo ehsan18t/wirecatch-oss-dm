@@ -292,6 +292,10 @@ impl Manager {
     ) {
         let at = self.inner.clock.unix_millis();
         let mut state = self.lock();
+        // Closing cancels a running test, which then reads as unreachable; the store is closing too.
+        if state.closed {
+            return;
+        }
         let Ok(index) = profile_index(&state, id) else {
             return;
         };
@@ -335,5 +339,46 @@ pub(super) async fn run_system_proxy_reads(
             return;
         };
         manager.lock().system_proxy = read;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use wirecatch_protocol::proxy::ProxyKind;
+    use wirecatch_settings::folders::KnownFolders;
+
+    use super::*;
+    use crate::manager::ManagerConfig;
+
+    #[tokio::test]
+    async fn a_test_cut_short_by_closing_is_not_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let folders = KnownFolders::under_home(dir.path().join("home"));
+        let config = ManagerConfig::for_tests(dir.path().join("data"), folders);
+        let manager = Manager::open(config).await.unwrap();
+        let id = ProxyServerId(1);
+        let settings = ProxyServerSettings {
+            name: "Office".into(),
+            kind: ProxyKind::Socks5,
+            host: "proxy.example".into(),
+            port: 1080,
+            user: String::new(),
+        };
+        {
+            let mut state = manager.lock();
+            state.proxy_servers.push(SavedProxyServer {
+                id,
+                settings: settings.clone(),
+                last_test: None,
+            });
+            state.closed = true;
+        }
+
+        let cut_short = ProxyTestResult::Unreachable {
+            reason: "cancelled".into(),
+        };
+        manager.keep_test(id, &settings, None, cut_short);
+
+        assert_eq!(manager.lock().proxy_servers[0].last_test, None);
     }
 }

@@ -525,18 +525,18 @@ pub fn category_from_mime(content_type: &str) -> Category {
     }
 }
 
-/// The category whose rule lists the extension of `file_name`.
+/// The category whose rule lists the longest file type `file_name` ends with, so `tar.gz` wins over `gz`; between equal ones, the first rule.
 #[must_use]
 pub fn category_of(settings: &AppSettings, file_name: &str) -> Category {
-    let Some((_, ext)) = file_name.rsplit_once('.') else {
-        return Category::Other;
-    };
-    let ext = ext.to_lowercase();
+    let name = file_name.to_lowercase();
     settings
         .categories
         .iter()
-        .find(|rule| rule.extensions.contains(&ext))
-        .map_or(Category::Other, |rule| rule.category)
+        .rev()
+        .flat_map(|rule| rule.extensions.iter().map(|ext| (ext, rule.category)))
+        .filter(|(ext, _)| wirecatch_queues::rules::is_of_type(&name, ext))
+        .max_by_key(|(ext, _)| ext.len())
+        .map_or(Category::Other, |(_, category)| category)
 }
 
 /// The folder new downloads of `category` go to in `queue` (D94.2).
@@ -1033,6 +1033,13 @@ mod tests {
         let f = folders();
         assert_eq!(category_of(&s, "Movie.MKV"), Category::Video);
         assert_eq!(category_of(&s, "backup.tar.gz"), Category::Archive);
+        let mut dotted = s.clone();
+        dotted.categories[0].extensions = vec!["tar.gz".into()];
+        assert_eq!(
+            category_of(&dotted, "backup.TAR.GZ"),
+            dotted.categories[0].category
+        );
+        assert_eq!(category_of(&dotted, "tar.gz"), Category::Archive);
         assert_eq!(category_of(&s, "README"), Category::Other);
         let mut queue = default_queue().settings;
         assert_eq!(

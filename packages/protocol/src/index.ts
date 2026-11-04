@@ -2,6 +2,7 @@
 export * from './generated/constants';
 export * from './generated/validators';
 export * from './extension-settings';
+export * from './hosts';
 export * from './ids';
 export * from './media-choices';
 export * from './media-start';
