@@ -83,7 +83,7 @@ fn kept_value(which: KeptValue) -> &'static str {
             "Wirecatch could not read its settings, perhaps saved by a newer version, so it is using the defaults. Check your folders, limits and proxy in Settings."
         }
         KeptValue::Queue => {
-            "Wirecatch could not read one of its queues, perhaps saved by a newer version. Its downloads moved to the default queue."
+            "Wirecatch could not read at least one of its queues, perhaps saved by a newer version. Their downloads moved to the default queue."
         }
         KeptValue::ProxyServers => {
             "Wirecatch could not read a saved proxy server. Downloads that used it no longer go through it, so check the proxy in Settings > Network before they run."

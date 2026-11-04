@@ -1188,11 +1188,13 @@ pub(crate) mod known_or_default {
     }
 }
 
-/// The category rules, leaving out one for a category this build does not know, so that it costs only that rule.
+/// The category rules, leaving out one for a category this build does not know, so that it costs only that rule. Any other fault in a rule fails the whole value.
 mod known_rules {
+    use serde::de::Error as _;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde_json::Value;
 
-    use super::CategoryRule;
+    use super::{Category, CategoryRule};
 
     pub fn serialize<S: Serializer>(
         rules: &[CategoryRule],
@@ -1204,19 +1206,17 @@ mod known_rules {
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Vec<CategoryRule>, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Stored {
-            Known(CategoryRule),
-            Unknown(serde::de::IgnoredAny),
+        let mut rules = Vec::new();
+        for rule in Vec::<Value>::deserialize(deserializer)? {
+            let unknown = matches!(
+                rule.get("category"),
+                Some(name @ Value::String(_)) if Category::deserialize(name).is_err()
+            );
+            if !unknown {
+                rules.push(serde_json::from_value(rule).map_err(D::Error::custom)?);
+            }
         }
-        Ok(Vec::<Stored>::deserialize(deserializer)?
-            .into_iter()
-            .filter_map(|rule| match rule {
-                Stored::Known(rule) => Some(rule),
-                Stored::Unknown(_) => None,
-            })
-            .collect())
+        Ok(rules)
     }
 }
 

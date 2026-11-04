@@ -1262,5 +1262,5 @@ Decided on 2026-11-05.
 
 1. Settings, a queue's settings, the proxy servers, the proxy passwords or the queue batches that cannot be read are read as absent, as before, and the app goes on with defaults. Their bytes first go to `kept:<key>` in the same table, so what the app then saves costs nothing, and the person is told once through a startup notice.
 2. A kept value is never read back: nothing can say whether it should win over what the person has changed since. It is there for recovery by hand, and it holds what the list holds, so it stays under the same owner-only access (D17).
-3. A category rule this build does not know is left out, so it costs that rule and not all the settings.
+3. A category rule this build does not know is left out, so it costs that rule and not all the settings. This also holds for an imported settings file, with nothing said about the rule left out. Any other fault in a rule fails the whole value, which is then kept, and an imported file is refused.
 4. The id counters are never lower than an id still in the list, so a hidden row is never replaced by a new download.

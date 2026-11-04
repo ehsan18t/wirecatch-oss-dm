@@ -197,8 +197,9 @@ const BATCHES_KEY: &str = "queue_batches";
 const PROXY_LOGINS_KEY: &str = "proxy_passwords";
 const PROXY_SERVERS_KEY: &str = "proxy_servers";
 
-/// The highest download, queue and proxy server ids ever handed out. Kept so an id is never
-/// reused, even after the newest one was deleted.
+/// The highest download, queue and proxy server ids ever handed out, so an id is not reused after
+/// the newest one was deleted. When this value cannot be read, ids go on from the highest still in
+/// the list, so a deleted one's can come back.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LastIds {
     pub download: i64,
@@ -1208,7 +1209,9 @@ impl Kept {
                 "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
                 params![kept_key, bytes],
             )?;
-            self.0.push(which);
+            if !self.0.contains(&which) {
+                self.0.push(which);
+            }
         }
         Ok(())
     }
@@ -3461,6 +3464,47 @@ mod tests {
         assert_eq!(first.last_ids.download, 9);
         assert_eq!(first.last_ids.queue, queue);
         store.close(PATIENCE).await;
+    }
+
+    #[tokio::test]
+    async fn a_rule_with_a_bad_folder_is_kept_with_the_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = serde_json::to_value(sample_settings()).unwrap();
+        settings["categories"] =
+            serde_json::json!([{ "category": "video", "extensions": [], "folder": 5 }]);
+        let (store, first) = opened_after(
+            dir.path(),
+            &format!("UPDATE settings SET value = '{settings}' WHERE key = 'app'"),
+        )
+        .await;
+        assert_eq!(first.settings, None);
+        assert_eq!(
+            first.recoveries,
+            vec![Recovery::ValueKept(KeptValue::Settings)]
+        );
+        store.close(PATIENCE).await;
+        assert_eq!(
+            kept_bytes(dir.path(), "kept:app"),
+            settings.to_string().as_bytes()
+        );
+    }
+
+    #[tokio::test]
+    async fn several_unreadable_queues_are_told_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, first) = opened_after(
+            dir.path(),
+            "UPDATE queues SET settings = '{\"new\":1}';
+             INSERT INTO queues (id, position, is_default, paused, running_outside_schedule, settings)
+             VALUES (77, 9, 0, 0, 0, '{\"new\":2}');",
+        )
+        .await;
+        assert_eq!(
+            first.recoveries,
+            vec![Recovery::ValueKept(KeptValue::Queue)]
+        );
+        store.close(PATIENCE).await;
+        assert_eq!(kept_bytes(dir.path(), "kept:queue:77"), b"{\"new\":2}");
     }
 
     #[tokio::test]
