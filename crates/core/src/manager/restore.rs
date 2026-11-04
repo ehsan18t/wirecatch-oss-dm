@@ -20,7 +20,7 @@ use wirecatch_store::{Snapshot, StoredDownload};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::questions;
-use super::relocate::finish_interrupted_move;
+use super::relocate::{files_that_arrived, finish_interrupted_move};
 use super::run::mark_completed;
 use super::state::{Counters, Entry, Hold, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
@@ -187,6 +187,7 @@ impl FileMoved {
 
     /// The other finished rows of the file go with it (D118); returns them as saved.
     fn move_other_rows(&self, downloads: &mut [Entry]) -> Vec<StoredDownload> {
+        let arrived = files_that_arrived(&self.files);
         downloads
             .iter_mut()
             .filter(|e| {
@@ -197,7 +198,7 @@ impl FileMoved {
             .map(|e| {
                 e.row.path = self.new_path.to_string_lossy().into_owned();
                 e.row.file_name = crate::naming::file_name_of(&self.new_path);
-                e.files.follow(&self.files);
+                e.files.follow(&arrived);
                 e.stored()
             })
             .collect()
@@ -575,6 +576,40 @@ mod tests {
             to
         );
         assert_eq!(restored.changed.len(), 2);
+    }
+
+    /// Another program took the subtitle file's new name: "Remove and delete" must never reach that file through the list.
+    #[test]
+    fn a_subtitle_file_that_cannot_follow_stays_listed_where_it_is() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (from, to) = (source.path().join("a.mp4"), target.path().join("a.mp4"));
+        let (old_srt, new_srt) = (
+            source.path().join("a.en.srt"),
+            target.path().join("a.en.srt"),
+        );
+        std::fs::write(&to, b"video").unwrap();
+        std::fs::write(&old_srt, b"words").unwrap();
+        std::fs::write(&new_srt, b"another program's").unwrap();
+        let mut row = moving(
+            DownloadStatus::Completed,
+            &from,
+            &to,
+            vec![pair(&from, &to), pair(&old_srt, &new_srt)],
+        );
+        row.files.sidecars = vec![old_srt.clone()];
+        let mut other = stored(2, 1, DownloadStatus::Completed);
+        other.summary.path.clone_from(&row.summary.path);
+        other.files.sidecars = vec![old_srt.clone()];
+
+        let restored = restored_with(vec![row, other]);
+
+        for id in [1, 2] {
+            let entry = &restored.state.downloads[&DownloadId(id)];
+            assert_eq!(Path::new(&entry.row.path), to);
+            assert_eq!(entry.files.sidecars, std::slice::from_ref(&old_srt));
+        }
+        assert_eq!(std::fs::read(&old_srt).unwrap(), b"words");
+        assert_eq!(std::fs::read(&new_srt).unwrap(), b"another program's");
     }
 
     /// Another program took the resume file's new name during the outage: the download's files stay split and it says so.

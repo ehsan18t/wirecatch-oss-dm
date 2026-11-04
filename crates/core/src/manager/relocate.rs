@@ -415,9 +415,18 @@ pub(super) fn finish_interrupted_move(entry: &mut Entry, record: &MoveUnderWay) 
         }
         _ => {
             take_moved_path(entry, dir, &record.path);
-            entry.files.follow(&record.files);
+            entry.files.follow(&files_that_arrived(&record.files));
         }
     }
+}
+
+/// Those of `files` now only at their new place. A file at the new place of one that could not follow is someone else's, and must not be listed as the download's.
+pub(super) fn files_that_arrived(files: &[MovedFile]) -> Vec<MovedFile> {
+    files
+        .iter()
+        .filter(|file| !file.from.exists() && file.to.exists())
+        .cloned()
+        .collect()
 }
 
 /// Whether `file` is whole at its new place: a copy takes its final name only when whole, and one of another size is some other program's.
