@@ -26,14 +26,20 @@ use crate::library::Library;
 use crate::ui::{Callout, Role, Typed as _};
 
 const WIDTH: f32 = 600.;
-const INCLUDED: [&str; 5] = [
+const INCLUDED: [&str; 7] = [
     "All settings, including the browser extension settings",
     "Queues with their schedules and speed limits",
+    "Proxy servers",
     "Folders by file type",
     "Sites to ignore",
-    "Which add-ons are installed (on import, you are asked before any is installed)",
+    "Local network sites",
+    "Which add-ons are installed (an import never installs any)",
 ];
-const EXCLUDED: [&str; 2] = ["Download history", "Saved site passwords"];
+const EXCLUDED: [&str; 3] = [
+    "Download history",
+    "Saved site passwords",
+    "Proxy passwords",
+];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Direction {
@@ -47,7 +53,7 @@ enum Step {
     /// What importing the chosen file would change.
     Preview {
         path: String,
-        preview: ImportPreview,
+        preview: Box<ImportPreview>,
     },
     /// The file written or read.
     Done { path: String },
@@ -167,7 +173,10 @@ impl BackupForm {
             };
             let path = api::path_text(path)?;
             let preview = api::preview_import(&manager, &path).await?;
-            Ok(Some(Step::Preview { path, preview }))
+            Ok(Some(Step::Preview {
+                path,
+                preview: Box::new(preview),
+            }))
         });
     }
 
@@ -295,17 +304,6 @@ impl BackupForm {
 
     fn preview_body(&self, preview: &ImportPreview, cx: &App) -> AnyElement {
         let library = self.library.read(cx);
-        let names = |list: &[String]| list.join(", ");
-        let queues = [
-            (!preview.queues_added.is_empty())
-                .then(|| format!("Adds queues: {}.", names(&preview.queues_added))),
-            (!preview.queues_updated.is_empty())
-                .then(|| format!("Changes queues: {}.", names(&preview.queues_updated))),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(" ");
         let addons: Vec<String> = preview
             .addons_to_offer
             .iter()
@@ -328,16 +326,53 @@ impl BackupForm {
                     .child(div().text_role(Role::Label, cx).child("Folders"))
                     .child(folders(&preview.folders, cx)),
             )
-            .when(!queues.is_empty(), |body| {
-                body.child(div().text_role(Role::Secondary, cx).child(queues))
-            })
             .children(
-                addons
+                changes(preview)
                     .into_iter()
+                    .chain(addons)
                     .map(|line| div().text_role(Role::Secondary, cx).child(line)),
             )
             .into_any_element()
     }
+}
+
+/// One line for each kind of change an import makes besides its folders.
+fn changes(preview: &ImportPreview) -> Vec<String> {
+    let said = |text: &str, names: &[String]| {
+        (!names.is_empty()).then(|| format!("{text}: {}.", names.join(", ")))
+    };
+    let line = |parts: Vec<Option<String>>| {
+        let parts: Vec<String> = parts.into_iter().flatten().collect();
+        (!parts.is_empty()).then(|| parts.join(" "))
+    };
+    let tested = (!preview.proxies_added.is_empty() || !preview.proxies_updated.is_empty())
+        .then(|| "They are tested after the import.".to_owned());
+    [
+        line(vec![
+            said("Adds queues", &preview.queues_added),
+            said("Changes queues", &preview.queues_updated),
+        ]),
+        line(vec![
+            said("Adds proxy servers", &preview.proxies_added),
+            said("Changes proxy servers", &preview.proxies_updated),
+            tested,
+        ]),
+        said(
+            "Removes the saved password from these proxy servers",
+            &preview.proxy_passwords_removed,
+        ),
+        said(
+            "Lets these sites reach your local network",
+            &preview.local_sites_added,
+        ),
+        said(
+            "Stops these sites from reaching your local network",
+            &preview.local_sites_removed,
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// The folders an import sets, each with why it is not the one the file asked for, or that it
@@ -407,4 +442,53 @@ fn done(direction: Direction, path: &str, cx: &App) -> AnyElement {
                 )),
         )
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn preview() -> ImportPreview {
+        ImportPreview {
+            folders: Vec::new(),
+            queues_added: Vec::new(),
+            queues_updated: Vec::new(),
+            proxies_added: Vec::new(),
+            proxies_updated: Vec::new(),
+            proxy_passwords_removed: Vec::new(),
+            local_sites_added: Vec::new(),
+            local_sites_removed: Vec::new(),
+            addons_to_offer: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn an_import_that_changes_nothing_else_says_nothing() {
+        assert_eq!(changes(&preview()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn every_change_of_an_import_is_said() {
+        let names = |name: &str| vec![name.to_owned()];
+        let lines = changes(&ImportPreview {
+            queues_added: names("Night"),
+            queues_updated: names("Main"),
+            proxies_added: names("Home"),
+            proxies_updated: names("Office"),
+            proxy_passwords_removed: names("Office"),
+            local_sites_added: names("nas.example.com"),
+            local_sites_removed: names("old.example.com"),
+            ..preview()
+        });
+        assert_eq!(
+            lines,
+            [
+                "Adds queues: Night. Changes queues: Main.",
+                "Adds proxy servers: Home. Changes proxy servers: Office. They are tested after the import.",
+                "Removes the saved password from these proxy servers: Office.",
+                "Lets these sites reach your local network: nas.example.com.",
+                "Stops these sites from reaching your local network: old.example.com.",
+            ]
+        );
+    }
 }

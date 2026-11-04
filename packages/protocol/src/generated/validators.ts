@@ -45,7 +45,6 @@ import type { Header } from './Header';
 import type { Hello } from './Hello';
 import type { HelloReply } from './HelloReply';
 import type { ImportPreview } from './ImportPreview';
-import type { ImportSummary } from './ImportSummary';
 import type { ImportedFolder } from './ImportedFolder';
 import type { JarCookie } from './JarCookie';
 import type { Link } from './Link';
@@ -749,16 +748,11 @@ export function isImportPreview(value: unknown): value is ImportPreview {
     isArrayOf(value1['folders'], isImportedFolder) &&
     isArrayOf(value1['queues_added'], (value2: unknown) => typeof value2 === 'string') &&
     isArrayOf(value1['queues_updated'], (value2: unknown) => typeof value2 === 'string') &&
-    isArrayOf(value1['addons_to_offer'], isAddonId))(value);
-}
-
-/** Whether `value` has the shape of a {@link ImportSummary}; fields it does not name are not checked. */
-export function isImportSummary(value: unknown): value is ImportSummary {
-  return ((value1: unknown): boolean =>
-    isRecord(value1) &&
-    isArrayOf(value1['folders'], isImportedFolder) &&
-    typeof value1['queues_added'] === 'number' &&
-    typeof value1['queues_updated'] === 'number' &&
+    isArrayOf(value1['proxies_added'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['proxies_updated'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['proxy_passwords_removed'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['local_sites_added'], (value2: unknown) => typeof value2 === 'string') &&
+    isArrayOf(value1['local_sites_removed'], (value2: unknown) => typeof value2 === 'string') &&
     isArrayOf(value1['addons_to_offer'], isAddonId))(value);
 }
 
@@ -1583,10 +1577,6 @@ export function isUiEvent(value: unknown): value is UiEvent {
       isRecord(value1) && value1['type'] === 'storage_failed' && isUserError(value1['data']))(
       value,
     ) ||
-    ((value1: unknown): boolean =>
-      isRecord(value1) &&
-      value1['type'] === 'settings_imported' &&
-      isImportSummary(value1['data']))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) &&
       value1['type'] === 'media_choice_requested' &&

@@ -4,10 +4,9 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 
-use wirecatch_engine::numeric::saturating_cast;
 use wirecatch_files::FileError;
 use wirecatch_protocol::app::{
-    AppSettings, Category, ImportSummary, ImportedFolder, PortablePath, Queue, QueueStatus,
+    AppSettings, Category, ImportedFolder, PortablePath, Queue, QueueStatus,
     SETTINGS_FILE_FORMAT_VERSION, Setting, SettingsFile, SettingsFileProxy, SettingsFileQueue,
 };
 use wirecatch_protocol::proxy::ProxyUse;
@@ -97,10 +96,14 @@ pub struct Imported {
     pub queues: Vec<Queue>,
     /// Every proxy server, those already saved first; an updated one keeps its last test.
     pub proxies: Vec<SavedProxyServer>,
-    pub summary: ImportSummary,
-    /// Names of the queues added and of those updated, for a preview.
-    pub added: Vec<String>,
-    pub updated: Vec<String>,
+    /// Every folder setting in the profile and the folder it became on this machine.
+    pub folders: Vec<ImportedFolder>,
+    /// Names of what was added and updated, for a preview.
+    pub queues_added: Vec<String>,
+    pub queues_updated: Vec<String>,
+    pub proxies_added: Vec<String>,
+    /// Only those whose settings differ from the file's.
+    pub proxies_updated: Vec<String>,
 }
 
 /// A profile whose folders were resolved on this machine, with the report of
@@ -187,8 +190,9 @@ pub struct NewIds<Q, P> {
 /// and checks the result.
 ///
 /// Queue ids from another machine mean nothing here, so queues are matched by
-/// name: the profile's default queue updates this default queue, a queue with a
-/// known name updates that queue, and the rest are added. Queues missing from the
+/// name: the profile's default queue updates this default queue, keeping the name it has
+/// here when another queue has the profile's, a queue with a known name updates that queue,
+/// the default one included, and the rest are added. Queues missing from the
 /// profile are kept, because downloads may still be in them. Proxy servers are matched by
 /// name the same way and never removed. A folder that does not
 /// exist on this machine (an absolute path from another system), or that is a
@@ -207,31 +211,89 @@ pub fn merge_localized(
     // Checked before the merge so a huge file costs nothing.
     crate::check_queue_count(profile.queues.len())?;
     crate::proxy::check_count(profile.proxy_servers.len())?;
-    let (proxies, proxy_ids) =
-        merge_proxies(profile.proxy_servers, current.proxies, &mut new_ids.proxy)?;
+    let proxies = merge_proxies(profile.proxy_servers, current.proxies, &mut new_ids.proxy)?;
     let local_proxy = |proxy: ProxyUse| match proxy {
-        ProxyUse::Server(id) => proxy_ids.get(&id).copied().map(ProxyUse::Server),
+        ProxyUse::Server(id) => proxies.ids.get(&id).copied().map(ProxyUse::Server),
         other => Some(other),
     };
-    let mut queues = current.queues.to_vec();
-    let mut ids = HashMap::new();
+    let queues = merge_queues(
+        profile.queues,
+        current.queues,
+        folders,
+        &local_proxy,
+        &mut new_ids.queue,
+    )?;
+
+    let mut settings = profile.settings;
+    settings.proxy.proxy = local_proxy(settings.proxy.proxy).unwrap_or_default();
+    // A file edited by hand may hold sites no host matches.
+    settings.extension.ignored_sites = crate::stored_sites(settings.extension.ignored_sites);
+    settings.extension.default_queue = queues
+        .ids
+        .get(&settings.extension.default_queue)
+        .copied()
+        .unwrap_or(DEFAULT_QUEUE_ID);
+    crate::check_queue_count(queues.list.len())?;
+    let settings = crate::validate(settings, &queues.list, folders, suffixes)?;
+    Ok(Imported {
+        settings,
+        queues: queues.list,
+        proxies: proxies.list,
+        folders: folder_report,
+        queues_added: queues.added,
+        queues_updated: queues.updated,
+        proxies_added: proxies.added,
+        proxies_updated: proxies.updated,
+    })
+}
+
+/// A list after a profile merged into it: what it holds, the local id of each incoming entry
+/// by its id in the file, and the names added and updated.
+struct Merged<T, Id> {
+    list: Vec<T>,
+    ids: HashMap<Id, Id>,
+    added: Vec<String>,
+    updated: Vec<String>,
+}
+
+/// The queues after adding or updating `incoming`; see [`merge_localized`].
+fn merge_queues(
+    mut incoming: Vec<SettingsFileQueue>,
+    current: &[Queue],
+    folders: &KnownFolders,
+    local_proxy: &impl Fn(ProxyUse) -> Option<ProxyUse>,
+    next_id: &mut impl FnMut() -> QueueId,
+) -> Result<Merged<Queue, QueueId>> {
+    // Default first: the name it gives up here is then free for the file's other queues.
+    incoming.sort_by_key(|queue| !queue.is_default);
+    let mut queues = current.to_vec();
+    let mut ids = HashMap::with_capacity(incoming.len());
     let (mut added, mut updated) = (Vec::new(), Vec::new());
-    for incoming in profile.queues {
-        let mut settings = crate::validate_queue(incoming.settings, folders)?;
+    for profile in incoming {
+        let mut settings = crate::validate_queue(profile.settings, folders)?;
         if let Setting::Own(proxy) = settings.proxy {
             settings.proxy = local_proxy(proxy).map_or(Setting::Global, Setting::Own);
         }
+        let name_taken = queues
+            .iter()
+            .any(|q| !q.is_default && q.settings.name.eq_ignore_ascii_case(&settings.name));
         let target = queues.iter_mut().find(|q| {
-            q.is_default == incoming.is_default
-                && (incoming.is_default || q.settings.name.eq_ignore_ascii_case(&settings.name))
+            if profile.is_default {
+                q.is_default
+            } else {
+                q.settings.name.eq_ignore_ascii_case(&settings.name)
+            }
         });
         let local_id = if let Some(existing) = target {
             updated.push(existing.settings.name.clone());
+            if profile.is_default && name_taken {
+                settings.name.clone_from(&existing.settings.name);
+            }
             existing.settings = settings;
             existing.id
         } else {
             added.push(settings.name.clone());
-            let id = (new_ids.queue)();
+            let id = next_id();
             queues.push(Queue {
                 id,
                 is_default: false,
@@ -240,44 +302,25 @@ pub fn merge_localized(
             });
             id
         };
-        ids.insert(incoming.id, local_id);
+        ids.insert(profile.id, local_id);
     }
-
-    let mut settings = profile.settings;
-    settings.proxy.proxy = local_proxy(settings.proxy.proxy).unwrap_or_default();
-    // A file edited by hand may hold sites no host matches.
-    settings.extension.ignored_sites = crate::stored_sites(settings.extension.ignored_sites);
-    settings.extension.default_queue = ids
-        .get(&settings.extension.default_queue)
-        .copied()
-        .unwrap_or(DEFAULT_QUEUE_ID);
-    crate::check_queue_count(queues.len())?;
-    let settings = crate::validate(settings, &queues, folders, suffixes)?;
-    let count = |names: &[String]| saturating_cast::<u32, _>(names.len());
-    Ok(Imported {
-        settings,
-        queues,
-        proxies,
-        summary: ImportSummary {
-            folders: folder_report,
-            queues_added: count(&added),
-            queues_updated: count(&updated),
-            addons_to_offer: Vec::new(),
-        },
+    Ok(Merged {
+        list: queues,
+        ids,
         added,
         updated,
     })
 }
 
-/// The proxy servers after adding or updating `incoming` by name, and the local id of each
-/// incoming one by its id in the file.
+/// The proxy servers after adding or updating `incoming` by name.
 fn merge_proxies(
     incoming: Vec<SettingsFileProxy>,
     current: &[SavedProxyServer],
     next_id: &mut impl FnMut() -> ProxyServerId,
-) -> Result<(Vec<SavedProxyServer>, HashMap<ProxyServerId, ProxyServerId>)> {
+) -> Result<Merged<SavedProxyServer, ProxyServerId>> {
     let mut proxies = current.to_vec();
     let mut ids = HashMap::with_capacity(incoming.len());
+    let (mut added, mut updated) = (Vec::new(), Vec::new());
     for profile in incoming {
         let shown = profile.settings.shown_name();
         let target = proxies
@@ -291,9 +334,13 @@ fn merge_proxies(
             .collect();
         let settings = crate::proxy::validate_settings_file(profile.settings, &others)?;
         let local_id = if let Some(existing) = target.and_then(|i| proxies.get_mut(i)) {
+            if existing.settings != settings {
+                updated.push(existing.settings.shown_name());
+            }
             existing.settings = settings;
             existing.id
         } else {
+            added.push(settings.shown_name());
             let id = next_id();
             proxies.push(SavedProxyServer {
                 id,
@@ -305,7 +352,12 @@ fn merge_proxies(
         ids.insert(profile.id, local_id);
     }
     crate::proxy::check_count(proxies.len())?;
-    Ok((proxies, ids))
+    Ok(Merged {
+        list: proxies,
+        ids,
+        added,
+        updated,
+    })
 }
 
 /// Replaces folders that do not exist on this machine, or that are startup or
@@ -741,7 +793,7 @@ mod tests {
         for rule in &imported.settings.categories[..special.len()] {
             assert_eq!(rule.folder, downloads, "{:?}", rule.category);
         }
-        let report = &imported.summary.folders;
+        let report = &imported.folders;
         assert_eq!(
             report[0].requested,
             PortablePath(r"\\server\share\Downloads".into())
@@ -777,7 +829,7 @@ mod tests {
             imported.settings.default_folder,
             PortablePath("{Downloads}".into())
         );
-        let first = &imported.summary.folders[0];
+        let first = &imported.folders[0];
         assert_eq!(first.setting, "Default folder");
         assert_eq!(first.requested, PortablePath(foreign.into()));
         assert_eq!(first.used, PortablePath("{Downloads}".into()));
@@ -785,7 +837,7 @@ mod tests {
             first.resolved,
             folders().downloads.to_string_lossy().into_owned()
         );
-        assert_eq!(imported.summary.folders[1].setting, "Video folder");
+        assert_eq!(imported.folders[1].setting, "Video folder");
         assert_eq!(
             imported.settings.categories[0].folder,
             PortablePath("{Downloads}".into())
@@ -827,7 +879,7 @@ mod tests {
             added.settings.folder,
             Setting::Own(imported.settings.default_folder.clone())
         );
-        let reported = imported.summary.folders.last().unwrap();
+        let reported = imported.folders.last().unwrap();
         assert_eq!(reported.setting, "Night queue folder");
         assert_eq!(reported.requested, PortablePath(foreign.into()));
     }
@@ -862,7 +914,7 @@ mod tests {
         let downloads = PortablePath("{Downloads}".into());
         assert_eq!(imported.settings.default_folder, downloads);
         assert_eq!(imported.settings.categories[0].folder, downloads);
-        let report = &imported.summary.folders;
+        let report = &imported.folders;
         for entry in &report[..2] {
             assert_eq!(entry.used, downloads);
             let reason = entry.reason.as_deref().unwrap_or_default();
@@ -893,8 +945,84 @@ mod tests {
         let imported = merge(profile, &[default_queue()], &folders(), || QueueId(2)).unwrap();
         let downloads = PortablePath("{Downloads}".into());
         assert_eq!(imported.settings.default_folder, downloads);
-        let first = &imported.summary.folders[0];
+        let first = &imported.folders[0];
         assert_eq!(first.used, downloads);
         assert!(first.reason.is_some(), "{first:?}");
+    }
+
+    fn profile_with_queues(queues: Vec<Queue>) -> SettingsFile {
+        SettingsFile {
+            format_version: SETTINGS_FILE_FORMAT_VERSION,
+            app_version: "0.1.0".into(),
+            exported_at: UnixMillis(0),
+            settings: default_settings(),
+            queues: queues.into_iter().map(in_profile).collect(),
+            proxy_servers: Vec::new(),
+            addons: vec![],
+        }
+    }
+
+    fn queue_names(imported: &Imported) -> Vec<&str> {
+        imported
+            .queues
+            .iter()
+            .map(|q| q.settings.name.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn the_files_default_queue_keeps_its_name_here_when_another_queue_has_the_new_one() {
+        let mut incoming = default_queue();
+        incoming.id = QueueId(10);
+        incoming.settings.name = "videos".into();
+        incoming.settings.max_concurrent = Setting::Own(7);
+        let here = default_queue();
+        let own_name = here.settings.name.clone();
+        let imported = merge(
+            profile_with_queues(vec![incoming]),
+            &[here, queue(2, "Videos")],
+            &folders(),
+            || QueueId(3),
+        )
+        .unwrap();
+        assert_eq!(queue_names(&imported), [own_name.as_str(), "Videos"]);
+        assert_eq!(imported.queues[0].settings.max_concurrent, Setting::Own(7));
+    }
+
+    #[test]
+    fn a_queue_named_like_the_default_queue_here_updates_it() {
+        let here = default_queue();
+        let own_name = here.settings.name.clone();
+        let mut incoming = queue(10, &own_name.to_uppercase());
+        incoming.settings.max_concurrent = Setting::Own(7);
+        let imported = merge(
+            profile_with_queues(vec![incoming]),
+            std::slice::from_ref(&here),
+            &folders(),
+            || QueueId(3),
+        )
+        .unwrap();
+        assert_eq!(imported.queues.len(), 1);
+        assert!(imported.queues[0].is_default);
+        assert_eq!(imported.queues[0].settings.max_concurrent, Setting::Own(7));
+    }
+
+    // The default queue goes first whatever the file's order, so the name it had here is free
+    // for the file's other queue, which must not fall on the default queue and vanish.
+    #[test]
+    fn a_files_queues_stay_apart_when_its_default_comes_last() {
+        let here = default_queue();
+        let own_name = here.settings.name.clone();
+        let mut renamed = default_queue();
+        renamed.id = QueueId(11);
+        renamed.settings.name = "Everything".into();
+        let imported = merge(
+            profile_with_queues(vec![queue(10, &own_name), renamed]),
+            &[here],
+            &folders(),
+            || QueueId(3),
+        )
+        .unwrap();
+        assert_eq!(queue_names(&imported), ["Everything", own_name.as_str()]);
     }
 }

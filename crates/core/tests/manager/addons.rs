@@ -1090,14 +1090,9 @@ async fn importing_settings_offers_the_add_on_without_downloading_it() -> TestRe
     let requests = server.requests("prof/yt-dlp");
 
     let second = harness(sources).await?;
-    let mut ui = second.manager.subscribe();
+    let preview = second.manager.preview_import(&file).await.unwrap();
+    assert_eq!(preview.addons_to_offer, vec![AddonId::Media]);
     second.manager.import_settings(&file).await.unwrap();
-    let summary = next_event(&mut ui, "the import summary", |e| match e {
-        UiEvent::SettingsImported(summary) => Some(summary.clone()),
-        _ => None,
-    })
-    .await;
-    assert_eq!(summary.addons_to_offer, vec![AddonId::Media]);
     tokio::time::sleep(QUIET).await;
     assert_eq!(
         second.manager.list_addons()[0].state,
@@ -1110,14 +1105,8 @@ async fn importing_settings_offers_the_add_on_without_downloading_it() -> TestRe
     );
 
     // Where it is installed already, nothing is offered.
-    let mut ui = first.manager.subscribe();
-    first.manager.import_settings(&file).await.unwrap();
-    let summary = next_event(&mut ui, "the import summary", |e| match e {
-        UiEvent::SettingsImported(summary) => Some(summary.clone()),
-        _ => None,
-    })
-    .await;
-    assert_eq!(summary.addons_to_offer, [] as [AddonId; 0]);
+    let preview = first.manager.preview_import(&file).await.unwrap();
+    assert_eq!(preview.addons_to_offer, [] as [AddonId; 0]);
     Ok(())
 }
 
