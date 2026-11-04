@@ -46,7 +46,7 @@ impl MainWindow {
 
     /// The Menu key or Shift+F10: the menu of the row under the cursor, at that row.
     pub(super) fn open_keyboard_menu(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        let Some(id) = self.cursor.filter(|id| self.selected.contains(id)) else {
+        let Some(id) = self.cursor_row(cx) else {
             return;
         };
         let target = Target::of(self, id, cx);

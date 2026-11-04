@@ -88,7 +88,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-78  | fix(streams): read HLS masters, keys correctly     | `fix/hls-masters-keys`           | 100, 101, 102, 198           | P2       | medium | none         | merged |
 | PR-79  | fix(desktop): tell loading from a failed list      | `fix/list-open-states`           | 103, 135, 211                | P2       | medium | none         | merged |
 | PR-80  | fix(core): correct how the add-on updates itself   | `fix/addon-updates`              | 108, 109, 110, 159, 208, 209 | P2       | medium | none         | merged |
-| PR-81  | fix(desktop): act on the rows the view shows       | `fix/selection-commands`         | 111, 136, 212                | P2       | medium | none         | open   |
+| PR-81  | fix(desktop): act on the rows the view shows       | `fix/selection-commands`         | 111, 136, 212                | P2       | medium | none         | merged |
 | PR-82  | fix(desktop): tidy navigation after a page opens   | `fix/navigation-state`           | 112, 162                     | P2       | small  | none         | open   |
 | PR-83  | fix(desktop): offer only actions that apply        | `fix/offers-that-apply`          | 113, 163, 166                | P2       | medium | none         | open   |
 | PR-84  | fix(sites): correct what counts as a local page    | `fix/what-counts-local`          | 114, 215, 244                | P2       | small  | none         | merged |
@@ -1135,7 +1135,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/main_window`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-82 fix(desktop): tidy navigation after a page opens
 
