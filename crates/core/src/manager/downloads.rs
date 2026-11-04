@@ -391,6 +391,8 @@ impl Manager {
             entry.origin.headers = headers::for_another_site(&entry.origin.headers);
         }
         entry.row.url = url.to_string();
+        // A fresh link serves the file as it is now, not as the browser saw it then.
+        entry.expect = None;
         if from == LinkFrom::Person {
             entry.chosen_by = ChosenBy::Person;
         }

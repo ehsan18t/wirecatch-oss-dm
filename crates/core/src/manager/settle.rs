@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use tracing::warn;
 use wirecatch_engine::{CancellationToken, PathRejected, PathResolver, RemoteFile, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::Category;
@@ -78,7 +79,7 @@ impl Manager {
         run_id: u64,
         remote: &ServerAnswer,
     ) -> Result<PathBuf, String> {
-        if let Some(path) = self.begin_writing_at_settled_path(id, run_id)? {
+        if let Some(path) = off_async_worker(|| self.begin_writing_at_settled_path(id, run_id))? {
             return Ok(path);
         }
         let url = self
@@ -100,17 +101,39 @@ impl Manager {
         id: DownloadId,
         run_id: u64,
     ) -> Result<Option<PathBuf>, String> {
+        let path = {
+            let state = self.lock();
+            let entry = current_run(&state, id, run_id)?;
+            if !entry.naming.settled {
+                return Ok(None);
+            }
+            entry.path().to_path_buf()
+        };
+        // Before the record: with it, no part file means the file there is this download's, also after a crash or a failed run. The engine starts over from an empty one.
+        let [part, _] = naming::partial_files(&path);
+        let made = path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| {
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&part)
+                    .map(drop)
+            });
         let mut guard = self.lock();
         let state = &mut *guard;
-        if !current_run(state, id, run_id)?.naming.settled {
-            return Ok(None);
+        current_run(state, id, run_id)?;
+        match made {
+            Ok(()) => {
+                if let Some(entry) = state.downloads.get_mut(&id) {
+                    entry.naming.writing = true;
+                }
+                self.save(state, id);
+            }
+            // The engine meets the same trouble and reports it; the record stays off.
+            Err(error) => warn!(id = id.0, %error, "could not create a download's part file"),
         }
-        let Some(entry) = state.downloads.get_mut(&id) else {
-            return Err(REMOVED.into());
-        };
-        entry.naming.writing = true;
-        let path = entry.path().to_path_buf();
-        self.save(state, id);
         Ok(Some(path))
     }
 

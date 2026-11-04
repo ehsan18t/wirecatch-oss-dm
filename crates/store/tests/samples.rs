@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use wirecatch_protocol::app::{AppSettings, QueueSettings, UserError};
+use wirecatch_records::answers::Answers;
 use wirecatch_records::batch::StoredBatch;
 use wirecatch_records::media::output::{Container, Extras, OutputJob};
 use wirecatch_records::media::{FormatId, MediaJob, StoredMedia};
@@ -25,6 +26,7 @@ const KINDS: &[(&str, Check)] = &[
     ("origin", loads::<Origin>),
     ("download_error", loads::<UserError>),
     ("media", loads::<StoredMedia>),
+    ("answers", loads::<Answers>),
 ];
 
 fn loads<T: DeserializeOwned>(json: &str) -> Result<(), String> {

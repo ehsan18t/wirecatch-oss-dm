@@ -1874,3 +1874,70 @@ async fn a_capture_refused_at_quit_does_not_come_back() -> TestResult {
     );
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_fresh_link_clears_the_size_the_browser_saw() -> TestResult {
+    let changed = fast_server(2048).await?;
+    let fresh = fast_server(2048).await?;
+    let h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let added = h
+        .manager
+        .add_capture(capture(changed.url("report.pdf").to_string()))
+        .await
+        .unwrap();
+    let id = added.id.unwrap();
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .unwrap();
+    h.wait_status(id, DownloadStatus::Failed).await;
+
+    let link = fresh.url("report.pdf").to_string();
+    h.manager.refresh_link(id, &link, LinkFrom::Person).unwrap();
+    let ended = h
+        .wait_for(id, "the run's end", |r| {
+            r.url == link && matches!(r.status, DownloadStatus::Completed | DownloadStatus::Failed)
+        })
+        .await;
+    assert_eq!(
+        ended.status,
+        DownloadStatus::Completed,
+        "the fresh link failed the old check"
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queued_capture_still_checks_the_file_after_a_restart() -> TestResult {
+    let changed = fast_server(2048).await?;
+    let mut h = Harness::new().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, true)
+        .unwrap();
+    let added = h
+        .manager
+        .add_capture(capture(changed.url("report.pdf").to_string()))
+        .await
+        .unwrap();
+    assert_eq!(added.action, AddAction::Queued);
+    let id = added.id.unwrap();
+
+    h.restart().await?;
+    h.manager
+        .set_queue_paused(wirecatch_core::DEFAULT_QUEUE_ID, false)
+        .unwrap();
+
+    let ended = h
+        .wait_for(id, "the run's end", |r| {
+            matches!(r.status, DownloadStatus::Completed | DownloadStatus::Failed)
+        })
+        .await;
+    assert_eq!(
+        ended.status,
+        DownloadStatus::Failed,
+        "another size was saved as the capture"
+    );
+    Ok(())
+}

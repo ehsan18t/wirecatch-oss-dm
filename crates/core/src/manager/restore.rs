@@ -195,13 +195,13 @@ fn restore_entry(
         origin: stored.origin,
         chosen_by: stored.chosen_by,
         naming: stored.naming,
-        expect: None,
+        expect: stored.answers.expect,
         run: None,
         resume_first: false,
         through_proxy: None,
         cleanup: None,
         hold: Hold::Free,
-        on_existing: None,
+        on_existing: stored.answers.on_existing,
         offered_file: false,
         stranded: stored.stranded,
     };
@@ -372,6 +372,7 @@ mod tests {
             naming: NameChoice::settled(),
             media: None,
             stranded: None,
+            answers: wirecatch_records::answers::Answers::default(),
         }
     }
 

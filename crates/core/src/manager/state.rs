@@ -23,6 +23,8 @@ use wirecatch_protocol::proxy::{ProxyServer, ProxyUse};
 use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
 use wirecatch_queues::schedule::Gate;
+use wirecatch_records::answers::Answers;
+pub(super) use wirecatch_records::answers::{Expectation, OnExisting};
 use wirecatch_settings::folders::KnownFolders;
 use wirecatch_settings::proxy::{ComputerProxy, Logins, SavedProxyServer};
 use wirecatch_sites::local_network::ChosenBy;
@@ -208,14 +210,13 @@ pub(super) struct Entry {
     /// For a stream or a page read by yt-dlp: what to download. `None` for every
     /// other download, including direct media files.
     pub media_job: Option<MediaJob>,
-    /// What the person chose for the file already in its folder (D88), for its next run. Not
-    /// saved: after a restart a duplicate is judged again.
+    /// What the person chose for the file already in its folder (D88), for its next run, also after a restart.
     pub on_existing: Option<OnExisting>,
     /// A server answered with the file, and the run stopped there for the one already in the folder, before a path was settled.
     pub offered_file: bool,
     /// Added in the app itself: if the server first answers with a web page while
     /// the media add-on is installed, that page is read for its video instead
-    /// (D51). Not saved, so a download restored after a restart is not checked.
+    /// (D51).
     pub video_check: bool,
 }
 
@@ -224,15 +225,6 @@ pub(super) struct Entry {
 pub(super) struct Asked {
     pub question: FileExistsQuestion,
     pub path: PathBuf,
-}
-
-/// What a download does about the file already in its folder, once decided (D88).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum OnExisting {
-    /// Its run finishes over the file at its path.
-    Replace,
-    /// Its path is the next free name.
-    KeepBoth,
 }
 
 /// A file found where a download would save (D88, D96), and what the download does about it.
@@ -244,16 +236,6 @@ pub(super) struct Found {
     pub then: WhenFileExists,
     /// It looks like the file the download would save, not a different file of the same name.
     pub same: bool,
-}
-
-/// What the browser saw of a captured download, so the app can tell when its own
-/// request got something else (another size, or a web page instead of the file).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Expectation {
-    /// The size the browser reported, if any.
-    pub size: Option<u64>,
-    /// The browser's name for the file, which says whether a web page is expected.
-    pub name: Option<String>,
 }
 
 /// An engine run in progress.
@@ -754,6 +736,10 @@ impl Entry {
                 job: self.media_job.clone(),
             }),
             stranded: self.stranded.clone(),
+            answers: Answers {
+                on_existing: self.on_existing,
+                expect: self.expect.clone(),
+            },
         }
     }
 
