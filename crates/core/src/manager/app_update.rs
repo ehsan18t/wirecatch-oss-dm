@@ -156,7 +156,7 @@ impl Manager {
                 Ok(named.clone())
             } else {
                 Err(wirecatch_engine::PathRejected::new(
-                    "the installer is not the size its list of files gives",
+                    "The installer on the server is not the size this release lists. Try again later.",
                 ))
             }
         }));
@@ -170,9 +170,8 @@ impl Manager {
             }
             Err(e) => {
                 return Err(CoreError::UpdateCheckFailed(format!(
-                    "The update could not be downloaded: {}",
-                    wirecatch_messages::describe(&e, &folder, wirecatch_messages::Worked::Never)
-                        .message
+                    "The update could not be downloaded. {}",
+                    wirecatch_messages::describe_app_file(&e, &folder)
                 )));
             }
         }

@@ -355,7 +355,8 @@ impl MainWindow {
         let tone = status_tone(&row, cx);
         let compact = !shown.link && !shown.folder;
         let running = Group::of(row.status) == Group::Downloading;
-        let shows_circle = !running && (hovered || (self.picked && !self.selected.is_empty()));
+        let shows_circle =
+            !running && (hovered || (self.picked && self.selection_facts(cx).count > 0));
         let shows_actions = hovered || (selected && !self.picked);
         let main = cx.entity().downgrade();
         let cursor_bounds = self.cursor_bounds.clone();

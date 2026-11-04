@@ -278,7 +278,7 @@ pub enum Recovery {
         /// Where the damaged file now is.
         kept_at: PathBuf,
     },
-    /// This many downloads could not be read (a newer version may have saved them) and are kept, hidden, for a version that can, without their sign-in. Counted once: on the start that first found them.
+    /// This many downloads could not be read (a newer version may have saved them, or the disk damaged them) and are kept, hidden, for a version that can, without their sign-in. Counted once: on the start that first found them.
     UnreadableKept(usize),
     /// Negative sizes or counts, each reset and written back, so counted once.
     ValuesReset {
@@ -363,7 +363,7 @@ impl Store {
     /// `on_failure` is called (on the database thread) with the reason whenever a
     /// batch of writes could not be saved even after retrying.
     ///
-    /// A database file SQLite reports as damaged is moved aside and a new list is started, so a power cut or a bad sync tool never stops Wirecatch from opening; [`Snapshot::recoveries`] says so.
+    /// A database file SQLite reports as damaged is moved aside and a new list is started, and a single stored value that cannot be read costs only its row or value, so a power cut or a bad sync tool never stops Wirecatch from opening; [`Snapshot::recoveries`] says so.
     pub fn open(dir: &Path, on_failure: FailureHandler) -> Result<(Store, Snapshot)> {
         Self::open_with(
             dir,
@@ -901,9 +901,7 @@ const LOCK_WAIT: Duration = Duration::from_secs(2);
 
 /// The lock file of the list at `database`: its path with `.lock` after it.
 fn lock_path(database: &Path) -> PathBuf {
-    let mut path = database.as_os_str().to_owned();
-    path.push(".lock");
-    PathBuf::from(path)
+    with_suffix(database, ".lock")
 }
 
 /// Takes the list's lock, which makes this the one manager of the list in `dir` for as long
@@ -970,11 +968,16 @@ fn check_integrity(conn: &Connection) -> rusqlite::Result<()> {
     if verdict == "ok" {
         Ok(())
     } else {
-        Err(rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CORRUPT),
-            Some(verdict),
-        ))
+        Err(damage(verdict))
     }
+}
+
+/// The error for a file found damaged, which [`is_damage`] recognises.
+fn damage(detail: String) -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CORRUPT),
+        Some(detail),
+    )
 }
 
 /// Whether a write that failed with `error` may pass when tried again: the database was busy or locked, or the disk failed, filled up or refused the file for now. A refused row or a missing table fails the same way every time.
@@ -997,6 +1000,17 @@ fn is_damage(error: &rusqlite::Error) -> bool {
     matches!(
         error.sqlite_error_code(),
         Some(rusqlite::ErrorCode::NotADatabase | rusqlite::ErrorCode::DatabaseCorrupt)
+    )
+}
+
+/// Whether reading a stored value failed on what the value is: bad text, the wrong type or an out-of-range number. `integrity_check` looks at none of these, and SQLite reports no error code for them.
+fn cannot_convert(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::Utf8Error(..)
+            | rusqlite::Error::InvalidColumnType(..)
+            | rusqlite::Error::IntegralValueOutOfRange(..)
+            | rusqlite::Error::FromSqlConversionFailure(..)
     )
 }
 
@@ -1026,6 +1040,18 @@ fn set_aside(path: &Path) -> Result<PathBuf> {
     Ok(kept_at)
 }
 
+/// How long ago the Unix time in milliseconds that `text` starts with was, as [`set_aside`] writes it.
+fn age_of_stamp(text: &str) -> Option<Duration> {
+    let digits = text
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(text.len());
+    let stamp = Duration::from_millis(text.get(..digits)?.parse().ok()?);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    Some(now.saturating_sub(stamp))
+}
+
 /// Deletes damaged lists set aside and copies taken before an upgrade once they are older than [`KEEP_COPIES_FOR`], with their side files. Failures are only logged: an old copy left behind never stops a start.
 fn remove_old_copies(path: &Path) {
     let (Some(dir), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str())) else {
@@ -1049,12 +1075,15 @@ fn remove_old_copies(path: &Path) {
         {
             continue;
         }
-        let old = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|modified| modified.elapsed().ok())
-            .is_some_and(|age| age > KEEP_COPIES_FOR);
+        // The stamp, not the modified time: moving a list aside keeps when it was last written.
+        let age = file_name
+            .strip_prefix(&copy_prefixes[0])
+            .and_then(age_of_stamp)
+            .or_else(|| {
+                let modified = entry.metadata().and_then(|m| m.modified()).ok()?;
+                modified.elapsed().ok()
+            });
+        let old = age.is_some_and(|age| age > KEEP_COPIES_FOR);
         if old && let Err(e) = std::fs::remove_file(entry.path()) {
             warn!(error = %e, file = file_name, "could not delete an old copy of the download list");
         }
@@ -1097,7 +1126,9 @@ fn schema_version() -> u32 {
 
 fn migrate(conn: &mut Connection, path: &Path) -> Result<()> {
     let supported = schema_version();
-    let found: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    let stored: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    // No build writes a negative version, so nothing says which tables the file holds.
+    let found = u32::try_from(stored).map_err(|_| damage(format!("user_version {stored}")))?;
     if found > supported {
         return Err(StoreError::TooNew { found, supported });
     }
@@ -1121,12 +1152,20 @@ fn read_value<T: DeserializeOwned>(
     key: &str,
     what: &str,
 ) -> rusqlite::Result<Option<T>> {
-    Ok(conn
+    let stored = conn
         .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
             row.get::<_, String>(0)
         })
-        .optional()?
-        .and_then(|json| from_json(&json, what)))
+        .optional();
+    let json = match stored {
+        Ok(json) => json,
+        Err(e) if cannot_convert(&e) => {
+            warn!(error = %e, "stored {what} is unreadable");
+            None
+        }
+        Err(e) => return Err(e),
+    };
+    Ok(json.and_then(|json| from_json(&json, what)))
 }
 
 fn write_value<T: Serialize>(tx: &Transaction<'_>, key: &str, value: &T) -> rusqlite::Result<()> {
@@ -1157,7 +1196,14 @@ fn load_queues(conn: &Connection) -> Result<Vec<Queue>> {
          FROM queues ORDER BY position",
     )?;
     let mut queues = Vec::new();
-    for row in stmt.query_map([], read_queue)? {
+    let read = stmt.query_map([], |row| match read_queue(row) {
+        Err(e) if cannot_convert(&e) => {
+            warn!(error = %e, "a stored queue cannot be read");
+            Ok(None)
+        }
+        other => other,
+    })?;
+    for row in read {
         queues.extend(row?);
     }
     Ok(queues)
@@ -1181,7 +1227,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
     )?;
     let mut downloads = Vec::new();
     let mut newly_unreadable = 0;
-    for row in stmt.query_map([], read_download)? {
+    for row in stmt.query_map([], read_stored_row)? {
         match row? {
             StoredRow::Readable {
                 download,
@@ -1394,13 +1440,30 @@ fn read_counts(
     Ok((total, done.unwrap_or(0), damaged))
 }
 
-/// A row that cannot be understood is reported rather than failing the whole start. A damaged origin costs only the sign-in it held.
+/// A row that cannot be understood is reported rather than failing the whole start.
+fn read_stored_row(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
+    match read_download(row) {
+        Err(e) if cannot_convert(&e) => {
+            warn!(error = %e, "a stored download cannot be read");
+            Ok(StoredRow::Unreadable {
+                id: DownloadId(row.get(0)?),
+                origin: row.get(ORIGIN_COLUMN).unwrap_or_default(),
+            })
+        }
+        other => other,
+    }
+}
+
+/// Where the stored origin is in the row [`load`] selects.
+const ORIGIN_COLUMN: usize = 12;
+
+/// One row as this build reads it. A damaged origin costs only the sign-in it held.
 fn read_download(row: &Row<'_>) -> rusqlite::Result<StoredRow> {
     let id = DownloadId(row.get(0)?);
     let path: String = row.get(2)?;
     let category = from_text(&row.get::<_, String>(5)?);
     let status = from_text(&row.get::<_, String>(6)?);
-    let stored_origin: String = row.get(12)?;
+    let stored_origin: String = row.get(ORIGIN_COLUMN)?;
     let (Some(category), Some(status)) = (category, status) else {
         warn!(id = id.0, "a stored download cannot be read");
         return Ok(StoredRow::Unreadable {
@@ -2365,7 +2428,13 @@ mod tests {
         let old_damaged = copy(&format!("{DAMAGED_SUFFIX}1"), Some(old));
         let old_journal = copy(&format!("{DAMAGED_SUFFIX}1-wal"), Some(old));
         let old_backup = copy(&format!("{BACKUP_SUFFIX}1"), Some(old));
-        let recent = copy(&format!("{DAMAGED_SUFFIX}2"), None);
+        let stamp_now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let recent = copy(&format!("{DAMAGED_SUFFIX}{stamp_now}"), None);
+        // The stamp says when it was set aside, whatever a later touch of the file says.
+        let old_touched = copy(&format!("{DAMAGED_SUFFIX}1-shm"), None);
         let unrelated = dir.path().join("notes.txt");
         std::fs::File::create(&unrelated)
             .unwrap()
@@ -2374,7 +2443,7 @@ mod tests {
 
         Store::open(dir.path(), ignore_failures()).unwrap();
 
-        for gone in [old_damaged, old_journal, old_backup] {
+        for gone in [old_damaged, old_journal, old_backup, old_touched] {
             assert!(!gone.exists(), "{}", gone.display());
         }
         assert!(recent.exists());
@@ -2988,5 +3057,140 @@ mod tests {
         store.close(Duration::from_secs(5)).await;
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.downloads, vec![download(1)]);
+    }
+
+    /// One flipped bit in one stored value, which no page checksum or integrity check sees.
+    #[tokio::test]
+    async fn a_flipped_bit_in_a_link_costs_that_row_and_not_every_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        store.save_downloads(vec![download(1), download(2)]);
+        store.close(PATIENCE).await;
+        let db = dir.path().join(DATABASE_FILE);
+        let mut bytes = std::fs::read(&db).unwrap();
+        let url = download(1).summary.url;
+        let at = bytes
+            .windows(url.len())
+            .position(|cell| cell == url.as_bytes())
+            .expect("the link is on disk");
+        bytes[at] ^= 0x80;
+        std::fs::write(&db, &bytes).unwrap();
+        let verdict: String = Connection::open(&db)
+            .unwrap()
+            .query_row("PRAGMA integrity_check(1)", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(verdict, "ok", "SQLite sees nothing wrong with the file");
+
+        let (store, first) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(first.downloads.len(), 1);
+        assert_eq!(first.recoveries, vec![Recovery::UnreadableKept(1)]);
+        store.close(PATIENCE).await;
+        let (store, second) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert_eq!(second.downloads.len(), 1);
+        assert_eq!(second.recoveries, Vec::new(), "told once");
+        store.close(PATIENCE).await;
+    }
+
+    /// Each form of a stored value that cannot be converted to what is asked of it.
+    #[tokio::test]
+    async fn a_value_that_cannot_be_converted_never_stops_a_start() {
+        for damage in [
+            "UPDATE downloads SET url = CAST(x'FF' AS TEXT) WHERE id = 1",
+            "UPDATE downloads SET path = x'00' WHERE id = 1",
+            "UPDATE downloads SET origin = x'00' WHERE id = 1",
+            "UPDATE downloads SET done = 'x' WHERE id = 1",
+            "UPDATE downloads SET added_at = 'x' WHERE id = 1",
+            "UPDATE downloads SET chosen_by = x'00' WHERE id = 1",
+            "UPDATE settings SET value = CAST(x'FF' AS TEXT) WHERE key = 'app'",
+            "UPDATE queues SET settings = CAST(x'FF' AS TEXT)",
+            "UPDATE queues SET paused = 'x'",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+            store.save_downloads(vec![download(1), download(2)]);
+            store.save_settings(sample_settings());
+            store.save_queues(vec![sample_queue()]);
+            store.close(PATIENCE).await;
+            Connection::open(dir.path().join(DATABASE_FILE))
+                .unwrap()
+                .execute_batch(damage)
+                .unwrap();
+            let (store, snapshot) = Store::open(dir.path(), ignore_failures())
+                .unwrap_or_else(|e| panic!("{damage}: {e}"));
+            assert!(
+                snapshot
+                    .downloads
+                    .iter()
+                    .any(|d| d.summary.id == DownloadId(2)),
+                "{damage}"
+            );
+            store.close(PATIENCE).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_schema_version_no_build_wrote_sets_the_list_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        store.close(PATIENCE).await;
+        Connection::open(dir.path().join(DATABASE_FILE))
+            .unwrap()
+            .execute_batch("PRAGMA user_version = -1")
+            .unwrap();
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        assert!(matches!(
+            snapshot.recoveries.as_slice(),
+            [Recovery::Damaged { .. }]
+        ));
+        store.close(PATIENCE).await;
+    }
+
+    /// Last written over a month ago and found damaged today: a month counts from today.
+    #[tokio::test]
+    async fn a_list_set_aside_survives_the_next_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join(DATABASE_FILE);
+        std::fs::write(&db, vec![b'x'; 8192]).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&db)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - KEEP_COPIES_FOR - Duration::from_secs(60))
+            .unwrap();
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let Some(Recovery::Damaged { kept_at }) = snapshot.recoveries.first() else {
+            panic!("not set aside: {:?}", snapshot.recoveries);
+        };
+        assert!(kept_at.exists(), "kept at the first start");
+        store.close(PATIENCE).await;
+        let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+        store.close(PATIENCE).await;
+        assert!(kept_at.exists(), "deleted at the very next start");
+    }
+
+    /// What the oldest stored settings still in `samples` read as, after every migration.
+    #[tokio::test]
+    async fn the_oldest_settings_survive_every_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        for sql in &MIGRATIONS[..4] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 4).unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+            params![
+                SETTINGS_KEY,
+                include_str!("../samples/settings/oldest.json")
+            ],
+        )
+        .unwrap();
+        drop(conn);
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let settings = snapshot.settings.expect("the settings survive");
+        assert_eq!(settings.connections_per_download, 3, "as stored");
+        assert!(settings.extension.ask_before_download, "switched on once");
+        assert!(settings.show_progress_windows, "a new setting's default");
+        store.close(PATIENCE).await;
     }
 }

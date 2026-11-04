@@ -87,12 +87,9 @@ impl Manager {
         let Some(entry) = state.downloads.get(&id) else {
             return;
         };
-        let url = match Url::parse(&entry.row.url) {
-            Ok(url) => url,
-            Err(e) => {
-                self.fail_to_start(state, id, wirecatch_messages::invalid_link(&e.to_string()));
-                return;
-            }
+        let Ok(url) = Url::parse(&entry.row.url) else {
+            self.fail_to_start(state, id, wirecatch_messages::invalid_link());
+            return;
         };
         if local_network::refuses_address(entry.chosen_by, &url) {
             let error = wirecatch_messages::private_network(entry.chosen_by);

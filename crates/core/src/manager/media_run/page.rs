@@ -117,19 +117,8 @@ pub(super) async fn page_attempt(
         // A format Wirecatch cannot fetch itself: yt-dlp downloads the same
         // selection. Its own requests are not covered by the
         // local network rule below (see `network_rule`); yt-dlp makes them.
-        // The engine would have taken a format with cookies but for them, so its address gets that rule's early check.
-        for url in found
-            .iter()
-            .filter(|f| f.cookies.is_some())
-            .filter_map(|f| Url::parse(f.url.as_deref()?).ok())
-        {
-            let Some(rule) = cancel
-                .run_until_cancelled(network_rule(job.chosen_by, &job.url, &url))
-                .await
-            else {
-                return Ok(MediaDone::Paused);
-            };
-            rule?;
+        if !cookie_formats_pass_the_rule(job, &found, cancel).await? {
+            return Ok(MediaDone::Paused);
         }
         // yt-dlp joins two formats into the container its own table picks (AV1 with AAC into MP4); the offer named the shared policy's.
         let merge_into = (video.is_some() && audio.is_some())
@@ -190,6 +179,28 @@ fn tightest_limit(job: &Job) -> Option<u64> {
         .iter()
         .filter_map(|limiter| limiter.limit())
         .min()
+}
+
+/// Gives the addresses of formats with cookies the early check of the rule: the engine would have taken them but for the cookies. `false` when stopped.
+async fn cookie_formats_pass_the_rule(
+    job: &Job,
+    found: &[&Format],
+    cancel: &CancellationToken,
+) -> Result<bool, UserError> {
+    for url in found
+        .iter()
+        .filter(|f| f.cookies.is_some())
+        .filter_map(|f| Url::parse(f.url.as_deref()?).ok())
+    {
+        let Some(rule) = cancel
+            .run_until_cancelled(network_rule(job.chosen_by, &job.url, &url))
+            .await
+        else {
+            return Ok(false);
+        };
+        rule?;
+    }
+    Ok(true)
 }
 
 /// Downloads the formats `found` side by side into `work`: their files, in the

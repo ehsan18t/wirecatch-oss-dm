@@ -65,18 +65,22 @@ fn pill<V>(label: String, cx: &Context<'_, V>) -> impl IntoElement {
 }
 
 impl MainWindow {
-    /// What dragging row `id` carries: the selection when it holds the row, else the row.
+    /// What dragging row `id` carries: what the list shows of the selection, in its order, when
+    /// the selection holds the row; else the row.
     pub(super) fn dragged_rows(
         &self,
         id: DownloadId,
         name: &str,
         cx: &gpui_kit::App,
     ) -> DraggedRows {
-        if self.selected.contains(&id) && self.selected.len() > 1 {
-            return DraggedRows {
-                ids: self.selection_facts(cx).dragged.clone(),
-                label: format!("{} downloads", self.selected.len()),
-            };
+        if self.selected.contains(&id) {
+            let shown = self.selection_facts(cx).ids.clone();
+            if shown.len() > 1 {
+                return DraggedRows {
+                    label: format!("{} downloads", shown.len()),
+                    ids: shown,
+                };
+            }
         }
         DraggedRows {
             ids: Rc::from([id]),
