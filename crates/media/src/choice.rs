@@ -14,7 +14,7 @@ use wirecatch_protocol::app::{
 use wirecatch_streams::{AudioTrack, Choice, StreamInfo, VideoTrack};
 
 use super::output::{self, AudioAction, Extras, OutputJob, SubtitlePick, Variant};
-use super::ytdlp::{Format, Info, ids};
+use super::ytdlp::{Format, FormatId, Info, ids};
 use super::{Content, MediaJob, Pick, safe_ext};
 
 /// Most options offered for one video.
@@ -85,6 +85,22 @@ fn offer(id: String, label: String, height: Option<u32>, size: Option<u64>, plan
         },
         plan,
     )
+}
+
+/// The video and audio formats `info` offers now as `quality`, for a download whose saved formats the page stopped listing.
+#[must_use]
+pub fn formats_of_quality(
+    info: &Info,
+    quality: &str,
+) -> Option<(Option<FormatId>, Option<FormatId>)> {
+    from_page(info)
+        .ok()?
+        .into_iter()
+        .find(|(_, plan)| plan.quality == quality)
+        .and_then(|(_, plan)| match plan.job {
+            MediaJob::Page { video, audio, .. } => Some((video, audio)),
+            _ => None,
+        })
 }
 
 /// Why a selection cannot be downloaded: it asks for something that was not offered. Each message says what to choose instead.

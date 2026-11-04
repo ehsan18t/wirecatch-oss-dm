@@ -1,6 +1,8 @@
 //! The bar over the list: one field that searches the downloads and takes pasted links, which it
 //! offers to download, and the button that opens an empty Add dialog.
 
+use std::rc::Rc;
+
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::Input;
@@ -22,7 +24,7 @@ use crate::ui::tokens;
 
 impl MainWindow {
     pub(super) fn command_bar(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let typed = self.typed_links(cx).len();
+        let typed = self.typed_links(cx).urls.len();
         let first_run = self.is_first_run(cx);
         h_flex()
             .key_context(super::SEARCH_CONTEXT)
@@ -170,18 +172,19 @@ impl MainWindow {
     }
 
     /// The links typed or pasted into the field.
-    pub(super) fn typed_links(&self, cx: &App) -> Vec<String> {
-        links::extract(&self.search.read(cx).value())
+    pub(super) fn typed_links(&self, cx: &App) -> Rc<links::Found> {
+        self.typed.of(&self.search.read(cx).value())
     }
 
     /// Opens the Add dialog on the field's links and empties the field.
     pub(super) fn download_typed(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        let urls = self.typed_links(cx);
-        if urls.is_empty() {
+        let text = self.search.read(cx).value();
+        let pasted = links::pasted(&text);
+        if pasted.is_empty() {
             return;
         }
         self.search
             .update(cx, |search, cx| search.set_value("", window, cx));
-        self.new_download(&urls, window, cx);
+        self.new_download(&pasted, window, cx);
     }
 }

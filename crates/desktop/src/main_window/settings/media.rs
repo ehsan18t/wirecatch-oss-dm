@@ -77,6 +77,61 @@ fn audio_patch(patch: OutputDefaultsPatch) -> AppSettingsPatch {
     })
 }
 
+/// Every quality to offer, with the saved one when the list does not hold it: the quality window
+/// saves any height a video has.
+fn quality_options(saved: VideoQuality) -> Vec<(VideoQuality, SharedString)> {
+    let mut options: Vec<(VideoQuality, SharedString)> = QUALITIES
+        .iter()
+        .map(|&(quality, name)| (quality, name.into()))
+        .collect();
+    if let VideoQuality::Height(height) = saved
+        && !options.iter().any(|(quality, _)| *quality == saved)
+    {
+        let taller = |quality: &VideoQuality| {
+            matches!(quality, VideoQuality::Best)
+                || matches!(quality, VideoQuality::Height(other) if *other > height)
+        };
+        let place = options
+            .iter()
+            .take_while(|(quality, _)| taller(quality))
+            .count();
+        options.insert(place, (saved, format!("{height}p").into()));
+    }
+    options
+}
+
+fn quality_field(library: &Entity<Library>, cx: &App) -> SettingField<SharedString> {
+    let saved = current(library, cx, |s| s.media.quality, VideoQuality::Best);
+    let options = quality_options(saved);
+    let names = options
+        .iter()
+        .map(|(_, name)| (name.clone(), name.clone()))
+        .collect();
+    let library = library.clone();
+    let shown = options.clone();
+    SettingField::dropdown(
+        names,
+        move |cx| {
+            let saved = current(&library, cx, |s| s.media.quality, VideoQuality::Best);
+            shown
+                .iter()
+                .find(|(quality, _)| *quality == saved)
+                .map_or_else(SharedString::default, |(_, name)| name.clone())
+        },
+        move |name, cx| {
+            if let Some((quality, _)) = options.iter().find(|(_, shown)| *shown == name) {
+                change(
+                    media(MediaDefaultsPatch {
+                        quality: Some(*quality),
+                        ..MediaDefaultsPatch::default()
+                    }),
+                    cx,
+                );
+            }
+        },
+    )
+}
+
 fn video(library: &Entity<Library>, cx: &App) -> SettingGroup {
     let by_height = current(
         library,
@@ -102,12 +157,7 @@ fn video(library: &Entity<Library>, cx: &App) -> SettingGroup {
         .item(
             SettingItem::new(
                 "Resolution",
-                choice(library, QUALITIES, |s| s.media.quality, |quality| {
-                    media(MediaDefaultsPatch {
-                        quality: Some(quality),
-                        ..MediaDefaultsPatch::default()
-                    })
-                }),
+                quality_field(library, cx),
             )
             .description(format!("Used when {} doesn't ask, and chosen first in the quality window. Audio-only downloads use the audio settings.", host::CHANNEL.name()))
             .keywords(["quality", "1080p", "4k", "720p", "best"]),
@@ -550,6 +600,23 @@ fn languages(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_height_the_list_lacks_shows_as_itself_in_height_order() {
+        let saved = VideoQuality::Height(1200);
+        let options = quality_options(saved);
+        let place = options.iter().position(|(quality, _)| *quality == saved);
+        assert_eq!(place, Some(3));
+        assert_eq!(options[3].1.as_ref(), "1200p");
+        assert_eq!(options.len(), QUALITIES.len() + 1);
+    }
+
+    #[test]
+    fn a_listed_quality_adds_nothing() {
+        for &(quality, _) in QUALITIES {
+            assert_eq!(quality_options(quality).len(), QUALITIES.len());
+        }
+    }
 
     #[test]
     fn the_menus_offer_only_formats_that_save_their_kind() {

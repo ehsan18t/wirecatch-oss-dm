@@ -28,4 +28,6 @@ pub struct Expectation {
 pub struct Answers {
     pub on_existing: Option<OnExisting>,
     pub expect: Option<Expectation>,
+    /// The name a download cancelled before its name was final left free for others; its next run is judged by it (D96).
+    pub plain_name: Option<String>,
 }

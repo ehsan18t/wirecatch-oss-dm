@@ -136,10 +136,13 @@ fn parse_master(lines: &[(usize, &str)], base: &Url) -> Result<Master, Located> 
 
 /// Each audio group's rendition to pair with a quality: its default one, else the one to select automatically, else the first.
 fn paired_audio(renditions: &[Rendition]) -> HashMap<String, usize> {
-    let rank = |r: &Rendition| if r.default { 2 } else { u8::from(r.autoselect) };
+    let rank = |r: &Rendition| {
+        let chosen = if r.default { 2 } else { u8::from(r.autoselect) };
+        (chosen, r.url.is_some())
+    };
     let mut paired: HashMap<String, usize> = HashMap::new();
     for (i, rendition) in renditions.iter().enumerate() {
-        if rendition.kind != RenditionKind::Audio || rendition.url.is_none() {
+        if rendition.kind != RenditionKind::Audio {
             continue;
         }
         paired
@@ -154,6 +157,8 @@ fn paired_audio(renditions: &[Rendition]) -> HashMap<String, usize> {
             })
             .or_insert(i);
     }
+    // RFC 8216: a rendition with no `URI` is inside the variant, so it pairs nothing separate.
+    paired.retain(|_, best| renditions.get(*best).is_some_and(|r| r.url.is_some()));
     paired
 }
 
@@ -355,7 +360,14 @@ impl<'a> MediaReader<'a> {
                     .unwrap_or(0.0);
             }
             "#EXT-X-BYTERANGE" => self.pending_range = Some(byte_range(value)?),
-            "#EXT-X-KEY" => update_keys(&mut self.keys, &attributes(value), self.base)?,
+            "#EXT-X-KEY" => {
+                update_keys(
+                    &mut self.keys,
+                    &attributes(value),
+                    self.base,
+                    &mut self.budget,
+                )?;
+            }
             "#EXT-X-MAP" => {
                 let map = self.read_map(value)?;
                 let number = match &self.map {
@@ -478,6 +490,7 @@ fn update_keys(
     keys: &mut Vec<Key>,
     attrs: &[(String, String)],
     base: &Url,
+    budget: &mut AddressBudget,
 ) -> Result<(), ManifestError> {
     let Some(method) = KeyMethod::parse(attr(attrs, "METHOD").unwrap_or("NONE")) else {
         keys.clear();
@@ -485,9 +498,11 @@ fn update_keys(
     };
     let format = KeyFormat::parse(attr(attrs, "KEYFORMAT"));
     // A key address that is not a URL at all (such as `skd://…` for FairPlay) is kept as missing: it is never fetched, only reported.
-    let url = attr(attrs, "URI")
-        .and_then(|u| base.join(u).ok())
-        .map(Arc::new);
+    let url = attr(attrs, "URI").and_then(|u| base.join(u).ok());
+    if let Some(url) = &url {
+        budget.spend(url)?;
+    }
+    let url = url.map(Arc::new);
     let iv = attr(attrs, "IV").map(parse_iv).transpose()?;
     keys.retain(|k| k.format != format);
     keys.push(Key {
@@ -1021,6 +1036,21 @@ a.ts
             text.push_str("#EXTINF:1,\ns.ts\n");
         }
         // Not `unwrap_err`, which would print every address on failure.
+        let error = parse(&text, &base).err().map(|e| e.cause);
+        assert_eq!(error, Some(ManifestError::AddressesTooLong));
+    }
+
+    /// Each key line makes an address of its own, kept by the pieces it encrypts.
+    #[test]
+    fn key_addresses_count_against_a_tracks_address_limit() {
+        let folder = "f".repeat(crate::plan::MAX_URL_LEN - 100);
+        let base = Url::parse(&format!("https://cdn.example/{folder}/index.m3u8")).unwrap();
+        let len = u64::try_from(base.join("k").unwrap().as_str().len()).unwrap();
+        let count = crate::plan::MAX_TRACK_URL_BYTES / len + 1;
+        let mut text = String::from("#EXTM3U\n");
+        for _ in 0..count {
+            text.push_str("#EXT-X-KEY:METHOD=AES-128,URI=\"k\"\n");
+        }
         let error = parse(&text, &base).err().map(|e| e.cause);
         assert_eq!(error, Some(ManifestError::AddressesTooLong));
     }

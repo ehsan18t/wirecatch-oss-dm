@@ -505,3 +505,25 @@ async fn the_client_goes_through_the_system_proxy() {
     assert_eq!(answer.bytes().await.unwrap().as_ref(), b"through the proxy");
     assert_eq!(proxy.seen_at("file.bin").len(), 1);
 }
+
+#[tokio::test]
+async fn a_stop_ends_a_check_that_has_not_answered() {
+    let cancel = CancellationToken::new();
+    let url = Url::parse("http://example.com/").unwrap();
+    let options = DownloadOptions::default();
+    let client = Clients::with_roots(&options, rustls::RootCertStore::empty())
+        .build()
+        .unwrap();
+    let (mut session, url) = Session::new(&url, &options, cancel.clone());
+    session.guard = Some(Guard(std::sync::Arc::new(|_| {
+        Box::pin(std::future::pending())
+    })));
+    cancel.cancel();
+    let sent = tokio::time::timeout(
+        wirecatch_test_support::PATIENCE,
+        send(&client, &url, &session, None),
+    )
+    .await
+    .expect("the stop ends the check");
+    assert!(matches!(sent.unwrap_err().error, Error::Cancelled));
+}
