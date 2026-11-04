@@ -29,7 +29,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-19  | fix(streams): limit DASH addresses while building  | `fix/dash-address-limit`         | 19                           | P1       | small  | none         | merged |
 | PR-20  | fix(engine): fail a run when a flush fails         | `fix/keep-failed-flush`          | 20                           | P1       | small  | none         | merged |
 | PR-21  | fix(engine): renew an expired redirect target      | `fix/expired-redirect-target`    | 21                           | P1       | small  | none         | merged |
-| PR-22  | fix(store): open a list with an unreadable value   | `fix/unreadable-value-opens`     | 22                           | P1       | medium | none         | open   |
+| PR-22  | fix(store): open a list with an unreadable value   | `fix/unreadable-value-opens`     | 22                           | P1       | medium | none         | merged |
 | PR-23  | fix(media): offer only sources ffmpeg can read     | `fix/offer-readable-sources`     | 23                           | P1       | medium | none         | merged |
 | PR-24  | fix(media): fetch cookie-gated formats with yt-dlp | `fix/cookie-formats-ytdlp`       | 24                           | P1       | medium | none         | merged |
 | PR-25  | fix(store): say when saving fails or recovers      | `fix/save-failure-signal`        | 25, 84, 233                  | P2       | medium | none         | open   |
@@ -425,7 +425,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/store`
 - **Proof:** `03-1.patch`, 2 tests. Apply it alone: it does not stack with `03-3.patch`, `03-5.patch` or `25-2.patch`.
 - **Checks:** `cargo test -p wirecatch-store`, `cargo clippy -p wirecatch-store`
-- **Status:** open
+- **Status:** merged
 
 ### PR-23 fix(media): offer only sources ffmpeg can read
 
