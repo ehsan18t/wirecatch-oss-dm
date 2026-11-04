@@ -72,6 +72,27 @@ impl SitePattern {
     }
 }
 
+/// A site rule as it is kept and matched: a name as the site lists keep it, an address without brackets or a port, a network or address prefix in lower case, or `<local>`. A pasted web address counts as its host. `None` when it names no site.
+#[must_use]
+pub fn normal_site_rule(input: &str) -> Option<String> {
+    let input = input.trim();
+    // Without a scheme, what follows `/` is a network's bits, whose bad value must not fall through to the address. A leading `*.` or `.` asks for names under it, and an address has none.
+    let pasted = input.contains("://") || !(input.contains('/') || input.starts_with(['*', '.']));
+    let pasted_address = || {
+        pasted
+            .then(|| SitePattern::read(&read_site(input).ok().flatten()?))
+            .flatten()
+    };
+    Some(match SitePattern::read(input).or_else(pasted_address)? {
+        SitePattern::Local => LOCAL.to_owned(),
+        SitePattern::Name(name) => name,
+        SitePattern::Under(name) => format!("{UNDER}{name}"),
+        SitePattern::Range { .. } if input.ends_with(ANY_PART) => input.to_owned(),
+        SitePattern::Range { network, bits } if bits == width(network) => network.to_string(),
+        SitePattern::Range { network, bits } => format!("{network}/{bits}"),
+    })
+}
+
 /// A host name as the site lists keep it (lower case, international names in ASCII form), when `input` names one and is not an address.
 fn read_name(input: &str) -> Option<String> {
     let name = read_site(input).ok().flatten()?;
@@ -208,6 +229,30 @@ mod tests {
         assert!(covers("<local>", "http://nas/f"));
         assert!(covers("<LOCAL>", "http://nas/f"));
         assert!(!covers("<local>", "http://example.com/f"));
+    }
+
+    #[test]
+    fn a_rule_is_kept_in_one_form() {
+        for (written, kept) in [
+            ("https://Example.COM/page", "example.com"),
+            ("example.com:8443", "example.com"),
+            ("*.Corp.Example", "*.corp.example"),
+            ("<LOCAL>", "<local>"),
+            ("[::1]", "::1"),
+            ("[fd00::1]:8080", "fd00::1"),
+            ("http://10.0.0.1:8080/", "10.0.0.1"),
+            ("FD00::/8", "fd00::/8"),
+            ("10.*", "10.*"),
+        ] {
+            assert_eq!(
+                normal_site_rule(written).as_deref(),
+                Some(kept),
+                "{written}"
+            );
+        }
+        for names_nothing in ["10.*.1", "*.10", "*.1.2.3.4", ".10", ".1.2.3.4"] {
+            assert_eq!(normal_site_rule(names_nothing), None, "{names_nothing}");
+        }
     }
 
     #[test]

@@ -15,6 +15,8 @@ pub use wirecatch_records::proxy::{Logins, SavedProxyServer};
 
 use crate::error::{Result, SettingsError};
 
+const EVERY_NAME: &str = "*";
+
 /// Checks the app's proxy and cleans up its hosts. Whether its profile exists is
 /// [`check_use`]'s to say.
 ///
@@ -43,29 +45,43 @@ pub fn validate_queue_exceptions(
     })
 }
 
-/// Hosts trimmed, in lower case and without duplicates.
+/// Hosts in the form the matcher reads (D73.8), without duplicates. The search for a duplicate stays short: it stops at the limit, whatever the length of `hosts`.
 fn clean_hosts(hosts: &[String]) -> Result<Vec<String>> {
     let mut cleaned: Vec<String> = Vec::new();
     for entry in hosts {
-        let entry = entry.trim().to_ascii_lowercase();
-        if entry.is_empty() || cleaned.contains(&entry) {
+        let entry = entry.trim();
+        if entry.is_empty() {
             continue;
         }
-        if entry.len() > MAX_PROXY_HOST_CHARS
-            || entry.contains(|c: char| c.is_whitespace() || c.is_control() || c == ',' || c == ';')
-        {
-            return Err(invalid(&format!(
+        let entry = exception_entry(entry).ok_or_else(|| {
+            invalid(&format!(
                 "\"{entry}\" cannot be a proxy exception. Use a host name like files.example.com, an address, or a network like 10.0.0.0/8."
+            ))
+        })?;
+        if cleaned.contains(&entry) {
+            continue;
+        }
+        if cleaned.len() == MAX_PROXY_EXCEPTIONS {
+            return Err(invalid(&format!(
+                "A list of proxy exceptions can have at most {MAX_PROXY_EXCEPTIONS} hosts. Remove some first."
             )));
         }
         cleaned.push(entry);
     }
-    if cleaned.len() > MAX_PROXY_EXCEPTIONS {
-        return Err(invalid(&format!(
-            "A list of proxy exceptions can have at most {MAX_PROXY_EXCEPTIONS} hosts. Remove some first."
-        )));
-    }
     Ok(cleaned)
+}
+
+/// One exception as it is kept, or `None` when the matcher could never match it. `*` covers every name, which only the matcher reads; a site rule does not take it.
+fn exception_entry(entry: &str) -> Option<String> {
+    if entry.len() > MAX_PROXY_HOST_CHARS
+        || entry.contains(|c: char| c.is_whitespace() || c.is_control() || c == ',' || c == ';')
+    {
+        return None;
+    }
+    if entry == EVERY_NAME {
+        return Some(EVERY_NAME.to_owned());
+    }
+    wirecatch_queues::normal_site_rule(entry)
 }
 
 /// Checks that `count` proxy servers are allowed.
@@ -435,24 +451,46 @@ pub fn copies(
 
 /// A profile for each server the computer's proxy names (D73.9): the environment's proxy
 /// variables, or else the system's setting. Passwords are left out, so they never reach a
-/// window. Empty when the computer sets no proxy.
-#[must_use]
-pub fn from_system(computer: &ComputerProxy) -> Vec<ProxyServerSettings> {
+/// window. A SOCKS4 server is skipped, as a profile cannot speak it. Empty when the computer
+/// sets no proxy.
+///
+/// # Errors
+///
+/// [`SettingsError::Invalid`] naming the server when only SOCKS4 servers are set.
+pub fn from_system(computer: &ComputerProxy) -> Result<Vec<ProxyServerSettings>> {
     let Some(system) = computer.proxies() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut profiles: Vec<ProxyServerSettings> = Vec::new();
+    let mut socks4 = None;
     for value in [&system.all, &system.http, &system.https, &system.ftp]
         .into_iter()
         .flatten()
     {
-        if let Some(profile) = parse_server(value)
+        if let Some(server) = socks4_server(value) {
+            socks4.get_or_insert(server);
+        } else if let Some(profile) = parse_server(value)
             && !profiles.iter().any(|p| same_proxy(p, &profile))
         {
             profiles.push(profile);
         }
     }
-    profiles
+    match socks4 {
+        Some(server) if profiles.is_empty() => Err(invalid(&format!(
+            "The computer's proxy {server} is a SOCKS4 server, which a proxy profile cannot use. Keep the System proxy, or add a profile for an HTTP, HTTPS or SOCKS5 server."
+        ))),
+        _ => Ok(profiles),
+    }
+}
+
+/// `host:port` of a proxy value that names a SOCKS4 server, without its login.
+fn socks4_server(value: &str) -> Option<String> {
+    let url = Url::parse(value.trim()).ok()?;
+    matches!(url.scheme(), "socks4" | "socks4a").then(|| {
+        let host = url.host_str().unwrap_or_default();
+        url.port()
+            .map_or_else(|| host.to_owned(), |port| format!("{host}:{port}"))
+    })
 }
 
 /// A proxy value (`http://user@proxy:8080`, `proxy:8080`, `socks5://...`) as a profile without
@@ -467,7 +505,7 @@ fn parse_server(value: &str) -> Option<ProxyServerSettings> {
     .ok()?;
     let kind = match url.scheme() {
         "https" => ProxyKind::Https,
-        "socks4" | "socks4a" | "socks5" | "socks5h" => ProxyKind::Socks5,
+        "socks5" | "socks5h" => ProxyKind::Socks5,
         _ => ProxyKind::Http,
     };
     let host = url

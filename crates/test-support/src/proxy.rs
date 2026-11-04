@@ -1,6 +1,6 @@
 //! Proxies for tests: a SOCKS5 proxy (RFC 1928) that forwards connections,
-//! optionally behind a user name and password (RFC 1929), and an HTTP proxy
-//! that turns every request away with `407`.
+//! optionally behind a user name and password (RFC 1929), a SOCKS4 proxy that
+//! forwards them too, and an HTTP proxy that turns every request away with `407`.
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -134,6 +134,70 @@ async fn serve(
     }
     reply.extend_from_slice(&bound.port().to_be_bytes());
     client.write_all(&reply).await?;
+    tokio::io::copy_bidirectional(&mut client, &mut server).await?;
+    Ok(())
+}
+
+/// A SOCKS4 proxy on a local port that forwards `CONNECT` requests to the IPv4 address asked for, and remembers each destination.
+pub struct Socks4Server {
+    /// The port it listens on, on 127.0.0.1.
+    pub port: u16,
+    destinations: Arc<Mutex<Vec<String>>>,
+}
+
+impl Socks4Server {
+    /// Starts the proxy.
+    pub async fn start() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let destinations = Arc::new(Mutex::new(Vec::new()));
+        let seen = destinations.clone();
+        tokio::spawn(async move {
+            while let Ok((client, _)) = listener.accept().await {
+                let seen = seen.clone();
+                tokio::spawn(async move {
+                    // A client that gives up half way is not the test's concern.
+                    let (Ok(()) | Err(_)) = serve_socks4(client, &seen).await;
+                });
+            }
+        });
+        Self { port, destinations }
+    }
+
+    /// The proxy's URL.
+    #[must_use]
+    pub fn url(&self) -> String {
+        format!("socks4://127.0.0.1:{}", self.port)
+    }
+
+    /// Every destination a client connected to, as `host:port`, in order.
+    #[must_use]
+    pub fn destinations(&self) -> Vec<String> {
+        self.destinations.lock().unwrap().clone()
+    }
+}
+
+async fn serve_socks4(mut client: TcpStream, seen: &Mutex<Vec<String>>) -> std::io::Result<()> {
+    const GRANTED: [u8; 8] = [0, 0x5A, 0, 0, 0, 0, 0, 0];
+    const REFUSED: [u8; 8] = [0, 0x5B, 0, 0, 0, 0, 0, 0];
+    let mut request = [0; 8];
+    client.read_exact(&mut request).await?;
+    let [_, _, port_high, port_low, a, b, c, d] = request;
+    let mut user = [1; 1];
+    while user[0] != 0 {
+        client.read_exact(&mut user).await?;
+    }
+    let destination = format!(
+        "{}:{}",
+        std::net::Ipv4Addr::new(a, b, c, d),
+        u16::from_be_bytes([port_high, port_low])
+    );
+    seen.lock().unwrap().push(destination.clone());
+    let Ok(mut server) = TcpStream::connect(destination.as_str()).await else {
+        client.write_all(&REFUSED).await?;
+        return Ok(());
+    };
+    client.write_all(&GRANTED).await?;
     tokio::io::copy_bidirectional(&mut client, &mut server).await?;
     Ok(())
 }
