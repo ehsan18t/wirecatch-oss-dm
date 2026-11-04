@@ -12,7 +12,7 @@ use wirecatch_sites::local_network::ChosenBy;
 
 use super::network::{format_rule, network_rule};
 use super::page::{address_gone, part_name, part_options};
-use super::placement::{Placed, final_path, place, remember_placing};
+use super::placement::{self, Placed, final_path, place, remember_placing};
 use super::workdir;
 use super::*;
 use crate::headers::Origin;
@@ -812,4 +812,171 @@ async fn parts_are_kept_only_for_the_formats_that_wrote_them() {
         .unwrap();
     assert!(!part.exists());
     assert!(work.is_dir());
+}
+
+const LINK: &str = "https://example.com/v";
+
+/// A work folder holding a finished `Clip.mp4` beside its planned path.
+fn finished_in_work(dir: &Path) -> (PathBuf, PathBuf, PathBuf) {
+    let output = dir.join("Clip.mp4");
+    let work = wirecatch_media::work_dir(&output);
+    std::fs::create_dir(&work).unwrap();
+    let file = work.join("Clip.mp4");
+    std::fs::write(&file, b"the video").unwrap();
+    (output, work, file)
+}
+
+/// What a next run does with nothing to download: any fetch would end in the unreadable job's error.
+async fn next_run(job: Job) -> Result<MediaDone, UserError> {
+    run(
+        job,
+        MediaJob::Unreadable,
+        &MediaProgress::default(),
+        &CancellationToken::new(),
+    )
+    .await
+}
+
+/// A file that could not be put in place, as when a player holds the old one, waits there: the next run places it and fetches nothing.
+#[tokio::test]
+async fn a_file_that_could_not_be_placed_waits_for_the_next_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let (output, work, file) = finished_in_work(dir.path());
+    std::fs::write(&output, b"the person's file").unwrap();
+    let mut job = job_at(dir.path(), &output, LINK, Taken::KeepBoth);
+    job.reserve = Arc::new(|_: &Path, _| false);
+    assert!(placement::finish(&file, &job, &work, &[]).await.is_err());
+
+    let job = job_at(dir.path(), &output, LINK, Taken::KeepBoth);
+    let end = next_run(job).await;
+    let Ok(MediaDone::Completed { path, .. }) = end else {
+        panic!("{end:?}");
+    };
+    assert_eq!(std::fs::read(&path).unwrap(), b"the video");
+    assert_eq!(std::fs::read(&output).unwrap(), b"the person's file");
+    assert!(!work.exists());
+}
+
+/// Dying after the link to a free name and before the work folder went leaves the file in both places: the next run neither copies it again nor asks about its own file.
+#[tokio::test]
+async fn a_crash_after_linking_does_not_make_a_second_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let (output, work, file) = finished_in_work(dir.path());
+    remember_placing(&work, LINK, &file, &[]).unwrap();
+    placement::note_move(&work, placement::Moving::ToFreeName, &output).unwrap();
+    std::fs::hard_link(&file, &output).unwrap();
+    let job = job_at(dir.path(), &output, LINK, Taken::Ask);
+    let end = next_run(job).await;
+    let Ok(MediaDone::Completed { path, .. }) = end else {
+        panic!("{end:?}");
+    };
+    assert_eq!(path, output);
+    assert!(!work.exists());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
+/// Dying once the file left the work folder: the note says where it went, and the row completes there.
+#[tokio::test]
+async fn a_crash_after_moving_completes_at_the_noted_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let (output, work, file) = finished_in_work(dir.path());
+    let other = dir.path().join("Clip (1).mp4");
+    remember_placing(&work, LINK, &file, &[]).unwrap();
+    placement::note_move(&work, placement::Moving::ToFreeName, &other).unwrap();
+    std::fs::rename(&file, &other).unwrap();
+    let end = next_run(job_at(dir.path(), &output, LINK, Taken::KeepBoth)).await;
+    let Ok(MediaDone::Completed { path, .. }) = end else {
+        panic!("{end:?}");
+    };
+    assert_eq!(path, other);
+    assert!(!work.exists());
+}
+
+/// Dying just before replacing: the old file is still at the name, so the replace still happens.
+#[tokio::test]
+async fn a_crash_before_replacing_still_replaces() {
+    let dir = tempfile::tempdir().unwrap();
+    let (output, work, file) = finished_in_work(dir.path());
+    std::fs::write(&output, b"the old one").unwrap();
+    remember_placing(&work, LINK, &file, &[]).unwrap();
+    placement::note_move(&work, placement::Moving::OntoTakenName, &output).unwrap();
+    let end = next_run(job_at(dir.path(), &output, LINK, Taken::Replace)).await;
+    assert!(matches!(end, Ok(MediaDone::Completed { .. })), "{end:?}");
+    assert_eq!(std::fs::read(&output).unwrap(), b"the video");
+}
+
+/// A note left by a move that failed says nothing of a file that later took that name: same size, other bytes, and ours is not thrown away for it.
+#[tokio::test]
+async fn a_note_never_claims_a_file_that_only_has_the_same_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let (output, work, file) = finished_in_work(dir.path());
+    std::fs::write(&output, b"not a video").unwrap();
+    remember_placing(&work, LINK, &file, &[]).unwrap();
+    placement::note_move(&work, placement::Moving::ToFreeName, &output).unwrap();
+    let end = next_run(job_at(dir.path(), &output, LINK, Taken::KeepBoth)).await;
+    let Ok(MediaDone::Completed { path, .. }) = end else {
+        panic!("{end:?}");
+    };
+    assert_ne!(path, output);
+    assert_eq!(std::fs::read(&path).unwrap(), b"the video");
+    assert_eq!(std::fs::read(&output).unwrap(), b"not a video");
+}
+
+/// Both the file and the name it went to gone: nothing waits to be placed, so the next run starts again rather than failing on a missing file each time.
+#[tokio::test]
+async fn a_file_gone_from_both_places_does_not_wait() {
+    let dir = tempfile::tempdir().unwrap();
+    let (output, work, file) = finished_in_work(dir.path());
+    remember_placing(&work, LINK, &file, &[]).unwrap();
+    placement::note_move(&work, placement::Moving::ToFreeName, &output).unwrap();
+    std::fs::remove_file(&file).unwrap();
+    let link = Url::parse(LINK).unwrap();
+    assert_eq!(placement::waiting_to_place(&work, &link).await, None);
+}
+
+/// What is noted is on disk before the file moves, whichever way it moves, or a crash in between would be read as no move at all.
+#[test]
+fn every_move_is_noted_before_it_happens() {
+    for (taken, how) in [
+        (Taken::KeepBoth, placement::Moving::ToFreeName),
+        (Taken::Replace, placement::Moving::OntoTakenName),
+        (Taken::KeepExisting, placement::Moving::OntoTakenName),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let (output, _, file) = finished_in_work(dir.path());
+        if how == placement::Moving::OntoTakenName {
+            std::fs::write(&output, b"the old one").unwrap();
+        }
+        let notes = std::cell::Cell::new(0);
+        let note = |noted: placement::Moving, to: &Path| {
+            assert_eq!(noted, how);
+            assert_eq!(to, output);
+            assert!(file.is_file(), "moved before the note");
+            notes.set(notes.get() + 1);
+            Ok(())
+        };
+        let free: Reserve = Arc::new(|_: &Path, _| true);
+        placement::place_noting(&file, &output, &free, taken, &note).unwrap();
+        assert_eq!(notes.get(), 1, "{taken:?}");
+    }
+}
+
+/// A name reserved for a move that could not be noted goes back, or no other download could ever have it.
+#[test]
+fn a_move_that_could_not_be_noted_gives_its_name_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let (output, _, file) = finished_in_work(dir.path());
+    std::fs::write(&output, b"another").unwrap();
+    let given_back = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = given_back.clone();
+    let reserve: Reserve = Arc::new(move |_: &Path, take: bool| {
+        if !take {
+            counted.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+        true
+    });
+    let note = |_: placement::Moving, _: &Path| Err(std::io::Error::other("no room"));
+    assert!(placement::place_noting(&file, &output, &reserve, Taken::KeepBoth, &note).is_err());
+    assert_eq!(given_back.load(std::sync::atomic::Ordering::Relaxed), 1);
+    assert!(file.is_file());
 }

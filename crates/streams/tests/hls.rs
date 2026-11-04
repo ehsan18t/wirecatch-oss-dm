@@ -1067,3 +1067,124 @@ async fn an_encrypted_web_page_is_not_a_finished_video() -> TestResult {
     assert!(matches!(got, Err(Error::NotMedia { .. })), "{got:?}");
     Ok(())
 }
+
+const ONE_SEGMENT: &str = "#EXTM3U\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n";
+
+async fn inspect_master(master: &str) -> TestResult<wirecatch_streams::StreamInfo> {
+    let server = FileServer::start().await;
+    server.put_typed("m.m3u8", master.to_string(), MPEGURL);
+    server.put_typed("v.m3u8", ONE_SEGMENT, MPEGURL);
+    server.put_typed("fr.m3u8", ONE_SEGMENT, MPEGURL);
+    Ok(inspect(
+        &server.url("m.m3u8"),
+        &options(),
+        PrivateNetwork::Auto,
+        CancellationToken::new(),
+    )
+    .await?)
+}
+
+/// RFC 8216: a rendition with no `URI` is inside the variant, so a default without one is what automatic audio means.
+#[tokio::test]
+async fn automatic_audio_stays_in_the_video_when_the_default_has_no_address() {
+    let server = FileServer::start().await;
+    server.put_typed(
+        "m.m3u8",
+        concat!(
+            "#EXTM3U\n",
+            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"English\",DEFAULT=YES,AUTOSELECT=YES\n",
+            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",NAME=\"French\",URI=\"fr.m3u8\"\n",
+            "#EXT-X-STREAM-INF:BANDWIDTH=1,AUDIO=\"a\"\n",
+            "v.m3u8\n",
+        ),
+        MPEGURL,
+    );
+    server.put_typed("v.m3u8", ONE_SEGMENT, MPEGURL);
+    server.put_typed("fr.m3u8", ONE_SEGMENT, MPEGURL);
+    server.put("s.ts", ts_segment(1, 1000));
+    let dir = private_dir("hls-default-in-video").unwrap();
+    let outcome = run(request(server.url("m.m3u8"), dir.join("v.ts"))).await;
+    assert!(
+        !matches!(outcome, Err(Error::NeedsFfmpeg)),
+        "French was picked as a separate track"
+    );
+    assert_eq!(server.requests("fr.m3u8"), 0);
+    dir.remove().unwrap();
+}
+
+#[tokio::test]
+async fn a_subtitle_codec_does_not_change_the_container() {
+    let info = inspect_master(concat!(
+        "#EXTM3U\n",
+        "#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1x1,CODECS=\"avc1.640028,mp4a.40.2,wvtt\"\n",
+        "v.m3u8\n",
+    ))
+    .await
+    .unwrap();
+    assert_eq!(info.extension(&Choice::Auto, &Choice::Auto, true), "mp4");
+}
+
+#[tokio::test]
+async fn audio_with_a_subtitle_codec_is_audio() {
+    let info = inspect_master(concat!(
+        "#EXTM3U\n",
+        "#EXT-X-STREAM-INF:BANDWIDTH=2,CODECS=\"mp4a.40.2,wvtt\"\n",
+        "v.m3u8\n",
+        "#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=1x1,CODECS=\"avc1.640028\"\n",
+        "fr.m3u8\n",
+    ))
+    .await
+    .unwrap();
+    assert_eq!(info.video.len(), 1, "listed as a video quality");
+}
+
+/// A key's address can carry a signature, and the error reaches what a person reads.
+#[tokio::test]
+async fn a_key_error_names_only_the_host() {
+    let server = FileServer::start().await;
+    server.put_typed(
+        "m.m3u8",
+        "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k?token=SECRET\"\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n",
+        MPEGURL,
+    );
+    server.put("k", b"short".to_vec());
+    server.put("s.ts", ts_segment(1, 1000));
+    let dir = private_dir("hls-key-host").unwrap();
+    let error = run(request(server.url("m.m3u8"), dir.join("v.ts")))
+        .await
+        .unwrap_err();
+    assert!(matches!(error, Error::Key { .. }), "{error}");
+    assert!(!error.to_string().contains("SECRET"), "{error}");
+    dir.remove().unwrap();
+}
+
+/// A refused key and a refused segment name their address in the engine's error, whose signature must not reach what a person reads.
+#[tokio::test]
+async fn a_refused_address_shows_no_signature() {
+    let server = FileServer::start().await;
+    for (name, playlist, refused) in [
+        (
+            "key.m3u8",
+            "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"k?token=SECRET\"\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n",
+            "k",
+        ),
+        (
+            "seg.m3u8",
+            "#EXTM3U\n#EXTINF:1,\ngone.ts?token=SECRET\n#EXT-X-ENDLIST\n",
+            "gone.ts",
+        ),
+    ] {
+        server.put_typed(name, playlist, MPEGURL);
+        server.put(refused, b"never sent".to_vec());
+        server.fail(refused, 100, 403);
+        server.put("s.ts", ts_segment(1, 1000));
+        let dir = private_dir("hls-no-signature").unwrap();
+        let error = run(request(server.url(name), dir.join("v.ts")))
+            .await
+            .unwrap_err();
+        let shown = error.to_string();
+        assert!(!shown.contains("SECRET"), "{shown}");
+        assert!(shown.contains("403"), "{shown}");
+        dir.remove().unwrap();
+    }
+}

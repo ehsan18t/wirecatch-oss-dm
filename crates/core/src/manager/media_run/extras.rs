@@ -172,9 +172,13 @@ pub(super) async fn fetch_small(
     limit: u64,
     cancel: &CancellationToken,
 ) -> Fetch {
-    let rule = match network_rule(job.chosen_by, &job.url, url).await {
-        Ok(rule) => rule,
-        Err(e) => return Fetch::Failed(e.message),
+    let rule = match cancel
+        .run_until_cancelled(network_rule(job.chosen_by, &job.url, url))
+        .await
+    {
+        Some(Ok(rule)) => rule,
+        Some(Err(e)) => return Fetch::Failed(e.message),
+        None => return Fetch::Stopped,
     };
     let mut options = job.options.clone();
     let list: Vec<Header> = own_headers

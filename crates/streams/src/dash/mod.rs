@@ -18,7 +18,7 @@ use std::sync::Arc;
 use roxmltree::{Document, Node};
 use url::Url;
 
-use crate::codec::Codec;
+use crate::codec::{Codec, is_subtitle_codec};
 use crate::error::{DrmSystem, Located, ManifestError, excerpt};
 use crate::plan::{MAX_TRACKS, NameBudget};
 use template::Template;
@@ -389,11 +389,7 @@ fn set_kind(set: Node<'_, '_>, first: Option<Node<'_, '_>>) -> Option<Kind> {
         Some(Kind::Video)
     } else if mime.starts_with("audio/") {
         Some(Kind::Audio)
-    } else if mime.starts_with("text/")
-        || mime.contains("ttml")
-        || codecs.starts_with("stpp")
-        || codecs.starts_with("wvtt")
-    {
+    } else if mime.starts_with("text/") || mime.contains("ttml") || is_subtitle_codec(codecs) {
         Some(Kind::Text)
     } else if Codec::any_video(codecs) {
         Some(Kind::Video)

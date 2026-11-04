@@ -59,13 +59,12 @@ impl DerefMut for Selected {
 /// change: status and queue, all it reads, move only with the lines.
 pub(super) struct Facts {
     from: FactsFrom,
-    count: usize,
+    /// How many selected rows the list shows.
+    pub count: usize,
     can: Applicable,
-    ids: Rc<[DownloadId]>,
+    pub ids: Rc<[DownloadId]>,
     queues: Rc<[(QueueId, String)]>,
     many_queues: bool,
-    /// What a drag from any selected row carries.
-    pub dragged: Rc<[DownloadId]>,
     /// How much of each heading's rows is ticked, by the kept list of those rows.
     picks: RefCell<HashMap<*const DownloadId, Picked>>,
 }
@@ -114,15 +113,7 @@ impl MainWindow {
 
     /// The rows of `laid` that are selected.
     fn chosen<'a>(&self, laid: &Laid, cx: &'a App) -> Vec<&'a DownloadSummary> {
-        if self.selected.is_empty() {
-            return Vec::new();
-        }
-        let downloads = &self.library.read(cx).downloads;
-        laid.rows
-            .iter()
-            .filter_map(|index| downloads.get(*index))
-            .filter(|row| self.selected.contains(&row.id))
-            .collect()
+        selected_among(&laid.rows, &self.library.read(cx).downloads, &self.selected)
     }
 
     /// The selection's facts, worked out again only when they may differ.
@@ -150,11 +141,6 @@ impl MainWindow {
                 .map(|queue| (queue.id, queue.settings.name.clone()))
                 .collect(),
             many_queues: library.queues.len() > 1,
-            dragged: if self.selected.len() > 1 {
-                self.selected.iter().copied().collect()
-            } else {
-                Rc::from([])
-            },
             picks: RefCell::default(),
             from,
         });
@@ -308,9 +294,15 @@ impl MainWindow {
 
     /// Alt+Enter: the details of the download under the cursor.
     pub(super) fn details_of_cursor(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        if let Some(id) = self.cursor.filter(|id| self.selected.contains(id)) {
+        if let Some(id) = self.cursor_row(cx) {
             details::open(self.library.clone(), id, window, cx);
         }
+    }
+
+    /// The cursor's download, while it is selected and the list shows it.
+    pub(super) fn cursor_row(&self, cx: &App) -> Option<DownloadId> {
+        let facts = self.selection_facts(cx);
+        self.cursor.filter(|id| facts.ids.contains(id))
     }
 
     /// Delete: asks before removing the selection.
@@ -492,15 +484,44 @@ pub(super) fn each(
     cx: &mut App,
 ) {
     let ids: Vec<DownloadId> = rows.iter().filter(|r| takes(r)).map(|r| r.id).collect();
+    each_id(ids, command, window, cx);
+}
+
+/// Runs `command` on each of `ids`; the first refusal shows in the window.
+pub(super) fn each_id(ids: Vec<DownloadId>, command: Command, window: &mut Window, cx: &mut App) {
     act(window.window_handle(), cx, move |manager| {
-        let mut refused = None;
-        for id in ids {
-            if let Err(e) = command(manager, id) {
-                refused.get_or_insert(e);
-            }
-        }
-        refused.map_or(Ok(()), Err)
+        through_every(ids, |id| command(manager, id))
     });
+}
+
+/// Runs `run` on every one of `ids`, past a refusal, and answers with the first refusal.
+fn through_every<E>(
+    ids: Vec<DownloadId>,
+    mut run: impl FnMut(DownloadId) -> Result<(), E>,
+) -> Result<(), E> {
+    let mut refused = None;
+    for id in ids {
+        if let Err(e) = run(id) {
+            refused.get_or_insert(e);
+        }
+    }
+    refused.map_or(Ok(()), Err)
+}
+
+/// The rows at `shown`, in that order, that `selected` holds: it may hold rows the view hides.
+fn selected_among<'a>(
+    shown: &[usize],
+    downloads: &'a [DownloadSummary],
+    selected: &HashSet<DownloadId>,
+) -> Vec<&'a DownloadSummary> {
+    if selected.is_empty() {
+        return Vec::new();
+    }
+    shown
+        .iter()
+        .filter_map(|index| downloads.get(*index))
+        .filter(|row| selected.contains(&row.id))
+        .collect()
 }
 
 #[cfg(test)]
@@ -508,6 +529,32 @@ mod tests {
     use super::super::laid::Asked;
     use super::super::{View, sort};
     use super::*;
+
+    #[test]
+    fn a_refusal_does_not_stop_the_rest_and_the_first_is_told() {
+        let mut ran = Vec::new();
+        let answer = through_every(vec![DownloadId(1), DownloadId(2), DownloadId(3)], |id| {
+            ran.push(id.0);
+            if id.0 < 3 { Err(id.0) } else { Ok(()) }
+        });
+        assert_eq!(answer, Err(1));
+        assert_eq!(ran, [1, 2, 3]);
+    }
+
+    #[test]
+    fn the_selection_acts_on_shown_rows_in_the_lists_order() {
+        let downloads = [
+            wirecatch_test_support::downloads::download(1),
+            wirecatch_test_support::downloads::download(2),
+            wirecatch_test_support::downloads::download(3),
+        ];
+        let selected = [DownloadId(1), DownloadId(2), DownloadId(3)]
+            .into_iter()
+            .collect();
+        let rows = selected_among(&[2, 0], &downloads, &selected);
+        let ids: Vec<i64> = rows.iter().map(|row| row.id.0).collect();
+        assert_eq!(ids, [3, 1], "row 2 is hidden");
+    }
 
     #[test]
     fn every_change_of_the_selection_moves_its_revision() {

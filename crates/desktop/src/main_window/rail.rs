@@ -43,14 +43,14 @@ impl MainWindow {
     pub(super) fn toggle_nav(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let narrow = window.viewport_size().width < px(NARROW);
         if narrow && self.shows_rail(window.viewport_size().width) {
-            self.drawer = !self.drawer;
+            self.page.drawer = !self.page.drawer;
         } else {
             self.nav = if self.shows_rail(window.viewport_size().width) {
                 Nav::Docked
             } else {
                 Nav::Rail
             };
-            self.drawer = false;
+            self.page.drawer = false;
         }
         cx.notify();
     }
@@ -99,7 +99,7 @@ impl MainWindow {
     fn rail_foot_item(&self, screen: Screen, cx: &mut Context<'_, Self>) -> AnyElement {
         let theme = cx.theme();
         let (id, label, icon) = sidebar::foot_page(screen);
-        let current = self.screen == screen;
+        let current = self.page.screen == screen;
         let dot = screen == Screen::About && sidebar::update_waiting(cx);
         rail_button(id, label, cx)
             .relative()
@@ -182,15 +182,15 @@ impl MainWindow {
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
         let theme = cx.theme();
-        let current = self.screen == Screen::Downloads && self.view == view;
+        let current = self.page.screen == Screen::Downloads && self.view == view;
         rail_button(id, label, cx)
             .when(current, |item| {
                 item.bg(theme.sidebar_accent).text_color(theme.primary)
             })
             .child(content)
             .on_click(cx.listener(move |this, _, window, cx| {
-                this.screen = Screen::Downloads;
-                this.drawer = false;
+                this.page.screen = Screen::Downloads;
+                this.page.drawer = false;
                 this.show(view, window, cx);
             }))
             .into_any_element()

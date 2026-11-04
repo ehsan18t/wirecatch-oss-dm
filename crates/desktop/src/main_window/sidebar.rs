@@ -126,7 +126,7 @@ impl MainWindow {
 
     /// The foot of the navigation: Settings by name, then the two pages that fit in an icon.
     pub(super) fn foot(&self, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
-        let on_settings = self.screen == Screen::Settings;
+        let on_settings = self.page.screen == Screen::Settings;
         let shortcuts = self.foot_icon(Screen::Shortcuts, cx);
         let about = self.foot_icon(Screen::About, cx);
         let open_settings = cx.listener(|this, _, _, cx| this.open_screen(Screen::Settings, cx));
@@ -144,6 +144,7 @@ impl MainWindow {
                 item.bg(theme.sidebar_accent)
                     .text_color(theme.sidebar_accent_foreground)
                     .font_weight(FontWeight::MEDIUM)
+                    .hover(|item| item.bg(theme.sidebar_accent))
             })
             .when(!on_settings, |item| {
                 item.text_color(theme.muted_foreground)
@@ -169,7 +170,7 @@ impl MainWindow {
     /// Keyboard shortcuts or About at the foot: an icon, with its name on hover.
     fn foot_icon(&self, screen: Screen, cx: &mut Context<'_, Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
-        let current = self.screen == screen;
+        let current = self.page.screen == screen;
         let (id, label, icon) = foot_page(screen);
         let dot = screen == Screen::About && update_waiting(cx);
         div()
@@ -183,7 +184,9 @@ impl MainWindow {
             .rounded(theme.radius)
             .cursor_pointer()
             .when(current, |item| {
-                item.bg(theme.sidebar_accent).text_color(theme.primary)
+                item.bg(theme.sidebar_accent)
+                    .text_color(theme.primary)
+                    .hover(|item| item.bg(theme.sidebar_accent))
             })
             .when(!current, |item| {
                 item.text_color(theme.muted_foreground)
@@ -287,7 +290,7 @@ impl MainWindow {
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
         let theme = cx.theme();
-        let current = self.screen == Screen::Downloads && self.view == view;
+        let current = self.page.screen == Screen::Downloads && self.view == view;
         let alarming = view == View::Group(Group::Attention) && count > 0;
         h_flex()
             .id(id)
@@ -296,10 +299,12 @@ impl MainWindow {
             .gap_2()
             .rounded(theme.radius)
             .cursor_pointer()
+            // GPUI keeps a hover's look until the mouse moves if the style first appears on leaving.
             .when(current, |item| {
                 item.bg(theme.sidebar_accent)
                     .text_color(theme.sidebar_accent_foreground)
                     .font_weight(FontWeight::MEDIUM)
+                    .hover(|item| item.bg(theme.sidebar_accent))
             })
             .when(!current, |item| {
                 item.text_color(theme.muted_foreground)
@@ -374,7 +379,7 @@ impl MainWindow {
             .cursor_pointer()
             .bg(behind)
             .when(!first, |item| item.border_t_1().border_color(theme.border))
-            .when(!current, |item| item.hover(move |item| item.bg(hovered)))
+            .hover(move |item| item.bg(if current { behind } else { hovered }))
             .when(current, |item| {
                 item.child(
                     div()
