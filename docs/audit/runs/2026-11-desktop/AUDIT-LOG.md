@@ -138,7 +138,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 111 | Cancel on a selection stops at a finished download                                                | `25-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 112 | The drawer stays open over a page opened from its foot                                            | `25-7`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 113 | Change queue inside the details opens the same details again                                      | `25-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 114 | A page address that is not a web address counts as on the person's network                        | `10-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 114 | A page address that is not a web address counts as on the person's network                        | `10-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 115 | A Windows socks= proxy fails on sites whose first address is IPv6                                 | `09-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 116 | The proxy form says a saved password is kept, then forgets it                                     | `27-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 117 | A download that fails to start leaves its slot empty                                              | `04-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -239,7 +239,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 212 | `let _theme = cx.theme()` does nothing                                                            | `25-12`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 213 | The link's hover popover covers the row's menu                                                    | `U-8`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 214 | The damaged-list notice squeezes its text and breaks the path                                     | `U-15`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 215 | A top-level domain held only through a wildcard counts as a local name                            | `10-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 215 | A top-level domain held only through a wildcard counts as a local name                            | `10-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 216 | direct_uses_no_proxy passes whatever Direct does                                                  | `09-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 217 | Module docs describe proxy behaviour that has changed                                             | `09-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 218 | A proxy test cancelled by quitting is saved as its last result                                    | `19-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -268,7 +268,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 241 | Comments in the checked configuration describe things that are gone                               | `33-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 242 | Two test helpers wait for progress with no deadline                                               | `01-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 243 | A roaming data folder that could not be deleted keeps the list with its cookies                   | `Xdatabase-migrations-4`                                                                           | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 244 | The `<local>` queue rule is never tested against the real network check                           | `M-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 244 | The `<local>` queue rule is never tested against the real network check                           | `M-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 
 ## Items
 
@@ -2218,7 +2218,7 @@ P2, small, open.
 
 ### 114. A page address that is not a web address counts as on the person's network
 
-P2, small, open.
+P2, small, fixed.
 
 `of_capture` only requires `Url::parse` to succeed. `chrome-extension://abcdef/x` has the opaque host `abcdef`, read as a single label off the list, so the capture is `LocalPage` and a link to a local address gets through. `cookie_scope::site_of` refuses those schemes next door.
 
@@ -3893,7 +3893,7 @@ P3, small, open.
 
 ### 215. A top-level domain held only through a wildcard counts as a local name
 
-P3, small, open.
+P3, small, fixed.
 
 `find` takes `node.leaf` for the first label, so `jm`, `ck` and five others read as not public. Only those registries could serve a host at the bare label, so no realistic site gains.
 
@@ -4357,7 +4357,7 @@ P3, small, fixed.
 
 ### 244. The `<local>` queue rule is never tested against the real network check
 
-P3, small, open.
+P3, small, fixed.
 
 All three mutants of `is_on_own_network` survive: `queues` tests `<local>` with a stand-in, and `placement` tests use named sites. The code is right today.
 

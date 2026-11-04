@@ -69,7 +69,10 @@ impl ChosenBy {
         let carried = frame_traced && pages.peek().is_some();
         let all_local = pages.all(|page| {
             Url::parse(page).is_ok_and(|page| {
-                is_local_by_itself(&page, suffixes) || is_listed(&page, local_sites, suffixes)
+                // Any other scheme's host is not a server's name: `chrome-extension://abcdef/` reads as a plain name.
+                matches!(page.scheme(), "http" | "https")
+                    && (is_local_by_itself(&page, suffixes)
+                        || is_listed(&page, local_sites, suffixes))
             })
         });
         if carried && all_local {
@@ -305,6 +308,32 @@ mod tests {
             "http://com./",
             "http://xn--p1ai/",
         ] {
+            assert!(
+                !is_local_by_itself(&url(public), &SuffixList::built_in()),
+                "{public}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_page_address_that_is_not_a_web_address_is_a_websites() {
+        for page in [
+            "chrome-extension://abcdef/x.html",
+            "moz-extension://abcdef/x.html",
+            "file://nas/x.html",
+            "ftp://nas/",
+        ] {
+            assert_eq!(
+                ChosenBy::of_capture(&capture(Some(page), None), &[], &SuffixList::built_in()),
+                ChosenBy::Website,
+                "{page}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_top_level_domain_held_through_a_wildcard_is_not_a_local_name() {
+        for public in ["http://jm/", "http://ck./"] {
             assert!(
                 !is_local_by_itself(&url(public), &SuffixList::built_in()),
                 "{public}"
