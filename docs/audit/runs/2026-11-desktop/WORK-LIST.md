@@ -117,7 +117,7 @@ Take the first open PR whose dependencies are merged, make its branch from main,
 | PR-109 | refactor(streams): remove leftovers from the crate | `refactor/streams-leftovers`     | 192, 193, 194                | P3       | small  | none         | open   |
 | PR-110 | test(core): repair media run tests, doc comments   | `test/media-run-tidy`            | 195, 196                     | P3       | small  | none         | open   |
 | PR-111 | fix(streams): stop media programs on a signal      | `fix/media-programs-on-signal`   | 199                          | P3       | medium | none         | open   |
-| PR-112 | fix(desktop): correct system registration details  | `fix/system-registration`        | 202, 203, 204                | P3       | small  | none         | open   |
+| PR-112 | fix(desktop): correct system registration details  | `fix/system-registration`        | 202, 203, 204                | P3       | small  | none         | merged |
 | PR-113 | fix(desktop): give every window a native title     | `fix/native-window-title`        | 205                          | P3       | small  | none         | open   |
 | PR-114 | fix(desktop): steady the list under the pointer    | `fix/list-under-pointer`         | 210, 213                     | P3       | small  | none         | open   |
 | PR-115 | fix(core): keep only finished proxy test results   | `fix/proxy-test-results`         | 218, 219                     | P3       | small  | none         | open   |
@@ -1493,7 +1493,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/shell/src/bridge.rs`, `crates/shell/src/autostart.rs`, `crates/bridge/src/install`, `crates/desktop/src/sign_in.rs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-shell -p wirecatch-bridge -p wirecatch-desktop`, `cargo clippy -p wirecatch-shell -p wirecatch-bridge -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-113 fix(desktop): give every window a native title
 
