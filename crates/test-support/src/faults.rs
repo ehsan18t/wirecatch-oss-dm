@@ -644,6 +644,19 @@ impl Running {
         self.child.wait().unwrap();
     }
 
+    /// [`wait`](Self::wait), for a test.
+    ///
+    /// # Panics
+    ///
+    /// It did not end in time.
+    #[must_use]
+    pub fn ended(self, bound: Duration) -> Ran {
+        match self.wait(bound) {
+            Ok(ran) => ran,
+            Err(e) => panic!("the run hung: {e}"),
+        }
+    }
+
     /// Waits for the process to end by itself, under `bound`.
     ///
     /// # Errors
@@ -717,6 +730,54 @@ pub fn wait_for<T>(what: &str, mut check: impl FnMut() -> Option<T>) -> T {
 pub fn kept_now(state: &Path, len: u64) -> Option<Vec<(u64, u64)>> {
     let kept = crate::resume::kept_ranges(state, len).ok()?;
     (kept_bytes(&kept) > 0).then_some(kept)
+}
+
+/// Creates a file of `len` bytes that takes no disk space for bytes never written: on NTFS only after `fsutil` marks it sparse, otherwise `set_len` allocates them all.
+///
+/// # Errors
+///
+/// The file cannot be made.
+pub fn create_sparse(path: &Path, len: u64) -> std::io::Result<()> {
+    let file = FsFile::create(path)?;
+    #[cfg(windows)]
+    {
+        let marked = Command::new("fsutil")
+            .args(["sparse", "setflag"])
+            .arg(path)
+            .stdout(Stdio::null())
+            .status()?;
+        if !marked.success() {
+            return Err(std::io::Error::other(format!("fsutil ended with {marked}")));
+        }
+    }
+    file.set_len(len)
+}
+
+/// Writes a resume file for `file` at `url` that says only the `remaining` ranges are missing, as an earlier run would have.
+///
+/// # Errors
+///
+/// The file cannot be written.
+pub fn write_resume_file(
+    state: &Path,
+    url: &str,
+    file: &Generated,
+    remaining: &[(u64, u64)],
+) -> std::io::Result<()> {
+    let remaining: Vec<_> = remaining
+        .iter()
+        .map(|&(start, end)| serde_json::json!({ "start": start, "end": end }))
+        .collect();
+    let saved = serde_json::json!({
+        "version": 1,
+        "url": url,
+        "total": file.len,
+        "ranged": true,
+        "etag": file.etag,
+        "last_modified": file.last_modified,
+        "remaining": remaining,
+    });
+    std::fs::write(state, saved.to_string())
 }
 
 /// How many bytes `kept` covers.
