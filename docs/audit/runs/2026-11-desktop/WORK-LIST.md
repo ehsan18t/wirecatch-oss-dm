@@ -159,7 +159,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-149 | test: read test code one way in the checks         | `test/one-test-reading`          | 270                          | P3       | small  | none         | merged |
 | PR-150 | fix(desktop): keep keys when a dialog closes       | `fix/focus-after-dialog`         | 271                          | P3       | small  | none         | open   |
 | PR-151 | chore(extension): read the product name            | `chore/extension-product-name`   | 272                          | P3       | small  | none         | merged |
-| PR-152 | refactor(shell): make local items private          | `refactor/shell-private-items`   | 273                          | P3       | small  | none         | open   |
+| PR-152 | refactor(shell): make local items private          | `refactor/shell-private-items`   | 273                          | P3       | small  | none         | merged |
 | PR-153 | fix(engine): tell sign-ins apart when resuming     | `fix/resume-sign-in`             | 274                          | P3       | small  | none         | open   |
 
 ## Lanes
@@ -2002,7 +2002,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/shell
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-shell`, `cargo clippy -p wirecatch-shell`
-- **Status:** open
+- **Status:** merged
 
 ### PR-153 fix(engine): tell sign-ins apart when resuming
 

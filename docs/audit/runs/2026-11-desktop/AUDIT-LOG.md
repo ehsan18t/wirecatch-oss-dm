@@ -297,7 +297,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 270 | The timing check misreads some test code                                                          | found while fixing                                                                                 | P3       | small  | Found while fixing PR-144.                                                                                       | none                                          | fixed                                                                          |
 | 271 | A dialog can give focus back to a button that has gone                                            | found while fixing                                                                                 | P3       | small  | Left by PR-114.                                                                                                  | none                                          | open                                                                           |
 | 272 | The extension writes the product name out by hand                                                 | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-144.                                                                                    | none                                          | fixed                                                                          |
-| 273 | Public shell items are used only in their own file                                                | found while fixing                                                                                 | P3       | small  | Found while fixing PR-146.                                                                                       | none                                          | open                                                                           |
+| 273 | Public shell items are used only in their own file                                                | found while fixing                                                                                 | P3       | small  | Found while fixing PR-146.                                                                                       | none                                          | fixed                                                                          |
 | 274 | A partial file can continue under another sign-in                                                 | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-46.                                                                                     | none                                          | open                                                                           |
 
 ## Items
@@ -4741,7 +4741,7 @@ The name is written out across more than 25 extension files, such as `lib/hub/al
 
 ### 273. Public shell items are used only in their own file
 
-P3, small, open.
+P3, small, fixed.
 
 Many public items of `crates/shell` have no caller outside their file, so they could be private. A word check cannot tell (item 267).
 
