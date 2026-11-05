@@ -61,7 +61,7 @@ pub(super) fn open(
         let saving = form.clone();
         let state = form.read(cx);
         let title = match &state.original {
-            Some(proxy) => format!("Edit {}", shown_name(&proxy.settings)),
+            Some(proxy) => format!("Edit {}", proxy.settings.shown_name()),
             None => "New proxy".to_owned(),
         };
         dialog
@@ -506,25 +506,6 @@ fn password_hint(has_saved: bool, saved: Password, keeps: bool) -> &'static str 
     }
 }
 
-/// `host:port`, with an IPv6 address in brackets.
-pub(super) fn address(settings: &ProxyServerSettings) -> String {
-    if settings.host.contains(':') {
-        format!("[{}]:{}", settings.host, settings.port)
-    } else {
-        format!("{}:{}", settings.host, settings.port)
-    }
-}
-
-/// A proxy's name, or its address when it has none.
-pub(super) fn shown_name(settings: &ProxyServerSettings) -> String {
-    let name = settings.name.trim();
-    if name.is_empty() {
-        address(settings)
-    } else {
-        name.to_owned()
-    }
-}
-
 pub(super) fn kind_label(kind: ProxyKind) -> &'static str {
     KINDS
         .iter()
@@ -620,7 +601,7 @@ pub(super) fn ask_delete(
     let Some(proxy) = read.proxies.iter().find(|proxy| proxy.id == id) else {
         return;
     };
-    let name = shown_name(&proxy.settings);
+    let name = proxy.settings.shown_name();
     let users = Users::of(id, read);
     let mut choices = vec![
         Replacement {
@@ -637,7 +618,7 @@ pub(super) fn ask_delete(
             .iter()
             .filter(|other| other.id != id)
             .map(|other| Replacement {
-                title: shown_name(&other.settings).into(),
+                title: other.settings.shown_name().into(),
                 proxy: ProxyUse::Server(other.id),
             }),
     );

@@ -286,11 +286,11 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 259 | A finished group's heading counts go stale                                                        | found while fixing                                                                                 | P3       | small  | Found while fixing PR-41.                                                                                        | none                                          | open   |
 | 260 | A startup notice covers the toolbar and Settings rows                                             | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | open   |
 | 261 | The not-private notice carries a path and a long sentence                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | open   |
-| 262 | A kill during a removal can leave a moved copy behind                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-129.                                                                                    | none                                          | open   |
+| 262 | A kill during a removal can leave a moved copy behind                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-129.                                                                                    | none                                          | fixed  |
 | 263 | Some tests still throttle a server so connections join                                            | found while fixing                                                                                 | P3       | small  | Found while fixing PR-126.                                                                                       | none                                          | open   |
-| 264 | The proxy's shown name has two copies                                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-116.                                                                                    | none                                          | open   |
-| 265 | A stream join reads only ffmpeg's last lines                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-105.                                                                                                  | none                                          | open   |
-| 266 | A crash while placing a video can double its subtitles                                            | found while fixing                                                                                 | P3       | small  | Left by PR-94.                                                                                                   | none                                          | open   |
+| 264 | The proxy's shown name has two copies                                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-116.                                                                                    | none                                          | fixed  |
+| 265 | A stream join reads only ffmpeg's last lines                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-105.                                                                                                  | none                                          | fixed  |
+| 266 | A crash while placing a video can double its subtitles                                            | found while fixing                                                                                 | P3       | small  | Left by PR-94.                                                                                                   | none                                          | fixed  |
 | 267 | No check finds shell functions nothing calls                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-98.                                                                                                   | none                                          | open   |
 | 268 | A hanging test on Windows leaves no name or log                                                   | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-11.                                                                                     | none                                          | open   |
 
@@ -4609,7 +4609,7 @@ P3, small, open.
 
 ### 262. A kill during a removal can leave a moved copy behind
 
-P3, small, open.
+P3, small, fixed.
 
 A removal can wait on a move to another drive. The row and its move record are gone by then, so a kill leaves a `.wirecatch-move-N` copy, possibly many gigabytes, that nothing cleans.
 
@@ -4633,7 +4633,7 @@ A few tests set a throttle with no action behind it, so that connections join be
 
 ### 264. The proxy's shown name has two copies
 
-P3, small, open.
+P3, small, fixed.
 
 `proxy_dialog::shown_name` repeats `ProxyServerSettings::shown_name`, and the sidebar imports the dialog just to call it.
 
@@ -4645,7 +4645,7 @@ P3, small, open.
 
 ### 265. A stream join reads only ffmpeg's last lines
 
-P3, small, open.
+P3, small, fixed.
 
 The stream join's `Error::Ffmpeg` keeps ffmpeg's last three lines (`SUMMARY_LINES`), so a cause named earlier shows the general sentence.
 
@@ -4657,7 +4657,7 @@ The stream join's `Error::Ffmpeg` keeps ffmpeg's last three lines (`SUMMARY_LINE
 
 ### 266. A crash while placing a video can double its subtitles
 
-P3, small, open.
+P3, small, fixed.
 
 A crash between a subtitle's link and its discard places it again under the keep-both rule, giving `Clip.en (1).srt`.
 

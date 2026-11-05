@@ -316,6 +316,12 @@ impl Manager {
                 path: to.to_path_buf(),
                 files: files.to_vec(),
             });
+            // Its row is off the saved list, so a save would not reach the disk (D171).
+            if entry.hold.is_removing() {
+                let deletion = entry.pending_deletion();
+                state.pending_deletions.insert(id, deletion);
+                self.save_pending_deletions(state);
+            }
             self.save(state, id);
         }
         drop(guard);
@@ -440,7 +446,7 @@ fn has_arrived(file: &MovedFile) -> bool {
 }
 
 /// Deletes the copies under way that a kill left in `dir`. No move runs yet at a start, so none of them is in use.
-fn discard_staged(dir: &Path) {
+pub(super) fn discard_staged(dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };

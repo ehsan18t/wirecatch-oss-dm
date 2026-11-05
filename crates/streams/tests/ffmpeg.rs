@@ -139,6 +139,25 @@ async fn ffmpeg_gets_each_path_as_one_untouched_argument() {
     root.remove().unwrap();
 }
 
+/// ffmpeg's last lines are rarely the cause: the error keeps all it wrote, for the wording table.
+#[tokio::test]
+async fn a_cause_ffmpeg_named_early_stays_in_the_error() {
+    let ffmpeg = fake_ffmpeg().unwrap();
+    let server = FileServer::start().await;
+    video_and_audio(&server).unwrap();
+    let dir = private_dir("ffmpeg-early-cause").unwrap();
+    let mut request = request(server.url("master.m3u8"), dir.join("fail-early-cause.mp4"));
+    request.ffmpeg = Some(ffmpeg);
+    let Error::Ffmpeg(said) = run(request).await.unwrap_err() else {
+        panic!("ffmpeg's failure is not reported as one");
+    };
+    assert!(
+        said.contains("not currently supported in container"),
+        "{said}"
+    );
+    dir.remove().unwrap();
+}
+
 #[tokio::test]
 async fn ffmpeg_failures_are_reported_and_the_parts_kept() {
     let ffmpeg = fake_ffmpeg().unwrap();

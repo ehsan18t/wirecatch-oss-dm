@@ -115,7 +115,7 @@ fn global_proxy(library: &Entity<Library>, cx: &App) -> SettingField<SharedStrin
     options.extend(library.read(cx).proxies.iter().map(|proxy| {
         (
             SharedString::from(proxy.id.0.to_string()),
-            SharedString::from(proxy_dialog::shown_name(&proxy.settings)),
+            SharedString::from(proxy.settings.shown_name()),
         )
     }));
     let (reading, picking) = (library.clone(), library.clone());
@@ -244,7 +244,7 @@ fn server_row(
 fn server_facts(proxy: &ProxyServer, read: &Library, cx: &App) -> gpui_kit::Div {
     let theme = cx.theme();
     let id = proxy.id;
-    let name = proxy_dialog::shown_name(&proxy.settings);
+    let name = proxy.settings.shown_name();
     let login = if proxy.settings.user.is_empty() {
         "no sign-in".to_owned()
     } else if proxy.has_password {
@@ -259,7 +259,7 @@ fn server_facts(proxy: &ProxyServer, read: &Library, cx: &App) -> gpui_kit::Div 
         }
         login
     } else {
-        format!("{} · {login}", proxy_dialog::address(&proxy.settings))
+        format!("{} · {login}", proxy.settings.address())
     };
     let (tested, tone) = match &proxy.last_test {
         None => ("Not tested yet".to_owned(), theme.muted_foreground),
@@ -315,7 +315,7 @@ fn server_facts(proxy: &ProxyServer, read: &Library, cx: &App) -> gpui_kit::Div 
 /// Test, Edit and Delete for one server.
 fn server_actions(library: &Entity<Library>, proxy: &ProxyServer) -> gpui_kit::Div {
     let id = proxy.id;
-    let name = proxy_dialog::shown_name(&proxy.settings);
+    let name = proxy.settings.shown_name();
     let (testing, editing, deleting) = (proxy.clone(), library.clone(), library.clone());
     h_flex()
         .gap_1()
