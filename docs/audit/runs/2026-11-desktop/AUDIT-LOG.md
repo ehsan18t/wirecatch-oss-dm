@@ -150,7 +150,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 123 | A failure notice in the browser loses its buttons after 32 later notices                          | `26-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
 | 124 | A tray action that fails tells the person nothing                                                 | `26-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 125 | An unfinished download reads 100%                                                                 | `23-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 126 | A finished download whose file is gone gets advice it cannot follow                               | `23-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 126 | A finished download whose file is gone gets advice it cannot follow                               | `23-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 127 | Settings, Media shows an empty Resolution after a rarer quality                                   | `27-6`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 128 | The Add dialog says By file type for downloads going to a queue's folder                          | `Xpath-normal-download-7`                                                                          | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 129 | scripts/linux-test.sh can never pass                                                              | `33-1`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -2422,7 +2422,7 @@ The `row.done >= total` branch of `percent` contradicts its doc, and it is reach
 
 ### 126. A finished download whose file is gone gets advice it cannot follow
 
-P2, small, open.
+P2, small, fixed.
 
 `file_to_open` tells a finished row to retry, but `can_retry` is only for failed and cancelled rows and `requeue` refuses. `item_to_reveal` says "Wirecatch creates it when the download starts" for a finished row too.
 
@@ -3039,6 +3039,8 @@ Messages in `notifications.rs`, `tray.rs`, `api.rs`, `appimage.rs`, `bridge.rs` 
 
 - `26-9`: confirmed, P3. Two messages name the product with a literal. Full text in `chunks/26.md`, verdict in `verdicts/B17.md`.
 - `B17-1`: confirmed, P3. Product name written out in more messages than the two of 26-9. Full text in `verdicts/B17.md`, verdict in `verdicts/new-findings.md`.
+
+**Left to do:** The six listed files read the product crate. About 120 non-test lines in other crates still hold the name, many in messages people read (core startup.rs, bridge app.rs), and the check to add is not done.
 
 ### 162. A navigation item left behind keeps its hover colour until the mouse moves
 

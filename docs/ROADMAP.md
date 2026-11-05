@@ -188,7 +188,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 123. A failure notice in the browser loses its buttons after 32 later notices (open)
 124. A tray action that fails tells the person nothing (fixed)
 125. An unfinished download reads 100% (fixed)
-126. A finished download whose file is gone gets advice it cannot follow (open)
+126. A finished download whose file is gone gets advice it cannot follow (fixed)
 127. Settings, Media shows an empty Resolution after a rarer quality (fixed)
 128. The Add dialog says By file type for downloads going to a queue's folder (fixed)
 129. scripts/linux-test.sh can never pass (fixed)
