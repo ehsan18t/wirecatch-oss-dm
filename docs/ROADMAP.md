@@ -223,7 +223,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 158. A resume file's temporary file can stay for good (fixed)
 159. Add-on release files of skipped versions stay in the work folder (fixed)
 160. Tray ticks flip on a repeat click, and & in a name shows wrongly (fixed)
-161. Messages name the product with a literal (open)
+161. Messages name the product with a literal (fixed)
 162. A navigation item left behind keeps its hover colour until the mouse moves (open)
 163. Empty pages offer Pause all or Resume all (fixed)
 164. Listed above as "A failed video shows the add-on's raw output" (fixed)
