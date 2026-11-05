@@ -270,7 +270,7 @@ impl Registry {
         self.fill()
     }
 
-    /// "Open in its own window" for download `id`: the window already showing it comes to the
+    /// "Show progress window" for download `id`: the window already showing it comes to the
     /// front, or a new one opens. Not limited: the person asked for it.
     pub fn show_download(&mut self, id: DownloadId) -> Step {
         if let Some(window) = self.window_showing(Shows::Download(id)) {
