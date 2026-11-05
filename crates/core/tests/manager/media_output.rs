@@ -269,6 +269,25 @@ async fn a_video_saved_as_mp4_is_converted_with_subtitles_and_chapters() -> Test
     Ok(())
 }
 
+/// D200: with Remember off, the format picked applies to that video only.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn remember_off_leaves_the_saved_format() -> TestResult {
+    let server = FileServer::start().await;
+    let h = ready(&server).await?;
+    let mut settings = h.manager.get_settings();
+    settings.media.remember_choices = false;
+    h.manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))?;
+    let choice = choice_for(&h, &server, 1).await?;
+    let pick = MediaSelection {
+        later: true,
+        ..selection(&choice.start.option_id, OutputFormat::Mkv)
+    };
+    h.manager.choose_media(choice.id, pick).await?;
+    assert_eq!(h.manager.get_settings(), settings);
+    Ok(())
+}
+
 /// Audio only as MP3 at 320 kbps: the best audio (Opus) is re-encoded, with
 /// title, artist and the video's picture; subtitles go next to it as `.srt`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

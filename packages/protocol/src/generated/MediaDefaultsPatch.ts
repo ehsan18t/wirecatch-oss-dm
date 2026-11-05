@@ -20,6 +20,10 @@ export type MediaDefaultsPatch = {
    */
   ask_each_time?: boolean;
   /**
+   * The new [`MediaDefaults::remember_choices`].
+   */
+  remember_choices?: boolean;
+  /**
    * The new [`MediaDefaults::quality`].
    */
   quality?: VideoQuality;

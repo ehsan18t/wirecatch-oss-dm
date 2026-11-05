@@ -315,7 +315,7 @@ async fn a_choice_whose_queue_is_deleted_goes_to_the_default_queue() -> TestResu
     Ok(())
 }
 
-/// Saves "Use my choices" (D50) with `quality` and `fallback`.
+/// Turns off "Ask before each video" (D50), with `quality` and `fallback` saved.
 fn without_asking(h: &Harness, quality: VideoQuality, fallback: QualityFallback) -> TestResult {
     let mut settings = h.manager.get_settings();
     settings.media.ask_each_time = false;
@@ -340,7 +340,7 @@ async fn caught_without_asking(
     .await
 }
 
-/// D50: with "Use my choices", a video is read and downloads at the saved
+/// D50: with "Ask before each video" off, a video is read and downloads at the saved
 /// resolution without a window, and nothing it did changes the saved choices.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_video_downloads_with_the_saved_choices_without_asking() -> TestResult {
@@ -452,6 +452,74 @@ async fn the_window_remembers_the_resolution_and_leaves_whether_to_ask() -> Test
         (media.quality, media.ask_each_time),
         (VideoQuality::Height(360), true)
     );
+    Ok(())
+}
+
+/// The resolution saved after a pick, with Remember set to `remember` once the window is open.
+async fn saved_quality_after_a_pick(remember: bool, later: bool) -> TestResult<VideoQuality> {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    let capture = media_capture(server.url("hls/master.m3u8"), MediaKind::Hls, None);
+    h.manager.add_capture(capture).await?;
+    let choice = choice_requested(&mut ui).await;
+    let mut settings = h.manager.get_settings();
+    settings.media.remember_choices = remember;
+    h.manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))?;
+    let pick = MediaSelection {
+        later,
+        ..select(&choice.options[1].id)
+    };
+    h.manager.choose_media(choice.id, pick).await?;
+    assert_eq!(h.manager.get_settings().media.remember_choices, remember);
+    Ok(h.manager.get_settings().media.quality)
+}
+
+/// D200: Remember on saves the pick, whichever button answers.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn remember_on_saves_the_pick() -> TestResult {
+    for later in [false, true] {
+        assert_eq!(
+            saved_quality_after_a_pick(true, later).await?,
+            VideoQuality::Height(360),
+            "later: {later}"
+        );
+    }
+    Ok(())
+}
+
+/// D200: Remember off applies the pick to that video only, whichever button answers.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn remember_off_leaves_the_saved_choices() -> TestResult {
+    for later in [false, true] {
+        assert_eq!(
+            saved_quality_after_a_pick(false, later).await?,
+            VideoQuality::Best,
+            "later: {later}"
+        );
+    }
+    Ok(())
+}
+
+/// D200: Remember changed and the window cancelled keeps the change and saves no pick.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelling_after_changing_remember_saves_no_pick() -> TestResult {
+    let server = FileServer::start().await;
+    hls(&server, false, false);
+    let h = Harness::new().await?;
+    let mut ui = h.manager.subscribe();
+    let capture = media_capture(server.url("hls/master.m3u8"), MediaKind::Hls, None);
+    h.manager.add_capture(capture).await.unwrap();
+    let choice = choice_requested(&mut ui).await;
+    let mut expected = h.manager.get_settings();
+    expected.media.remember_choices = false;
+    h.manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&expected))?;
+
+    h.manager.dismiss_media_choice(choice.id)?;
+    assert_eq!(h.manager.get_settings(), expected);
     Ok(())
 }
 

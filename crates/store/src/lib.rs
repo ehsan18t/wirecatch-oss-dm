@@ -3606,6 +3606,7 @@ mod tests {
         assert_eq!(settings.connections_per_download, 3, "as stored");
         assert!(settings.extension.ask_before_download, "switched on once");
         assert!(settings.show_progress_windows, "a new setting's default");
+        assert!(settings.media.remember_choices, "a new setting's default");
         store.close(PATIENCE).await;
     }
 

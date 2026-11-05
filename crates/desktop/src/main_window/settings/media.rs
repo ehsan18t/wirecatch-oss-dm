@@ -1,6 +1,6 @@
 //! Media: whether a video asks for a quality or downloads at once with the saved choices (D50),
-//! the resolution and what to do when a video lacks it, and what videos and audio alone are
-//! saved as, each with its own choices.
+//! whether a pick in the quality window is kept (D200), the resolution and what to do when a
+//! video lacks it, and what videos and audio alone are saved as, each with its own choices.
 
 use gpui_kit::component::IndexPath;
 use gpui_kit::component::combobox::{Combobox, ComboboxEvent, ComboboxState};
@@ -18,9 +18,8 @@ use wirecatch_shell::host;
 use super::{Typing, change, choice, current, list_field, switch};
 use crate::download_windows::media_output::nearest_kbps;
 use crate::library::Library;
-use crate::text::{AUDIO_FORMATS, VIDEO_FORMATS};
+use crate::text::{ASK_EACH_VIDEO, AUDIO_FORMATS, REMEMBER_CHOICES, VIDEO_FORMATS};
 
-const ASKING: &[(bool, &str)] = &[(true, "Ask each time"), (false, "Use my choices")];
 const QUALITIES: &[(VideoQuality, &str)] = &[
     (VideoQuality::Best, "Best available"),
     (VideoQuality::Height(2160), "2160p"),
@@ -143,15 +142,28 @@ fn video(library: &Entity<Library>, cx: &App) -> SettingGroup {
         .title("Video")
         .item(
             SettingItem::new(
-                "When you download a video",
-                choice(library, ASKING, |s| s.media.ask_each_time, |ask| {
+                REMEMBER_CHOICES,
+                switch(library, |s| s.media.remember_choices, |on| {
                     media(MediaDefaultsPatch {
-                        ask_each_time: Some(ask),
+                        remember_choices: Some(on),
                         ..MediaDefaultsPatch::default()
                     })
                 }),
             )
-            .description("Ask for a quality each time, or start at once with the settings below.")
+            .description("Saves your quality window picks as the settings below. Off, they apply to that video only.")
+            .keywords(["remember", "save", "last", "quality window"]),
+        )
+        .item(
+            SettingItem::new(
+                ASK_EACH_VIDEO,
+                switch(library, |s| s.media.ask_each_time, |on| {
+                    media(MediaDefaultsPatch {
+                        ask_each_time: Some(on),
+                        ..MediaDefaultsPatch::default()
+                    })
+                }),
+            )
+            .description("Opens the quality window for each video. Off, videos start at once with the settings below.")
             .keywords(["ask", "quality window", "prompt"]),
         )
         .item(

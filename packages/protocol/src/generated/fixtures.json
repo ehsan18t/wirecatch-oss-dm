@@ -17,6 +17,7 @@
           },
           "fallback": "lower",
           "quality": "best",
+          "remember_choices": true,
           "video": {
             "audio_kbps": null,
             "auto_subtitles": true,
@@ -44,6 +45,7 @@
           },
           "fallback": "lower",
           "quality": "best",
+          "remember_choices": true,
           "video": {
             "audio_kbps": null,
             "auto_subtitles": true,
@@ -76,6 +78,7 @@
           "quality": {
             "height": 720
           },
+          "remember_choices": false,
           "video": {
             "audio_kbps": null,
             "auto_subtitles": false,
@@ -103,6 +106,7 @@
           },
           "fallback": "lower",
           "quality": "best",
+          "remember_choices": true,
           "video": {
             "audio_kbps": null,
             "auto_subtitles": true,
@@ -127,6 +131,7 @@
           "quality": {
             "height": 720
           },
+          "remember_choices": false,
           "video": {
             "auto_subtitles": false,
             "chapters": false,
@@ -154,6 +159,7 @@
           },
           "fallback": "lower",
           "quality": "best",
+          "remember_choices": true,
           "video": {
             "audio_kbps": null,
             "auto_subtitles": true,
@@ -181,6 +187,7 @@
           },
           "fallback": "lower",
           "quality": "best",
+          "remember_choices": true,
           "video": {
             "audio_kbps": null,
             "auto_subtitles": true,

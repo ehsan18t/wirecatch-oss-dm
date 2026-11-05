@@ -162,6 +162,7 @@ export function applyBrowserControlsPatch(
       video: applyOutputPatch(media.video, change.video),
       audio: applyOutputPatch(media.audio, change.audio),
       ask_each_time: change.ask_each_time ?? media.ask_each_time,
+      remember_choices: change.remember_choices ?? media.remember_choices,
       quality: change.quality ?? media.quality,
       fallback: change.fallback ?? media.fallback,
     },

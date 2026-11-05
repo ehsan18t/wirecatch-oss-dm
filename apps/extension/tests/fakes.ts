@@ -74,6 +74,7 @@ export const CONTROLS: BrowserControls = {
       chapters: false,
     },
     ask_each_time: true,
+    remember_choices: true,
     quality: 'best',
     fallback: 'lower',
   },

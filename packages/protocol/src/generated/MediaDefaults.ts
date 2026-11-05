@@ -4,9 +4,10 @@ import type { QualityFallback } from './QualityFallback';
 import type { VideoQuality } from './VideoQuality';
 
 /**
- * What the quality window starts from (D24) and whether it opens at all (D50): the last
- * choices, kept separately for videos and for audio only, the resolution, and what to do when
- * a video does not offer it. Also in Settings, Media, and in the settings profile.
+ * What the quality window starts from (D24), whether it opens at all (D50) and whether a pick
+ * there is kept (D200): the saved choices, kept separately for videos and for audio only, the
+ * resolution, and what to do when a video does not offer it. Also in Settings, Media, and in
+ * the settings profile.
  */
 export type MediaDefaults = {
   /**
@@ -24,7 +25,13 @@ export type MediaDefaults = {
    */
   ask_each_time: boolean;
   /**
-   * The resolution picked first; every pick from the quality window becomes it.
+   * Save what is picked in the quality window when it is answered with Download or Download
+   * later. Off, a pick applies to that video only (D200).
+   */
+  remember_choices: boolean;
+  /**
+   * The resolution picked first; with
+   * [`remember_choices`](Self::remember_choices), a pick from the quality window becomes it.
    */
   quality: VideoQuality;
   /**
