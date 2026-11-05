@@ -161,6 +161,15 @@ impl Ran {
                 None => super::NO_REASON.into(),
             })
     }
+
+    /// All of standard error kept, for the log and a wording table, since its last line is rarely the cause; else how it exited.
+    #[must_use]
+    pub fn all_said(&self) -> String {
+        match self.stderr.to_string() {
+            said if said.is_empty() => self.reason(),
+            said => said,
+        }
+    }
 }
 
 /// Which of a program's outputs a line came from.
