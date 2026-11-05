@@ -4,6 +4,7 @@ import {
   appRun,
   BUNDLED_LIBRARY_SEARCH,
   canPackageLinux,
+  libraryLicence,
   linuxDepends,
   newestGlibc,
 } from './linux.mjs';
@@ -47,4 +48,46 @@ test('both package formats state the C library version in their own form', () =>
   assert.equal(rpm[0], 'glibc >= 2.39');
   assert.ok(deb.includes('libxkbcommon0'));
   assert.ok(rpm.includes('libxkbcommon'));
+});
+
+/** A machine whose package tools answer from `answers`, keyed by the command line, and whose files are `files`. */
+const machineWith = (answers, files = {}) => ({
+  query: (command, args) => answers[[command, ...args].join(' ')],
+  read: (file) => files[file],
+});
+const RPM_OWNER = 'rpm -qf --qf %{NAME}\n%{SOURCERPM} /lib/libx.so.1';
+
+test('a library on a Debian system takes its package copyright file', () => {
+  const machine = machineWith(
+    { 'dpkg-query -S /lib/libx.so.1': 'libx1:amd64: /lib/libx.so.1\n' },
+    { '/usr/share/doc/libx1/copyright': 'debian terms' },
+  );
+  assert.equal(libraryLicence('/lib/libx.so.1', machine), 'debian terms');
+});
+
+test('a library on an RPM system takes the licence files of its package', () => {
+  const machine = machineWith(
+    {
+      [RPM_OWNER]: 'libx\nlibx-1.0-2.fc44.src.rpm',
+      'rpm -qL libx': '/usr/share/licenses/libx/COPYING\n/usr/share/licenses/libx/NOTICE\n',
+    },
+    { '/usr/share/licenses/libx/COPYING': 'terms', '/usr/share/licenses/libx/NOTICE': 'notice' },
+  );
+  assert.equal(libraryLicence('/lib/libx.so.1', machine), 'terms\n\nnotice');
+});
+
+test('an RPM subpackage with no licence file takes the one of the package it was built with', () => {
+  const machine = machineWith(
+    {
+      [RPM_OWNER]: 'libx-extra\nlibx-1.0-2.fc44.src.rpm',
+      'rpm -qL libx-extra': '(contains no files)\n',
+      'rpm -qL libx': '/usr/share/licenses/libx/COPYING\n',
+    },
+    { '/usr/share/licenses/libx/COPYING': 'terms' },
+  );
+  assert.equal(libraryLicence('/lib/libx.so.1', machine), 'terms');
+});
+
+test('a library no package tool can account for has no licence to give', () => {
+  assert.equal(libraryLicence('/lib/libx.so.1', machineWith({})), undefined);
 });

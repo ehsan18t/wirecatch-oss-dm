@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+
 /** What the app needs from the system on Linux: the libraries GPUI loads, by package name. */
 const SYSTEM_LIBRARIES = {
   deb: [
@@ -28,6 +31,45 @@ const SYSTEM_LIBRARIES = {
  */
 export const BUNDLED_LIBRARY_SEARCH =
   '-C link-arg=-Wl,--disable-new-dtags -C link-arg=-Wl,-rpath,$ORIGIN/../lib';
+
+/** This machine, as `libraryLicence` asks it: a package tool's output, or nothing when the tool is missing or does not know. */
+const THIS_MACHINE = {
+  query(command, args) {
+    try {
+      return execFileSync(command, args, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      return undefined;
+    }
+  },
+  read: (file) => readFileSync(file, 'utf8'),
+};
+
+function rpmLicenceFiles(name, machine) {
+  const listed = machine.query('rpm', ['-qL', name]) ?? '';
+  return listed.split('\n').filter((line) => line.startsWith('/'));
+}
+
+/**
+ * The licence of the system package that installed the library at `file`, which the library's licence requires alongside it (D117),
+ * or nothing when no package tool knows the file. `file` is the real file, not the link ldd names: that is what the package databases list.
+ */
+export function libraryLicence(file, machine = THIS_MACHINE) {
+  // Lines read `package:architecture: /path`.
+  const debian = machine.query('dpkg-query', ['-S', file]);
+  if (debian) return machine.read(`/usr/share/doc/${debian.split(':')[0]}/copyright`);
+
+  const rpm = machine.query('rpm', ['-qf', '--qf', '%{NAME}\n%{SOURCERPM}', file]);
+  if (!rpm) return undefined;
+  const [name, sourceRpm] = rpm.split('\n');
+  // A subpackage may ship no licence file of its own: Fedora's libxkbcommon-x11 relies on libxkbcommon's.
+  const source = /^(.+)-[^-]+-[^-]+\.src\.rpm$/.exec(sourceRpm)?.[1];
+  const own = rpmLicenceFiles(name, machine);
+  const files = own.length > 0 || !source ? own : rpmLicenceFiles(source, machine);
+  return files.length > 0 ? files.map((path) => machine.read(path)).join('\n\n') : undefined;
+}
 
 /** The AppImage's entry point. */
 export function appRun(app) {

@@ -28,6 +28,7 @@ import {
   appRun,
   BUNDLED_LIBRARY_SEARCH,
   canPackageLinux,
+  libraryLicence,
   linuxDepends,
   newestGlibc,
 } from './package/linux.mjs';
@@ -86,14 +87,6 @@ const ICON_SIZES = [32, 64, 128, 256, 512];
  */
 const APPIMAGE_LIBRARIES = ['libxkbcommon.so.0', 'libxkbcommon-x11.so.0', 'libxcb-xkb.so.1'];
 
-/** The copyright file of the Debian package that installed the library at `path`, which the library's licence requires alongside it. */
-function libraryCopyright(path) {
-  // Lines read `package:architecture: /path`. The package database lists the real file, not the link ldd names.
-  const owner = execFileSync('dpkg-query', ['-S', realpathSync(path)], { encoding: 'utf8' });
-  const name = owner.split(':')[0];
-  return readFileSync(join('/usr/share/doc', name, 'copyright'), 'utf8');
-}
-
 /** Copies the `APPIMAGE_LIBRARIES` the app at `binary` links, directly or through another, as this machine resolves them, into `folder`, and adds their licences to the `notices` file. */
 function bundleLibraries(binary, folder, notices) {
   mkdirSync(folder, { recursive: true });
@@ -109,7 +102,9 @@ function bundleLibraries(binary, folder, notices) {
     const path = linked.get(name);
     if (!path?.startsWith('/')) fail(`The app does not link ${name}, or this machine lacks it.`);
     copyFileSync(path, join(folder, name));
-    appendFileSync(notices, noticeSection(name, libraryCopyright(path)));
+    const licence =
+      libraryLicence(realpathSync(path)) ?? fail(`No system package gives the licence of ${path}.`);
+    appendFileSync(notices, noticeSection(name, licence));
   }
 }
 
