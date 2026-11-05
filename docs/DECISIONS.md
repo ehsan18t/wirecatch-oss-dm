@@ -1330,6 +1330,13 @@ It amends D50.4. `MediaDefaults::start` is the only copy of the rule. The TypeSc
 
 It amends D65.2. `START_NOTICE_TIMES` and `FINISH_NOTICE_TIMES` had no reader once the settings page was drawn in Rust: `FINISH_TIMES` and `START_TIMES` in `crates/desktop/src/main_window/settings/notifications.rs` hold the choices and their words. Each time stays its own enum in the protocol, with its seconds.
 
+### D174. The gate stops a Rust test that hangs and names it
+
+Decided on 2026-11-05. D58 stands: the tests stay under `cargo test`, with no cargo-nextest.
+
+1. The `test` and `test-http3` checks read `cargo test`'s output. libtest prints a notice for a test still running at 60 seconds; a test with no result four minutes after that fails the check by name (`scripts/gate/test-limit.mjs`). Five minutes is more than two `PATIENCE` waits that run out, and far enough inside the Rust job's 20 minutes (D57) that the job is not cancelled and its log is kept.
+2. A hang stops `cargo test` and the program it runs, so the test binaries after it do not run, also under `--no-fail-fast`. libtest gives no way to stop one test.
+3. This holds on every system and for every run of the checks, so there is one way the tests run. libtest gives no notice when it runs one test at a time (a machine with one core, or `--test-threads=1`); such a run has no limit. Neither has a test target without libtest: `crates/logging`'s `harness = false` test. On Unix a program a test puts in its own process group outlives the stop.
 ### D173. A video's bar never falls past an estimate
 
 Decided on 2026-11-05.
