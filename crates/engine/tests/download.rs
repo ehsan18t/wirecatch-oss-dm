@@ -106,6 +106,64 @@ async fn unknown_length_download_completes() {
     dir.remove().unwrap();
 }
 
+/// Starts a download from a server that holds its answer's body, and pauses it once the server has answered.
+async fn pause_once_answered(config: Config, name: &str) -> TestResult<(Outcome, Arc<Progress>)> {
+    let server = TestServer::start(
+        test_data(MIB_USIZE),
+        Config {
+            hold_bodies_from: Some(0),
+            ..config
+        },
+    )
+    .await;
+    let dir = private_dir(name)?;
+    let progress = Arc::new(Progress::default());
+    let cancel = CancellationToken::new();
+    let task = tokio::spawn(download(
+        request(&server, name, &dir, 1),
+        progress.clone(),
+        cancel.clone(),
+    ));
+    tokio::time::timeout(PATIENCE, async {
+        while progress.file_name().is_none() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await?;
+    cancel.cancel();
+    let outcome = task.await??;
+    dir.remove()?;
+    Ok((outcome, progress))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_pause_says_whether_the_next_run_continues() {
+    let len = MIB_USIZE as u64;
+    for (name, ranges, omit_length, remaining, can_continue) in [
+        ("ranged", true, false, Some(len), true),
+        ("no-ranges", false, false, Some(len), false),
+        ("no-size", false, true, None, false),
+    ] {
+        let config = Config {
+            ranges,
+            omit_length,
+            ..Default::default()
+        };
+        let (outcome, progress) = pause_once_answered(config, name).await.unwrap();
+        let Outcome::Paused {
+            remaining: left,
+            can_continue: continues,
+            ..
+        } = outcome
+        else {
+            panic!("{name}: not paused: {outcome:?}")
+        };
+        assert_eq!(left, remaining, "{name}");
+        assert_eq!(continues, can_continue, "{name}");
+        assert_eq!(progress.can_continue(), can_continue, "{name}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn resumes_after_pause_without_downloading_again() {
     let len = 4 * MIB_USIZE;
@@ -473,8 +531,12 @@ async fn pausing_or_lifting_the_limit_never_waits_out_the_rate_limiter() {
         .expect("the pause waited for the rate limiter")
         .unwrap()
         .unwrap();
-    let Outcome::Paused { remaining, .. } = outcome else {
-        panic!("not paused: {outcome:?}")
+    let Outcome::Paused {
+        remaining: Some(remaining),
+        ..
+    } = outcome
+    else {
+        panic!("not paused with a known size: {outcome:?}")
     };
     let kept = server.data.len() as u64 - remaining;
 

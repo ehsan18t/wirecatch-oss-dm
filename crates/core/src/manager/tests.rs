@@ -11,7 +11,7 @@ use tokio::sync::Notify;
 use wirecatch_engine::{CancellationToken, Error as EngineError, PathRejected, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, CaptureConfirmation, DownloadStatus};
-use wirecatch_protocol::extension::{CaptureSource, NewDownload};
+use wirecatch_protocol::extension::{CaptureSource, MediaHint, MediaKind, NewDownload};
 use wirecatch_test_support::{PATIENCE, QUIET};
 
 use super::fake::{EngineFuture, FakeEngine, FakeRun};
@@ -42,6 +42,58 @@ fn media_requests_name_the_app_or_the_browser() {
         super::media::media_options(&origin, PrivateNetwork::Block, ProxyChoice::System).user_agent,
         "TestBrowser/1"
     );
+}
+
+// On this one-thread runtime the read spawned by `media_addon_ready` waits for the first `await`, so the stage still holds its token.
+#[tokio::test]
+async fn a_page_read_stops_with_the_manager() {
+    let dir = tempfile::tempdir().unwrap();
+    let folders = KnownFolders::under_home(dir.path().join("home"));
+    let manager = Manager::open(ManagerConfig::for_tests(dir.path().join("data"), folders))
+        .await
+        .unwrap();
+    let id = manager
+        .add_video_page(AddRequest {
+            url: "https://example.com/watch/7".to_owned().into(),
+            queue: None,
+            folder: None,
+            file_name: None,
+            start: true,
+        })
+        .unwrap();
+    manager.media_addon_ready();
+    let token = match &manager.lock().media.get(&id).unwrap().stage {
+        super::media::MediaStage::Analysing(token) => token.clone(),
+        _ => panic!("the page is not being read"),
+    };
+    assert!(!token.is_cancelled());
+    manager.shutdown().await;
+    assert!(token.is_cancelled());
+}
+
+#[tokio::test]
+async fn a_stream_read_stops_with_the_manager() {
+    let server = wirecatch_test_support::files::FileServer::start().await;
+    server.put("master.m3u8", "#EXTM3U\n");
+    server.hang("master.m3u8", true);
+    let dir = tempfile::tempdir().unwrap();
+    let folders = KnownFolders::under_home(dir.path().join("home"));
+    let manager = Manager::open(ManagerConfig::for_tests(dir.path().join("data"), folders))
+        .await
+        .unwrap();
+    let mut stream = capture(server.url("master.m3u8").as_str());
+    stream.media = Some(MediaHint {
+        kind: MediaKind::Hls,
+        title: None,
+    });
+    manager.add_capture(stream).await.unwrap();
+    let token = match manager.lock().media.iter().next().map(|(_, m)| &m.stage) {
+        Some(super::media::MediaStage::Analysing(token)) => token.clone(),
+        _ => panic!("the stream is not being read"),
+    };
+    assert!(!token.is_cancelled());
+    manager.shutdown().await;
+    assert!(token.is_cancelled());
 }
 
 /// A manager in a temporary folder whose runs are played by `engine`.
@@ -180,12 +232,18 @@ fn add_request(url: &str) -> AddRequest {
 async fn a_download_being_removed_cannot_be_brought_back() {
     let runs = Arc::new(AtomicUsize::new(0));
     let counted = runs.clone();
-    let engine = move |run: FakeRun| {
+    // The run ignores being asked to stop until the test lets it go, and the stop timeout outlasts the test.
+    let let_go = Arc::new(Notify::new());
+    let held = let_go.clone();
+    let engine = move |_run: FakeRun| -> EngineFuture {
         counted.fetch_add(1, Ordering::SeqCst);
-        deaf(run)
+        let held = held.clone();
+        Box::pin(async move {
+            held.notified().await;
+            Err(EngineError::Cancelled)
+        })
     };
-    let stop_timeout = Duration::from_secs(1);
-    let (manager, dir) = manager_with(engine, stop_timeout, DEFAULT_CAPTURE_TIMEOUT).await;
+    let (manager, dir) = manager_with(engine, 2 * PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
     let id = manager
         .add_download(add_request("https://example.com/gone.bin"))
         .await
@@ -222,6 +280,7 @@ async fn a_download_being_removed_cannot_be_brought_back() {
         [] as [wirecatch_protocol::app::DownloadSummary; 0]
     );
 
+    let_go.notify_one();
     removal.await.unwrap().unwrap();
     tokio::time::sleep(QUIET).await;
     assert!(manager.lock().downloads.is_empty());

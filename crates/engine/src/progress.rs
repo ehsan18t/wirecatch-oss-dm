@@ -1,7 +1,7 @@
 //! Live counters for one download.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 const UNKNOWN: u64 = u64::MAX;
@@ -16,6 +16,7 @@ pub struct Progress {
     total: AtomicU64,
     done: AtomicU64,
     connections: AtomicUsize,
+    can_continue: AtomicBool,
     /// Where the file goes, and its name, once the server has answered.
     target: Mutex<Option<Target>>,
 }
@@ -32,6 +33,7 @@ impl Default for Progress {
             total: AtomicU64::new(UNKNOWN),
             done: AtomicU64::new(0),
             connections: AtomicUsize::new(0),
+            can_continue: AtomicBool::new(false),
             target: Mutex::new(None),
         }
     }
@@ -52,6 +54,11 @@ impl Progress {
     /// Connections currently receiving data.
     pub fn connections(&self) -> usize {
         self.connections.load(Ordering::Relaxed)
+    }
+
+    /// Whether a later run can continue from what is on disk, as the server's answer says: it takes byte ranges and gave the size. Without that a later run starts from the beginning. `false` until the server has answered.
+    pub fn can_continue(&self) -> bool {
+        self.can_continue.load(Ordering::Relaxed)
     }
 
     /// The name the file is saved under, once decided.
@@ -90,10 +97,12 @@ impl Progress {
         file_name: &str,
         total: Option<u64>,
         already_done: u64,
+        can_continue: bool,
     ) {
         self.total
             .store(total.unwrap_or(UNKNOWN), Ordering::Relaxed);
         self.done.store(already_done, Ordering::Relaxed);
+        self.can_continue.store(can_continue, Ordering::Relaxed);
         // Last: a reader that sees the name also sees what an earlier run kept.
         *self.target() = Some(Target {
             file_name: file_name.to_string(),

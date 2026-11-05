@@ -1,9 +1,9 @@
 //! `wirecatch`, the command-line downloader built on the Wirecatch engine.
 //!
-//! Exit status: 0 when the file is complete, 1 on an error, 2 for a usage mistake (from clap) and 130 when the download was paused or stopped with Ctrl+C. Running the same command again continues a paused download.
+//! Exit status: 0 when the file is complete, 1 on an error, 2 for a usage mistake (from clap) and 130 when the download was paused or stopped with Ctrl+C. Running the same command again continues a paused download when the server allows it, and otherwise starts it from the beginning.
 
 use std::io::{self, Write as _};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
@@ -37,7 +37,7 @@ const PROGRESS_CHARS: &str = "=> ";
 
 /// Fast, resumable downloads over parallel connections.
 ///
-/// Run the same command again after an interruption to continue where it stopped.
+/// Run the same command again after an interruption to continue where it stopped, when the server allows it.
 #[derive(Parser, Debug)]
 #[command(name = wirecatch_product::CLI_EXECUTABLE, version)]
 struct Args {
@@ -279,7 +279,7 @@ async fn stop_on_ctrl_c(cancel: CancellationToken) {
 enum Ending {
     /// The file is complete.
     Saved,
-    /// The download stopped before the end; running the same command continues it.
+    /// The download stopped before the end; running the same command continues it when the server allows it.
     Stopped,
 }
 
@@ -315,21 +315,32 @@ fn summary(outcome: &Outcome) -> (Ending, String) {
             (Ending::Saved, line)
         }
         Outcome::Paused {
-            path, remaining, ..
-        } => {
-            let line = format!(
-                "Paused with {} left for {}. Run the same command again to continue.",
-                HumanBytes(*remaining),
-                path.display()
-            );
-            (Ending::Stopped, line)
-        }
+            path,
+            remaining,
+            can_continue,
+            ..
+        } => (
+            Ending::Stopped,
+            paused_line(path, *remaining, *can_continue),
+        ),
         _ => (
             Ending::Stopped,
-            "Wirecatch stopped before the download finished. Run the same command again to continue."
+            "Wirecatch stopped before the download finished. Run the same command again to continue if the server allows it."
                 .to_owned(),
         ),
     }
+}
+
+fn paused_line(path: &Path, remaining: Option<u64>, can_continue: bool) -> String {
+    let left = remaining.map_or_else(String::new, |left| {
+        format!(" with {} left", HumanBytes(left))
+    });
+    let next = if can_continue {
+        "Run the same command again to continue."
+    } else {
+        "This server cannot continue a download, so running the same command again starts from the beginning."
+    };
+    format!("Paused{left} for {}. {next}", path.display())
 }
 
 /// Moves the bar to what an earlier run kept. The estimator would read that jump as bytes just received, and show the wrong speed and time left for about half a minute.
@@ -503,6 +514,25 @@ mod tests {
         assert_eq!(ending, Ending::Stopped);
         assert!(line.contains("again"), "{line}");
         assert!(report(Err(Error::PrematureEof { at: 1, end: 2 })).is_err());
+    }
+
+    #[test]
+    fn a_pause_promises_a_continuation_only_when_one_will_happen() {
+        let path = Path::new("f.bin");
+        let continues = paused_line(path, Some(2048), true);
+        assert_eq!(
+            continues,
+            "Paused with 2.00 KiB left for f.bin. Run the same command again to continue."
+        );
+        for line in [
+            paused_line(path, Some(2048), false),
+            paused_line(path, None, false),
+        ] {
+            assert!(line.contains("starts from the beginning"), "{line}");
+            assert!(!line.contains("to continue"), "{line}");
+        }
+        let unknown = paused_line(path, None, false);
+        assert!(unknown.starts_with("Paused for f.bin."), "{unknown}");
     }
 
     #[test]

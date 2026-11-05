@@ -9,10 +9,10 @@ use wirecatch_protocol::app::{DownloadStatus, FixAction, QueueSettings, UiEvent}
 use wirecatch_protocol::wire::ErrorCode;
 
 use crate::common::{
-    Harness, PATIENCE, Seen, SilentServer, TestResult, exists, fast_server, partial_files,
-    throttled_server, wait_until,
+    Config, Harness, PATIENCE, Seen, SilentServer, TestResult, TestServer, exists, fast_server,
+    partial_files, test_data, throttled_server, wait_until,
 };
-use wirecatch_engine::units::KIB;
+use wirecatch_engine::units::{KIB, KIB_USIZE};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {
@@ -62,6 +62,37 @@ async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {
         "asked again for bytes already here: {answers:?}, {} were here",
         paused.done
     );
+    Ok(())
+}
+
+/// Slow enough that no run finishes before the pause, whatever the machine's load.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_server_without_ranges_is_not_promised_that_its_part_is_kept() -> TestResult {
+    let server = TestServer::start(
+        test_data(1024 * KIB_USIZE),
+        Config {
+            per_connection_bps: Some(8 * KIB),
+            ..Default::default()
+        },
+    )
+    .await;
+    let mut h = Harness::new().await?;
+    let row = h.add(&server.url("file.bin")).await?;
+    h.wait_for(row.id, "the first bytes", |r| r.done > 0).await;
+    h.manager.pause(row.id).unwrap();
+    h.wait_status(row.id, DownloadStatus::Paused).await;
+
+    server.configure(|c| c.refuse_paths.push(("/file.bin".into(), 410)));
+    h.restart().await?;
+    h.manager.resume(row.id).unwrap();
+    let failed = h.wait_status(row.id, DownloadStatus::Failed).await;
+    let message = failed
+        .error
+        .expect("a failed download explains why")
+        .message;
+    assert!(message.contains("expired"), "{message}");
+    assert!(message.contains("starts from the beginning"), "{message}");
+    assert!(!message.contains("is kept"), "{message}");
     Ok(())
 }
 

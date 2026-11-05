@@ -309,6 +309,7 @@ fn restore_entry(
         hold: Hold::Free,
         on_existing: stored.answers.on_existing,
         plain_name: stored.answers.plain_name,
+        next_run: stored.answers.next_run,
         offered_file: false,
         stranded: stored.stranded,
         files: stored.files,

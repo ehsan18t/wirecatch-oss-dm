@@ -627,11 +627,7 @@ fn status_line(row: &DownloadSummary, tone: Hsla, cx: &App) -> Option<AnyElement
                 )
             })
             .child(div().truncate().child(text::size(row))),
-        DownloadStatus::Paused => line().child(
-            div()
-                .truncate()
-                .child(format!("Paused at {}", text::size(row))),
-        ),
+        DownloadStatus::Paused => line().child(div().truncate().child(text::paused_at(row))),
         _ => line().child(div().truncate().child(text::status_short(row))),
     };
     Some(said.into_any_element())

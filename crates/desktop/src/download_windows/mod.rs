@@ -179,6 +179,12 @@ fn run(steps: Vec<Step>, cx: &mut App) {
                     _ = handle.update(cx, |_, window, _| window.activate_window());
                 }
             }
+            Step::Close(label) => {
+                let opened = cx.global_mut::<Windows>().open.remove(&label);
+                if let Some((handle, _)) = opened {
+                    _ = handle.update(cx, |_, window, _| window.remove_window());
+                }
+            }
         }
     }
 }

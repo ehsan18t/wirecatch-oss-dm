@@ -209,6 +209,8 @@ struct Inner {
     stats: Arc<Stats>,
     /// `true` while answers may go out; see [`TestServer::hold`].
     open: watch::Sender<bool>,
+    /// `true` while bodies may go out; see [`TestServer::hold_bodies`].
+    bodies_open: watch::Sender<bool>,
     /// The path of every request so far, answered or not, in the order they arrived.
     arrived: watch::Sender<Vec<String>>,
 }
@@ -234,6 +236,7 @@ impl TestServer {
             config: Mutex::new(config),
             stats: stats.clone(),
             open: watch::Sender::new(true),
+            bodies_open: watch::Sender::new(true),
             arrived: watch::Sender::new(Vec::new()),
         });
         let app = Router::new()
@@ -285,6 +288,16 @@ impl TestServer {
     /// Lets held answers, and every later one, go out.
     pub fn release(&self) {
         self.inner.open.send_replace(true);
+    }
+
+    /// Holds every body from now on: answers send their headers and then wait for [`release_bodies`](Self::release_bodies). For a test that acts once a client has read the headers, and before it can finish.
+    pub fn hold_bodies(&self) {
+        self.inner.bodies_open.send_replace(false);
+    }
+
+    /// Lets held bodies, and every later one, go out.
+    pub fn release_bodies(&self) {
+        self.inner.bodies_open.send_replace(true);
     }
 
     /// How many requests for `path` (a leading `/` is optional) have arrived so far,
@@ -561,16 +574,21 @@ fn body(
     let stats = request.inner.stats.clone();
     let held = config.hold_bodies_from == Some(range.start);
     let end = range.end;
+    let bodies_open = request.inner.bodies_open.subscribe();
     futures_util::stream::unfold((range.start, 0u64, live), move |(pos, sent, live)| {
         let data = data.clone();
         let stats = stats.clone();
         let sent_here = sent_here.clone();
+        let mut bodies_open = bodies_open.clone();
         async move {
             if pos >= end {
                 return None;
             }
             if held {
                 std::future::pending::<()>().await;
+            }
+            if bodies_open.wait_for(|open| *open).await.is_err() {
+                return None;
             }
             if let Some(after) = abort_after
                 && sent >= after

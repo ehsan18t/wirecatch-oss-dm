@@ -1,5 +1,5 @@
 //! Get a new link: a download whose link stopped working takes a fresh one, pasted from the page
-//! it came from, and continues where it stopped. From the main window the link is the person's
+//! it came from, and continues where it stopped if the server allows it. From the main window the link is the person's
 //! own (D43.5).
 
 use gpui_kit::component::WindowExt as _;
@@ -125,7 +125,7 @@ impl RefreshForm {
                     Ok(()) => {
                         window.close_dialog(cx);
                         window.push_notification(
-                            "New link saved. The download continues where it stopped.",
+                            "New link saved. The download continues where it stopped if the server allows it.",
                             cx,
                         );
                     }
@@ -161,7 +161,7 @@ impl Render for RefreshForm {
             let kept = if page_video {
                 "A video read from a page starts over if the link is a different one."
             } else {
-                "What is already downloaded is kept."
+                "What is already downloaded is kept if the server can continue the download; otherwise it starts over."
             };
             format!(
                 "Links from some sites stop working after a while. Start the download again on its page, copy the new link and paste it here. {kept}"

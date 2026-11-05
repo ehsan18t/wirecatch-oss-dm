@@ -23,6 +23,7 @@ async fn server_naming(name: &str, len: usize, bps: Option<u64>) -> TestServer {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_servers_name_decides_name_category_and_folder() -> TestResult {
     let server = server_naming("Holiday Movie.mp4", 512 * KIB_USIZE, Some(128 * KIB)).await;
+    server.hold();
     let mut h = Harness::new().await?;
     let mut events = h.manager.subscribe();
     let row = h.add(&server.url("dl?id=1")).await?;
@@ -31,6 +32,7 @@ async fn the_servers_name_decides_name_category_and_folder() -> TestResult {
         (row.file_name.as_str(), row.category),
         ("dl", Category::Other)
     );
+    server.release();
 
     let answered = h
         .wait_for(row.id, "the server's answer", |r| r.done > 0)
@@ -159,9 +161,18 @@ async fn a_part_file_left_by_a_crash_is_picked_up_again() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_same_server_name_twice_gets_a_free_name() -> TestResult {
     let server = server_naming("report.pdf", 4 * KIB_USIZE, None).await;
+    // No body until both have their names: a first download that ended sooner would turn the second's name into a question.
+    server.hold_bodies();
     let h = Harness::new().await?;
     let first = h.add(&server.url("a")).await?.id;
     let second = h.add(&server.url("b")).await?.id;
+    for id in [first, second] {
+        h.wait_for(id, "the server's name", |row| {
+            row.file_name.starts_with("report")
+        })
+        .await;
+    }
+    server.release_bodies();
     let first = h.wait_status(first, DownloadStatus::Completed).await;
     let second = h.wait_status(second, DownloadStatus::Completed).await;
     let mut names = [first.file_name, second.file_name];
