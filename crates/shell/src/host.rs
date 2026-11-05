@@ -175,7 +175,7 @@ impl Core {
 /// `%LOCALAPPDATA%` on Windows (local, not roaming, so none of it follows a roaming profile to other
 /// computers, D21.5), and in `~/.local/share` on Linux.
 ///
-/// `local_base` is the platform's local user data folder and `roaming_base` its roaming one (the same folder on Linux). A data folder an earlier version left in the roaming folder is moved to the local one first, once, when the local one holds no download list yet (see [`migrate`]); if that fails, the old folder is used as it is, so nothing is lost. Blocks on the disk: call it before the manager opens.
+/// `local_base` is the platform's local user data folder and `roaming_base` its roaming one (the same folder on Linux). A data folder an earlier version left in the roaming folder is moved to the local one first, once, when the local one holds no download list yet (see `migrate`); if that fails, the old folder is used as it is, so nothing is lost. Blocks on the disk: call it before the manager opens.
 pub fn data_dir(local_base: &Path, roaming_base: &Path) -> PathBuf {
     if let Some(dir) = std::env::var_os(DATA_DIR_VAR).filter(|d| !d.is_empty()) {
         return PathBuf::from(dir);
@@ -212,7 +212,7 @@ pub fn log_folder(data_dir_var: Option<OsString>) -> Option<PathBuf> {
 
 /// What happened to a data folder left in the roaming folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Migration {
+enum Migration {
     /// There was nothing to move.
     Nothing,
     /// Renamed in one step (same drive).
@@ -232,7 +232,7 @@ fn holds_data(folder: &Path) -> bool {
 
 /// Whether the data folder must move from `old` to `new`: only when they are different folders, the old one exists and the new one holds no download list, so it happens once and never overwrites a list.
 #[must_use]
-pub fn needs_move(old: &Path, new: &Path) -> bool {
+fn needs_move(old: &Path, new: &Path) -> bool {
     old != new && old.is_dir() && !holds_data(new)
 }
 
@@ -269,7 +269,7 @@ fn retry_deleting_old_folder(old: &Path, new: &Path) {
 
 /// Moves the data folder `old` to `new` when [`needs_move`] says so: a rename on the same drive, otherwise [`copy_then_delete`], which never leaves a partial copy at `new`; into a `new` that other programs made already, entry by entry. Returns the folder to use and what happened. Blocks on the disk.
 #[must_use]
-pub fn migrate(old: &Path, new: &Path) -> (PathBuf, Migration) {
+fn migrate(old: &Path, new: &Path) -> (PathBuf, Migration) {
     if !needs_move(old, new) {
         retry_deleting_old_folder(old, new);
         return (new.to_path_buf(), Migration::Nothing);
@@ -385,10 +385,8 @@ fn remove_if_there(file: &Path) -> std::io::Result<()> {
 
 /// Copies the file or folder `from` to `to` (which must not exist), then deletes `from`. The copy is made under a staging name next to `to` and renamed to `to` only once complete, so `to` never holds a partial copy, even when the app is killed halfway; the next move removes such a leftover and starts over. `from` stays as it was until the copy is in place. Blocks on the disk.
 ///
-/// # Errors
-///
-/// `to` exists already, a leftover staging copy cannot be removed, or a folder or file cannot be read, made, copied or renamed. A failure to delete `from` afterwards is only logged: everything is in `to` by then.
-pub fn copy_then_delete(from: &Path, to: &Path) -> std::io::Result<()> {
+/// Fails when `to` exists already, a leftover staging copy cannot be removed, or a folder or file cannot be read, made, copied or renamed. A failure to delete `from` afterwards is only logged: everything is in `to` by then.
+fn copy_then_delete(from: &Path, to: &Path) -> std::io::Result<()> {
     if to.exists() {
         return Err(std::io::ErrorKind::AlreadyExists.into());
     }

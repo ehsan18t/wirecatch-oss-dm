@@ -34,6 +34,7 @@ const COMMIT_SCOPES = [
   'messages',
   'media',
   'settings',
+  'shell',
   'cli',
   'e2e',
   'test-support',
