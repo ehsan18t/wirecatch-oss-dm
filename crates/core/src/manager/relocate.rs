@@ -76,8 +76,8 @@ impl Manager {
         dir: PathBuf,
         exited: Option<CancellationToken>,
     ) -> Result<()> {
-        // The engine must close the files before they can be moved; bounded by the
-        // stop timeout.
+        // The engine must close the files before they can be moved. The stop timeout does not
+        // bound this: `exited` fires only once the run's file work, its marks included, has ended.
         if let Some(exited) = exited {
             exited.cancelled().await;
         }

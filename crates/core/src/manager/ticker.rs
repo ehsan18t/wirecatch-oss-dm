@@ -64,10 +64,9 @@ impl Manager {
                 to_mark.extend(part_to_mark(entry));
             }
         }
-        // The part file is marked as soon as it exists, so the finished file carries the
-        // mark from the moment it is renamed into place. As the run's file work: a mark
-        // being written refuses readers, so one still under way when a move copies the
-        // mark would leave the copy without it.
+        // Marked once the part file exists, so the finished file has the mark from its rename.
+        // In the run's file work: a mark being written refuses readers, so a move copying it
+        // then would leave the copy unmarked.
         for (file_work, part, mark) in to_mark {
             #[cfg(test)]
             let before_marking = self.before_marking();
