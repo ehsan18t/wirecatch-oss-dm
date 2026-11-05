@@ -61,8 +61,8 @@ pub(super) struct Facts {
     from: FactsFrom,
     /// How many selected rows the commands reach.
     pub count: usize,
-    /// How many of those are in folded groups.
-    folded: usize,
+    /// Those of them in collapsed groups.
+    folded: Rc<[DownloadId]>,
     can: Applicable,
     pub ids: Rc<[DownloadId]>,
     queues: Rc<[(QueueId, String)]>,
@@ -136,12 +136,12 @@ impl MainWindow {
             return facts.clone();
         }
         let rows = self.chosen(&from.laid, cx);
-        let on_show = selected_among(&from.laid.rows, &library.downloads, &self.selected).len();
+        let ids: Vec<DownloadId> = rows.iter().map(|row| row.id).collect();
         let facts = Rc::new(Facts {
             count: rows.len(),
-            folded: rows.len().saturating_sub(on_show),
             can: Applicable::to(&rows),
-            ids: rows.iter().map(|row| row.id).collect(),
+            ids: ids.clone().into(),
+            folded: folded_among(&ids, &from.laid.ids).into(),
             queues: library
                 .queues
                 .iter()
@@ -154,12 +154,6 @@ impl MainWindow {
         });
         *kept = Some(facts.clone());
         facts
-    }
-
-    /// How many of `ids` the list does not show because their group is folded.
-    pub(super) fn folded_among(&self, ids: &[DownloadId], cx: &App) -> usize {
-        let shown: HashSet<DownloadId> = self.shown_ids(cx).iter().copied().collect();
-        ids.iter().filter(|id| !shown.contains(id)).count()
     }
 
     /// How much of `ids`, a list kept by the lines, is ticked.
@@ -291,11 +285,8 @@ impl MainWindow {
 
     /// Enter: opens the selected file, when one finished download is selected and on show.
     pub(super) fn open_selected(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        if let [row] = self.selected_rows(cx).as_slice()
-            && row.status == wirecatch_protocol::app::DownloadStatus::Completed
-            && self.shown_ids(cx).contains(&row.id)
-        {
-            files::open(row.id, window, cx);
+        if let Some(id) = to_open(&self.selected_rows(cx), &self.shown_ids(cx)) {
+            files::open(id, window, cx);
         }
     }
 
@@ -315,15 +306,18 @@ impl MainWindow {
     /// Delete: asks before removing the selection.
     pub(super) fn remove_selected(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let ids: Vec<DownloadId> = self.selected_rows(cx).iter().map(|r| r.id).collect();
-        let folded = self.folded_among(&ids, cx);
-        confirm::remove(&self.library, &ids, folded, window, cx);
+        let folded = folded_among(&ids, &self.shown_ids(cx));
+        confirm::remove(&self.library, &ids, &folded, window, cx);
     }
 
     /// The bar's circle, in the list's column of circles: ticks every download the list shows,
     /// or unticks them when all are. Ticks in folded groups stay (D160).
     fn every_circle(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let shown = self.shown_ids(cx);
-        let every = bar_pick(self.kept_pick(&shown, cx), self.selection_facts(cx).folded);
+        let every = bar_pick(
+            self.kept_pick(&shown, cx),
+            self.selection_facts(cx).folded.len(),
+        );
         h_flex().w(px(list::CIRCLE_WIDTH)).justify_center().child(
             SelectCircle::new("sel-every", every)
                 .on_click(cx.listener(move |this, _, _, cx| this.toggle_rows(&shown, cx))),
@@ -341,7 +335,7 @@ impl MainWindow {
         if count < 2 && !(self.picked && count == 1) {
             return None;
         }
-        let folded = facts.folded;
+        let folded = facts.folded.clone();
         let ids = facts.ids.clone();
         let theme = cx.theme();
         let library = self.library.clone();
@@ -369,7 +363,7 @@ impl MainWindow {
             .child(
                 bar_button("sel-remove", "Remove", Icon::new(Lucide::Trash)).on_click(
                     move |_, window, cx| {
-                        confirm::remove(&library, &ids, folded, window, cx);
+                        confirm::remove(&library, &ids, &folded, window, cx);
                     },
                 ),
             )
@@ -512,6 +506,28 @@ fn through_every<E>(
     refused.map_or(Ok(()), Err)
 }
 
+/// Those of `ids` the list does not show, because their group is collapsed.
+pub(super) fn folded_among(ids: &[DownloadId], shown: &[DownloadId]) -> Vec<DownloadId> {
+    let shown: HashSet<DownloadId> = shown.iter().copied().collect();
+    ids.iter()
+        .copied()
+        .filter(|id| !shown.contains(id))
+        .collect()
+}
+
+/// What Enter opens: the one selected download, when it finished and is on show.
+fn to_open(rows: &[DownloadSummary], shown: &[DownloadId]) -> Option<DownloadId> {
+    match rows {
+        [row]
+            if row.status == wirecatch_protocol::app::DownloadStatus::Completed
+                && shown.contains(&row.id) =>
+        {
+            Some(row.id)
+        }
+        _ => None,
+    }
+}
+
 /// Ctrl+click on `id`: adds it or takes it away. A row only clicked stays beside it while on show; one folded away is let go, since nothing shows it is held.
 fn ctrl_clicked(
     selected: &mut HashSet<DownloadId>,
@@ -625,6 +641,31 @@ mod tests {
         assert_eq!(selected, ids(&[9]));
         circle_clicked(&mut selected, true, &[]);
         assert_eq!(selected, ids(&[9]), "every group folded");
+    }
+
+    #[test]
+    fn folded_rows_are_those_the_list_does_not_show() {
+        let (a, b, c) = (DownloadId(1), DownloadId(2), DownloadId(3));
+        assert_eq!(folded_among(&[a, b, c], &[b]), [a, c]);
+        assert_eq!(folded_among(&[a, b], &[a, b]), []);
+        assert_eq!(folded_among(&[a], &[]), [a]);
+    }
+
+    #[test]
+    fn enter_opens_only_a_finished_download_on_show() {
+        use wirecatch_protocol::app::DownloadStatus;
+        let row = |id, status| DownloadSummary {
+            status,
+            ..wirecatch_test_support::downloads::download(id)
+        };
+        let done = row(1, DownloadStatus::Completed);
+        let id = done.id;
+        assert_eq!(to_open(std::slice::from_ref(&done), &[id]), Some(id));
+        assert_eq!(to_open(std::slice::from_ref(&done), &[]), None, "collapsed");
+        let running = row(1, DownloadStatus::Downloading);
+        assert_eq!(to_open(&[running], &[id]), None, "not finished");
+        let other = row(2, DownloadStatus::Completed);
+        assert_eq!(to_open(&[done, other], &[id, DownloadId(2)]), None, "two");
     }
 
     #[test]

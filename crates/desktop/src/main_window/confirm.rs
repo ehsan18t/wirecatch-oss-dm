@@ -75,7 +75,7 @@ impl Asked {
 /// The Remove question's form: whether finished files go too.
 struct RemoveForm {
     asked: Asked,
-    /// How many of the downloads are in folded groups, out of sight.
+    /// How many of the downloads are in collapsed groups, out of sight.
     folded: usize,
     delete_files: bool,
 }
@@ -84,9 +84,9 @@ struct RemoveForm {
 fn folded_note(count: usize, folded: usize) -> Option<String> {
     match (count, folded) {
         (_, 0) => None,
-        (1, _) => Some("It is in a folded group.".to_owned()),
-        (_, 1) => Some("1 of them is in a folded group.".to_owned()),
-        (_, folded) => Some(format!("{folded} of them are in folded groups.")),
+        (1, _) => Some("It is in a collapsed group.".to_owned()),
+        (_, 1) => Some("1 of them is in a collapsed group.".to_owned()),
+        (_, folded) => Some(format!("{folded} of them are in collapsed groups.")),
     }
 }
 
@@ -137,11 +137,11 @@ impl Render for RemoveForm {
     }
 }
 
-/// Asks before removing `ids` from the list, `folded` of which the list does not show.
+/// Asks before removing `ids` from the list; `folded` are the ones the list does not show.
 pub(super) fn remove(
     library: &Entity<Library>,
     ids: &[DownloadId],
-    folded: usize,
+    folded: &[DownloadId],
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -154,6 +154,7 @@ pub(super) fn remove(
     } else {
         format!("Remove {} downloads?", asked.count())
     };
+    let folded = asked.ids.iter().filter(|id| folded.contains(id)).count();
     let form = cx.new(|_| RemoveForm {
         asked,
         folded,
@@ -210,7 +211,14 @@ pub(super) fn remove(
 }
 
 /// Asks before cancelling `ids`: they stop and lose what was downloaded, but stay in the list.
-pub fn cancel(library: &Entity<Library>, ids: &[DownloadId], window: &mut Window, cx: &mut App) {
+/// `folded` are the ones the list does not show.
+pub fn cancel(
+    library: &Entity<Library>,
+    ids: &[DownloadId],
+    folded: &[DownloadId],
+    window: &mut Window,
+    cx: &mut App,
+) {
     let asked = Asked::read(library, &cancellable(&library.read(cx).downloads, ids), cx);
     if asked.count() == 0 {
         return;
@@ -240,6 +248,8 @@ pub fn cancel(library: &Entity<Library>, ids: &[DownloadId], window: &mut Window
     } else {
         "Keep them"
     };
+    let folded = asked.ids.iter().filter(|id| folded.contains(id)).count();
+    let note = folded_note(asked.count(), folded);
     let name = asked.one.clone();
     let ids = asked.ids;
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
@@ -253,6 +263,9 @@ pub fn cancel(library: &Entity<Library>, ids: &[DownloadId], window: &mut Window
                     .text_sm()
                     .when_some(name.clone(), |body, name| {
                         body.child(div().text_role(Role::Strong, cx).child(name))
+                    })
+                    .when_some(note.clone(), |body, note| {
+                        body.child(div().text_role(Role::Secondary, cx).child(note))
                     })
                     .child(div().text_role(Role::Secondary, cx).child(said)),
             )
@@ -288,14 +301,14 @@ mod tests {
     #[test]
     fn removing_says_how_much_of_it_is_out_of_sight() {
         assert_eq!(folded_note(5, 0), None);
-        assert_eq!(folded_note(1, 1).unwrap(), "It is in a folded group.");
+        assert_eq!(folded_note(1, 1).unwrap(), "It is in a collapsed group.");
         assert_eq!(
             folded_note(5, 1).unwrap(),
-            "1 of them is in a folded group."
+            "1 of them is in a collapsed group."
         );
         assert_eq!(
             folded_note(5, 3).unwrap(),
-            "3 of them are in folded groups."
+            "3 of them are in collapsed groups."
         );
     }
 

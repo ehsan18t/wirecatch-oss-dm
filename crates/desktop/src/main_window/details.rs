@@ -496,13 +496,14 @@ fn footer(
         )
         .when(cancellable, |bar| {
             bar.child(
-                quiet("details-cancel", IconName::CircleX, "Cancel download")
-                    .on_click(move |_, window, cx| confirm::cancel(&cancelled, &[id], window, cx)),
+                quiet("details-cancel", IconName::CircleX, "Cancel download").on_click(
+                    move |_, window, cx| confirm::cancel(&cancelled, &[id], &[], window, cx),
+                ),
             )
         })
         .child(
             quiet("details-remove", IconName::Delete, "Remove")
-                .on_click(move |_, window, cx| confirm::remove(&library, &[id], 0, window, cx)),
+                .on_click(move |_, window, cx| confirm::remove(&library, &[id], &[], window, cx)),
         )
         .child(div().flex_1())
         .when_some(main, |bar, (action, label, icon)| {
