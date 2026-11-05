@@ -1,6 +1,7 @@
 //! The download complete window (D52.6): one small window at the bottom right of the main
-//! screen, listing what finished or failed, newest first, until the person closes it. It opens
-//! without taking the keyboard. "Use notifications instead" switches the setting in one click.
+//! screen, listing what finished or failed, newest first, until the person closes it or the last
+//! of it leaves the download list. It opens without taking the keyboard. "Use notifications
+//! instead" switches the setting in one click.
 
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
@@ -41,7 +42,9 @@ struct Finished {
 impl Global for Finished {}
 
 /// Adds what ended to the window, opening it if it is closed. A download whose own progress
-/// window is open is left out: that window shows it finished.
+/// window is open is left out: that window shows it finished. So is one no longer in the list:
+/// this comes on its own channel, so its removal may have reached the list first, and no later
+/// event would take it out of the window.
 pub fn add(tell: Tell, cx: &mut App) {
     let (queue, rows) = match tell {
         Tell::Finished(rows) | Tell::Failed(rows) => (None, rows),
@@ -50,8 +53,10 @@ pub fn add(tell: Tell, cx: &mut App) {
             report.completed.into_iter().chain(report.failed).collect(),
         ),
     };
+    let listed = &cx.global::<super::Windows>().library.read(cx).downloads;
     let rows: Vec<DownloadSummary> = rows
         .into_iter()
+        .filter(|row| listed.find(row.id).is_some())
         .filter(|row| !super::shows(Shows::Download(row.id), cx))
         .collect();
     // Counted from what the window lists, so the heading agrees with the rows under it.
@@ -70,15 +75,25 @@ pub fn add(tell: Tell, cx: &mut App) {
 /// Brings the listed downloads up to date after missed events.
 pub fn reload(rows: &[DownloadSummary], cx: &mut App) {
     cx.default_global::<Finished>().book.reload(rows);
-    if let Some((_, view)) = cx.global::<Finished>().window.clone() {
-        _ = view.update(cx, |_, cx| cx.notify());
-    }
+    show_what_is_left(cx);
 }
 
 /// Keeps the listed downloads in step with the core's events.
 pub fn follow(event: &UiEvent, cx: &mut App) {
     cx.default_global::<Finished>().book.follow(event);
-    if let Some((_, view)) = cx.global::<Finished>().window.clone() {
+    show_what_is_left(cx);
+}
+
+/// Redraws the window, or closes it once nothing is left to list.
+fn show_what_is_left(cx: &mut App) {
+    let finished = cx.global::<Finished>();
+    let empty = finished.book.list().groups.is_empty();
+    let Some((handle, view)) = finished.window.clone() else {
+        return;
+    };
+    if empty {
+        _ = handle.update(cx, |_, window, cx| crate::closing::close(window, cx));
+    } else {
         _ = view.update(cx, |_, cx| cx.notify());
     }
 }
@@ -320,7 +335,69 @@ fn row_buttons(row: &DownloadSummary, alone: bool) -> Vec<Button> {
 
 #[cfg(test)]
 mod tests {
+    use gpui_kit::TestAppContext;
+    use wirecatch_protocol::DownloadId;
+    use wirecatch_test_support::downloads::download;
+
     use super::*;
+    use crate::library::Library;
+
+    fn failed(id: i64) -> DownloadSummary {
+        DownloadSummary {
+            status: DownloadStatus::Failed,
+            ..download(id)
+        }
+    }
+
+    /// The download windows over a library listing `rows`.
+    fn windows_over(rows: Vec<DownloadSummary>, cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::component::init(cx);
+            let library = cx.new(|_| {
+                let mut library = Library::empty();
+                library.downloads.replace(rows);
+                library
+            });
+            super::super::init(&library, cx);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn a_download_gone_from_the_list_opens_no_window(cx: &mut TestAppContext) {
+        windows_over(Vec::new(), cx);
+        cx.update(|cx| add(Tell::Failed(vec![failed(1)]), cx));
+        cx.run_until_parked();
+        assert_eq!(cx.windows().len(), 0);
+    }
+
+    #[gpui_kit::test]
+    fn the_window_closes_once_every_row_is_removed(cx: &mut TestAppContext) {
+        windows_over(vec![failed(1), failed(2)], cx);
+        cx.update(|cx| add(Tell::Failed(vec![failed(1), failed(2)]), cx));
+        cx.run_until_parked();
+        assert_eq!(cx.windows().len(), 1);
+
+        let removed = |id| UiEvent::DownloadsRemoved(vec![DownloadId(id)]);
+        cx.update(|cx| follow(&removed(1), cx));
+        cx.run_until_parked();
+        assert_eq!(cx.windows().len(), 1, "one row is left");
+
+        cx.update(|cx| follow(&removed(2), cx));
+        cx.run_until_parked();
+        assert_eq!(cx.windows().len(), 0);
+    }
+
+    #[gpui_kit::test]
+    fn the_window_closes_when_missed_events_removed_every_row(cx: &mut TestAppContext) {
+        windows_over(vec![failed(1)], cx);
+        cx.update(|cx| add(Tell::Failed(vec![failed(1)]), cx));
+        cx.run_until_parked();
+        assert_eq!(cx.windows().len(), 1);
+
+        cx.update(|cx| reload(&[], cx));
+        cx.run_until_parked();
+        assert_eq!(cx.windows().len(), 0);
+    }
 
     #[test]
     fn the_foot_says_where_finished_downloads_went() {

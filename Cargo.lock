@@ -10237,6 +10237,7 @@ dependencies = [
  "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-server",
+ "wirecatch-settings",
  "wirecatch-test-support",
  "wirecatch-updates",
 ]

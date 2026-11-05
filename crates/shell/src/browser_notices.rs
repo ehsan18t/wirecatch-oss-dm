@@ -24,8 +24,9 @@ use crate::notifications::{Act, Notification, chosen};
 /// notification instead. A browser in front answers within milliseconds.
 pub const ANSWER_WAIT: Duration = Duration::from_millis(NOTICE_ANSWER_WAIT_MS);
 
-/// Notices whose buttons still work, the newest last: a notice stays until it is closed, but past
-/// this many the oldest are forgotten and their buttons do nothing.
+/// Notices whose buttons still work, this many of each kind: a notice stays until it is closed,
+/// but past this many the oldest of its kind is forgotten and its buttons do nothing. Kinds count
+/// apart, so a run of captures never takes the buttons of a failure.
 const KEPT_NOTICES: usize = 32;
 
 /// The notices asked for.
@@ -66,8 +67,11 @@ impl BrowserNotices {
         let id = NoticeId(notices.last_id);
         let (shown, answer) = oneshot::channel();
         notices.waiting.insert(id, shown);
-        if notices.kept.len() >= KEPT_NOTICES {
-            notices.kept.pop_front();
+        let mut same_kind = notices.kept.iter().filter(|kept| kept.kind == kind);
+        if let Some(oldest) = same_kind.next().map(|kept| kept.id)
+            && same_kind.count() + 1 >= KEPT_NOTICES
+        {
+            notices.kept.retain(|kept| kept.id != oldest);
         }
         let still = match &notification.click {
             Act::Show(reveal) => reveal.ids.iter().copied().collect(),
@@ -142,7 +146,7 @@ impl BrowserNotices {
 
     /// Asks every connected browser to show `notification` as a notice of `kind`, which stays
     /// `stays` (`None` until it is closed). `None` when no browser is connected; otherwise the
-    /// notice's id and the answer [`answered`] waits for.
+    /// notice's id and the answer [`unanswered`] waits for.
     pub fn ask(
         &self,
         manager: &Manager,
@@ -178,11 +182,10 @@ impl BrowserNotices {
     }
 }
 
-/// Whether a browser said within [`ANSWER_WAIT`] that it showed the notice `answer` is for.
-pub async fn answered(answer: oneshot::Receiver<()>) -> bool {
-    tokio::time::timeout(ANSWER_WAIT, answer)
-        .await
-        .is_ok_and(|r| r.is_ok())
+/// Whether no browser said within [`ANSWER_WAIT`] that it showed the notice `answer` is for. A
+/// notice taken back meanwhile drops its sender: nothing is left to tell, so it counts as answered.
+pub async fn unanswered(answer: oneshot::Receiver<()>) -> bool {
+    tokio::time::timeout(ANSWER_WAIT, answer).await.is_err()
 }
 
 /// `notification` as notice `id` in the browser offers it, with the same buttons.
@@ -275,6 +278,38 @@ mod tests {
                 .iter()
                 .all(|id| notices.notification(*id).is_some())
         );
+    }
+
+    #[test]
+    fn a_run_of_one_kind_keeps_the_buttons_of_another() {
+        let notices = BrowserNotices::default();
+        let note = plain("a".into(), String::new());
+        let (failure, _) = notices.register(&note, NoticeKind::Failed);
+        for _ in 0..=KEPT_NOTICES {
+            notices.register(&note, NoticeKind::Started);
+        }
+        assert!(notices.notification(failure).is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn only_a_notice_no_browser_answered_goes_to_a_system_notification() {
+        use crate::notifications::tests::row;
+        use wirecatch_protocol::app::DownloadStatus::Failed;
+        let notices = BrowserNotices::default();
+        let failed = row(1, "downloads", Failed);
+        let notification = crate::notifications::failed(&[&failed]).unwrap();
+
+        let (shown, answer) = notices.register(&notification, NoticeKind::Failed);
+        notices.shown(shown);
+        assert!(!unanswered(answer).await);
+
+        let (_, answer) = notices.register(&notification, NoticeKind::Failed);
+        let removed = UiEvent::DownloadsRemoved(vec![failed.id]);
+        assert_eq!(notices.outdated_by(&removed).len(), 2);
+        assert!(!unanswered(answer).await, "taken back while waiting");
+
+        let (_, answer) = notices.register(&notification, NoticeKind::Failed);
+        assert!(unanswered(answer).await);
     }
 
     /// A notice about downloads that are gone, or a failure tried again, is taken back (D97.4).
