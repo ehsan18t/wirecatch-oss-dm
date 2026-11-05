@@ -5,7 +5,7 @@ use std::rc::Rc;
 use gpui_kit::component::IndexPath;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::combobox::{Combobox, ComboboxEvent, ComboboxState};
-use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::input::Input;
 use gpui_kit::component::searchable_list::{SearchableListItem, SearchableVec};
 use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::switch::Switch;
@@ -29,6 +29,7 @@ use super::media_output::{
     OutputChoice, conversion_note, fit_for, format_label, holds_subtitles, kbps_for, quality_notes,
     shown_subtitles, size_for, subtitle_reason, subtitle_toggle, video_length,
 };
+use super::proposed_name::ProposedName;
 use super::view::{earlier_chip, folder_box, queue_badge_picker};
 use crate::backend::Backend;
 use crate::library::Library;
@@ -136,7 +137,8 @@ pub struct MediaForm {
     choice: MediaChoice,
     option_id: String,
     output: OutputChoice,
-    file_name: Entity<InputState>,
+    /// The name without its extension, which comes from the format chosen.
+    file_name: ProposedName,
     folder: Option<String>,
     /// Where audio only goes when its type decides: the question names only the video's folder.
     audio_folder: Option<String>,
@@ -191,8 +193,8 @@ impl MediaForm {
             Some(folder.to_string_lossy().into_owned())
         });
 
-        let title = choice.title.clone();
-        let file_name = cx.new(|cx| InputState::new(window, cx).placeholder(title));
+        let file_name =
+            ProposedName::holding(wirecatch_media::file_stem(&choice.title), window, cx);
         let mut subscriptions = follow_pickers(&quality, &format, &kbps, &subtitles, cx);
         subscriptions.push(cx.observe(&library, |form, _, cx| form.addon_moved(cx)));
 
@@ -476,8 +478,7 @@ impl MediaForm {
         };
         let mut selection = self.choice.start.clone();
         selection.option_id.clone_from(&option.id);
-        let name = self.file_name.read(cx).value().trim().to_owned();
-        selection.file_name = (!name.is_empty()).then_some(name);
+        selection.file_name = self.file_name.chosen(cx);
         selection.folder.clone_from(&self.folder);
         selection.queue = self.queue.filter(|queue| *queue != self.choice.queue);
         selection.later = later;
@@ -768,7 +769,7 @@ impl Render for MediaForm {
             )
             .children(self.subtitle_rows(cx))
             .children(self.chapters(cx))
-            .child(row("File name", Input::new(&self.file_name), cx))
+            .child(row("File name", Input::new(self.file_name.field()), cx))
             .child(self.folder_row(cx))
             .child(self.buttons(cx))
     }
@@ -907,7 +908,127 @@ fn install_wait(addon: Option<&AddonInfo>, before: Option<&AddonState>) -> Insta
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
+    use gpui_kit::{TestAppContext, VisualTestContext};
+    use wirecatch_protocol::app::MediaDefaults;
+    use wirecatch_protocol::rules::QueueReason;
+
     use super::*;
+
+    fn video_called(title: &str) -> MediaChoice {
+        let options = vec![MediaOption {
+            id: "best".to_owned(),
+            label: "1080p".to_owned(),
+            height: Some(1080),
+            audio_only: false,
+            size: None,
+            needs_ffmpeg: false,
+            quality: "1080p".to_owned(),
+            outputs: Vec::new(),
+        }];
+        let start = MediaDefaults::default()
+            .start(&options, &[], false)
+            .selection;
+        MediaChoice {
+            id: QuestionId(1),
+            title: title.to_owned(),
+            page_url: None,
+            options,
+            folder: "/videos".to_owned(),
+            type_folder: None,
+            queue: QueueId(1),
+            queue_reason: QueueReason::BrowserQueue,
+            subtitles: Vec::new(),
+            chapters: false,
+            duration_ms: None,
+            start,
+            missing_quality: None,
+        }
+    }
+
+    fn open_form<'a>(
+        title: &str,
+        cx: &'a mut TestAppContext,
+    ) -> (Entity<MediaForm>, &'a mut VisualTestContext) {
+        cx.update(|cx| {
+            gpui_kit::component::init(cx);
+            cx.set_global(Backend::unopened());
+        });
+        let choice = video_called(title);
+        let (host, cx) = cx.add_window_view(|window, cx| {
+            let library = cx.new(|_| Library::empty());
+            Undrawn(cx.new(|cx| MediaForm::new(choice, library, window, cx)))
+        });
+        (host.read_with(cx, |host, _| host.0.clone()), cx)
+    }
+
+    /// Holds the form in a window without drawing it: its queue badge needs the app's windows.
+    struct Undrawn(Entity<MediaForm>);
+
+    impl Render for Undrawn {
+        fn render(&mut self, _: &mut Window, _: &mut Context<'_, Self>) -> impl IntoElement {
+            div()
+        }
+    }
+
+    fn field_text(form: &Entity<MediaForm>, cx: &mut VisualTestContext) -> String {
+        form.read_with(cx, |form, cx| {
+            form.file_name.field().read(cx).value().as_ref().to_owned()
+        })
+    }
+
+    fn type_in_field(form: &Entity<MediaForm>, text: &str, cx: &mut VisualTestContext) {
+        let field = form.read_with(cx, |form, _| form.file_name.field().clone());
+        let text = text.to_owned();
+        cx.update(|window, cx| {
+            field.update(cx, |state, cx| state.set_value(text, window, cx));
+        });
+    }
+
+    /// The name the form sends when Download is pressed.
+    fn name_sent(form: &Entity<MediaForm>, cx: &mut VisualTestContext) -> Option<String> {
+        let sent = Rc::new(RefCell::new(None));
+        let seen = Rc::clone(&sent);
+        let _listening = cx.update(|_, cx| {
+            cx.subscribe(form, move |_, answer: &MediaAnswer, _| {
+                if let MediaAnswer::Choose(selection) = answer {
+                    seen.replace(Some(selection.file_name.clone()));
+                }
+            })
+        });
+        form.update(cx, |form, cx| form.answer(false, cx));
+        cx.run_until_parked();
+        sent.take().expect("the form answered")
+    }
+
+    #[gpui_kit::test]
+    fn a_video_opens_with_its_name_to_edit_and_sends_none_untouched(cx: &mut TestAppContext) {
+        let (form, cx) = open_form("Evening news", cx);
+        assert_eq!(field_text(&form, cx), "Evening news");
+        assert_eq!(name_sent(&form, cx), None);
+    }
+
+    #[gpui_kit::test]
+    fn the_field_holds_what_the_file_would_be_called(cx: &mut TestAppContext) {
+        let (form, cx) = open_form("AC/DC - Thunderstruck", cx);
+        assert_eq!(field_text(&form, cx), "AC-DC - Thunderstruck");
+        assert_eq!(name_sent(&form, cx), None, "the core makes the same name");
+    }
+
+    #[gpui_kit::test]
+    fn an_edited_name_is_sent_and_a_cleared_one_goes_back_to_the_proposal(cx: &mut TestAppContext) {
+        let (form, cx) = open_form("Evening news", cx);
+        type_in_field(&form, "Evening news, part 2", cx);
+        assert_eq!(
+            name_sent(&form, cx).as_deref(),
+            Some("Evening news, part 2")
+        );
+        type_in_field(&form, "  ", cx);
+        assert_eq!(name_sent(&form, cx), None);
+        type_in_field(&form, " Evening news ", cx);
+        assert_eq!(name_sent(&form, cx), None);
+    }
 
     fn addon(state: AddonState, usable: bool) -> AddonInfo {
         AddonInfo {

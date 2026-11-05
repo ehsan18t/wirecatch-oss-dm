@@ -107,7 +107,7 @@ pub(crate) fn settled_name(
     let server_named_it = suggested != from_link && suggested != GENERIC_NAME;
     let name = match choice.map(str::trim).filter(|n| !n.is_empty()) {
         // The user can choose again, so their name is refused rather than changed.
-        Some(chosen) => return checked(naming::sanitize(chosen)),
+        Some(chosen) => return checked(naming::sanitize(&without_folders(chosen))),
         None if server_named_it || provisional.is_empty() => suggested,
         None => provisional,
     };
@@ -118,6 +118,11 @@ pub(crate) fn settled_name(
         name.push('_');
     }
     Ok(name)
+}
+
+/// A name a person chose, whose slashes are its words: `sanitize` keeps only what follows the last one, as for a server's name (D215).
+pub(crate) fn without_folders(chosen: &str) -> String {
+    chosen.replace(['/', '\\'], "-")
 }
 
 /// Whether settling on `settled` changes the file type of the name the person confirmed. A confirmed name without a type promises none, so a server may give it one: `get` becoming `report.pdf` (D166).
@@ -382,6 +387,24 @@ mod tests {
         let no_hint = settled_name(None, "get", &link, "").unwrap();
         assert_eq!(no_hint, "get");
         assert!(settle(Some("x.wcpart"), "server.pdf").is_err());
+    }
+
+    #[test]
+    fn a_chosen_name_keeps_the_words_around_a_slash() {
+        let link = Url::parse("https://example.com/get").unwrap();
+        let settle = |choice| settled_name(Some(choice), "server.pdf", &link, "").unwrap();
+        assert_eq!(settle("AC/DC Live"), "AC-DC Live");
+        assert_eq!(settle(r"AC\DC Live"), "AC-DC Live");
+        assert_eq!(settle("../../evil.pdf"), "..-..-evil.pdf");
+        // Only a person's choice: a page or a server's name still loses its folder part.
+        assert_eq!(
+            settled_name(None, "folder/server.pdf", &link, "").unwrap(),
+            "server.pdf"
+        );
+        assert_eq!(
+            file_name(Some("folder/page.pdf"), &link).unwrap(),
+            "page.pdf"
+        );
     }
 
     #[test]

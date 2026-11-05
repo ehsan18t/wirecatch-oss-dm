@@ -119,7 +119,8 @@ impl Manager {
             .transpose()?;
         let placed = {
             let state = self.lock_open()?;
-            let name = naming::file_name(request.file_name.as_deref(), &url)?;
+            let chosen = request.file_name.as_deref().map(naming::without_folders);
+            let name = naming::file_name(chosen.as_deref(), &url)?;
             let candidate = Candidate {
                 url: &url,
                 file_name: &name,
@@ -662,8 +663,9 @@ impl Manager {
         let state = self.lock_open()?;
         state.slot(new.placed.queue)?;
         let wanted = &new.wanted;
+        let chosen = wanted.file_name.as_deref().map(naming::without_folders);
         let name = naming::file_name(
-            wanted.file_name.as_deref().or(wanted.hint_name.as_deref()),
+            chosen.as_deref().or(wanted.hint_name.as_deref()),
             &new.fetch.url,
         )?;
         let category = wanted

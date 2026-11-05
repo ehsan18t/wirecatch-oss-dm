@@ -898,6 +898,29 @@ async fn ask_before_download_waits_for_the_user() -> TestResult {
     );
     assert_eq!(h.manager.list_downloads().len(), 1);
     assert!(h.manager.reject_capture(second.id).is_err());
+
+    // A slash in the name the user picks is part of the name, before and after the server answers.
+    client.call(Call::AddDownload(ask("c"))).await?.unwrap();
+    let third = h.manager.pending_confirmations().remove(0);
+    let id = h
+        .manager
+        .confirm_capture(
+            third.id,
+            CaptureConfirmation {
+                folder: Some(folder.to_string_lossy().into_owned()),
+                file_name: Some("AC/DC Live.pdf".into()),
+                queue: None,
+                later: false,
+            },
+        )
+        .await
+        .unwrap();
+    let expected = folder.join("AC-DC Live.pdf");
+    let row = h.manager.list_downloads();
+    let row = row.iter().find(|row| row.id == id).unwrap();
+    assert_eq!(std::path::Path::new(&row.path), expected);
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+    assert_eq!(std::path::Path::new(&done.path), expected);
     Ok(())
 }
 

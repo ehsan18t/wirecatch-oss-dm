@@ -58,6 +58,16 @@ impl Backend {
         }
     }
 
+    /// A backend whose manager never opens, for forms that only read `now`.
+    #[cfg(test)]
+    pub fn unopened() -> Self {
+        Self {
+            runtime: Self::runtime().expect("a test runtime"),
+            core: Arc::new(Core::preparing(config)),
+            serving: None,
+        }
+    }
+
     /// Stops serving the browser; the returned future ends once the endpoint is free for a new
     /// copy of the app to claim.
     pub fn free_endpoint(cx: &mut App) -> impl Future<Output = ()> + use<> {

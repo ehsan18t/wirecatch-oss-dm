@@ -1478,3 +1478,15 @@ Decided on 2026-11-05. It adds to D32.5.
 2. `#[serde(default)]` alone does not make a field optional in TypeScript. Most such defaults are for reading saved settings, and a guard that let a field through while its type promised it would hide the gap from every reader.
 3. Every field at the first release stays required: no version has been released, so every app sends them, and readers need no branch that never runs.
 4. The test `the_required_fields_of_answers_to_the_extension_are_settled` lists what the generated types require and fails on a new required field.
+
+### D215. A proposed file name is the field's text
+
+Decided on 2026-11-05. It adds to D23, D51.5 and D166.
+
+1. A window that proposes a file name holds it as the field's real text, so a person edits part of it and types only what changes. The caret starts at the first character and nothing is selected. Opening a window gives the field no keyboard focus, and Enter does not download, in the field or outside it. A long name scrolls inside the field and does not widen the window.
+2. A name left as proposed is no choice, and is sent as none: a browser's file stays free to be improved by the server within D166, and a video is named from its title and the format's extension. A name that differs only in surrounding spaces counts as left as proposed.
+3. A cleared field goes back to the proposal. It stays empty and shows the proposal in the muted hint style, which is the name the download gets.
+4. A proposal that arrives later replaces only a field the person has not changed; an edited or cleared field keeps its text, and the hint and the comparison in item 2 follow the newest proposal.
+5. Each field keeps its meaning. A browser's file holds the whole name, extension included. A video holds the stem, which is what the title's file name would be before its extension (`wirecatch_media::file_stem`), so `AC/DC` shows as `AC-DC`. A video's choice does not change once its window shows it, so its field gets no later proposal.
+6. A name a person chooses has no folder part, in any window or in the Add dialog: a slash or backslash in it becomes `-`, so `AC/DC Live` saves as `AC-DC Live`. A name from a page or a server still loses what comes before its last slash.
+7. A field with no proposal has none to hold: the Add dialog's File name stays empty, as a server's name is not known yet, and "Leave empty for the name the server gives." says what that means. Hints that show the shape of a value, such as `https://` in Get a new link, stay hints.

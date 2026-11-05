@@ -7,6 +7,7 @@
 pub mod finished;
 mod media_form;
 pub mod media_output;
+mod proposed_name;
 mod run_record;
 mod view;
 

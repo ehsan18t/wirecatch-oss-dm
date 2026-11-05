@@ -10,7 +10,7 @@ use std::time::Instant;
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::input::Input;
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::switch::Switch;
@@ -40,6 +40,7 @@ use wirecatch_shell::api;
 use wirecatch_shell::download_windows::{Shows, fitted_height};
 
 use super::media_form::{MediaAnswer, MediaForm};
+use super::proposed_name::ProposedName;
 use super::run_record::{Look, RunRecord};
 use crate::backend::{Backend, act, said};
 use crate::library::Library;
@@ -75,9 +76,7 @@ pub struct DownloadWindow {
     /// The question is no longer open in the core.
     over: bool,
     /// The file name the person may change.
-    name: Entity<InputState>,
-    /// The name the core last gave the field.
-    core_name: Option<String>,
+    name: ProposedName,
     /// The queue picked for a file; `None` is Automatic.
     queue: Option<QueueId>,
     /// The folder picked for a file; `None` is where its queue saves.
@@ -137,8 +136,7 @@ impl DownloadWindow {
             addon_asked: None,
             addon_awaited: None,
             reading: None,
-            name: cx.new(|cx| InputState::new(window, cx)),
-            core_name: None,
+            name: ProposedName::empty(window, cx),
             queue: None,
             folder: None,
             record: RunRecord::default(),
@@ -178,7 +176,7 @@ impl DownloadWindow {
                 }
                 view.over = question.is_none();
                 if let Some(Question::Capture(capture)) = &question {
-                    view.name_from(&capture.file_name, cx);
+                    view.name.propose(&capture.file_name, view.window, cx);
                 }
                 if let Some(Question::Addon(item)) = &question {
                     view.addon_awaited = Some(item.addon.id);
@@ -203,14 +201,6 @@ impl DownloadWindow {
     pub fn reading_from(&mut self, url: &str, cx: &App) {
         self.reading = Some(url.to_owned());
         self.earlier = newest_attempt(&self.library.read(cx).downloads, url);
-    }
-
-    fn name_from(&mut self, name: &str, cx: &mut Context<'_, Self>) {
-        let field = self.name.read(cx).value();
-        if core_name_applies(&field, self.core_name.as_deref(), name) {
-            self.core_name = Some(name.to_owned());
-            put_name(self.name.clone(), name.to_owned(), self.window, cx);
-        }
     }
 
     /// Runs `work` on the manager; the answer turns the window into the download's progress, or
@@ -522,7 +512,7 @@ impl DownloadWindow {
                     .child(heading(&capture.file_name, &capture.url, capture.size, cx))
                     .children(earlier.map(|row| earlier_chip(&row, cx))),
             )
-            .child(Field::new("Save as", Input::new(&self.name)))
+            .child(Field::new("Save as", Input::new(self.name.field())))
             .child(Field::new("Folder", self.folder_field(capture, cx)))
             .child(
                 h_flex()
@@ -616,10 +606,9 @@ impl DownloadWindow {
     }
 
     fn confirm(&mut self, id: QuestionId, later: bool, cx: &mut Context<'_, Self>) {
-        let name = self.name.read(cx).value();
         let confirmation = CaptureConfirmation {
             folder: self.folder.clone(),
-            file_name: chosen_name(&name, self.core_name.as_deref()),
+            file_name: self.name.chosen(cx),
             queue: self.queue,
             later,
         };
@@ -1530,27 +1519,6 @@ fn button(id: &'static str, label: &'static str, variant: ButtonVariant, busy: b
         .disabled(busy)
 }
 
-/// The name the person chose in the field: a name left as proposed is no choice, so the server's
-/// answer may still improve it.
-fn chosen_name(field: &str, proposed: Option<&str>) -> Option<String> {
-    let name = field.trim();
-    (!name.is_empty() && Some(name) != proposed).then(|| name.to_owned())
-}
-
-/// Whether the core's name replaces what the field holds: never a name the person typed.
-fn core_name_applies(field: &str, last: Option<&str>, core: &str) -> bool {
-    last.is_none_or(|last| last != core && field == last)
-}
-
-/// `window` is the field's own: a question's window can open behind another, so the active one may be neither.
-fn put_name(state: Entity<InputState>, name: String, window: AnyWindowHandle, cx: &mut App) {
-    cx.defer(move |cx| {
-        _ = window.update(cx, |_, window, cx| {
-            state.update(cx, |state, cx| state.set_value(name, window, cx));
-        });
-    });
-}
-
 fn newest_attempt(downloads: &[DownloadSummary], link: &str) -> Option<DownloadId> {
     downloads
         .iter()
@@ -1575,7 +1543,6 @@ fn failed_video<'a>(
 
 #[cfg(test)]
 mod tests {
-    use gpui_kit::{Render, TestAppContext};
     use wirecatch_protocol::app::{DownloadStatus, DownloadSummary};
     use wirecatch_protocol::rules::Rule;
 
@@ -1620,80 +1587,6 @@ mod tests {
         assert!(failed_video(&downloads, page, Some(DownloadId(3))).is_none());
         let going = [row(4, page, DownloadStatus::Downloading)];
         assert!(failed_video(&going, page, None).is_none());
-    }
-
-    struct NameField(gpui_kit::Entity<super::InputState>);
-
-    impl Render for NameField {
-        fn render(
-            &mut self,
-            _: &mut gpui_kit::Window,
-            _: &mut gpui_kit::Context<'_, Self>,
-        ) -> impl gpui_kit::IntoElement {
-            gpui_kit::div()
-        }
-    }
-
-    #[test]
-    fn only_a_name_the_person_changed_counts_as_chosen() {
-        use super::chosen_name;
-
-        assert_eq!(chosen_name("get", Some("get")), None);
-        assert_eq!(chosen_name(" get ", Some("get")), None);
-        assert_eq!(chosen_name("", Some("get")), None);
-        assert_eq!(
-            chosen_name("report.pdf", Some("get")).as_deref(),
-            Some("report.pdf")
-        );
-        assert_eq!(chosen_name("get", None).as_deref(), Some("get"));
-    }
-
-    #[test]
-    fn a_name_the_person_typed_outlasts_the_question_being_read_again() {
-        use super::core_name_applies;
-
-        assert!(core_name_applies("", None, "report.pdf"));
-        assert!(!core_name_applies(
-            "my name.pdf",
-            Some("report.pdf"),
-            "report.pdf"
-        ));
-        assert!(!core_name_applies(
-            "report.pdf",
-            Some("report.pdf"),
-            "report.pdf"
-        ));
-        // The core found a better name, and the person has not changed the field.
-        assert!(core_name_applies(
-            "report.pdf",
-            Some("report.pdf"),
-            "final.pdf"
-        ));
-        assert!(!core_name_applies(
-            "my name.pdf",
-            Some("report.pdf"),
-            "final.pdf"
-        ));
-    }
-
-    #[gpui_kit::test]
-    fn a_window_behind_the_others_still_gets_its_name(cx: &mut TestAppContext) {
-        cx.update(gpui_kit::component::init);
-        let (field, cx) = cx.add_window_view(|window, cx| {
-            NameField(cx.new(|cx| super::InputState::new(window, cx)))
-        });
-        cx.deactivate_window();
-
-        let state = field.read_with(cx, |field, _| field.0.clone());
-        let put = state.clone();
-        cx.update(|window, cx| {
-            super::put_name(put, "report.pdf".to_owned(), window.window_handle(), cx);
-        });
-        cx.run_until_parked();
-
-        state.read_with(cx, |state, _| {
-            assert_eq!(state.value().as_ref(), "report.pdf");
-        });
     }
 
     #[test]

@@ -356,6 +356,12 @@ const MAX_TITLE_CHARS: usize = 150;
 #[must_use]
 pub fn file_name(title: &str, ext: &str) -> String {
     let ext = safe_ext(Some(ext), Content::Unknown);
+    format!("{}.{ext}", file_stem(title))
+}
+
+/// What [`file_name`] calls media named `title`, before the extension.
+#[must_use]
+pub fn file_stem(title: &str) -> String {
     let title = title.trim();
     let title = if title.is_empty() { "video" } else { title };
     // A title is no path: `sanitize` keeps only what follows the last slash of a server's name.
@@ -365,13 +371,21 @@ pub fn file_name(title: &str, ext: &str) -> String {
         .map(|c| if matches!(c, '/' | '\\') { '-' } else { c })
         .collect();
     stem = wirecatch_engine::naming::sanitize(&stem);
-    let stem = stem.trim_end_matches('.');
-    format!("{stem}.{ext}")
+    stem.trim_end_matches('.').to_owned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_title_s_stem_is_its_file_name_before_the_extension() {
+        for title in ["AC/DC: Live?", "  Evening news.  ", "Dr. Who 2.1", ""] {
+            let stem = file_stem(title);
+            assert_eq!(file_name(title, "webm"), format!("{stem}.webm"));
+        }
+        assert_eq!(file_stem("AC/DC - Thunderstruck"), "AC-DC - Thunderstruck");
+    }
 
     #[test]
     fn a_title_keeps_what_is_before_its_slash() {
