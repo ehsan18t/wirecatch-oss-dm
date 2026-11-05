@@ -1308,4 +1308,4 @@ Decided on 2026-11-05.
 
 ### D160. Commands reach ticked rows in a folded group
 
-A folded heading's circle ticks the rows under it, so the selection bar, Space and Delete act on them, and the bar counts them: a tick is on purpose and the circle shows it, and every command that removes something still asks with how many. A row only clicked and then folded away is out of reach. Select all and Shift ranges take only the rows the list shows.
+A folded heading's circle ticks the rows under it, so the selection bar, Space and Delete act on them, and the bar counts them: a tick is on purpose and the circle shows it, and Remove asks with how many, saying how many of them are in folded groups. A row only clicked and then folded away is out of reach, and a Ctrl+click lets go of it. The cursor's commands (the Menu key, Alt+Enter, Enter) act only on a row on show. Select all and Shift ranges take only the rows the list shows. The bar's circle ticks and unticks only the rows on show, leaving ticks in folded groups, and shows some ticked while the count includes them.

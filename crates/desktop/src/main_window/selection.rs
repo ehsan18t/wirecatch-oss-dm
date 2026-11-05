@@ -61,6 +61,8 @@ pub(super) struct Facts {
     from: FactsFrom,
     /// How many selected rows the commands reach.
     pub count: usize,
+    /// How many of those are in folded groups.
+    folded: usize,
     can: Applicable,
     pub ids: Rc<[DownloadId]>,
     queues: Rc<[(QueueId, String)]>,
@@ -134,8 +136,10 @@ impl MainWindow {
             return facts.clone();
         }
         let rows = self.chosen(&from.laid, cx);
+        let on_show = selected_among(&from.laid.rows, &library.downloads, &self.selected).len();
         let facts = Rc::new(Facts {
             count: rows.len(),
+            folded: rows.len().saturating_sub(on_show),
             can: Applicable::to(&rows),
             ids: rows.iter().map(|row| row.id).collect(),
             queues: library
@@ -150,6 +154,12 @@ impl MainWindow {
         });
         *kept = Some(facts.clone());
         facts
+    }
+
+    /// How many of `ids` the list does not show because their group is folded.
+    pub(super) fn folded_among(&self, ids: &[DownloadId], cx: &App) -> usize {
+        let shown: HashSet<DownloadId> = self.shown_ids(cx).iter().copied().collect();
+        ids.iter().filter(|id| !shown.contains(id)).count()
     }
 
     /// How much of `ids`, a list kept by the lines, is ticked.
@@ -181,9 +191,8 @@ impl MainWindow {
         if modifiers.shift {
             self.select_range_to(id, cx);
         } else if modifiers.secondary(cx) {
-            if !self.selected.remove(&id) {
-                self.selected.insert(id);
-            }
+            let shown = self.shown_ids(cx);
+            ctrl_clicked(&mut self.selected, self.picked, id, &shown);
             self.anchor = Some(id);
             self.cursor = Some(id);
             self.picked = true;
@@ -194,19 +203,9 @@ impl MainWindow {
         cx.notify();
     }
 
-    /// A circle's click: ticks every one of `ids` while any is unticked, else unticks them all. A
-    /// row only clicked is let go first, since its circle never showed it ticked.
+    /// A circle's click on `ids`; see [`circle_clicked`].
     pub(super) fn toggle_rows(&mut self, ids: &[DownloadId], cx: &mut Context<'_, Self>) {
-        if !self.picked {
-            self.selected.clear();
-        }
-        if ids.iter().all(|id| self.selected.contains(id)) {
-            for id in ids {
-                self.selected.remove(id);
-            }
-        } else {
-            self.selected.extend(ids.iter().copied());
-        }
+        circle_clicked(&mut self.selected, self.picked, ids);
         self.picked = !self.selected.is_empty();
         self.anchor = ids.first().copied().filter(|_| self.picked);
         self.cursor = self.anchor;
@@ -269,10 +268,13 @@ impl MainWindow {
     /// Selects every download the list shows.
     pub(super) fn select_all(&mut self, cx: &mut Context<'_, Self>) {
         let shown = self.shown_ids(cx);
+        if shown.is_empty() {
+            return;
+        }
         *self.selected = shown.iter().copied().collect();
         self.anchor = shown.first().copied();
         self.cursor = shown.last().copied();
-        self.picked = !shown.is_empty();
+        self.picked = true;
         cx.notify();
     }
 
@@ -287,10 +289,11 @@ impl MainWindow {
         }
     }
 
-    /// Enter: opens the selected file, when one finished download is selected.
+    /// Enter: opens the selected file, when one finished download is selected and on show.
     pub(super) fn open_selected(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         if let [row] = self.selected_rows(cx).as_slice()
             && row.status == wirecatch_protocol::app::DownloadStatus::Completed
+            && self.shown_ids(cx).contains(&row.id)
         {
             files::open(row.id, window, cx);
         }
@@ -306,28 +309,24 @@ impl MainWindow {
     /// The cursor's download, while it is selected and the list shows it.
     pub(super) fn cursor_row(&self, cx: &App) -> Option<DownloadId> {
         let facts = self.selection_facts(cx);
-        self.cursor.filter(|id| facts.ids.contains(id))
+        cursor_on_show(self.cursor, &facts.ids, &self.shown_ids(cx))
     }
 
     /// Delete: asks before removing the selection.
     pub(super) fn remove_selected(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let ids: Vec<DownloadId> = self.selected_rows(cx).iter().map(|r| r.id).collect();
-        confirm::remove(&self.library, &ids, window, cx);
+        let folded = self.folded_among(&ids, cx);
+        confirm::remove(&self.library, &ids, folded, window, cx);
     }
 
     /// The bar's circle, in the list's column of circles: ticks every download the list shows,
-    /// or unticks them when all are.
+    /// or unticks them when all are. Ticks in folded groups stay (D160).
     fn every_circle(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let every = self.kept_pick(&self.shown_ids(cx), cx);
+        let shown = self.shown_ids(cx);
+        let every = bar_pick(self.kept_pick(&shown, cx), self.selection_facts(cx).folded);
         h_flex().w(px(list::CIRCLE_WIDTH)).justify_center().child(
-            SelectCircle::new("sel-every", every).on_click(cx.listener(move |this, _, _, cx| {
-                if every == Picked::All {
-                    this.clear_selection();
-                    cx.notify();
-                } else {
-                    this.select_all(cx);
-                }
-            })),
+            SelectCircle::new("sel-every", every)
+                .on_click(cx.listener(move |this, _, _, cx| this.toggle_rows(&shown, cx))),
         )
     }
 
@@ -342,6 +341,7 @@ impl MainWindow {
         if count < 2 && !(self.picked && count == 1) {
             return None;
         }
+        let folded = facts.folded;
         let ids = facts.ids.clone();
         let theme = cx.theme();
         let library = self.library.clone();
@@ -369,7 +369,7 @@ impl MainWindow {
             .child(
                 bar_button("sel-remove", "Remove", Icon::new(Lucide::Trash)).on_click(
                     move |_, window, cx| {
-                        confirm::remove(&library, &ids, window, cx);
+                        confirm::remove(&library, &ids, folded, window, cx);
                     },
                 ),
             )
@@ -512,6 +512,56 @@ fn through_every<E>(
     refused.map_or(Ok(()), Err)
 }
 
+/// Ctrl+click on `id`: adds it or takes it away. A row only clicked stays beside it while on show; one folded away is let go, since nothing shows it is held.
+fn ctrl_clicked(
+    selected: &mut HashSet<DownloadId>,
+    picked: bool,
+    id: DownloadId,
+    shown: &[DownloadId],
+) {
+    if !picked {
+        selected.retain(|held| shown.contains(held));
+    }
+    if !selected.remove(&id) {
+        selected.insert(id);
+    }
+}
+
+/// A circle's click: ticks every one of `ids` while any is unticked, else unticks them all, leaving
+/// other ticks as they are. A row only clicked is let go first, since its circle never showed it
+/// ticked.
+fn circle_clicked(selected: &mut HashSet<DownloadId>, picked: bool, ids: &[DownloadId]) {
+    if !picked {
+        selected.clear();
+    }
+    if ids.iter().all(|id| selected.contains(id)) {
+        for id in ids {
+            selected.remove(id);
+        }
+    } else {
+        selected.extend(ids.iter().copied());
+    }
+}
+
+/// What the bar's circle shows: how much of the list is ticked, and never empty while ticks in
+/// folded groups are in the bar's count.
+fn bar_pick(shown: Picked, folded: usize) -> Picked {
+    if folded > 0 && shown == Picked::None {
+        Picked::Some
+    } else {
+        shown
+    }
+}
+
+/// The cursor, while it is on a selected row the list shows.
+fn cursor_on_show(
+    cursor: Option<DownloadId>,
+    selected: &[DownloadId],
+    shown: &[DownloadId],
+) -> Option<DownloadId> {
+    cursor.filter(|id| selected.contains(id) && shown.contains(id))
+}
+
 /// The rows at `shown`, in that order, that `selected` holds: it may hold rows the view hides.
 fn selected_among<'a>(
     shown: &[usize],
@@ -543,6 +593,55 @@ mod tests {
         });
         assert_eq!(answer, Err(1));
         assert_eq!(ran, [1, 2, 3]);
+    }
+
+    fn ids(list: &[i64]) -> HashSet<DownloadId> {
+        list.iter().copied().map(DownloadId).collect()
+    }
+
+    #[test]
+    fn ctrl_click_lets_go_of_a_row_only_clicked_once_it_is_folded_away() {
+        let (a, b) = (DownloadId(1), DownloadId(2));
+        let mut selected = ids(&[1]);
+        ctrl_clicked(&mut selected, false, b, &[b]);
+        assert_eq!(selected, ids(&[2]), "row 1 is off screen");
+
+        let mut selected = ids(&[1]);
+        ctrl_clicked(&mut selected, false, b, &[a, b]);
+        assert_eq!(selected, ids(&[1, 2]), "row 1 is on screen");
+
+        let mut ticked = ids(&[1]);
+        ctrl_clicked(&mut ticked, true, b, &[b]);
+        assert_eq!(ticked, ids(&[1, 2]), "row 1 was ticked on purpose");
+    }
+
+    #[test]
+    fn the_bars_circle_leaves_ticks_in_folded_groups() {
+        let shown = [DownloadId(1), DownloadId(2)];
+        let mut selected = ids(&[9]);
+        circle_clicked(&mut selected, true, &shown);
+        assert_eq!(selected, ids(&[1, 2, 9]));
+        circle_clicked(&mut selected, true, &shown);
+        assert_eq!(selected, ids(&[9]));
+        circle_clicked(&mut selected, true, &[]);
+        assert_eq!(selected, ids(&[9]), "every group folded");
+    }
+
+    #[test]
+    fn the_bars_circle_is_not_empty_while_folded_ticks_count() {
+        assert_eq!(bar_pick(Picked::None, 3), Picked::Some);
+        assert_eq!(bar_pick(Picked::None, 0), Picked::None);
+        assert_eq!(bar_pick(Picked::Some, 3), Picked::Some);
+        assert_eq!(bar_pick(Picked::All, 3), Picked::All);
+    }
+
+    #[test]
+    fn the_cursor_acts_only_on_a_selected_row_on_show() {
+        let (a, b) = (DownloadId(1), DownloadId(2));
+        assert_eq!(cursor_on_show(Some(a), &[a, b], &[a]), Some(a));
+        assert_eq!(cursor_on_show(Some(b), &[a, b], &[a]), None, "folded away");
+        assert_eq!(cursor_on_show(Some(a), &[b], &[a]), None, "not selected");
+        assert_eq!(cursor_on_show(None, &[a], &[a]), None);
     }
 
     #[test]

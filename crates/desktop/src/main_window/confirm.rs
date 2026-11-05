@@ -75,7 +75,19 @@ impl Asked {
 /// The Remove question's form: whether finished files go too.
 struct RemoveForm {
     asked: Asked,
+    /// How many of the downloads are in folded groups, out of sight.
+    folded: usize,
     delete_files: bool,
+}
+
+/// Says how much of what is being removed the list does not show.
+fn folded_note(count: usize, folded: usize) -> Option<String> {
+    match (count, folded) {
+        (_, 0) => None,
+        (1, _) => Some("It is in a folded group.".to_owned()),
+        (_, 1) => Some("1 of them is in a folded group.".to_owned()),
+        (_, folded) => Some(format!("{folded} of them are in folded groups.")),
+    }
 }
 
 impl Render for RemoveForm {
@@ -101,6 +113,9 @@ impl Render for RemoveForm {
             .when_some(asked.one.clone(), |form, name| {
                 form.child(div().text_role(Role::Strong, cx).child(name))
             })
+            .when_some(folded_note(asked.count(), self.folded), |form, said| {
+                form.child(div().text_role(Role::Secondary, cx).child(said))
+            })
             .when_some(consequence, |form, said| {
                 form.child(div().text_role(Role::Secondary, cx).child(said))
             })
@@ -122,10 +137,11 @@ impl Render for RemoveForm {
     }
 }
 
-/// Asks before removing `ids` from the list.
+/// Asks before removing `ids` from the list, `folded` of which the list does not show.
 pub(super) fn remove(
     library: &Entity<Library>,
     ids: &[DownloadId],
+    folded: usize,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -140,6 +156,7 @@ pub(super) fn remove(
     };
     let form = cx.new(|_| RemoveForm {
         asked,
+        folded,
         delete_files: false,
     });
     crate::ui::dialog::open(window, cx, move |dialog, _, cx| {
@@ -267,6 +284,20 @@ mod tests {
     use super::*;
     use wirecatch_protocol::app::DownloadSummary;
     use wirecatch_test_support::downloads::download;
+
+    #[test]
+    fn removing_says_how_much_of_it_is_out_of_sight() {
+        assert_eq!(folded_note(5, 0), None);
+        assert_eq!(folded_note(1, 1).unwrap(), "It is in a folded group.");
+        assert_eq!(
+            folded_note(5, 1).unwrap(),
+            "1 of them is in a folded group."
+        );
+        assert_eq!(
+            folded_note(5, 3).unwrap(),
+            "3 of them are in folded groups."
+        );
+    }
 
     #[test]
     fn cancel_leaves_out_finished_and_unknown_rows() {

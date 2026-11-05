@@ -502,7 +502,7 @@ fn footer(
         })
         .child(
             quiet("details-remove", IconName::Delete, "Remove")
-                .on_click(move |_, window, cx| confirm::remove(&library, &[id], window, cx)),
+                .on_click(move |_, window, cx| confirm::remove(&library, &[id], 0, window, cx)),
         )
         .child(div().flex_1())
         .when_some(main, |bar, (action, label, icon)| {

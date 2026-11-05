@@ -78,6 +78,8 @@ impl MainWindow {
 struct Target {
     rows: Vec<DownloadSummary>,
     ids: Vec<DownloadId>,
+    /// How many of them are in folded groups.
+    folded: usize,
     /// The one download, when the menu acts on one.
     only: Option<DownloadSummary>,
     library: Entity<Library>,
@@ -100,8 +102,10 @@ impl Target {
         } else {
             Vec::new()
         };
+        let ids: Vec<DownloadId> = rows.iter().map(|row| row.id).collect();
         Self {
-            ids: rows.iter().map(|row| row.id).collect(),
+            folded: main.folded_among(&ids, cx),
+            ids,
             only: match rows.as_slice() {
                 [only] => Some(only.clone()),
                 _ => None,
@@ -278,7 +282,11 @@ fn moves(menu: PopupMenu, target: &Target) -> PopupMenu {
 /// Cancel and Remove, which ask first.
 fn ending(menu: PopupMenu, target: Target) -> PopupMenu {
     let Target {
-        rows, ids, library, ..
+        rows,
+        ids,
+        folded,
+        library,
+        ..
     } = target;
     let cancelled = (library.clone(), ids.clone());
     menu.when(rows.iter().any(applies::can_cancel), |menu| {
@@ -293,7 +301,7 @@ fn ending(menu: PopupMenu, target: Target) -> PopupMenu {
     .item(
         PopupMenuItem::new("Remove")
             .icon(Icon::new(Lucide::Trash))
-            .on_click(move |_, window, cx| confirm::remove(&library, &ids, window, cx)),
+            .on_click(move |_, window, cx| confirm::remove(&library, &ids, folded, window, cx)),
     )
 }
 
