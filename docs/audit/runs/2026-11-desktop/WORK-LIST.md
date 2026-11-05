@@ -169,7 +169,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-159 | fix(desktop): keep long queue names in the menu    | `fix/queue-menu-width`           | 280                          | P3       | small  | none         | open   |
 | PR-160 | fix(desktop): keep the empty state under banners   | `fix/banner-stack`               | 281                          | P3       | small  | none         | open   |
 | PR-161 | fix(core): keep one copy after a killed move       | `fix/killed-move-copies`         | 282                          | P3       | small  | none         | merged |
-| PR-162 | test(desktop): prove quit ends the process         | `test/quit-ends-process`         | 283                          | P3       | small  | none         | open   |
+| PR-162 | test(desktop): prove quit ends the process         | `test/quit-ends-process`         | 283                          | P3       | small  | none         | merged |
 
 ## Lanes
 
@@ -2126,4 +2126,4 @@ Not yet tried against the real thing: the subtitle choice on a real yt-dlp page 
 - **Touches:** crates/desktop
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
