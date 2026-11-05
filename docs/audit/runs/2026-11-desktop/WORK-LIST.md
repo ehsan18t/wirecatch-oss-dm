@@ -156,7 +156,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-146 | chore: flag shell public items with no caller      | `chore/shell-unused-check`       | 267                          | P3       | small  | none         | closed |
 | PR-147 | test: limit each test's time on Windows            | `test/windows-test-limit`        | 268                          | P3       | small  | none         | merged |
 | PR-148 | fix(core): keep a mark a move would lose           | `fix/mark-across-move`           | 269                          | P3       | small  | none         | open   |
-| PR-149 | test: read test code one way in the checks         | `test/one-test-reading`          | 270                          | P3       | small  | none         | open   |
+| PR-149 | test: read test code one way in the checks         | `test/one-test-reading`          | 270                          | P3       | small  | none         | merged |
 | PR-150 | fix(desktop): keep keys when a dialog closes       | `fix/focus-after-dialog`         | 271                          | P3       | small  | none         | open   |
 | PR-151 | chore(extension): read the product name            | `chore/extension-product-name`   | 272                          | P3       | small  | none         | open   |
 | PR-152 | refactor(shell): make local items private          | `refactor/shell-private-items`   | 273                          | P3       | small  | none         | open   |
@@ -1966,7 +1966,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** scripts/gate
 - **Proof:** none
 - **Checks:** `node --test scripts/gate`
-- **Status:** open
+- **Status:** merged
 
 ### PR-150 fix(desktop): keep keys when a dialog closes
 
