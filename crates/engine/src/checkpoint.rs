@@ -89,7 +89,10 @@ impl ResumeSaver {
             return Ok(());
         }
         // Read before the flush: every range done by now was written before it.
-        let remaining = self.shared.table.lock().remaining();
+        let (remaining, file_len) = {
+            let table = self.shared.table.lock();
+            (table.remaining(), table.file_len())
+        };
         let Saving {
             part,
             failed_flush,
@@ -120,14 +123,16 @@ impl ResumeSaver {
             &self.abandoned,
             failed_flush,
             || {
-                ResumeState::new(
+                let mut state = ResumeState::new(
                     &self.url,
                     shared.request.total,
                     shared.request.ranged,
                     &self.validators,
                     remaining.clone(),
-                )
-                .save(&self.path, &self.abandoned)?;
+                );
+                state.ended_at =
+                    (shared.request.total.is_none() && remaining.is_empty()).then_some(file_len);
+                state.save(&self.path, &self.abandoned)?;
                 *saved = Some(remaining);
                 Ok(())
             },

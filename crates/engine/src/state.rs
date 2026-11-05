@@ -63,6 +63,9 @@ pub struct ResumeState {
     pub last_modified: Option<String>,
     /// Byte ranges not yet on disk.
     pub remaining: Vec<ByteRange>,
+    /// With no `total`: the length the server's whole answer came to, once it has ended.
+    #[serde(default)]
+    pub ended_at: Option<u64>,
 }
 
 impl ResumeState {
@@ -81,6 +84,7 @@ impl ResumeState {
             etag: validators.etag.clone(),
             last_modified: validators.last_modified.clone(),
             remaining,
+            ended_at: None,
         }
     }
 

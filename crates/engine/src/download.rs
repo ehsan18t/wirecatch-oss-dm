@@ -11,7 +11,7 @@ use url::Url;
 
 use crate::abandon::{Abandoned, Abandonment};
 use crate::checkpoint::{Checkpoints, ResumeSaver};
-use crate::error::{Chain, Error, IoAction, IoContext, Result};
+use crate::error::{Chain, Error, IoAction, IoContext, REFUSED_LINK_STATUSES, Result};
 use crate::file_work::FileWork;
 use crate::http::{Clients, Validators};
 use crate::net_guard::{PrivateGuard, guard_from, private_guard};
@@ -145,8 +145,10 @@ pub enum ExistingFile {
     /// in the part file next to a resume file that says it is complete.
     /// Running the request again with [`exact_path`](DownloadRequest::exact_path)
     /// once the path is free, or after moving both files to another path and
-    /// asking for that one, then only finishes it, unless the server answers
-    /// that the file changed.
+    /// asking for that one, then only finishes it when the server answers with
+    /// the same size and validators or refuses the link. A server that answers
+    /// that the file changed has it fetched again, and any other failure ends
+    /// the run with that error and the data kept.
     /// Taking the path and keeping it are one step on Windows and on Linux file
     /// systems that support it (see
     /// [`naming::move_to_free_name`](crate::naming::move_to_free_name)).
@@ -478,12 +480,12 @@ async fn complete_earlier_run(request: &DownloadRequest, url: &str) -> Result<Op
     .await
 }
 
-/// Whether the data of a run that saved `saved` is still the file: the server answers as it did then, or cannot answer, so an expired link costs nothing. A server without ranges then finishes it too, where a resume would fetch it again.
+/// Whether the data of a run that saved `saved` is still the file: the server answers as it did then, or refuses the link, so an expired link costs nothing (D156). A server without ranges then finishes it too, where a resume would fetch it again. Any other failure proves nothing, so the run ends with it and the data waits.
 fn still_stands(saved: &ResumeState, opened: &Result<Opened>) -> bool {
     match opened {
         Ok(opened) => saved.describes(opened.total, &opened.validators),
-        Err(Error::Cancelled) => false,
-        Err(_) => true,
+        Err(Error::HttpStatus { status, .. }) => REFUSED_LINK_STATUSES.contains(status),
+        Err(_) => false,
     }
 }
 
@@ -725,6 +727,41 @@ mod tests {
             action: IoAction::Finish,
             path: "f.bin".into(),
             source: kind.into(),
+        }
+    }
+
+    /// Only an answer about the link finishes a part file: a failure to reach or trust the server shows nothing.
+    #[test]
+    fn only_a_refused_link_counts_as_an_expired_one() {
+        let saved = ResumeState::new(
+            "https://x/f",
+            Some(1),
+            false,
+            &Validators::default(),
+            Vec::new(),
+        );
+        let status = |status| Error::HttpStatus {
+            status,
+            url: "https://x/f".into(),
+        };
+        for code in REFUSED_LINK_STATUSES {
+            assert!(still_stands(&saved, &Err(status(code))), "{code}");
+        }
+        let proves_nothing = [
+            status(500),
+            status(503),
+            Error::Certificate {
+                reason: "unknown issuer".into(),
+            },
+            Error::PrivateNetwork {
+                url: "https://x/f".into(),
+            },
+            Error::ProxyLoginRefused,
+            Error::Cancelled,
+        ];
+        for error in proves_nothing {
+            let told = error.to_string();
+            assert!(!still_stands(&saved, &Err(error)), "{told}");
         }
     }
 

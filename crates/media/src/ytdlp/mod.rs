@@ -164,8 +164,8 @@ impl YtDlpError {
     }
 }
 
-/// The answers that say an address stopped leading to its file, whoever downloads it: a fresh one from the page usually works.
-pub const REFUSED_ADDRESS_STATUSES: [u16; 4] = [401, 403, 404, 410];
+/// The answers that say an address stopped leading to its file: a fresh one from the page usually works.
+pub const REFUSED_ADDRESS_STATUSES: [u16; 4] = wirecatch_engine::REFUSED_LINK_STATUSES;
 
 /// How yt-dlp says a selection names no format the page lists now. yt-dlp reports causes only as text.
 const FORMAT_GONE: &str = "requested format is not available";
