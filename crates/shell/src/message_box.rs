@@ -1,5 +1,5 @@
-//! A system message box, for what must be said before the app has a window of its own. Only
-//! Windows has one without a toolkit; elsewhere the text goes to the log alone.
+//! A system message, for what must be said before the app has a window of its own: a box on
+//! Windows. Linux has none without a toolkit, so there it is a notification (D103).
 
 /// How the box is marked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8,9 +8,18 @@ pub enum Tone {
     Warning,
 }
 
-/// Shows `text` under `title` and waits until the person closes it.
+/// Shows `text` under `title`. A box waits until the person closes it.
 pub fn show(tone: Tone, title: &str, text: &str) {
     tracing::info!("{title}: {text}");
+    #[cfg(target_os = "linux")]
+    if let Err(e) = notify_rust::Notification::new()
+        .appname(title)
+        .summary(title)
+        .body(&crate::system_notifications::escape_text(text))
+        .show()
+    {
+        tracing::warn!("could not show a notification: {e}");
+    }
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::WindowsAndMessaging::{

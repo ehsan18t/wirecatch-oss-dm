@@ -49,7 +49,7 @@ impl Notifier {
 
 /// Escapes text for a notification's markup: file names come from websites. Only what markup
 /// needs, since a service that shows a body as plain text would show any other entity as written.
-fn escape_text(text: &str) -> String {
+pub(crate) fn escape_text(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
         match c {
