@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use wirecatch_files::FileError;
+use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{
     AddonId, AppSettings, AppSettingsPatch, Category, ImportPreview, UiEvent,
 };
@@ -12,12 +13,22 @@ use wirecatch_protocol::extension::{
 };
 use wirecatch_protocol::wire::Event;
 
+use wirecatch_settings::proxy::SavedProxyServer;
 use wirecatch_settings::settings_file::{Current, NewIds};
 
 use super::Manager;
 use super::queues::apply_to_slot;
 use super::state::{QueueSlot, State};
 use crate::error::{CoreError, Result};
+
+/// Whether the password saved for proxy `id` still belongs to it after an import: a profile
+/// has no proxy passwords (A6), so a saved one stays only with its proxy.
+fn password_stays(id: ProxyServerId, was: &[SavedProxyServer], now: &[SavedProxyServer]) -> bool {
+    let was = was.iter().find(|p| p.id == id);
+    let now = now.iter().find(|p| p.id == id);
+    matches!((was, now), (Some(was), Some(now))
+        if wirecatch_settings::proxy::same_proxy(&was.settings, &now.settings))
+}
 
 impl Manager {
     /// The current settings.
@@ -180,11 +191,9 @@ impl Manager {
     }
 
     /// Applies a settings profile from `path`. Queues are matched by name, folders
-    /// are resolved on this machine, and downloads are left alone. What changed,
-    /// including any folder that had to be replaced, is sent to the UI as
-    /// [`UiEvent::SettingsImported`]. Add-ons the profile lists that are not
-    /// installed here are listed there for the UI to offer; nothing is
-    /// downloaded without the person asking.
+    /// are resolved on this machine, and downloads are left alone. Add-ons the profile
+    /// lists are not installed: nothing is downloaded without the person asking.
+    /// [`preview_import`](Self::preview_import) tells what this would change.
     ///
     /// # Errors
     ///
@@ -195,7 +204,6 @@ impl Manager {
     /// on an error.
     pub async fn import_settings(&self, path: &Path) -> Result<()> {
         let localized = self.read_settings_file(path).await?;
-        let wants_media = localized.profile.addons.contains(&AddonId::Media);
 
         let retest: Vec<_> = {
             let mut state = self.lock_open()?;
@@ -225,15 +233,9 @@ impl Manager {
                     Err(_) => state.queues.push(QueueSlot::new(queue)),
                 }
             }
-            // A profile has no proxy passwords (A6): a saved one stays only with its proxy.
             let kept: wirecatch_settings::proxy::Logins = std::mem::take(&mut state.proxy_logins)
                 .into_iter()
-                .filter(|(id, _)| {
-                    let was = state.proxy_servers.iter().find(|p| p.id == *id);
-                    let now = imported.proxies.iter().find(|p| p.id == *id);
-                    matches!((was, now), (Some(was), Some(now))
-                        if wirecatch_settings::proxy::same_proxy(&was.settings, &now.settings))
-                })
+                .filter(|(id, _)| password_stays(*id, &state.proxy_servers, &imported.proxies))
                 .collect();
             let mut retest = Vec::new();
             for profile in &mut imported.proxies {
@@ -253,10 +255,6 @@ impl Manager {
             // Queues first: the new settings may name a queue that was just added.
             self.queues_changed(&mut state);
             self.apply_settings(&mut state, imported.settings);
-            if wants_media && state.addon.tools.is_none() {
-                imported.summary.addons_to_offer.push(AddonId::Media);
-            }
-            self.emit(UiEvent::SettingsImported(imported.summary));
             retest
         };
         for id in retest {
@@ -268,9 +266,10 @@ impl Manager {
     /// What [`import_settings`](Self::import_settings) would change with the
     /// profile at `path`, without changing anything: every folder as it would
     /// resolve here (startup and system folders refused and replaced, folders
-    /// outside the person's own folders flagged), the queues it would add and
-    /// update, and the add-ons it would offer. The UI shows this and asks before
-    /// importing.
+    /// outside the person's own folders flagged), the queues and proxy servers it
+    /// would add and update, the proxy passwords it would drop, the sites it would
+    /// let reach or stop reaching the person's network, and the add-ons it would
+    /// offer. The UI shows this and asks before importing.
     ///
     /// # Errors
     ///
@@ -300,10 +299,31 @@ impl Manager {
         if wants_media && state.addon.tools.is_none() {
             addons_to_offer.push(AddonId::Media);
         }
+        let proxy_passwords_removed = state
+            .proxy_servers
+            .iter()
+            .filter(|p| {
+                state.proxy_logins.contains_key(&p.id)
+                    && !password_stays(p.id, &state.proxy_servers, &imported.proxies)
+            })
+            .map(|p| p.settings.shown_name())
+            .collect();
+        let missing_from = |list: &[String], other: &[String]| -> Vec<String> {
+            list.iter()
+                .filter(|site| !other.contains(site))
+                .cloned()
+                .collect()
+        };
+        let (now, was) = (&imported.settings.local_sites, &state.settings.local_sites);
         Ok(ImportPreview {
-            folders: imported.summary.folders,
-            queues_added: imported.added,
-            queues_updated: imported.updated,
+            local_sites_added: missing_from(now, was),
+            local_sites_removed: missing_from(was, now),
+            folders: imported.folders,
+            queues_added: imported.queues_added,
+            queues_updated: imported.queues_updated,
+            proxies_added: imported.proxies_added,
+            proxies_updated: imported.proxies_updated,
+            proxy_passwords_removed,
             addons_to_offer,
         })
     }

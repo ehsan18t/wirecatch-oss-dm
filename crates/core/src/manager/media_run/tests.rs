@@ -11,7 +11,7 @@ use wirecatch_media::{MediaJob, MediaProgress, Pick};
 use wirecatch_sites::local_network::ChosenBy;
 
 use super::network::{format_rule, network_rule};
-use super::page::{address_gone, formats_ytdlp_takes, part_name, part_options};
+use super::page::{address_gone, fetch_parts, formats_ytdlp_takes, part_name, part_options};
 use super::placement::{self, Placed, final_path, place, remember_placing};
 use super::workdir;
 use super::*;
@@ -830,6 +830,70 @@ async fn parts_are_kept_only_for_the_formats_that_wrote_them() {
 }
 
 const LINK: &str = "https://example.com/v";
+
+/// A format that server `at` answers from.
+fn format_at(id: &str, url: &Url) -> Format {
+    serde_json::from_value(serde_json::json!({ "format_id": id, "url": url.as_str() })).unwrap()
+}
+
+/// Fetches `found` under a job that gives up on the first stall, and gives what the person is told.
+async fn failure_of_parts(found: &[Format]) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    let work = dir.path().join("Clip.mp4.wcmedia");
+    std::fs::create_dir(&work).unwrap();
+    let mut job = job_at(dir.path(), &dir.path().join("Clip.mp4"), LINK, Taken::Ask);
+    job.options.stall_timeout = Duration::from_millis(100);
+    job.options.max_retries = 0;
+    job.chosen_by = ChosenBy::Person;
+    // A page on the same machine as its formats, which it may then reach.
+    job.url = Url::parse("http://127.0.0.1/watch").unwrap();
+    let found: Vec<&Format> = found.iter().collect();
+    let progress = MediaProgress::default();
+    let ended = fetch_parts(&job, &found, &work, &progress, &CancellationToken::new()).await;
+    match ended {
+        Err(PageError::Failed(error)) => error.message,
+        Err(PageError::Refused { status }) => panic!("refused: {status:?}"),
+        Ok(files) => panic!("not a failure: {files:?}"),
+    }
+}
+
+/// A server that holds every body: its part stalls before its first byte.
+async fn stalling_server(ranges: bool) -> wirecatch_test_support::http::TestServer {
+    wirecatch_test_support::http::TestServer::start(
+        wirecatch_test_support::test_data(1024),
+        wirecatch_test_support::http::Config {
+            ranges,
+            hold_bodies_from: Some(0),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_part_that_stalls_before_its_first_byte_is_not_promised_a_kept_part() {
+    let stalling = stalling_server(true).await;
+    let told = failure_of_parts(&[format_at("137", &stalling.url("v.mp4"))]).await;
+    assert!(told.contains("stopped sending data"), "{told}");
+    assert!(!told.contains("is kept"), "{told}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_finished_part_is_kept_when_the_other_cannot_continue() {
+    let finishing = wirecatch_test_support::http::TestServer::start(
+        wirecatch_test_support::test_data(1024),
+        wirecatch_test_support::http::Config::default(),
+    )
+    .await;
+    let stalling = stalling_server(false).await;
+    let told = failure_of_parts(&[
+        format_at("137", &finishing.url("v.mp4")),
+        format_at("140", &stalling.url("a.m4a")),
+    ])
+    .await;
+    assert!(told.contains("stopped sending data"), "{told}");
+    assert!(told.contains("is kept"), "{told}");
+}
 
 /// A work folder holding a finished `Clip.mp4` beside its planned path.
 fn finished_in_work(dir: &Path) -> (PathBuf, PathBuf, PathBuf) {

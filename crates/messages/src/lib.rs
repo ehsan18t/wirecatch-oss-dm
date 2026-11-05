@@ -21,11 +21,26 @@ const HELD_FILE_CODES: &[i32] = &[32, 33]; // ERROR_SHARING_VIOLATION, ERROR_LOC
 #[cfg(not(windows))]
 const HELD_FILE_CODES: &[i32] = &[];
 
-/// Whether the link delivered data before it failed, which turns a refusal into an expired link.
+/// Whether the link delivered data before it failed, which turns a refusal into an expired link, and what the next run does with that data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Worked {
+    /// The next run continues from the data kept.
     Before,
+    /// Nothing kept can be continued, so the next run starts from the beginning.
+    BeforeStartsOver,
     Never,
+}
+
+impl Worked {
+    /// `what` happened, with what trying again does with the data so far.
+    fn retry(self, what: &str) -> UserError {
+        let next = match self {
+            Worked::Before => "Try again; the part already downloaded is kept.",
+            Worked::BeforeStartsOver => "Try again; the download starts from the beginning.",
+            Worked::Never => "Try again.",
+        };
+        fix(format!("{what} {next}"), FixAction::Retry)
+    }
 }
 
 fn network_problem(error: &wirecatch_engine::NetworkError) -> UserError {
@@ -78,17 +93,13 @@ pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError
             format!("Something went wrong inside Wirecatch ({detail}). Try again, and please report it if it keeps happening."),
             FixAction::Retry,
         ),
-        EngineError::Stalled { after } => fix(
-            format!(
-                "The server stopped sending data for {}. Try again; the part already downloaded is kept.",
-                how_long(*after)
-            ),
-            FixAction::Retry,
-        ),
-        EngineError::PrematureEof { .. } => fix(
-            "The connection closed before the file was finished. Try again; the part already downloaded is kept.",
-            FixAction::Retry,
-        ),
+        EngineError::Stalled { after } => worked.retry(&format!(
+            "The server stopped sending data for {}.",
+            how_long(*after)
+        )),
+        EngineError::PrematureEof { .. } => {
+            worked.retry("The connection closed before the file was finished.")
+        }
         EngineError::RangeNotHonored { .. } => fix(
             "The server stopped allowing downloads to continue where they left off. Try again to restart the download.",
             FixAction::Retry,
@@ -261,11 +272,8 @@ pub fn storage_failed(reason: &str) -> UserError {
 
 /// The message for a download whose run ended without a result (a bug).
 #[must_use]
-pub fn stopped_unexpectedly() -> UserError {
-    fix(
-        "The download stopped unexpectedly. Try again; the part already downloaded is kept.",
-        FixAction::Retry,
-    )
+pub fn stopped_unexpectedly(worked: Worked) -> UserError {
+    worked.retry("The download stopped unexpectedly.")
 }
 
 /// An `ftps` or `ftpes` link to a server that offers no encryption.
@@ -377,6 +385,12 @@ fn http_status(status: u16, worked: Worked) -> UserError {
         401 | 403 | 404 | 410 if worked == Worked::Before => fix(
             format!(
                 "The download link has expired (the server answered {status}). Open the page again and refresh the link; the part already downloaded is kept."
+            ),
+            FixAction::RefreshLink,
+        ),
+        401 | 403 | 404 | 410 if worked == Worked::BeforeStartsOver => fix(
+            format!(
+                "The download link has expired (the server answered {status}). Open the page again and refresh the link; the download then starts from the beginning."
             ),
             FixAction::RefreshLink,
         ),
@@ -720,6 +734,33 @@ mod tests {
                 .message
                 .contains("expired")
         );
+        let starts_over = describe(&status(403), Path::new("/d"), Worked::BeforeStartsOver);
+        assert!(starts_over.message.contains("expired"));
+        assert_eq!(starts_over.fix, Some(FixAction::RefreshLink));
+    }
+
+    #[test]
+    fn only_a_download_that_will_continue_is_promised_its_part() {
+        const KEPT: &str = "already downloaded is kept";
+        let eof = EngineError::PrematureEof { at: 1, end: 2 };
+        let said = |error: &EngineError, worked| describe(error, Path::new("/d"), worked).message;
+        for error in [status(403), status(404), stalled(), eof] {
+            let continues = said(&error, Worked::Before);
+            assert!(continues.contains(KEPT), "{continues}");
+            let starts_over = said(&error, Worked::BeforeStartsOver);
+            assert!(!starts_over.contains(KEPT), "{starts_over}");
+            assert!(
+                starts_over.contains("starts from the beginning"),
+                "{starts_over}"
+            );
+            let never = said(&error, Worked::Never);
+            assert!(!never.contains(KEPT), "{never}");
+            assert!(!never.contains("beginning"), "{never}");
+        }
+        let vanished = |worked| stopped_unexpectedly(worked).message;
+        assert!(vanished(Worked::Before).contains(KEPT));
+        assert!(!vanished(Worked::BeforeStartsOver).contains(KEPT));
+        assert!(!vanished(Worked::Never).contains(KEPT));
     }
 
     #[test]
