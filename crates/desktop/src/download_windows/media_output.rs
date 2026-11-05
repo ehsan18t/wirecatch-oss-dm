@@ -233,14 +233,6 @@ pub fn subtitle_reason(fit: &OutputFit, choice: &OutputChoice) -> Option<String>
     })
 }
 
-/// Subtitles inside a file mean writing it after the download, even when nothing is converted;
-/// where something is converted anyway, [`conversion_note`] says what that takes.
-pub fn subtitles_added_note(fit: &OutputFit, shown: SubtitleChoice) -> Option<&'static str> {
-    let converts = fit.video == StreamAction::Encode || fit.audio == StreamAction::Encode;
-    (shown == SubtitleChoice::Inside && !converts)
-        .then_some("Subtitles are added after downloading, which takes seconds.")
-}
-
 /// `ids` as the window lists them: a language's repeat, which [`shown_subtitles`] leaves out, is
 /// that language's listed one.
 fn listed_subtitles(offered: &[MediaSubtitle], ids: &[String]) -> Vec<String> {
@@ -701,16 +693,6 @@ mod tests {
             LanguageSource::Kept,
             "the window switched it on"
         );
-    }
-
-    #[test]
-    fn only_subtitles_written_into_a_file_that_converts_nothing_get_their_own_note() {
-        let copied = fit(OutputFormat::Mp4, StreamAction::Copy, StreamAction::Copy);
-        let encoded = fit(OutputFormat::Mp4, StreamAction::Encode, StreamAction::Copy);
-        assert!(subtitles_added_note(&copied, SubtitleChoice::Inside).is_some());
-        assert!(subtitles_added_note(&copied, SubtitleChoice::Files).is_none());
-        assert!(subtitles_added_note(&copied, SubtitleChoice::Off).is_none());
-        assert!(subtitles_added_note(&encoded, SubtitleChoice::Inside).is_none());
     }
 
     /// A page with every kind of quality, read as the core reads it, and its window's question.
