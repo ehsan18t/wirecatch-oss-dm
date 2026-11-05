@@ -13,7 +13,6 @@ export const HAND_WRITTEN = [
   'hosts',
   'ids',
   'media-choices',
-  'media-start',
   'queue-settings',
   'secrets',
   'setting-words',

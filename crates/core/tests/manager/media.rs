@@ -351,7 +351,8 @@ fn without_asking(h: &Harness, quality: VideoQuality, fallback: QualityFallback)
     settings.media.ask_each_time = false;
     settings.media.quality = quality;
     settings.media.fallback = fallback;
-    h.manager.update_settings(settings)?;
+    h.manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))?;
     Ok(())
 }
 

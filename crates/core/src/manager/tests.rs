@@ -111,7 +111,9 @@ async fn manager_with(
     // These captures start at once, without the window a fresh install shows first (D23).
     let mut settings = manager.get_settings();
     settings.extension.ask_before_download = false;
-    manager.update_settings(settings).unwrap();
+    manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
+        .unwrap();
     let engine: FakeEngine = Arc::new(engine);
     manager.use_fake_engine(engine);
     (manager, dir)
@@ -701,7 +703,9 @@ async fn every_way_a_link_arrives_runs_under_its_own_rule() {
     .await;
     let mut settings = manager.get_settings();
     settings.extension.ask_before_download = true;
-    manager.update_settings(settings).unwrap();
+    manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
+        .unwrap();
     let rules = |n: usize| {
         let seen = seen.clone();
         async move {
@@ -744,7 +748,9 @@ async fn a_download_that_fails_to_start_gives_its_slot_to_the_next() {
     let (manager, _dir) = manager_with(deaf, PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
     let mut settings = manager.get_settings();
     settings.max_concurrent_downloads = 1;
-    manager.update_settings(settings).unwrap();
+    manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
+        .unwrap();
     manager.set_queue_paused(DEFAULT_QUEUE_ID, true).unwrap();
     let mut ids = Vec::new();
     for name in ["broken", "second", "third"] {
@@ -769,7 +775,9 @@ async fn a_download_runs_under_the_apps_limits_and_its_queues() {
     let (manager, _dir) = manager_with(deaf, PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
     let mut settings = manager.get_settings();
     settings.connections_per_download = CONNECTIONS;
-    manager.update_settings(settings).unwrap();
+    manager
+        .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
+        .unwrap();
     let state = manager.lock();
     let global = &manager.inner.global_limiter;
     let queue = &state.slot(DEFAULT_QUEUE_ID).unwrap().limiter;

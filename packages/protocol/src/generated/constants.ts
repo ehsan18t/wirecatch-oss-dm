@@ -5,11 +5,9 @@ import type { Call } from './Call';
 import type { ErrorCode } from './ErrorCode';
 import type { Event } from './Event';
 import type { ExtensionSettings } from './ExtensionSettings';
-import type { FinishNoticeTime } from './FinishNoticeTime';
 import type { FixAction } from './FixAction';
 import type { OutputFormat } from './OutputFormat';
 import type { QueueId } from './QueueId';
-import type { StartNoticeTime } from './StartNoticeTime';
 import type { Theme } from './Theme';
 
 /**
@@ -140,27 +138,6 @@ export const THEMES: readonly Theme[] = ['system', 'light', 'dark'];
  * answer first: a fresh link, another folder, or keeping the original.
  */
 export const RETRY_FIXES: readonly FixAction[] = ['retry', 'free_disk_space'];
-
-/**
- * Every [`StartNoticeTime`] with its seconds, in the order settings offer them (D65).
- */
-export const START_NOTICE_TIMES: readonly (readonly [StartNoticeTime, number])[] = [
-  ['three_seconds', 3],
-  ['five_seconds', 5],
-  ['eight_seconds', 8],
-  ['ten_seconds', 10],
-];
-
-/**
- * Every [`FinishNoticeTime`] with its seconds (`null` until closed), in the order settings
- * offer them (D65).
- */
-export const FINISH_NOTICE_TIMES: readonly (readonly [FinishNoticeTime, number | null])[] = [
-  ['five_seconds', 5],
-  ['eight_seconds', 8],
-  ['fifteen_seconds', 15],
-  ['until_closed', null],
-];
 
 /**
  * Every [`Accent`], in the order settings offer them. The design system in `packages/ui`
@@ -530,16 +507,6 @@ export const AUDIO_KBPS_CHOICES: Readonly<Partial<Record<OutputFormat, readonly 
   mp3: [128, 192, 256, 320],
   m4a: [128, 192, 256],
   opus: [96, 128, 160, 192],
-};
-
-/**
- * The audio bit rate, in kbps, used when the audio of a download saved as each
- * format must be re-encoded (`OutputFormat::default_kbps`).
- */
-export const AUDIO_DEFAULT_KBPS: Readonly<Partial<Record<OutputFormat, number>>> = {
-  mp3: 192,
-  m4a: 192,
-  opus: 128,
 };
 
 /**

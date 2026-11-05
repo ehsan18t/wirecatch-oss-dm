@@ -1426,21 +1426,6 @@ crate::exported::exported_consts! {
     /// download complete window offer Try again for them (D52). The others need the person's
     /// answer first: a fresh link, another folder, or keeping the original.
     pub const RETRY_FIXES: &[FixAction] = &[FixAction::Retry, FixAction::FreeDiskSpace];
-    /// Every [`StartNoticeTime`] with its seconds, in the order settings offer them (D65).
-    pub const START_NOTICE_TIMES: &[(StartNoticeTime, u64)] = &[
-        (StartNoticeTime::ThreeSeconds, StartNoticeTime::ThreeSeconds.seconds()),
-        (StartNoticeTime::FiveSeconds, StartNoticeTime::FiveSeconds.seconds()),
-        (StartNoticeTime::EightSeconds, StartNoticeTime::EightSeconds.seconds()),
-        (StartNoticeTime::TenSeconds, StartNoticeTime::TenSeconds.seconds()),
-    ];
-    /// Every [`FinishNoticeTime`] with its seconds (`null` until closed), in the order settings
-    /// offer them (D65).
-    pub const FINISH_NOTICE_TIMES: &[(FinishNoticeTime, Option<u64>)] = &[
-        (FinishNoticeTime::FiveSeconds, FinishNoticeTime::FiveSeconds.seconds()),
-        (FinishNoticeTime::EightSeconds, FinishNoticeTime::EightSeconds.seconds()),
-        (FinishNoticeTime::FifteenSeconds, FinishNoticeTime::FifteenSeconds.seconds()),
-        (FinishNoticeTime::UntilClosed, FinishNoticeTime::UntilClosed.seconds()),
-    ];
     /// Every [`Accent`], in the order settings offer them. The design system in `packages/ui`
     /// reads this list and defines a palette for each of these but `system`; its tests fail on
     /// an accent without one.
@@ -1782,8 +1767,7 @@ pub struct CaptureConfirmation {
     pub later: bool,
 }
 
-/// Everything the core pushes to the desktop UI. The desktop app forwards these
-/// to the webview as one event stream.
+/// Everything the core pushes to the desktop UI, as one event stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 #[ts(export)]
@@ -2219,8 +2203,7 @@ mod tests {
         assert_eq!(settings.max_concurrent_downloads, 5);
     }
 
-    /// The design system's stylesheet names its accents with these words (`data-accent`), and
-    /// the desktop shell's first-paint script writes them as they are.
+    /// The design system's stylesheet names its accents with these words (`data-accent`).
     #[test]
     fn accents_and_themes_are_snake_case_words() {
         let accents = [

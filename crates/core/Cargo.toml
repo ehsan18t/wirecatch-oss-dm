@@ -60,7 +60,7 @@ wirecatch-logging = { workspace = true, features = ["setup"] }
 wirecatch-files = { workspace = true, features = ["testing"] }
 wirecatch-server.workspace = true
 wirecatch-sites = { workspace = true, features = ["testing"] }
-wirecatch-test-support = { path = "../test-support", features = ["downloads", "faults", "resume", "servers"] }
+wirecatch-test-support = { path = "../test-support", features = ["downloads", "faults", "resume", "servers", "settings"] }
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 ed25519-dalek = { version = "2.2.0", default-features = false, features = ["std"] }
 

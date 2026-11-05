@@ -136,36 +136,6 @@ macro_rules! enum_lists {
 
 enum_lists!(Accent, Theme, FixAction);
 
-/// Lists of a generated enum's values with their seconds (`$seconds` is `u64`, or `Option<u64>`
-/// for `null`), as `[value, seconds]` pairs.
-macro_rules! timed_lists {
-    ($($name:ident: $seconds:ty => $ts:literal),+) => {
-        $(
-            #[cfg(test)]
-            impl Exported for &[(crate::app::$name, $seconds)] {
-                fn written(&self) -> Written {
-                    Written {
-                        value: serde_json::to_string(self).unwrap(),
-                        annotation: Some(concat!(
-                            "readonly (readonly [",
-                            stringify!($name),
-                            ", ",
-                            $ts,
-                            "])[]"
-                        )),
-                        imports: &[stringify!($name)],
-                    }
-                }
-            }
-        )+
-    };
-}
-
-timed_lists!(
-    StartNoticeTime: u64 => "number",
-    FinishNoticeTime: Option<u64> => "number | null"
-);
-
 #[cfg(test)]
 impl Exported for crate::QueueId {
     fn written(&self) -> Written {
@@ -446,30 +416,19 @@ mod tests {
             let values: Vec<String> = values.iter().map(u32::to_string).collect();
             format!("[{}]", values.join(", "))
         };
-        vec![
-            per_format(
-                "AUDIO_KBPS_CHOICES",
-                &[
-                    " The audio bit rates, in kbps, a person can pick when saving as each format;",
-                    " formats without a choice are left out (`OutputFormat::kbps_choices`).",
-                ],
-                "Readonly<Partial<Record<OutputFormat, readonly number[]>>>",
-                |format| {
-                    Some(format.kbps_choices())
-                        .filter(|c| !c.is_empty())
-                        .map(list)
-                },
-            ),
-            per_format(
-                "AUDIO_DEFAULT_KBPS",
-                &[
-                    " The audio bit rate, in kbps, used when the audio of a download saved as each",
-                    " format must be re-encoded (`OutputFormat::default_kbps`).",
-                ],
-                "Readonly<Partial<Record<OutputFormat, number>>>",
-                |format| format.default_kbps().map(|kbps| kbps.to_string()),
-            ),
-        ]
+        vec![per_format(
+            "AUDIO_KBPS_CHOICES",
+            &[
+                " The audio bit rates, in kbps, a person can pick when saving as each format;",
+                " formats without a choice are left out (`OutputFormat::kbps_choices`).",
+            ],
+            "Readonly<Partial<Record<OutputFormat, readonly number[]>>>",
+            |format| {
+                Some(format.kbps_choices())
+                    .filter(|c| !c.is_empty())
+                    .map(list)
+            },
+        )]
     }
 
     /// Where `ts-rs` writes the types: `TS_RS_EXPORT_DIR`, which `.cargo/config.toml` points into `target/` for plain test runs and `pnpm protocol:generate` points at a staging folder, or its own default.
@@ -576,25 +535,11 @@ mod tests {
                 serde_json::json!({ "before": before, "patch": patch, "after": after })
             })
             .collect();
-        let starts: Vec<Value> = crate::media_start::start_cases()
-            .into_iter()
-            .map(|(defaults, options, subtitles, chapters)| {
-                let start = defaults.start(&options, &subtitles, chapters);
-                serde_json::json!({
-                    "defaults": defaults,
-                    "options": options,
-                    "subtitles": subtitles,
-                    "chapters": chapters,
-                    "start": start,
-                })
-            })
-            .collect();
         let fixtures = serde_json::json!({
             "normalize_site": sites,
             "normalize_file_type": file_types,
             "apply_extension_settings": applied,
             "apply_browser_controls": controls,
-            "media_start": starts,
         });
         let dir = export_dir();
         std::fs::create_dir_all(&dir).unwrap();

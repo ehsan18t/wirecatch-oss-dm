@@ -61,14 +61,9 @@ impl Manager {
         )?)
     }
 
-    /// Replaces every setting after checking them. Lists are cleaned up (lower case,
-    /// no duplicates), and the stored result arrives as `SettingsChanged`. New
-    /// limits apply to running downloads at once, and a new proxy to downloads that start later
-    /// (D73.3).
+    /// Applies `patch` to the current settings, checks the result and keeps it. A patch holds only the settings that change, so settings nobody changed keep their current values whoever set them: two windows changing different settings never undo each other.
     ///
-    /// Settings someone else changed in the meantime are overwritten, so the windows and
-    /// the shell change settings with [`change_settings`](Self::change_settings); this is
-    /// for replacing them all at once.
+    /// Lists are cleaned up (lower case, no duplicates), and the stored result arrives as `SettingsChanged`. New limits apply to running downloads at once, and a new proxy to downloads that start later (D73.3).
     ///
     /// # Errors
     ///
@@ -76,24 +71,6 @@ impl Manager {
     /// [`CoreError::Path`] for a folder that does not resolve, and
     /// [`CoreError::Closed`] once the manager has shut down. Nothing changes on an
     /// error.
-    pub fn update_settings(&self, new: AppSettings) -> Result<()> {
-        let mut state = self.lock_open()?;
-        wirecatch_settings::proxy::check_use(new.proxy.proxy, &state.proxy_servers)?;
-        let new = wirecatch_settings::validate(
-            new,
-            &state.queue_list(),
-            &self.inner.folders,
-            &state.suffixes,
-        )?;
-        self.apply_settings(&mut state, new);
-        Ok(())
-    }
-
-    /// Applies `patch` to the current settings, checks the result and keeps it, like [`update_settings`](Self::update_settings). A patch holds only the settings that change, so settings nobody changed keep their current values whoever set them: two windows changing different settings never undo each other.
-    ///
-    /// # Errors
-    ///
-    /// The errors of [`update_settings`](Self::update_settings).
     pub fn change_settings(&self, patch: AppSettingsPatch) -> Result<()> {
         if let Some(extension) = &patch.extension {
             wirecatch_settings::check_site_patch(extension)?;
@@ -128,7 +105,7 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// The errors of [`update_settings`](Self::update_settings).
+    /// The errors of [`change_settings`](Self::change_settings).
     pub fn update_browser_controls(&self, patch: BrowserControlsPatch) -> Result<BrowserControls> {
         self.change_settings(patch.into())?;
         Ok(self.browser_controls())
@@ -138,7 +115,7 @@ impl Manager {
     ///
     /// # Errors
     ///
-    /// The errors of [`update_settings`](Self::update_settings), and [`CoreError::Invalid`] for a site to keep that names no host.
+    /// The errors of [`change_settings`](Self::change_settings), and [`CoreError::Invalid`] for a site to keep that names no host.
     pub fn update_extension_settings(
         &self,
         patch: ExtensionSettingsPatch,

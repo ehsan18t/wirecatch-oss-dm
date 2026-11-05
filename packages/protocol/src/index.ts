@@ -5,7 +5,6 @@ export * from './extension-settings';
 export * from './hosts';
 export * from './ids';
 export * from './media-choices';
-export * from './media-start';
 export * from './queue-settings';
 export * from './secrets';
 export * from './setting-words';

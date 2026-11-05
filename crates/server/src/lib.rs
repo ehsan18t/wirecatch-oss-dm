@@ -77,7 +77,7 @@ where
                         send(&mut stream, Message::Event { event }, version).await?;
                     }
                 }
-                // The manager is gone; nothing more will happen.
+                // Never happens while this holds the manager; the match needs the arm.
                 Err(RecvError::Closed) => return Ok(()),
             },
         }

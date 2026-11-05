@@ -17,8 +17,7 @@ import type { SuffixListInfo } from './SuffixListInfo';
 import type { UserError } from './UserError';
 
 /**
- * Everything the core pushes to the desktop UI. The desktop app forwards these
- * to the webview as one event stream.
+ * Everything the core pushes to the desktop UI, as one event stream.
  */
 export type UiEvent =
   | { type: 'downloads_changed'; data: Array<DownloadSummary> }

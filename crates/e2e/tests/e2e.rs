@@ -275,7 +275,7 @@ fn extension_settings_sync_both_ways() {
         settings.extension.capture_enabled = false;
         settings.extension.capture_extensions = vec!["zip".into()];
         app.manager
-            .update_settings(settings)
+            .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
             .expect("the app saved the change");
         let from_app = app.manager.extension_settings();
         assert!(!from_app.capture_enabled);
@@ -338,7 +338,7 @@ fn browser_controls_sync_both_ways() {
             let mut settings = app.manager.get_settings();
             edit(&mut settings);
             app.manager
-                .update_settings(settings)
+                .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
                 .expect("the app saved the change");
             let from_app = app.manager.browser_controls();
             for ext in [&mut chrome, &mut firefox] {

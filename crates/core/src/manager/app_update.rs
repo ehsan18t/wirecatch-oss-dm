@@ -445,7 +445,9 @@ mod tests {
         );
         let mut settings = h.manager.get_settings();
         settings.prerelease_updates = true;
-        h.manager.update_settings(settings).unwrap();
+        h.manager
+            .change_settings(wirecatch_test_support::settings::whole_patch(&settings))
+            .unwrap();
         let update = h
             .manager
             .check_app_update("0.1.0", None)

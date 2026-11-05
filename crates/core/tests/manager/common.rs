@@ -261,7 +261,7 @@ pub fn row(manager: &Manager, id: DownloadId) -> DownloadSummary {
 pub fn tune(manager: &Manager, change: impl FnOnce(&mut AppSettings)) -> TestResult {
     let mut settings = manager.get_settings();
     change(&mut settings);
-    manager.update_settings(settings)?;
+    manager.change_settings(wirecatch_test_support::settings::whole_patch(&settings))?;
     Ok(())
 }
 

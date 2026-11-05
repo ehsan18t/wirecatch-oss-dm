@@ -7,10 +7,6 @@ import type { FinishedQueue } from './FinishedQueue';
  */
 export type FinishedGroup = {
   /**
-   * Identifies the group while the window is open, for keyed lists.
-   */
-  key: number;
-  /**
    * The queue whose summary this is; `None` for downloads told one by one.
    */
   queue: FinishedQueue | null;

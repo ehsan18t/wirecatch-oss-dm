@@ -105,7 +105,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-95  | fix(core): apply the local rule to yt-dlp reads    | `fix/ytdlp-local-rule`           | 137                          | P2       | medium | none         | merged |
 | PR-96  | fix(engine): check free space before a download    | `fix/free-space-check`           | 140                          | P2       | medium | none         | merged |
 | PR-97  | fix(core): record every file of a move up front    | `fix/record-moves`               | 141, 201, 246                | P2       | medium | PR-04, PR-08 | merged |
-| PR-98  | chore: remove code nothing calls                   | `chore/remove-dead-commands`     | 142, 235, 236                | P3       | medium | none         | open   |
+| PR-98  | chore: remove code nothing calls                   | `chore/remove-dead-commands`     | 142, 235, 236                | P3       | medium | none         | merged |
 | PR-99  | test: wait under PATIENCE in every test            | `test/patience-waits`            | 143, 242                     | P3       | medium | none         | merged |
 | PR-100 | test: stop racing real-clock limits in tests       | `test/no-clock-races`            | 144, 167                     | P3       | medium | none         | merged |
 | PR-101 | test: share test values through test-support       | `test/shared-test-values`        | 146, 147, 149, 183           | P3       | medium | none         | open   |
@@ -1352,7 +1352,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/shell`, `crates/protocol`, `packages/protocol`, `crates/core`, `crates/server`, `crates/e2e`, `scripts/gate`, `docs/DECISIONS.md`
 - **Proof:** none
 - **Checks:** `pnpm protocol:generate`, `pnpm gate` once on the final tree, since `crates/protocol` is a wide change. The log proposes a gate check listing public items of `crates/shell` with no caller.
-- **Status:** open
+- **Status:** merged
 
 ### PR-99 test: wait under PATIENCE in every test
 
