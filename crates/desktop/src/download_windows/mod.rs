@@ -98,7 +98,7 @@ pub fn show_download(id: DownloadId, cx: &mut App) {
 /// Asks before cancelling download `id`, as the list does (D23.4).
 fn ask_to_cancel(id: DownloadId, window: &mut Window, cx: &mut App) {
     let library = cx.global::<Windows>().library.clone();
-    crate::main_window::confirm::cancel(&library, &[id], window, cx);
+    crate::main_window::confirm::cancel(&library, &[id], &[], window, cx);
 }
 
 /// What a failed download's window offers it, the main one last: its fix, with Try again while

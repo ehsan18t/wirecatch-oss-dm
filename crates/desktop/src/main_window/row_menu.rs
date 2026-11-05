@@ -78,6 +78,8 @@ impl MainWindow {
 struct Target {
     rows: Vec<DownloadSummary>,
     ids: Vec<DownloadId>,
+    /// Those of them in collapsed groups.
+    folded: Vec<DownloadId>,
     /// The one download, when the menu acts on one.
     only: Option<DownloadSummary>,
     library: Entity<Library>,
@@ -100,8 +102,10 @@ impl Target {
         } else {
             Vec::new()
         };
+        let ids: Vec<DownloadId> = rows.iter().map(|row| row.id).collect();
         Self {
-            ids: rows.iter().map(|row| row.id).collect(),
+            folded: super::selection::folded_among(&ids, &main.shown_ids(cx)),
+            ids,
             only: match rows.as_slice() {
                 [only] => Some(only.clone()),
                 _ => None,
@@ -278,22 +282,26 @@ fn moves(menu: PopupMenu, target: &Target) -> PopupMenu {
 /// Cancel and Remove, which ask first.
 fn ending(menu: PopupMenu, target: Target) -> PopupMenu {
     let Target {
-        rows, ids, library, ..
+        rows,
+        ids,
+        folded,
+        library,
+        ..
     } = target;
-    let cancelled = (library.clone(), ids.clone());
+    let cancelled = (library.clone(), ids.clone(), folded.clone());
     menu.when(rows.iter().any(applies::can_cancel), |menu| {
         menu.item(
             PopupMenuItem::new("Cancel")
                 .icon(IconName::CircleX)
                 .on_click(move |_, window, cx| {
-                    confirm::cancel(&cancelled.0, &cancelled.1, window, cx);
+                    confirm::cancel(&cancelled.0, &cancelled.1, &cancelled.2, window, cx);
                 }),
         )
     })
     .item(
         PopupMenuItem::new("Remove")
             .icon(Icon::new(Lucide::Trash))
-            .on_click(move |_, window, cx| confirm::remove(&library, &ids, window, cx)),
+            .on_click(move |_, window, cx| confirm::remove(&library, &ids, &folded, window, cx)),
     )
 }
 
