@@ -319,6 +319,18 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 254. Ticking a folded group does nothing the person can act on (fixed)
 255. A page read can outlive the app after a quit past the limit (fixed)
 256. A retry on the best format can move the bar backwards (fixed)
+257. A server can change the type of a name the person confirmed (open)
+258. A real size above the estimate moves a video's bar backwards (open)
+259. A finished group's heading counts go stale (open)
+260. A startup notice covers the toolbar and Settings rows (open)
+261. The not-private notice carries a path and a long sentence (open)
+262. A kill during a removal can leave a moved copy behind (open)
+263. Some tests still throttle a server so connections join (open)
+264. The proxy's shown name has two copies (open)
+265. A stream join reads only ffmpeg's last lines (open)
+266. A crash while placing a video can double its subtitles (open)
+267. No check finds shell functions nothing calls (open)
+268. A hanging test on Windows leaves no name or log (open)
 
 Done before the release:
 
