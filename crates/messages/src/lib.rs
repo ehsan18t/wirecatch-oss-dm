@@ -2,6 +2,7 @@
 
 use std::io;
 use std::path::Path;
+use wirecatch_product::PRODUCT_NAME;
 
 use wirecatch_engine::{Error as EngineError, HELD_FILE_CODES, IoAction, ProxySetting};
 use wirecatch_protocol::app::{FixAction, UserError};
@@ -46,6 +47,25 @@ fn network_problem(error: &wirecatch_engine::NetworkError) -> UserError {
     fix(message, FixAction::Retry)
 }
 
+fn certificate_refused() -> UserError {
+    fix(
+        format!(
+            "This site's security certificate could not be verified, so {PRODUCT_NAME} did not download from it. Check that your computer's date and time are right. If they are, the site needs to fix its certificate."
+        ),
+        FixAction::Retry,
+    )
+}
+
+/// No fix: retrying would hit the same insecure redirect.
+fn insecure_redirect() -> UserError {
+    UserError {
+        message: format!(
+            "The site tried to switch this secure download to an unencrypted connection, where it could be read or changed on the way, so {PRODUCT_NAME} stopped it. Get the file from another link or ask the site to fix it."
+        ),
+        fix: None,
+    }
+}
+
 /// Describes why a download failed, saved in `folder`.
 #[must_use]
 pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError {
@@ -56,23 +76,18 @@ pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError
             FixAction::RefreshLink,
         ),
         EngineError::Network(e) => network_problem(e),
-        EngineError::Certificate { .. } => fix(
-            "This site's security certificate could not be verified, so Wirecatch did not download from it. Check that your computer's date and time are right. If they are, the site needs to fix its certificate.",
-            FixAction::Retry,
-        ),
+        EngineError::Certificate { .. } => certificate_refused(),
         EngineError::TooManyRedirects { .. } => fix(
-            "This link keeps sending Wirecatch somewhere else and never reaches the file. Open it in your browser to check it, or refresh the link with a fresh one.",
+            format!(
+                "This link keeps sending {PRODUCT_NAME} somewhere else and never reaches the file. Open it in your browser to check it, or refresh the link with a fresh one."
+            ),
             FixAction::RefreshLink,
         ),
         EngineError::RedirectWithoutLocation { .. } => fix(
             "The server sent a broken redirect for this link. Refresh the link with one copied from the page.",
             FixAction::RefreshLink,
         ),
-        // Deliberately no fix: retrying would hit the same insecure redirect.
-        EngineError::InsecureRedirect { .. } => UserError {
-            message: "The site tried to switch this secure download to an unencrypted connection, where it could be read or changed on the way, so Wirecatch stopped it. Get the file from another link or ask the site to fix it.".into(),
-            fix: None,
-        },
+        EngineError::InsecureRedirect { .. } => insecure_redirect(),
         // Only the manager's own resolver refuses a file, and the reason that
         // reaches a person is that the server sent something other than the file
         // the browser saw: a fresh link from the page is the way out.
@@ -80,11 +95,15 @@ pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError
         // Who chose the link decides the words and the fix: a download's run
         // uses `private_network`; this is for requests no one link stands for.
         EngineError::PrivateNetwork { .. } => UserError {
-            message: "Wirecatch did not follow this address to a device on your own network, which it blocks for safety.".into(),
+            message: format!(
+                "{PRODUCT_NAME} did not follow this address to a device on your own network, which it blocks for safety."
+            ),
             fix: None,
         },
         EngineError::Internal(detail) => fix(
-            format!("Something went wrong inside Wirecatch ({detail}). Try again, and please report it if it keeps happening."),
+            format!(
+                "Something went wrong inside {PRODUCT_NAME} ({detail}). Try again, and please report it if it keeps happening."
+            ),
             FixAction::Retry,
         ),
         EngineError::Stalled { after } => worked.retry(&format!(
@@ -135,7 +154,9 @@ pub fn describe(error: &EngineError, folder: &Path, worked: Worked) -> UserError
 /// The same answer would come again, so only another link can help.
 fn too_large() -> UserError {
     fix(
-        "The server sent far more than expected for this address, so Wirecatch stopped reading it. Refresh the link with one copied from the page.",
+        format!(
+            "The server sent far more than expected for this address, so {PRODUCT_NAME} stopped reading it. Refresh the link with one copied from the page."
+        ),
         FixAction::RefreshLink,
     )
 }
@@ -190,7 +211,7 @@ pub fn describe_app_file(error: &EngineError, folder: &Path) -> String {
             let told = describe(other, folder, Worked::Never);
             if told.fix == Some(FixAction::ChooseFolder) {
                 format!(
-                    "Wirecatch cannot save files in {}. Check that you may write there and that its drive is connected, then try again.",
+                    "{PRODUCT_NAME} cannot save files in {}. Check that you may write there and that its drive is connected, then try again.",
                     folder.display()
                 )
             } else {
@@ -209,13 +230,17 @@ pub fn private_network(chosen_by: ChosenBy) -> UserError {
         // may reach their network: the one way out, and it does not loop. A link
         // given in a download's own window keeps the website's rule (D43.5).
         ChosenBy::Website => UserError {
-            message: "This link leads to a device on your own network, and Wirecatch does not follow a link a website gave it there. If you trust this link, give the download a new link in Wirecatch's main window and paste the same one: a link you paste there yourself may reach your own network.".into(),
+            message: format!(
+                "This link leads to a device on your own network, and {PRODUCT_NAME} does not follow a link a website gave it there. If you trust this link, give the download a new link in {PRODUCT_NAME}'s main window and paste the same one: a link you paste there yourself may reach your own network."
+            ),
             fix: Some(FixAction::RefreshLink),
         },
         // The link itself was allowed; somewhere on the internet it was sent
         // on into the local network, which pasting it again would not change.
         ChosenBy::Person | ChosenBy::LocalPage => UserError {
-            message: "This link sent Wirecatch on from the internet to a device on your own network, which Wirecatch does not follow. Use the device's own address on your network instead.".into(),
+            message: format!(
+                "This link sent {PRODUCT_NAME} on from the internet to a device on your own network, which {PRODUCT_NAME} does not follow. Use the device's own address on your network instead."
+            ),
             fix: None,
         },
     }
@@ -253,14 +278,19 @@ pub fn describe_run(
 
 /// Why a website's link to the local network is not taken over, for the
 /// browser's notice: there is no download in the app to act on.
-pub const CAPTURE_TO_OWN_NETWORK: &str = "It leads to a device on your own network, which Wirecatch does not reach for a link a website gave.";
+#[must_use]
+pub fn capture_to_own_network() -> String {
+    format!(
+        "It leads to a device on your own network, which {PRODUCT_NAME} does not reach for a link a website gave."
+    )
+}
 
 /// The message shown when saving to the download list keeps failing.
 #[must_use]
 pub fn storage_failed(reason: &str) -> UserError {
     fix(
         format!(
-            "Wirecatch could not save changes to the download list ({reason}). Recent changes may be lost when it closes. Make sure the disk has free space."
+            "{PRODUCT_NAME} could not save changes to the download list ({reason}). Recent changes may be lost when it closes. Make sure the disk has free space."
         ),
         FixAction::FreeDiskSpace,
     )
@@ -276,7 +306,7 @@ pub fn stopped_unexpectedly(worked: Worked) -> UserError {
 fn ftp_tls_unavailable(host: &str) -> UserError {
     fix(
         format!(
-            "The FTP server {host} does not offer encryption, so Wirecatch stopped rather than download without it. If an unencrypted download is acceptable, refresh the link with one that starts with ftp:// instead."
+            "The FTP server {host} does not offer encryption, so {PRODUCT_NAME} stopped rather than download without it. If an unencrypted download is acceptable, refresh the link with one that starts with ftp:// instead."
         ),
         FixAction::RefreshLink,
     )
@@ -321,7 +351,7 @@ fn ftp_proxy_unsupported(setting: &ProxySetting) -> UserError {
 fn invalid_option(option: &str) -> UserError {
     UserError {
         message: format!(
-            "Wirecatch could not start this download because a setting it uses ({option}) is out of range. Check Settings, then add the download again."
+            "{PRODUCT_NAME} could not start this download because a setting it uses ({option}) is out of range. Check Settings, then add the download again."
         ),
         fix: None,
     }
@@ -468,7 +498,7 @@ fn disk_failure(
     if held && let Some(file) = existing {
         return fix(
             format!(
-                "Wirecatch could not use {}. Another program may have it open, or it may be read-only. Close that program, then try again.",
+                "{PRODUCT_NAME} could not use {}. Another program may have it open, or it may be read-only. Close that program, then try again.",
                 file.display()
             ),
             FixAction::Retry,
@@ -476,7 +506,9 @@ fn disk_failure(
     }
     match error.kind() {
         io::ErrorKind::PermissionDenied | io::ErrorKind::ReadOnlyFilesystem => fix(
-            format!("Wirecatch is not allowed to save files in {folder}. Choose another folder."),
+            format!(
+                "{PRODUCT_NAME} is not allowed to save files in {folder}. Choose another folder."
+            ),
             FixAction::ChooseFolder,
         ),
         // A file standing where a folder must be created shows up as AlreadyExists.
@@ -967,7 +999,7 @@ mod tests {
         for text in [
             website.message,
             private_network(ChosenBy::Person).message,
-            CAPTURE_TO_OWN_NETWORK.into(),
+            capture_to_own_network(),
         ] {
             assert!(!text.contains('\u{2014}') && text.ends_with('.'), "{text}");
         }

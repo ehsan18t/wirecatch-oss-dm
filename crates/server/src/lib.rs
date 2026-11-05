@@ -5,6 +5,7 @@
 
 use std::io;
 use std::sync::Arc;
+use wirecatch_product::PRODUCT_NAME;
 
 use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
@@ -281,11 +282,15 @@ fn readable_id(body: &[u8]) -> u64 {
 /// not have been sent. The answer says which.
 fn unsupported_call(id: u64, method: CallMethod) -> Message {
     let message = if method == CallMethod::Unknown {
-        "This version of the Wirecatch app cannot do what was asked, so it did nothing. Everything else still works, and updating the Wirecatch app may add it."
+        format!(
+            "This version of the {PRODUCT_NAME} app cannot do what was asked, so it did nothing. Everything else still works, and updating the {PRODUCT_NAME} app may add it."
+        )
     } else {
-        "The connection to the Wirecatch app speaks an older protocol version, which cannot do what was asked, so nothing was done. Everything else still works."
+        format!(
+            "The connection to the {PRODUCT_NAME} app speaks an older protocol version, which cannot do what was asked, so nothing was done. Everything else still works."
+        )
     };
-    error(id, ErrorCode::UnsupportedCall, message.into())
+    error(id, ErrorCode::UnsupportedCall, message)
 }
 
 fn snapshot(manager: &Manager) -> [Event; 3] {
@@ -299,10 +304,10 @@ fn snapshot(manager: &Manager) -> [Event; 3] {
 /// Says which side to update.
 fn version_refusal(id: u64, hello: &Hello, refused: VersionError) -> Message {
     let client = match hello.client {
-        ClientKind::Extension => "browser extension",
-        ClientKind::Bridge => "browser connector",
-        ClientKind::Cli => "command-line tool",
-        ClientKind::App => "copy of Wirecatch being opened",
+        ClientKind::Extension => "browser extension".to_owned(),
+        ClientKind::Bridge => "browser connector".to_owned(),
+        ClientKind::Cli => "command-line tool".to_owned(),
+        ClientKind::App => format!("copy of {PRODUCT_NAME} being opened"),
     };
     let (code, message) = match refused {
         VersionError::Empty { oldest, newest } => (
@@ -314,7 +319,7 @@ fn version_refusal(id: u64, hello: &Hello, refused: VersionError) -> Message {
         VersionError::PeerTooOld { peer, ours } => (
             ErrorCode::UnsupportedVersion,
             format!(
-                "The {client} is too old for this Wirecatch app: it supports protocol versions up to {}, and the app needs {} or newer. Update the {client}.",
+                "The {client} is too old for this {PRODUCT_NAME} app: it supports protocol versions up to {}, and the app needs {} or newer. Update the {client}.",
                 peer.newest(),
                 ours.oldest(),
             ),
@@ -322,7 +327,7 @@ fn version_refusal(id: u64, hello: &Hello, refused: VersionError) -> Message {
         VersionError::PeerTooNew { peer, ours } => (
             ErrorCode::UnsupportedVersion,
             format!(
-                "The {client} is newer than this Wirecatch app: it needs protocol version {} or newer, and the app speaks up to {}. Update the Wirecatch app.",
+                "The {client} is newer than this {PRODUCT_NAME} app: it needs protocol version {} or newer, and the app speaks up to {}. Update the {PRODUCT_NAME} app.",
                 peer.oldest(),
                 ours.newest(),
             ),

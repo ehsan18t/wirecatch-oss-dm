@@ -1,6 +1,7 @@
 //! Errors returned by manager operations. Messages are written for the user.
 
 use std::io;
+use wirecatch_product::PRODUCT_NAME;
 
 use wirecatch_files::FileError;
 use wirecatch_protocol::wire::{ErrorCode, ProtocolError};
@@ -57,7 +58,7 @@ pub enum CoreError {
 
     /// An add-on this build of Wirecatch does not know.
     #[error(
-        "There is no such add-on in this version of Wirecatch. Update Wirecatch if this add-on is new."
+        "There is no such add-on in this version of {app}. Update {app} if this add-on is new.", app = PRODUCT_NAME
     )]
     UnknownAddon,
 
@@ -123,16 +124,16 @@ pub enum CoreError {
 
     /// A captured download could not be taken over; the text says why, in one or
     /// more whole sentences.
-    #[error("Wirecatch could not take over this download. {0} The browser keeps it.")]
+    #[error("{app} could not take over this download. {0} The browser keeps it.", app = PRODUCT_NAME)]
     NotStarted(String),
 
     /// The manager has shut down.
-    #[error("Wirecatch is shutting down. Start it again to continue.")]
+    #[error("{app} is shutting down. Start it again to continue.", app = PRODUCT_NAME)]
     Closed,
 
     /// A bug: something that should not fail did.
     #[error(
-        "Something went wrong inside Wirecatch ({0}). Try again, and please report it if it keeps happening."
+        "Something went wrong inside {app} ({0}). Try again, and please report it if it keeps happening.", app = PRODUCT_NAME
     )]
     Internal(String),
 }

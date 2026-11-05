@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 wirecatch-engine.workspace = true
 wirecatch-files.workspace = true
+wirecatch-product.workspace = true
 wirecatch-protocol.workspace = true
 wirecatch-queues.workspace = true
 wirecatch-records.workspace = true

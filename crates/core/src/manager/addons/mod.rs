@@ -16,6 +16,7 @@ mod updates;
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::Duration;
+use wirecatch_product::PRODUCT_NAME;
 
 use tracing::{info, warn};
 use wirecatch_addons::manifest::{AddonComponent, ComponentId};
@@ -409,7 +410,9 @@ impl Manager {
             }
         } else if slot.unreadable {
             AddonState::Failed {
-                message: "The media add-on's list of installed files could not be read, so Wirecatch cannot tell whether the add-on works. Restart Wirecatch, or install the add-on again to repair it.".into(),
+                message: format!(
+                    "The media add-on's list of installed files could not be read, so {PRODUCT_NAME} cannot tell whether the add-on works. Restart {PRODUCT_NAME}, or install the add-on again to repair it."
+                ),
             }
         } else if !installed && !slot.record.components.is_empty() {
             AddonState::Failed {
@@ -483,7 +486,7 @@ impl Manager {
             "yesterday"
         };
         Some(format!(
-            "A newer version was released {when}; Wirecatch installs it after two days."
+            "A newer version was released {when}; {PRODUCT_NAME} installs it after two days."
         ))
     }
 

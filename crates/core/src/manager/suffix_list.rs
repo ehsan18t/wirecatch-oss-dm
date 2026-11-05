@@ -7,6 +7,7 @@
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use wirecatch_product::PRODUCT_NAME;
 
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -135,9 +136,9 @@ impl Manager {
     /// in use as it was; and [`CoreError::Closed`] once the manager has shut down.
     pub async fn check_suffix_list(&self) -> Result<SuffixListInfo> {
         let Some(source) = self.inner.suffix_list_source.clone() else {
-            return Err(CoreError::UpdateCheckFailed(
-                "This copy of Wirecatch does not download the Public Suffix List.".into(),
-            ));
+            return Err(CoreError::UpdateCheckFailed(format!(
+                "This copy of {PRODUCT_NAME} does not download the Public Suffix List."
+            )));
         };
         let _one_at_a_time = self.inner.suffix_checking.lock().await;
         self.check_suffix_list_from(&source).await
@@ -178,7 +179,7 @@ impl Manager {
         match failed {
             None => Ok(info),
             Some(reason) => Err(CoreError::UpdateCheckFailed(format!(
-                "Wirecatch could not update its list of public domains ({reason}). It keeps using the list it has; {}, then try again.",
+                "{PRODUCT_NAME} could not update its list of public domains ({reason}). It keeps using the list it has; {}, then try again.",
                 reason.advice()
             ))),
         }

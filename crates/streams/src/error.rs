@@ -4,6 +4,7 @@
 
 use std::io;
 use std::path::PathBuf;
+use wirecatch_product::PRODUCT_NAME;
 
 use crate::model::Role;
 use crate::plan::{MAX_SEGMENTS, MAX_TRACKS};
@@ -21,13 +22,13 @@ pub enum Error {
 
     /// The stream is a live broadcast (an HLS playlist without an end, or a
     /// dynamic DASH manifest). Downloading those is not supported yet.
-    #[error("This video is a live broadcast. Wirecatch can download it after the broadcast ends.")]
+    #[error("This video is a live broadcast. {app} can download it after the broadcast ends.", app = PRODUCT_NAME)]
     Live,
 
     /// The link answered with something that is neither an HLS playlist nor a
     /// DASH manifest.
     #[error(
-        "This link is not a video stream Wirecatch can read (HLS or DASH). Open the video page again and use the link the browser extension found."
+        "This link is not a video stream {app} can read (HLS or DASH). Open the video page again and use the link the browser extension found.", app = PRODUCT_NAME
     )]
     NotAStream,
 
@@ -46,24 +47,24 @@ pub enum Error {
 
     /// The playlist or manifest holds far more than any real stream: its addresses or track names together, or its pieces, qualities, renditions or representations. A fresh link does not help.
     #[error(
-        "This stream's playlist is far larger than any video's, so Wirecatch does not download it."
+        "This stream's playlist is far larger than any video's, so {app} does not download it.", app = PRODUCT_NAME
     )]
     TooLarge,
 
     /// The playlist or manifest lists more segments than any video Wirecatch downloads (200,000 per track). A fresh link does not help.
     #[error(
-        "This stream lists more than {MAX_SEGMENTS} segments in one track, more than any video Wirecatch can download."
+        "This stream lists more than {MAX_SEGMENTS} segments in one track, more than any video {app} can download.", app = PRODUCT_NAME
     )]
     TooManySegments,
 
     /// The video is encrypted with DRM.
     #[error(
-        "This video is protected with DRM ({0}), which only licensed players can open, so Wirecatch cannot download it."
+        "This video is protected with DRM ({0}), which only licensed players can open, so {app} cannot download it.", app = PRODUCT_NAME
     )]
     Drm(DrmSystem),
 
     /// The stream uses a feature this version does not handle.
-    #[error("This stream uses {0}, which Wirecatch cannot download yet.")]
+    #[error("This stream uses {0}, which {app} cannot download yet.", app = PRODUCT_NAME)]
     Unsupported(Feature),
 
     /// The track chosen in the request is not in the stream (any more).
@@ -113,7 +114,7 @@ pub enum Error {
     /// ffmpeg would have to guess what it is, and a crafted file could then
     /// make it open other files or addresses. The track is thrown away, so the next try fetches it again.
     #[error(
-        "The downloaded {} is not in a format Wirecatch can join (MPEG-TS, MP4, Matroska, WebM, AAC, MP3, AC-3, E-AC-3, FLAC, Ogg, WAV, FLV or AVI), so it was not passed to ffmpeg. The link may not point to a real video; open the video page again to get a fresh one.", .role.name()
+        "The downloaded {} is not in a format {app} can join (MPEG-TS, MP4, Matroska, WebM, AAC, MP3, AC-3, E-AC-3, FLAC, Ogg, WAV, FLV or AVI), so it was not passed to ffmpeg. The link may not point to a real video; open the video page again to get a fresh one.", .role.name(), app = PRODUCT_NAME
     )]
     UnknownFormat {
         /// Which track it is.
@@ -173,7 +174,7 @@ pub enum Error {
     /// so a website cannot use Wirecatch to reach devices at home; see
     /// [`StreamRequest::private_network`](crate::StreamRequest::private_network).
     #[error(
-        "This video points to a device on your own network, which Wirecatch blocks for safety."
+        "This video points to a device on your own network, which {app} blocks for safety.", app = PRODUCT_NAME
     )]
     PrivateNetwork,
 
@@ -428,7 +429,7 @@ pub enum ManifestError {
     NoSegments,
     /// A track has more than 200,000 pieces, more than any video has.
     #[error(
-        "it lists more than {MAX_SEGMENTS} segments, more than any video Wirecatch can download"
+        "it lists more than {MAX_SEGMENTS} segments, more than any video {app} can download", app = PRODUCT_NAME
     )]
     TooManySegments,
     /// `EXT-X-MEDIA-SEQUENCE` is not a number.

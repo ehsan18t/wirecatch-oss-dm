@@ -16,6 +16,7 @@ pub use info::{Chapter, Format, FormatId, Info, SubtitleFile, Transport, ids, se
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use wirecatch_product::PRODUCT_NAME;
 
 use tracing::debug;
 use wirecatch_engine::{CancellationToken, Url};
@@ -140,7 +141,7 @@ pub enum YtDlpError {
     #[error("yt-dlp printed something that is not a page description")]
     BadOutput(#[source] serde_json::Error),
     /// yt-dlp described the page in more than Wirecatch reads.
-    #[error("yt-dlp described the page at a length past what Wirecatch reads")]
+    #[error("yt-dlp described the page at a length past what {app} reads", app = PRODUCT_NAME)]
     OutputTooLarge,
     /// yt-dlp finished without leaving the file it was asked for.
     #[error("yt-dlp finished without saving the video")]

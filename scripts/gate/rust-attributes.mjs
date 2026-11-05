@@ -72,6 +72,22 @@ export function codeOnly(text) {
   return pieces.join('');
 }
 
+/** `[start, end)` of each string literal in `text`, raw ones included. */
+export function stringLiterals(text) {
+  const found = [];
+  let i = 0;
+  while (i < text.length) {
+    const end = literalEnd(text, i);
+    if (end === -1) {
+      i += 1;
+    } else {
+      if (text[i] === '"' || /^[bc]?r/.test(text.slice(i, i + 2))) found.push([i, end]);
+      i = end;
+    }
+  }
+  return found;
+}
+
 /** The index just past the bracket that closes the one at `open`. */
 export function closingBracket(code, open) {
   let depth = 0;

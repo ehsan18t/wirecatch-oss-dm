@@ -1,6 +1,7 @@
 //! Which files and keys a registration is made of, worked out without touching the system.
 
 use std::path::{Path, PathBuf};
+use wirecatch_product::PRODUCT_NAME;
 
 use anyhow::{Context, bail};
 use serde::Serialize;
@@ -192,7 +193,7 @@ pub(crate) fn plan(config: &Config, layout: &Layout) -> anyhow::Result<Plan> {
     }
     let exe_text = exe.to_str().with_context(|| {
         format!(
-            "The bridge path {} contains characters a manifest cannot hold. Install Wirecatch in a folder with a plain name",
+            "The bridge path {} contains characters a manifest cannot hold. Install {PRODUCT_NAME} in a folder with a plain name",
             exe.display()
         )
     })?;

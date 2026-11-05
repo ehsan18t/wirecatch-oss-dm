@@ -118,7 +118,10 @@ pub fn apply(
         Action::Remove => launcher.disable().map_err(AutostartError::Remove)?,
         Action::Nothing => {}
         Action::TurnSettingOff => {
-            tracing::info!("starting with the system was turned off outside Wirecatch");
+            tracing::info!(
+                "starting with the system was turned off outside {}",
+                crate::host::CHANNEL.name()
+            );
             // Only this one setting, so a change made meanwhile in a window is kept.
             manager.change_settings(AppSettingsPatch {
                 start_with_system: Some(false),

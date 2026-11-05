@@ -1367,3 +1367,11 @@ Decided on 2026-11-05.
 1. A schedule without a stop time starts a run at its start, which lasts until the queue has nothing left. That run is `QueueStatus::running_until_empty`, saved with the queue next to `running_outside_schedule`. So a restart keeps a run whether or not a download was running, and never starts one. A question about a file in the folder is held in memory only, so a kill ends a run that had nothing else left.
 2. `schedule::allows` is the one answer: inside the window, or during a run. The core and the sidebar both read it, so the queue's line and Start now follow what really decides. Between runs a queue without a stop time is outside its schedule all day, and offers Start now.
 3. A run keeps going for a download that only waits: its question about a file in the folder, its move, or the page read for its video, up to the row that replaces it (`State::arriving`). A link added to the queue meanwhile starts at once, as part of the run.
+### D175. Messages read the product's name from one place
+
+Decided on 2026-11-05. Holds up D29.
+
+1. The shell and the desktop app name the running build with `CHANNEL.name()`, as they already did: `Wirecatch Dev` in a development build.
+2. Crates below the shell read `PRODUCT_NAME` from `wirecatch-product`: `CHANNEL` lives in the shell, these crates cannot depend on it, and the bridge and the command-line tool also run beside an app of the other channel. So a development build's messages from below the shell say `Wirecatch`.
+3. Names people read change this way. Ids and paths stay, among them the theme ids `Wirecatch Light` and `Wirecatch Dark`, which `assets/theme.json` also holds.
+4. The `product-name` check fails on the name written in a Rust string outside tests.
