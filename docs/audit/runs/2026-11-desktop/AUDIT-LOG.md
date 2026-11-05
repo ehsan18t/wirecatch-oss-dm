@@ -280,7 +280,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 253 | A quit right after a cancel can leave a part file                                                 | found while fixing                                                                                 | P3       | small  | Found while fixing PR-123.                                                                                       | fixed                                         |
 | 254 | Ticking a folded group does nothing the person can act on                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-81.                                                                                        | open                                          |
 | 255 | A page read can outlive the app after a quit past the limit                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10. Read from the code, not run.                                                        | open                                          |
-| 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | open                                          |
+| 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | fixed                                         |
 
 ## Items
 
@@ -4525,7 +4525,7 @@ A yt-dlp page read still running at exit is no longer killed by dropping the run
 
 ### 256. A retry on the best format can move the bar backwards
 
-P3, small, open.
+P3, small, fixed.
 
 A row with no saved formats runs the best selection with nothing to seed the total, so if yt-dlp takes two formats the total grows and the bar drops when the second starts.
 

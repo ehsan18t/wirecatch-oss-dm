@@ -318,7 +318,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 253. A quit right after a cancel can leave a part file (fixed)
 254. Ticking a folded group does nothing the person can act on (open)
 255. A page read can outlive the app after a quit past the limit (open)
-256. A retry on the best format can move the bar backwards (open)
+256. A retry on the best format can move the bar backwards (fixed)
 
 Done before the release:
 
