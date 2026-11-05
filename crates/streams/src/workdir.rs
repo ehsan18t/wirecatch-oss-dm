@@ -4,7 +4,7 @@
 //! `<output name>.wcstream/` holds:
 //! - `stream.txt`: which plan the folder belongs to (a fingerprint of its
 //!   segments and their owner). A folder for another plan is cleared.
-//! - `done.log`: one line per finished segment (`S <track> <index> <size>`), per batch of segments appended to their track (`A <track> <next index> <track size>`) and per joined track (`J <track> <size>`), appended as they finish. A line whose file is missing or has another size is ignored, so a crash at any point only costs the segments it interrupted.
+//! - `done.log`: one line per finished segment (`S <track> <index> <size>`), per segment cut off by a pause or a failure (`P <track> <index> <bytes kept>`), per batch of segments appended to their track (`A <track> <next index> <track size>`) and per joined track (`J <track> <size>`), appended as they finish. A line whose file is missing or has another size is ignored, so a crash at any point only costs the segments it interrupted.
 //! - `t<track>/<index>.seg`: finished segments, decrypted. A segment is
 //!   written as `.part` and renamed once complete, and removed once it is
 //!   appended to its track.
@@ -43,6 +43,8 @@ pub(crate) struct WorkDir {
     log: Mutex<Option<File>>,
     /// Finished segments and their sizes, by `(track, index)`.
     pub done: HashMap<(usize, usize), u64>,
+    /// Segments cut off before their end, by `(track, index)`: how many of their first bytes their `.part` file holds.
+    pub partial: HashMap<(usize, usize), u64>,
     /// Tracks whose segments are partly appended to their file.
     pub appended: HashMap<usize, Appended>,
     /// Joined tracks and their sizes.
@@ -53,6 +55,7 @@ pub(crate) struct WorkDir {
 #[derive(Default)]
 struct Log {
     done: HashMap<(usize, usize), u64>,
+    partial: HashMap<(usize, usize), u64>,
     appended: HashMap<usize, Appended>,
     joined: HashMap<usize, u64>,
 }
@@ -79,6 +82,13 @@ impl Log {
                         if later {
                             log.appended.insert(track, Appended { next, size });
                         }
+                    }
+                }
+                ["P", track, index, size] => {
+                    if let (Ok(track), Ok(index), Ok(size)) =
+                        (track.parse(), index.parse(), size.parse())
+                    {
+                        log.partial.insert((track, index), size);
                     }
                 }
                 ["J", track, size] => {
@@ -133,6 +143,7 @@ impl WorkDir {
             )),
             dir,
             done: HashMap::new(),
+            partial: HashMap::new(),
             appended: HashMap::new(),
             joined: HashMap::new(),
         };
@@ -143,6 +154,17 @@ impl WorkDir {
             .filter(|((track, index), size)| {
                 pieces.get(*track).is_some_and(|n| index < n)
                     && size_is(work.segment_path(*track, *index), *size)
+            })
+            .collect();
+        // The `.part` file was synced before its line, so it holds at least that many bytes; a crash after more were written leaves only more.
+        work.partial = log
+            .partial
+            .into_iter()
+            .filter(|((track, index), size)| {
+                *size > 0
+                    && pieces.get(*track).is_some_and(|n| index < n)
+                    && !work.done.contains_key(&(*track, *index))
+                    && fs::metadata(work.part_path(*track, *index)).is_ok_and(|m| m.len() >= *size)
             })
             .collect();
         // The track file holds at least what was appended: it is synced before its line is written, and cut back to it before appending more.
@@ -189,6 +211,11 @@ impl WorkDir {
     /// Notes a finished segment. Blocks on the file system.
     pub fn record_segment(&self, track: usize, index: usize, size: u64) -> io::Result<()> {
         self.append(&format!("S {track} {index} {size}\n"), Sync::No)
+    }
+
+    /// Notes that the `.part` file of a segment cut off before its end holds its first `size` bytes, which must already be synced. Blocks on the file system.
+    pub fn record_partial(&self, track: usize, index: usize, size: u64) -> io::Result<()> {
+        self.append(&format!("P {track} {index} {size}\n"), Sync::No)
     }
 
     /// Notes that a track's segments before `appended.next` are in its file, which is `appended.size` long. The line is on disk when this returns, so the segments can be removed. Blocks on the file system.

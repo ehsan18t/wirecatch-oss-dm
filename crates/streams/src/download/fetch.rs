@@ -4,6 +4,8 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::OnceCell;
@@ -86,6 +88,7 @@ pub(super) fn queue(plan: &mut Plan, work: &WorkDir) -> Queue {
                 queue.done += 1;
                 queue.bytes += size;
             } else {
+                queue.bytes += work.partial.get(&(track, index)).copied().unwrap_or(0);
                 queue.jobs.push_back(Job {
                     track,
                     index,
@@ -168,21 +171,7 @@ async fn fetch_piece(shared: &Shared, job: &Job, buffer: &mut Vec<u8>) -> Result
         )),
         None => None,
     };
-    let part = shared.work.part_path(job.track, job.index);
-    let progress = shared.progress.clone();
-    shared
-        .fetcher
-        .save(&job.piece.url, job.piece.range.clone(), &part, move |n| {
-            progress.add_bytes(n);
-        })
-        .await
-        .map_err(|e| {
-            map_engine(e, |cause| Error::Segment {
-                number: job.number,
-                total: shared.total,
-                cause,
-            })
-        })?;
+    let part = receive_piece(shared, job).await?;
 
     let work = shared.work.clone();
     let (track, index) = (job.track, job.index);
@@ -240,6 +229,75 @@ async fn fetch_piece(shared: &Shared, job: &Job, buffer: &mut Vec<u8>) -> Result
         }
         Fetched::KeyDoesNotFit => Err(Error::Decrypt { number, total }),
         Fetched::NotMedia => Err(Error::NotMedia { number, total }),
+    }
+}
+
+/// Downloads one piece into its `.part` file, after what a cut-off earlier run kept of it, and gives the file's path. A kept start the server cannot continue is dropped and the piece fetched whole; a piece cut off again keeps what arrived.
+async fn receive_piece(shared: &Shared, job: &Job) -> Result<PathBuf> {
+    let part = shared.work.part_path(job.track, job.index);
+    let kept = shared.work.partial.get(&(job.track, job.index)).copied();
+    let counted = Arc::new(AtomicU64::new(0));
+    let save = |kept: u64| {
+        let (progress, counted) = (shared.progress.clone(), counted.clone());
+        shared.fetcher.save_after(
+            &job.piece.url,
+            job.piece.range.clone(),
+            &part,
+            kept,
+            move |n| {
+                progress.add_bytes(n);
+                counted.fetch_add(n, Ordering::Relaxed);
+            },
+        )
+    };
+    let mut saved = save(kept.unwrap_or(0)).await;
+    if let Some(kept) = kept
+        && saved.is_err()
+        && !shared.stop.is_cancelled()
+    {
+        warn!(
+            track = job.track,
+            index = job.index,
+            "a cut segment could not be continued; fetching it whole"
+        );
+        shared
+            .progress
+            .remove_bytes(kept + counted.swap(0, Ordering::Relaxed));
+        saved = save(0).await;
+    }
+    if let Err(e) = saved {
+        keep_cut_segment(shared, job).await;
+        return Err(map_engine(e, |cause| Error::Segment {
+            number: job.number,
+            total: shared.total,
+            cause,
+        }));
+    }
+    Ok(part)
+}
+
+/// Keeps what a segment cut off by a pause or a failure received, so the next run asks only for the rest. Its bytes reach the disk before the log names them; anything that fails only loses the segment.
+async fn keep_cut_segment(shared: &Shared, job: &Job) {
+    let work = shared.work.clone();
+    let (track, index) = (job.track, job.index);
+    let kept = blocking(&shared.file_work, move || {
+        let file = match fs::OpenOptions::new()
+            .write(true)
+            .open(work.part_path(track, index))
+        {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            opened => opened?,
+        };
+        let size = file.metadata()?.len();
+        if size > 0 {
+            file.sync_all()?;
+            work.record_partial(track, index, size)?;
+        }
+        Ok(())
+    })
+    .await;
+    if let Err(e) = kept {
+        warn!(track, index, error = %e, "could not keep a cut segment; it will be fetched again whole");
     }
 }
 

@@ -187,6 +187,62 @@ pub(crate) fn is_signing_parameter(name: &str) -> bool {
             .any(|prefix| name.starts_with(prefix))
 }
 
+/// Google Video (YouTube) links name their parameters as `/videoplayback/name/value/…` path segments, signature, expiry and chosen servers among them.
+const GOOGLE_VIDEO_HOST: &str = ".googlevideo.com";
+
+/// The Google Video parameters that name the video, format, file version and segment; every other one changes each time the page is read.
+const GOOGLE_VIDEO_IDENTITY: &[&str] =
+    &["id", "itag", "sgovp", "sq", "gosq", "govp", "range", "file"];
+
+/// Writes what identifies the address `url` across readings of its page.
+fn write_address(hash: &mut Fnv, url: &Url) {
+    if url
+        .host_str()
+        .is_some_and(|h| h.ends_with(GOOGLE_VIDEO_HOST))
+        && let Some(["videoplayback", pairs @ ..]) = url
+            .path_segments()
+            .map(Iterator::collect::<Vec<_>>)
+            .as_deref()
+    {
+        // Allowed names only: the other names come and go between readings.
+        let path = pairs.chunks(2).filter_map(|pair| match pair {
+            [name, value] => Some((name.to_string().into(), value.to_string().into())),
+            _ => None,
+        });
+        for (name, value) in path.chain(url.query_pairs()) {
+            if GOOGLE_VIDEO_IDENTITY.contains(&name.as_ref()) {
+                write_pair(hash, &name, Some(&value));
+            }
+        }
+        return;
+    }
+    // A `name=value` path segment of a signing name (Akamai's `hdntl=exp=…~hmac=…`) counts like one in the query.
+    for segment in url.path_segments().into_iter().flatten() {
+        match segment.split_once('=') {
+            Some((name, _)) if is_signing_parameter(name) => write_pair(hash, name, None),
+            _ => hash.write(segment.as_bytes()),
+        }
+        hash.write(&[0xFB]);
+    }
+    hash.write(&[0xFE]);
+    for (name, value) in url.query_pairs() {
+        write_pair(
+            hash,
+            &name,
+            (!is_signing_parameter(&name)).then_some(&*value),
+        );
+    }
+}
+
+fn write_pair(hash: &mut Fnv, name: &str, value: Option<&str>) {
+    hash.write(name.as_bytes());
+    hash.write(&[0xFD]);
+    if let Some(value) = value {
+        hash.write(value.as_bytes());
+    }
+    hash.write(&[0xFC]);
+}
+
 impl Plan {
     /// What a work folder's segments must match to be reused: the plan's [`fingerprint`](Self::fingerprint), and `owner`, which tells apart two sites serving the same paths.
     pub fn work_identity(&self, owner: &str) -> u64 {
@@ -197,7 +253,7 @@ impl Plan {
         hash.0
     }
 
-    /// Identifies the plan across runs, to tell whether segments on disk belong to it. Paths count, and so do queries, ranges, keys and the number of pieces. Of a query, every parameter counts except the values of [`SIGNING_PARAMETERS`]: refreshing a signed link must keep the segments already downloaded, while two videos told apart only by a query value (`?video=1`, `?video=2`) must never share them. Hosts are left out, because one video is often served by whichever CDN host is closest at the time. A token carried in the path itself (some Akamai set-ups) still makes a refreshed link start over.
+    /// Identifies the plan across runs, to tell whether segments on disk belong to it. Paths count, and so do queries, ranges, keys and the number of pieces. Of a query, every parameter counts except the values of [`SIGNING_PARAMETERS`]: refreshing a signed link must keep the segments already downloaded, while two videos told apart only by a query value (`?video=1`, `?video=2`) must never share them. Hosts are left out, because one video is often served by whichever CDN host is closest at the time. A path segment `name=value` of a signing name counts as it would in the query, and of a Google Video link only [`GOOGLE_VIDEO_IDENTITY`] counts. A token in the path under no such name still makes a refreshed link start over.
     pub fn fingerprint(&self) -> u64 {
         let mut hash = Fnv::default();
         hash.write(&(self.tracks.len() as u64).to_le_bytes());
@@ -205,16 +261,7 @@ impl Plan {
             hash.write(&[track.role as u8]);
             hash.write(&(track.pieces.len() as u64).to_le_bytes());
             for piece in &track.pieces {
-                hash.write(piece.url.path().as_bytes());
-                hash.write(&[0xFE]);
-                for (name, value) in piece.url.query_pairs() {
-                    hash.write(name.as_bytes());
-                    hash.write(&[0xFD]);
-                    if !is_signing_parameter(&name) {
-                        hash.write(value.as_bytes());
-                    }
-                    hash.write(&[0xFC]);
-                }
+                write_address(&mut hash, &piece.url);
                 if let Some(range) = &piece.range {
                     hash.write(&range.start.to_le_bytes());
                     hash.write(&range.end.to_le_bytes());
@@ -334,5 +381,51 @@ mod tests {
             }
         };
         assert_eq!(plan("a").fingerprint(), plan("b").fingerprint());
+    }
+
+    // A token carried as a path segment changed the path, so a refreshed link lost every segment.
+    #[test]
+    fn a_refreshed_token_in_the_path_keeps_its_fingerprint() {
+        let plan = |token: &str, video: u8| Plan {
+            tracks: vec![Track {
+                role: Role::Video,
+                codecs: Vec::new(),
+                pieces: (1..3)
+                    .map(|n| {
+                        let url = format!(
+                            "https://cdn.example/hdntl=exp={token}~hmac={token}/v{video}/{n}.ts"
+                        );
+                        Piece::plain(Url::parse(&url).unwrap(), None)
+                    })
+                    .collect(),
+            }],
+        };
+        assert_eq!(plan("a", 1).fingerprint(), plan("b", 1).fingerprint());
+        assert_ne!(plan("a", 1).fingerprint(), plan("a", 2).fingerprint());
+    }
+
+    // YouTube's stream links carry their signature, expiry and servers as path segments, so every resume read a new fingerprint and downloaded the whole video again.
+    #[test]
+    fn a_youtube_stream_read_again_keeps_its_fingerprint() {
+        let segment = |host: &str, video: &str, read: &str, n: u32| {
+            format!(
+                "https://{host}.googlevideo.com/videoplayback/id/{video}/itag/628/source/youtube/expire/17928{read}/ei/{read}Ffca/ip/2001:db8::{read}/sgovp/clen%3D612708816%3Blmt%3D1792759152274608/mn/sn-{read},sn-h5576nsy/mt/17928{read}/initcwndbps/{read}875/sparams/expire,ei,ip,id,itag/sig/AE0s{read}/lsig/APaT{read}/playlist/index.m3u8/govp/slices%3D0-219,{n}00-{n}99/gosq/{n}/file/seg.ts"
+            )
+        };
+        let plan = |host: &str, video: &str, read: &str, first: u32| Plan {
+            tracks: vec![Track {
+                role: Role::Video,
+                codecs: Vec::new(),
+                pieces: (first..first + 2)
+                    .map(|n| {
+                        Piece::plain(Url::parse(&segment(host, video, read, n)).unwrap(), None)
+                    })
+                    .collect(),
+            }],
+        };
+        let first = plan("rr4---sn-a", "06c7e340", "1", 1).fingerprint();
+        assert_eq!(first, plan("rr1---sn-b", "06c7e340", "2", 1).fingerprint());
+        assert_ne!(first, plan("rr4---sn-a", "d9f2d4d0", "1", 1).fingerprint());
+        assert_ne!(first, plan("rr4---sn-a", "06c7e340", "1", 2).fingerprint());
     }
 }

@@ -295,7 +295,9 @@ impl Fetcher {
             limit,
             url: url.to_string(),
         };
-        let answer = self.transfer(&url, range, &mut sink, &mut |_| {}).await?;
+        let answer = self
+            .transfer(&url, range, 0, &mut sink, &mut |_| {})
+            .await?;
         let body = match sink {
             Sink::Memory { buf, .. } => buf.freeze(),
             Sink::File { .. } => Bytes::new(),
@@ -332,18 +334,49 @@ impl Fetcher {
         path: &Path,
         mut on_bytes: impl FnMut(u64) + Send,
     ) -> Result<u64> {
+        self.save_after(url, range, path, 0, &mut on_bytes).await
+    }
+
+    /// [`save`](Self::save), continuing a file at `path` whose first `kept` bytes an earlier transfer of the same resource wrote: it is cut to `kept`, and only the bytes after them are asked for. `on_bytes` counts only those, and the result includes `kept`.
+    ///
+    /// # Errors
+    ///
+    /// As [`save`](Self::save). A server that cannot continue from `kept` fails the transfer; the caller may then save the resource whole.
+    pub async fn save_after(
+        &self,
+        url: &Url,
+        range: Option<Range<u64>>,
+        path: &Path,
+        kept: u64,
+        mut on_bytes: impl FnMut(u64) + Send,
+    ) -> Result<u64> {
         let url = clean_url(url)?;
-        let file = tokio::fs::File::create(path)
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(kept == 0)
+            .open(path)
             .await
             .context(IoAction::CreateFile, path)?;
+        if kept > 0 {
+            file.set_len(kept).await.context(IoAction::Resize, path)?;
+            file.seek(std::io::SeekFrom::Start(kept))
+                .await
+                .context(IoAction::Write, path)?;
+        }
         let mut sink = Sink::File {
             file: BufWriter::with_capacity(SAVE_BUFFER, file),
             path: path.to_path_buf(),
         };
-        if range.as_ref().is_some_and(|r| r.end <= r.start) {
-            return Ok(0);
+        if range
+            .as_ref()
+            .is_some_and(|r| r.end <= r.start.saturating_add(kept))
+        {
+            return Ok(kept);
         }
-        let answer = self.transfer(&url, range, &mut sink, &mut on_bytes).await;
+        let answer = self
+            .transfer(&url, range, kept, &mut sink, &mut on_bytes)
+            .await;
         // Whatever arrived is kept, also after an error.
         let flushed = sink.finish().await;
         let answer = answer?;
@@ -357,12 +390,13 @@ impl Fetcher {
         &self.inner.clients[index]
     }
 
-    /// Moves `[range.start, range.end)` (or the whole resource) into `sink`,
+    /// Moves `[range.start, range.end)` (or the whole resource) into `sink`, after the `kept` bytes it already holds,
     /// retrying from wherever it got to.
     async fn transfer(
         &self,
         url: &Url,
         range: Option<Range<u64>>,
+        kept: u64,
         sink: &mut Sink,
         on_bytes: &mut (dyn FnMut(u64) + Send),
     ) -> Result<Answer> {
@@ -370,8 +404,8 @@ impl Fetcher {
         let mut position = Position {
             base: range.as_ref().map_or(0, |r| r.start),
             end: range.map(|r| r.end),
-            written: 0,
-            counted: 0,
+            written: kept,
+            counted: kept,
             first: None,
         };
         let retries = Retries {
