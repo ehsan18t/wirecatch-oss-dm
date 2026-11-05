@@ -1424,3 +1424,10 @@ Decided on 2026-11-05. It amends D171.
 
 1. A download a failed move left split keeps its new path on its deletion record, in the place of a move's target. Its removal deletes the partial files at both paths, and so does a start that finds the record.
 2. A finished download's deletion record also lists the files of its move. A start finishes that move for the other finished rows of the file, as far as D132.2 tells, so those rows follow the file. With no such row the extra copy of D171.2 stays.
+
+### D182. Focus that has nowhere to go falls to the list
+
+Decided on 2026-11-05. It carries out D168.2.
+
+1. When the element holding focus leaves the main window, such as a button that left with its row, or one a closing dialog gives focus back to, focus moves to the list, so the window's keys keep working.
+2. While a dialog is open, focus stays out of the list, so the keys cannot act on the rows behind the dialog.

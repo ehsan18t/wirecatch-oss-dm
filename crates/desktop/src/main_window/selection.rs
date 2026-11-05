@@ -13,8 +13,8 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, FocusHandle, InteractiveElement as _, IntoElement, Modifiers,
-    ParentElement as _, Styled as _, Window, div, px,
+    AnyElement, App, Context, IntoElement, Modifiers, ParentElement as _, Styled as _, Window, div,
+    px,
 };
 use wirecatch_protocol::app::DownloadSummary;
 use wirecatch_protocol::wire::ProtocolError;
@@ -382,22 +382,8 @@ impl MainWindow {
                     })),
             );
         super::command_bar::command_row()
-            .track_focus(&self.row_focus)
             .child(bar)
             .into_any_element()
-    }
-}
-
-/// When the selection takes or gives back the row, focus inside it moves to `focus.1`, the list: the element holding it is about to go, which would leave the window's actions out of reach, and the search field typed into unseen would narrow the list.
-pub(super) fn row_taken(
-    was_held: &mut bool,
-    held: bool,
-    focus: (&FocusHandle, &FocusHandle),
-    window: &mut Window,
-    cx: &mut App,
-) {
-    if std::mem::replace(was_held, held) != held && focus.0.contains_focused(window, cx) {
-        focus.1.focus(window, cx);
     }
 }
 
