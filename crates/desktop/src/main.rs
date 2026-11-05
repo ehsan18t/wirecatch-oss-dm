@@ -82,7 +82,10 @@ fn claim_or_hand_over(runtime: &tokio::runtime::Runtime, launch: &Launch) -> Cla
                 }
             }
             Err(e) => {
-                tracing::error!("browser downloads cannot reach Wirecatch: {e}");
+                tracing::error!(
+                    "browser downloads cannot reach {}: {e}",
+                    host::CHANNEL.name()
+                );
                 return Claim::Run(None);
             }
         }

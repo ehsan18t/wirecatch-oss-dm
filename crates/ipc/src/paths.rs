@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use wirecatch_product::Channel;
 #[cfg(any(unix, test))]
-use wirecatch_product::{IPC_FALLBACK_FOLDER_PREFIX, IPC_RUNTIME_FOLDER};
+use wirecatch_product::{IPC_FALLBACK_FOLDER_PREFIX, IPC_RUNTIME_FOLDER, PRODUCT_NAME};
 
 /// Where every named pipe lives on Windows.
 #[cfg(any(windows, test))]
@@ -117,7 +117,9 @@ pub(crate) fn check_private_dir(facts: DirFacts, uid: u32, shown: &str) -> Resul
         };
         return problem(
             what.into(),
-            format!("Wirecatch did not create it. Remove {shown}, then open Wirecatch again."),
+            format!(
+                "{PRODUCT_NAME} did not create it. Remove {shown}, then open {PRODUCT_NAME} again."
+            ),
         );
     }
     if facts.owner_uid != uid {
@@ -128,7 +130,9 @@ pub(crate) fn check_private_dir(facts: DirFacts, uid: u32, shown: &str) -> Resul
                 "it belongs to user {} instead of you (user {uid}), so that user could intercept your downloads",
                 facts.owner_uid
             ),
-            "Ask an administrator to delete it, or restart the computer (which empties the temporary folder on most systems), then open Wirecatch again.".into(),
+            format!(
+                "Ask an administrator to delete it, or restart the computer (which empties the temporary folder on most systems), then open {PRODUCT_NAME} again."
+            ),
         );
     }
     if facts.mode & 0o077 != 0 {
@@ -137,7 +141,9 @@ pub(crate) fn check_private_dir(facts: DirFacts, uid: u32, shown: &str) -> Resul
                 "other users have access to it (permissions {:03o}, expected 700)",
                 facts.mode & 0o777
             ),
-            format!("Run `chmod 700 {shown}` (or delete the folder), then open Wirecatch again."),
+            format!(
+                "Run `chmod 700 {shown}` (or delete the folder), then open {PRODUCT_NAME} again."
+            ),
         );
     }
     Ok(())

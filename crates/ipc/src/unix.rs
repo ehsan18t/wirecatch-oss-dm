@@ -6,6 +6,7 @@ use std::io;
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
+use wirecatch_product::PRODUCT_NAME;
 
 use tokio::net::{UnixListener, UnixStream};
 use wirecatch_product::Channel;
@@ -270,7 +271,9 @@ fn remove_stale_socket(path: &Path, endpoint: &Endpoint) -> Result<(), IpcError>
     };
     if !meta.file_type().is_socket() {
         return Err(IpcError::io(
-            format!("{endpoint} exists and is not a socket. Remove it, then open Wirecatch again"),
+            format!(
+                "{endpoint} exists and is not a socket. Remove it, then open {PRODUCT_NAME} again"
+            ),
             io::Error::from(io::ErrorKind::AlreadyExists),
         ));
     }

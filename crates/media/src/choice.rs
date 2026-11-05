@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
+use wirecatch_product::PRODUCT_NAME;
 
 use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
 
@@ -460,7 +461,9 @@ fn usable_formats(all: &[Format]) -> Result<Vec<&Format>, UserError> {
     }
     if all.iter().any(Format::drm) {
         return Err(UserError {
-            message: "This video is protected with DRM, which only licensed players can open, so Wirecatch cannot download it.".into(),
+            message: format!(
+                "This video is protected with DRM, which only licensed players can open, so {PRODUCT_NAME} cannot download it."
+            ),
             fix: None,
         });
     }
@@ -639,16 +642,18 @@ pub fn duration_ms(info: &Info) -> Option<u64> {
 
 fn live() -> UserError {
     UserError {
-        message:
-            "This video is a live broadcast. Wirecatch can download it after the broadcast ends."
-                .into(),
+        message: format!(
+            "This video is a live broadcast. {PRODUCT_NAME} can download it after the broadcast ends."
+        ),
         fix: None,
     }
 }
 
 fn nothing() -> UserError {
     UserError {
-        message: "Wirecatch found no video or audio it can download on this page. Open the video page again and start the video, then try again.".into(),
+        message: format!(
+            "{PRODUCT_NAME} found no video or audio it can download on this page. Open the video page again and start the video, then try again."
+        ),
         fix: Some(FixAction::Retry),
     }
 }

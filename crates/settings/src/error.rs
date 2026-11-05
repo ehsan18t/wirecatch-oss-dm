@@ -1,4 +1,5 @@
 use wirecatch_files::FileError;
+use wirecatch_product::PRODUCT_NAME;
 
 use crate::folders::PathError;
 
@@ -29,7 +30,7 @@ pub enum SettingsError {
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsFileError {
     #[error(
-        "This settings file was made by a newer version of Wirecatch (format {found}, this version reads up to {supported}). Update Wirecatch, then import it again."
+        "This settings file was made by a newer version of {app} (format {found}, this version reads up to {supported}). Update {app}, then import it again.", app = PRODUCT_NAME
     )]
     TooNew {
         /// Format version found in the file, as written there.
@@ -39,13 +40,13 @@ pub enum SettingsFileError {
     },
 
     #[error(
-        "This settings file was made by an earlier version of Wirecatch (format {found}), whose settings files this version cannot read. Export the settings again with this version."
+        "This settings file was made by an earlier version of {app} (format {found}), whose settings files this version cannot read. Export the settings again with this version.", app = PRODUCT_NAME
     )]
     TooOld { found: u64 },
 
     /// A file that is not a readable settings profile.
     #[error(
-        "This file is not a Wirecatch settings file ({0}). Choose a file made with Export settings."
+        "This file is not a {app} settings file ({0}). Choose a file made with Export settings.", app = PRODUCT_NAME
     )]
     Invalid(String),
 }

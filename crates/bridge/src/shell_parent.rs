@@ -15,6 +15,7 @@ use std::os::windows::io::{
     RawHandle,
 };
 use std::path::Path;
+use wirecatch_product::PRODUCT_NAME;
 
 use windows_sys::Win32::Foundation::{FALSE, HANDLE};
 use windows_sys::Win32::System::Threading::{
@@ -109,9 +110,9 @@ fn open_shell(
     // still has this id, the handle is the shell, not a program that got the id after the
     // shell restarted.
     if find_shell() != Some(shell) {
-        return Err(io::Error::other(
-            "the desktop shell restarted while Wirecatch was being started",
-        ));
+        return Err(io::Error::other(format!(
+            "the desktop shell restarted while {PRODUCT_NAME} was being started"
+        )));
     }
     check_parent(
         &ProcessAccount::current().map_err(io::Error::other)?,

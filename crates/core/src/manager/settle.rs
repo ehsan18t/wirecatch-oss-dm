@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use wirecatch_product::PRODUCT_NAME;
 
 use tracing::warn;
 use wirecatch_engine::{CancellationToken, PathRejected, PathResolver, RemoteFile, Url};
@@ -72,8 +73,8 @@ impl Manager {
     ) -> Settle {
         let manager = Arc::downgrade(&self.inner);
         Arc::new(move |answer: &ServerAnswer| {
-            let manager =
-                Manager::from_weak(&manager).ok_or_else(|| "Wirecatch is closing.".to_string())?;
+            let manager = Manager::from_weak(&manager)
+                .ok_or_else(|| format!("{PRODUCT_NAME} is closing."))?;
             let path = manager.settle_path(id, run_id, answer)?;
             answered.cancel();
             Ok(path)

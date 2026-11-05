@@ -8,6 +8,7 @@ use wirecatch_engine::{
     CancellationToken, Fetcher, Url,
     header::{ACCEPT, HeaderValue},
 };
+use wirecatch_product::PRODUCT_NAME;
 use wirecatch_protocol::UnixMillis;
 
 use super::{
@@ -82,7 +83,7 @@ fn problem_for(lookup: Lookup) -> Option<String> {
         Lookup::Unreachable(reason) => {
             warn!(%reason, "could not check for a newer yt-dlp");
             Some(format!(
-                "Wirecatch could not check for a newer media add-on ({reason}). Check your internet connection, then try again."
+                "{PRODUCT_NAME} could not check for a newer media add-on ({reason}). Check your internet connection, then try again."
             ))
         }
     }

@@ -15,6 +15,7 @@ wirecatch-engine.workspace = true
 wirecatch-files.workspace = true
 # Hiding secrets in what the add-on's programs print.
 wirecatch-logging.workspace = true
+wirecatch-product.workspace = true
 # HLS "METHOD=AES-128" is AES-128 in CBC mode with PKCS#7 padding. The aes pgp uses (core's add-on
 # signatures), and the cbc on the same cipher crate, so the app carries one copy of the cipher code;
 # move them with pgp.

@@ -1,4 +1,5 @@
 use wirecatch_files::FileError;
+use wirecatch_product::PRODUCT_NAME;
 
 /// Why the download list could not be opened or saved. The `Display` text is plain language and
 /// says how to fix the problem, so the UI can show it as is.
@@ -7,7 +8,7 @@ pub enum StoreError {
     /// Another manager has the download list open: another copy of Wirecatch, which may run
     /// with other rights than this one.
     #[error(
-        "Another copy of Wirecatch has the download list in {path} open. Close it, or keep using that copy."
+        "Another copy of {app} has the download list in {path} open. Close it, or keep using that copy.", app = PRODUCT_NAME
     )]
     AlreadyOpen {
         /// The folder that holds the list.
@@ -16,7 +17,7 @@ pub enum StoreError {
 
     /// The database was written by a newer Wirecatch.
     #[error(
-        "The download list was saved by a newer version of Wirecatch (database version {found}, this version reads up to {supported}). Update Wirecatch to open it."
+        "The download list was saved by a newer version of {app} (database version {found}, this version reads up to {supported}). Update {app} to open it.", app = PRODUCT_NAME
     )]
     TooNew {
         /// Schema version found in the database.
@@ -27,7 +28,7 @@ pub enum StoreError {
 
     /// The database could not be read or written.
     #[error(
-        "The download list could not be read or saved ({0}). Check that Wirecatch's data folder can be written to and the disk is not full, then restart Wirecatch."
+        "The download list could not be read or saved ({0}). Check that {app}'s data folder can be written to and the disk is not full, then restart {app}.", app = PRODUCT_NAME
     )]
     Database(#[from] rusqlite::Error),
 

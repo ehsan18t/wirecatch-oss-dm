@@ -3,6 +3,7 @@
 pub mod output;
 
 use serde::{Deserialize, Serialize};
+use wirecatch_product::PRODUCT_NAME;
 use wirecatch_protocol::app::MediaSummary;
 
 use output::OutputJob;
@@ -93,7 +94,7 @@ const MAX_FORMAT_ID: usize = 100;
 
 /// A format id with a character yt-dlp's selections give a meaning to, or none at all.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{0:?} is not a format id Wirecatch passes to yt-dlp")]
+#[error("{0:?} is not a format id {app} passes to yt-dlp", app = PRODUCT_NAME)]
 pub struct InvalidFormatId(String);
 
 impl TryFrom<String> for FormatId {
