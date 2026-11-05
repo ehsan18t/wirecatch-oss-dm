@@ -355,6 +355,13 @@ fn refused_by_proxy(error: &reqwest::Error) -> bool {
     false
 }
 
+/// Raw OS codes for a file another program holds open.
+#[cfg(windows)]
+pub const HELD_FILE_CODES: &[i32] = &[32, 33]; // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
+/// Raw OS codes for a file another program holds open.
+#[cfg(not(windows))]
+pub const HELD_FILE_CODES: &[i32] = &[];
+
 /// What the engine was doing with a file when [`Error::Io`] happened.
 ///
 /// New actions may be added in minor releases, so a `match` needs a `_` arm.
@@ -376,6 +383,10 @@ pub enum IoAction {
     Flush,
     /// Saving the resume file next to the part file.
     SaveResume,
+    /// Reading the resume file of an earlier run.
+    ReadResume,
+    /// Deleting the resume file of an earlier run that cannot continue.
+    DeleteResume,
     /// Giving the finished file its final name.
     Finish,
 }
@@ -390,6 +401,8 @@ impl fmt::Display for IoAction {
             IoAction::Resize => "set the size of the file",
             IoAction::Flush => "flush the file to the disk",
             IoAction::SaveResume => "save the resume file",
+            IoAction::ReadResume => "read the resume file",
+            IoAction::DeleteResume => "delete the resume file",
             IoAction::Finish => "move the finished file into place",
         })
     }
@@ -400,6 +413,19 @@ impl fmt::Display for IoAction {
 pub(crate) trait IoContext<T> {
     /// The error, if any, as [`Error::Io`] for `action` on `path`.
     fn context(self, action: IoAction, path: &Path) -> Result<T>;
+}
+
+impl Error {
+    /// Whether the final rename failed the way a file briefly held by another program does: a virus scanner or an indexer on Windows. Elsewhere nothing holds a file, and a refused rename stays refused.
+    pub(crate) fn is_finish_held(&self) -> bool {
+        matches!(
+            self,
+            Error::Io { action: IoAction::Finish, source, .. }
+                if cfg!(windows)
+                    && (source.kind() == io::ErrorKind::PermissionDenied
+                        || source.raw_os_error().is_some_and(|code| HELD_FILE_CODES.contains(&code)))
+        )
+    }
 }
 
 impl<T> IoContext<T> for io::Result<T> {

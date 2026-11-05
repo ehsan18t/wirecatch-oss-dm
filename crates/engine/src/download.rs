@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -20,7 +21,7 @@ use crate::progress::Progress;
 use crate::request::RequestContext;
 use crate::retry::Retries;
 use crate::segment::{self, SharedTable};
-use crate::storage::Finish;
+use crate::state::ResumeState;
 use crate::target::{self, Described, Destination, Prepared, Target};
 use crate::transport::{self, Opened, Remote};
 use crate::url::without_password;
@@ -142,10 +143,10 @@ pub enum ExistingFile {
     Replace,
     /// Keep it, and end with [`Error::TargetTaken`]. The finished data stays
     /// in the part file next to a resume file that says it is complete.
-    /// Running the request again once the path is free, or after moving both
-    /// files to another path and asking for that one, then only finishes it
-    /// when the server gave the size and takes ranges, as for any resume;
-    /// otherwise that run downloads it again.
+    /// Running the request again with [`exact_path`](DownloadRequest::exact_path)
+    /// once the path is free, or after moving both files to another path and
+    /// asking for that one, then only finishes it, unless the server answers
+    /// that the file changed.
     /// Taking the path and keeping it are one step on Windows and on Linux file
     /// systems that support it (see
     /// [`naming::move_to_free_name`](crate::naming::move_to_free_name)).
@@ -331,6 +332,9 @@ pub(crate) async fn download_guarded(
     // Dropped with this future, which then marks queued file work abandoned.
     let abandonment = Abandonment::new();
     let abandoned = abandonment.flag();
+    // What the resume file records and compares: never a password.
+    let saved_url = without_password(&request.url).to_string();
+    let complete = complete_earlier_run(&request, &saved_url).await?;
     let mut opts = request.options.clone();
     let session_guard = guard.map(|g| {
         clients.set_resolver(g.resolver);
@@ -338,12 +342,18 @@ pub(crate) async fn download_guarded(
         opts.http3 = false;
         g.guard
     });
-    let opened = transport::open(&request.url, &opts, &clients, &cancel, session_guard).await?;
+    let opened = transport::open(&request.url, &opts, &clients, &cancel, session_guard).await;
+    if complete.is_some_and(|saved| still_stands(&saved, &opened))
+        && let Some(done) =
+            finish_earlier_run(&request, &saved_url, &progress, &cancel, &abandoned).await?
+    {
+        return Ok(done);
+    }
+    let opened = opened?;
     debug!(ranged = opened.ranged, total = ?opened.total, url = %opened.final_url, "probed");
-    // What the resume file records and compares: never a password.
-    let saved_url = without_password(&request.url).to_string();
     let destination = Destination::choose(&request, &opened)?;
 
+    let described = Described::of(&opened);
     let Opened {
         body,
         mut connection,
@@ -355,11 +365,6 @@ pub(crate) async fn download_guarded(
         ..
     } = opened;
 
-    let described = Described {
-        ranged,
-        total,
-        validators: validators.clone(),
-    };
     let Prepared {
         target,
         table,
@@ -431,17 +436,114 @@ async fn first_save(
     Ok(saver)
 }
 
+/// Waits between tries of a final rename: a virus scanner or an indexer holds a new file for a moment.
+const FINISH_WAITS: [Duration; 3] = [
+    Duration::from_millis(200),
+    Duration::from_secs(1),
+    Duration::from_secs(3),
+];
+
+/// `attempt` until it no longer fails on a file another program holds, within [`FINISH_WAITS`] or until `cancel`.
+async fn with_held_file_waits<T, F: Future<Output = Result<T>>>(
+    cancel: &CancellationToken,
+    mut attempt: impl FnMut() -> F,
+) -> Result<T> {
+    for wait in FINISH_WAITS {
+        match attempt().await {
+            Err(e) if e.is_finish_held() => {
+                debug!(error = %Chain(&e), "the finished file is held; trying again");
+                if cancel
+                    .run_until_cancelled(tokio::time::sleep(wait))
+                    .await
+                    .is_none()
+                {
+                    return Err(e);
+                }
+            }
+            other => return other,
+        }
+    }
+    attempt().await
+}
+
+/// What an earlier run of this link saved at the caller's path, when it has all its data.
+async fn complete_earlier_run(request: &DownloadRequest, url: &str) -> Result<Option<ResumeState>> {
+    let Some(path) = request.exact_path.clone() else {
+        return Ok(None);
+    };
+    let (url, if_exists) = (url.to_owned(), request.if_exists);
+    storage::blocking(&request.file_work, move || {
+        Ok(target::complete_part(&path, &url, if_exists)?.map(|complete| complete.saved))
+    })
+    .await
+}
+
+/// Whether the data of a run that saved `saved` is still the file: the server answers as it did then, or cannot answer, so an expired link costs nothing. A server without ranges then finishes it too, where a resume would fetch it again.
+fn still_stands(saved: &ResumeState, opened: &Result<Opened>) -> bool {
+    match opened {
+        Ok(opened) => saved.describes(opened.total, &opened.validators),
+        Err(Error::Cancelled) => false,
+        Err(_) => true,
+    }
+}
+
+/// Finishes the download at the caller's path from an earlier run's data.
+async fn finish_earlier_run(
+    request: &DownloadRequest,
+    url: &str,
+    progress: &Arc<Progress>,
+    cancel: &CancellationToken,
+    abandoned: &Abandoned,
+) -> Result<Option<Outcome>> {
+    let Some(path) = &request.exact_path else {
+        return Ok(None);
+    };
+    with_held_file_waits(cancel, || {
+        let (path, url, if_exists) = (path.clone(), url.to_owned(), request.if_exists);
+        let (progress, abandoned) = (progress.clone(), abandoned.clone());
+        storage::blocking(&request.file_work, move || {
+            abandoned.check()?;
+            let Some(target::CompletePart { target, len, .. }) =
+                target::complete_part(&path, &url, if_exists)?
+            else {
+                return Ok(None);
+            };
+            progress.start(&target.file, &target.name(), Some(len), len, true);
+            let path =
+                storage::finalize(&target.part, &target.file, &target.finish, len, &abandoned)?;
+            abandoned.check()?;
+            target::discard(&target.state);
+            info!(path = %path.display(), bytes = len, "completed from an earlier run");
+            Ok(Some(Outcome::Completed {
+                path,
+                bytes: len,
+                resumed_from: len,
+            }))
+        })
+    })
+    .await
+}
+
 /// [`finish`] on the blocking pool.
 async fn end(
     shared: Arc<Shared>,
     saver: Arc<ResumeSaver>,
     target: Target,
     resumed_from: u64,
-    first_error: Option<Error>,
+    mut first_error: Option<Error>,
 ) -> Result<Outcome> {
-    let file_work = shared.file_work.clone();
-    storage::blocking(&file_work, move || {
-        finish(&shared, &saver, target, resumed_from, first_error)
+    let target = Arc::new(target);
+    let cancel = shared.request.cancel.clone();
+    with_held_file_waits(&cancel, || {
+        let (shared, saver) = (shared.clone(), saver.clone());
+        let (target, first_error) = (target.clone(), first_error.take());
+        let file_work = shared.file_work.clone();
+        async move {
+            storage::blocking(&file_work, move || {
+                finish(&shared, &saver, &target, resumed_from, first_error)
+            })
+            .await
+        }
     })
     .await
 }
@@ -553,7 +655,7 @@ async fn join_workers(mut workers: JoinSet<Result<()>>) -> Option<Error> {
 fn finish(
     shared: &Shared,
     saver: &ResumeSaver,
-    target: Target,
+    target: &Target,
     resumed_from: u64,
     first_error: Option<Error>,
 ) -> Result<Outcome> {
@@ -568,9 +670,9 @@ fn finish(
     };
 
     if complete {
-        if matches!(target.finish, Finish::Refuse) {
-            // A finish refused because the name is taken leaves a resume file that says the data is all there, so a later run that can resume only finishes.
-            saver.save()?;
+        // A finish that fails or is refused leaves a resume file that says the data is all there, so a later run only finishes. Without it that run fetches again, which only costs time.
+        if let Err(e) = saver.save() {
+            warn!(error = %Chain(&e), "could not save that the download is complete");
         }
         // Closing waits for a checkpoint still flushing, during which the owner may drop the download and start another run on the same files.
         let closed = saver.close();
@@ -599,7 +701,7 @@ fn finish(
     saver.close()?;
     if shared.request.cancel.is_cancelled() {
         return Ok(Outcome::Paused {
-            path: target.file,
+            path: target.file.clone(),
             remaining: shared.request.total.map(|_| remaining),
             can_continue: shared.request.can_continue(),
         });
@@ -608,4 +710,70 @@ fn finish(
         at: file_len - remaining,
         end: file_len,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::io;
+
+    use super::*;
+    use crate::error::IoAction;
+
+    fn refused(kind: io::ErrorKind) -> Error {
+        Error::Io {
+            action: IoAction::Finish,
+            path: "f.bin".into(),
+            source: kind.into(),
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn only_a_held_file_is_tried_again() {
+        let tries = Cell::new(0);
+        let result: Result<()> = with_held_file_waits(&CancellationToken::new(), || {
+            tries.set(tries.get() + 1);
+            std::future::ready(Err(refused(io::ErrorKind::NotFound)))
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(tries.get(), 1);
+    }
+
+    #[cfg(windows)]
+    #[tokio::test(start_paused = true)]
+    async fn a_held_file_is_tried_again_until_it_gives_way_or_the_waits_end() {
+        let tries = Cell::new(0);
+        let result = with_held_file_waits(&CancellationToken::new(), || {
+            tries.set(tries.get() + 1);
+            std::future::ready(if tries.get() < 3 {
+                Err(refused(io::ErrorKind::PermissionDenied))
+            } else {
+                Ok(())
+            })
+        })
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(tries.get(), 3);
+
+        let tries = Cell::new(0);
+        let result: Result<()> = with_held_file_waits(&CancellationToken::new(), || {
+            tries.set(tries.get() + 1);
+            std::future::ready(Err(refused(io::ErrorKind::PermissionDenied)))
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(tries.get(), FINISH_WAITS.len() + 1);
+
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let tries = Cell::new(0);
+        let result: Result<()> = with_held_file_waits(&cancelled, || {
+            tries.set(tries.get() + 1);
+            std::future::ready(Err(refused(io::ErrorKind::PermissionDenied)))
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(tries.get(), 1, "a pause ends the waits");
+    }
 }

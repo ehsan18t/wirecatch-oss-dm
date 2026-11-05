@@ -167,7 +167,7 @@ impl QueueSlot {
 
 /// What an unfinished download keeps beside its path. Only its media work folders are deleted as folders: a folder under any other name is someone's.
 pub(super) struct Partial {
-    files: [PathBuf; 2],
+    files: [PathBuf; 3],
     folders: Vec<PathBuf>,
 }
 
@@ -183,7 +183,7 @@ impl Partial {
             Vec::new()
         };
         Self {
-            files: crate::naming::partial_files(&deletion.path),
+            files: crate::naming::partial_files_and_temp(&deletion.path),
             folders,
         }
     }

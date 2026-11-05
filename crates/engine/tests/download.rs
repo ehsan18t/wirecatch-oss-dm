@@ -164,6 +164,196 @@ async fn a_pause_says_whether_the_next_run_continues() {
     }
 }
 
+/// Saves what a run of `url` leaves when it has all of `data` but could not rename it.
+fn left_complete(dir: &std::path::Path, url: &str, data: &[u8]) -> TestResult {
+    std::fs::write(dir.join("f.bin.wcpart"), data)?;
+    let state = serde_json::json!({
+        "version": 1,
+        "url": url,
+        "total": data.len(),
+        "ranged": false,
+        "remaining": [],
+    });
+    std::fs::write(dir.join("f.bin.wcstate"), state.to_string())?;
+    Ok(())
+}
+
+/// Another link's complete part file is not this download's, even with the same size.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn another_links_complete_part_file_is_not_finished_as_this_download() {
+    let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
+    let dir = private_dir("other-complete").unwrap();
+    let path = dir.join("f.bin");
+    left_complete(&dir, "https://other.example/f.bin", &vec![0; KIB_USIZE]).unwrap();
+
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(path.clone());
+    run(req).await.unwrap();
+
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
+/// The server says the file is another now: what the earlier run kept is not it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_complete_part_file_of_a_changed_file_is_fetched_again() {
+    let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
+    let dir = private_dir("changed-complete").unwrap();
+    let path = dir.join("f.bin");
+    left_complete(&dir, server.url("f.bin").as_str(), &vec![0; KIB_USIZE / 2]).unwrap();
+    let state = dir.join("f.bin.wcstate");
+    let mut saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&state).unwrap()).unwrap();
+    saved["etag"] = serde_json::json!("\"old\"");
+    std::fs::write(&state, saved.to_string()).unwrap();
+
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(path.clone());
+    run(req).await.unwrap();
+
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
+/// The server takes no ranges and answers as before: nothing is fetched again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_complete_part_file_is_finished_when_the_server_answers_the_same() {
+    let server = TestServer::start(
+        test_data(KIB_USIZE),
+        Config {
+            hold_bodies_from: Some(0),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = private_dir("same-complete").unwrap();
+    let path = dir.join("f.bin");
+    left_complete(&dir, server.url("f.bin").as_str(), &server.data).unwrap();
+
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(path.clone());
+    let outcome = run(req).await.unwrap();
+
+    assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    assert_eq!(files_in(&dir), ["f.bin"]);
+    dir.remove().unwrap();
+}
+
+/// The server now refuses the link, and that costs nothing: nothing is missing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_complete_part_file_is_finished_when_the_server_refuses() {
+    let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
+    server.configure(|c| c.refuse_paths.push(("/f.bin".into(), 410)));
+    let dir = private_dir("complete-part").unwrap();
+    let path = dir.join("f.bin");
+    std::fs::write(dir.join("f.bin.wcpart"), &server.data).unwrap();
+    let state = serde_json::json!({
+        "version": 1,
+        "url": server.url("f.bin").as_str(),
+        "total": server.data.len(),
+        "ranged": false,
+        "remaining": [],
+    });
+    std::fs::write(dir.join("f.bin.wcstate"), state.to_string()).unwrap();
+
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(path.clone());
+    let outcome = run(req).await.unwrap();
+
+    assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    assert_eq!(files_in(&dir), ["f.bin"]);
+    dir.remove().unwrap();
+}
+
+/// A file too short for the size its resume file saved is not complete, whatever the file says.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_part_file_shorter_than_its_saved_size_is_fetched_again() {
+    let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
+    let dir = private_dir("short-part").unwrap();
+    let path = dir.join("f.bin");
+    std::fs::write(dir.join("f.bin.wcpart"), b"cut").unwrap();
+    let state = serde_json::json!({
+        "version": 1,
+        "url": server.url("f.bin").as_str(),
+        "total": server.data.len(),
+        "ranged": false,
+        "remaining": [],
+    });
+    std::fs::write(dir.join("f.bin.wcstate"), state.to_string()).unwrap();
+
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(path.clone());
+    run(req).await.unwrap();
+
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
+/// A rename that stays refused fails the run, and the next run needs no data from the server.
+#[cfg(windows)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_file_held_through_every_rename_is_finished_by_the_next_run() {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    const FILE_SHARE_READ: u32 = 1;
+
+    let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
+    let dir = private_dir("held-finish").unwrap();
+    let path = dir.join("f.bin");
+    std::fs::write(&path, b"old").unwrap();
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .open(&path)
+        .unwrap();
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(path.clone());
+    let error = run(req.clone()).await.unwrap_err();
+    assert!(matches!(error, Error::Io { .. }), "{error:?}");
+
+    drop(held);
+    server.configure(|c| c.refuse_paths.push(("/f.bin".into(), 410)));
+    run(req).await.unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
+/// A stalled download has nothing new to save: a resume file taken away stays away.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_download_with_nothing_new_does_not_save_again() {
+    let server = TestServer::start(
+        test_data(MIB_USIZE),
+        Config {
+            ranges: true,
+            hold_bodies_from: Some(0),
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = private_dir("no-new-save").unwrap();
+    let state = dir.join("f.bin.wcstate");
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.options.checkpoint_interval = Duration::from_millis(10);
+    req.options.stall_timeout = PATIENCE;
+    let cancel = CancellationToken::new();
+    let task = tokio::spawn(download(req, Arc::default(), cancel.clone()));
+    tokio::time::timeout(PATIENCE, async {
+        while !state.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the first save never came");
+    std::fs::remove_file(&state).unwrap();
+    tokio::time::sleep(QUIET).await;
+    let saved_again = state.exists();
+    cancel.cancel();
+    task.await.unwrap().unwrap();
+    assert!(!saved_again, "it saved with nothing new");
+    dir.remove().unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn resumes_after_pause_without_downloading_again() {
     let len = 4 * MIB_USIZE;

@@ -16,7 +16,7 @@ use super::Manager;
 use super::file_exists::give_up_the_name;
 use super::state::{Entry, State, Stop};
 use crate::error::{CoreError, Result};
-use crate::naming::{self, partial_files};
+use crate::naming::{self, partial_files_and_temp};
 
 /// Starts the name of a copy on its way to its final name.
 const STAGED_PREFIX: &str = ".wirecatch-move-";
@@ -464,9 +464,9 @@ fn files_to_move(
     sidecar_to: impl Fn(&Path) -> PathBuf,
 ) -> Vec<MovedFile> {
     if !completed {
-        return partial_files(from)
+        return partial_files_and_temp(from)
             .into_iter()
-            .zip(partial_files(to))
+            .zip(partial_files_and_temp(to))
             .filter(|(old, _)| old.exists())
             .map(|(from, to)| MovedFile { from, to })
             .collect();
@@ -763,7 +763,7 @@ mod tests {
         let from = dir.path().join("a.bin");
         let to = dir.path().join("b").join("a.bin");
         std::fs::create_dir_all(to.parent().unwrap()).unwrap();
-        let [part, state] = partial_files(&from);
+        let [part, state] = naming::partial_files(&from);
         std::fs::write(&part, b"data").unwrap();
         std::fs::write(&state, b"state").unwrap();
         let pairs: Vec<(PathBuf, PathBuf)> =
@@ -772,7 +772,7 @@ mod tests {
                 .map(|file| (file.from, file.to))
                 .collect();
         move_together(&pairs, move_file).unwrap();
-        let [new_part, new_state] = partial_files(&to);
+        let [new_part, new_state] = naming::partial_files(&to);
         assert_eq!(std::fs::read(new_part).unwrap(), b"data");
         assert_eq!(std::fs::read(new_state).unwrap(), b"state");
         assert!(!part.exists() && !state.exists());

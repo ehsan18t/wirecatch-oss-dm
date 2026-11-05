@@ -339,8 +339,9 @@ fn restore_entry(
         && entry.row.total.is_none_or(|total| total == size)
     {
         mark_completed(&mut entry, size, around.now_millis);
-        let [_, resume_file] = crate::naming::partial_files(entry.path());
+        let [_, resume_file, temp] = crate::naming::partial_files_and_temp(entry.path());
         wirecatch_files::discard::file(&resume_file);
+        wirecatch_files::discard::file(&temp);
         fixed = true;
     }
     if matches!(

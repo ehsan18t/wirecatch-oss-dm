@@ -285,6 +285,7 @@ pub use ::url::Url;
 pub use download::{
     DownloadRequest, ExistingFile, Outcome, PathRejected, PathResolver, RemoteFile, download,
 };
+pub use error::HELD_FILE_CODES;
 pub use error::{Error, IoAction, NetworkError, Result};
 pub use fetch::{Fetched, Fetcher};
 pub use file_work::FileWork;
