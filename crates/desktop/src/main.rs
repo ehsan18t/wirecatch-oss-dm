@@ -22,8 +22,9 @@ mod tray;
 mod ui;
 
 use gpui_kit::component::TitleBar;
-use gpui_kit::{QuitMode, TitlebarOptions, WindowOptions};
+use gpui_kit::{Bounds, Pixels, QuitMode, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 use wirecatch_ipc::{IpcError, Listener};
+use wirecatch_shell::download_windows::MIN_WINDOW_HEIGHT;
 use wirecatch_shell::launch::{self, Launch};
 use wirecatch_shell::message_box::{self, Tone};
 use wirecatch_shell::{autostart, bridge, elevation, host};
@@ -47,6 +48,21 @@ pub fn window_options() -> WindowOptions {
             ..TitleBar::title_bar_options()
         }),
         ..TitleBar::window_options()
+    }
+}
+
+/// What every pop-up window opens with: `window_options`, at `bounds`, that a person cannot resize (D220). Its own code can, to fit its content.
+#[must_use]
+pub fn popup_window_options(bounds: Bounds<Pixels>) -> WindowOptions {
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        is_resizable: false,
+        // Linux never reads `is_resizable`, so a window manager's frame can still drag the edges.
+        window_min_size: Some(size(
+            bounds.size.width,
+            px(download_windows::logical(MIN_WINDOW_HEIGHT)),
+        )),
+        ..window_options()
     }
 }
 
@@ -167,5 +183,18 @@ mod tests {
             .titlebar
             .and_then(|titlebar| titlebar.title);
         assert_eq!(title.as_deref(), Some(host::CHANNEL.name()));
+    }
+
+    #[test]
+    fn only_a_pop_up_cannot_be_resized() {
+        assert!(window_options().is_resizable);
+        let bounds = Bounds::new(gpui_kit::point(px(10.), px(20.)), size(px(460.), px(600.)));
+        let popup = popup_window_options(bounds);
+        assert!(!popup.is_resizable);
+        assert_eq!(
+            popup.window_min_size.map(|least| least.width),
+            Some(bounds.size.width),
+            "Linux ignores is_resizable: this alone keeps a window manager from narrowing it"
+        );
     }
 }

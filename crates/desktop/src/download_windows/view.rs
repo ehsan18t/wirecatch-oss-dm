@@ -1026,17 +1026,15 @@ pub(super) fn queue_badge_picker(
     };
     let proposed = name_of(proposed);
     let (lead, value) = automatic_reason(&proposed, reason);
-    let tip = value
-        .as_ref()
-        .map_or_else(|| lead.clone(), |value| format!("{lead} {value}"));
     let shown = picked.map_or_else(|| proposed.clone(), name_of);
+    let tip = picker_tip(&proposed, reason, picked.map(|_| shown.as_str()));
     let queues: Vec<(QueueId, String)> = library
         .queues
         .iter()
         .map(|queue| (queue.id, queue.settings.name.clone()))
         .collect();
     let accent = cx.theme().primary;
-    Button::new(id)
+    let opener = Button::new(id)
         .ghost()
         .icon(Icon::new(if picked.is_none() {
             Lucide::Zap
@@ -1082,8 +1080,9 @@ pub(super) fn queue_badge_picker(
                 );
             }
             menu
-        })
-        .into_any_element()
+        });
+    // The menu's own wrapper keeps the button's full width, which would run a long name under Cancel.
+    div().min_w_0().child(opener).into_any_element()
 }
 
 /// A folder, the whole width; a click picks another.
@@ -1132,6 +1131,15 @@ pub(super) fn automatic_reason(queue: &str, reason: &QueueReason) -> (String, Op
         QueueReason::Picked => (format!("Goes to {queue}, as you picked"), None),
         QueueReason::DefaultQueue => (format!("Goes to {queue}, the default queue"), None),
     }
+}
+
+/// The queue picker's tooltip: where the download goes, `picked` by the person or else `proposed`.
+fn picker_tip(proposed: &str, reason: &QueueReason, picked: Option<&str>) -> String {
+    let (lead, value) = picked.map_or_else(
+        || automatic_reason(proposed, reason),
+        |picked| automatic_reason(picked, &QueueReason::Picked),
+    );
+    value.map_or_else(|| lead.clone(), |value| format!("{lead} {value}"))
 }
 
 /// A queue's name, tinted so it reads as the name of something.
@@ -1624,6 +1632,19 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn the_picker_tip_names_the_queue_the_download_goes_to() {
+        let rule = QueueReason::Matched(Rule::Site("github.com".to_owned()));
+        assert_eq!(
+            picker_tip("Main", &rule, None),
+            "Goes to Main, for github.com"
+        );
+        assert_eq!(
+            picker_tip("Main", &QueueReason::DefaultQueue, Some("Archive")),
+            "Goes to Archive, as you picked"
+        );
+    }
 
     #[test]
     fn automatic_says_why_it_picked_the_queue() {
