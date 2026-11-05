@@ -320,7 +320,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 255. A page read can outlive the app after a quit past the limit (fixed)
 256. A retry on the best format can move the bar backwards (fixed)
 257. A server can change the type of a name the person confirmed (open)
-258. A real size above the estimate moves a video's bar backwards (open)
+258. A real size above the estimate moves a video's bar backwards (fixed)
 259. A finished group's heading counts go stale (open)
 260. A startup notice covers the toolbar and Settings rows (open)
 261. The not-private notice carries a path and a long sentence (open)
