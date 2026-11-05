@@ -276,8 +276,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 249 | The timing check misses a throttled server racing an action                                       | found while fixing                                                                                 | P3       | medium | Found by review of PR-01 and PR-47.                                                                              | open                                          |
 | 250 | The capture reply's doc contradicts the extension                                                 | found while fixing                                                                                 | P3       | small  | Found by review of PR-70.                                                                                        | fixed                                         |
 | 251 | The layout test can fail on a font that did not load                                              | found while fixing                                                                                 | P3       | small  | Seen once on CI, on a change with no extension code.                                                             | fixed                                         |
-| 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | open                                          |
-| 253 | A quit right after a cancel can leave a part file                                                 | found while fixing                                                                                 | P3       | small  | Found while fixing PR-123.                                                                                       | open                                          |
+| 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | fixed                                         |
+| 253 | A quit right after a cancel can leave a part file                                                 | found while fixing                                                                                 | P3       | small  | Found while fixing PR-123.                                                                                       | fixed                                         |
 | 254 | Ticking a folded group does nothing the person can act on                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-81.                                                                                        | open                                          |
 | 255 | A page read can outlive the app after a quit past the limit                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10. Read from the code, not run.                                                        | open                                          |
 | 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | open                                          |
@@ -4473,7 +4473,7 @@ P3, small, fixed.
 
 ### 252. A quit during a removal can leave part files behind
 
-P3, small, open.
+P3, small, fixed.
 
 **Left to do:** `shutdown` now waits for a removal, so a plain quit finishes it. A kill or crash during a removal, or a quit past `QUIT_PATIENCE`, still leaves part files with no row. PR-129 finishes this.
 
@@ -4487,7 +4487,7 @@ P3, small, open.
 
 ### 253. A quit right after a cancel can leave a part file
 
-P3, small, open.
+P3, small, fixed.
 
 `shutdown` does not wait for `entry.cleanup`, the background delete after a cancel, so a process exit can cut it short. The part file stays under the Cancelled row until a retry or a removal deletes it, so only disk space is lost.
 

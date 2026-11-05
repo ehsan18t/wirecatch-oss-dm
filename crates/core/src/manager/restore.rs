@@ -10,19 +10,19 @@ use wirecatch_protocol::app::{AppSettings, DownloadStatus, Queue, Setting};
 use wirecatch_protocol::proxy::ProxyUse;
 use wirecatch_protocol::rules::QueueReason;
 use wirecatch_protocol::{DownloadId, QueueId};
-use wirecatch_records::files::MovedFile;
+use wirecatch_records::files::{MovedFile, PendingDeletion};
 use wirecatch_settings::DEFAULT_QUEUE_ID;
 use wirecatch_settings::proxy::{ComputerProxy, SavedProxyServer};
 use wirecatch_sites::local_network::ChosenBy;
 use wirecatch_sites::public_suffix::SuffixList;
-use wirecatch_store::{Snapshot, StoredDownload};
+use wirecatch_store::{Snapshot, Store, StoredDownload};
 
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::questions;
 use super::relocate::{files_that_arrived, finish_interrupted_move};
 use super::run::mark_completed;
-use super::state::{Counters, Entry, Hold, QueueSlot, State};
+use super::state::{Counters, Entry, Hold, Partial, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
 use crate::batches::Batches;
 use crate::naming::Claimed;
@@ -35,6 +35,23 @@ pub(super) struct Restored {
     /// range), so they need saving. Otherwise the stored settings stay as they are, with
     /// anything another build saved that this one cannot read.
     pub settings_changed: bool,
+    /// Deletions on record were finished, so the record needs saving empty.
+    pub deletions_finished: bool,
+}
+
+impl Restored {
+    /// Saves what restoring changed.
+    pub fn save_changes(&mut self, store: &Store) {
+        if self.deletions_finished {
+            store.save_pending_deletions(Vec::new());
+        }
+        // Only when changed, so what another build saved and this one cannot read (an accent added later, say) survives this build opening them.
+        if self.settings_changed {
+            store.save_settings(self.state.settings.clone());
+        }
+        store.save_queues(self.state.queue_list());
+        store.save_downloads(std::mem::take(&mut self.changed));
+    }
 }
 
 /// What restoring needs to know about the world outside the database.
@@ -116,6 +133,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         handovers: Handovers::default(),
         dirty: BTreeSet::default(),
         removals: Vec::new(),
+        pending_deletions: BTreeMap::new(),
         batches: Batches::default(),
         proxy_logins,
         proxy_servers: profiles,
@@ -127,10 +145,12 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         state.insert_entry(entry);
     }
     state.batches = Batches::restore(state.downloads.values().map(|e| &e.row), snapshot.batches);
+    finish_deletions(&state, &snapshot.pending_deletions);
     Restored {
         state,
         changed,
         settings_changed,
+        deletions_finished: !snapshot.pending_deletions.is_empty(),
     }
 }
 
@@ -160,6 +180,21 @@ fn restore_downloads(
         changed.extend(file.move_other_rows(&mut downloads));
     }
     (downloads, changed)
+}
+
+/// Deletes what a kill cut short (D134).
+fn finish_deletions(state: &State, deletions: &[PendingDeletion]) {
+    for deletion in deletions {
+        // A download at that path came back because a kill beat its row's deletion, and those files are its own, unless the row is the cancelled one the record is for.
+        let spared = state
+            .claimed
+            .holder(&deletion.path)
+            .and_then(|holder| state.downloads.get(&holder))
+            .is_some_and(|holder| holder.row.status != DownloadStatus::Cancelled);
+        if !spared {
+            Partial::of(deletion).delete();
+        }
+    }
 }
 
 /// A finished file with a move on record, as a row saved it.
@@ -418,6 +453,69 @@ mod tests {
             state.unfinished.iter().map(|id| id.0).collect::<Vec<_>>(),
             [2]
         );
+    }
+
+    /// The delete after a cancel that a kill cut short, and the part file of `row`.
+    fn cancelled_row(dir: &Path) -> (StoredDownload, PathBuf) {
+        let path = dir.join("a.bin");
+        let [part, _] = crate::naming::partial_files(&path);
+        std::fs::write(&part, b"part").unwrap();
+        let mut row = stored(1, 1, DownloadStatus::Cancelled);
+        row.summary.path = path.to_string_lossy().into_owned();
+        (row, part)
+    }
+
+    #[test]
+    fn a_start_finishes_the_delete_a_kill_cut_short_after_a_cancel() {
+        let dir = tempfile::tempdir().unwrap();
+        let (row, part) = cancelled_row(dir.path());
+        let snapshot = Snapshot {
+            pending_deletions: vec![PendingDeletion {
+                path: PathBuf::from(&row.summary.path),
+                media: false,
+            }],
+            downloads: vec![row],
+            ..Snapshot::default()
+        };
+        let restored = restore(snapshot, &nowhere(&|_| None));
+        assert!(!part.exists(), "the part file stayed");
+        assert!(restored.deletions_finished);
+    }
+
+    /// Another program, such as the command line, may have saved that name since.
+    #[test]
+    fn a_cancelled_download_with_no_record_keeps_a_part_file_it_did_not_leave() {
+        let dir = tempfile::tempdir().unwrap();
+        let (row, part) = cancelled_row(dir.path());
+        let snapshot = Snapshot {
+            downloads: vec![row],
+            ..Snapshot::default()
+        };
+        let restored = restore(snapshot, &nowhere(&|_| None));
+        assert!(part.exists(), "someone else's part file was deleted");
+        assert!(!restored.deletions_finished);
+    }
+
+    /// A download that came back holds its path: the record is from before the row left the list.
+    #[test]
+    fn a_deletion_on_record_spares_a_download_at_that_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.bin");
+        let [part, _] = crate::naming::partial_files(&path);
+        std::fs::write(&part, b"part").unwrap();
+        let mut row = stored(1, 1, DownloadStatus::Paused);
+        row.summary.path = path.to_string_lossy().into_owned();
+        let snapshot = Snapshot {
+            downloads: vec![row],
+            pending_deletions: vec![PendingDeletion {
+                path: path.clone(),
+                media: false,
+            }],
+            ..Snapshot::default()
+        };
+        let restored = restore(snapshot, &nowhere(&|_| None));
+        assert!(part.exists(), "the download's own file was deleted");
+        assert!(restored.deletions_finished);
     }
 
     /// The proxy a run is shown going through comes from the system's setting as last read, not read again under the manager's lock.
@@ -736,6 +834,7 @@ mod tests {
                 stored(3, 9, DownloadStatus::Paused),
             ],
             batches: Vec::new(),
+            pending_deletions: Vec::new(),
             proxy_logins: wirecatch_settings::proxy::Logins::new(),
             proxy_servers: Vec::new(),
             recoveries: Vec::new(),

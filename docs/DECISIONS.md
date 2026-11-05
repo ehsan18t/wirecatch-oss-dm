@@ -1192,7 +1192,7 @@ Decided on 2026-11-04. It amends D88.3 and D96.
 
 ### D119. Quitting waits for moves to other folders and for removals
 
-Decided on 2026-11-04. `Manager::shutdown` waits for every move under way, however long the disk takes, so the list and the disk agree on the next start, and for every removal under way to delete its files, so a quit leaves no part files with no row. A crash during a removal can still leave them, since the row is off the saved list first. It sets no limit of its own: a limit on quitting belongs to the program around it, which ends the process. A kill during a copy to another drive is safe because the copy reaches its final name only when whole: the original stays, and the list still names it.
+Decided on 2026-11-04. `Manager::shutdown` waits for every move under way, however long the disk takes, so the list and the disk agree on the next start, and for every removal under way to delete its files, so a quit leaves no part files with no row. What a crash cuts short the next start finishes (D134). It sets no limit of its own: a limit on quitting belongs to the program around it, which ends the process. A kill during a copy to another drive is safe because the copy reaches its final name only when whole: the original stays, and the list still names it.
 
 ### D120. A page with several videos is read as its first
 
@@ -1264,6 +1264,7 @@ Decided on 2026-11-05.
 2. A kept value is never read back: nothing can say whether it should win over what the person has changed since. It is there for recovery by hand, and it holds what the list holds, so it stays under the same owner-only access (D17).
 3. A category rule this build does not know is left out, so it costs that rule and not all the settings. This also holds for an imported settings file, with nothing said about the rule left out. Any other fault in a rule fails the whole value, which is then kept, and an imported file is refused.
 4. The id counters are never lower than an id still in the list, so a hidden row is never replaced by a new download.
+
 ### D133. An add-on says whether it works apart from what is being done to it
 
 Decided on 2026-11-05. `AddonInfo.usable` says the programs on this machine work now; `state` says what is being done. An update under way or failed leaves the add-on usable, so the quality form does not ask to install it, About gives its version, and the card keeps Remove, and Check for updates after a failure. Try again with nothing left to install ends the failure.
@@ -1279,3 +1280,11 @@ A run of yt-dlp is another process, out of reach of the engine's `Block`, and yt
 3. A run that failed having had a request refused shows the private network message for a link sent on from the internet. A run that succeeded with one refused, such as a picture, stays a success.
 4. The guard needs no login: any program on the computer that reaches it gets only what it could reach by itself, less the local network.
 5. An address `Url::parse` rejects, such as `http://[fe80::1%25eth0]/`, never reaches yt-dlp as a page or format, since each is parsed first; named by a redirect, it does not parse as an address and fails to resolve at the guard.
+
+### D134. A start finishes deleting what a kill cut short
+
+Decided on 2026-11-05. It amends D119.
+
+1. A removal saves which partial files it will delete before its row leaves the list, and clears that when they are gone. A start deletes what is still on record, unless a download holds that path: a kill between the two saves leaves the row, and the files are its own. It then clears the record whatever came of each delete: one that fails is logged and not tried again.
+2. A finished file that "Remove and delete" had not reached is not deleted at the next start: by then the name may hold a file the person saved, and only disk space is at stake.
+3. The delete after a cancel is on the same record, and `Manager::shutdown` waits for it. A start finishes only a delete a kill cut short, once, also at a path its own cancelled row holds. A cancelled row with nothing on record keeps whatever lies at its path, since another program may have saved that name.

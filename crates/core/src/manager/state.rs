@@ -25,7 +25,7 @@ use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
 use wirecatch_queues::schedule::Gate;
 use wirecatch_records::answers::Answers;
 pub(super) use wirecatch_records::answers::{Expectation, OnExisting};
-use wirecatch_records::files::DownloadFiles;
+use wirecatch_records::files::{DownloadFiles, PendingDeletion};
 use wirecatch_settings::folders::KnownFolders;
 use wirecatch_settings::proxy::{ComputerProxy, Logins, SavedProxyServer};
 use wirecatch_sites::local_network::ChosenBy;
@@ -80,6 +80,8 @@ pub(super) struct State {
     pub dirty: BTreeSet<DownloadId>,
     /// Cancelled when a removal has deleted its files; a quit waits for them.
     pub removals: Vec<CancellationToken>,
+    /// The partial files of each download being removed, as saved until they are gone (D134).
+    pub pending_deletions: BTreeMap<DownloadId, PendingDeletion>,
     /// What each queue at work has finished or failed so far (D52).
     pub batches: Batches,
     /// The passwords of the proxy servers, which never leave the app (D71.2).
@@ -170,6 +172,22 @@ pub(super) struct Partial {
 }
 
 impl Partial {
+    /// What `deletion` names.
+    pub fn of(deletion: &PendingDeletion) -> Self {
+        let folders = if deletion.media {
+            vec![
+                wirecatch_media::work_dir(&deletion.path),
+                wirecatch_media::stream_dir(&deletion.path),
+            ]
+        } else {
+            Vec::new()
+        };
+        Self {
+            files: crate::naming::partial_files(&deletion.path),
+            folders,
+        }
+    }
+
     /// Deletes all of it, ignoring what is already gone. Blocks on the disk.
     pub fn delete(&self) {
         for file in &self.files {
@@ -753,17 +771,14 @@ impl Entry {
 
     /// What an unfinished download keeps next to its final path.
     pub fn partial(&self) -> Partial {
-        let folders = if self.media_job.is_some() {
-            vec![
-                wirecatch_media::work_dir(self.path()),
-                wirecatch_media::stream_dir(self.path()),
-            ]
-        } else {
-            Vec::new()
-        };
-        Partial {
-            files: crate::naming::partial_files(self.path()),
-            folders,
+        Partial::of(&self.pending_deletion())
+    }
+
+    /// The record of what [`partial`](Self::partial) names.
+    pub fn pending_deletion(&self) -> PendingDeletion {
+        PendingDeletion {
+            path: self.path().to_path_buf(),
+            media: self.media_job.is_some(),
         }
     }
 

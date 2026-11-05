@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
-use wirecatch_engine::{Error as EngineError, PathRejected, Url};
+use wirecatch_engine::{CancellationToken, Error as EngineError, PathRejected, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, CaptureConfirmation, DownloadStatus};
 use wirecatch_protocol::extension::{CaptureSource, NewDownload};
@@ -1020,6 +1020,157 @@ async fn shutdown_waits_for_a_removal_to_delete_its_files() {
         .unwrap();
     assert!(!part.exists(), "the part file was left behind");
     removing.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shutdown_waits_for_a_cancelled_downloads_files() {
+    let (manager, _dir) = manager_with(deaf, Duration::from_secs(1), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(AddRequest {
+            start: false,
+            ..add_request("https://example.com/f.bin")
+        })
+        .await
+        .unwrap();
+    let [part, _] = naming::partial_files(manager.lock().downloads[&id].path());
+    std::fs::create_dir_all(part.parent().unwrap()).unwrap();
+    std::fs::write(&part, b"kept").unwrap();
+    let entered = Arc::new(Notify::new());
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    let told = entered.clone();
+    manager.use_before_deleting(Arc::new(move || {
+        told.notify_one();
+        assert!(
+            held.lock().unwrap().recv().is_err(),
+            "ends when the sender is dropped"
+        );
+    }));
+    manager.cancel(id).unwrap();
+    tokio::time::timeout(PATIENCE, entered.notified())
+        .await
+        .expect("the deletion never began");
+    let mut quit = {
+        let manager = manager.clone();
+        tokio::spawn(async move { manager.shutdown().await })
+    };
+    assert!(
+        tokio::time::timeout(QUIET, &mut quit).await.is_err(),
+        "shutdown returned while the deletion was held"
+    );
+    drop(release);
+    tokio::time::timeout(PATIENCE, quit)
+        .await
+        .expect("shutdown never ended")
+        .unwrap();
+    assert!(!part.exists(), "the part file was left behind");
+}
+
+/// The record stays on disk until the files are gone, and goes when they are.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_cancels_delete_is_on_record_until_its_files_are_gone() {
+    let (manager, dir) = manager_with(deaf, Duration::from_secs(1), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(AddRequest {
+            start: false,
+            ..add_request("https://example.com/f.bin")
+        })
+        .await
+        .unwrap();
+    let database = dir.path().join("data").join(crate::DATABASE_FILE);
+    let on_record = move || -> String {
+        rusqlite::Connection::open(&database)
+            .unwrap()
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'pending_deletions'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_default()
+    };
+    let seen = Arc::new(std::sync::Mutex::new(String::new()));
+    let (noted, read, waiter) = (seen.clone(), on_record.clone(), manager.clone());
+    manager.use_before_deleting(Arc::new(move || {
+        assert!(waiter.inner.store.wait_for_writes(PATIENCE));
+        *noted.lock().unwrap() = read();
+    }));
+    manager.cancel(id).unwrap();
+    wait_until("the delete to end", || {
+        manager.lock().downloads[&id]
+            .cleanup
+            .as_ref()
+            .is_some_and(CancellationToken::is_cancelled)
+    })
+    .await;
+    assert!(seen.lock().unwrap().contains("f.bin"), "not on record");
+    assert!(manager.inner.store.wait_for_writes(PATIENCE));
+    assert_eq!(on_record(), "[]");
+}
+
+/// What a kill during a removal leaves: the record, and the files.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_start_finishes_deleting_what_a_kill_left() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let path = dir.path().join("big.iso");
+    let [part, state] = naming::partial_files(&path);
+    std::fs::write(&part, b"kept").unwrap();
+    std::fs::write(&state, b"kept").unwrap();
+    let (store, _) = wirecatch_store::Store::open(&data, Box::new(|_| {})).unwrap();
+    store.save_pending_deletions(vec![wirecatch_records::files::PendingDeletion {
+        path: path.clone(),
+        media: false,
+    }]);
+    store.close(PATIENCE).await;
+
+    let config = ManagerConfig::for_tests(
+        data.clone(),
+        KnownFolders::under_home(dir.path().join("home")),
+    );
+    let manager = Manager::open(config).await.unwrap();
+    assert!(!part.exists() && !state.exists(), "the files stayed");
+    manager.shutdown().await;
+
+    let (store, snapshot) = wirecatch_store::Store::open(&data, Box::new(|_| {})).unwrap();
+    assert_eq!(snapshot.pending_deletions, []);
+    store.close(PATIENCE).await;
+}
+
+/// The record stays on disk until the files are gone.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_removal_is_on_record_until_its_files_are_gone() {
+    let (manager, dir) = manager_with(deaf, Duration::from_secs(1), DEFAULT_CAPTURE_TIMEOUT).await;
+    let id = manager
+        .add_download(add_request("https://example.com/f.bin"))
+        .await
+        .unwrap();
+    let path = manager.lock().downloads[&id].path().to_path_buf();
+    let database = dir.path().join("data").join(crate::DATABASE_FILE);
+    let on_record = move || -> String {
+        let other = rusqlite::Connection::open(&database).unwrap();
+        other
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'pending_deletions'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_default()
+    };
+    let (seen, read) = (
+        Arc::new(std::sync::Mutex::new(String::new())),
+        on_record.clone(),
+    );
+    let store_seen = seen.clone();
+    let waiter = manager.clone();
+    manager.use_before_deleting(Arc::new(move || {
+        assert!(waiter.inner.store.wait_for_writes(PATIENCE));
+        *store_seen.lock().unwrap() = read();
+    }));
+    manager.remove(&[id], RemoveFiles::Keep).await.unwrap();
+    let file_name = naming::file_name_of(&path);
+    assert!(seen.lock().unwrap().contains(&file_name), "not on record");
+    assert!(manager.inner.store.wait_for_writes(PATIENCE));
+    assert_eq!(on_record(), "[]");
 }
 
 /// Opens a download's move to `chosen` with the mover held, quits, lets the mover go, then reopens the
