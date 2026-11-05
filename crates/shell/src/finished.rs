@@ -79,7 +79,7 @@ impl FinishedBook {
 
     /// Runs `update` on every listed row, dropping those it returns false for and the groups left
     /// empty. Heading counts move by what changed: they also cover rows past
-    /// [`MAX_FINISHED_LISTED`], so counting the listed rows again would lose those.
+    /// [`MAX_FINISHED_LISTED`], so counting the listed rows again would lose those (D176).
     fn update_rows(&mut self, mut update: impl FnMut(&mut DownloadSummary) -> bool) {
         for FinishedGroup { queue, downloads } in &mut self.list.groups {
             downloads.retain_mut(|row| {

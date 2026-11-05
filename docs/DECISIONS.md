@@ -1329,3 +1329,10 @@ It amends D50.4. `MediaDefaults::start` is the only copy of the rule. The TypeSc
 ### D162. Settings lists the notice times it offers
 
 It amends D65.2. `START_NOTICE_TIMES` and `FINISH_NOTICE_TIMES` had no reader once the settings page was drawn in Rust: `FINISH_TIMES` and `START_TIMES` in `crates/desktop/src/main_window/settings/notifications.rs` hold the choices and their words. Each time stays its own enum in the protocol, with its seconds.
+
+### D176. A finished group's heading follows only the rows it lists
+
+Decided on 2026-11-05. Amends D52.6.
+
+1. A queue's heading counts move with the rows the group lists: when one is removed, changes status, is dropped by a reload, or ends again in a newer group.
+2. The book keeps nothing of the downloads past `MAX_FINISHED_LISTED`, so what happens to them later does not reach the counts. Removing one leaves the heading one too high, and one that fails, is retried and ends counts in both groups. Keeping their ids and statuses would hold data for every download of a large queue to correct a heading few people would read that closely.
