@@ -7,11 +7,8 @@
 
 use std::path::Path;
 
-use wirecatch_ipc::{Channel, Folders, IpcError, Listener, endpoint_in};
+use wirecatch_ipc::{Channel, Folders, IpcError, KEY_FILE, Listener, endpoint_in};
 use wirecatch_test_support::private_dir;
-
-/// The key file's name, as the listener writes it.
-const KEY_FILE: &str = "endpoint-key";
 
 /// Folders that keep the key in `key` and name no runtime folder.
 fn keyed_in(key: &Path) -> Folders {

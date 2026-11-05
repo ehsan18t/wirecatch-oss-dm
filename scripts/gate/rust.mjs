@@ -97,8 +97,13 @@ export function testArguments({ desktop, failFast }) {
   ];
 }
 
-/** Read by the tests that start the bridge (`BRIDGE_VARIABLE` in crates/test-support/src/bridge.rs). */
-const BRIDGE_VARIABLE = 'WIRECATCH_TEST_BRIDGE';
+/** The variable the tests that start the bridge read, from its one home. */
+export function bridgeVariable() {
+  const home = join('crates', 'test-support', 'src', 'bridge.rs');
+  const found = /\bBRIDGE_VARIABLE: &str = "(\w+)"/.exec(readFileSync(join(ROOT, home), 'utf8'));
+  if (!found) throw new GateError(`${home} no longer names BRIDGE_VARIABLE.`);
+  return found[1];
+}
 
 /** The bridge the workspace test build makes, with `test-overrides` (TEST_FEATURES), and the bridge's own tests run. Every other test that starts the bridge takes this one: building their own would resolve features apart from the workspace and relink this file. */
 function workspaceBridge() {
@@ -112,7 +117,7 @@ function workspaceBridge() {
 }
 
 function test() {
-  run('cargo', testArguments(options), { env: { [BRIDGE_VARIABLE]: workspaceBridge() } });
+  run('cargo', testArguments(options), { env: { [bridgeVariable()]: workspaceBridge() } });
 }
 
 /** The published engine still builds with the oldest Rust its manifest promises. */

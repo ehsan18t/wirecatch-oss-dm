@@ -1,6 +1,7 @@
 //! A download as the manager lists it, for tests that need one with a few fields set.
 
 use wirecatch_protocol::app::{Category, DownloadStatus, DownloadSummary};
+use wirecatch_protocol::extension::{CaptureSource, NewDownload};
 use wirecatch_protocol::rules::QueueReason;
 use wirecatch_protocol::{DownloadId, QueueId};
 
@@ -28,5 +29,28 @@ pub fn download(id: i64) -> DownloadSummary {
         completed_at: None,
         processing: None,
         proxy: None,
+    }
+}
+
+/// A browser's download of `url`, saying nothing else about it.
+#[must_use]
+pub fn capture(url: impl Into<String>) -> NewDownload {
+    let url = url.into();
+    NewDownload {
+        handover_id: format!("handover-{url}"),
+        url,
+        referrer: None,
+        page_url: None,
+        frame_url: None,
+        suggested_name: None,
+        mime: None,
+        size_hint: None,
+        cookies: None,
+        cookie_jar: None,
+        user_agent: None,
+        extra_headers: Vec::new(),
+        source: CaptureSource::BrowserDownload,
+        queue: None,
+        media: None,
     }
 }

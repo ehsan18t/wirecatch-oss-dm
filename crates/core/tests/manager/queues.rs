@@ -8,7 +8,7 @@ use wirecatch_protocol::app::{
     AddRequest, CaptureConfirmation, DownloadStatus, PortablePath, Queue, QueueNotify, QueueReport,
     QueueSettings, Schedule, Setting, TimeOfDay, UiEvent, WaitReason,
 };
-use wirecatch_protocol::extension::{CaptureSource, NewDownload};
+use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::{DownloadId, QueueId};
 
 use crate::common::{Harness, SilentServer, TestResult, fast_server, is_running, monday, tune};
@@ -253,20 +253,12 @@ fn capture(url: &impl ToString, queue: QueueId) -> NewDownload {
     NewDownload {
         handover_id: "tab-1".into(),
         suggested_name: url.rsplit('/').next().map(Into::into),
-        url,
         // A page on the person's network, whose links may lead there (D39).
         referrer: Some("http://intranet.test/".into()),
         page_url: Some("http://intranet.test/".into()),
-        frame_url: None,
-        mime: None,
         size_hint: Some(1024),
-        cookies: None,
-        cookie_jar: None,
-        user_agent: None,
-        extra_headers: vec![],
-        source: CaptureSource::BrowserDownload,
         queue: Some(queue),
-        media: None,
+        ..wirecatch_test_support::downloads::capture(url)
     }
 }
 

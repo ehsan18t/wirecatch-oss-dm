@@ -471,7 +471,7 @@ fn the_bridge_starts_the_app_when_it_is_not_running() {
     run(|sandbox| async move {
         let launch = Launch::Program(vec![
             env!("CARGO_BIN_EXE_wirecatch-e2e-app").into(),
-            "--background".into(),
+            wirecatch_protocol::launch::BACKGROUND_FLAG.into(),
             "--endpoint".into(),
             sandbox.endpoint.as_os_str().into(),
             "--root".into(),

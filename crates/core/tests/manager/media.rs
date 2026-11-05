@@ -8,50 +8,18 @@ use std::time::Duration;
 use wirecatch_core::CoreError;
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonState, Category, DownloadStatus, DownloadSummary, FileExistsAnswer,
-    FileExistsChoice, FixAction, MediaChoice, MediaSelection, OutputFormat, QualityFallback,
-    Repeated, UiEvent, VideoQuality, WaitReason, WhenFileExists,
+    FileExistsChoice, FixAction, MediaChoice, MediaSelection, QualityFallback, Repeated, UiEvent,
+    VideoQuality, WaitReason, WhenFileExists,
 };
 use wirecatch_protocol::extension::{AddAction, MediaKind, NewDownload};
 
 use crate::common::{Harness, PATIENCE, QUIET, TestResult, extension, test_data, tune, wait_until};
 use crate::media_support::{
-    FileServer, Releases, args, harness, harness_refreshing, install, media_capture, next_event,
-    publish, real_ffmpeg, tell_tool, use_real_ffmpeg, ytdlp_calls,
+    FileServer, Releases, args, choice_requested, harness, harness_refreshing, install,
+    media_capture, mp4_data, next_event, publish, real_ffmpeg, select, tell_tool, use_real_ffmpeg,
+    ytdlp_calls,
 };
 use wirecatch_engine::units::{KIB, KIB_USIZE};
-
-fn select(option: &str) -> MediaSelection {
-    MediaSelection {
-        option_id: option.into(),
-        folder: None,
-        file_name: None,
-        queue: None,
-        later: false,
-        output: OutputFormat::default(),
-        audio_kbps: None,
-        subtitles: Vec::new(),
-        subtitle_files: false,
-        unembedded_subtitles: wirecatch_protocol::app::UnembeddedSubtitles::Files,
-        chapters: false,
-        every_video: None,
-    }
-}
-
-/// `len` bytes of test data that start like an MP4 file, so the join hands
-/// them to (the fake) ffmpeg instead of refusing them as an unknown format.
-fn mp4_data(len: usize) -> Vec<u8> {
-    let mut data = test_data(len);
-    data[..8].copy_from_slice(b"\0\0\0\x18ftyp");
-    data
-}
-
-async fn choice_requested(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> MediaChoice {
-    next_event(ui, "a media choice", |e| match e {
-        UiEvent::MediaChoiceRequested(c) => Some(c.clone()),
-        _ => None,
-    })
-    .await
-}
 
 const SEGMENT: usize = 50 * KIB_USIZE;
 

@@ -50,11 +50,7 @@ fn main() -> Result<()> {
 }
 
 async fn run(cert: TestCertificate) -> Result<()> {
-    let data = Bytes::from(
-        (0..SIZE)
-            .map(|i| (i * 31 + i / 509).to_le_bytes()[0])
-            .collect::<Vec<u8>>(),
-    );
+    let data = Bytes::from(wirecatch_test_support::test_data(SIZE));
     let (h3_port, h3) = servers::start_h3(data.clone(), &cert);
     let (tcp_port, tcp) =
         servers::start_tcp(data.clone(), &cert, Some(format!(r#"h3=":{h3_port}""#))).await;

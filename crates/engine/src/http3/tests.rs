@@ -108,11 +108,7 @@ fn an_answer_about_another_version_of_the_file_is_a_changed_file() {
 }
 
 fn test_data(len: usize) -> Bytes {
-    Bytes::from(
-        (0..len)
-            .map(|i| (i * 31 + i / 509).to_le_bytes()[0])
-            .collect::<Vec<u8>>(),
-    )
+    Bytes::from(wirecatch_test_support::test_data(len))
 }
 
 /// How many connections each download here uses.

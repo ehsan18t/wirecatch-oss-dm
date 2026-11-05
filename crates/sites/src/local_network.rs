@@ -353,21 +353,9 @@ mod tests {
 
     fn capture(page: Option<&str>, referrer: Option<&str>) -> NewDownload {
         NewDownload {
-            handover_id: "h".into(),
-            url: "http://192.168.1.10/f.zip".into(),
             referrer: referrer.map(str::to_string),
             page_url: page.map(str::to_string),
-            frame_url: None,
-            suggested_name: None,
-            mime: None,
-            size_hint: None,
-            cookies: None,
-            cookie_jar: None,
-            user_agent: None,
-            extra_headers: vec![],
-            source: CaptureSource::BrowserDownload,
-            queue: None,
-            media: None,
+            ..wirecatch_test_support::downloads::capture("http://192.168.1.10/f.zip")
         }
     }
 

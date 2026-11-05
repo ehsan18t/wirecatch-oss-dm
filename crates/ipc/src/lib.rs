@@ -284,6 +284,7 @@ impl IpcError {
     }
 }
 
+pub use key::{KEY_FILE, LOCK_FILE};
 pub use wirecatch_product::Channel;
 
 #[cfg(windows)]

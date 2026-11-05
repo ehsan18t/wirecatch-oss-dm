@@ -3,7 +3,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { ROOT } from './process.mjs';
-import { DESKTOP_CRATE, TEST_FEATURES, testArguments, TOOLS, toolSpecs } from './rust.mjs';
+import {
+  bridgeVariable,
+  DESKTOP_CRATE,
+  TEST_FEATURES,
+  testArguments,
+  TOOLS,
+  toolSpecs,
+} from './rust.mjs';
 
 const WORKFLOWS = join(ROOT, '.github', 'workflows');
 /** The one `tool:` input a workflow may give an installer: the output of `node scripts/gate.mjs --tool-specs`. */
@@ -46,4 +53,8 @@ test('without the desktop crate the tests leave it out', () => {
 
 test('--no-fail-fast reaches cargo', () => {
   assert.ok(testArguments({ desktop: true, failFast: false }).includes('--no-fail-fast'));
+});
+
+test('the bridge variable is read from the crate that names it', () => {
+  assert.match(bridgeVariable(), /^WIRECATCH_\w+$/);
 });

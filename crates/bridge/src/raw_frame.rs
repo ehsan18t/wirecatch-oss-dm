@@ -283,5 +283,11 @@ mod tests {
         let frame = read_async(&mut slice).await.unwrap().unwrap();
         assert_eq!(frame.as_bytes(), &bytes[..]);
         assert!(read_async(&mut slice).await.unwrap().is_none());
+        let mut blocking = &bytes[..];
+        let Some(Incoming::Frame(read)) = read_blocking(&mut blocking).unwrap() else {
+            panic!("the blocking read did not give the frame");
+        };
+        assert_eq!(read.as_bytes(), frame.as_bytes());
+        assert!(read_blocking(&mut blocking).unwrap().is_none());
     }
 }

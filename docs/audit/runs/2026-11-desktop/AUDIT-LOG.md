@@ -170,10 +170,10 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 143 | Tests give waits a fixed short limit, and the timing check cannot see them                        | `01-10` `33-2` `04-7` `06-3` `21-3`                                                                | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | fixed  |
 | 144 | Tests race the machine against a real-clock limit of the code under test                          | `03-7` `10-5` `13-4` `B19-1` `B19-2`                                                               | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | fixed  |
 | 145 | A page's HLS part runs outside the run's file work                                                | `17-6` `Xpath-media-download-8` `Xsecond-review-disk-writes-9` `Xsecond-review-resume-6`           | P3       | small  | P3, 4 findings, small                                                                                            | none                                          | fixed  |
-| 146 | Bridge and test values are written separately in several crates                                   | `06-4` `22-9` `B04-3` `B04-4`                                                                      | P3       | small  | P3, 4 findings, small                                                                                            | none                                          | open   |
-| 147 | Test servers repeat their range parsing and behave unlike their docs                              | `31-1` `31-2` `31-3` `31-4`                                                                        | P3       | small  | P3, 4 findings, small                                                                                            | none                                          | open   |
+| 146 | Bridge and test values are written separately in several crates                                   | `06-4` `22-9` `B04-3` `B04-4`                                                                      | P3       | small  | P3, 4 findings, small                                                                                            | none                                          | fixed  |
+| 147 | Test servers repeat their range parsing and behave unlike their docs                              | `31-1` `31-2` `31-3` `31-4`                                                                        | P3       | small  | P3, 4 findings, small                                                                                            | none                                          | fixed  |
 | 148 | An import's summary event and the every-video answer have no reader                               | `27-11` `30-4` `Xfeature-behaviour-7`                                                              | P3       | small  | P3, 3 findings, small                                                                                            | none                                          | open   |
-| 149 | Tests repeat their fixtures and data generators                                                   | `02-8` `07-7` `17-9`                                                                               | P3       | medium | P3, 3 findings, medium                                                                                           | none                                          | open   |
+| 149 | Tests repeat their fixtures and data generators                                                   | `02-8` `07-7` `17-9`                                                                               | P3       | medium | P3, 3 findings, medium                                                                                           | none                                          | fixed  |
 | 150 | A reload after missed events repeats notices and leaves open windows stale                        | `23-9` `Xdatabase-migrations-3` `24-9`                                                             | P3       | medium | P3, 3 findings, medium                                                                                           | none                                          | fixed  |
 | 151 | A capture's check and its record sit in separate lock sections                                    | `07-5` `Xconcurrency-6`                                                                            | P3       | small  | P3, 2 findings, small                                                                                            | `Xconcurrency-3-and-6`                        | fixed  |
 | 152 | A found duplicate overrides a stop the person chose in the same moment                            | `04-3` `05-12`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
@@ -207,7 +207,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 180 | Fetcher::save promises data survives a drop, but up to 256 KiB is lost                            | `02-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 181 | bench_local sleeps for no time after each accept                                                  | `02-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 182 | A redirect error tells the CLI user to allow something the CLI cannot                             | `32-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 183 | async_and_blocking_reads_agree never does a blocking read                                         | `06-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 183 | async_and_blocking_reads_agree never does a blocking read                                         | `06-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 184 | The AppImage replacement is renamed into place without a flush                                    | `12-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 185 | The unsigned release page address reaches the system shell unchecked                              | `Xsecurity-update-signatures-4`                                                                    | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 186 | Turning off pre-release versions keeps offering the one already found                             | `Xpath-app-update-7`                                                                               | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -2775,7 +2775,7 @@ The HLS branch of `fetch_part` never sets `file_work`, so `RunGuard` reports the
 
 ### 146. Bridge and test values are written separately in several crates
 
-P3, small, open.
+P3, small, fixed.
 
 The bridge's test overrides, `--background`, `WIRECATCH_TEST_BRIDGE` and the key file's name are literals in several crates, tied by comments. Renaming one leaves tests that pass or rebuild the bridge under other tests. More copies of the key name are in `ipc/tests/channel.rs` and `shell/src/host.rs`.
 
@@ -2794,7 +2794,7 @@ The bridge's test overrides, `--background`, `WIRECATCH_TEST_BRIDGE` and the key
 
 ### 147. Test servers repeat their range parsing and behave unlike their docs
 
-P3, small, open.
+P3, small, fixed.
 
 `Range` is parsed four times in `test-support`, and the HTTP/3 copy answers 200 where the others answer 416. `bytes_sent` has no reader, `drop_first` does not break off after the bytes it names, and `FileServer` records a request when answered, against its docs.
 
@@ -2833,7 +2833,7 @@ P3, small, open.
 
 ### 149. Tests repeat their fixtures and data generators
 
-P3, medium, open.
+P3, medium, fixed.
 
 Each test file writes a whole `NewDownload`, six 14-field `Job` literals repeat, and two private `test_data` generators sit next to the shared one.
 
@@ -3411,7 +3411,7 @@ P3, small, fixed.
 
 ### 183. async_and_blocking_reads_agree never does a blocking read
 
-P3, small, open.
+P3, small, fixed.
 
 The test named for two readers agreeing calls only `read_async`.
 

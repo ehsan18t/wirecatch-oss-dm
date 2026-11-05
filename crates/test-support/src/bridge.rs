@@ -8,18 +8,10 @@ use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
 use wirecatch_product::BRIDGE_EXECUTABLE;
+pub use wirecatch_protocol::launch::{ENDPOINT_VAR, LAUNCH_VAR, START_BUDGET_VAR};
 
-/// Names a bridge already built with `test-overrides` to use instead of building one. The gate sets it (`scripts/gate/rust.mjs`).
+/// Names a bridge already built with `test-overrides` to use instead of building one. The gate reads this line and sets it (`scripts/gate/rust.mjs`).
 pub const BRIDGE_VARIABLE: &str = "WIRECATCH_TEST_BRIDGE";
-
-/// Read by the bridge (with `test-overrides`, `crates/bridge/src/app.rs`): the endpoint to connect to.
-pub const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
-
-/// Read by the bridge (with `test-overrides`): a JSON array `[program, args...]` started instead of the app.
-pub const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
-
-/// Read by the bridge (with `test-overrides`): how long, in milliseconds, to wait for an app it started to listen.
-pub const START_BUDGET_VAR: &str = "WIRECATCH_BRIDGE_TEST_START_BUDGET_MS";
 
 /// The path of a bridge built with `test-overrides`, building it on first use unless [`BRIDGE_VARIABLE`] names one.
 #[must_use]

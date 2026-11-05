@@ -17,6 +17,28 @@ use super::workdir;
 use super::*;
 use crate::headers::Origin;
 
+/// A job on a website's page, for a test to change what it is about.
+fn job() -> Job {
+    Job {
+        output: PathBuf::from("/v/out.mp4"),
+        url: Url::parse("http://93.184.215.14/watch").unwrap(),
+        origin: Origin::default(),
+        chosen_by: ChosenBy::Website,
+        tools: None,
+        options: DownloadOptions::default(),
+        temp_dir: PathBuf::new(),
+        timeout: Duration::from_secs(1),
+        refresh_delays: Arc::new([]),
+        clock: Arc::new(crate::clock::SystemClock),
+        work_owner: String::new(),
+        quality: String::new(),
+        reserve: Arc::new(|_: &Path, _| true),
+        placing: Arc::new(|| {}),
+        file_work: FileWork::new(),
+        taken: Taken::KeepBoth,
+    }
+}
+
 #[test]
 fn a_typed_name_keeps_the_words_after_its_dot() {
     for (typed, wanted) in [
@@ -242,22 +264,9 @@ fn a_stream_downloads_under_the_rule_of_whoever_chose_it() {
         (ChosenBy::Person, PrivateNetwork::Auto),
     ] {
         let job = Job {
-            output: PathBuf::from("/v/out.mp4"),
             url: Url::parse("https://videos.example.com/master.m3u8").unwrap(),
-            origin: Origin::default(),
             chosen_by,
-            tools: None,
-            options: DownloadOptions::default(),
-            temp_dir: PathBuf::new(),
-            timeout: Duration::from_secs(1),
-            refresh_delays: Arc::new([]),
-            clock: Arc::new(crate::clock::SystemClock),
-            work_owner: String::new(),
-            quality: String::new(),
-            reserve: Arc::new(|_: &Path, _| true),
-            placing: Arc::new(|| {}),
-            file_work: FileWork::new(),
-            taken: Taken::KeepBoth,
+            ..job()
         };
         let request = stream_request(&job, Path::new("/v/w/out"), Pick::Auto, Pick::Auto);
         assert_eq!(request.private_network, rule, "{chosen_by:?}");
@@ -270,24 +279,7 @@ fn a_format_downloads_under_its_network_rule() {
         "format_id": "1", "ext": "mp4", "http_headers": {"X-Format": "yes"}
     }))
     .unwrap();
-    let job = Job {
-        output: PathBuf::from("/v/out.mp4"),
-        url: Url::parse("http://93.184.215.14/watch").unwrap(),
-        origin: Origin::default(),
-        chosen_by: ChosenBy::Website,
-        tools: None,
-        options: DownloadOptions::default(),
-        temp_dir: PathBuf::new(),
-        timeout: Duration::from_secs(1),
-        refresh_delays: Arc::new([]),
-        clock: Arc::new(crate::clock::SystemClock),
-        work_owner: String::new(),
-        quality: String::new(),
-        reserve: Arc::new(|_: &Path, _| true),
-        placing: Arc::new(|| {}),
-        file_work: FileWork::new(),
-        taken: Taken::KeepBoth,
-    };
+    let job = Job { ..job() };
     let options = part_options(&job, &format, PrivateNetwork::Block);
     assert_eq!(options.private_network, PrivateNetwork::Block);
     assert_eq!(options.headers.get("x-format").unwrap(), "yes");
@@ -306,22 +298,8 @@ fn a_format_downloads_under_its_network_rule() {
 #[tokio::test]
 async fn a_job_that_cannot_be_read_never_runs() {
     let job = Job {
-        output: PathBuf::from("/v/out.mp4"),
         url: Url::parse("http://127.0.0.1:9/watch").unwrap(),
-        origin: Origin::default(),
-        chosen_by: ChosenBy::Website,
-        tools: None,
-        options: DownloadOptions::default(),
-        temp_dir: PathBuf::new(),
-        timeout: Duration::from_secs(1),
-        refresh_delays: Arc::new([]),
-        clock: Arc::new(crate::clock::SystemClock),
-        work_owner: String::new(),
-        quality: String::new(),
-        reserve: Arc::new(|_: &Path, _| true),
-        placing: Arc::new(|| {}),
-        file_work: FileWork::new(),
-        taken: Taken::KeepBoth,
+        ..job()
     };
     let progress = MediaProgress::default();
     let ended = run(
@@ -362,20 +340,8 @@ async fn a_finished_stream_is_marked_before_it_is_put_in_place() {
     let job = Job {
         output: output.clone(),
         url: server.url("index.m3u8"),
-        origin: Origin::default(),
-        chosen_by: ChosenBy::Website,
-        tools: None,
-        options: DownloadOptions::default(),
-        temp_dir: PathBuf::new(),
         timeout: Duration::from_secs(5),
-        refresh_delays: Arc::new([]),
-        clock: Arc::new(crate::clock::SystemClock),
-        work_owner: String::new(),
-        quality: String::new(),
-        reserve: Arc::new(|_: &Path, _| true),
-        placing: Arc::new(|| {}),
-        file_work: FileWork::new(),
-        taken: Taken::KeepBoth,
+        ..job()
     };
     let done = run_stream(
         &job,
@@ -411,20 +377,7 @@ async fn a_finished_video_is_marked_before_it_is_put_in_place() {
     let job = Job {
         output: dir.path().join("out.mp4"),
         url: Url::parse("https://videos.example/watch?v=1&token=secret").unwrap(),
-        origin: Origin::default(),
-        chosen_by: ChosenBy::Website,
-        tools: None,
-        options: DownloadOptions::default(),
-        temp_dir: PathBuf::new(),
-        timeout: Duration::from_secs(1),
-        refresh_delays: Arc::new([]),
-        clock: Arc::new(crate::clock::SystemClock),
-        work_owner: String::new(),
-        quality: String::new(),
-        reserve: Arc::new(|_: &Path, _| true),
-        placing: Arc::new(|| {}),
-        file_work: FileWork::new(),
-        taken: Taken::KeepBoth,
+        ..job()
     };
     let done = finish(&part, &job, &work, &[]).await.unwrap();
     let crate::manager::run::MediaDone::Completed { path, .. } = done else {
@@ -601,20 +554,9 @@ async fn a_small_file_past_its_limit_is_never_written() {
     let job = Job {
         output: dir.path().join("out.mp4"),
         url: server.url("/watch"),
-        origin: Origin::default(),
         chosen_by: ChosenBy::Person,
-        tools: None,
-        options: DownloadOptions::default(),
         temp_dir: dir.path().to_path_buf(),
-        timeout: Duration::from_secs(1),
-        refresh_delays: Arc::new([]),
-        clock: Arc::new(crate::clock::SystemClock),
-        work_owner: String::new(),
-        quality: String::new(),
-        reserve: Arc::new(|_: &Path, _| true),
-        placing: Arc::new(|| {}),
-        file_work: FileWork::new(),
-        taken: Taken::KeepBoth,
+        ..job()
     };
     let path = dir.path().join("sub-0.vtt");
     let fetched = super::extras::fetch_small(
@@ -664,20 +606,11 @@ fn job_at(dir: &Path, output: &Path, url: &str, taken: Taken) -> Job {
     Job {
         output: output.to_path_buf(),
         url: Url::parse(url).unwrap(),
-        origin: Origin::default(),
         chosen_by: ChosenBy::Person,
         tools: Some(tools),
-        options: DownloadOptions::default(),
         temp_dir: dir.to_path_buf(),
-        timeout: Duration::from_secs(1),
-        refresh_delays: Arc::new([]),
-        clock: Arc::new(crate::clock::SystemClock),
-        work_owner: String::new(),
-        quality: String::new(),
-        reserve: Arc::new(|_: &Path, _| true),
-        placing: Arc::new(|| {}),
-        file_work: FileWork::new(),
         taken,
+        ..job()
     }
 }
 

@@ -5,7 +5,7 @@ use wirecatch_engine::units::{KIB, KIB_USIZE};
 use wirecatch_protocol::app::{
     DownloadStatus, FileExistsAnswer, FileExistsChoice, Repeated, UiEvent,
 };
-use wirecatch_protocol::extension::{AddAction, CaptureSource, NewDownload};
+use wirecatch_protocol::extension::{AddAction, NewDownload};
 
 use crate::common::{Config, Harness, PATIENCE, TestResult, TestServer, test_data, tune};
 
@@ -13,20 +13,9 @@ use crate::common::{Config, Harness, PATIENCE, TestResult, TestServer, test_data
 fn click(url: &str, n: u32) -> NewDownload {
     NewDownload {
         handover_id: format!("click-{n}"),
-        url: url.to_string(),
-        referrer: None,
         page_url: Some("https://intranet.test/page".into()),
-        frame_url: None,
         suggested_name: Some("report.pdf".into()),
-        mime: None,
-        size_hint: None,
-        cookies: None,
-        cookie_jar: None,
-        user_agent: None,
-        extra_headers: vec![],
-        source: CaptureSource::BrowserDownload,
-        queue: None,
-        media: None,
+        ..wirecatch_test_support::downloads::capture(url)
     }
 }
 

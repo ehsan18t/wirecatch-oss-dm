@@ -8,23 +8,16 @@ use wirecatch_core::CoreError;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
     AddonState, Category, DownloadStatus, FixAction, MediaChoice, MediaSelection, OutputFormat,
-    ProcessingStep, StreamAction, UiEvent,
+    ProcessingStep, StreamAction,
 };
 use wirecatch_protocol::extension::MediaKind;
 
 use crate::common::{Harness, TestResult, extension, test_data};
 use crate::media_support::{
-    FileServer, Releases, harness, install, media_capture, next_event, publish, real_ffmpeg,
-    tell_tool, use_real_ffmpeg, ytdlp_calls,
+    FileServer, Releases, choice_requested, harness, install, media_capture, mp4_data, publish,
+    real_ffmpeg, select, tell_tool, use_real_ffmpeg, ytdlp_calls,
 };
 use wirecatch_engine::units::{KIB, KIB_USIZE};
-
-/// Test data that starts like an MP4 file.
-fn mp4_data(len: usize) -> Vec<u8> {
-    let mut data = test_data(len);
-    data[..8].copy_from_slice(b"\0\0\0\x18ftyp");
-    data
-}
 
 /// Test data that starts like a WebM file.
 fn webm_data(len: usize) -> Vec<u8> {
@@ -92,18 +85,8 @@ fn page_info(server: &FileServer) -> String {
 
 fn selection(option: &str, output: OutputFormat) -> MediaSelection {
     MediaSelection {
-        option_id: option.into(),
-        folder: None,
-        file_name: None,
-        queue: None,
-        later: false,
         output,
-        audio_kbps: None,
-        subtitles: Vec::new(),
-        subtitle_files: false,
-        unembedded_subtitles: wirecatch_protocol::app::UnembeddedSubtitles::Files,
-        chapters: false,
-        every_video: None,
+        ..select(option)
     }
 }
 
@@ -123,11 +106,7 @@ async fn choice_for(h: &Harness, server: &FileServer, n: u32) -> TestResult<Medi
             None,
         ))
         .await?;
-    Ok(next_event(&mut ui, "a media choice", |e| match e {
-        UiEvent::MediaChoiceRequested(c) => Some(c.clone()),
-        _ => None,
-    })
-    .await)
+    Ok(choice_requested(&mut ui).await)
 }
 
 /// Requests made for each format file, in [`FORMATS`] order.

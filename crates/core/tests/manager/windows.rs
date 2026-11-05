@@ -4,10 +4,9 @@
 //! in the list.
 
 use wirecatch_protocol::app::{
-    AddonState, CaptureConfirmation, DownloadStatus, MediaChoice, MediaSelection, OutputFormat,
-    UiEvent,
+    AddonState, CaptureConfirmation, DownloadStatus, MediaSelection, UiEvent,
 };
-use wirecatch_protocol::extension::{CaptureSource, MediaKind, NewDownload, WithdrawOutcome};
+use wirecatch_protocol::extension::{MediaKind, NewDownload, WithdrawOutcome};
 
 use crate::common::{TestResult, fast_server, tune};
 use crate::media_support::{
@@ -17,37 +16,18 @@ use crate::media_support::{
 fn file_capture(url: String, handover: &str) -> NewDownload {
     NewDownload {
         handover_id: handover.to_string(),
-        url,
         referrer: Some("https://intranet.test/page".into()),
         page_url: Some("https://intranet.test/page".into()),
-        frame_url: None,
         suggested_name: Some("report.pdf".into()),
-        mime: None,
         size_hint: Some(1024),
-        cookies: None,
-        cookie_jar: None,
-        user_agent: None,
-        extra_headers: vec![],
-        source: CaptureSource::BrowserDownload,
-        queue: None,
-        media: None,
+        ..wirecatch_test_support::downloads::capture(url)
     }
 }
 
 fn pick(option: &str, later: bool) -> MediaSelection {
     MediaSelection {
-        option_id: option.into(),
-        folder: None,
-        file_name: None,
-        queue: None,
         later,
-        output: OutputFormat::default(),
-        audio_kbps: None,
-        subtitles: Vec::new(),
-        subtitle_files: false,
-        unembedded_subtitles: wirecatch_protocol::app::UnembeddedSubtitles::Files,
-        chapters: false,
-        every_video: None,
+        ..crate::media_support::select(option)
     }
 }
 
@@ -64,14 +44,6 @@ fn video_info(server: &FileServer) -> String {
         ]
     })
     .to_string()
-}
-
-async fn next_choice(ui: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> MediaChoice {
-    next_event(ui, "a media choice", |e| match e {
-        UiEvent::MediaChoiceRequested(c) => Some(c.clone()),
-        _ => None,
-    })
-    .await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -149,7 +121,7 @@ async fn two_links_to_one_video_are_asked_about_once() -> TestResult {
         .add_capture(media_capture(&first_link, MediaKind::Page, None))
         .await
         .unwrap();
-    let choice = next_choice(&mut ui).await;
+    let choice = crate::media_support::choice_requested(&mut ui).await;
     h.manager
         .add_capture(media_capture(&second_link, MediaKind::Page, None))
         .await
@@ -194,7 +166,7 @@ async fn two_links_to_one_video_are_asked_about_once() -> TestResult {
         .add_capture(media_capture(&third_link, MediaKind::Page, None))
         .await
         .unwrap();
-    let again = next_choice(&mut ui).await;
+    let again = crate::media_support::choice_requested(&mut ui).await;
     assert_ne!(again.id, choice.id);
     assert_eq!(h.manager.earlier_download(again.id).map(|r| r.id), Some(id));
     Ok(())
@@ -221,7 +193,7 @@ async fn a_page_being_read_is_listed_until_its_choice_comes() -> TestResult {
     let listed = h.manager.media_being_read();
     assert_eq!(listed.len(), 1);
     assert_eq!((listed[0].id, listed[0].url.clone()), reading);
-    let choice = next_choice(&mut ui).await;
+    let choice = crate::media_support::choice_requested(&mut ui).await;
     assert_eq!(choice.id, reading.0);
     assert_eq!(
         h.manager.media_being_read(),

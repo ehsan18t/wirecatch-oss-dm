@@ -275,30 +275,21 @@ async fn serve(
             (file.clone(), failing)
         })
     };
-    let (status, response) = match file {
+    let (status, response) = match &file {
         None => (
             StatusCode::NOT_FOUND,
             Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::empty()),
         ),
-        Some((file, failing)) => {
-            if file.hangs {
-                std::future::pending::<()>().await;
-            }
-            if !file.delay.is_zero() {
-                tokio::time::sleep(file.delay).await;
-            }
-            if failing {
-                let status = StatusCode::from_u16(file.fail_status).unwrap();
-                (
-                    status,
-                    Response::builder().status(status).body(Body::empty()),
-                )
-            } else {
-                answer(&file, &headers)
-            }
+        Some((file, true)) => {
+            let status = StatusCode::from_u16(file.fail_status).unwrap();
+            (
+                status,
+                Response::builder().status(status).body(Body::empty()),
+            )
         }
+        Some((file, false)) => answer(file, &headers),
     };
     inner.log.lock().unwrap().push(Seen {
         at: Instant::now(),
@@ -309,6 +300,14 @@ async fn serve(
         peer,
         sent: Arc::default(),
     });
+    if let Some((file, _)) = file {
+        if file.hangs {
+            std::future::pending::<()>().await;
+        }
+        if !file.delay.is_zero() {
+            tokio::time::sleep(file.delay).await;
+        }
+    }
     response.unwrap()
 }
 
@@ -361,4 +360,35 @@ fn answer(file: &File, headers: &HeaderMap) -> (StatusCode, axum::http::Result<R
         (None, None) => builder.body(Body::from(body)),
     };
     (status, response)
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpStream;
+
+    use super::FileServer;
+    use crate::PATIENCE;
+
+    #[tokio::test]
+    async fn a_request_is_recorded_when_it_arrives() {
+        let server = FileServer::start().await;
+        server.put("file", b"body".as_slice());
+        server.hang("file", true);
+        let url = server.url("file");
+        let address = (url.host_str().unwrap(), url.port().unwrap());
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET /file HTTP/1.1\r\nHost: test\r\n\r\n")
+            .await
+            .unwrap();
+        let deadline = std::time::Instant::now() + PATIENCE;
+        while server.requests("file") == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a request still unanswered was not recorded"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
 }

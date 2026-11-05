@@ -11,7 +11,7 @@ use tokio::sync::Notify;
 use wirecatch_engine::{CancellationToken, Error as EngineError, PathRejected, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, CaptureConfirmation, DownloadStatus};
-use wirecatch_protocol::extension::{CaptureSource, MediaHint, MediaKind, NewDownload};
+use wirecatch_protocol::extension::{MediaHint, MediaKind, NewDownload};
 use wirecatch_test_support::{PATIENCE, QUIET};
 
 use super::fake::{EngineFuture, FakeEngine, FakeRun};
@@ -127,22 +127,10 @@ fn deaf(_run: FakeRun) -> EngineFuture {
 
 fn capture(url: &str) -> NewDownload {
     NewDownload {
-        handover_id: format!("handover-{url}"),
-        url: url.into(),
-        referrer: None,
         // A page on the person's network (D39), so no name is looked up first.
         page_url: Some("http://intranet.test/".into()),
-        frame_url: None,
         suggested_name: Some("report.pdf".into()),
-        mime: None,
-        size_hint: None,
-        cookies: None,
-        cookie_jar: None,
-        user_agent: None,
-        extra_headers: vec![],
-        source: CaptureSource::BrowserDownload,
-        queue: None,
-        media: None,
+        ..wirecatch_test_support::downloads::capture(url)
     }
 }
 

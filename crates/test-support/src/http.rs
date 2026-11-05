@@ -152,15 +152,10 @@ impl Seen {
     /// `None` for an open range such as `bytes=100-`.
     #[must_use]
     pub fn range(&self) -> Option<(u64, Option<u64>)> {
-        let (first, last) = self
-            .header("range")?
-            .strip_prefix("bytes=")?
-            .split_once('-')?;
-        let start = first.parse().ok()?;
-        let end = if last.is_empty() {
-            None
-        } else {
-            Some(last.parse::<u64>().ok()?.checked_add(1)?)
+        let (start, last) = read_range(self.header("range")?)?;
+        let end = match last {
+            None => None,
+            Some(last) => Some(last.checked_add(1)?),
         };
         Some((start, end))
     }
@@ -171,8 +166,6 @@ impl Seen {
 pub struct Stats {
     /// Requests received.
     pub requests: AtomicUsize,
-    /// Body bytes sent.
-    pub bytes_sent: AtomicU64,
     /// Most bodies served at the same time.
     pub max_concurrent: AtomicUsize,
     /// Requests turned away by `max_connections`.
@@ -269,12 +262,6 @@ impl TestServer {
     /// Changes the configuration for the requests that follow.
     pub fn configure(&self, change: impl FnOnce(&mut Config)) {
         change(&mut self.inner.config.lock().unwrap());
-    }
-
-    /// Body bytes sent so far, over every connection.
-    #[must_use]
-    pub fn bytes_sent(&self) -> u64 {
-        self.stats.bytes_sent.load(Ordering::SeqCst)
     }
 
     /// Holds every answer from now on: requests are taken, and counted by
@@ -576,13 +563,11 @@ fn body(
         .per_connection_bps
         .map(|bps| time_to_send(chunk as u64, bps));
     let data = request.inner.data.clone();
-    let stats = request.inner.stats.clone();
     let held = config.hold_bodies_from == Some(range.start);
     let end = range.end;
     let body_gate = request.inner.body_gate.clone();
     futures_util::stream::unfold((range.start, 0u64, live), move |(pos, sent, live)| {
         let data = data.clone();
-        let stats = stats.clone();
         let sent_here = sent_here.clone();
         let body_gate = body_gate.clone();
         async move {
@@ -602,11 +587,10 @@ fn body(
             if let Some(pause) = pause {
                 tokio::time::sleep(pause).await;
             }
-            let next = pos + body_gate.take((chunk as u64).min(end - pos)).await;
+            let until_abort = abort_after.map_or(u64::MAX, |after| after - sent);
+            let wanted = (chunk as u64).min(end - pos).min(until_abort);
+            let next = pos + body_gate.take(wanted).await;
             let bytes = data.slice(index(pos)..index(next));
-            stats
-                .bytes_sent
-                .fetch_add(bytes.len() as u64, Ordering::SeqCst);
             sent_here.fetch_add(bytes.len() as u64, Ordering::SeqCst);
             Some((Ok(bytes), (next, sent + (next - pos), live)))
         }
@@ -701,16 +685,24 @@ fn empty(builder: response::Builder) -> Response {
 
 /// `bytes=a-b` or `bytes=a-` as a half-open range within `len`.
 pub(crate) fn parse_range(headers: &HeaderMap, len: u64) -> Option<(u64, u64)> {
-    let value = std::str::from_utf8(headers.get(header::RANGE)?.as_bytes()).ok()?;
-    let spec = value.strip_prefix("bytes=")?;
-    let (first, last) = spec.split_once('-')?;
-    let start: u64 = first.parse().ok()?;
-    let end = if last.is_empty() {
-        len
-    } else {
-        last.parse::<u64>().ok()?.saturating_add(1).min(len)
-    };
+    let (start, last) = asked_range(headers)?;
+    let end = last.map_or(len, |last| last.saturating_add(1).min(len));
     Some((start, end))
+}
+
+/// The first byte and, when it names one, the last of a `Range` header.
+pub(crate) fn asked_range(headers: &HeaderMap) -> Option<(u64, Option<u64>)> {
+    read_range(std::str::from_utf8(headers.get(header::RANGE)?.as_bytes()).ok()?)
+}
+
+fn read_range(value: &str) -> Option<(u64, Option<u64>)> {
+    let (first, last) = value.strip_prefix("bytes=")?.split_once('-')?;
+    let last = if last.is_empty() {
+        None
+    } else {
+        Some(last.parse().ok()?)
+    };
+    Some((first.parse().ok()?, last))
 }
 
 /// Decrements the concurrency gauge when the response body is dropped.
@@ -740,21 +732,47 @@ fn admit(current: &AtomicUsize, limit: usize) -> Option<usize> {
 /// Whether a request asks for more than `max` bytes, for a range with no end,
 /// or for no range at all.
 fn asks_too_much(headers: &HeaderMap, max: u64) -> bool {
-    let asked = headers
-        .get(header::RANGE)
-        .and_then(|v| std::str::from_utf8(v.as_bytes()).ok())
-        .and_then(|v| v.strip_prefix("bytes="))
-        .and_then(|v| v.split_once('-'))
-        .and_then(|(first, last)| Some((first.parse::<u64>().ok()?, last.parse::<u64>().ok()?)));
-    match asked {
-        Some((start, last)) => last < start || last - start + 1 > max,
-        None => true,
+    match asked_range(headers) {
+        Some((start, Some(last))) => last < start || last - start + 1 > max,
+        _ => true,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::path_key;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpStream;
+
+    use super::{Config, TestServer, path_key};
+    use crate::PATIENCE;
+
+    /// Asks `server` for a file and reads until it ends the answer, whole or broken off.
+    async fn ask(server: &TestServer) {
+        let url = server.url("file");
+        let address = (url.host_str().unwrap(), url.port().unwrap());
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET /file HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut answer = Vec::new();
+        let ended = tokio::time::timeout(PATIENCE, stream.read_to_end(&mut answer));
+        // A broken-off answer may end in a reset; what the server sent is what the test reads.
+        let (Ok(Ok(_) | Err(_)) | Err(_)) = ended.await;
+    }
+
+    #[tokio::test]
+    async fn drop_first_breaks_off_after_exactly_the_bytes_it_names() {
+        let config = Config {
+            drop_first: Some((1, 1000)),
+            ..Config::default()
+        };
+        let server = TestServer::start(vec![7; 10_000], config).await;
+        ask(&server).await;
+        ask(&server).await;
+        let sent: Vec<_> = server.stats.seen().iter().map(super::Seen::sent).collect();
+        assert_eq!(sent, [1000, 10_000]);
+    }
 
     #[test]
     fn a_path_has_one_leading_slash_however_it_is_given() {

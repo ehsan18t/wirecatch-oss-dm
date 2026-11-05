@@ -108,7 +108,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-98  | chore: remove code nothing calls                   | `chore/remove-dead-commands`     | 142, 235, 236                | P3       | medium | none         | merged |
 | PR-99  | test: wait under PATIENCE in every test            | `test/patience-waits`            | 143, 242                     | P3       | medium | none         | merged |
 | PR-100 | test: stop racing real-clock limits in tests       | `test/no-clock-races`            | 144, 167                     | P3       | medium | none         | merged |
-| PR-101 | test: share test values through test-support       | `test/shared-test-values`        | 146, 147, 149, 183           | P3       | medium | none         | open   |
+| PR-101 | test: share test values through test-support       | `test/shared-test-values`        | 146, 147, 149, 183           | P3       | medium | none         | merged |
 | PR-102 | fix(desktop): show startup notices only once       | `fix/startup-notices-once`       | 150, 214                     | P3       | medium | none         | merged |
 | PR-103 | fix(core): let a person's stop win                 | `fix/person-stop-wins`           | 152, 172                     | P3       | small  | none         | merged |
 | PR-104 | fix(engine): tighten network guard edge cases      | `fix/net-guard-edges`            | 154, 155, 216, 217           | P3       | medium | none         | merged |
@@ -1388,7 +1388,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/test-support`, `crates/bridge`, `crates/ipc/tests`, `crates/shell/src/launch.rs`, `crates/core/tests`, `crates/core/src/manager/media_run/tests.rs`, `crates/e2e`, `crates/engine/src/http3/tests.rs`, `scripts/gate/rust.mjs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-test-support -p wirecatch-bridge -p wirecatch-ipc -p wirecatch-core -p wirecatch-engine -p wirecatch-e2e`, `node --test scripts/gate/rust.test.mjs`
-- **Status:** open
+- **Status:** merged
 
 ### PR-102 fix(desktop): show startup notices only once
 

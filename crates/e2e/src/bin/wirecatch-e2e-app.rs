@@ -18,6 +18,7 @@ use std::time::Duration;
 use wirecatch_core::KnownFolders;
 use wirecatch_e2e::app::App;
 use wirecatch_ipc::Endpoint;
+use wirecatch_protocol::launch::BACKGROUND_FLAG;
 use wirecatch_test_support::PATIENCE;
 
 /// The longest this process runs, whatever happens.
@@ -76,7 +77,7 @@ fn parse_args() -> anyhow::Result<(Endpoint, PathBuf)> {
         match arg.to_str() {
             Some("--endpoint") => endpoint = args.next().map(Endpoint::from_raw),
             Some("--root") => root = args.next().map(PathBuf::from),
-            Some("--background") => {}
+            Some(BACKGROUND_FLAG) => {}
             _ => anyhow::bail!("unknown argument {}", arg.display()),
         }
     }

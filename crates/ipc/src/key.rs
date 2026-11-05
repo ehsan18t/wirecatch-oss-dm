@@ -15,10 +15,10 @@ use std::path::{Path, PathBuf};
 use crate::IpcError;
 
 /// The key file's name inside the key folder.
-pub(crate) const KEY_FILE: &str = "endpoint-key";
+pub const KEY_FILE: &str = "endpoint-key";
 
 /// The lock file's name inside the key folder.
-const LOCK_FILE: &str = "endpoint-key.lock";
+pub const LOCK_FILE: &str = "endpoint-key.lock";
 
 /// Where the listener writes a new key before it renames it into place.
 const STAGED_FILE: &str = "endpoint-key.tmp";

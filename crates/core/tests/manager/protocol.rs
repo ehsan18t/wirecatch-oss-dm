@@ -16,9 +16,8 @@ use wirecatch_protocol::app::{
     CaptureConfirmation, DownloadStatus, MediaDefaultsPatch, QueueSettings, UiEvent, Update,
 };
 use wirecatch_protocol::extension::{
-    AddAction, BrowserControlsPatch, CaptureSource, CookieJar, CookieRequest,
-    ExtensionSettingsPatch, Header, JarCookie, NewDownload, SameSite, WithdrawOutcome,
-    WithdrawRequest,
+    AddAction, BrowserControlsPatch, CookieJar, CookieRequest, ExtensionSettingsPatch, Header,
+    JarCookie, NewDownload, SameSite, WithdrawOutcome, WithdrawRequest,
 };
 use wirecatch_protocol::frame::{self, MAX_FRAME_LEN};
 use wirecatch_protocol::wire::{
@@ -165,21 +164,13 @@ fn hello(protocol_version: u32, max_protocol_version: Option<u32>) -> Call {
 /// A capture whose handover id is derived from its link.
 fn capture(url: String) -> NewDownload {
     NewDownload {
-        handover_id: format!("handover-{url}"),
-        url,
         referrer: Some("https://intranet.test/page".into()),
         page_url: Some("https://intranet.test/page".into()),
-        frame_url: None,
         suggested_name: Some("report.pdf".into()),
-        mime: None,
         size_hint: Some(1024),
         cookies: Some("session=abc".into()),
-        cookie_jar: None,
         user_agent: Some("TestBrowser/1".into()),
-        extra_headers: vec![],
-        source: CaptureSource::BrowserDownload,
-        queue: None,
-        media: None,
+        ..wirecatch_test_support::downloads::capture(url)
     }
 }
 
