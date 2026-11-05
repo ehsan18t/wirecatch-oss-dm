@@ -68,12 +68,12 @@ async fn queue_and_global_concurrency_limits_hold() -> TestResult {
         }
         let total: u32 = per_queue.values().sum();
         assert!(total <= 3, "{total} downloads run at once");
-        peak = peak.max(total);
         // Only while they are held: a client that has every byte moves on before the server counts its answer as finished.
-        if total == 3 {
+        if total == 3 && peak < 3 {
             assert!(server.stats.max_concurrent.load(Ordering::SeqCst) <= 3);
             server.release_bodies();
         }
+        peak = peak.max(total);
         if rows.iter().all(|r| r.status == DownloadStatus::Completed) {
             break;
         }
