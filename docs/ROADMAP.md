@@ -338,7 +338,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 273. Public shell items are used only in their own file (fixed)
 274. A partial file can continue under another sign-in (won't fix (rare, a mixed file is the only harm, and a refreshed sign-in must keep its progress))
 275. A new extension refuses an older app's settings (fixed)
-276. Some video formats show no size (open)
+276. Some video formats show no size (fixed)
 277. Switching kind can save a language this video lacks (open)
 278. Keys can go dead when two things leave during a dialog (fixed)
 279. No check catches a Settings row that wraps a lone word (open)
