@@ -98,6 +98,13 @@ fn open_to_mark(path: &Path) -> std::io::Result<std::fs::File> {
 #[cfg(windows)]
 fn write_mark(file: &std::fs::File, host_url: &str, referrer: Option<&str>) -> std::io::Result<()> {
     use std::io::Write;
+
+    open_mark_stream(file)?.write_all(zone_identifier(host_url, referrer).as_bytes())
+}
+
+/// Opens `file`'s `Zone.Identifier` stream to write it, empty.
+#[cfg(windows)]
+fn open_mark_stream(file: &std::fs::File) -> std::io::Result<std::fs::File> {
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
     use std::ptr::null;
 
@@ -109,7 +116,7 @@ fn write_mark(file: &std::fs::File, host_url: &str, referrer: Option<&str>) -> s
         GENERIC_WRITE, HANDLE, OBJ_CASE_INSENSITIVE, RtlNtStatusToDosError, UNICODE_STRING,
     };
     use windows_sys::Win32::Storage::FileSystem::{
-        FILE_ATTRIBUTE_NORMAL, FILE_SHARE_DELETE, FILE_SHARE_READ, SYNCHRONIZE,
+        FILE_ATTRIBUTE_NORMAL, FILE_SHARE_DELETE, SYNCHRONIZE,
     };
     use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
@@ -142,10 +149,10 @@ fn write_mark(file: &std::fs::File, host_url: &str, referrer: Option<&str>) -> s
             &raw mut status_block,
             null(),
             FILE_ATTRIBUTE_NORMAL,
-            // Not shared for writing: a second mark of the same file at once
-            // (the ticker's late one and the finished file's) fails and is
-            // logged, rather than mixing its text into this one.
-            FILE_SHARE_READ | FILE_SHARE_DELETE,
+            // Not shared for reading: the stream is empty until the text goes in.
+            // Not for writing: a second mark at once (the ticker's late one and
+            // the finished file's) fails and is logged, not mixed into this one.
+            FILE_SHARE_DELETE,
             FILE_OVERWRITE_IF,
             FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT,
             null(),
@@ -160,8 +167,9 @@ fn write_mark(file: &std::fs::File, host_url: &str, referrer: Option<&str>) -> s
         ));
     }
     // SAFETY: the call succeeded, so `handle` is an open handle owned by nothing else.
-    let mut stream = std::fs::File::from(unsafe { OwnedHandle::from_raw_handle(handle) });
-    stream.write_all(zone_identifier(host_url, referrer).as_bytes())
+    Ok(std::fs::File::from(unsafe {
+        OwnedHandle::from_raw_handle(handle)
+    }))
 }
 
 /// Does nothing: only Windows marks files downloaded from the internet.
@@ -236,6 +244,36 @@ mod tests {
         );
         // The file itself is untouched.
         assert_eq!(std::fs::read(&file).unwrap(), b"MZ");
+    }
+
+    /// Between creating the stream and writing it, a reader is refused rather
+    /// than shown a file with an empty mark.
+    #[cfg(windows)]
+    #[test]
+    fn a_mark_being_written_cannot_be_read() {
+        const ERROR_SHARING_VIOLATION: i32 = 32;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("setup.exe");
+        std::fs::write(&file, b"MZ").unwrap();
+        let stream = format!("{}:Zone.Identifier", file.display());
+
+        let opened = open_to_mark(&file).unwrap();
+        let writing = open_mark_stream(&opened).unwrap();
+        let read = std::fs::read_to_string(&stream);
+        assert_eq!(
+            read.as_ref().map_err(std::io::Error::raw_os_error),
+            Err(Some(ERROR_SHARING_VIOLATION)),
+            "read {read:?} from a mark still being written"
+        );
+        drop(writing);
+
+        mark(&file, "https://example.com/setup.exe", None);
+        let writing_again = open_mark_stream(&opened).unwrap();
+        assert!(
+            std::fs::read_to_string(&stream).is_err(),
+            "a mark being replaced was readable"
+        );
+        drop(writing_again);
     }
 
     /// A part file renamed into place before the mark reaches it must not be

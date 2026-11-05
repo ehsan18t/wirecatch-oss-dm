@@ -9,8 +9,8 @@ use wirecatch_core::{LinkFrom, Manager, RemoveFiles};
 use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{
     AddRequest, AddonId, AddonInfo, AppSettings, AppSettingsPatch, CaptureConfirmation,
-    DownloadStatus, DownloadSummary, FileExistsAnswer, ImportPreview, MediaSelection, Question,
-    Queue, QueueSettings, SuffixListInfo,
+    DownloadStatus, DownloadSummary, FileExistsAnswer, FileTypeChoice, ImportPreview,
+    MediaSelection, Question, Queue, QueueSettings, SuffixListInfo,
 };
 use wirecatch_protocol::desktop::SAFE_EXTENSIONS;
 use wirecatch_protocol::proxy::{ProxyServer, ProxyServerDraft, ProxyTestResult, ProxyUse};
@@ -556,6 +556,9 @@ pub fn question(m: &Manager, id: QuestionId) -> Option<Question> {
     if let Some(found) = m.pending_file_exists().into_iter().find(|q| q.id == id) {
         return Some(Question::FileExists(found));
     }
+    if let Some(asked) = m.pending_file_types().into_iter().find(|q| q.id == id) {
+        return Some(Question::FileType(asked));
+    }
     m.media_being_read()
         .into_iter()
         .find(|r| r.id == id)
@@ -590,6 +593,20 @@ pub fn answer_file_exists(
     answer: FileExistsAnswer,
 ) -> CommandResult<DownloadId> {
     plain(m.answer_file_exists(id, answer))
+}
+
+/// Answers a download whose server changed the file type of the name the person confirmed (D166).
+///
+/// # Errors
+///
+/// The question was already answered, or closed when its download was resumed, cancelled or
+/// removed; or the manager has shut down ([`Manager::answer_file_type`]).
+pub fn answer_file_type(
+    m: &Manager,
+    id: QuestionId,
+    choice: FileTypeChoice,
+) -> CommandResult<DownloadId> {
+    plain(m.answer_file_type(id, choice))
 }
 
 /// Every add-on and its state. Update checks run in the core: once a day while

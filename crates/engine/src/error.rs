@@ -11,6 +11,9 @@ use crate::ftp::reply;
 use crate::net_guard::NameRefused;
 use crate::proxy::ProxySetting;
 
+/// The answers that say a link stopped leading to its file, whoever downloads it.
+pub const REFUSED_LINK_STATUSES: [u16; 4] = [401, 403, 404, 410];
+
 /// Errors a download can end with.
 ///
 /// [`Error::is_retryable`] tells whether trying the same download again later

@@ -9,8 +9,8 @@ use wirecatch_core::Manager;
 use wirecatch_engine::numeric::{f64_to_u64, saturating_cast};
 use wirecatch_protocol::app::{
     AddonRequestItem, DOWNLOAD_WINDOW_CASCADE_STEP, DOWNLOAD_WINDOW_MAX_HEIGHT,
-    DOWNLOAD_WINDOW_MIN_HEIGHT, DOWNLOAD_WINDOW_WIDTH, FileExistsQuestion, MAX_QUESTION_WINDOWS,
-    MediaChoice, MediaReading, PendingCapture,
+    DOWNLOAD_WINDOW_MIN_HEIGHT, DOWNLOAD_WINDOW_WIDTH, FileExistsQuestion, FileTypeQuestion,
+    MAX_QUESTION_WINDOWS, MediaChoice, MediaReading, PendingCapture,
 };
 use wirecatch_protocol::{DownloadId, QuestionId};
 
@@ -327,6 +327,7 @@ pub fn open_question_ids(
     addon_pages: &[AddonRequestItem],
     reading: &[MediaReading],
     files: &[FileExistsQuestion],
+    file_types: &[FileTypeQuestion],
 ) -> Vec<QuestionId> {
     let mut ids: Vec<QuestionId> = captures
         .iter()
@@ -335,6 +336,7 @@ pub fn open_question_ids(
         .chain(addon_pages.iter().map(|a| a.id))
         .chain(reading.iter().map(|r| r.id))
         .chain(files.iter().map(|f| f.id))
+        .chain(file_types.iter().map(|f| f.id))
         .collect();
     ids.sort_unstable();
     ids.dedup();
@@ -350,6 +352,7 @@ pub fn open_questions(manager: &Manager) -> Vec<QuestionId> {
         &manager.pending_addon_requests(),
         &manager.media_being_read(),
         &manager.pending_file_exists(),
+        &manager.pending_file_types(),
     )
 }
 

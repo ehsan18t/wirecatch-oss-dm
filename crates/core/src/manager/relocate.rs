@@ -61,7 +61,7 @@ impl Manager {
             entry.hold.begin_move();
             let exited = entry.run.as_ref().map(|run| run.exited.clone());
             self.stop_run(entry, Stop::Requeue);
-            self.close_file_exists(&mut state, id);
+            self.close_questions_of(&mut state, id);
             exited
         };
         let manager = self.clone();

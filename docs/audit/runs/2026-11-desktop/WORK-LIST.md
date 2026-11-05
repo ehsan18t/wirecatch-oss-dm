@@ -142,12 +142,12 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-132 | fix(desktop): stop page reads at a late quit       | `fix/page-read-at-quit`          | 255                          | P3       | small  | none         | merged |
 | PR-133 | fix(streams): hide tokens in key error paths       | `fix/key-error-path`             | 198                          | P3       | small  | none         | merged |
 | PR-134 | fix(desktop): draw the every-video tick            | `fix/every-video-tick`           | 148                          | P2       | small  | none         | open   |
-| PR-135 | fix(core): ask when a server changes the file type | `fix/ask-on-type-change`         | 257                          | P2       | medium | none         | open   |
+| PR-135 | fix(core): ask when a server changes the file type | `fix/ask-on-type-change`         | 257                          | P2       | medium | none         | merged |
 | PR-136 | fix(media): keep the bar steady past an estimate   | `fix/bar-past-estimate`          | 258                          | P3       | small  | none         | merged |
 | PR-137 | fix(desktop): keep finished group counts current   | `fix/finished-group-counts`      | 259                          | P3       | small  | none         | merged |
 | PR-138 | fix(desktop): keep startup notices out of the way  | `fix/startup-notice-place`       | 260, 261                     | P3       | small  | none         | open   |
 | PR-139 | fix(core): clean up a move a removal cut short     | `fix/removal-move-copy`          | 262                          | P3       | small  | none         | merged |
-| PR-140 | test: hold servers instead of throttling to join   | `test/hold-to-join`              | 263                          | P3       | small  | none         | open   |
+| PR-140 | test: hold servers instead of throttling to join   | `test/hold-to-join`              | 263                          | P3       | small  | none         | merged |
 | PR-141 | refactor(desktop): use the one proxy display name  | `refactor/one-proxy-name`        | 264                          | P3       | small  | none         | merged |
 | PR-142 | fix(streams): read all of ffmpeg's failure text    | `fix/ffmpeg-failure-text`        | 265                          | P3       | small  | none         | merged |
 | PR-143 | fix(core): keep one subtitle copy after a crash    | `fix/subtitle-after-crash`       | 266                          | P3       | small  | none         | merged |
@@ -1796,7 +1796,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/core, crates/desktop
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`, `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-136 fix(media): keep the bar steady past an estimate
 
@@ -1856,7 +1856,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/engine, crates/core
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo clippy -p wirecatch-engine`, `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-141 refactor(desktop): use the one proxy display name
 

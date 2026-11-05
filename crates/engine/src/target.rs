@@ -240,7 +240,7 @@ fn plan_exact(
     Ok((target, resume))
 }
 
-/// What a run of `url` left at `path` when it has all the data: the resume file lists nothing left and the part file has the saved size. Another link's is not this download's, so it goes the way of any resume. Blocks.
+/// What a run of `url` left at `path` when it has all the data: the resume file lists nothing left and the part file has the saved size, without which nothing shows it is whole. Another link's is not this download's, so it goes the way of any resume. Blocks.
 pub(crate) fn complete_part(
     path: &Path,
     url: &str,
@@ -254,7 +254,7 @@ pub(crate) fn complete_part(
         return Ok(None);
     };
     if !saved.remaining.is_empty()
-        || saved.total.is_some_and(|total| total != len)
+        || saved.total.or(saved.ended_at) != Some(len)
         || !same_download(&saved.url, url)
     {
         return Ok(None);

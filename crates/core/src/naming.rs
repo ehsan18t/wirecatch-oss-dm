@@ -120,6 +120,13 @@ pub(crate) fn settled_name(
     Ok(name)
 }
 
+/// Whether settling on `settled` changes the file type of the name the person confirmed. A confirmed name without a type promises none, so a server may give it one: `get` becoming `report.pdf` (D166).
+pub(crate) fn changes_file_type(confirmed: &str, settled: &str) -> bool {
+    let (_, confirmed_type) = split_ext(confirmed);
+    let (_, settled_type) = split_ext(settled);
+    !confirmed_type.is_empty() && !confirmed_type.eq_ignore_ascii_case(settled_type)
+}
+
 /// The engine's name for a file when neither the server nor the link offers one.
 const GENERIC_NAME: &str = "download";
 
@@ -375,6 +382,26 @@ mod tests {
         let no_hint = settled_name(None, "get", &link, "").unwrap();
         assert_eq!(no_hint, "get");
         assert!(settle(Some("x.wcpart"), "server.pdf").is_err());
+    }
+
+    #[test]
+    fn only_a_different_type_on_a_typed_name_changes_the_file_type() {
+        for (confirmed, settled, changes) in [
+            ("invoice.pdf", "invoice.exe", true),
+            ("invoice.pdf", "invoice.pdf.exe", true),
+            ("invoice.pdf", "invoice", true),
+            ("invoice.pdf", "invoice.PDF", false),
+            ("invoice.pdf", "Invoice March.pdf", false),
+            ("get", "report.pdf", false),
+            ("get", "get", false),
+            (".profile", "setup.exe", false),
+        ] {
+            assert_eq!(
+                changes_file_type(confirmed, settled),
+                changes,
+                "{confirmed} to {settled}"
+            );
+        }
     }
 
     /// The user can pick another name; a server cannot be asked to. Its name is

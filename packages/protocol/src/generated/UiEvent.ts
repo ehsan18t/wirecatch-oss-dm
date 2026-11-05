@@ -4,6 +4,7 @@ import type { AppSettings } from './AppSettings';
 import type { DownloadId } from './DownloadId';
 import type { DownloadSummary } from './DownloadSummary';
 import type { FileExistsQuestion } from './FileExistsQuestion';
+import type { FileTypeQuestion } from './FileTypeQuestion';
 import type { MediaChoice } from './MediaChoice';
 import type { NoticeId } from './NoticeId';
 import type { NoticePressed } from './NoticePressed';
@@ -30,6 +31,7 @@ export type UiEvent =
   | { type: 'storage_failed'; data: UserError }
   | { type: 'media_choice_requested'; data: MediaChoice }
   | { type: 'file_exists_requested'; data: FileExistsQuestion }
+  | { type: 'file_type_requested'; data: FileTypeQuestion }
   | { type: 'capture_repeated'; data: Repeated }
   | {
       type: 'media_captured';

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant, SystemTime};
 use wirecatch_engine::header::{
     AUTHORIZATION, COOKIE, HeaderValue, PROXY_AUTHORIZATION, REFERER, USER_AGENT,
 };
-use wirecatch_engine::units::{KIB, KIB_USIZE, MIB, MIB_USIZE};
+use wirecatch_engine::units::{KIB, KIB_USIZE, MIB_USIZE};
 use wirecatch_engine::{CancellationToken, DownloadRequest, Error, Outcome, Progress, download};
 use wirecatch_test_support::http::{Busy, Config, Refuse, TestServer};
 use wirecatch_test_support::{PATIENCE, QUIET, TestResult, private_dir, test_data};
@@ -50,12 +50,10 @@ const CREDENTIALS: [&str; 4] = [
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn credentials_never_follow_a_redirect_to_another_origin() {
-    // Throttled so several workers really do send their own requests.
     let target = TestServer::start(
         test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(4 * MIB),
             ..Default::default()
         },
     )
@@ -73,7 +71,11 @@ async fn credentials_never_follow_a_redirect_to_another_origin() {
     let mut req = request(&origin, "start", &dir, 4);
     with_browser_headers(&mut req);
 
-    let path = completed_path(run(req).await.unwrap());
+    // Two requests: the redirected first one and a worker's own.
+    let outcome = target
+        .hold_until_joined("files/data.bin", 2, Box::pin(run(req)))
+        .await;
+    let path = completed_path(outcome.unwrap());
     assert_eq!(std::fs::read(path).unwrap(), target.data);
 
     // The origin the headers were given for received all of them.
@@ -115,7 +117,6 @@ async fn same_origin_redirect_keeps_credentials() {
         test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(4 * MIB),
             redirect: Some(("/old".into(), "/files/new.bin".into())),
             ..Default::default()
         },
@@ -125,7 +126,10 @@ async fn same_origin_redirect_keeps_credentials() {
     let mut req = request(&server, "old", &dir, 4);
     with_browser_headers(&mut req);
 
-    let path = completed_path(run(req).await.unwrap());
+    let outcome = server
+        .hold_until_joined("files/new.bin", 2, Box::pin(run(req)))
+        .await;
+    let path = completed_path(outcome.unwrap());
     assert_eq!(path, dir.join("new.bin"), "named after the redirect target");
     assert_eq!(std::fs::read(path).unwrap(), server.data);
 
@@ -239,18 +243,35 @@ async fn retry_after_is_honored_in_the_middle_of_a_download() {
     dir.remove().unwrap();
 }
 
+/// How long the server's bodies stay held after the first refusal. Connections that kept retrying instead of stepping back are refused at least four times each in this time (at about 0, 0.6, 1.6 and 3.6 s), well above the bounds on refusals below.
+const RETRIES_SHOW_WITHIN: Duration = Duration::from_secs(4);
+
+/// Runs `req` with the served connections held, so the others are refused and the file cannot end before they have shown what they do about it.
+async fn run_through_refusals(
+    server: &TestServer,
+    req: DownloadRequest,
+) -> wirecatch_engine::Result<Outcome> {
+    server.hold_bodies();
+    let release = async {
+        let deadline = Instant::now() + PATIENCE;
+        while server.stats.refused.load(Ordering::SeqCst) == 0 {
+            assert!(Instant::now() < deadline, "the limit was never reached");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        tokio::time::sleep(RETRIES_SHOW_WITHIN).await;
+        server.release_bodies();
+    };
+    tokio::join!(Box::pin(run(req)), release).0
+}
+
 /// Eight connections against a server that serves two at a time.
 async fn completes_within_the_server_connection_limit(refuse: Refuse, test: &str) -> TestResult {
     const ALLOWED: usize = 2;
     const CONNECTIONS: usize = 8;
-    // Long enough (about 4 s) that connections that kept retrying instead of
-    // stepping back would be refused at least four times each (at about 0, 0.6,
-    // 1.6 and 3.6 s), well above the bound on refusals below.
     let server = TestServer::start(
         test_data(8 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB),
             max_connections: Some((ALLOWED, refuse)),
             ..Default::default()
         },
@@ -258,7 +279,9 @@ async fn completes_within_the_server_connection_limit(refuse: Refuse, test: &str
     .await;
     let dir = private_dir(test)?;
 
-    let path = completed_path(run(request(&server, "limited.bin", &dir, CONNECTIONS)).await?);
+    let path = completed_path(
+        run_through_refusals(&server, request(&server, "limited.bin", &dir, CONNECTIONS)).await?,
+    );
 
     assert_eq!(std::fs::read(path)?, server.data);
     let max = server.stats.max_concurrent.load(Ordering::SeqCst);
@@ -310,7 +333,6 @@ async fn extra_connections_told_to_wait_step_back_at_once() {
         test_data(4 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(2 * MIB),
             max_connections: Some((ALLOWED, Refuse::Status(503))),
             refuse_retry_after: Some((2 * PATIENCE).as_secs().to_string()),
             ..Default::default()
@@ -319,7 +341,7 @@ async fn extra_connections_told_to_wait_step_back_at_once() {
     .await;
     let dir = private_dir("limit-retry-after").unwrap();
 
-    let downloaded = run(request(&server, "wait.bin", &dir, CONNECTIONS));
+    let downloaded = run_through_refusals(&server, request(&server, "wait.bin", &dir, CONNECTIONS));
     let path = completed_path(
         tokio::time::timeout(PATIENCE, downloaded)
             .await
@@ -352,7 +374,6 @@ async fn url_credentials_reach_every_request_to_their_origin() {
         test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(4 * MIB),
             ..Default::default()
         },
     )
@@ -361,7 +382,10 @@ async fn url_credentials_reach_every_request_to_their_origin() {
     let mut req = request(&server, "files/private.bin", &dir, 4);
     req.url = with_userinfo(req.url).unwrap();
 
-    let path = completed_path(run(req).await.unwrap());
+    let outcome = server
+        .hold_until_joined("files/private.bin", 2, Box::pin(run(req)))
+        .await;
+    let path = completed_path(outcome.unwrap());
     assert_eq!(std::fs::read(path).unwrap(), server.data);
 
     let seen = server.stats.seen();
@@ -378,7 +402,6 @@ async fn url_credentials_never_follow_a_redirect_to_another_origin() {
         test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(4 * MIB),
             ..Default::default()
         },
     )
@@ -395,7 +418,10 @@ async fn url_credentials_never_follow_a_redirect_to_another_origin() {
     let mut req = request(&origin, "start", &dir, 4);
     req.url = with_userinfo(req.url).unwrap();
 
-    let path = completed_path(run(req).await.unwrap());
+    let outcome = target
+        .hold_until_joined("files/data.bin", 2, Box::pin(run(req)))
+        .await;
+    let path = completed_path(outcome.unwrap());
     assert_eq!(std::fs::read(path).unwrap(), target.data);
 
     assert_eq!(origin.stats.seen()[0].header("authorization"), Some(ALICE));
