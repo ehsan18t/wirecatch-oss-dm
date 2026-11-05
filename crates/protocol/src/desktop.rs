@@ -112,8 +112,6 @@ pub struct FinishedList {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct FinishedGroup {
-    /// Identifies the group while the window is open, for keyed lists.
-    pub key: u32,
     /// The queue whose summary this is; `None` for downloads told one by one.
     pub queue: Option<FinishedQueue>,
     /// The downloads as they were when they ended, newest first, at most

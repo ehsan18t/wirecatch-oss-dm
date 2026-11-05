@@ -2,18 +2,15 @@
 //! code the interface runs without a window. Every error is a [`ProtocolError`]: a code the
 //! interface acts on and plain-language text, ready to show as is.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
 
 use crate::host::CHANNEL;
 use wirecatch_core::{LinkFrom, Manager, RemoveFiles};
 use wirecatch_protocol::ProxyServerId;
 use wirecatch_protocol::app::{
-    AddRequest, AddonId, AddonInfo, AddonRequestItem, AppSettings, AppSettingsPatch,
-    CaptureConfirmation, DownloadStatus, DownloadSummary, FileExistsAnswer, FileExistsQuestion,
-    ImportPreview, MediaChoice, MediaSelection, PendingCapture, Question, Queue, QueueSettings,
-    SuffixListInfo,
+    AddRequest, AddonId, AddonInfo, AppSettings, AppSettingsPatch, CaptureConfirmation,
+    DownloadStatus, DownloadSummary, FileExistsAnswer, ImportPreview, MediaSelection, Question,
+    Queue, QueueSettings, SuffixListInfo,
 };
 use wirecatch_protocol::desktop::SAFE_EXTENSIONS;
 use wirecatch_protocol::proxy::{ProxyServer, ProxyServerDraft, ProxyTestResult, ProxyUse};
@@ -285,12 +282,6 @@ pub async fn import_settings(m: &Manager, path: &str) -> CommandResult<()> {
     plain(m.import_settings(Path::new(path)).await)
 }
 
-/// Browser downloads waiting for the person to confirm them.
-#[must_use]
-pub fn pending_confirmations(m: &Manager) -> Vec<PendingCapture> {
-    m.pending_confirmations()
-}
-
 /// Starts a captured download the person confirmed, or adds it paused for later; returns the
 /// new download's id.
 ///
@@ -388,13 +379,13 @@ fn site_of(url: &str) -> String {
     }
 }
 
-/// What `open_file` opens.
+/// What opening a finished download opens.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToOpen {
     /// A file that cannot run code: it opens at once.
     File(PathBuf),
     /// A program: it opens only once the person agreed to `warning`, which the shell shows in a
-    /// dialog of its own, so no page can answer it for them.
+    /// dialog of its own.
     Program {
         /// The program.
         path: PathBuf,
@@ -437,39 +428,7 @@ impl ProgramWarning {
     }
 }
 
-/// The downloads whose program warning the shell shows now. A page can call `open_file` without
-/// a click and as often as it likes, so while one warning is up for a download, opening that
-/// download again raises no other (D43.1).
-#[derive(Debug, Default)]
-pub struct WarningsShown(Mutex<HashSet<DownloadId>>);
-
-impl WarningsShown {
-    /// Marks the warning for download `id` as showing until the answer drops. `None` when it
-    /// shows already.
-    pub fn show(&self, id: DownloadId) -> Option<WarningShowing<'_>> {
-        let newly = self.ids().insert(id);
-        newly.then_some(WarningShowing { shown: self, id })
-    }
-
-    fn ids(&self) -> std::sync::MutexGuard<'_, HashSet<DownloadId>> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
-/// A program warning that is showing; it is gone once this drops.
-#[derive(Debug)]
-pub struct WarningShowing<'a> {
-    shown: &'a WarningsShown,
-    id: DownloadId,
-}
-
-impl Drop for WarningShowing<'_> {
-    fn drop(&mut self) {
-        self.shown.ids().remove(&self.id);
-    }
-}
-
-/// The finished file to open for `open_file`, and whether it is a program the person must
+/// The finished file to open, and whether it is a program the person must
 /// trust first.
 ///
 /// # Errors
@@ -603,15 +562,6 @@ pub fn question(m: &Manager, id: QuestionId) -> Option<Question> {
         .map(Question::Reading)
 }
 
-/// One download, for its progress window.
-///
-/// # Errors
-///
-/// There is no download `id` ([`Manager::get_download`]).
-pub fn get_download(m: &Manager, id: DownloadId) -> CommandResult<DownloadSummary> {
-    find(m, id)
-}
-
 /// The newest download in the list that question `id` is about again, so its window can say
 /// so without blocking anything.
 #[must_use]
@@ -628,12 +578,6 @@ pub fn dismiss_media_choice(m: &Manager, id: QuestionId) -> CommandResult<()> {
     plain(m.dismiss_media_choice(id))
 }
 
-/// Media choices still waiting for an answer, so a new or reloaded window shows them again.
-#[must_use]
-pub fn pending_media_choices(m: &Manager) -> Vec<MediaChoice> {
-    m.pending_media_choices()
-}
-
 /// Answers a download whose file is already in its folder (D88).
 ///
 /// # Errors
@@ -646,19 +590,6 @@ pub fn answer_file_exists(
     answer: FileExistsAnswer,
 ) -> CommandResult<DownloadId> {
     plain(m.answer_file_exists(id, answer))
-}
-
-/// Downloads waiting for an answer about the file already in their folder.
-#[must_use]
-pub fn pending_file_exists(m: &Manager) -> Vec<FileExistsQuestion> {
-    m.pending_file_exists()
-}
-
-/// Pages waiting for the media add-on, so a new or reloaded window offers the install again.
-/// [`dismiss_media_choice`] with an item's id drops that page.
-#[must_use]
-pub fn pending_addon_requests(m: &Manager) -> Vec<AddonRequestItem> {
-    m.pending_addon_requests()
 }
 
 /// Every add-on and its state. Update checks run in the core: once a day while
@@ -872,17 +803,6 @@ mod tests {
     }
 
     #[test]
-    fn one_warning_shows_per_download_until_it_is_answered() {
-        let shown = WarningsShown::default();
-        let first = shown.show(DownloadId(1));
-        assert!(first.is_some());
-        assert!(shown.show(DownloadId(1)).is_none());
-        assert!(shown.show(DownloadId(2)).is_some());
-        drop(first);
-        assert!(shown.show(DownloadId(1)).is_some());
-    }
-
-    #[test]
     fn known_safe_types_open_directly_in_any_case() {
         for name in [
             "movie.mp4",
@@ -1037,8 +957,7 @@ mod tests {
         );
     }
 
-    /// The interface tells this error from others by its code (`isAddonRequired` in
-    /// `src/lib/addons.ts`), never by its wording.
+    /// The interface tells this error from others by its code, never by its wording.
     #[test]
     fn the_add_on_required_error_keeps_its_code() {
         assert!(

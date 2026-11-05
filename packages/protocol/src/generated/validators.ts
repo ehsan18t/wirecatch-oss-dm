@@ -678,7 +678,6 @@ export function isFinishNoticeTime(value: unknown): value is FinishNoticeTime {
 export function isFinishedGroup(value: unknown): value is FinishedGroup {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
-    typeof value1['key'] === 'number' &&
     (isFinishedQueue(value1['queue']) || value1['queue'] === null) &&
     isArrayOf(value1['downloads'], isDownloadSummary))(value);
 }

@@ -14,9 +14,8 @@ use wirecatch_protocol::app::{
 };
 use wirecatch_protocol::{DownloadId, QuestionId};
 
-/// Every download window's label starts with this. The capability in
-/// `capabilities/download-windows.json` matches it as `download-*`.
-pub const LABEL_PREFIX: &str = "download-";
+/// Every download window's label starts with this.
+const LABEL_PREFIX: &str = "download-";
 
 /// A download window's size when it opens, in logical pixels.
 pub const WINDOW_SIZE: (f64, f64) = (DOWNLOAD_WINDOW_WIDTH as f64, 600.0);
@@ -44,12 +43,6 @@ pub fn fitted_height(wanted: f64, screen: Option<f64>) -> f64 {
         return floor;
     }
     wanted.ceil().clamp(floor, ceiling)
-}
-
-/// Whether `label` is a download window's.
-#[must_use]
-pub fn is_download_window(label: &str) -> bool {
-    label.starts_with(LABEL_PREFIX)
 }
 
 /// What a download window shows.
@@ -104,26 +97,6 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// The open windows, in the order they opened.
-    #[must_use]
-    pub fn windows(&self) -> &[OpenWindow] {
-        &self.windows
-    }
-
-    /// What the window `label` shows now, or `None` when no such window is open.
-    #[must_use]
-    pub fn shows(&self, label: &str) -> Option<Shows> {
-        self.windows
-            .iter()
-            .find(|w| w.label == label)
-            .map(|w| w.shows)
-    }
-
-    /// Questions waiting for room to open their window, oldest first.
-    pub fn waiting(&self) -> impl Iterator<Item = QuestionId> + '_ {
-        self.waiting.iter().copied()
-    }
-
     fn asking(&self) -> usize {
         self.windows
             .iter()
@@ -388,6 +361,14 @@ mod tests {
         QuestionId(id)
     }
 
+    fn shown_by(registry: &Registry, label: &str) -> Option<Shows> {
+        registry
+            .windows
+            .iter()
+            .find(|w| w.label == label)
+            .map(|w| w.shows)
+    }
+
     #[test]
     fn a_window_on_a_question_closed_meanwhile_is_found_after_a_reload() {
         let mut registry = Registry::default();
@@ -435,15 +416,18 @@ mod tests {
     fn a_window_is_known_by_what_it_shows_now() {
         let mut registry = Registry::default();
         let window = opened(registry.ask(q(4)));
-        assert_eq!(registry.shows(&window.label), Some(Shows::Question(q(4))));
+        assert_eq!(
+            shown_by(&registry, &window.label),
+            Some(Shows::Question(q(4)))
+        );
         registry.became_download(&window.label, DownloadId(9));
         assert_eq!(
-            registry.shows(&window.label),
+            shown_by(&registry, &window.label),
             Some(Shows::Download(DownloadId(9)))
         );
         registry.gone(&window.label);
-        assert_eq!(registry.shows(&window.label), None);
-        assert_eq!(registry.shows("main"), None);
+        assert_eq!(shown_by(&registry, &window.label), None);
+        assert_eq!(shown_by(&registry, "main"), None);
     }
 
     #[test]
@@ -460,8 +444,8 @@ mod tests {
                 Step::Focus(progress.label.clone()),
             ]
         );
-        assert_eq!(r.shows(&question.label), None);
-        assert_eq!(r.windows().len(), 1);
+        assert_eq!(shown_by(&r, &question.label), None);
+        assert_eq!(r.windows.len(), 1);
         assert_eq!(
             r.show_question(q(4))
                 .map(|step| matches!(step, Step::Open(_))),
@@ -496,7 +480,7 @@ mod tests {
             panic!("expected a window to open");
         };
         assert_eq!(r.became_download(&window.label, DownloadId(9)), []);
-        assert_eq!(r.windows().len(), 1);
+        assert_eq!(r.windows.len(), 1);
     }
 
     #[test]
@@ -506,7 +490,7 @@ mod tests {
         assert_eq!(slots, [0, 1, 2, 3, 4]);
         assert_eq!(r.ask(q(6)), None);
         assert_eq!(r.ask(q(7)), None);
-        assert_eq!(r.waiting().collect::<Vec<_>>(), [q(6), q(7)]);
+        assert_eq!(r.waiting.iter().copied().collect::<Vec<_>>(), [q(6), q(7)]);
         // Asking again (the video was read) opens nothing twice.
         assert_eq!(r.ask(q(3)), None);
         assert_eq!(r.ask(q(6)), None);
@@ -517,7 +501,7 @@ mod tests {
             panic!("{steps:?}")
         };
         assert_eq!((next.shows, next.slot), (Shows::Question(q(6)), 5));
-        assert!(r.windows().iter().any(|w| w.label == "download-q2"
+        assert!(r.windows.iter().any(|w| w.label == "download-q2"
             && w.shows == Shows::Download(DownloadId(40))
             && w.slot == 1));
 

@@ -2,9 +2,7 @@
 //! quality the saved resolution picks, or its fallback when the video does not offer it, saved
 //! as the saved choices say, as far as the video offers them.
 //!
-//! The core downloads this without asking when the person chose not to be asked. The desktop's
-//! sample backend has a TypeScript port (`packages/protocol/src/media-start.ts`), tested
-//! against the cases `pnpm protocol:generate` writes from here.
+//! The core downloads this without asking when the person chose not to be asked.
 
 use serde::Serialize;
 
@@ -204,86 +202,6 @@ fn same_language(language: &str, wanted: &str) -> bool {
     let have = language.to_ascii_lowercase();
     let want = wanted.to_ascii_lowercase();
     have == want || have.split(['-', '_']).next() == Some(want.as_str())
-}
-
-/// Saved choices and the videos they meet; `pnpm protocol:generate` writes each with where
-/// [`MediaDefaults::start`] starts it, for the TypeScript port to be tested against.
-#[cfg(test)]
-pub(crate) fn start_cases() -> Vec<(MediaDefaults, Vec<MediaOption>, Vec<MediaSubtitle>, bool)> {
-    let heights = [Some(2160), Some(1080), Some(720), Some(360)];
-    let videos = || -> Vec<MediaOption> {
-        heights
-            .iter()
-            .map(|h| test_option(*h, false))
-            .chain([test_option(None, true)])
-            .collect()
-    };
-    let subtitles = test_subtitles();
-    let saved = |quality, fallback, ask_each_time| MediaDefaults {
-        ask_each_time,
-        quality,
-        fallback,
-        ..MediaDefaults::default()
-    };
-    let mut cases = Vec::new();
-    for quality in [
-        VideoQuality::Best,
-        VideoQuality::AudioOnly,
-        VideoQuality::Height(1080),
-        VideoQuality::Height(1440),
-        VideoQuality::Height(4320),
-        VideoQuality::Height(240),
-    ] {
-        for fallback in [
-            QualityFallback::Lower,
-            QualityFallback::Higher,
-            QualityFallback::Ask,
-        ] {
-            for ask in [true, false] {
-                cases.push((saved(quality, fallback, ask), videos(), Vec::new(), false));
-            }
-        }
-    }
-    // Only a video without audio alone, a stream that does not say its heights, audio alone.
-    let only_videos: Vec<MediaOption> = videos().into_iter().filter(|o| !o.audio_only).collect();
-    let no_heights = vec![test_option(None, false), test_option(None, true)];
-    let audio_alone = vec![test_option(None, true)];
-    for options in [only_videos, no_heights, audio_alone] {
-        for quality in [VideoQuality::AudioOnly, VideoQuality::Height(1080)] {
-            cases.push((
-                saved(quality, QualityFallback::Ask, false),
-                options.clone(),
-                Vec::new(),
-                false,
-            ));
-        }
-    }
-    // The saved formats, audio qualities, subtitles and chapters.
-    let mut formats = MediaDefaults::default();
-    formats.video.format = OutputFormat::Mkv;
-    formats.video.subtitle_languages = vec!["bn".into(), "en".into(), "fr".into()];
-    formats.video.chapters = true;
-    formats.video.subtitle_files = true;
-    formats.audio.format = OutputFormat::Mp3;
-    formats.audio.audio_kbps = Some(200);
-    formats.audio.subtitle_languages = vec!["pt".into()];
-    formats.audio.auto_subtitles = false;
-    for quality in [VideoQuality::Height(1080), VideoQuality::AudioOnly] {
-        formats.quality = quality;
-        cases.push((formats.clone(), videos(), subtitles.clone(), true));
-        cases.push((formats.clone(), videos(), subtitles.clone(), false));
-    }
-    let mut webm = formats.clone();
-    webm.video.format = OutputFormat::Webm;
-    webm.video.auto_subtitles = false;
-    webm.quality = VideoQuality::Height(720);
-    cases.push((webm, videos(), subtitles.clone(), true));
-    let mut usual = formats.clone();
-    usual.audio.audio_kbps = None;
-    usual.audio.format = OutputFormat::Opus;
-    usual.quality = VideoQuality::AudioOnly;
-    cases.push((usual, videos(), subtitles, false));
-    cases
 }
 
 /// A quality of `height`, or audio alone, offered as the original and as MKV (audio: MP3 and

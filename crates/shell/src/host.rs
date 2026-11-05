@@ -606,7 +606,7 @@ mod tests {
         assert_ne!(Channel::Dev.name(), Channel::Release.name());
     }
 
-    /// The log folder is known before the app does anything, so a start that fails (no WebView2, a second copy, a refused elevation) still leaves its reason in the file.
+    /// The log folder is known before the app does anything, so a start that fails (a second copy, a refused elevation) still leaves its reason in the file.
     #[test]
     fn the_log_folder_is_known_before_the_app_starts() {
         let chosen = Path::new("try").join("data");

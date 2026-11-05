@@ -2,7 +2,6 @@
 //! a queue's summary is a group under its own heading, newest first, within
 //! [`MAX_FINISHED_GROUPS`] groups of [`MAX_FINISHED_LISTED`] downloads.
 
-use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, UiEvent};
 use wirecatch_protocol::desktop::{
     FinishedGroup, FinishedList, FinishedQueue, MAX_FINISHED_GROUPS, MAX_FINISHED_LISTED,
@@ -12,7 +11,6 @@ use wirecatch_protocol::desktop::{
 #[derive(Debug, Default)]
 pub struct FinishedBook {
     list: FinishedList,
-    next_key: u32,
 }
 
 impl FinishedBook {
@@ -38,11 +36,9 @@ impl FinishedBook {
                 top.downloads = downloads;
             }
             _ => {
-                self.next_key = self.next_key.wrapping_add(1);
                 self.list.groups.insert(
                     0,
                     FinishedGroup {
-                        key: self.next_key,
                         queue,
                         downloads: newest_first.take(MAX_FINISHED_LISTED).collect(),
                     },
@@ -99,15 +95,6 @@ impl FinishedBook {
     pub fn list(&self) -> &FinishedList {
         &self.list
     }
-
-    /// Whether the window lists download `id`.
-    #[must_use]
-    pub fn lists(&self, id: DownloadId) -> bool {
-        self.list
-            .groups
-            .iter()
-            .any(|g| g.downloads.iter().any(|d| d.id == id))
-    }
 }
 
 /// The summary header of a queue that is done.
@@ -131,7 +118,7 @@ pub fn queue_header(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wirecatch_protocol::QueueId;
+    use wirecatch_protocol::{DownloadId, QueueId};
 
     fn ended(id: i64, status: DownloadStatus) -> DownloadSummary {
         let mut row = wirecatch_test_support::downloads::download(id);
@@ -182,7 +169,6 @@ mod tests {
             panic!("{:?}", book.list());
         };
         assert_eq!(ids(group), [3, 2, 1]);
-        assert!(book.lists(DownloadId(2)) && !book.lists(DownloadId(4)));
     }
 
     #[test]
@@ -204,11 +190,6 @@ mod tests {
         assert_eq!(
             (night.name.as_str(), night.completed, night.failed),
             ("Night", 1, 1)
-        );
-        let keys: Vec<_> = groups.iter().map(|g| g.key).collect();
-        assert_eq!(
-            keys.len(),
-            keys.iter().collect::<std::collections::BTreeSet<_>>().len()
         );
     }
 

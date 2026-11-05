@@ -136,36 +136,6 @@ macro_rules! enum_lists {
 
 enum_lists!(Accent, Theme, FixAction);
 
-/// Lists of a generated enum's values with their seconds (`$seconds` is `u64`, or `Option<u64>`
-/// for `null`), as `[value, seconds]` pairs.
-macro_rules! timed_lists {
-    ($($name:ident: $seconds:ty => $ts:literal),+) => {
-        $(
-            #[cfg(test)]
-            impl Exported for &[(crate::app::$name, $seconds)] {
-                fn written(&self) -> Written {
-                    Written {
-                        value: serde_json::to_string(self).unwrap(),
-                        annotation: Some(concat!(
-                            "readonly (readonly [",
-                            stringify!($name),
-                            ", ",
-                            $ts,
-                            "])[]"
-                        )),
-                        imports: &[stringify!($name)],
-                    }
-                }
-            }
-        )+
-    };
-}
-
-timed_lists!(
-    StartNoticeTime: u64 => "number",
-    FinishNoticeTime: Option<u64> => "number | null"
-);
-
 #[cfg(test)]
 impl Exported for crate::QueueId {
     fn written(&self) -> Written {
@@ -576,25 +546,11 @@ mod tests {
                 serde_json::json!({ "before": before, "patch": patch, "after": after })
             })
             .collect();
-        let starts: Vec<Value> = crate::media_start::start_cases()
-            .into_iter()
-            .map(|(defaults, options, subtitles, chapters)| {
-                let start = defaults.start(&options, &subtitles, chapters);
-                serde_json::json!({
-                    "defaults": defaults,
-                    "options": options,
-                    "subtitles": subtitles,
-                    "chapters": chapters,
-                    "start": start,
-                })
-            })
-            .collect();
         let fixtures = serde_json::json!({
             "normalize_site": sites,
             "normalize_file_type": file_types,
             "apply_extension_settings": applied,
             "apply_browser_controls": controls,
-            "media_start": starts,
         });
         let dir = export_dir();
         std::fs::create_dir_all(&dir).unwrap();
