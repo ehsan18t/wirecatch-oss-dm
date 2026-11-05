@@ -166,7 +166,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 139 | Nothing opens a download's window again after Hide                                                | `24-8`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 140 | A file too large for the disk is not noticed until it is full                                     | `01-3`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 141 | A crash at the end of a move leaves the list and the disk disagreeing                             | `Xcrash-and-resume-4`                                                                              | P2       | medium | P2, 1 finding, medium; after item 8                                                                              | none                                          | fixed  |
-| 142 | Commands and items left from the removed web interface are dead                                   | `23-11` `24-11` `30-5` `30-6` `B19-5`                                                              | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | open   |
+| 142 | Commands and items left from the removed web interface are dead                                   | `23-11` `24-11` `30-5` `30-6` `B19-5`                                                              | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | fixed  |
 | 143 | Tests give waits a fixed short limit, and the timing check cannot see them                        | `01-10` `33-2` `04-7` `06-3` `21-3`                                                                | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | fixed  |
 | 144 | Tests race the machine against a real-clock limit of the code under test                          | `03-7` `10-5` `13-4` `B19-1` `B19-2`                                                               | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | fixed  |
 | 145 | A page's HLS part runs outside the run's file work                                                | `17-6` `Xpath-media-download-8` `Xsecond-review-disk-writes-9` `Xsecond-review-resume-6`           | P3       | small  | P3, 4 findings, small                                                                                            | none                                          | fixed  |
@@ -259,8 +259,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 232 | The complete window stays open and blank once its rows are removed                                | `24-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 233 | The notice of a failed save ignores Do Not Disturb                                                | `26-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
 | 234 | The language list names Twi "Akan" and gives Ossetic itself as its other name                     | `30-7`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 235 | The comment on RecvError::Closed in the server's loop is wrong                                    | `07-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
-| 236 | Manager::update_settings has no caller outside tests                                              | `19-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 235 | The comment on RecvError::Closed in the server's loop is wrong                                    | `07-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
+| 236 | Manager::update_settings has no caller outside tests                                              | `19-10`                                                                                            | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 237 | lock_path repeats with_suffix                                                                     | `03-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 238 | Product tests are pinned to today's config values                                                 | `33-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 239 | Two copies of the pnpm-workspace parser                                                           | `33-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -2692,7 +2692,7 @@ No record of a move exists on disk, so a crash at the end of a move, between the
 
 ### 142. Commands and items left from the removed web interface are dead
 
-P3, medium, open.
+P3, medium, fixed.
 
 `api::pending_*`, `get_download`, `WarningsShown`, `is_download_window`, `Registry::shows` and others have no reader left since the Tauri and Svelte app went. `START_NOTICE_TIMES` and the TypeScript `mediaStart` are reached only by tests. A test's doc still names WebView2.
 
@@ -4245,7 +4245,7 @@ P3, small, fixed.
 
 ### 235. The comment on RecvError::Closed in the server's loop is wrong
 
-P3, small, open.
+P3, small, fixed.
 
 `serve_connection` owns a `Manager`, so `wire_events` outlives the receiver and `Closed` cannot happen. The arm must stay for the match; its comment misleads about shutdown.
 
@@ -4261,7 +4261,7 @@ P3, small, open.
 
 ### 236. Manager::update_settings has no caller outside tests
 
-P3, small, open.
+P3, small, fixed.
 
 Every call is in a test or `crates/e2e`, and the body repeats `change_settings`.
 
