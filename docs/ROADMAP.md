@@ -210,7 +210,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 145. A page's HLS part runs outside the run's file work (fixed)
 146. Bridge and test values are written separately in several crates (fixed)
 147. Test servers repeat their range parsing and behave unlike their docs (fixed)
-148. An import's summary event and the every-video answer have no reader (open)
+148. An import's summary event and the every-video answer have no reader (fixed)
 149. Tests repeat their fixtures and data generators (fixed)
 150. A reload after missed events repeats notices and leaves open windows stale (fixed)
 151. A capture's check and its record sit in separate lock sections (fixed)
