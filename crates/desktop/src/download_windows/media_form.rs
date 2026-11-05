@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use gpui_kit::component::IndexPath;
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
+use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::combobox::{Combobox, ComboboxEvent, ComboboxState};
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::searchable_list::{SearchableListItem, SearchableVec};
@@ -142,6 +143,8 @@ pub struct MediaForm {
     audio_folder: Option<String>,
     /// The queue picked; `None` is Automatic.
     queue: Option<QueueId>,
+    /// The "every video" tick, once the person has touched it. It goes with the answer, so Cancel changes nothing, and untouched it leaves the setting as it stands then (D50.6).
+    every_video: Option<bool>,
     /// The selects list what the quality and format offer: they are rebuilt on the next draw.
     stale: bool,
     /// An answer is on its way.
@@ -205,6 +208,7 @@ impl MediaForm {
             folder: None,
             audio_folder,
             queue: None,
+            every_video: None,
             stale: true,
             busy: false,
             earlier: None,
@@ -440,7 +444,7 @@ impl MediaForm {
         selection.queue = self.queue.filter(|queue| *queue != self.choice.queue);
         selection.later = later;
         self.output.apply(option, &self.choice, &mut selection);
-        selection.every_video = None;
+        selection.every_video = self.every_video;
         if self.needs_install(cx) {
             self.install_then(selection, cx);
         } else {
@@ -638,6 +642,27 @@ impl MediaForm {
         row("Folder", folder_box("media-folder", &shown, pick, cx), cx)
     }
 
+    fn every_video_ticked(&self, cx: &App) -> bool {
+        let asks = self
+            .library
+            .read(cx)
+            .settings
+            .as_ref()
+            .is_none_or(|settings| settings.media.ask_each_time);
+        every_video_ticked(self.every_video, asks)
+    }
+
+    fn every_video_tick(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        Checkbox::new("media-every-video")
+            .label("Use these choices for every video")
+            .checked(self.every_video_ticked(cx))
+            .disabled(self.busy || self.awaiting_addon.is_some())
+            .on_click(cx.listener(|form, checked: &bool, _, cx| {
+                form.every_video = Some(*checked);
+                cx.notify();
+            }))
+    }
+
     fn buttons(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let busy = self.busy || self.awaiting_addon.is_some();
         let form = cx.entity().downgrade();
@@ -735,8 +760,14 @@ impl Render for MediaForm {
             .children(self.chapters(cx))
             .child(row("File name", Input::new(&self.file_name), cx))
             .child(self.folder_row(cx))
+            .child(self.every_video_tick(cx))
             .child(self.buttons(cx))
     }
+}
+
+/// What the person ticked, else how the setting stands: a window opened only because a video lacks the saved quality must not turn asking back on (D50.6).
+fn every_video_ticked(touched: Option<bool>, asks: bool) -> bool {
+    touched.unwrap_or(!asks)
 }
 
 fn subtitle_picker(
@@ -873,6 +904,14 @@ fn install_wait(addon: Option<&AddonInfo>, before: Option<&AddonState>) -> Insta
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_every_video_tick_starts_from_the_setting_until_touched() {
+        assert!(!every_video_ticked(None, true));
+        assert!(every_video_ticked(None, false));
+        assert!(every_video_ticked(Some(true), true));
+        assert!(!every_video_ticked(Some(false), false));
+    }
 
     fn addon(state: AddonState, usable: bool) -> AddonInfo {
         AddonInfo {
