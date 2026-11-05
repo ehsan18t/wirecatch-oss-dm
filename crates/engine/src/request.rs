@@ -24,3 +24,10 @@ pub(crate) struct RequestContext {
     /// [`DownloadOptions::stall_timeout`](crate::DownloadOptions::stall_timeout).
     pub stall_timeout: Duration,
 }
+
+impl RequestContext {
+    /// Whether a later run can pick this download up: [`ResumeState::can_resume`](crate::state::ResumeState::can_resume) refuses anything else.
+    pub fn can_continue(&self) -> bool {
+        self.ranged && self.total.is_some()
+    }
+}

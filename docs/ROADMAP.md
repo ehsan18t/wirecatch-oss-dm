@@ -90,7 +90,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 25. The could-not-save banner is wrong both ways, and its Try again saves nothing (open)
 26. Settings, queues and proxies that cannot be read are silently replaced (fixed)
 27. A removal under way at quit comes back, and a capture is downloaded twice (fixed)
-28. Nothing knows whether a download can continue, so messages promise what will not happen (open)
+28. Nothing knows whether a download can continue, so messages promise what will not happen (fixed)
 29. The Public Suffix List's date and Check now were never put in Settings (open)
 30. The window redoes whole-list work on every frame and progress tick (fixed)
 31. The Add dialog's link rule leaves out ftpes, so such links cannot be added (fixed)

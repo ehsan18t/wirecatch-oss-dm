@@ -1296,3 +1296,12 @@ Decided on 2026-11-05.
 1. On Unix, `SIGTERM`, `SIGHUP` and `SIGINT` kill every running program's group, then end the app as the signal would have by default. Every program has a group of its own, so none of them hears a terminal's Ctrl+C by itself. A thread of its own waits for them, through `signal-hook`: a handler on a tokio runtime would go on swallowing the signal after that runtime ended.
 2. A signal the app was started ignoring, as `nohup` does for `SIGHUP`, stays ignored. The command-line downloader starts no programs and has no handler of this kind. A program that waits on `SIGINT` itself and has started a media program, as `crates/core/examples/headless.rs` does, ends at once instead of shutting down; what it had downloaded resumes on its next run.
 3. This does not cover a crash or `SIGKILL`, which no handler sees. The supervisor that case needs stays on the roadmap.
+
+### D153. A download says whether its next run continues
+
+Decided on 2026-11-05.
+
+1. A download can continue only when the server takes byte ranges and gave the size (`ResumeState::can_resume`). The engine reports that as `Progress::can_continue` once the server has answered and as `Outcome::Paused::can_continue`; `Outcome::Paused::remaining` is `None` when the size is unknown.
+2. Core keeps the last answer as `Answers::next_run`, saved with the download, so a refused link after a restart is worded by the same fact. No message promises the part already downloaded unless there is data and the next run can continue from it. A video read from a page counts a finished part, a part being fetched from a server that can continue, a stream's segments and yt-dlp's own download (`MediaProgress::keeps_data`).
+3. The refresh dialog cannot know what a new link's server will answer, so its note and notice say the download continues if the server allows it.
+4. Release notes for the next release of `wirecatch-engine` (breaking). Changed: `Outcome::Paused::remaining` is `Option<u64>`. Added: `Outcome::Paused::can_continue` and `Progress::can_continue`.
