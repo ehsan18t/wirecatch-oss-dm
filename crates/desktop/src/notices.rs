@@ -311,16 +311,22 @@ pub fn storage_failed(reason: &str, cx: &mut App) {
         return;
     }
     let title = format!("{} could not save its download list", host::CHANNEL.name());
+    let through = problem_through_do_not_disturb(cx);
     cx.global::<Kept>()
         .0
         .system
-        .show(notifications::plain(title, reason.to_owned()), true);
+        .show(notifications::plain(title, reason.to_owned()), through);
+}
+
+/// A problem told in a notification asks to show during Do Not Disturb while the person allows it; before the manager is up, the setting's default (D64.2).
+fn problem_through_do_not_disturb(cx: &App) -> bool {
+    let (manager, _) = Backend::now(cx);
+    manager.is_none_or(|m| m.get_settings().notify_during_do_not_disturb)
 }
 
 pub fn could_not(refused: ProtocolError, cx: &mut App) {
     let title = format!("{} could not do that", host::CHANNEL.name());
-    let (manager, _) = Backend::now(cx);
-    let through = manager.is_none_or(|m| m.get_settings().notify_during_do_not_disturb);
+    let through = problem_through_do_not_disturb(cx);
     cx.global::<Kept>()
         .0
         .system

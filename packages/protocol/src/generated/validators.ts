@@ -1577,6 +1577,9 @@ export function isUiEvent(value: unknown): value is UiEvent {
       isRecord(value1) && value1['type'] === 'storage_failed' && isUserError(value1['data']))(
       value,
     ) ||
+    ((value1: unknown): boolean => isRecord(value1) && value1['type'] === 'storage_recovered')(
+      value,
+    ) ||
     ((value1: unknown): boolean =>
       isRecord(value1) &&
       value1['type'] === 'media_choice_requested' &&

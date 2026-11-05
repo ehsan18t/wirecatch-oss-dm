@@ -36,6 +36,8 @@ pub struct Library {
     order: OrderReading,
     /// Why the download list could not be saved, until it saves again or is dismissed.
     pub storage_problem: Option<String>,
+    /// Try again was pressed and its answer has not come.
+    pub storage_retrying: bool,
     /// What the person must know about this start, such as a damaged list set aside.
     pub startup_notices: Vec<StartupNotice>,
     notices_kept: bool,
@@ -131,6 +133,7 @@ impl Library {
             revisions: Revisions::default(),
             order: OrderReading::default(),
             storage_problem: None,
+            storage_retrying: false,
             startup_notices: Vec::new(),
             notices_kept: false,
             open_questions: Vec::new(),
@@ -214,7 +217,11 @@ impl Library {
                 let stops = next.is_err();
                 let alive = this.update(cx, |library, cx| match next {
                     Ok(event) => library.apply(event, cx),
-                    Err(RecvError::Lagged(_)) => Self::load(cx),
+                    Err(RecvError::Lagged(_)) => {
+                        // The lost event may be a retry's answer.
+                        library.storage_retrying = false;
+                        Self::load(cx);
+                    }
                     Err(RecvError::Closed) => {}
                 });
                 if alive.is_err() || stops {
@@ -279,6 +286,11 @@ impl Library {
             UiEvent::StorageFailed(error) => {
                 crate::notices::storage_failed(&error.message, cx);
                 self.storage_problem = Some(error.message);
+                self.storage_retrying = false;
+            }
+            UiEvent::StorageRecovered => {
+                self.storage_problem = None;
+                self.storage_retrying = false;
             }
             _ => return,
         }

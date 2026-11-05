@@ -1367,3 +1367,12 @@ Decided on 2026-11-05.
 1. A schedule without a stop time starts a run at its start, which lasts until the queue has nothing left. That run is `QueueStatus::running_until_empty`, saved with the queue next to `running_outside_schedule`. So a restart keeps a run whether or not a download was running, and never starts one. A question about a file in the folder is held in memory only, so a kill ends a run that had nothing else left.
 2. `schedule::allows` is the one answer: inside the window, or during a run. The core and the sidebar both read it, so the queue's line and Start now follow what really decides. Between runs a queue without a stop time is outside its schedule all day, and offers Start now.
 3. A run keeps going for a download that only waits: its question about a file in the folder, its move, or the page read for its video, up to the row that replaces it (`State::arriving`). A link added to the queue meanwhile starts at once, as part of the run.
+### D167. The could-not-save banner follows the saves
+
+Decided on 2026-11-05.
+
+1. `crates/store` tells `SaveNews`: `Failed` and `Recovered`, which core sends as `UiEvent::StorageFailed` and `UiEvent::StorageRecovered`.
+2. A spell of failures lasts until nothing is kept and every kind of write that was dropped because it can never pass has since been saved. A spell is told once, so a write that can never pass does not raise a notification per batch, and a write of another kind passing does not end the spell.
+3. The banner goes by itself when the spell ends. Try again sends `Manager::retry_saving`, which tries the kept writes at once instead of at their next turn, and always answers: `StorageFailed` with the reason while they still fail, so the banner stays, or `StorageRecovered`. With nothing kept a retry ends the spell, as a dropped write cannot be tried again. Dismiss only hides the banner for this spell.
+4. Kept writes are retried about every 5 seconds and once at closing. What is not saved: a write that can never pass, the oldest past 10,000 kept writes, and what still fails at closing.
+5. The notification shown when no main window is open follows the Do Not Disturb setting, as D64.2 says.

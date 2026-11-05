@@ -322,8 +322,69 @@ pub const DATABASE_SIDE_FILES: [&str; 2] = ["-wal", "-shm"];
 /// How long a damaged list set aside, or a copy taken before an upgrade, is kept. Both hold every download's cookies, which a live download forgets after a week (D17); a month leaves time to recover a list by hand.
 const KEEP_COPIES_FOR: Duration = Duration::from_hours(720);
 
-/// Told why saving failed after every retry.
-pub type FailureHandler = Box<dyn Fn(String) + Send>;
+/// How saving is going, told on the database thread (D167).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SaveNews {
+    /// Saving failed after every retry, and why. Told once per spell of failures, and again for each [`Store::retry_kept`] that still fails.
+    Failed(String),
+    /// Nothing waits to be saved any more. Also the answer to a [`Store::retry_kept`] with nothing to do.
+    Recovered,
+}
+
+/// Told [`SaveNews`].
+pub type SaveWatcher = Box<dyn Fn(SaveNews) + Send>;
+
+/// One kind of write, as far as a spell of failures remembers it.
+type WriteKind = std::mem::Discriminant<Op>;
+
+/// A spell of failures: it lasts until nothing is kept and every kind of write that was dropped has since been saved, so a write that can never pass does not start a new spell each batch (D167).
+struct SaveSpell<'a> {
+    tell: &'a SaveWatcher,
+    failing: Option<Failing>,
+}
+
+struct Failing {
+    reason: String,
+    lost: Vec<WriteKind>,
+}
+
+impl SaveSpell<'_> {
+    fn failed(&mut self, reason: String, lost: Vec<WriteKind>) {
+        if let Some(failing) = &mut self.failing {
+            failing.reason = reason;
+            failing.lost.extend(lost);
+        } else {
+            (self.tell)(SaveNews::Failed(reason.clone()));
+            self.failing = Some(Failing { reason, lost });
+        }
+    }
+
+    /// A batch of these kinds was saved whole, the kept writes with it.
+    fn saved(&mut self, kinds: &[WriteKind]) {
+        if let Some(failing) = &mut self.failing {
+            failing.lost.retain(|kind| !kinds.contains(kind));
+            if failing.lost.is_empty() {
+                self.failing = None;
+                (self.tell)(SaveNews::Recovered);
+            }
+        }
+    }
+
+    /// A dropped write cannot be tried again, so with nothing kept nothing is left to save.
+    fn answer_retry(&mut self, nothing_kept: bool) {
+        if nothing_kept {
+            self.failing = None;
+        }
+        match &self.failing {
+            Some(failing) => (self.tell)(SaveNews::Failed(failing.reason.clone())),
+            None => (self.tell)(SaveNews::Recovered),
+        }
+    }
+}
+
+fn kinds_of(writes: &[Op]) -> Vec<WriteKind> {
+    writes.iter().map(std::mem::discriminant).collect()
+}
 
 /// How long a write waits for a lock held by someone else (a backup tool, say).
 #[cfg(not(test))]
@@ -353,6 +414,8 @@ enum Op {
     SavePendingDeletions(Vec<PendingDeletion>),
     SaveProxyLogins(Logins),
     SaveProxyServers(Vec<SavedProxyServer>),
+    /// Tries the kept writes at once, and always answers with [`SaveNews`].
+    RetryKept,
     /// Answers once every write sent before it has been tried.
     Flush(mpsc::Sender<()>),
     /// Saves everything sent before it, closes the database and stops the thread.
@@ -378,6 +441,7 @@ impl std::fmt::Debug for Op {
             Op::SavePendingDeletions(_) => "SavePendingDeletions",
             Op::SaveProxyLogins(_) => "SaveProxyLogins",
             Op::SaveProxyServers(_) => "SaveProxyServers",
+            Op::RetryKept => "RetryKept",
             Op::Flush(_) => "Flush",
             Op::Close(_) => "Close",
         })
@@ -388,14 +452,13 @@ impl Store {
     /// Opens (or creates) the database in `dir`, brings its schema up to date and
     /// loads everything. Blocks on the disk, so call it from a blocking thread.
     ///
-    /// `on_failure` is called (on the database thread) with the reason whenever a
-    /// batch of writes could not be saved even after retrying.
+    /// `watcher` is told (on the database thread) when writes could not be saved even after retrying, and when saving recovers.
     ///
     /// A database file SQLite reports as damaged is moved aside and a new list is started, and a single stored value that cannot be read costs only its row or value, so a power cut or a bad sync tool never stops Wirecatch from opening; [`Snapshot::recoveries`] says so.
-    pub fn open(dir: &Path, on_failure: FailureHandler) -> Result<(Store, Snapshot)> {
+    pub fn open(dir: &Path, watcher: SaveWatcher) -> Result<(Store, Snapshot)> {
         Self::open_with(
             dir,
-            on_failure,
+            watcher,
             #[cfg(test)]
             None,
         )
@@ -406,15 +469,15 @@ impl Store {
     #[cfg(test)]
     fn open_watched(
         dir: &Path,
-        on_failure: FailureHandler,
+        watcher: SaveWatcher,
         backing_off: BackOffHook,
     ) -> Result<(Store, Snapshot)> {
-        Self::open_with(dir, on_failure, Some(backing_off))
+        Self::open_with(dir, watcher, Some(backing_off))
     }
 
     fn open_with(
         dir: &Path,
-        on_failure: FailureHandler,
+        watcher: SaveWatcher,
         #[cfg(test)] backing_off: Option<BackOffHook>,
     ) -> Result<(Store, Snapshot)> {
         std::fs::create_dir_all(dir)
@@ -459,7 +522,7 @@ impl Store {
                     #[cfg(test)]
                     backing_off,
                 };
-                run(conn, lock, &mut inbox, &on_failure);
+                run(conn, lock, &mut inbox, &watcher);
             })
             .map_err(|source| StoreError::File(FileError::new(&path, source)))?;
         Ok((Store { ops }, snapshot))
@@ -523,7 +586,12 @@ impl Store {
         self.send(Op::SaveProxyServers(profiles));
     }
 
-    /// Blocks until every write sent so far has been tried, for at most `timeout`, and says whether that happened. A write that failed is kept for a later try and goes to the failure handler. Call it without holding anything the failure handler needs.
+    /// Tries the kept writes now rather than at their next turn. The answer comes as [`SaveNews`], whatever it is.
+    pub fn retry_kept(&self) {
+        self.send(Op::RetryKept);
+    }
+
+    /// Blocks until every write sent so far has been tried, for at most `timeout`, and says whether that happened. A write that failed is kept for a later try and goes to the watcher. Call it without holding anything the watcher needs.
     #[must_use]
     pub fn wait_for_writes(&self, timeout: Duration) -> bool {
         let (done, wait) = mpsc::channel();
@@ -563,12 +631,13 @@ impl Store {
 /// Applies writes until every [`Store`] handle is gone. Writes that queued up while
 /// the disk was busy are committed together in one transaction. A batch that fails
 /// is retried after a short pause; if it still fails, its writes are tried one by
-/// one, so one bad write cannot take the others down with it, and `on_failure` is
-/// told why. Writes that still fail are kept, in order, and tried again before
-/// the next writes (or after a while if none come), never dropped: a lost delete
-/// would bring back a removed download.
-fn run(conn: Connection, lock: File, inbox: &mut Inbox<'_>, on_failure: &FailureHandler) {
-    let (conn, closed) = write_until_closed(conn, inbox, on_failure);
+/// one, so one bad write cannot take the others down with it, and `watcher` is
+/// told why. Writes that may pass later are kept, in order, and tried again before
+/// the next writes (or after a while if none come): a lost delete would bring back a
+/// removed download. A write that never can is dropped, the oldest go past [`MAX_KEPT`],
+/// and what still fails at closing is lost.
+fn run(conn: Connection, lock: File, inbox: &mut Inbox<'_>, watcher: &SaveWatcher) {
+    let (conn, closed) = write_until_closed(conn, inbox, watcher);
     // Closing the connection checkpoints the journal and releases the files.
     if let Err((_, e)) = conn.close() {
         warn!(error = %e, "the database did not close cleanly");
@@ -592,10 +661,14 @@ fn wake(waiting: oneshot::Sender<()>) {
 fn write_until_closed(
     mut conn: Connection,
     inbox: &mut Inbox<'_>,
-    on_failure: &FailureHandler,
+    watcher: &SaveWatcher,
 ) -> (Connection, Option<oneshot::Sender<()>>) {
     let ops = inbox.ops;
     let mut kept: Vec<Op> = Vec::new();
+    let mut spell = SaveSpell {
+        tell: watcher,
+        failing: None,
+    };
     loop {
         let first = if !inbox.arrived.is_empty() {
             None
@@ -615,12 +688,13 @@ fn write_until_closed(
             }
         };
         let mut writes = std::mem::take(&mut kept);
-        let retried = writes.len();
+        let mut retry_asked = false;
         let mut flushed = Vec::new();
         let mut closing = None;
         let early = std::mem::take(&mut inbox.arrived);
         for op in early.into_iter().chain(first).chain(ops.try_iter()) {
             match op {
+                Op::RetryKept => retry_asked = true,
                 Op::Flush(done) => flushed.push(done),
                 Op::Close(done) => {
                     // Writes sent after the close are not taken.
@@ -636,16 +710,11 @@ fn write_until_closed(
         } else {
             &RETRY_PAUSES
         };
-        if !writes.is_empty()
-            && let Err(e) = apply_with_retries(&mut conn, &writes, pauses, inbox)
-        {
-            error!(error = %e, "could not save changes to the database");
-            let fresh = retried == 0;
-            kept = trim_kept(apply_one_by_one(&mut conn, writes));
-            // Reported once per spell of failures: while writes are kept, new ones failing too is not news, and how a spell splits into batches depends on timing.
-            if fresh {
-                on_failure(e.to_string());
-            }
+        if !writes.is_empty() {
+            kept = try_writes(&mut conn, writes, pauses, inbox, &mut spell);
+        }
+        if retry_asked {
+            spell.answer_retry(kept.is_empty());
         }
         for done in flushed {
             if done.send(()).is_err() {
@@ -659,12 +728,35 @@ fn write_until_closed(
     }
 }
 
+/// Applies `writes` and returns the ones to keep, telling `spell` how it went.
+fn try_writes(
+    conn: &mut Connection,
+    writes: Vec<Op>,
+    pauses: &[Duration],
+    inbox: &mut Inbox<'_>,
+    spell: &mut SaveSpell<'_>,
+) -> Vec<Op> {
+    let kinds = kinds_of(&writes);
+    let Err(e) = apply_with_retries(conn, &writes, pauses, inbox) else {
+        spell.saved(&kinds);
+        return Vec::new();
+    };
+    error!(error = %e, "could not save changes to the database");
+    let tried = apply_one_by_one(conn, writes);
+    if tried.kept.is_empty() && tried.lost.is_empty() {
+        spell.saved(&kinds);
+    } else {
+        spell.failed(e.to_string(), tried.lost);
+    }
+    trim_kept(tried.kept)
+}
+
 /// Closing: one last try of the `kept` writes, then whatever still fails is lost.
 fn last_try(conn: &mut Connection, kept: Vec<Op>) {
     if kept.is_empty() {
         return;
     }
-    let lost = apply_one_by_one(conn, kept);
+    let lost = apply_one_by_one(conn, kept).kept;
     if !lost.is_empty() {
         error!(
             writes = lost.len(),
@@ -673,11 +765,19 @@ fn last_try(conn: &mut Connection, kept: Vec<Op>) {
     }
 }
 
-/// Applies each write on its own and returns the ones that failed, in order. A
-/// write is also held back when an earlier write to the same row or setting
-/// failed, so that writes to one thing never land out of order.
-fn apply_one_by_one(conn: &mut Connection, writes: Vec<Op>) -> Vec<Op> {
+/// What became of writes tried one by one.
+struct TriedAlone {
+    /// The ones that may pass later, in order.
+    kept: Vec<Op>,
+    /// The kinds of the ones dropped because they never can.
+    lost: Vec<WriteKind>,
+}
+
+/// Applies each write on its own. A write is also held back when an earlier write to the same
+/// row or setting failed, so that writes to one thing never land out of order.
+fn apply_one_by_one(conn: &mut Connection, writes: Vec<Op>) -> TriedAlone {
     let mut failed = Vec::new();
+    let mut lost = Vec::new();
     let mut blocked: Vec<Target> = Vec::new();
     for write in writes.into_iter().flat_map(split) {
         let target = target_of(&write);
@@ -695,10 +795,11 @@ fn apply_one_by_one(conn: &mut Connection, writes: Vec<Op>) -> Vec<Op> {
             // Kept, it would fail every batch again and hold up the writes after it.
             Err(e) => {
                 error!(error = %e, ?write, "a change could not be saved and never will be; dropping it");
+                lost.push(std::mem::discriminant(&write));
             }
         }
     }
-    failed
+    TriedAlone { kept: failed, lost }
 }
 
 /// At most [`MAX_KEPT`] of the kept writes, each one split by [`split`]. Past the limit only each
@@ -802,7 +903,7 @@ fn target_of(op: &Op) -> Target {
         Op::SavePendingDeletions(_) => Target::PendingDeletions,
         Op::SaveProxyLogins(_) => Target::ProxyLogins,
         Op::SaveProxyServers(_) => Target::ProxyServers,
-        Op::Flush(_) | Op::Close(_) => Target::Nothing,
+        Op::RetryKept | Op::Flush(_) | Op::Close(_) => Target::Nothing,
     }
 }
 
@@ -918,7 +1019,7 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
             }
             Op::SaveProxyLogins(logins) => write_value(&tx, PROXY_LOGINS_KEY, logins)?,
             Op::SaveProxyServers(profiles) => write_value(&tx, PROXY_SERVERS_KEY, profiles)?,
-            Op::Flush(_) | Op::Close(_) => {}
+            Op::RetryKept | Op::Flush(_) | Op::Close(_) => {}
         }
     }
     tx.commit()
@@ -1758,8 +1859,9 @@ fn restrict_to_owner(path: &Path) {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use std::sync::{Arc, Mutex};
 
     use wirecatch_protocol::DEFAULT_QUEUE_ID;
     use wirecatch_protocol::ProxyServerId;
@@ -1885,8 +1987,144 @@ mod tests {
         wait_closed(closed);
     }
 
-    fn ignore_failures() -> FailureHandler {
+    fn ignore_failures() -> SaveWatcher {
         Box::new(|_| {})
+    }
+
+    type Told = Arc<Mutex<Vec<SaveNews>>>;
+
+    fn watching() -> (Told, SaveWatcher) {
+        let told = Told::default();
+        let sink = told.clone();
+        (told, Box::new(move |news| sink.lock().unwrap().push(news)))
+    }
+
+    fn failures(told: &Told) -> Vec<String> {
+        told.lock()
+            .unwrap()
+            .iter()
+            .filter_map(|news| match news {
+                SaveNews::Failed(reason) => Some(reason.clone()),
+                SaveNews::Recovered => None,
+            })
+            .collect()
+    }
+
+    fn recovered(told: &Told) -> bool {
+        told.lock().unwrap().contains(&SaveNews::Recovered)
+    }
+
+    #[test]
+    fn a_write_that_can_never_pass_is_told_once_however_many_batches_fail() {
+        let dir = tempfile::tempdir().unwrap();
+        let (told, watcher) = watching();
+        let (store, _) = Store::open(dir.path(), watcher).unwrap();
+        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        other.execute("DROP TABLE downloads", []).unwrap();
+
+        for id in 1..=3 {
+            store.save_downloads(vec![download(id)]);
+            store.flush();
+        }
+
+        assert_eq!(failures(&told).len(), 1, "{told:?}");
+        assert!(!recovered(&told));
+    }
+
+    #[test]
+    fn another_kind_of_write_passing_does_not_end_a_spell() {
+        let dir = tempfile::tempdir().unwrap();
+        let (told, watcher) = watching();
+        let (store, _) = Store::open(dir.path(), watcher).unwrap();
+        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        other.execute("DROP TABLE downloads", []).unwrap();
+        store.save_downloads(vec![download(1)]);
+        store.flush();
+
+        store.save_last_ids(LastIds::default());
+        store.flush();
+        store.save_downloads(vec![download(2)]);
+        store.flush();
+
+        assert_eq!(failures(&told).len(), 1, "{told:?}");
+        assert!(!recovered(&told));
+    }
+
+    #[test]
+    fn the_same_kind_of_write_passing_again_ends_a_spell() {
+        let dir = tempfile::tempdir().unwrap();
+        let (told, watcher) = watching();
+        let (store, _) = Store::open(dir.path(), watcher).unwrap();
+        store.save_downloads(vec![download(3)]);
+        store.flush();
+        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        other
+            .execute_batch(
+                "CREATE TRIGGER refuse_two BEFORE INSERT ON downloads WHEN NEW.id = 2
+                 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;",
+            )
+            .unwrap();
+        store.save_downloads(vec![download(2)]);
+        store.flush();
+        assert!(!recovered(&told));
+
+        store.save_downloads(vec![download(1)]);
+        store.flush();
+
+        assert!(recovered(&told));
+    }
+
+    #[test]
+    fn kept_writes_landing_tell_that_saving_recovered() {
+        let dir = tempfile::tempdir().unwrap();
+        let (told, watcher) = watching();
+        let (store, _) = Store::open(dir.path(), watcher).unwrap();
+        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        other.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        store.save_downloads(vec![download(1)]);
+        store.flush();
+        assert_eq!(failures(&told).len(), 1, "{told:?}");
+        assert!(!recovered(&told));
+
+        other.execute_batch("COMMIT").unwrap();
+        store.flush();
+
+        assert!(recovered(&told));
+        assert_eq!(stored_ids(&other), vec![1]);
+    }
+
+    #[test]
+    fn a_retry_that_still_fails_tells_the_failure_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let (told, watcher) = watching();
+        let (store, _) = Store::open(dir.path(), watcher).unwrap();
+        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        other.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        store.save_downloads(vec![download(1)]);
+        store.flush();
+
+        store.retry_kept();
+        store.flush();
+
+        assert_eq!(failures(&told).len(), 2, "{told:?}");
+        assert!(!recovered(&told));
+        other.execute_batch("COMMIT").unwrap();
+    }
+
+    #[test]
+    fn a_retry_with_nothing_kept_ends_a_spell() {
+        let dir = tempfile::tempdir().unwrap();
+        let (told, watcher) = watching();
+        let (store, _) = Store::open(dir.path(), watcher).unwrap();
+        let other = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
+        other.execute("DROP TABLE downloads", []).unwrap();
+        store.save_downloads(vec![download(1)]);
+        store.flush();
+
+        store.retry_kept();
+        store.flush();
+
+        assert!(recovered(&told));
     }
 
     #[tokio::test]
@@ -1896,7 +2134,11 @@ mod tests {
         let sink = reports.clone();
         let (store, _) = Store::open(
             dir.path(),
-            Box::new(move |reason| sink.lock().unwrap().push(reason)),
+            Box::new(move |news| {
+                if let SaveNews::Failed(reason) = news {
+                    sink.lock().unwrap().push(reason);
+                }
+            }),
         )
         .unwrap();
         store.save_downloads(vec![download(1)]);
@@ -2003,9 +2245,7 @@ mod tests {
             .unwrap()
     }
 
-    /// One write that keeps failing must not take the others in its batch down
-    /// with it, and is itself kept and tried again later rather than dropped: a
-    /// lost delete would bring back a removed download, cookies and all.
+    /// One write that can never pass must not take the others in its batch down with it.
     #[tokio::test]
     async fn a_write_that_can_never_pass_is_dropped_and_the_others_are_saved() {
         let dir = tempfile::tempdir().unwrap();
@@ -2013,7 +2253,11 @@ mod tests {
         let sink = reports.clone();
         let (store, _) = Store::open(
             dir.path(),
-            Box::new(move |reason| sink.lock().unwrap().push(reason)),
+            Box::new(move |news| {
+                if let SaveNews::Failed(reason) = news {
+                    sink.lock().unwrap().push(reason);
+                }
+            }),
         )
         .unwrap();
         store.save_downloads(vec![download(3)]);
@@ -2050,7 +2294,11 @@ mod tests {
         let sink = reports.clone();
         let (store, _) = Store::open(
             dir.path(),
-            Box::new(move |reason| sink.lock().unwrap().push(reason)),
+            Box::new(move |news| {
+                if let SaveNews::Failed(reason) = news {
+                    sink.lock().unwrap().push(reason);
+                }
+            }),
         )
         .unwrap();
         store.save_downloads(vec![download(3)]);
