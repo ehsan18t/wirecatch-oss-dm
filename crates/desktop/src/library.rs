@@ -5,7 +5,7 @@
 use gpui_kit::{AppContext as _, Context, Entity, EventEmitter};
 use tokio::sync::broadcast::error::RecvError;
 use wirecatch_protocol::app::{
-    AddonInfo, AppSettings, DownloadSummary, Queue, StartupNotice, UiEvent,
+    AddonInfo, AppSettings, DownloadSummary, Queue, StartupNotice, SuffixListInfo, UiEvent,
 };
 use wirecatch_protocol::desktop::Reveal;
 use wirecatch_protocol::proxy::ProxyServer;
@@ -38,6 +38,10 @@ pub struct Library {
     pub storage_problem: Option<String>,
     /// Try again was pressed and its answer has not come.
     pub storage_retrying: bool,
+    /// The Public Suffix List in use, once the manager has opened.
+    pub suffix_list: Option<SuffixListInfo>,
+    /// Check now was pressed and its answer has not come.
+    pub suffix_list_checking: bool,
     /// What the person must know about this start, such as a damaged list set aside.
     pub startup_notices: Vec<StartupNotice>,
     notices_kept: bool,
@@ -93,6 +97,7 @@ struct Snapshot {
     proxies: Vec<ProxyServer>,
     addons: Vec<AddonInfo>,
     settings: AppSettings,
+    suffix_list: SuffixListInfo,
     startup_notices: Vec<StartupNotice>,
     open_questions: Vec<QuestionId>,
 }
@@ -134,6 +139,8 @@ impl Library {
             order: OrderReading::default(),
             storage_problem: None,
             storage_retrying: false,
+            suffix_list: None,
+            suffix_list_checking: false,
             startup_notices: Vec::new(),
             notices_kept: false,
             open_questions: Vec::new(),
@@ -158,6 +165,7 @@ impl Library {
                 proxies: api::list_proxy_servers(&manager),
                 addons: api::list_addons(&manager),
                 settings: api::get_settings(&manager),
+                suffix_list: api::suffix_list(&manager),
                 startup_notices: manager.startup_notices().to_vec(),
                 open_questions: wirecatch_shell::download_windows::open_questions(&manager),
                 events,
@@ -178,6 +186,7 @@ impl Library {
                         proxies,
                         addons,
                         settings,
+                        suffix_list,
                         startup_notices,
                         open_questions,
                     } = snapshot;
@@ -189,6 +198,7 @@ impl Library {
                         library.revisions.proxies += 1;
                         library.revisions.settings += 1;
                         library.addons = addons;
+                        library.suffix_list = Some(suffix_list);
                         crate::text::set_clock(settings.clock);
                         library.settings = Some(settings);
                         library.keep_startup_notices(startup_notices);
@@ -283,6 +293,7 @@ impl Library {
             UiEvent::WindowRequested => return cx.emit(Asked::Window),
             UiEvent::LinksRequested(links) => return cx.emit(Asked::Links(links)),
             UiEvent::BrowserSettingsRequested => return cx.emit(Asked::BrowserSettings),
+            UiEvent::SuffixListChecked(list) => self.suffix_list = Some(list),
             UiEvent::StorageFailed(error) => {
                 crate::notices::storage_failed(&error.message, cx);
                 self.storage_problem = Some(error.message);
