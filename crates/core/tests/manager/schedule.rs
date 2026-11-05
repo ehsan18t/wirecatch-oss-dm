@@ -5,9 +5,7 @@ use chrono::TimeDelta;
 use wirecatch_core::DEFAULT_QUEUE_ID;
 use wirecatch_protocol::app::{DownloadStatus, Schedule, TimeOfDay, Weekday};
 
-use crate::common::{
-    Harness, QUIET, TestResult, fast_server, is_running, monday, throttled_server,
-};
+use crate::common::{Harness, QUIET, TestResult, fast_server, held_server, is_running, monday};
 use wirecatch_engine::units::KIB;
 
 fn schedule_default_queue(h: &Harness, schedule: Schedule) -> TestResult {
@@ -28,7 +26,7 @@ fn tod(hour: u8, minute: u8) -> TimeOfDay {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_window_starts_and_stops_its_queue() -> TestResult {
-    let server = throttled_server(512 * KIB, 64 * KIB).await?;
+    let server = held_server(512 * KIB, 64 * KIB).await?;
     let h = Harness::at(monday(1, 0)?).await?;
     schedule_default_queue(
         &h,

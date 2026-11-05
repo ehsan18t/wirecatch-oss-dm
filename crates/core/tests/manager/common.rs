@@ -34,6 +34,13 @@ pub async fn throttled_server(len: u64, bps: u64) -> TestResult<TestServer> {
     .await)
 }
 
+/// A [`fast_server`] that sends `bytes` in all and then holds its bodies until [`TestServer::release_bodies`]: a download reaches that much and cannot finish, however the machine is loaded.
+pub async fn held_server(len: u64, bytes: u64) -> TestResult<TestServer> {
+    let server = fast_server(len).await?;
+    server.hold_bodies_after(bytes);
+    Ok(server)
+}
+
 /// A ranged server with an `ETag` for `len` bytes of [`test_data`], at full
 /// speed.
 pub async fn fast_server(len: u64) -> TestResult<TestServer> {

@@ -14,7 +14,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 use url::Url;
 
-use crate::http::{index, time_to_send};
+use crate::http::{ByteGate, index, time_to_send};
 use crate::{PATIENCE, TestCertificate};
 
 /// How often a held transfer looks whether it may send.
@@ -169,6 +169,8 @@ pub struct FtpStats {
     pub max_transfers: AtomicUsize,
     /// File bytes sent over data connections.
     pub bytes_sent: AtomicU64,
+    /// What data connections may send; see [`FtpServer::hold_data_after`].
+    data_gate: ByteGate,
     /// `REST` offsets the transfers started from.
     pub rest_offsets: Mutex<Vec<u64>>,
     /// Each transfer's offset and the file bytes it has sent so far.
@@ -273,6 +275,16 @@ impl FtpServer {
             self.port
         ))
         .unwrap()
+    }
+
+    /// Lets data connections send `bytes` more in all, then holds them until [`release_data`](Self::release_data). A client that breaks off while held is noticed.
+    pub fn hold_data_after(&self, bytes: u64) {
+        self.stats.data_gate.hold_after(bytes);
+    }
+
+    /// Lets held data, and all later data, go out.
+    pub fn release_data(&self) {
+        self.stats.data_gate.open();
     }
 
     /// Changes the configuration for the sessions that follow.
@@ -719,6 +731,12 @@ async fn send_file(
             }
             end = end.min(limit);
         }
+        let granted = tokio::select! {
+            biased;
+            granted = stats.data_gate.take(end - position) => granted,
+            sent = held(data) => return sent,
+        };
+        let end = position + granted;
         data.write_all(&file[index(position)..index(end)]).await?;
         let n = end - position;
         position = end;

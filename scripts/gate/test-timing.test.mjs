@@ -9,6 +9,58 @@ function lines(text, file = TEST_FILE) {
   return timingRaces(file, text).map((hit) => hit.line);
 }
 
+test('a throttled server set up before the test acts on the run is a race', () => {
+  const text = [
+    'async fn stops_midway() {',
+    '    let server = throttled_server(LEN, RATE).await?;',
+    '    h.wait_for(row.id, "progress", |r| r.done > 0).await;',
+    '    h.manager.pause(row.id).unwrap();',
+    '}',
+  ].join('\n');
+  assert.deepEqual(lines(text), [2]);
+});
+
+test('a throttle through a helper or a file, and every way of acting on a run, count', () => {
+  const text = [
+    'async fn a() {',
+    '    let server = slow_server().await;',
+    '    tune(&h.manager, |s| s.limit = 1)?;',
+    '}',
+    'async fn b() {',
+    '    server.throttle("v.mp4", Some(RATE));',
+    '    h.restart().await?;',
+    '}',
+    'async fn c() {',
+    '    let server = strict_server(LEN, LIMIT, Some(RATE)).await;',
+    '    cancel_when(&cancel, ready);',
+    '}',
+    'async fn d() {',
+    '    server.throttle("v.mp4", None);',
+    '    h.restart().await?;',
+    '}',
+  ].join('\n');
+  assert.deepEqual(lines(text), [2, 6, 10]);
+});
+
+test('a throttle with no action after it is no race, nor is a held server', () => {
+  const text = [
+    'async fn second_run() {',
+    '    pause_midway(first, MIB).await.unwrap();',
+    '    server.configure(|c| c.per_connection_bps = Some(RATE));',
+    '    run(second).await.unwrap();',
+    '}',
+    'async fn held() {',
+    '    let server = held_server(LEN, BYTES).await?;',
+    '    h.manager.pause(row.id).unwrap();',
+    '}',
+    'async fn only_slow() {',
+    '    config.data_bps = Some(RATE);',
+    '    dir.remove().unwrap();',
+    '}',
+  ].join('\n');
+  assert.deepEqual(lines(text), []);
+});
+
 test('recv_timeout is a wait like any other', () => {
   const text = [
     'const DEADLINE: Duration = Duration::from_secs(10);',

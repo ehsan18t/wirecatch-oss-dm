@@ -167,7 +167,8 @@ async fn one_connection_sends_its_requests_one_after_another() {
 async fn a_paused_download_resumes_with_limited_requests() {
     let limit = 256 * KIB;
     let len = 4 * MIB_USIZE;
-    let server = strict_server(len, limit, Some(MIB)).await;
+    let server = strict_server(len, limit, None).await;
+    server.hold_bodies_after(MIB);
     let dir = private_dir("resume").unwrap();
 
     let progress = Arc::new(Progress::default());
@@ -187,6 +188,7 @@ async fn a_paused_download_resumes_with_limited_requests() {
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
     let kept = kept_ranges(&dir.join("video.mp4.wcstate"), len as u64).unwrap();
     let seen_before = server.stats.seen().len();
+    server.release_bodies();
 
     // The second run's probe asks from byte 0, which the first run kept: the server holds that answer's body, so it sends nothing however long the engine takes to break it off, and an engine that read it on would stall and fail.
     server.configure(|c| {

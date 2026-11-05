@@ -10,14 +10,14 @@ use wirecatch_protocol::wire::ErrorCode;
 
 use crate::common::{
     Config, Harness, PATIENCE, Seen, SilentServer, TestResult, TestServer, exists, fast_server,
-    partial_files, test_data, throttled_server, wait_until,
+    held_server, partial_files, test_data, wait_until,
 };
 use wirecatch_engine::units::{KIB, KIB_USIZE};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {
     let len = 512 * KIB;
-    let server = throttled_server(len, 128 * KIB).await?;
+    let server = held_server(len, 128 * KIB).await?;
     let h = Harness::new().await?;
     let row = h.add(&server.url("old/file.bin")).await?;
     h.wait_for(row.id, "a good part downloaded", |r| r.done >= 128 * KIB)
@@ -39,6 +39,7 @@ async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {
     // sends no byte whatever the machine's load, and a download that read it
     // on to fetch the file again would wait on it and fail.
     server.configure(|c| c.hold_bodies_from = Some(0));
+    server.release_bodies();
     let asked_before = server.stats.seen().len();
     h.manager
         .refresh_link(
@@ -65,17 +66,10 @@ async fn an_expired_link_is_refreshed_without_losing_bytes() -> TestResult {
     Ok(())
 }
 
-/// Slow enough that no run finishes before the pause, whatever the machine's load.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_server_without_ranges_is_not_promised_that_its_part_is_kept() -> TestResult {
-    let server = TestServer::start(
-        test_data(1024 * KIB_USIZE),
-        Config {
-            per_connection_bps: Some(8 * KIB),
-            ..Default::default()
-        },
-    )
-    .await;
+    let server = TestServer::start(test_data(1024 * KIB_USIZE), Config::default()).await;
+    server.hold_bodies_after(16 * KIB);
     let mut h = Harness::new().await?;
     let row = h.add(&server.url("file.bin")).await?;
     h.wait_for(row.id, "the first bytes", |r| r.done > 0).await;
@@ -98,7 +92,7 @@ async fn a_server_without_ranges_is_not_promised_that_its_part_is_kept() -> Test
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancel_discards_progress_and_retry_starts_over() -> TestResult {
-    let server = throttled_server(512 * KIB, 128 * KIB).await?;
+    let server = held_server(512 * KIB, 64 * KIB).await?;
     let h = Harness::new().await?;
     let row = h.add(&server.url("file.bin")).await?;
     h.wait_for(row.id, "progress", |r| r.done > 0).await;
@@ -113,7 +107,7 @@ async fn cancel_discards_progress_and_retry_starts_over() -> TestResult {
     })
     .await;
 
-    server.configure(|c| c.per_connection_bps = None);
+    server.release_bodies();
     let asked_before = server.stats.seen().len();
     h.manager.retry(row.id).unwrap();
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
@@ -174,15 +168,18 @@ async fn the_ui_hears_when_saving_keeps_failing() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn resume_and_retry_pressed_while_stopping_are_not_lost() -> TestResult {
-    let server = throttled_server(256 * KIB, 64 * KIB).await?;
+    let servers = [
+        held_server(256 * KIB, 64 * KIB).await?,
+        held_server(256 * KIB, 64 * KIB).await?,
+        held_server(256 * KIB, 64 * KIB).await?,
+    ];
     let h = Harness::new().await?;
-    let resumed = h.add(&server.url("resumed.bin")).await?.id;
-    let all = h.add(&server.url("all.bin")).await?.id;
-    let retried = h.add(&server.url("retried.bin")).await?.id;
+    let resumed = h.add(&servers[0].url("resumed.bin")).await?.id;
+    let all = h.add(&servers[1].url("all.bin")).await?.id;
+    let retried = h.add(&servers[2].url("retried.bin")).await?.id;
     for id in [resumed, all, retried] {
         h.wait_for(id, "progress", |r| r.done > 0).await;
     }
-    server.configure(|c| c.per_connection_bps = None);
 
     // Each second call arrives while the first one's stop is still finishing.
     h.manager.pause(resumed).unwrap();
@@ -191,10 +188,13 @@ async fn resume_and_retry_pressed_while_stopping_are_not_lost() -> TestResult {
     h.manager.resume_all().unwrap();
     h.manager.cancel(retried).unwrap();
     h.manager.retry(retried).unwrap();
+    for server in &servers {
+        server.release_bodies();
+    }
 
     for id in [resumed, all, retried] {
         let done = h.wait_status(id, DownloadStatus::Completed).await;
-        assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
+        assert_eq!(std::fs::read(&done.path).unwrap(), servers[0].data);
     }
     Ok(())
 }
@@ -375,7 +375,7 @@ async fn a_waiting_download_can_be_cancelled_and_removed() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remove_stops_and_cleans_up() -> TestResult {
-    let slow = throttled_server(512 * KIB, 64 * KIB).await?;
+    let slow = held_server(512 * KIB, 64 * KIB).await?;
     let fast = fast_server(8 * KIB).await?;
     let h = Harness::new().await?;
     let mut events = h.manager.subscribe();
@@ -513,7 +513,7 @@ async fn downloads_move_between_queues_and_keep_their_order() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_running_download_moves_folder_and_continues() -> TestResult {
     let len = 512 * KIB;
-    let server = throttled_server(len, 128 * KIB).await?;
+    let server = held_server(len, 64 * KIB).await?;
     let h = Harness::new().await?;
     let row = h.add(&server.url("big.bin")).await?;
     h.wait_for(row.id, "a good part downloaded", |r| r.done >= 64 * KIB)
@@ -542,7 +542,7 @@ async fn a_running_download_moves_folder_and_continues() -> TestResult {
         elsewhere.join("big.bin")
     );
 
-    server.configure(|c| c.per_connection_bps = None);
+    server.release_bodies();
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(std::fs::read(&done.path).unwrap(), server.data);
     assert_eq!(done.total, Some(len));
@@ -649,17 +649,19 @@ async fn the_list_is_grouped_by_queue_in_line_order() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pause_all_and_resume_all() -> TestResult {
-    let server = throttled_server(256 * KIB, 64 * KIB).await?;
+    let first = held_server(256 * KIB, 64 * KIB).await?;
+    let second = held_server(256 * KIB, 64 * KIB).await?;
     let h = Harness::new().await?;
-    let a = h.add(&server.url("a.bin")).await?.id;
-    let b = h.add(&server.url("b.bin")).await?.id;
+    let a = h.add(&first.url("a.bin")).await?.id;
+    let b = h.add(&second.url("b.bin")).await?.id;
     h.wait_for(a, "running", |r| r.done > 0).await;
 
     h.manager.pause_all().unwrap();
     h.wait_status(a, DownloadStatus::Paused).await;
     h.wait_status(b, DownloadStatus::Paused).await;
 
-    server.configure(|c| c.per_connection_bps = None);
+    first.release_bodies();
+    second.release_bodies();
     h.manager.resume_all().unwrap();
     h.wait_status(a, DownloadStatus::Completed).await;
     h.wait_status(b, DownloadStatus::Completed).await;
@@ -712,7 +714,7 @@ async fn a_finished_download_is_marked_as_from_the_internet() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_download_is_marked_before_it_is_finished() -> TestResult {
     let len = 256 * KIB;
-    let server = throttled_server(len, 64 * KIB).await?;
+    let server = held_server(len, 16 * KIB).await?;
     let h = Harness::new().await?;
     let row = h.add(&server.url("setup.exe?token=abc")).await?;
     let running = h

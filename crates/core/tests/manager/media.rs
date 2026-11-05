@@ -1287,7 +1287,7 @@ async fn page_media_is_read_again_after_a_restart_and_continues() -> TestResult 
     assert_eq!(install(&h).await?.state, AddonState::Installed);
     let (video, audio) = (mp4_data(600 * KIB_USIZE), mp4_data(20 * KIB_USIZE));
     tell_tool(&h, "info.json", &page_info(&server, &video, &audio))?;
-    server.throttle("fmt/video.mp4", Some(150 * KIB));
+    server.hold_after("fmt/video.mp4", 150 * KIB);
     let mut ui = h.manager.subscribe();
     h.manager
         .add_capture(media_capture(server.url("watch/2"), MediaKind::Page, None))
@@ -1302,7 +1302,7 @@ async fn page_media_is_read_again_after_a_restart_and_continues() -> TestResult 
     h.wait_for(id, "part of the video", |r| r.done >= 150 * KIB)
         .await;
     h.restart().await?;
-    server.throttle("fmt/video.mp4", None);
+    server.release("fmt/video.mp4");
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert!(Path::new(&done.path).is_file());
     // Read at the choice, at the first start and again after the restart.

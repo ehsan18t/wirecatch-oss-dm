@@ -252,21 +252,14 @@ async fn a_finished_download_from_another_link_is_a_different_file() -> TestResu
 /// never replaced; the finished download takes the next free name.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_file_saved_meanwhile_is_never_replaced() -> TestResult {
-    let server = TestServer::start(
-        test_data(64 * KIB_USIZE),
-        Config {
-            ranges: true,
-            per_connection_bps: Some(16 * KIB),
-            ..Config::default()
-        },
-    )
-    .await;
+    let server = TestServer::start(test_data(64 * KIB_USIZE), ranged()).await;
+    server.hold_bodies_after(16 * KIB);
     let h = Harness::new().await?;
     let dir = h.root.path().join("saved");
     let row = add_into(&h, server.url("report").as_str(), &dir).await?;
     h.wait_for(row.id, "the first bytes", |r| r.done > 0).await;
     std::fs::write(dir.join(NAME), b"saved by another program")?;
-    server.configure(|c| c.per_connection_bps = None);
+    server.release_bodies();
 
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(Path::new(&done.path), dir.join("report (1).pdf"));
@@ -618,16 +611,8 @@ async fn a_file_beside_a_leftover_resume_file_is_asked_about() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn replace_never_continues_a_part_file_another_link_left() -> TestResult {
     const BIG: usize = 4 * 1024 * KIB_USIZE;
-    // Far slower than any wait below: it cannot finish before the pause.
-    let other = TestServer::start(
-        vec![0xAA; BIG],
-        Config {
-            ranges: true,
-            per_connection_bps: Some(16 * KIB),
-            ..Config::default()
-        },
-    )
-    .await;
+    let other = TestServer::start(vec![0xAA; BIG], ranged()).await;
+    other.hold_bodies_after(16 * KIB);
     let wanted = TestServer::start(vec![0xBB; BIG], ranged()).await;
     let h = Harness::new().await?;
     let dir = h.root.path().join("saved");
@@ -665,16 +650,9 @@ fn ranged() -> Config {
 /// An answer stays an answer across a restart.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_answered_replace_survives_a_restart() -> TestResult {
-    let server = TestServer::start(
-        // Far slower than any wait below: it cannot finish before the pause.
-        test_data(4096 * KIB_USIZE),
-        Config {
-            ranges: true,
-            per_connection_bps: Some(16 * KIB),
-            ..Config::default()
-        },
-    )
-    .await;
+    let server = TestServer::start(test_data(4096 * KIB_USIZE), ranged()).await;
+    // The answer that raised the question is dropped, so what it sent would be lost with it.
+    server.hold_bodies();
     let mut h = Harness::new().await?;
     let dir = folder_with(&h, b"the older file")?;
     let mut events = h.manager.subscribe();
@@ -682,12 +660,13 @@ async fn an_answered_replace_survives_a_restart() -> TestResult {
     let question = asked(&mut events).await?;
     h.manager
         .answer_file_exists(question.id, answer(FileExistsChoice::Replace, false))?;
+    server.hold_bodies_after(1024 * KIB);
     h.wait_for(row.id, "some progress", |r| r.done > 0).await;
     h.manager.pause(row.id)?;
     h.wait_status(row.id, DownloadStatus::Paused).await;
 
     h.restart().await?;
-    server.configure(|c| c.per_connection_bps = None);
+    server.release_bodies();
     h.manager.resume(row.id)?;
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
 

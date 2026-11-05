@@ -30,16 +30,17 @@ fn click(url: &str, n: u32) -> NewDownload {
     }
 }
 
-async fn slow_server() -> TestServer {
-    TestServer::start(
+async fn holding_server() -> TestServer {
+    let server = TestServer::start(
         test_data(256 * KIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(16 * KIB),
             ..Config::default()
         },
     )
-    .await
+    .await;
+    server.hold_bodies_after(16 * KIB);
+    server
 }
 
 async fn repeated(events: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> TestResult<Repeated> {
@@ -56,7 +57,7 @@ async fn repeated(events: &mut tokio::sync::broadcast::Receiver<UiEvent>) -> Tes
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_link_already_downloading_shows_that_download() -> TestResult {
-    let server = slow_server().await;
+    let server = holding_server().await;
     let h = Harness::new().await?;
     let url = server.url("report.pdf").to_string();
     let first = h.manager.add_capture(click(&url, 1)).await?;
@@ -73,7 +74,7 @@ async fn a_link_already_downloading_shows_that_download() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_link_waiting_for_confirmation_shows_that_question() -> TestResult {
-    let server = slow_server().await;
+    let server = holding_server().await;
     let h = Harness::new().await?;
     tune(&h.manager, |s| s.extension.ask_before_download = true)?;
     let url = server.url("report.pdf").to_string();
@@ -95,7 +96,7 @@ async fn a_link_waiting_for_confirmation_shows_that_question() -> TestResult {
 /// question.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_confirmed_link_shows_its_download() -> TestResult {
-    let server = slow_server().await;
+    let server = holding_server().await;
     let h = Harness::new().await?;
     tune(&h.manager, |s| s.extension.ask_before_download = true)?;
     let url = server.url("report.pdf").to_string();
@@ -126,7 +127,7 @@ async fn a_confirmed_link_shows_its_download() -> TestResult {
 /// the moment they said yes, so the browser is told so and drops its copy; never both download.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_withdrawal_while_confirming_finds_it_taken() -> TestResult {
-    let server = slow_server().await;
+    let server = holding_server().await;
     let h = Harness::new().await?;
     tune(&h.manager, |s| s.extension.ask_before_download = true)?;
     let url = server.url("report.pdf").to_string();
@@ -155,7 +156,7 @@ async fn a_withdrawal_while_confirming_finds_it_taken() -> TestResult {
 /// Two clicks of one link at the same moment, with no question first, make one download. The join is decided when the path is taken, so it holds however the two interleave.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn two_clicks_at_once_make_one_download() -> TestResult {
-    let server = slow_server().await;
+    let server = holding_server().await;
     for round in 0..20 {
         let h = Harness::new().await?;
         let url = format!("{}?round={round}", server.url("report.pdf"));
@@ -174,7 +175,7 @@ async fn two_clicks_at_once_make_one_download() -> TestResult {
 /// The browser's copy may only go once a server has answered (`AddAction::Started`).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn joining_a_download_no_server_has_answered_is_not_called_started() -> TestResult {
-    let server = slow_server().await;
+    let server = holding_server().await;
     let h = Harness::new().await?;
     let url = server.url("report.pdf").to_string();
     server.hold();

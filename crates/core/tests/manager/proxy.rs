@@ -14,9 +14,7 @@ use wirecatch_protocol::proxy::{
 use wirecatch_protocol::{ProxyServerId, Secret};
 use wirecatch_test_support::proxy::{SocksConfig, SocksServer};
 
-use crate::common::{
-    Harness, TestResult, fast_server, is_running, throttled_server, tune, wait_until,
-};
+use crate::common::{Harness, TestResult, fast_server, held_server, is_running, tune, wait_until};
 
 /// A profile for `socks`, logged in as `user` when one is given.
 fn socks_profile(name: &str, socks: &SocksServer, user: &str) -> ProxyServerSettings {
@@ -225,7 +223,7 @@ async fn a_profile_skips_the_hosts_on_the_computers_bypass_list() -> TestResult 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_running_download_keeps_its_proxy_when_the_profile_changes() -> TestResult {
-    let slow = throttled_server(128 * KIB, 32 * KIB).await?;
+    let slow = held_server(128 * KIB, 32 * KIB).await?;
     let first = SocksServer::start(SocksConfig::default()).await;
     let h = Harness::new().await?;
     let id = h
@@ -239,6 +237,7 @@ async fn a_running_download_keeps_its_proxy_when_the_profile_changes() -> TestRe
     h.manager
         .update_proxy_server(id, draft(socks_profile("Office", &second, ""), None))?;
     assert!(is_running(&h.row(row.id)));
+    slow.release_bodies();
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(done.done, 128 * KIB);
     assert_eq!(second.destinations(), Vec::<String>::new());

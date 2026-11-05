@@ -13,6 +13,14 @@ const WAIT = String.raw`(?:\btimeout|\brecv_timeout|_within)`;
 /** A wait given a fixed `Duration` written in place: `timeout(Duration::from_secs(2), ..)`, `outcome_within(id, Duration::from_secs(1))`. */
 const FIXED_WAIT = String.raw`${WAIT}\((?:[^()]|\([^()]*\))*?Duration::from_\w+\(`;
 
+/** A server told to send slowly, also through a helper: the test relies on the speed to act before it finishes. */
+const THROTTLED =
+  /\b(?:throttled|slow)_server\(|\bstrict_server\([^;]*\bSome\(|\.throttle\([^;]*\bSome\(|\bper_connection_bps\s*[:=]\s*Some\b|\bdata_bps\s*[:=]\s*Some\b|\bserver_naming\([^;]*\bSome\(/g;
+
+/** What a test does to a download while it runs. */
+const ACTS_ON_A_RUN =
+  /\.(?:pause|pause_all|cancel|resume|resume_all|retry|refresh_link|shutdown)\(|\.remove\(&|\.set_download_folder\(|\.restart\(|\.update_proxy_server\(|\.clock\.set\(|\.cancel_addon_operation\(|\.remove_addon\(|\btune\(|\bcancel_when\(|\bpause_midway\(|\banother_program_saves_meanwhile\(/g;
+
 /** Below this, a named wait or deadline is short: `PATIENCE` in test-support, two minutes. */
 const PATIENCE_SECONDS = 120;
 
@@ -139,6 +147,15 @@ function unnamedSleepsIn(body) {
     .filter((index) => !inside(loops, index));
 }
 
+/** Where in `body` a throttled server is set up before the test acts on a run: on a busy machine the transfer ends first. */
+function throttledRacesIn(body) {
+  const acts = [...body.matchAll(ACTS_ON_A_RUN)].map((match) => match.index);
+  const lastAct = Math.max(-1, ...acts);
+  return [...body.matchAll(THROTTLED)]
+    .map((match) => match.index)
+    .filter((index) => index < lastAct);
+}
+
 /**
  * The places in one Rust file where a test races the machine, as `{ line, code }`: an upper bound on a measured duration, or a fixed `Duration` written into a wait that has to succeed. A `while` condition, and a wait whose test is that nothing came (`is_err()`, `is_none()`), are windows in which something must not happen, which can only miss a fault, so they are not races. Each statement is read on one line for the bounds, and duration names are read one function at a time.
  */
@@ -164,7 +181,11 @@ export function timingRaces(file, text) {
       if (bound.test(line) && !/\bwhile\b/.test(line)) report(start + offset);
       offset += line.length + 1;
     }
-    for (const index of [...shortWaitsIn(body, short), ...unnamedSleepsIn(body)]) {
+    for (const index of [
+      ...shortWaitsIn(body, short),
+      ...unnamedSleepsIn(body),
+      ...throttledRacesIn(body),
+    ]) {
       report(start + index);
     }
   }
@@ -172,10 +193,11 @@ export function timingRaces(file, text) {
 }
 
 function testTiming() {
-  const hits = filesMatching(`${MEASURED}|Duration::from_`, ['*.rs']).flatMap((file) =>
-    timingRaces(file, readFileSync(join(ROOT, file), 'utf8')).map(
-      (hit) => `${file}:${String(hit.line)}: ${hit.code}`,
-    ),
+  const hits = filesMatching(`${MEASURED}|Duration::from_|_bps|_server|throttle`, ['*.rs']).flatMap(
+    (file) =>
+      timingRaces(file, readFileSync(join(ROOT, file), 'utf8')).map(
+        (hit) => `${file}:${String(hit.line)}: ${hit.code}`,
+      ),
   );
   if (hits.length > 0) {
     throw new GateError(

@@ -22,7 +22,8 @@ async fn server_naming(name: &str, len: usize, bps: Option<u64>) -> TestServer {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_servers_name_decides_name_category_and_folder() -> TestResult {
-    let server = server_naming("Holiday Movie.mp4", 512 * KIB_USIZE, Some(128 * KIB)).await;
+    let server = server_naming("Holiday Movie.mp4", 512 * KIB_USIZE, None).await;
+    server.hold_bodies_after(64 * KIB);
     server.hold();
     let mut h = Harness::new().await?;
     let mut events = h.manager.subscribe();
@@ -59,7 +60,7 @@ async fn the_servers_name_decides_name_category_and_folder() -> TestResult {
     // The chosen path is kept: after a restart the download continues there.
     h.restart().await?;
     assert_eq!(std::path::Path::new(&h.row(row.id).path), expected);
-    server.configure(|c| c.per_connection_bps = None);
+    server.release_bodies();
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(std::path::Path::new(&done.path), expected);
     assert_eq!(std::fs::read(&expected).unwrap(), server.data);
@@ -120,7 +121,8 @@ async fn a_folder_chosen_before_the_server_answers_is_kept() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_part_file_left_by_a_crash_is_picked_up_again() -> TestResult {
     let len = 512 * KIB_USIZE;
-    let server = server_naming("report.pdf", len, Some(128 * KIB)).await;
+    let server = server_naming("report.pdf", len, None).await;
+    server.hold_bodies_after(64 * KIB);
     let h = Harness::new().await?;
     let documents = h.folders.downloads.join("Documents");
     let path = documents.join("report.pdf");
@@ -143,7 +145,7 @@ async fn a_part_file_left_by_a_crash_is_picked_up_again() -> TestResult {
     let [part, state] = crate::common::partial_files(&path.to_string_lossy());
     assert!(part.exists() && state.exists());
 
-    server.configure(|c| c.per_connection_bps = None);
+    server.release_bodies();
     let row = h.add(&server.url("dl")).await?;
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(std::path::Path::new(&done.path), path);

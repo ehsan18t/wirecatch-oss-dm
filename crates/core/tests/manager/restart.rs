@@ -5,20 +5,22 @@ use wirecatch_protocol::app::DownloadStatus;
 use wirecatch_protocol::app::QueueSettings;
 
 use crate::common::{
-    Config, Harness, TestResult, TestServer, fast_server, is_running, partial_files, test_data,
-    throttled_server, wait_until,
+    Config, Harness, TestResult, TestServer, fast_server, held_server, is_running, partial_files,
+    test_data, wait_until,
 };
 use wirecatch_engine::units::{KIB, KIB_USIZE};
 use wirecatch_test_support::resume::{asked_again, kept_ranges};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_file_that_finished_before_the_restart_is_not_downloaded_again() -> TestResult {
-    let slow = throttled_server(512 * KIB, 64 * KIB).await?;
     let mut h = Harness::new().await?;
     // Two downloads whose server has answered, so their paths are final.
     let mut settled = Vec::new();
+    let mut servers = Vec::new();
     for name in ["done.bin", "half.bin"] {
+        let slow = held_server(512 * KIB, 64 * KIB).await?;
         let row = h.add(&slow.url(name)).await?;
+        servers.push(slow);
         h.wait_for(row.id, "the server's answer", |r| r.done > 0)
             .await;
         h.manager.pause(row.id).unwrap();
@@ -29,7 +31,7 @@ async fn a_file_that_finished_before_the_restart_is_not_downloaded_again() -> Te
     };
     // One that never ran: its path is still a guess.
     let guessed = h
-        .add_with(&slow.url("guess.bin"), |r| r.start = false)
+        .add_with(&servers[0].url("guess.bin"), |r| r.start = false)
         .await?;
 
     // The engine renamed the first one's part file just before the app stopped.
@@ -90,7 +92,7 @@ async fn ids_are_never_reused_after_deleting_the_newest() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn downloads_survive_a_restart_and_running_ones_continue() -> TestResult {
-    let slow = throttled_server(512 * KIB, 256 * KIB).await?;
+    let slow = held_server(512 * KIB, 64 * KIB).await?;
     let fast = fast_server(32 * KIB).await?;
     let mut h = Harness::new().await?;
 
@@ -129,6 +131,7 @@ async fn downloads_survive_a_restart_and_running_ones_continue() -> TestResult {
         before.done
     );
     assert_eq!(resumed.total, Some(512 * KIB));
+    slow.release_bodies();
 
     // The interrupted download finishes without being asked, continuing where it was.
     let done = h.wait_status(running.id, DownloadStatus::Completed).await;
@@ -217,7 +220,7 @@ async fn a_damaged_download_list_is_set_aside_and_the_person_is_told() -> TestRe
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_removal_in_progress_at_quit_stays_removed() -> TestResult {
-    let slow = throttled_server(4096 * KIB, 64 * KIB).await?;
+    let slow = held_server(4096 * KIB, 64 * KIB).await?;
     let mut h = Harness::new().await?;
     let row = h.add(&slow.url("gone.bin")).await?;
     h.wait_for(row.id, "the server's answer", |r| r.done > 0)
