@@ -26,9 +26,10 @@ export type MediaDefaults = {
   ask_each_time: boolean;
   /**
    * Save what is picked in the quality window when it is answered with Download or Download
-   * later. Off, a pick applies to that video only (D200).
+   * later. Off, a pick applies to that video only (D200). An app from before it sends none,
+   * so the extension reads it as optional (D210).
    */
-  remember_choices: boolean;
+  remember_choices?: boolean;
   /**
    * The resolution picked first; with
    * [`remember_choices`](Self::remember_choices), a pick from the quality window becomes it.

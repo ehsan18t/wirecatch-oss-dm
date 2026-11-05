@@ -583,6 +583,83 @@ mod tests {
         }
     }
 
+    /// The names of the fields a TypeScript object type requires, its doc comments left out.
+    fn required_fields(declaration: &str) -> Vec<String> {
+        let mut code = String::new();
+        let mut rest = declaration;
+        while let Some((before, comment)) = rest.split_once("/**") {
+            code.push_str(before);
+            rest = comment.split_once("*/").map_or("", |(_, after)| after);
+        }
+        code.push_str(rest);
+        code.trim()
+            .trim_matches(['{', '}'])
+            .split(", ")
+            .filter_map(|field| field.trim().split_once(": "))
+            .filter(|(name, _)| !name.ends_with('?'))
+            .map(|(name, _)| name.to_owned())
+            .collect()
+    }
+
+    /// The fields the generated TypeScript requires in what the app answers the extension with. A new field is optional there, or a new extension refuses every older app's answer (D210): make it so, and leave this list as it is.
+    #[test]
+    fn the_required_fields_of_answers_to_the_extension_are_settled() {
+        use crate::app::{MediaDefaults, OutputDefaults};
+        use crate::extension::{AddedDownload, BrowserControls, BrowserNotice, ExtensionSettings};
+        use crate::wire::{HelloReply, ProtocolError, QueueSummary};
+        use ts_rs::TS;
+
+        let cfg = ts_rs::Config::default();
+        let answers = [
+            (
+                HelloReply::inline(&cfg),
+                &["app_version", "protocol_version"][..],
+            ),
+            (ProtocolError::inline(&cfg), &["code", "message"]),
+            (AddedDownload::inline(&cfg), &["id", "action"]),
+            (QueueSummary::inline(&cfg), &["id", "name", "is_default"]),
+            (
+                BrowserNotice::inline(&cfg),
+                &["id", "kind", "title", "body", "buttons", "stays_ms"],
+            ),
+            (
+                ExtensionSettings::inline(&cfg),
+                &[
+                    "capture_enabled",
+                    "ask_before_download",
+                    "show_media_button",
+                    "ignored_sites",
+                    "capture_extensions",
+                    "min_capture_size",
+                    "default_queue",
+                ],
+            ),
+            (
+                BrowserControls::inline(&cfg),
+                &["global_speed_limit", "max_concurrent_downloads", "media"],
+            ),
+            (
+                MediaDefaults::inline(&cfg),
+                &["video", "audio", "ask_each_time", "quality", "fallback"],
+            ),
+            (
+                OutputDefaults::inline(&cfg),
+                &[
+                    "format",
+                    "audio_kbps",
+                    "subtitle_languages",
+                    "auto_subtitles",
+                    "subtitles",
+                    "unembedded_subtitles",
+                    "chapters",
+                ],
+            ),
+        ];
+        for (declaration, settled) in answers {
+            assert_eq!(required_fields(&declaration), settled, "{declaration}");
+        }
+    }
+
     #[test]
     fn a_message_is_written_as_the_connections_version_has_it() {
         use crate::wire::{ProtocolError, Reply};

@@ -855,7 +855,7 @@ export function isMediaDefaults(value: unknown): value is MediaDefaults {
     isOutputDefaults(value1['video']) &&
     isOutputDefaults(value1['audio']) &&
     typeof value1['ask_each_time'] === 'boolean' &&
-    typeof value1['remember_choices'] === 'boolean' &&
+    (value1['remember_choices'] === undefined || typeof value1['remember_choices'] === 'boolean') &&
     isVideoQuality(value1['quality']) &&
     isQualityFallback(value1['fallback']))(value);
 }

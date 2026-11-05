@@ -152,6 +152,7 @@ export function applyBrowserControlsPatch(
 ): BrowserControls {
   const { media } = controls;
   const change = patch.media ?? {};
+  const rememberChoices = change.remember_choices ?? media.remember_choices;
   return {
     global_speed_limit:
       patch.global_speed_limit === undefined
@@ -162,9 +163,9 @@ export function applyBrowserControlsPatch(
       video: applyOutputPatch(media.video, change.video),
       audio: applyOutputPatch(media.audio, change.audio),
       ask_each_time: change.ask_each_time ?? media.ask_each_time,
-      remember_choices: change.remember_choices ?? media.remember_choices,
       quality: change.quality ?? media.quality,
       fallback: change.fallback ?? media.fallback,
+      ...(rememberChoices === undefined ? {} : { remember_choices: rememberChoices }),
     },
   };
 }
