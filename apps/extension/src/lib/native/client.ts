@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@wirecatch/product';
 import {
   isEvent,
   isOutcome,
@@ -121,8 +122,10 @@ const isErrorAnswer = object({ status: literal('err') });
  * Why a request failed when the app's answer to it does not match the protocol, shown to the
  * person as it is. A retry gets the same answer, so the advice is to update, not to try again.
  */
-export const UNREADABLE_ANSWER =
-  'Wirecatch sent a response this version of the extension cannot read. Updating the extension may help.';
+export const UNREADABLE_ANSWER = `${PRODUCT_NAME} sent a response this version of the extension cannot read. Updating the extension may help.`;
+
+const CONNECTION_CLOSED = `The connection to ${PRODUCT_NAME} was closed.`;
+const NO_ANSWER = `${PRODUCT_NAME} did not answer in time.`;
 
 /** The delay before retry number `attempt` (counted from 0): past the end of the table, its last delay. */
 export function backoffDelay(backoff: Backoff, attempt: number): number {
@@ -225,7 +228,7 @@ export class NativeClient {
     this.#stopped = true;
     this.#clearRetry();
     this.#dropPort();
-    this.#rejectAll(new RequestError('disconnected', 'The connection to Wirecatch was closed.'));
+    this.#rejectAll(new RequestError('disconnected', CONNECTION_CLOSED));
   }
 
   /** Skips the remaining backoff and connects right away, starting the app if it is closed (the popup's "Try again" and "Connect Wirecatch", and every request). */
@@ -274,14 +277,12 @@ export class NativeClient {
 
   #waitUntilConnected(timeoutMs: number): Promise<void> {
     if (this.#stopped) {
-      return Promise.reject(
-        new RequestError('disconnected', 'The connection to Wirecatch was closed.'),
-      );
+      return Promise.reject(new RequestError('disconnected', CONNECTION_CLOSED));
     }
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.#readyWaiters.delete(waiter);
-        reject(new RequestError('timeout', 'Wirecatch did not answer in time.'));
+        reject(new RequestError('timeout', NO_ANSWER));
       }, timeoutMs);
       const waiter = {
         resolve: () => {
@@ -366,7 +367,7 @@ export class NativeClient {
   #send(call: Call, timeoutMs: number): Promise<Reply> {
     const port = this.#port;
     if (port === null) {
-      return Promise.reject(new RequestError('disconnected', 'Wirecatch is not connected.'));
+      return Promise.reject(new RequestError('disconnected', `${PRODUCT_NAME} is not connected.`));
     }
     if (this.#version !== null && !hasCall(this.#options.callSince, this.#version, call.method)) {
       return Promise.reject(
@@ -382,7 +383,7 @@ export class NativeClient {
       return Promise.reject(
         new RequestError(
           'too_large',
-          `This request is too large to send to Wirecatch (over ${formatBytes(MAX_FRAME_LEN)}). Try a shorter list or a shorter address.`,
+          `This request is too large to send to ${PRODUCT_NAME} (over ${formatBytes(MAX_FRAME_LEN)}). Try a shorter list or a shorter address.`,
         ),
       );
     }
@@ -390,7 +391,7 @@ export class NativeClient {
       const timer = setTimeout(() => {
         this.#pending.delete(id);
         this.#rememberLate(id, call);
-        reject(new RequestError('timeout', 'Wirecatch did not answer in time.'));
+        reject(new RequestError('timeout', NO_ANSWER));
       }, timeoutMs);
       this.#pending.set(id, { call, resolve, reject, timer });
       try {
@@ -399,7 +400,7 @@ export class NativeClient {
         clearTimeout(timer);
         this.#pending.delete(id);
         const detail = messageOf(error);
-        reject(new RequestError('disconnected', `Could not send to Wirecatch: ${detail}`));
+        reject(new RequestError('disconnected', `Could not send to ${PRODUCT_NAME}: ${detail}`));
       }
     });
   }
@@ -461,7 +462,10 @@ export class NativeClient {
       return;
     }
     this.#rejectAll(
-      new RequestError('disconnected', problem.detail ?? 'The connection to Wirecatch was lost.'),
+      new RequestError(
+        'disconnected',
+        problem.detail ?? `The connection to ${PRODUCT_NAME} was lost.`,
+      ),
     );
     if (this.#stopped) return;
     this.#clearRetry();

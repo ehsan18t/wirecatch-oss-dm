@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@wirecatch/product';
 import {
   DEFAULT_EXTENSION_SETTINGS,
   type Call,
@@ -368,11 +369,11 @@ export class Hub {
     const badge = this.#deps.badge;
     if (badge === undefined) return;
     if (snapshot.status.state === 'unavailable') {
-      badge.set('!', 'Wirecatch is not connected. Click for details.');
+      badge.set('!', `${PRODUCT_NAME} is not connected. Click for details.`);
     } else if (snapshot.alerts.length > 0) {
-      badge.set('!', 'Wirecatch has alerts for you. Click to see them.');
+      badge.set('!', `${PRODUCT_NAME} has alerts for you. Click to see them.`);
     } else {
-      badge.set('', 'Wirecatch');
+      badge.set('', PRODUCT_NAME);
     }
   }
 }

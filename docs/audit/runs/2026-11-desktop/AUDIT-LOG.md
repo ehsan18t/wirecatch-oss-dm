@@ -293,10 +293,10 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 266 | A crash while placing a video can double its subtitles                                            | found while fixing                                                                                 | P3       | small  | Left by PR-94.                                                                                                   | none                                          | fixed                                                                          |
 | 267 | No check finds shell functions nothing calls                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-98.                                                                                                   | none                                          | won't fix (a word check is unsound and it needs name resolution; see item 273) |
 | 268 | A hanging test on Windows leaves no name or log                                                   | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-11.                                                                                     | none                                          | fixed                                                                          |
-| 269 | A mark written after a move's copy is lost                                                        | found while fixing                                                                                 | P3       | small  | Found while reviewing the mark fix. Read from the code, not run.                                                 | none                                          | open                                                                           |
-| 270 | The timing check misreads some test code                                                          | found while fixing                                                                                 | P3       | small  | Found while fixing PR-144.                                                                                       | none                                          | open                                                                           |
+| 269 | A mark written after a move's copy is lost                                                        | found while fixing                                                                                 | P3       | small  | Found while reviewing the mark fix. Read from the code, not run.                                                 | none                                          | fixed                                                                          |
+| 270 | The timing check misreads some test code                                                          | found while fixing                                                                                 | P3       | small  | Found while fixing PR-144.                                                                                       | none                                          | fixed                                                                          |
 | 271 | A dialog can give focus back to a button that has gone                                            | found while fixing                                                                                 | P3       | small  | Left by PR-114.                                                                                                  | none                                          | open                                                                           |
-| 272 | The extension writes the product name out by hand                                                 | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-144.                                                                                    | none                                          | open                                                                           |
+| 272 | The extension writes the product name out by hand                                                 | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-144.                                                                                    | none                                          | fixed                                                                          |
 | 273 | Public shell items are used only in their own file                                                | found while fixing                                                                                 | P3       | small  | Found while fixing PR-146.                                                                                       | none                                          | open                                                                           |
 | 274 | A partial file can continue under another sign-in                                                 | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-46.                                                                                     | none                                          | open                                                                           |
 
@@ -4693,7 +4693,7 @@ A Windows test job was cancelled at the 20 minute limit and its log was lost, so
 
 ### 269. A mark written after a move's copy is lost
 
-P3, small, open.
+P3, small, fixed.
 
 If the ticker's first mark starts after `copy_mark` reads, the mark lands on the source file, which the move then deletes. A part file is marked again by its next run; a finished file is not.
 
@@ -4705,7 +4705,7 @@ If the ticker's first mark starts after `copy_mark` reads, the mark lands on the
 
 ### 270. The timing check misreads some test code
 
-P3, small, open.
+P3, small, fixed.
 
 `testRegions` in `test-timing.mjs` uses the test-module pattern `product-name.mjs` has since replaced, so it has the same blind spots.
 
@@ -4729,7 +4729,7 @@ When the selection bar and the command bar swap while a dialog is open, the dial
 
 ### 272. The extension writes the product name out by hand
 
-P3, small, open.
+P3, small, fixed.
 
 The name is written out across more than 25 extension files, such as `lib/hub/alerts.ts`, `lib/native/status.ts` and `lib/native/client.ts`, though `@wirecatch/product` holds it. The check PR-144 added reads only Rust.
 

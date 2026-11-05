@@ -1,4 +1,5 @@
 // The name and help of each setting the popup shows. Those the app's settings show too come from the words both share (`SETTING_WORDS`, D61), so the two say the same.
+import { PRODUCT_NAME } from '@wirecatch/product';
 import { SETTING_WORDS } from '@wirecatch/protocol';
 
 interface SettingText {
@@ -15,7 +16,7 @@ function shared(id: keyof typeof SETTING_WORDS): SettingText {
 export const SETTINGS = {
   captureEnabled: {
     label: 'Capture downloads',
-    help: 'Send downloads from this browser to Wirecatch.',
+    help: `Send downloads from this browser to ${PRODUCT_NAME}.`,
   },
   askBeforeDownload: {
     label: 'Ask before each download',
@@ -32,12 +33,12 @@ export const SETTINGS = {
   privateWindows: shared('private_windows'),
   shortcut: {
     label: 'Keyboard shortcut',
-    help: "Sends a page's video or audio to Wirecatch.",
+    help: `Sends a page's video or audio to ${PRODUCT_NAME}.`,
   },
   /** Firefox has no shortcuts page the popup can open, so the row says where it is. */
   shortcutFirefox: {
     label: 'Keyboard shortcut',
-    help: "Sends a page's video or audio to Wirecatch. Set it in the add-ons manager, under Manage Extension Shortcuts.",
+    help: `Sends a page's video or audio to ${PRODUCT_NAME}. Set it in the add-ons manager, under Manage Extension Shortcuts.`,
   },
   quality: shared('media_quality'),
   fallback: shared('media_fallback'),

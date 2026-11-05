@@ -1,5 +1,6 @@
 <script lang="ts">
   // The notices in a web page's frame (D65): the design system's toasts, with each notice's buttons, a close button, and Clear all while there are several. The frame sits at the page's bottom right and is only as big as they are, so the page around stays clickable; the page script around sizes it from what this reports.
+  import { PRODUCT_NAME } from '@wirecatch/product';
   import { ToastRegion } from '@wirecatch/ui';
   import type { NoticesPage } from '@/lib/notices/page.svelte';
 
@@ -31,6 +32,8 @@
   });
 </script>
 
+<svelte:head><title>{PRODUCT_NAME} alerts</title></svelte:head>
+
 <div bind:this={stack} class="ml-auto w-fit">
-  <ToastRegion toaster={page.toaster} label="Wirecatch" inPlace />
+  <ToastRegion toaster={page.toaster} label={PRODUCT_NAME} inPlace />
 </div>

@@ -25,6 +25,11 @@
     {#if oncopy}
       <IconButton icon={ClipboardCopy} label="Copy diagnostics" size="sm" onclick={oncopy} />
     {/if}
-    <IconButton icon={Settings} label="Open Wirecatch settings" size="sm" onclick={onsettings} />
+    <IconButton
+      icon={Settings}
+      label={`Open ${PRODUCT_NAME} settings`}
+      size="sm"
+      onclick={onsettings}
+    />
   </div>
 </header>

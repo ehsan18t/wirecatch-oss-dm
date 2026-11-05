@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@wirecatch/product';
 import { videoSiteFor, type MediaKind } from '@wirecatch/protocol';
 import { fileNameFromUrl } from '../file-types';
 import type { MediaItem } from './registry';
@@ -142,7 +143,7 @@ export function describeTarget(target: MediaTarget): { title: string; detail: st
     case 'page':
       return {
         title: `This ${target.site ?? 'page'} page`,
-        detail: 'Wirecatch gets the video with its media add-on.',
+        detail: `${PRODUCT_NAME} gets the video with its media add-on.`,
       };
   }
 }

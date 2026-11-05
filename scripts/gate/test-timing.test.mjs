@@ -236,6 +236,40 @@ test('a module behind cfg(all(test, ..)) is test code', () => {
   assert.deepEqual(lines(text, 'crates/ipc/src/windows.rs'), [4]);
 });
 
+test('every form of test code is read, not only a test module', () => {
+  const race = ['fn races() {', '    assert!(started.elapsed() < LIMIT);', '}'];
+  for (const attribute of [
+    '#[cfg(test)]',
+    '#[test]',
+    '#[tokio::test]',
+    '#[cfg(any(test, feature = "testing"))]',
+    '#[cfg(all(windows, test))]',
+  ]) {
+    assert.deepEqual(
+      lines([attribute, ...race].join('\n'), 'crates/ipc/src/windows.rs'),
+      [3],
+      attribute,
+    );
+  }
+});
+
+test("a function a person's build holds is not test code", () => {
+  for (const attribute of ['#[cfg(any(windows, test))]', '#[cfg(not(test))]', '#[cfg(windows)]']) {
+    const text = [attribute, 'fn connect() {', '    if started.elapsed() < LIMIT {}', '}'];
+    assert.deepEqual(lines(text.join('\n'), 'crates/ipc/src/windows.rs'), [], attribute);
+  }
+});
+
+test('a file behind a test-only module declaration is read whole', () => {
+  const text = 'fn races() {\n    assert!(started.elapsed() < LIMIT);\n}';
+  const hits = timingRaces('crates/a/src/fake.rs', text, ['crates/a/src/fake']);
+  assert.deepEqual(
+    hits.map((hit) => hit.line),
+    [2],
+  );
+  assert.deepEqual(timingRaces('crates/a/src/real.rs', text, ['crates/a/src/fake']), []);
+});
+
 test('a short fixed timeout on a wait that has to succeed is a race; one that must run out is not', () => {
   const text = [
     'async fn waits() {',
