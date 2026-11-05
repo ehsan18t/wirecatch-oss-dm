@@ -19,15 +19,16 @@ use gpui_kit::{
 };
 use wirecatch_protocol::app::{
     AddonId, AddonInfo, AddonState, Category, MediaChoice, MediaOption, MediaSelection,
-    OutputFormat, StreamAction,
+    OutputDefaults, OutputFormat, StreamAction, SubtitleChoice,
 };
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
 use wirecatch_shell::activity::format_bytes;
 use wirecatch_shell::{api, host};
 
 use super::media_output::{
-    OutputChoice, conversion_note, fit_for, format_label, kbps_for, quality_notes, shown_subtitles,
-    size_for, video_length,
+    OutputChoice, conversion_note, fit_for, format_label, holds_subtitles, kbps_for, quality_notes,
+    shown_subtitles, size_for, subtitle_reason, subtitle_toggle, subtitles_added_note,
+    video_length,
 };
 use super::view::{earlier_chip, folder_box, queue_badge_picker};
 use crate::backend::Backend;
@@ -170,7 +171,7 @@ impl MediaForm {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) -> Self {
-        let mut output = OutputChoice::proposed(&choice.start);
+        let mut output = OutputChoice::proposed(&choice.start, &choice.subtitles);
         let option_id = choice.start.option_id.clone();
         let fit = choice
             .options
@@ -368,6 +369,38 @@ impl MediaForm {
             state.set_items(SearchableVec::new(rates), window, cx);
             state.set_selected_value(&kbps, window, cx);
         });
+
+        let languages = self.output.subtitles.clone();
+        self.subtitles.update(cx, |state, cx| {
+            if state.selected_values() != languages {
+                state.set_selected_values(&languages, window, cx);
+            }
+        });
+    }
+
+    /// The saved choices for the kind of quality picked.
+    fn saved_choices(&self, cx: &App) -> OutputDefaults {
+        let audio_only = self.picked().is_some_and(|option| option.audio_only);
+        self.library
+            .read(cx)
+            .settings
+            .as_ref()
+            .map(|settings| {
+                if audio_only {
+                    settings.media.audio.clone()
+                } else {
+                    settings.media.video.clone()
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    fn pick_subtitles(&mut self, pick: SubtitleChoice, cx: &mut Context<'_, Self>) {
+        let saved = self.saved_choices(cx);
+        self.output
+            .choose_subtitles(pick, &self.choice.subtitles, &saved);
+        self.stale = true;
+        cx.notify();
     }
 
     /// Where the file goes unless the person picked a folder here: the one picked when the link
@@ -390,8 +423,17 @@ impl MediaForm {
             .unwrap_or_else(|| type_folder.clone())
     }
 
+    fn subtitles_shown(&self) -> SubtitleChoice {
+        let fit = self
+            .picked()
+            .and_then(|option| fit_for(option, self.output.format));
+        self.output.subtitles_shown(fit)
+    }
+
     fn needs_install(&self, cx: &App) -> bool {
-        self.picked().is_some_and(|option| option.needs_ffmpeg)
+        let needs_ffmpeg = self.picked().is_some_and(|option| option.needs_ffmpeg)
+            || self.subtitles_shown() != SubtitleChoice::Off;
+        needs_ffmpeg
             && !self
                 .library
                 .read(cx)
@@ -406,7 +448,8 @@ impl MediaForm {
                 "Installing the media add-on. The download starts when it is ready.".to_owned(),
             );
         }
-        if !self.picked()?.needs_ffmpeg || !self.needs_install(cx) {
+        let joins = self.picked()?.needs_ffmpeg;
+        if !self.needs_install(cx) {
             return None;
         }
         if let Some(problem) = &self.install_problem {
@@ -418,10 +461,14 @@ impl MediaForm {
             .first()
             .and_then(|addon| addon.size)
             .map_or_else(String::new, |size| format!(" ({})", format_bytes(size)));
-        Some(format!(
-            "Video and audio download separately: {} first installs the media add-on{size} to merge them.",
-            host::CHANNEL.name(),
-        ))
+        let app = host::CHANNEL.name();
+        Some(if joins {
+            format!(
+                "Video and audio download separately: {app} first installs the media add-on{size} to merge them."
+            )
+        } else {
+            format!("Subtitles need the media add-on: {app} first installs it{size}.")
+        })
     }
 
     fn answer(&mut self, later: bool, cx: &mut Context<'_, Self>) {
@@ -553,38 +600,45 @@ impl MediaForm {
         })
     }
 
-    /// Whether the subtitles ticked go inside the file, or how they are saved when they cannot.
-    fn subtitle_placement(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
-        if self.output.subtitles.is_empty() {
-            return None;
+    /// How the video keeps its subtitles; a video with none has no row. What the format cannot do
+    /// is not offered (D195).
+    fn subtitle_rows(&self, cx: &mut Context<'_, Self>) -> Vec<AnyElement> {
+        if self.choice.subtitles.is_empty() {
+            return Vec::new();
         }
-        let embeds = self
+        let fit = self
             .picked()
-            .and_then(|option| fit_for(option, self.output.format))
-            .is_some_and(|fit| fit.embeds_subtitles);
-        Some(if embeds {
-            let label = "Save as .srt files next to the video";
-            h_flex()
-                .ml(px(NOTE_INSET))
-                .gap_2()
-                .child(
-                    Switch::new("media-subtitle-files")
-                        .small()
-                        .checked(self.output.subtitle_files)
-                        .accessibility_label(label)
-                        .on_click(cx.listener(|form, on: &bool, _, cx| {
-                            form.output.subtitle_files = *on;
-                            cx.notify();
-                        })),
-                )
-                .child(div().text_role(Role::Meta, cx).child(label))
-                .into_any_element()
-        } else {
-            note(
-                "Subtitles are saved as .srt files next to the file.".to_owned(),
-                cx,
-            )
-        })
+            .and_then(|option| fit_for(option, self.output.format));
+        let shown = self.output.subtitles_shown(fit);
+        let toggle = subtitle_toggle(
+            "media-subtitles",
+            shown,
+            holds_subtitles(fit),
+            cx.listener(|form, pick: &SubtitleChoice, _, cx| form.pick_subtitles(*pick, cx)),
+            cx,
+        );
+        let mut rows = vec![row("Subtitles", toggle, cx)];
+        rows.extend(
+            fit.and_then(|fit| subtitle_reason(fit, &self.output))
+                .map(|reason| note(reason, cx)),
+        );
+        if shown != SubtitleChoice::Off {
+            rows.push(
+                div()
+                    .ml(px(NOTE_INSET))
+                    .child(
+                        Combobox::new(&self.subtitles)
+                            .placeholder("None")
+                            .search_placeholder("Search languages"),
+                    )
+                    .into_any_element(),
+            );
+        }
+        rows.extend(
+            fit.and_then(|fit| subtitles_added_note(fit, shown))
+                .map(|text| note(text.to_owned(), cx)),
+        );
+        rows
     }
 
     fn chapters(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
@@ -717,16 +771,7 @@ impl Render for MediaForm {
                     .into_iter()
                     .map(|text| note(text, cx)),
             )
-            .when(!self.choice.subtitles.is_empty(), |body| {
-                body.child(row(
-                    "Subtitles",
-                    Combobox::new(&self.subtitles)
-                        .placeholder("None")
-                        .search_placeholder("Search languages"),
-                    cx,
-                ))
-            })
-            .children(self.subtitle_placement(cx))
+            .children(self.subtitle_rows(cx))
             .children(self.chapters(cx))
             .child(row("File name", Input::new(&self.file_name), cx))
             .child(self.folder_row(cx))
@@ -798,7 +843,7 @@ fn follow_pickers(
             subtitles,
             |form, _, event: &ComboboxEvent<SearchableVec<Choice<String>>>, cx| {
                 if let ComboboxEvent::Change(ids) = event {
-                    form.output.subtitles.clone_from(ids);
+                    form.output.pick_languages(ids);
                     cx.notify();
                 }
             },

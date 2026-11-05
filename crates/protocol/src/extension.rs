@@ -875,7 +875,7 @@ pub(crate) fn browser_controls_cases() -> Vec<(BrowserControls, BrowserControlsP
                         format: Some(OutputFormat::Mkv),
                         subtitle_languages: Some(vec!["en".into(), "pt-br".into()]),
                         auto_subtitles: Some(false),
-                        subtitle_files: Some(true),
+                        subtitles: Some(crate::app::SubtitleChoice::Files),
                         chapters: Some(false),
                         ..OutputDefaultsPatch::default()
                     }),

@@ -1,9 +1,12 @@
 //! Picking one of a few options laid side by side, or any of them.
 
-use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::button::{Toggle, ToggleGroup, ToggleVariants as _};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{App, ElementId, Styled as _, Window};
+
+/// How strongly an option that cannot be pressed is drawn: the kit's own disabled toggle looks enabled.
+const DISABLED_TEXT: f32 = 0.6;
 
 /// One of `options`, the `picked` one pressed; `pick` gets the index pressed.
 pub fn one_of(
@@ -13,13 +16,27 @@ pub fn one_of(
     pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> ToggleGroup {
+    one_of_except(id, options, picked, None, pick, cx)
+}
+
+/// [`one_of`], with the `unavailable` option shown but not pressable.
+pub fn one_of_except(
+    id: impl Into<ElementId>,
+    options: &[&'static str],
+    picked: usize,
+    unavailable: Option<usize>,
+    pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> ToggleGroup {
     group(id)
-        .children(
-            options
-                .iter()
-                .enumerate()
-                .map(|(index, label)| option(index, label, index == picked, cx)),
-        )
+        .children(options.iter().enumerate().map(|(index, label)| {
+            let blocked = unavailable == Some(index);
+            option(index, label, index == picked, cx)
+                .disabled(blocked)
+                .when(blocked, |option| {
+                    option.text_color(cx.theme().muted_foreground.opacity(DISABLED_TEXT))
+                })
+        }))
         .on_click(move |pressed, window, cx| {
             // Pressing the picked option again unpresses it; it stays picked.
             if let Some(index) = (0..pressed.len()).find(|&i| pressed[i] && i != picked) {

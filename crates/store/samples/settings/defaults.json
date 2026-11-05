@@ -82,7 +82,7 @@
       "audio_kbps": null,
       "subtitle_languages": [],
       "auto_subtitles": true,
-      "subtitle_files": false,
+      "subtitles": "off",
       "chapters": false
     },
     "audio": {
@@ -90,7 +90,7 @@
       "audio_kbps": null,
       "subtitle_languages": [],
       "auto_subtitles": true,
-      "subtitle_files": false,
+      "subtitles": "off",
       "chapters": false
     },
     "ask_each_time": true,

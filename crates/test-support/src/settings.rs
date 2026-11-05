@@ -118,7 +118,7 @@ fn output_patch(output: OutputDefaults) -> OutputDefaultsPatch {
         audio_kbps,
         subtitle_languages,
         auto_subtitles,
-        subtitle_files,
+        subtitles,
         unembedded_subtitles,
         chapters,
     } = output;
@@ -127,7 +127,7 @@ fn output_patch(output: OutputDefaults) -> OutputDefaultsPatch {
         audio_kbps: Update::Set(audio_kbps),
         subtitle_languages: Some(subtitle_languages),
         auto_subtitles: Some(auto_subtitles),
-        subtitle_files: Some(subtitle_files),
+        subtitles: Some(subtitles),
         unembedded_subtitles: Some(unembedded_subtitles),
         chapters: Some(chapters),
     }

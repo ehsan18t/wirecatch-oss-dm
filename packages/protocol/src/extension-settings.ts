@@ -137,7 +137,7 @@ function applyOutputPatch(
     audio_kbps: patch.audio_kbps === undefined ? defaults.audio_kbps : patch.audio_kbps,
     subtitle_languages: patch.subtitle_languages ?? defaults.subtitle_languages,
     auto_subtitles: patch.auto_subtitles ?? defaults.auto_subtitles,
-    subtitle_files: patch.subtitle_files ?? defaults.subtitle_files,
+    subtitles: patch.subtitles ?? defaults.subtitles,
     unembedded_subtitles: patch.unembedded_subtitles ?? defaults.unembedded_subtitles,
     chapters: patch.chapters ?? defaults.chapters,
   };

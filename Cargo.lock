@@ -10017,6 +10017,7 @@ dependencies = [
  "wirecatch-engine",
  "wirecatch-ipc",
  "wirecatch-logging",
+ "wirecatch-media",
  "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-queues",

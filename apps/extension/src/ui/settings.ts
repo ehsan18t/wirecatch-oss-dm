@@ -45,7 +45,7 @@ export const SETTINGS = {
   videoFormat: shared('media'),
   subtitles: shared('media_subtitles'),
   autoSubtitles: shared('media_auto_subtitles'),
-  subtitleFiles: shared('media_subtitle_files'),
+  subtitleChoice: shared('media_subtitle_choice'),
   unembeddedSubtitles: shared('media_unembedded_subtitles'),
   chapters: shared('media_chapters'),
   audioFormat: shared('media_audio'),

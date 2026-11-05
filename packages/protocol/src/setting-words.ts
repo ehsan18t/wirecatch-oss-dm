@@ -44,16 +44,16 @@ export const SETTING_WORDS = {
   },
   media_subtitles: {
     label: 'Subtitle languages',
-    help: 'The creator’s subtitles, or auto-generated ones if allowed. Languages a video doesn’t have are skipped.',
+    help: 'The creator’s subtitles, or auto-generated ones if allowed. Languages a video doesn’t have are skipped. With none chosen, the video’s own language is used.',
     brief: 'Languages a video doesn’t have are skipped.',
   },
   media_auto_subtitles: {
     label: 'Use auto-generated subtitles',
     help: 'Used when a language has no subtitles written by people.',
   },
-  media_subtitle_files: {
+  media_subtitle_choice: {
     label: 'Subtitles',
-    help: 'Inside the video file, where players show them, or as .srt files next to it.',
+    help: 'In the video file, where players show them, or as .srt files next to it.',
   },
   media_unembedded_subtitles: {
     label: 'If the format can’t hold subtitles',

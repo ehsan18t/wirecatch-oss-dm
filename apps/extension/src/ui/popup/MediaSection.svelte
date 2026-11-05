@@ -12,7 +12,7 @@
     languageChoices,
     qualityChoices,
     qualityValue,
-    SUBTITLE_PLACEMENT_CHOICES,
+    SUBTITLE_CHOICES,
     UNEMBEDDED_CHOICES,
     videoQuality,
     type BrowserControls,
@@ -20,6 +20,7 @@
     type OutputFormat,
     type QualityFallback,
     type QualityValue,
+    type SubtitleChoice,
     type UnembeddedSubtitles,
   } from '@wirecatch/protocol';
   import {
@@ -145,46 +146,46 @@
         />
       {/snippet}
     </SettingRow>
-    <SettingRow label={SETTINGS.subtitles.label} help={SETTINGS.subtitles.help} stacked>
-      {#snippet children(control)}
-        <MultiSelect
-          {...control}
-          class="w-full"
-          placeholder="None"
-          searchPlaceholder="Search languages"
-          values={media.video.subtitle_languages}
-          options={languageChoices(media.video.subtitle_languages)}
-          disabled={!editable}
-          onchange={(languages: string[]) =>
-            void model.updateControls({ media: { video: { subtitle_languages: languages } } })}
-        />
-      {/snippet}
-    </SettingRow>
-    <SettingSwitch
-      id="auto-subtitles"
-      label={SETTINGS.autoSubtitles.label}
-      help={SETTINGS.autoSubtitles.help}
-      checked={media.video.auto_subtitles}
-      disabled={!editable}
-      onchange={(on: boolean) =>
-        void model.updateControls({ media: { video: { auto_subtitles: on } } })}
-    />
-    <SettingRow label={SETTINGS.subtitleFiles.label} help={SETTINGS.subtitleFiles.help} stacked>
+    <SettingRow label={SETTINGS.subtitleChoice.label} help={SETTINGS.subtitleChoice.help} stacked>
       {#snippet children(control)}
         <Select
           {...control}
           class="w-full"
-          value={media.video.subtitle_files ? 'files' : 'inside'}
-          options={SUBTITLE_PLACEMENT_CHOICES}
+          value={media.video.subtitles}
+          options={SUBTITLE_CHOICES}
           disabled={!editable}
-          onchange={(placed: 'inside' | 'files') =>
-            void model.updateControls({
-              media: { video: { subtitle_files: placed === 'files' } },
-            })}
+          onchange={(subtitles: SubtitleChoice) =>
+            void model.updateControls({ media: { video: { subtitles } } })}
         />
       {/snippet}
     </SettingRow>
-    {#if !media.video.subtitle_files}
+    {#if media.video.subtitles !== 'off'}
+      <SettingRow label={SETTINGS.subtitles.label} help={SETTINGS.subtitles.help} stacked>
+        {#snippet children(control)}
+          <MultiSelect
+            {...control}
+            class="w-full"
+            placeholder="The video’s language"
+            searchPlaceholder="Search languages"
+            values={media.video.subtitle_languages}
+            options={languageChoices(media.video.subtitle_languages)}
+            disabled={!editable}
+            onchange={(languages: string[]) =>
+              void model.updateControls({ media: { video: { subtitle_languages: languages } } })}
+          />
+        {/snippet}
+      </SettingRow>
+      <SettingSwitch
+        id="auto-subtitles"
+        label={SETTINGS.autoSubtitles.label}
+        help={SETTINGS.autoSubtitles.help}
+        checked={media.video.auto_subtitles}
+        disabled={!editable}
+        onchange={(on: boolean) =>
+          void model.updateControls({ media: { video: { auto_subtitles: on } } })}
+      />
+    {/if}
+    {#if media.video.subtitles === 'inside'}
       <SettingRow
         label={SETTINGS.unembeddedSubtitles.label}
         help={SETTINGS.unembeddedSubtitles.help}

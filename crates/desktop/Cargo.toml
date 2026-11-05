@@ -43,6 +43,8 @@ wirecatch-product.workspace = true
 [dev-dependencies]
 # GPUI's own feature, not gpui-kit's `test-support`: that one locks in gpui-fast, whose exact taffy pin conflicts with GPUI's.
 gpui-pre = { version = "0.3.10", features = ["test-support"] }
+serde_json.workspace = true
+wirecatch-media.workspace = true
 wirecatch-test-support = { path = "../test-support", features = ["downloads"] }
 
 [lints]

@@ -610,6 +610,21 @@ pub struct MediaSelection {
     pub chapters: bool,
 }
 
+impl MediaSelection {
+    /// How this selection keeps its subtitles, before its format has its say
+    /// ([`SubtitleChoice::in_format`]).
+    #[must_use]
+    pub fn subtitle_choice(&self) -> SubtitleChoice {
+        if self.subtitles.is_empty() {
+            SubtitleChoice::Off
+        } else if self.subtitle_files {
+            SubtitleChoice::Files
+        } else {
+            SubtitleChoice::Inside
+        }
+    }
+}
+
 /// What the quality window starts from (D24), whether it opens at all (D50) and whether a pick
 /// there is kept (D200): the saved choices, kept separately for videos and for audio only, the
 /// resolution, and what to do when a video does not offer it. Also in Settings, Media, and in
@@ -685,31 +700,70 @@ pub enum QualityFallback {
 }
 
 /// The starting choices for one kind of media download.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export)]
 pub struct OutputDefaults {
     /// The format picked first.
-    #[serde(default)]
     pub format: OutputFormat,
     /// Audio quality in kbps for a lossy audio format; `None` is the format's usual quality.
-    #[serde(default)]
     pub audio_kbps: Option<u32>,
-    /// Subtitle languages to tick, for example `["en", "fr"]`.
-    #[serde(default)]
+    /// Subtitle languages to take, for example `["en", "fr"]`; none is the video's own language
+    /// (D195). Kept while [`subtitles`](Self::subtitles) is off.
     pub subtitle_languages: Vec<String>,
     /// Take a language's auto-generated subtitles when it has none written by people.
-    #[serde(default = "default_true")]
     pub auto_subtitles: bool,
-    /// Save subtitles as `.srt` files next to a video instead of inside it.
-    #[serde(default)]
-    pub subtitle_files: bool,
+    /// How a video keeps its subtitles.
+    pub subtitles: SubtitleChoice,
     /// With subtitles inside the video, what happens to them when the format cannot hold any (D93).
-    #[serde(default, with = "known_or_default")]
-    #[ts(as = "UnembeddedSubtitles")]
     pub unembedded_subtitles: UnembeddedSubtitles,
     /// Add chapters to the file.
-    #[serde(default)]
     pub chapters: bool,
+}
+
+/// [`OutputDefaults`] as saved, by this build or an older one, which had no off and kept
+/// `subtitle_files` instead: an empty language list was off.
+#[derive(Deserialize)]
+struct SavedOutputDefaults {
+    #[serde(default)]
+    format: OutputFormat,
+    #[serde(default)]
+    audio_kbps: Option<u32>,
+    #[serde(default)]
+    subtitle_languages: Vec<String>,
+    #[serde(default = "default_true")]
+    auto_subtitles: bool,
+    #[serde(default, with = "known_or_default")]
+    subtitles: Option<SubtitleChoice>,
+    #[serde(default)]
+    subtitle_files: bool,
+    #[serde(default, with = "known_or_default")]
+    unembedded_subtitles: UnembeddedSubtitles,
+    #[serde(default)]
+    chapters: bool,
+}
+
+impl<'de> Deserialize<'de> for OutputDefaults {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let saved = SavedOutputDefaults::deserialize(deserializer)?;
+        let subtitles = saved
+            .subtitles
+            .unwrap_or(if saved.subtitle_languages.is_empty() {
+                SubtitleChoice::Off
+            } else if saved.subtitle_files {
+                SubtitleChoice::Files
+            } else {
+                SubtitleChoice::Inside
+            });
+        Ok(Self {
+            format: saved.format,
+            audio_kbps: saved.audio_kbps,
+            subtitle_languages: saved.subtitle_languages,
+            auto_subtitles: saved.auto_subtitles,
+            subtitles,
+            unembedded_subtitles: saved.unembedded_subtitles,
+            chapters: saved.chapters,
+        })
+    }
 }
 
 impl Default for OutputDefaults {
@@ -719,9 +773,36 @@ impl Default for OutputDefaults {
             audio_kbps: None,
             subtitle_languages: Vec::new(),
             auto_subtitles: true,
-            subtitle_files: false,
+            subtitles: SubtitleChoice::Off,
             unembedded_subtitles: UnembeddedSubtitles::Files,
             chapters: false,
+        }
+    }
+}
+
+/// How a video keeps its subtitles (D195).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum SubtitleChoice {
+    /// None are saved.
+    #[default]
+    Off,
+    /// As tracks inside the file.
+    Inside,
+    /// As `.srt` files next to it.
+    Files,
+}
+
+impl SubtitleChoice {
+    /// What this choice comes to in a format that can hold subtitles or not: the one rule of the
+    /// quality window and the download (D195).
+    #[must_use]
+    pub fn in_format(self, holds_subtitles: bool, unembedded: UnembeddedSubtitles) -> Self {
+        match (self, holds_subtitles, unembedded) {
+            (Self::Inside, false, UnembeddedSubtitles::Files) => Self::Files,
+            (Self::Inside, false, UnembeddedSubtitles::Skip) => Self::Off,
+            (choice, ..) => choice,
         }
     }
 }
@@ -1332,9 +1413,9 @@ pub struct OutputDefaultsPatch {
     /// The new [`OutputDefaults::auto_subtitles`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_subtitles: Option<bool>,
-    /// The new [`OutputDefaults::subtitle_files`].
+    /// The new [`OutputDefaults::subtitles`].
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub subtitle_files: Option<bool>,
+    pub subtitles: Option<SubtitleChoice>,
     /// The new [`OutputDefaults::unembedded_subtitles`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unembedded_subtitles: Option<UnembeddedSubtitles>,
@@ -1677,7 +1758,7 @@ impl OutputDefaults {
             audio_kbps,
             subtitle_languages,
             auto_subtitles,
-            subtitle_files,
+            subtitles,
             unembedded_subtitles,
             chapters,
         } = self;
@@ -1686,7 +1767,7 @@ impl OutputDefaults {
             audio_kbps: new_audio_kbps,
             subtitle_languages: new_subtitle_languages,
             auto_subtitles: new_auto_subtitles,
-            subtitle_files: new_subtitle_files,
+            subtitles: new_subtitles,
             unembedded_subtitles: new_unembedded_subtitles,
             chapters: new_chapters,
         } = patch;
@@ -1694,7 +1775,7 @@ impl OutputDefaults {
         update(audio_kbps, new_audio_kbps);
         set(subtitle_languages, new_subtitle_languages);
         set(auto_subtitles, new_auto_subtitles);
-        set(subtitle_files, new_subtitle_files);
+        set(subtitles, new_subtitles);
         set(unembedded_subtitles, new_unembedded_subtitles);
         set(chapters, new_chapters);
     }
@@ -2222,6 +2303,54 @@ mod tests {
             ..AppSettingsPatch::default()
         });
         assert!(!off.notify_during_do_not_disturb);
+    }
+
+    /// A choice saved by a newer build that this one does not know falls back like an older
+    /// save, by its languages; what is saved reads back as itself.
+    #[test]
+    fn output_defaults_read_their_subtitle_choice_old_new_and_unknown() {
+        let read = |json: &str| {
+            serde_json::from_str::<OutputDefaults>(json)
+                .unwrap()
+                .subtitles
+        };
+        assert_eq!(read("{}"), SubtitleChoice::Off);
+        assert_eq!(read(r#"{"subtitle_files":true}"#), SubtitleChoice::Off);
+        assert_eq!(
+            read(r#"{"subtitle_languages":["en"]}"#),
+            SubtitleChoice::Inside
+        );
+        assert_eq!(
+            read(r#"{"subtitle_languages":["en"],"subtitle_files":true}"#),
+            SubtitleChoice::Files
+        );
+        assert_eq!(
+            read(r#"{"subtitle_languages":["en"],"subtitles":"off"}"#),
+            SubtitleChoice::Off
+        );
+        assert_eq!(read(r#"{"subtitles":"inside"}"#), SubtitleChoice::Inside);
+        assert_eq!(
+            read(r#"{"subtitle_languages":["en"],"subtitles":"somewhere"}"#),
+            SubtitleChoice::Inside
+        );
+        let saved = OutputDefaults {
+            subtitles: SubtitleChoice::Files,
+            ..OutputDefaults::default()
+        };
+        let again: OutputDefaults =
+            serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
+        assert_eq!(again, saved);
+    }
+
+    #[test]
+    fn a_format_that_cannot_hold_subtitles_moves_only_the_choice_of_inside() {
+        use SubtitleChoice::{Files, Inside, Off};
+        use UnembeddedSubtitles as When;
+        assert_eq!(Inside.in_format(true, When::Skip), Inside);
+        assert_eq!(Inside.in_format(false, When::Files), Files);
+        assert_eq!(Inside.in_format(false, When::Skip), Off);
+        assert_eq!(Files.in_format(false, When::Skip), Files);
+        assert_eq!(Off.in_format(false, When::Files), Off);
     }
 
     /// Settings saved before the accent existed have none, and a newer build may have saved a

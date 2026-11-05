@@ -3,6 +3,7 @@
 import { AUDIO_KBPS_CHOICES, SUBTITLE_LANGUAGES } from './generated/constants';
 import type { OutputFormat } from './generated/OutputFormat';
 import type { QualityFallback } from './generated/QualityFallback';
+import type { SubtitleChoice } from './generated/SubtitleChoice';
 import type { UnembeddedSubtitles } from './generated/UnembeddedSubtitles';
 import type { VideoQuality } from './generated/VideoQuality';
 
@@ -91,10 +92,11 @@ export const FALLBACK_CHOICES: readonly Choice<QualityFallback>[] = [
   { value: 'ask', label: 'Ask me' },
 ];
 
-/** Where a video's subtitles go: `true` is `OutputDefaults.subtitle_files`. */
-export const SUBTITLE_PLACEMENT_CHOICES: readonly Choice<'inside' | 'files'>[] = [
-  { value: 'inside', label: 'Inside the video' },
-  { value: 'files', label: 'As separate files' },
+/** How a video keeps its subtitles (D195). */
+export const SUBTITLE_CHOICES: readonly Choice<SubtitleChoice>[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'inside', label: 'In the video' },
+  { value: 'files', label: 'Separate files' },
 ];
 
 /** What happens to subtitles a format cannot hold (D93). */
