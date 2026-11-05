@@ -1036,7 +1036,7 @@ pub(super) fn queue_badge_picker(
         .map(|queue| (queue.id, queue.settings.name.clone()))
         .collect();
     let accent = cx.theme().primary;
-    Button::new(id)
+    let opener = Button::new(id)
         .ghost()
         .icon(Icon::new(if picked.is_none() {
             Lucide::Zap
@@ -1082,8 +1082,9 @@ pub(super) fn queue_badge_picker(
                 );
             }
             menu
-        })
-        .into_any_element()
+        });
+    // The menu's own wrapper keeps the button's full width, which would run a long name under Cancel.
+    div().min_w_0().child(opener).into_any_element()
 }
 
 /// A folder, the whole width; a click picks another.

@@ -14,15 +14,15 @@ mod view;
 use std::collections::HashMap;
 
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, Entity, Global, WeakEntity, Window,
-    WindowBounds, WindowOptions, point, px, size,
+    AnyWindowHandle, App, AppContext as _, Bounds, Entity, Global, WeakEntity, Window, point, px,
+    size,
 };
 use wirecatch_protocol::app::{
     DownloadStatus, DownloadSummary, FixAction, RETRY_FIXES, Repeated, UiEvent,
 };
 use wirecatch_protocol::{DownloadId, QuestionId};
 use wirecatch_shell::download_windows::{
-    Area, MIN_WINDOW_SIZE, OpenWindow, Registry, Shows, Step, WINDOW_SIZE, place,
+    Area, OpenWindow, Registry, Shows, Step, WINDOW_SIZE, place,
 };
 
 use crate::library::Library;
@@ -216,14 +216,7 @@ fn open(opened: &OpenWindow, cx: &mut App) {
         origin: point(px(logical(x)), px(logical(y))),
         size: size(px(logical(WINDOW_SIZE.0)), px(logical(WINDOW_SIZE.1))),
     };
-    let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(bounds)),
-        window_min_size: Some(size(
-            px(logical(MIN_WINDOW_SIZE.0)),
-            px(logical(MIN_WINDOW_SIZE.1)),
-        )),
-        ..crate::window_options()
-    };
+    let options = crate::popup_window_options(bounds);
     let label = opened.label.clone();
     let shows = opened.shows;
     let built = gpui_kit::open_window(options, cx, |window, cx| {
@@ -252,7 +245,7 @@ fn open(opened: &OpenWindow, cx: &mut App) {
 }
 
 /// A logical size or place the registry works in, in GPUI's pixels: whole pixels, so exact.
-fn logical(value: f64) -> f32 {
+pub(crate) fn logical(value: f64) -> f32 {
     wirecatch_engine::numeric::f64_to_u64(value.round())
         .and_then(|whole| u16::try_from(whole).ok())
         .map_or(0., f32::from)
@@ -307,6 +300,21 @@ mod tests {
             ..failed_with(Some(FixAction::RefreshLink))
         };
         assert_eq!(fixes_offered(&cancelled), [FixAction::Retry]);
+    }
+
+    #[gpui_kit::test]
+    fn a_download_window_cannot_be_resized(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::component::init(cx);
+            let library = cx.new(|_| Library::empty());
+            init(&library, cx);
+            show_download(DownloadId(1), cx);
+        });
+        cx.run_until_parked();
+        let resizable = cx.windows()[0]
+            .update(cx, |_, window, _| window.is_resizable())
+            .unwrap();
+        assert!(!resizable);
     }
 
     #[gpui_kit::test]

@@ -1490,3 +1490,12 @@ Decided on 2026-11-05. It adds to D23, D51.5 and D166.
 5. Each field keeps its meaning. A browser's file holds the whole name, extension included. A video holds the stem, which is what the title's file name would be before its extension (`wirecatch_media::file_stem`), so `AC/DC` shows as `AC-DC`. A video's choice does not change once its window shows it, so its field gets no later proposal.
 6. A name a person chooses has no folder part, in any window or in the Add dialog: a slash or backslash in it becomes `-`, so `AC/DC Live` saves as `AC-DC Live`. A name from a page or a server still loses what comes before its last slash.
 7. A field with no proposal has none to hold: the Add dialog's File name stays empty, as a server's name is not known yet, and "Leave empty for the name the server gives." says what that means. Hints that show the shape of a value, such as `https://` in Get a new link, stay hints.
+
+### D220. A person cannot resize a pop-up window
+
+Decided on 2026-11-05.
+
+1. A pop-up window (each download window, whatever it shows, and the download complete window) keeps the width it opens at. Made narrower, its rows ran out of room and its buttons overlapped. Every pop-up opens through `popup_window_options`, so a new one gets this by default. The main window stays resizable.
+2. The height still follows the content: `fit` calls `Window::resize`, which `is_resizable` does not limit on any platform. On Windows the window only loses `WS_THICKFRAME` and `WS_MAXIMIZEBOX`, so its edges stop being resize areas, a double click on its title bar does nothing, and `SetWindowPos` still sets its size.
+3. Linux never reads `is_resizable`. The setting stops the app's own client-side edges from starting a resize (`Window::start_window_resize`), but a window manager's frame or shortcut can still resize the window, and GPUI offers no maximum size to prevent it. So the window's minimum width is the width it opens at, which keeps the buttons from overlapping; growing wider does no harm.
+4. At the fixed width the queue picker shrinks and truncates its name before anything overlaps, however long the name and whichever buttons sit beside it.

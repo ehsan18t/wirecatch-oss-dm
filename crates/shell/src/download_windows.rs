@@ -20,8 +20,8 @@ const LABEL_PREFIX: &str = "download-";
 /// A download window's size when it opens, in logical pixels.
 pub const WINDOW_SIZE: (f64, f64) = (DOWNLOAD_WINDOW_WIDTH as f64, 600.0);
 
-/// The smallest a download window can be made, in logical pixels.
-pub const MIN_WINDOW_SIZE: (f64, f64) = (360.0, DOWNLOAD_WINDOW_MIN_HEIGHT as f64);
+/// The least height a download window takes, in logical pixels.
+pub const MIN_WINDOW_HEIGHT: f64 = DOWNLOAD_WINDOW_MIN_HEIGHT as f64;
 
 /// The most a download window takes, in logical pixels: past it, its body scrolls.
 const MAX_WINDOW_HEIGHT: f64 = DOWNLOAD_WINDOW_MAX_HEIGHT as f64;
@@ -35,7 +35,7 @@ const SCREEN_MARGIN: f64 = 48.0;
 /// smallest window.
 #[must_use]
 pub fn fitted_height(wanted: f64, screen: Option<f64>) -> f64 {
-    let floor = MIN_WINDOW_SIZE.1;
+    let floor = MIN_WINDOW_HEIGHT;
     let ceiling = screen.filter(|h| h.is_finite()).map_or(WINDOW_SIZE.1, |h| {
         (h - 2.0 * SCREEN_MARGIN).min(MAX_WINDOW_HEIGHT).max(floor)
     });
@@ -388,7 +388,7 @@ mod tests {
         // A short progress view: smaller than the opening size, rounded up to whole pixels.
         assert_eq!(fitted_height(431.2, Some(1040.0)), 432.0);
         // Never smaller than the smallest window.
-        assert_eq!(fitted_height(120.0, Some(1040.0)), MIN_WINDOW_SIZE.1);
+        assert_eq!(fitted_height(120.0, Some(1040.0)), MIN_WINDOW_HEIGHT);
         // A long quality list, or a group opened: never taller than the most a window takes;
         // the body scrolls.
         assert_eq!(fitted_height(2000.0, Some(1440.0)), MAX_WINDOW_HEIGHT);
@@ -400,11 +400,11 @@ mod tests {
         // Unknown screen: no taller than the opening size.
         assert_eq!(fitted_height(900.0, None), WINDOW_SIZE.1);
         // A tiny screen still gets the smallest window, and nonsense gives the smallest too.
-        assert_eq!(fitted_height(700.0, Some(250.0)), MIN_WINDOW_SIZE.1);
-        assert_eq!(fitted_height(f64::NAN, Some(1040.0)), MIN_WINDOW_SIZE.1);
+        assert_eq!(fitted_height(700.0, Some(250.0)), MIN_WINDOW_HEIGHT);
+        assert_eq!(fitted_height(f64::NAN, Some(1040.0)), MIN_WINDOW_HEIGHT);
         assert_eq!(
             fitted_height(f64::INFINITY, Some(1040.0)),
-            MIN_WINDOW_SIZE.1
+            MIN_WINDOW_HEIGHT
         );
     }
 

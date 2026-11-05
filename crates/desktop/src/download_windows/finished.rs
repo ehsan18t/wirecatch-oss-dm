@@ -9,8 +9,8 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, AnyWindowHandle, App, AppContext as _, Bounds, Context, ElementId, Global,
     InteractiveElement as _, IntoElement, ParentElement as _, Render,
-    StatefulInteractiveElement as _, Styled as _, WeakEntity, Window, WindowBounds, WindowOptions,
-    div, point, px, size,
+    StatefulInteractiveElement as _, Styled as _, WeakEntity, Window, WindowOptions, div, point,
+    px, size,
 };
 use wirecatch_protocol::app::{
     AppSettingsPatch, DownloadStatus, DownloadSummary, FixAction, NotifyOnFinish, UiEvent,
@@ -108,12 +108,8 @@ fn open(cx: &mut App) {
         area.origin.y + area.size.height - px(HEIGHT + MARGIN),
     );
     let options = WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-            origin,
-            size(px(WIDTH), px(HEIGHT)),
-        ))),
         focus: false,
-        ..crate::window_options()
+        ..crate::popup_window_options(Bounds::new(origin, size(px(WIDTH), px(HEIGHT))))
     };
     let library = cx.global::<super::Windows>().library.clone();
     let built = gpui_kit::open_window(options, cx, |window, cx| {
@@ -368,6 +364,17 @@ mod tests {
         cx.update(|cx| add(Tell::Failed(vec![failed(1)]), cx));
         cx.run_until_parked();
         assert_eq!(cx.windows().len(), 0);
+    }
+
+    #[gpui_kit::test]
+    fn the_window_cannot_be_resized(cx: &mut TestAppContext) {
+        windows_over(vec![failed(1)], cx);
+        cx.update(|cx| add(Tell::Failed(vec![failed(1)]), cx));
+        cx.run_until_parked();
+        let resizable = cx.windows()[0]
+            .update(cx, |_, window, _| window.is_resizable())
+            .unwrap();
+        assert!(!resizable);
     }
 
     #[gpui_kit::test]
