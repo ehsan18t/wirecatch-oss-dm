@@ -460,9 +460,9 @@ pub enum ManifestError {
     /// An `EXT-X-MAP` has no `URI`.
     #[error("an EXT-X-MAP has no URI")]
     MapWithoutUri,
-    /// A link in it is not a valid address.
-    #[error("it links to {0:?}, which is not a valid address")]
-    BadLink(String),
+    /// A link in it is not a valid address. Its text is not kept: it may carry a token, and being no address, no rule can tell what of it is safe to show.
+    #[error("it links to something that is not a valid address")]
+    BadLink,
     /// A link in it is not a web address (`file:` and the like), which no stream may point to.
     #[error("it links to a {0:?} address, which is not a web address")]
     NotWebAddress(String),
@@ -614,10 +614,6 @@ mod tests {
             (
                 "server answered 403 for https://cdn.example:8443/tok/k.bin?a=b",
                 "server answered 403 for https://cdn.example:8443",
-            ),
-            (
-                "it links to \"http://[::1/tok\", which is not valid",
-                "it links to \"http://[::1\", which is not valid",
             ),
             ("no address here: /a/b", "no address here: /a/b"),
             ("ftp://a/x and https://b/y", "ftp://a and https://b"),

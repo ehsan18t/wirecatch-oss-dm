@@ -1198,3 +1198,22 @@ async fn a_refused_address_shows_no_signature() {
         dir.remove().unwrap();
     }
 }
+
+/// A link that is no address cannot be cut to its site, so none of its text reaches what a person reads.
+#[tokio::test]
+async fn a_link_that_is_no_address_is_not_quoted() {
+    let server = FileServer::start().await;
+    server.put_typed(
+        "m.m3u8",
+        "#EXTM3U\n#EXTINF:1,\nhttp://[::1/SECRET and more\n#EXT-X-ENDLIST\n",
+        MPEGURL,
+    );
+    let dir = private_dir("hls-bad-link").unwrap();
+    let error = run(request(server.url("m.m3u8"), dir.join("v.ts")))
+        .await
+        .unwrap_err();
+    let shown = error.to_string();
+    assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(shown.contains("not a valid address"), "{shown}");
+    dir.remove().unwrap();
+}
