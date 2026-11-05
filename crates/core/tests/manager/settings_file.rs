@@ -72,6 +72,7 @@ async fn settings_and_queues_move_to_another_machine() -> TestResult {
     // A different user on a different machine.
     let there = Harness::new().await?;
     assert_ne!(there.folders.home, here.folders.home);
+    let preview = there.manager.preview_import(&file).await.unwrap();
     let mut events = there.manager.subscribe();
     there.manager.import_settings(&file).await.unwrap();
 
@@ -104,21 +105,21 @@ async fn settings_and_queues_move_to_another_machine() -> TestResult {
         there.folders.downloads.join("Stuff").join("notes.bin")
     );
 
-    // The UI heard about both changes, and got a summary to show.
+    // The UI heard about both changes, and the preview told what they would be.
     let mut saw = (false, false);
-    let mut summary = None;
     while let Ok(event) = events.try_recv() {
         match event {
             UiEvent::QueuesChanged(_) => saw.0 = true,
             UiEvent::SettingsChanged(_) => saw.1 = true,
-            UiEvent::SettingsImported(s) => summary = Some(s),
             _ => {}
         }
     }
     assert_eq!(saw, (true, true));
-    let summary = summary.expect("no import summary");
-    assert_eq!((summary.queues_added, summary.queues_updated), (1, 1));
-    let default = &summary.folders[0];
+    assert_eq!(
+        (preview.queues_added.len(), preview.queues_updated.len()),
+        (1, 1)
+    );
+    let default = &preview.folders[0];
     assert_eq!(default.setting, "Default folder");
     assert_eq!(default.used, PortablePath("{Downloads}/Stuff".into()));
     assert_eq!(

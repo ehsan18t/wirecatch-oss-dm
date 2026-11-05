@@ -1805,8 +1805,6 @@ pub enum UiEvent {
     /// Saving to the download list failed even after retrying, so recent changes
     /// may be lost when the app closes. The UI shows the message.
     StorageFailed(UserError),
-    /// A settings profile was imported; the UI shows what changed.
-    SettingsImported(ImportSummary),
     /// Media with several qualities: the UI shows the picker.
     MediaChoiceRequested(MediaChoice),
     /// A download found its file already in the folder and asks what to do (D88).
@@ -1875,23 +1873,6 @@ pub enum UiEvent {
     QueueFinished(QueueReport),
 }
 
-/// What importing a settings profile changed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
-pub struct ImportSummary {
-    /// Every folder setting in the profile and the folder it became on this machine.
-    pub folders: Vec<ImportedFolder>,
-    /// Queues the profile added.
-    pub queues_added: u32,
-    /// Existing queues that took the profile's name, limits and schedule: the default queue,
-    /// and every queue whose name matches one in the profile, ignoring case.
-    pub queues_updated: u32,
-    /// Add-ons the profile lists that are not installed here. Nothing is
-    /// downloaded on import; the UI may offer to install them.
-    #[serde(default)]
-    pub addons_to_offer: Vec<AddonId>,
-}
-
 /// One folder setting from an imported profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -1930,6 +1911,18 @@ pub struct ImportPreview {
     /// Names of the queues here the import would change (the default queue is
     /// always matched with the profile's).
     pub queues_updated: Vec<String>,
+    /// Names of the proxy servers the import would add. Each is tested afterwards.
+    pub proxies_added: Vec<String>,
+    /// Names of the proxy servers here whose settings the import would change. Each is tested
+    /// afterwards.
+    pub proxies_updated: Vec<String>,
+    /// Names of the proxy servers here that would lose their saved password, because the file
+    /// points them at another server or login.
+    pub proxy_passwords_removed: Vec<String>,
+    /// Sites the import would let reach the person's own network.
+    pub local_sites_added: Vec<String>,
+    /// Sites the import would stop reaching the person's own network.
+    pub local_sites_removed: Vec<String>,
     /// Add-ons the profile lists that are not installed here, to offer
     /// after the import. Nothing is downloaded on import.
     pub addons_to_offer: Vec<AddonId>,

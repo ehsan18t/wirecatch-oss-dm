@@ -100,7 +100,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 73  | An AppImage restart can be lost while the old copy exits                                          | `12-3` `Xpath-app-update-3`                                                                        | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 74  | A stored bad part can never be thrown away, so Refresh link cannot help                           | `15-3` `Xpath-media-download-6`                                                                    | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 75  | A refused HLS or yt-dlp address fails instead of reading the page again                           | `17-5` `B07-3`                                                                                     | P2       | medium | P2, 2 findings, medium                                                                                           | `B07-p2-tests`                                | fixed  |
-| 76  | The import preview hides proxy and local site changes                                             | `19-1` `27-2`                                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | open   |
+| 76  | The import preview hides proxy and local site changes                                             | `19-1` `27-2`                                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 77  | A missing library is not seen as a broken add-on, and can raise a system dialog                   | `Xsecurity-addon-unpacking-2` `B12-3`                                                              | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 78  | A download moved to another queue shows in the wrong place                                        | `23-1` `25-5`                                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 79  | The window and a restart disagree with what a queue's run really is                               | `18-2` `18-3`                                                                                      | P2       | medium | P2, 2 findings, medium; clears the way for item 138                                                              | none                                          | open   |
@@ -231,7 +231,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 204 | The autostart Launcher trait has one implementation and no test                                   | `22-8`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 205 | Every window has an empty native title                                                            | `U-2`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 206 | invalid_link ignores its argument, and its doc and test claim otherwise                           | `28-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 207 | An import can leave two queues with the same name                                                 | `19-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | `19-2`                                        | open   |
+| 207 | An import can leave two queues with the same name                                                 | `19-2`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | `19-2`                                        | fixed  |
 | 208 | An update offer names a yt-dlp older than the one installed                                       | `11-3`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 209 | swap_in spells out the release file's name                                                        | `11-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 210 | Ticking the first row pushes the list down under the pointer                                      | `U-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
@@ -1613,7 +1613,7 @@ A file format that is refused reads the page again; an HLS playlist or a yt-dlp 
 
 ### 76. The import preview hides proxy and local site changes
 
-P2, medium, open.
+P2, medium, fixed.
 
 `ImportPreview` has no proxies or local sites, and `preview_import` drops them, while the import applies them, tests each server and may drop saved logins. "Not included" names only site passwords, though the file holds `proxy_servers`. So a person confirms changes they were not shown.
 
@@ -2815,6 +2815,8 @@ P3, small, open.
 - `30-4`: confirmed, P3. UiEvent::SettingsImported has no reader in the product. Full text in `chunks/30.md`, verdict in `verdicts/B12.md`.
 - `Xfeature-behaviour-7`: confirmed, P3. An import's summary event and the "every video" answer have nothing on the other end. Full text in `cross/feature-behaviour.md`, verdict in `verdicts/B12.md`.
 
+**Left to do:** The import preview and wording are fixed. The media window still sends no every_video choice, though D50.6 promises a tick; this waits for a design decision.
+
 ### 149. Tests repeat their fixtures and data generators
 
 P3, medium, open.
@@ -3783,7 +3785,7 @@ The `InvalidUrl` arm drops the text callers format, the test compares the functi
 
 ### 207. An import can leave two queues with the same name
 
-P3, small, open.
+P3, small, fixed.
 
 `merge_localized` checks no queue name against the others, so a renamed default queue can meet a same-named one, and neither can be edited until renamed. A non-default queue named like the default is added beside it too.
 

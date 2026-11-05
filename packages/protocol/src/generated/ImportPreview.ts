@@ -22,6 +22,28 @@ export type ImportPreview = {
    */
   queues_updated: Array<string>;
   /**
+   * Names of the proxy servers the import would add. Each is tested afterwards.
+   */
+  proxies_added: Array<string>;
+  /**
+   * Names of the proxy servers here whose settings the import would change. Each is tested
+   * afterwards.
+   */
+  proxies_updated: Array<string>;
+  /**
+   * Names of the proxy servers here that would lose their saved password, because the file
+   * points them at another server or login.
+   */
+  proxy_passwords_removed: Array<string>;
+  /**
+   * Sites the import would let reach the person's own network.
+   */
+  local_sites_added: Array<string>;
+  /**
+   * Sites the import would stop reaching the person's own network.
+   */
+  local_sites_removed: Array<string>;
+  /**
    * Add-ons the profile lists that are not installed here, to offer
    * after the import. Nothing is downloaded on import.
    */
