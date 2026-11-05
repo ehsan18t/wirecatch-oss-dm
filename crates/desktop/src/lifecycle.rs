@@ -91,3 +91,43 @@ fn start_again(args: &[String]) {
         tracing::warn!("could not start the app again: {e}");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use gpui_kit::TestAppContext;
+    use wirecatch_test_support::PATIENCE;
+
+    use super::*;
+
+    /// Set for the child of the test below, whose quit must end its process.
+    const QUITTING_CHILD_VAR: &str = "WIRECATCH_TEST_QUITTING";
+
+    /// A child whose quit only returned to the harness would print its result (D144).
+    #[gpui_kit::test]
+    fn a_quit_ends_the_process(cx: &mut TestAppContext) {
+        if std::env::var_os(QUITTING_CHILD_VAR).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "lifecycle::tests::a_quit_ends_the_process"])
+                .env(QUITTING_CHILD_VAR, "1")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            let printed = String::from_utf8_lossy(&output.stdout);
+            assert!(printed.contains("running 1 test"), "{printed}");
+            assert!(!printed.contains("test result"), "{printed}");
+            return;
+        }
+        cx.update(|cx| {
+            cx.set_global(Backend::unopened());
+            quit(cx);
+        });
+        let deadline = Instant::now() + PATIENCE;
+        while Instant::now() < deadline {
+            cx.run_until_parked();
+            // Another thread stops the manager: there is no event here to wait on.
+            std::thread::park_timeout(Duration::from_millis(10));
+        }
+    }
+}
