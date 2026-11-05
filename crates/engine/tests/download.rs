@@ -11,7 +11,7 @@ use wirecatch_engine::{
     Progress, RemoteFile, download,
 };
 use wirecatch_test_support::http::{Busy, Config, TestServer};
-use wirecatch_test_support::resume::{asked_again, kept_ranges};
+use wirecatch_test_support::resume::{SavedRun, asked_again, kept_ranges, write_resume_file};
 use wirecatch_test_support::{PATIENCE, QUIET, TestResult, files_in, private_dir, test_data};
 
 mod common;
@@ -164,17 +164,22 @@ async fn a_pause_says_whether_the_next_run_continues() {
     }
 }
 
-/// Saves what a run of `url` leaves when it has all of `data` but could not rename it.
-fn left_complete(dir: &std::path::Path, url: &str, data: &[u8]) -> TestResult {
+/// What a run of `url` on a server without ranges saves once it has all of a file of `total` bytes.
+fn complete_run(url: &str, total: usize) -> SavedRun<'_> {
+    SavedRun {
+        url,
+        total: Some(total as u64),
+        ranged: false,
+        etag: None,
+        last_modified: None,
+        remaining: &[],
+    }
+}
+
+/// Saves what `run` leaves when it could not rename its part file holding `data`.
+fn left_complete(dir: &std::path::Path, run: &SavedRun<'_>, data: &[u8]) -> TestResult {
     std::fs::write(dir.join("f.bin.wcpart"), data)?;
-    let state = serde_json::json!({
-        "version": 1,
-        "url": url,
-        "total": data.len(),
-        "ranged": false,
-        "remaining": [],
-    });
-    std::fs::write(dir.join("f.bin.wcstate"), state.to_string())?;
+    write_resume_file(&dir.join("f.bin.wcstate"), run)?;
     Ok(())
 }
 
@@ -184,7 +189,8 @@ async fn another_links_complete_part_file_is_not_finished_as_this_download() {
     let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
     let dir = private_dir("other-complete").unwrap();
     let path = dir.join("f.bin");
-    left_complete(&dir, "https://other.example/f.bin", &vec![0; KIB_USIZE]).unwrap();
+    let run_of_other = complete_run("https://other.example/f.bin", KIB_USIZE);
+    left_complete(&dir, &run_of_other, &vec![0; KIB_USIZE]).unwrap();
 
     let mut req = request(&server, "f.bin", &dir, 1);
     req.exact_path = Some(path.clone());
@@ -200,12 +206,12 @@ async fn a_complete_part_file_of_a_changed_file_is_fetched_again() {
     let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
     let dir = private_dir("changed-complete").unwrap();
     let path = dir.join("f.bin");
-    left_complete(&dir, server.url("f.bin").as_str(), &vec![0; KIB_USIZE / 2]).unwrap();
-    let state = dir.join("f.bin.wcstate");
-    let mut saved: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&state).unwrap()).unwrap();
-    saved["etag"] = serde_json::json!("\"old\"");
-    std::fs::write(&state, saved.to_string()).unwrap();
+    let url = server.url("f.bin");
+    let run_of_old = SavedRun {
+        etag: Some("\"old\""),
+        ..complete_run(url.as_str(), KIB_USIZE)
+    };
+    left_complete(&dir, &run_of_old, &vec![0; KIB_USIZE]).unwrap();
 
     let mut req = request(&server, "f.bin", &dir, 1);
     req.exact_path = Some(path.clone());
@@ -228,7 +234,9 @@ async fn a_complete_part_file_is_finished_when_the_server_answers_the_same() {
     .await;
     let dir = private_dir("same-complete").unwrap();
     let path = dir.join("f.bin");
-    left_complete(&dir, server.url("f.bin").as_str(), &server.data).unwrap();
+    let url = server.url("f.bin");
+    let saved = complete_run(url.as_str(), server.data.len());
+    left_complete(&dir, &saved, &server.data).unwrap();
 
     let mut req = request(&server, "f.bin", &dir, 1);
     req.exact_path = Some(path.clone());
@@ -247,15 +255,9 @@ async fn a_complete_part_file_is_finished_when_the_server_refuses() {
     server.configure(|c| c.refuse_paths.push(("/f.bin".into(), 410)));
     let dir = private_dir("complete-part").unwrap();
     let path = dir.join("f.bin");
-    std::fs::write(dir.join("f.bin.wcpart"), &server.data).unwrap();
-    let state = serde_json::json!({
-        "version": 1,
-        "url": server.url("f.bin").as_str(),
-        "total": server.data.len(),
-        "ranged": false,
-        "remaining": [],
-    });
-    std::fs::write(dir.join("f.bin.wcstate"), state.to_string()).unwrap();
+    let url = server.url("f.bin");
+    let saved = complete_run(url.as_str(), server.data.len());
+    left_complete(&dir, &saved, &server.data).unwrap();
 
     let mut req = request(&server, "f.bin", &dir, 1);
     req.exact_path = Some(path.clone());
@@ -273,15 +275,9 @@ async fn a_part_file_shorter_than_its_saved_size_is_fetched_again() {
     let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
     let dir = private_dir("short-part").unwrap();
     let path = dir.join("f.bin");
-    std::fs::write(dir.join("f.bin.wcpart"), b"cut").unwrap();
-    let state = serde_json::json!({
-        "version": 1,
-        "url": server.url("f.bin").as_str(),
-        "total": server.data.len(),
-        "ranged": false,
-        "remaining": [],
-    });
-    std::fs::write(dir.join("f.bin.wcstate"), state.to_string()).unwrap();
+    let url = server.url("f.bin");
+    let saved = complete_run(url.as_str(), server.data.len());
+    left_complete(&dir, &saved, b"cut").unwrap();
 
     let mut req = request(&server, "f.bin", &dir, 1);
     req.exact_path = Some(path.clone());
@@ -335,7 +331,7 @@ async fn a_download_with_nothing_new_does_not_save_again() {
     let state = dir.join("f.bin.wcstate");
     let mut req = request(&server, "f.bin", &dir, 1);
     req.options.checkpoint_interval = Duration::from_millis(10);
-    req.options.stall_timeout = PATIENCE;
+    req.options.stall_timeout = 2 * PATIENCE;
     let cancel = CancellationToken::new();
     let task = tokio::spawn(download(req, Arc::default(), cancel.clone()));
     tokio::time::timeout(PATIENCE, async {

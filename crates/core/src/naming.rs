@@ -236,12 +236,13 @@ pub(crate) fn left_by(path: &Path, url: &str) -> bool {
 ///
 /// # Errors
 ///
-/// The resume file could not be read, which says nothing about whose they are: both stay, and the run must not go on over them.
+/// The resume file could not be read, which says nothing about whose they are: all stay, and the run must not go on over them.
 pub(crate) fn discard_partials_of_other_links(path: &Path, url: &str) -> std::io::Result<()> {
-    let [part, state] = partial_files(path);
-    if !resumes_link(&state, url)? {
-        wirecatch_files::discard::file(&part);
-        wirecatch_files::discard::file(&state);
+    let files = partial_files_and_temp(path);
+    if !resumes_link(&files[1], url)? {
+        for file in &files {
+            wirecatch_files::discard::file(file);
+        }
     }
     Ok(())
 }
@@ -417,6 +418,17 @@ mod tests {
             unique_path(dir.path(), ".bashrc", |p| claimed.contains(p)),
             dir.path().join(".bashrc")
         );
+    }
+
+    #[test]
+    fn another_links_partial_files_go_with_their_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.zip");
+        for file in partial_files_and_temp(&path) {
+            std::fs::write(file, b"x").unwrap();
+        }
+        discard_partials_of_other_links(&path, "https://example.com/a.zip").unwrap();
+        assert!(partial_files_and_temp(&path).iter().all(|f| !f.exists()));
     }
 
     /// A folder where the resume file should be: reading it fails the way a held file does.

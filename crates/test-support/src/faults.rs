@@ -1,5 +1,6 @@
 //! What fault tests need beyond `http::TestServer`: a raw HTTP/1.1 server whose body is generated from the offset, so a file can be larger than memory, change mid-download, and its headers can lie, and a runner for a child process that can be killed.
 
+use crate::resume::SavedRun;
 use std::fs::File as FsFile;
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -127,6 +128,19 @@ impl Generated {
             len,
             etag: Some(format!("\"v{seed}\"")),
             last_modified: None,
+        }
+    }
+
+    /// What an earlier run of this file at `url` saved, with only the `remaining` ranges missing.
+    #[must_use]
+    pub fn saved_run<'a>(&'a self, url: &'a str, remaining: &'a [(u64, u64)]) -> SavedRun<'a> {
+        SavedRun {
+            url,
+            total: Some(self.len),
+            ranged: true,
+            etag: self.etag.as_deref(),
+            last_modified: self.last_modified.as_deref(),
+            remaining,
         }
     }
 
@@ -751,33 +765,6 @@ pub fn create_sparse(path: &Path, len: u64) -> std::io::Result<()> {
         }
     }
     file.set_len(len)
-}
-
-/// Writes a resume file for `file` at `url` that says only the `remaining` ranges are missing, as an earlier run would have.
-///
-/// # Errors
-///
-/// The file cannot be written.
-pub fn write_resume_file(
-    state: &Path,
-    url: &str,
-    file: &Generated,
-    remaining: &[(u64, u64)],
-) -> std::io::Result<()> {
-    let remaining: Vec<_> = remaining
-        .iter()
-        .map(|&(start, end)| serde_json::json!({ "start": start, "end": end }))
-        .collect();
-    let saved = serde_json::json!({
-        "version": 1,
-        "url": url,
-        "total": file.len,
-        "ranged": true,
-        "etag": file.etag,
-        "last_modified": file.last_modified,
-        "remaining": remaining,
-    });
-    std::fs::write(state, saved.to_string())
 }
 
 /// How many bytes `kept` covers.

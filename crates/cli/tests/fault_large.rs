@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use wirecatch_test_support::faults::{
     FaultServer, Generated, Req, Scratch, check_kept, cli, create_sparse, kept_now, wait_for,
-    write_resume_file,
 };
+use wirecatch_test_support::resume::write_resume_file;
 use wirecatch_test_support::{PATIENCE, TestResult};
 
 const EXE: &str = env!("CARGO_BIN_EXE_wirecatch");
@@ -33,9 +33,7 @@ fn earlier_run(scratch: &Scratch, server: &FaultServer, file: &Generated) -> Tes
     create_sparse(&part, LEN)?;
     write_resume_file(
         &scratch.downloads.join("large.bin.wcstate"),
-        &server.url(NAME),
-        file,
-        &[(FETCH_FROM, LEN)],
+        &file.saved_run(&server.url(NAME), &[(FETCH_FROM, LEN)]),
     )?;
     Ok(())
 }
