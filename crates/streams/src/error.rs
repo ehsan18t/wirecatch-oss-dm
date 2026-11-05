@@ -102,10 +102,9 @@ pub enum Error {
     )]
     FfmpegRun(crate::process::RunError),
 
-    /// ffmpeg ran but failed; the text is what it reported. The downloaded
-    /// segments are kept, so trying again does not download them again.
+    /// ffmpeg ran but failed; the text is all it wrote that was kept, since its last line is rarely the cause, and the message shows the start of it. The downloaded segments are kept, so trying again does not download them again.
     #[error(
-        "ffmpeg could not join the video: {0}. The downloaded parts are kept; try again, or reinstall the ffmpeg add-on if it keeps failing."
+        "ffmpeg could not join the video: {}. The downloaded parts are kept; try again, or reinstall the ffmpeg add-on if it keeps failing.", crate::process::for_a_person(.0)
     )]
     Ffmpeg(String),
 
@@ -543,6 +542,16 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The error holds up to two runs' tails of ffmpeg's output; a person's message stays short.
+    #[test]
+    fn a_long_ffmpeg_failure_shows_a_short_message() {
+        let message = Error::Ffmpeg("word ".repeat(2000)).to_string();
+        assert!(
+            message.chars().count() < 2 * crate::process::MAX_REASON_CHARS,
+            "{message}"
+        );
+    }
 
     /// A cause held as a field (its message is part of this error's) still brings its own reason along: what the operating system or the XML parser said.
     #[test]

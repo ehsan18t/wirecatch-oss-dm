@@ -19,6 +19,11 @@ pub(super) const PLACING: &str = "placing.done";
 /// Written just before each move of the finished file: how it moves, then the name it moves to.
 pub(super) const PLACING_TO: &str = "placing.to";
 
+/// Where the note of a move of the subtitle file `name` goes, written just before it moves as [`PLACING_TO`] is for the finished file.
+pub(super) fn placing_subtitle_to(name: &str) -> String {
+    format!("{name}.to")
+}
+
 /// A subtitle as the site sent it.
 pub(super) fn subtitle(n: usize, ext: &str) -> String {
     format!("sub-{n}.{ext}")

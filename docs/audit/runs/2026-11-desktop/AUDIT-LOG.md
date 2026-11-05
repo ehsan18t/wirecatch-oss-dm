@@ -289,8 +289,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 262 | A kill during a removal can leave a moved copy behind                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-129.                                                                                    | none                                          | open   |
 | 263 | Some tests still throttle a server so connections join                                            | found while fixing                                                                                 | P3       | small  | Found while fixing PR-126.                                                                                       | none                                          | open   |
 | 264 | The proxy's shown name has two copies                                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-116.                                                                                    | none                                          | open   |
-| 265 | A stream join reads only ffmpeg's last lines                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-105.                                                                                                  | none                                          | open   |
-| 266 | A crash while placing a video can double its subtitles                                            | found while fixing                                                                                 | P3       | small  | Left by PR-94.                                                                                                   | none                                          | open   |
+| 265 | A stream join reads only ffmpeg's last lines                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-105.                                                                                                  | none                                          | fixed  |
+| 266 | A crash while placing a video can double its subtitles                                            | found while fixing                                                                                 | P3       | small  | Left by PR-94.                                                                                                   | none                                          | fixed  |
 | 267 | No check finds shell functions nothing calls                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-98.                                                                                                   | none                                          | open   |
 | 268 | A hanging test on Windows leaves no name or log                                                   | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-11.                                                                                     | none                                          | open   |
 
@@ -4645,7 +4645,7 @@ P3, small, open.
 
 ### 265. A stream join reads only ffmpeg's last lines
 
-P3, small, open.
+P3, small, fixed.
 
 The stream join's `Error::Ffmpeg` keeps ffmpeg's last three lines (`SUMMARY_LINES`), so a cause named earlier shows the general sentence.
 
@@ -4657,7 +4657,7 @@ The stream join's `Error::Ffmpeg` keeps ffmpeg's last three lines (`SUMMARY_LINE
 
 ### 266. A crash while placing a video can double its subtitles
 
-P3, small, open.
+P3, small, fixed.
 
 A crash between a subtitle's link and its discard places it again under the keep-both rule, giving `Clip.en (1).srt`.
 

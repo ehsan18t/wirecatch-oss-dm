@@ -1329,3 +1329,9 @@ It amends D50.4. `MediaDefaults::start` is the only copy of the rule. The TypeSc
 ### D162. Settings lists the notice times it offers
 
 It amends D65.2. `START_NOTICE_TIMES` and `FINISH_NOTICE_TIMES` had no reader once the settings page was drawn in Rust: `FINISH_TIMES` and `START_TIMES` in `crates/desktop/src/main_window/settings/notifications.rs` hold the choices and their words. Each time stays its own enum in the protocol, with its seconds.
+
+### D172. A subtitle file's move is noted as the video's is
+
+Decided on 2026-11-05. It amends D132.4.
+
+Before each subtitle file moves from the work folder, its name and how it moves are noted there. A next run that finds the note and the subtitle file gone, or the two names one file, lists the file at the noted name and places no second copy. A note beside a different file says nothing, and the subtitle file takes a free name.
