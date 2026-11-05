@@ -173,7 +173,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 
 ## Lanes
 
-PR-159 to PR-162 are open. Every other item is fixed or recorded as won't fix.
+PR-159 and PR-160 are open. Every other item is fixed or recorded as won't fix.
 
 Not yet tried against the real thing: the subtitle choice on a real yt-dlp page and through the add-on install, Asking turned off on a real download, and every Linux path. Reports say what each pull request did not test.
 

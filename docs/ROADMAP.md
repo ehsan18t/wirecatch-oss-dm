@@ -13,7 +13,7 @@
 
 ## Where things stand and what comes next
 
-As of 2026-11-05, items 1 to 12 under "Before the first release" are done, and so is the desktop audit's fix list except items 280 to 283. The GPUI desktop app is on main (D95, D107), and so are queues that decide how their downloads run (D72), proxy profiles (D73), queue folders (D94) and the rebuilt download list (D115). The release setup that is the maintainer's comes next; this list is the order after it, which the maintainer may change.
+As of 2026-11-05, items 1 to 12 under "Before the first release" are done, and so is the desktop audit's fix list except items 280 and 281. The GPUI desktop app is on main (D95, D107), and so are queues that decide how their downloads run (D72), proxy profiles (D73), queue folders (D94) and the rebuilt download list (D115). The release setup that is the maintainer's comes next; this list is the order after it, which the maintainer may change.
 
 ## After the first release
 
@@ -44,9 +44,12 @@ To fix:
 - **The Download folder field may read as a placeholder.** Saving files shows a dim "Downloads" where other screens show the full path. Not yet checked whether this is intended.
 - **Empty space in a short download window.** The "already answered" note leaves a gap under Close, because the window keeps its minimum height.
 - **On Linux, yt-dlp and ffmpeg keep running after the app crashes.** Only a live app kills their process group (`crates/streams/src/process/tree.rs`). `PR_SET_PDEATHSIG` does not solve it: it fires when the thread that started the program exits, and the runtime threads come and go. It needs another mechanism, such as a small supervisor that kills the group when the pipe to the app closes, with a test that kills the app and finds both programs gone.
+- **On Linux, a launch that cannot hand over tells only the log.** The "already running" message from `crates/shell/src/launch.rs` is not shown there, so a launch refused by an older running copy looks as if nothing happened. D221 removes the usual cause after an upgrade; a launch made while the package manager is still working can still meet it.
 
 Not tested yet:
 
+- **A real package upgrade.** The post-install hook (D221) has run only against stand-in programs in a test.
+- **Packaging on an RPM system in CI.** The Linux jobs run on Ubuntu, so only tests with stand-in package tools cover the `rpm` licence lookup.
 - **A real update.** A successful download, install and restart has never run; the banner was only seen up to a failed checksum, with its stage seeded by a temporary change. It needs a signed release to test against. The setup's side (its approval prompt, the wait and the restart after a failure, D111) has only been compiled.
 - **Real installers.** None has been built with the third-party notices (D117), so the first run of the release workflow is the first test of its Linux steps.
 - **Certificates on Linux (D116).** The change has run only in CI, not on a Linux computer.
