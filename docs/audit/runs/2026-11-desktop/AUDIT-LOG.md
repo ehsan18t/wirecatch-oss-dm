@@ -269,18 +269,30 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 242 | Two test helpers wait for progress with no deadline                                               | `01-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 243 | A roaming data folder that could not be deleted keeps the list with its cookies                   | `Xdatabase-migrations-4`                                                                           | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 244 | The `<local>` queue rule is never tested against the real network check                           | `M-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 245 | A crash can save a download twice under a second name                                             | found while fixing                                                                                 | P2       | medium | Found by the fault tests while fixing.                                                                           | fixed                                         |
-| 246 | A killed copy leaves its temporary file behind                                                    | found while fixing                                                                                 | P2       | small  | Found by review of PR-08.                                                                                        | fixed                                         |
-| 247 | Test comments carry history and review labels                                                     | found while fixing                                                                                 | P3       | small  | Found while fixing PR-18.                                                                                        | fixed                                         |
-| 248 | Nothing stops new code deleting a whole folder                                                    | found while fixing                                                                                 | P3       | medium | Left out of PR-02.                                                                                               | fixed                                         |
-| 249 | The timing check misses a throttled server racing an action                                       | found while fixing                                                                                 | P3       | medium | Found by review of PR-01 and PR-47.                                                                              | fixed                                         |
-| 250 | The capture reply's doc contradicts the extension                                                 | found while fixing                                                                                 | P3       | small  | Found by review of PR-70.                                                                                        | fixed                                         |
-| 251 | The layout test can fail on a font that did not load                                              | found while fixing                                                                                 | P3       | small  | Seen once on CI, on a change with no extension code.                                                             | fixed                                         |
-| 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | fixed                                         |
-| 253 | A quit right after a cancel can leave a part file                                                 | found while fixing                                                                                 | P3       | small  | Found while fixing PR-123.                                                                                       | fixed                                         |
-| 254 | Ticking a folded group does nothing the person can act on                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-81.                                                                                        | fixed                                         |
-| 255 | A page read can outlive the app after a quit past the limit                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10. Read from the code, not run.                                                        | fixed                                         |
-| 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | fixed                                         |
+| 245 | A crash can save a download twice under a second name                                             | found while fixing                                                                                 | P2       | medium | Found by the fault tests while fixing.                                                                           | none                                          | fixed  |
+| 246 | A killed copy leaves its temporary file behind                                                    | found while fixing                                                                                 | P2       | small  | Found by review of PR-08.                                                                                        | none                                          | fixed  |
+| 247 | Test comments carry history and review labels                                                     | found while fixing                                                                                 | P3       | small  | Found while fixing PR-18.                                                                                        | none                                          | fixed  |
+| 248 | Nothing stops new code deleting a whole folder                                                    | found while fixing                                                                                 | P3       | medium | Left out of PR-02.                                                                                               | none                                          | fixed  |
+| 249 | The timing check misses a throttled server racing an action                                       | found while fixing                                                                                 | P3       | medium | Found by review of PR-01 and PR-47.                                                                              | none                                          | fixed  |
+| 250 | The capture reply's doc contradicts the extension                                                 | found while fixing                                                                                 | P3       | small  | Found by review of PR-70.                                                                                        | none                                          | fixed  |
+| 251 | The layout test can fail on a font that did not load                                              | found while fixing                                                                                 | P3       | small  | Seen once on CI, on a change with no extension code.                                                             | none                                          | fixed  |
+| 252 | A quit during a removal can leave part files behind                                               | found while fixing                                                                                 | P3       | small  | Found while fixing PR-27.                                                                                        | none                                          | fixed  |
+| 253 | A quit right after a cancel can leave a part file                                                 | found while fixing                                                                                 | P3       | small  | Found while fixing PR-123.                                                                                       | none                                          | fixed  |
+| 254 | Ticking a folded group does nothing the person can act on                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-81.                                                                                        | none                                          | fixed  |
+| 255 | A page read can outlive the app after a quit past the limit                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10. Read from the code, not run.                                                        | none                                          | fixed  |
+| 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | none                                          | fixed  |
+| 257 | A server can change the type of a name the person confirmed                                       | found while fixing                                                                                 | P2       | medium | Found while reviewing PR-51.                                                                                     | none                                          | open   |
+| 258 | A real size above the estimate moves a video's bar backwards                                      | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-131. Read from the code, not run.                                                       | none                                          | open   |
+| 259 | A finished group's heading counts go stale                                                        | found while fixing                                                                                 | P3       | small  | Found while fixing PR-41.                                                                                        | none                                          | open   |
+| 260 | A startup notice covers the toolbar and Settings rows                                             | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | open   |
+| 261 | The not-private notice carries a path and a long sentence                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | open   |
+| 262 | A kill during a removal can leave a moved copy behind                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-129.                                                                                    | none                                          | open   |
+| 263 | Some tests still throttle a server so connections join                                            | found while fixing                                                                                 | P3       | small  | Found while fixing PR-126.                                                                                       | none                                          | open   |
+| 264 | The proxy's shown name has two copies                                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-116.                                                                                    | none                                          | open   |
+| 265 | A stream join reads only ffmpeg's last lines                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-105.                                                                                                  | none                                          | open   |
+| 266 | A crash while placing a video can double its subtitles                                            | found while fixing                                                                                 | P3       | small  | Left by PR-94.                                                                                                   | none                                          | open   |
+| 267 | No check finds shell functions nothing calls                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-98.                                                                                                   | none                                          | open   |
+| 268 | A hanging test on Windows leaves no name or log                                                   | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-11.                                                                                     | none                                          | open   |
 
 ## Items
 
@@ -3651,8 +3663,6 @@ P3, small, fixed.
 
 - `14-6`: confirmed, P3. The key error prints the whole signed address to the person and into what is saved. Full text in `chunks/14.md`, verdict in `verdicts/B08.md`.
 
-**Left to do:** Query values are hidden, but a token in a key's path still shows on a refused key. PR-133 finishes this.
-
 ### 199. On Linux, media programs may outlive an app ended by a signal
 
 P3, medium, fixed.
@@ -4479,8 +4489,6 @@ P3, small, fixed.
 
 P3, small, fixed.
 
-**Left to do:** `shutdown` now waits for a removal, so a plain quit finishes it. A kill or crash during a removal, or a quit past `QUIT_PATIENCE`, still leaves part files with no row. PR-129 finishes this.
-
 `shutdown` does not wait for a removal's file deletion, so a quit or crash during it leaves part files with no row. The record of the removal is kept until it ends, so no row comes back.
 
 **Fix:** Finish the deletion at the next start from that record, or have `shutdown` wait for it.
@@ -4517,13 +4525,13 @@ A folded group's heading circle ticks ids that `laid.rows` leaves out. The circl
 
 P3, small, fixed.
 
-A yt-dlp page read still running at exit is no longer killed by dropping the runtime, because its token at `crates/shell/src/media.rs:617` does not come from `stopped`. On Linux it should end on a closed pipe or at its time limit.
+A yt-dlp page read still running at exit is no longer killed by dropping the runtime, because its token at `crates/core/src/manager/media.rs:617` does not come from `stopped`. On Linux it should end on a closed pipe or at its time limit.
 
 **Fix:** Tie the read's token to `stopped`.
 
 **Blocks:** nothing. **Blocked by:** nothing.
 
-**Touches:** crates/shell/src/media.rs.
+**Touches:** crates/core/src/manager/media.rs.
 
 ### 256. A retry on the best format can move the bar backwards
 
@@ -4536,6 +4544,150 @@ A row with no saved formats runs the best selection with nothing to seed the tot
 **Blocks:** nothing. **Blocked by:** nothing.
 
 **Touches:** crates/media/src/lib.rs, crates/core/src/manager/media_run/page.rs.
+
+### 257. A server can change the type of a name the person confirmed
+
+P2, medium, open.
+
+A confirmed name that was not edited is sent as no choice, so the server's `Content-Disposition` still decides. `invoice.pdf`, confirmed, can be saved as `invoice.exe` with no question. The program warning and the Mark of the Web still apply when it is opened.
+
+**Fix:** When a server's name changes the file type of a name the person confirmed, ask again. The server may still improve the name otherwise.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/naming.rs, settled_name; manager/settle.rs, settle_on_disk; crates/desktop/src/download_windows/view.rs, chosen_name.
+
+### 258. A real size above the estimate moves a video's bar backwards
+
+P3, small, open.
+
+A yt-dlp row seeds its total from the page's sizes. A real size above a `filesize_approx` seed, or a growing `total_bytes_estimate`, raises the total and drops the bar.
+
+**Fix:** Never let the bar fall while a run is going, or show no total until the sizes are real.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/media/src/lib.rs, report.
+
+### 259. A finished group's heading counts go stale
+
+P3, small, open.
+
+A queue group's heading counts in the complete window are not updated when `FinishedBook::follow` removes or changes a row.
+
+**Fix:** Count from the rows the group holds.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/shell/src/finished.rs, FinishedBook::follow.
+
+### 260. A startup notice covers the toolbar and Settings rows
+
+P3, small, open.
+
+A persistent startup notice stays until it is closed, over the toolbar and over the Theme and Accent colour rows in Settings.
+
+**Fix:** Show these notices where they cover nothing, or let them leave once read.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/desktop/src/notices.rs.
+
+### 261. The not-private notice carries a path and a long sentence
+
+P3, small, open.
+
+`not_private` puts a folder path and a long sentence on the notification surface, which breaks a path across many lines at its fixed width. The same fault in the list-recovered notice is fixed.
+
+**Fix:** Shorten it and log the path, as the list-recovered notice does.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/manager/startup.rs, not_private.
+
+### 262. A kill during a removal can leave a moved copy behind
+
+P3, small, open.
+
+A removal can wait on a move to another drive. The row and its move record are gone by then, so a kill leaves a `.wirecatch-move-N` copy, possibly many gigabytes, that nothing cleans.
+
+**Fix:** Put the move's target folder on the deletion record.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/manager/relocate.rs; manager/downloads.rs, finish_removing.
+
+### 263. Some tests still throttle a server so connections join
+
+P3, small, open.
+
+A few tests set a throttle with no action behind it, so that connections join before the file ends. A fast machine can outlast it, and the `test-timing` check cannot see them, since no action follows.
+
+**Fix:** Hold the server until the connections have joined.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/engine/tests: hardening.rs, parallel_download, no_request_asks; crates/core/tests/manager/limits.rs.
+
+### 264. The proxy's shown name has two copies
+
+P3, small, open.
+
+`proxy_dialog::shown_name` repeats `ProxyServerSettings::shown_name`, and the sidebar imports the dialog just to call it.
+
+**Fix:** Compare the two, then keep the one in `crates/protocol`.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/desktop/src/main_window/proxy_dialog.rs; crates/protocol/src/proxy.rs.
+
+### 265. A stream join reads only ffmpeg's last lines
+
+P3, small, open.
+
+The stream join's `Error::Ffmpeg` keeps ffmpeg's last three lines (`SUMMARY_LINES`), so a cause named earlier shows the general sentence.
+
+**Fix:** Give the wording table all the lines kept, as `FfmpegError::Failed` now has.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/streams/src/ffmpeg.rs.
+
+### 266. A crash while placing a video can double its subtitles
+
+P3, small, open.
+
+A crash between a subtitle's link and its discard places it again under the keep-both rule, giving `Clip.en (1).srt`.
+
+**Fix:** Note a subtitle's move as the video's is noted.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** crates/core/src/manager/media_run/placement.rs.
+
+### 267. No check finds shell functions nothing calls
+
+P3, small, open.
+
+Item 142 removed the public items of `crates/shell` with no caller, but proposed a check that was not added, so more can gather.
+
+**Fix:** Add the check, or record why not.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** scripts/gate/.
+
+### 268. A hanging test on Windows leaves no name or log
+
+P3, small, open.
+
+A Windows test job was cancelled at the 20 minute limit and its log was lost, so the hanging test was never named. The cause was never found.
+
+**Fix:** Give each test a time limit in that step, so a hang names its test.
+
+**Blocks:** nothing. **Blocked by:** nothing.
+
+**Touches:** scripts/gate/; .github/workflows/.
 
 ## Fixed beyond the items
 
