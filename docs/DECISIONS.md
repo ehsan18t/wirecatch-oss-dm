@@ -1335,3 +1335,11 @@ It amends D65.2. `START_NOTICE_TIMES` and `FINISH_NOTICE_TIMES` had no reader on
 Decided on 2026-11-05. It amends D132.4.
 
 Before each subtitle file moves from the work folder, its name and how it moves are noted there. A next run that finds the note and the subtitle file gone, or the two names one file, lists the file at the noted name and places no second copy. A note beside a different file says nothing, and the subtitle file takes a free name.
+
+### D155. Whether a queue is in a run is saved, and the window reads it
+
+Decided on 2026-11-05.
+
+1. A schedule without a stop time starts a run at its start, which lasts until the queue has nothing left. That run is `QueueStatus::running_until_empty`, saved with the queue next to `running_outside_schedule`. So a restart keeps a run whether or not a download was running, and never starts one.
+2. `schedule::allows` is the one answer: inside the window, or during a run. The core and the sidebar both read it, so the queue's line and Start now follow what really decides. Between runs a queue without a stop time is outside its schedule all day, and offers Start now.
+3. A run keeps going for a download that only waits: its question about a file in the folder, its move, or the page read for its video.

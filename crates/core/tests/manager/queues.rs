@@ -132,6 +132,32 @@ async fn start_now_and_its_end_by_pausing_survive_a_restart() -> TestResult {
     Ok(())
 }
 
+/// The run a queue was started for goes on while its last download's files move.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queue_run_outlasts_the_move_of_its_last_download() -> TestResult {
+    let silent = SilentServer::start().await;
+    let h = Harness::with_stop_timeout(SHORT).await?;
+    let mut main = queue(&h, DEFAULT_QUEUE_ID)?;
+    main.settings.schedule = Some(Schedule {
+        start: TimeOfDay { hour: 2, minute: 0 },
+        stop: None,
+        days: vec![],
+    });
+    h.manager.update_queue(main.id, main.settings).unwrap();
+    let row = h.add(&silent.url("slow.bin")).await?;
+    h.manager.start_queue_now(DEFAULT_QUEUE_ID).unwrap();
+    assert!(is_running(&h.row(row.id)));
+
+    let folder = h.root.path().join("moved");
+    h.manager
+        .set_download_folder(row.id, &folder.to_string_lossy())
+        .await?;
+    h.wait_for(row.id, "the run to go on after the move", is_running)
+        .await;
+    assert!(queue(&h, DEFAULT_QUEUE_ID)?.status.running_outside_schedule);
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn waiting_downloads_say_why() -> TestResult {
     let silent = SilentServer::start().await;

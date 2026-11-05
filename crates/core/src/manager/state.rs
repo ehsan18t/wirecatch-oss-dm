@@ -22,7 +22,6 @@ use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::proxy::{ProxyServer, ProxyUse};
 use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
-use wirecatch_queues::schedule::Gate;
 use wirecatch_records::answers::Answers;
 pub(super) use wirecatch_records::answers::{Expectation, NextRun, OnExisting};
 use wirecatch_records::files::{DownloadFiles, PendingDeletion};
@@ -152,7 +151,6 @@ pub(super) struct QueueSlot {
     pub queue: Queue,
     /// Shared by every download of the queue; a new limit applies to running downloads at once.
     pub limiter: Arc<RateLimiter>,
-    pub gate: Gate,
 }
 
 impl QueueSlot {
@@ -160,7 +158,6 @@ impl QueueSlot {
         Self {
             limiter: Arc::new(RateLimiter::new(queue.settings.speed_limit.own())),
             queue,
-            gate: Gate::default(),
         }
     }
 }

@@ -285,7 +285,7 @@ fn restore_queues(stored: Vec<Queue>) -> Vec<QueueSlot> {
 /// its queue continues the run that was under way.
 fn restore_entry(
     stored: StoredDownload,
-    queues: &mut [QueueSlot],
+    queues: &[QueueSlot],
     default_queue: QueueId,
     around: &Surroundings<'_>,
 ) -> (Entry, bool) {
@@ -350,9 +350,6 @@ fn restore_entry(
     ) {
         entry.row.status = DownloadStatus::Queued;
         entry.resume_first = true;
-        if let Some(slot) = queues.iter_mut().find(|s| s.queue.id == entry.row.queue) {
-            slot.gate.resume_run();
-        }
     }
     (entry, fixed)
 }

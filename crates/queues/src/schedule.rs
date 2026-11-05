@@ -9,55 +9,34 @@ use wirecatch_protocol::app::{Schedule, TimeOfDay, Weekday};
 /// How far back a jump of the clock is searched for a missed start time.
 const MAX_CATCH_UP_DAYS: i64 = 7;
 
-/// Remembers a run a schedule without a stop time has begun.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Gate {
-    running_until_empty: bool,
-}
-
-impl Gate {
-    /// For local time `(since, now]`; `has_work`: downloads still waiting or running.
-    pub fn is_open(
-        &mut self,
-        schedule: Option<&Schedule>,
-        since: NaiveDateTime,
-        now: NaiveDateTime,
-        has_work: bool,
-    ) -> bool {
-        let Some(schedule) = schedule else {
-            return true;
-        };
-        if schedule.stop.is_some() {
-            return window_open(schedule, now);
-        }
-        if start_crossed(schedule, since, now) {
-            self.running_until_empty = true;
-        }
-        if !has_work {
-            self.running_until_empty = false;
-        }
-        self.running_until_empty
-    }
-
-    pub fn resume_run(&mut self) {
-        self.running_until_empty = true;
-    }
-
-    pub fn reset(&mut self) {
-        self.running_until_empty = false;
-    }
-}
-
-/// Whether `schedule` lets its queue run at local time `now`, as a person reads it: inside its
-/// window, or, without a stop time, from its start until the day ends. [`Gate`] decides when the
-/// queue really starts.
-#[must_use]
-pub fn allows(schedule: &Schedule, now: NaiveDateTime) -> bool {
+/// Brings the saved `running_until_empty` of a schedule without a stop time up to local time `(since, now]`; `has_work`: downloads still waiting, running or about to go on.
+pub fn follow_run(
+    schedule: &Schedule,
+    since: NaiveDateTime,
+    now: NaiveDateTime,
+    has_work: bool,
+    running_until_empty: &mut bool,
+) {
     if schedule.stop.is_some() {
-        return window_open(schedule, now);
+        *running_until_empty = false;
+        return;
     }
-    to_time(schedule.start)
-        .is_some_and(|start| runs_on(schedule, now.date()) && now.time() >= start)
+    if start_crossed(schedule, since, now) {
+        *running_until_empty = true;
+    }
+    if !has_work {
+        *running_until_empty = false;
+    }
+}
+
+/// Whether `schedule` lets its queue run at local time `now`: inside its window, or, without a stop time, during a run. The core and the window both read this (D155).
+#[must_use]
+pub fn allows(schedule: &Schedule, running_until_empty: bool, now: NaiveDateTime) -> bool {
+    if schedule.stop.is_some() {
+        window_open(schedule, now)
+    } else {
+        running_until_empty
+    }
 }
 
 /// A schedule without a stop time has no window and is never open here.
@@ -168,12 +147,12 @@ mod tests {
             stop: None,
             days: vec![Weekday::Mon],
         };
-        assert!(!allows(&s, mon(21, 59)));
-        assert!(allows(&s, mon(22, 0)));
-        assert!(!allows(&s, day(13, 22, 30)));
+        assert!(!allows(&s, false, mon(22, 30)));
+        assert!(allows(&s, true, mon(21, 59)));
+        assert!(allows(&s, true, day(13, 3, 0)));
         let windowed = window(tod(2, 0), tod(6, 30), vec![]);
         assert_eq!(
-            allows(&windowed, mon(3, 0)),
+            allows(&windowed, false, mon(3, 0)),
             window_open(&windowed, mon(3, 0))
         );
     }
@@ -255,20 +234,18 @@ mod tests {
             stop: None,
             days: vec![],
         };
-        let mut gate = Gate::default();
-        assert!(!gate.is_open(Some(&s), mon(1, 0), mon(1, 30), true));
-        assert!(gate.is_open(Some(&s), mon(1, 30), mon(2, 0), true));
-        assert!(gate.is_open(Some(&s), mon(2, 0), mon(9, 0), true));
-        assert!(!gate.is_open(Some(&s), mon(9, 0), mon(9, 1), false));
+        let mut run = false;
+        let mut step = |since, now, has_work| {
+            follow_run(&s, since, now, has_work, &mut run);
+            run
+        };
+        assert!(!step(mon(1, 0), mon(1, 30), true));
+        assert!(step(mon(1, 30), mon(2, 0), true));
+        assert!(step(mon(2, 0), mon(9, 0), true));
+        assert!(!step(mon(9, 0), mon(9, 1), false));
         // Work added later waits for the next start.
-        assert!(!gate.is_open(Some(&s), mon(9, 1), mon(12, 0), true));
-        assert!(gate.is_open(Some(&s), mon(12, 0), day(13, 2, 0), true));
-    }
-
-    #[test]
-    fn gate_without_schedule_is_always_open() {
-        let mut gate = Gate::default();
-        assert!(gate.is_open(None, mon(1, 0), mon(1, 0), false));
+        assert!(!step(mon(9, 1), mon(12, 0), true));
+        assert!(step(mon(12, 0), day(13, 2, 0), true));
     }
 
     #[test]

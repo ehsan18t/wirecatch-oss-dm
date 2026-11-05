@@ -284,6 +284,9 @@ pub struct QueueStatus {
     /// Set by "start now": the queue runs outside its schedule until it is empty
     /// or paused, then the schedule applies again.
     pub running_outside_schedule: bool,
+    /// A schedule without a stop time has passed its start: the queue runs until it has nothing
+    /// left to do, then waits for the next start.
+    pub running_until_empty: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

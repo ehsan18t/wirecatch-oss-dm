@@ -1357,7 +1357,8 @@ export function isQueueStatus(value: unknown): value is QueueStatus {
   return ((value1: unknown): boolean =>
     isRecord(value1) &&
     typeof value1['paused'] === 'boolean' &&
-    typeof value1['running_outside_schedule'] === 'boolean')(value);
+    typeof value1['running_outside_schedule'] === 'boolean' &&
+    typeof value1['running_until_empty'] === 'boolean')(value);
 }
 
 /** Whether `value` has the shape of a {@link QueueSummary}; fields it does not name are not checked. */
