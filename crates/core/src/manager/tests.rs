@@ -1240,6 +1240,68 @@ fn hold_moves(manager: &Manager) -> (Arc<Notify>, std::sync::mpsc::Sender<()>) {
     (entered, release)
 }
 
+/// A mark being written refuses readers, so a copy that reads it meanwhile goes without it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_move_waits_for_the_mark_its_run_began() {
+    let server = wirecatch_test_support::files::FileServer::start().await;
+    server.put("setup.exe", vec![0u8; 256 * 1024]);
+    server.hold_after("setup.exe", 16 * 1024);
+    let dir = tempfile::tempdir().unwrap();
+    let folders = KnownFolders::under_home(dir.path().join("home"));
+    let manager = Manager::open(ManagerConfig::for_tests(dir.path().join("data"), folders))
+        .await
+        .unwrap();
+
+    let marking = Arc::new(Notify::new());
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    let told = marking.clone();
+    manager.use_before_marking(Arc::new(move || {
+        told.notify_one();
+        assert!(
+            held.lock().unwrap().recv().is_err(),
+            "ends when the sender is dropped"
+        );
+    }));
+    let moved = Arc::new(Notify::new());
+    let told = moved.clone();
+    manager.use_fake_mover(Arc::new(move |from, to| {
+        told.notify_one();
+        std::fs::rename(from, to)
+    }));
+
+    let id = manager
+        .add_download(add_request(server.url("setup.exe").as_str()))
+        .await
+        .unwrap();
+    tokio::time::timeout(PATIENCE, marking.notified())
+        .await
+        .expect("the part file was never marked");
+    wait_until("the part file to have data", || {
+        manager.lock().downloads[&id].row.done > 0
+    })
+    .await;
+
+    let moving = {
+        let (manager, chosen) = (
+            manager.clone(),
+            dir.path().join("chosen").to_string_lossy().into_owned(),
+        );
+        tokio::spawn(async move { manager.set_download_folder(id, &chosen).await })
+    };
+    assert!(
+        tokio::time::timeout(QUIET, moved.notified()).await.is_err(),
+        "the files moved while the mark was still being written"
+    );
+
+    drop(release);
+    tokio::time::timeout(PATIENCE, moved.notified())
+        .await
+        .expect("the move never began");
+    moving.await.unwrap().unwrap();
+    manager.shutdown().await;
+}
+
 /// The deletions on record in the database under `dir`, once what is queued is written.
 fn deletions_on_disk(manager: &Manager, dir: &Path) -> String {
     assert!(manager.inner.store.wait_for_writes(PATIENCE));

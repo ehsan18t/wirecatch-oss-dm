@@ -10,7 +10,7 @@ use tracing::warn;
 use chrono::NaiveDateTime;
 use tokio::task::AbortHandle;
 use wirecatch_engine::{
-    CancellationToken, ManualProxies, Progress, ProxyChoice, ProxyRoute, RateLimiter, Url,
+    CancellationToken, FileWork, ManualProxies, Progress, ProxyChoice, ProxyRoute, RateLimiter, Url,
 };
 use wirecatch_media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use wirecatch_protocol::UnixMillis;
@@ -291,9 +291,10 @@ pub(super) struct Run {
     /// Cancelled by the run's task once the engine has returned and closed its files.
     pub exited: CancellationToken,
     pub gauge: Gauge,
-    /// Whether the engine's part file got its Mark of the Web, so the file is
-    /// marked before it is renamed into place.
-    pub marked: bool,
+    /// Whether the ticker may no longer mark the engine's part file: it began the Mark of the Web, or the run's work is over.
+    pub marking_done: bool,
+    /// What the run does on the blocking pool, which its end waits for.
+    pub file_work: FileWork,
     /// Why the run is being stopped, once it is.
     pub stop: Option<Stop>,
     /// The file already in the folder, with [`Stop::FileExists`].
@@ -922,7 +923,8 @@ mod tests {
                 cancel: CancellationToken::new(),
                 exited: CancellationToken::new(),
                 gauge: Gauge::Engine(Arc::new(Progress::default())),
-                marked: false,
+                marking_done: false,
+                file_work: FileWork::new(),
                 stop: None,
                 found: None,
                 server_name: None,

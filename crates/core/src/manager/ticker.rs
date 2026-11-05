@@ -9,12 +9,13 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use tokio::sync::Notify;
-use wirecatch_engine::CancellationToken;
 use wirecatch_engine::numeric::saturating_cast;
+use wirecatch_engine::{CancellationToken, FileWork};
 use wirecatch_protocol::app::{DownloadStatus, DownloadSummary, QueueReport, UiEvent, WaitReason};
 use wirecatch_protocol::{DownloadId, QueueId};
 use wirecatch_store::Progress;
 
+use super::run::Mark;
 use super::state::{Entry, Gauge, State};
 use super::{Inner, Manager};
 use crate::batches::Outcomes;
@@ -63,13 +64,19 @@ impl Manager {
                 to_mark.extend(part_to_mark(entry));
             }
         }
-        if !to_mark.is_empty() {
-            // The part file is marked as soon as it exists, so the finished file
-            // carries the mark from the moment it is renamed into place.
-            self.inner.runtime.spawn_blocking(move || {
-                for (part, url, referrer) in to_mark {
-                    wirecatch_files::zone::mark(&part, &url, referrer.as_deref());
+        // The part file is marked as soon as it exists, so the finished file carries the
+        // mark from the moment it is renamed into place. As the run's file work: a mark
+        // being written refuses readers, so one still under way when a move copies the
+        // mark would leave the copy without it.
+        for (file_work, part, mark) in to_mark {
+            #[cfg(test)]
+            let before_marking = self.before_marking();
+            file_work.spawn_blocking(move || {
+                #[cfg(test)]
+                if let Some(hook) = before_marking {
+                    hook();
                 }
+                wirecatch_files::zone::mark(&part, &mark.url, mark.referrer.as_deref());
             });
         }
         let running = !state.running.is_empty();
@@ -149,17 +156,20 @@ fn queue_report(state: &State, queue: QueueId, outcomes: &Outcomes) -> Option<Qu
 }
 
 /// The engine's part file of a running download that has not been marked yet,
-/// once the server has answered (the path is final then), with the addresses
-/// for the mark.
-fn part_to_mark(entry: &mut Entry) -> Option<(std::path::PathBuf, String, Option<String>)> {
+/// once the server has answered (the path is final then), with the run's file
+/// work and what the mark says.
+fn part_to_mark(entry: &mut Entry) -> Option<(FileWork, std::path::PathBuf, Mark)> {
     let run = entry.run.as_mut()?;
-    if run.marked || !matches!(run.gauge, Gauge::Engine(_)) || !run.gauge.read().answered {
+    if run.marking_done || !matches!(run.gauge, Gauge::Engine(_)) || !run.gauge.read().answered {
         return None;
     }
-    run.marked = true;
+    run.marking_done = true;
     let [part, _] = crate::naming::partial_files(std::path::Path::new(&entry.row.path));
-    let referrer = crate::headers::referrer(&entry.origin.headers).map(str::to_string);
-    Some((part, entry.row.url.clone(), referrer))
+    let mark = Mark {
+        url: entry.row.url.clone(),
+        referrer: crate::headers::referrer(&entry.origin.headers).map(str::to_string),
+    };
+    Some((run.file_work.clone(), part, mark))
 }
 
 /// Copies a run's engine counters into its row. Returns whether the row changed.
