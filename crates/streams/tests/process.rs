@@ -607,10 +607,11 @@ async fn a_run_past_its_time_limit_ends_what_the_program_started() -> TestResult
     Ok(())
 }
 
-/// A program that exits and leaves a child running: the run ends the child as soon as the program has ended. The child shares standard error, so if it were left running the run would read on until its grace ran out and say so in the log; it would still end the child afterwards, which is why the log is what tells.
-#[tokio::test]
+/// A program that exits and leaves a child running: the run ends the child as soon as the program has ended. The child shares standard error, so if it were left running the run would read on until its grace ran out; on a held clock that grace never runs out, so the run would not end.
+#[tokio::test(start_paused = true)]
 async fn what_a_program_leaves_running_ends_with_it() -> TestResult {
     let (logs, _capturing) = Logs::capture();
+    let frozen = Frozen::clock();
     let (address, accepted) = holder_listener().await?;
     let mut holding = false;
     let ran = run(
@@ -627,7 +628,9 @@ async fn what_a_program_leaves_running_ends_with_it() -> TestResult {
         !logged.contains("outputs stayed open"),
         "the child was not ended with the program: {logged}"
     );
-    holder_ended(accepted.await??).await
+    holder_ended(accepted.await??).await?;
+    frozen.thaw();
+    Ok(())
 }
 
 /// A child that left the program's group (as after `setsid`) keeps the outputs open; the run still ends once the program itself has, after a short grace.

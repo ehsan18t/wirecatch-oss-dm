@@ -7,19 +7,22 @@ import { closingBracket, codeOnly } from './rust-attributes.mjs';
 /** What measures how long something took: an `Instant`'s `elapsed()` or `duration_since`, or the gap between two instants a test server recorded (`Seen::at`). */
 const MEASURED = String.raw`\.elapsed\(\)|duration_since\(|\.at\s*-`;
 
+/** The waits the check reads. `\btimeout` keeps out configured limits such as `with_capture_timeout`, so `recv_timeout` is named. */
+const WAIT = String.raw`(?:\btimeout|\brecv_timeout|_within)`;
+
 /** A wait given a fixed `Duration` written in place: `timeout(Duration::from_secs(2), ..)`, `outcome_within(id, Duration::from_secs(1))`. */
-const FIXED_WAIT = String.raw`(?:\btimeout|_within)\((?:[^()]|\([^()]*\))*?Duration::from_\w+\(`;
+const FIXED_WAIT = String.raw`${WAIT}\((?:[^()]|\([^()]*\))*?Duration::from_\w+\(`;
 
 /** Below this, a named wait or deadline is short: `PATIENCE` in test-support, two minutes. */
 const PATIENCE_SECONDS = 120;
 
-/** The `Duration` constants a file names, with their length in seconds: `const PROMPT: Duration = Duration::from_secs(3);`. */
+/** The durations a file names, with their length in seconds: `const PROMPT: Duration = Duration::from_secs(3);`, `let patience = Duration::from_secs(5);`. */
 function durationConstants(code) {
   const unit = { secs: 1, millis: 1e-3, micros: 1e-6, nanos: 1e-9 };
   return new Map(
     [
       ...code.matchAll(
-        /\bconst\s+(\w+)\s*:\s*Duration\s*=\s*Duration::from_(secs|millis|micros|nanos)\(\s*([\d_]+)\s*\)/g,
+        /\b(?:const|let)\s+(\w+)\s*(?::\s*Duration\s*)?=\s*Duration::from_(secs|millis|micros|nanos)\(\s*([\d_]+)\s*\)/g,
       ),
     ].map((m) => [m[1], Number(m[3].replaceAll('_', '')) * unit[m[2]]]),
   );
@@ -60,7 +63,7 @@ function inside(regions, index) {
 /** The comparisons that bound `subject` from above: `subject < x`, `x > subject`, `(a..b).contains(&subject)`. */
 function upperBounds(subject) {
   return new RegExp(
-    String.raw`(?:${subject})\s*<=?(?![<=])|[^=\-<>]>=?\s*(?:${subject})|\.\.=?\s*[^)\s][^)]*\)\s*\.contains\(\s*&\s*(?:${subject})`,
+    String.raw`(?:${subject})(?:\.\w+\(\))*\s*<=?(?![<=])|[^=\-<>]>=?\s*(?:${subject})|\.\.=?\s*[^)\s][^)]*\)\s*\.contains\(\s*&\s*(?:${subject})`,
   );
 }
 
@@ -99,7 +102,7 @@ function shortWaits(code) {
   ];
   const waits = [FIXED_WAIT];
   if (short.length > 0) {
-    waits.push(String.raw`(?:\btimeout|_within)\(\s*(?:${short.join('|')})\b`);
+    waits.push(String.raw`${WAIT}\(\s*(?:${short.join('|')})\b`);
   }
   return {
     wait: new RegExp(waits.join('|'), 'g'),

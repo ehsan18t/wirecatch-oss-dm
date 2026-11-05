@@ -9,6 +9,40 @@ function lines(text, file = TEST_FILE) {
   return timingRaces(file, text).map((hit) => hit.line);
 }
 
+test('recv_timeout is a wait like any other', () => {
+  const text = [
+    'const DEADLINE: Duration = Duration::from_secs(10);',
+    'fn waits() {',
+    '    done.recv_timeout(DEADLINE).unwrap();',
+    '    done.recv_timeout(Duration::from_secs(1)).unwrap();',
+    '    done.recv_timeout(PATIENCE).unwrap();',
+    '    assert!(quiet.recv_timeout(DEADLINE).is_err());',
+    '}',
+  ].join('\n');
+  assert.deepEqual(lines(text), [3, 4]);
+});
+
+test('a short duration kept in a local name and given to a wait is a race', () => {
+  const text = [
+    'async fn waits() {',
+    '    let patience = Duration::from_secs(5);',
+    '    timeout(patience, work()).await.unwrap();',
+    '}',
+  ].join('\n');
+  assert.deepEqual(lines(text), [3]);
+});
+
+test('a measured time compared through a method is bounded too', () => {
+  const text = [
+    'fn quick() {',
+    '    let took = started.elapsed();',
+    '    assert!(took.as_millis() < 500);',
+    '    assert!(took.as_millis() >= 1);',
+    '}',
+  ].join('\n');
+  assert.deepEqual(lines(text), [3]);
+});
+
 test('an upper bound on elapsed time in a test is a race', () => {
   const text = [
     '#[tokio::test]',

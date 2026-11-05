@@ -211,13 +211,21 @@ const CAPTURE_CHECK: Duration = Duration::from_secs(3);
 /// refused by the engine, and a name that does not answer in time goes on to
 /// the engine, which decides.
 pub async fn refuses(chosen_by: ChosenBy, url: &Url) -> bool {
+    refuses_within(chosen_by, url, CAPTURE_CHECK).await
+}
+
+async fn refuses_within(chosen_by: ChosenBy, url: &Url, lookup: Duration) -> bool {
     if chosen_by != ChosenBy::Website {
         return false;
     }
     if let Some(ip) = address_in(url) {
         return is_local(ip);
     }
-    let found = addresses(url, CAPTURE_CHECK).await;
+    every_one_local(addresses(url, lookup).await)
+}
+
+/// A name with no answer is not refused: the engine decides.
+fn every_one_local(found: Vec<IpAddr>) -> bool {
     !found.is_empty() && found.into_iter().all(is_local)
 }
 
@@ -263,6 +271,8 @@ pub fn is_local(ip: IpAddr) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use wirecatch_test_support::PATIENCE;
+
     use super::*;
 
     fn url(text: &str) -> Url {
@@ -507,13 +517,22 @@ mod tests {
             "http://localhost/a",
             "http://[::1]/a",
         ] {
-            assert!(refuses(ChosenBy::Website, &url(link)).await, "{link}");
-            assert!(!refuses(ChosenBy::LocalPage, &url(link)).await, "{link}");
-            assert!(!refuses(ChosenBy::Person, &url(link)).await, "{link}");
+            let link = &url(link);
+            assert!(
+                refuses_within(ChosenBy::Website, link, PATIENCE).await,
+                "{link}"
+            );
+            assert!(
+                !refuses_within(ChosenBy::LocalPage, link, PATIENCE).await,
+                "{link}"
+            );
+            assert!(
+                !refuses_within(ChosenBy::Person, link, PATIENCE).await,
+                "{link}"
+            );
         }
         assert!(!refuses(ChosenBy::Website, &url("http://93.184.215.14/a")).await);
-        // A name that does not resolve is the engine's to decide.
-        assert!(!refuses(ChosenBy::Website, &url("http://no-such-host.invalid/a")).await);
+        assert!(!every_one_local(Vec::new()));
         assert!(refuses_address(
             ChosenBy::Website,
             &url("http://10.0.0.1/a")

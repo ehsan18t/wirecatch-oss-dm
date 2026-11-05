@@ -18,9 +18,10 @@ use std::time::Duration;
 use wirecatch_core::KnownFolders;
 use wirecatch_e2e::app::App;
 use wirecatch_ipc::Endpoint;
+use wirecatch_test_support::PATIENCE;
 
 /// The longest this process runs, whatever happens.
-const LIFETIME: Duration = Duration::from_secs(60);
+const LIFETIME: Duration = Duration::from_secs(2 * PATIENCE.as_secs());
 
 /// Created in the root folder just before the process exits.
 const EXITED_MARKER: &str = "app-exited";

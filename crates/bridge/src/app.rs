@@ -529,7 +529,7 @@ mod tests {
             launches: Arc::new(Mutex::new(0)),
         };
         let find = || wirecatch_ipc::endpoint_in(Channel::Dev, &folders);
-        let mut conn = connect_or_launch(&find, &app, START_BUDGET, Start::IfNeeded)
+        let mut conn = connect_or_launch(&find, &app, PATIENCE, Start::IfNeeded)
             .await
             .unwrap();
         conn.write_all(b"k").await.unwrap();
@@ -585,7 +585,7 @@ mod tests {
                 wirecatch_ipc::endpoint_in(Channel::Dev, &folders)
             }
         };
-        let mut conn = connect_or_launch(&find, &app, START_BUDGET, Start::IfNeeded)
+        let mut conn = connect_or_launch(&find, &app, PATIENCE, Start::IfNeeded)
             .await
             .unwrap();
         assert_eq!(*launches.lock().unwrap(), 1);
@@ -700,7 +700,7 @@ mod tests {
     }
 
     // The reason reported is the last attempt's: a key that appeared once the app started, with nothing listening yet, is a slow start, not a missing key.
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn the_last_attempt_decides_what_is_reported() {
         let (endpoint, dir) = test_endpoint();
         let missing = dir.path().join("Wirecatch").join("endpoint-key");

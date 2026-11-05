@@ -167,8 +167,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 140 | A file too large for the disk is not noticed until it is full                                     | `01-3`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 141 | A crash at the end of a move leaves the list and the disk disagreeing                             | `Xcrash-and-resume-4`                                                                              | P2       | medium | P2, 1 finding, medium; after item 8                                                                              | none                                          | fixed  |
 | 142 | Commands and items left from the removed web interface are dead                                   | `23-11` `24-11` `30-5` `30-6` `B19-5`                                                              | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | open   |
-| 143 | Tests give waits a fixed short limit, and the timing check cannot see them                        | `01-10` `33-2` `04-7` `06-3` `21-3`                                                                | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | open   |
-| 144 | Tests race the machine against a real-clock limit of the code under test                          | `03-7` `10-5` `13-4` `B19-1` `B19-2`                                                               | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | open   |
+| 143 | Tests give waits a fixed short limit, and the timing check cannot see them                        | `01-10` `33-2` `04-7` `06-3` `21-3`                                                                | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | fixed  |
+| 144 | Tests race the machine against a real-clock limit of the code under test                          | `03-7` `10-5` `13-4` `B19-1` `B19-2`                                                               | P3       | medium | P3, 5 findings, medium                                                                                           | none                                          | fixed  |
 | 145 | A page's HLS part runs outside the run's file work                                                | `17-6` `Xpath-media-download-8` `Xsecond-review-disk-writes-9` `Xsecond-review-resume-6`           | P3       | small  | P3, 4 findings, small                                                                                            | none                                          | fixed  |
 | 146 | Bridge and test values are written separately in several crates                                   | `06-4` `22-9` `B04-3` `B04-4`                                                                      | P3       | small  | P3, 4 findings, small                                                                                            | none                                          | open   |
 | 147 | Test servers repeat their range parsing and behave unlike their docs                              | `31-1` `31-2` `31-3` `31-4`                                                                        | P3       | small  | P3, 4 findings, small                                                                                            | none                                          | open   |
@@ -191,7 +191,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 164 | A failed video or conversion shows the program's raw output                                       | `U-9` `B18-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 165 | New queue and New proxy do not put the cursor in the Name field                                   | `U-13` `B16-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 166 | The row, the menu and the details decide offers and words on their own                            | `25-11` `U-10`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
-| 167 | Two test files depend on an order only timing decides                                             | `05-14` `21-3`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
+| 167 | Two test files depend on an order only timing decides                                             | `05-14` `21-3`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 168 | The same small pieces of logic are written many times in the forms                                | `27-12` `B19-3`                                                                                    | P3       | medium | P3, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 169 | Dying between placing a video and deleting its work folder gives a second copy                    | `Xcrash-and-resume-3` `Xsecond-review-resume-8`                                                    | P3       | medium | P3, 2 findings, medium; after item 4                                                                             | none                                          | fixed  |
 | 170 | Exporting settings over an earlier file is not written whole                                      | `19-6` `Xrepeated-logic-6`                                                                         | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
@@ -266,7 +266,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 239 | Two copies of the pnpm-workspace parser                                                           | `33-4`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 240 | Dead code in the product generator                                                                | `33-5`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 241 | Comments in the checked configuration describe things that are gone                               | `33-6`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
-| 242 | Two test helpers wait for progress with no deadline                                               | `01-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | open   |
+| 242 | Two test helpers wait for progress with no deadline                                               | `01-9`                                                                                             | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 243 | A roaming data folder that could not be deleted keeps the list with its cookies                   | `Xdatabase-migrations-4`                                                                           | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 244 | The `<local>` queue rule is never tested against the real network check                           | `M-4`                                                                                              | P3       | small  | P3, 1 finding, small                                                                                             | none                                          | fixed  |
 | 245 | A crash can save a download twice under a second name                                             | found while fixing                                                                                 | P2       | medium | Found by the fault tests while fixing.                                                                           | fixed                                         |
@@ -2700,7 +2700,7 @@ P3, medium, open.
 
 ### 143. Tests give waits a fixed short limit, and the timing check cannot see them
 
-P3, medium, open.
+P3, medium, fixed.
 
 Tests give a wait a short limit of their own: 10 s in `options.rs`, 5 s in `lifecycle.rs`, and `START_BUDGET`, `LIFETIME` and `LINGER` in the bridge and e2e tests. `test-timing` cannot see `recv_timeout`, a local `Duration` passed to a wait, or a measured time compared through a method. Only the check's own gap (`33-2`) lets them through.
 
@@ -2722,7 +2722,7 @@ Tests give a wait a short limit of their own: 10 s in `options.rs`, 5 s in `life
 
 ### 144. Tests race the machine against a real-clock limit of the code under test
 
-P3, medium, open.
+P3, medium, fixed.
 
 Tests run on the real clock against a limit of the code under test: the store's lock wait, a 3 s lookup, `Idle`'s 300 ms, a 600 ms bridge budget and a 1 s stop limit. A stall fails them on correct code. None was seen failing.
 
@@ -3135,7 +3135,7 @@ P3, small, fixed.
 
 ### 167. Two test files depend on an order only timing decides
 
-P3, small, open.
+P3, small, fixed.
 
 `the_same_server_name_twice_gets_a_free_name` fails if the first download ends before the second's answer, and FTP transfer tests rely on a throttle so other connections can join.
 
@@ -4345,7 +4345,7 @@ Comments in `config/product.toml`, `Cargo.toml`, `browser.mjs` and `.githooks/co
 
 ### 242. Two test helpers wait for progress with no deadline
 
-P3, small, open.
+P3, small, fixed.
 
 `pause_midway` and `another_program_saves_meanwhile` loop with no deadline and never look at the spawned task, so a download that fails early hangs the test until the CI job's limit.
 
