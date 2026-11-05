@@ -21,7 +21,7 @@ use super::added_pages::AnsweredPage;
 use super::file_exists::give_up_the_name;
 use super::policy::RunPolicy;
 use super::settle::path_resolver;
-use super::state::{Entry, Found, Gauge, OnExisting, Run, State, Stop};
+use super::state::{Entry, Found, Gauge, NextRun, OnExisting, Run, State, Stop};
 use super::{Inner, Manager};
 use crate::headers;
 use crate::headers::Origin;
@@ -326,7 +326,7 @@ impl Manager {
             (Ended::Vanished, None) => {
                 warn!(id = id.0, "download task ended without a result");
                 entry.row.status = DownloadStatus::Failed;
-                entry.row.error = Some(wirecatch_messages::stopped_unexpectedly());
+                entry.row.error = Some(wirecatch_messages::stopped_unexpectedly(worked));
             }
         }
         if !finished {
@@ -396,11 +396,16 @@ impl Manager {
 /// live fields; whether anything had arrived before is what a failure is worded by.
 fn take_reading(entry: &mut Entry, gauge: &Gauge) -> Worked {
     let reading = gauge.read();
-    let worked = worked_before(reading.answered, entry.row.done);
     if reading.answered {
         entry.row.done = reading.done;
         entry.row.total = reading.total;
+        entry.next_run = if gauge.can_continue() {
+            NextRun::Continues
+        } else {
+            NextRun::StartsOver
+        };
     }
+    let worked = worked_before(reading.answered, entry.row.done, entry.next_run);
     entry.clear_live_fields();
     worked
 }
@@ -448,10 +453,12 @@ pub(super) fn mark_cancelled(entry: &mut Entry) {
     entry.row.done = 0;
 }
 
-/// A run that got an answer, or a download that had data from an earlier run, had a link that worked.
-fn worked_before(answered: bool, done: u64) -> Worked {
-    if answered || done > 0 {
+/// A run that got an answer, or a download that had data from an earlier run, had a link that worked. Only data a next run can continue from is worth promising.
+fn worked_before(answered: bool, done: u64, next_run: NextRun) -> Worked {
+    if done > 0 && next_run == NextRun::Continues {
         Worked::Before
+    } else if answered || done > 0 {
+        Worked::BeforeStartsOver
     } else {
         Worked::Never
     }
@@ -700,7 +707,7 @@ mod tests {
         assert_eq!(entry.row.status, DownloadStatus::Failed);
         assert_eq!(
             entry.row.error,
-            Some(wirecatch_messages::stopped_unexpectedly())
+            Some(wirecatch_messages::stopped_unexpectedly(Worked::Never))
         );
     }
 

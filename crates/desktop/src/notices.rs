@@ -121,6 +121,7 @@ async fn watch(manager: Manager, tellers: Arc<Tellers>) {
             event = events.recv() => match event {
                 Ok(event) => {
                     tellers.browser.follow(&manager, &event);
+                    teller.follow(&event);
                     teller.ended(activity.apply(&event), Instant::now());
                     match event {
                         UiEvent::SettingsChanged(new) => settings = *new,
@@ -167,7 +168,9 @@ async fn watch(manager: Manager, tellers: Arc<Tellers>) {
 
 /// Reads again what the watch follows, and the settings.
 fn reload(manager: &Manager, activity: &mut Activity, teller: &mut Teller) -> AppSettings {
-    activity.load(&manager.list_downloads());
+    let list = manager.list_downloads();
+    activity.load(&list);
+    teller.reload(&list);
     teller.queues(&manager.list_queues());
     manager.get_settings()
 }
@@ -234,7 +237,7 @@ fn ask_browser(
         through_do_not_disturb(settings, &notification),
     );
     tokio::spawn(async move {
-        if !browser_notices::answered(answer).await {
+        if browser_notices::unanswered(answer).await {
             tellers.browser.give_up(id);
             tellers.system.show(notification, through);
         }

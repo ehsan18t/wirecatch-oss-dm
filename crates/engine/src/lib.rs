@@ -44,7 +44,7 @@
 //!
 //!     // Read `progress` from any task or thread to show a progress bar.
 //!     let progress = Arc::new(Progress::default());
-//!     // `cancel.cancel()` pauses the download; running the same request again resumes it.
+//!     // `cancel.cancel()` pauses the download; running the same request again resumes it if the server allows it.
 //!     let cancel = CancellationToken::new();
 //!
 //!     match download(request, progress, cancel).await? {
@@ -52,8 +52,8 @@
 //!             println!("saved {bytes} bytes to {}", path.display());
 //! #           std::fs::remove_file(&path)?;
 //!         }
-//!         Outcome::Paused { path, remaining, .. } => {
-//!             println!("paused with {remaining} bytes left for {}", path.display());
+//!         Outcome::Paused { path, can_continue, .. } => {
+//!             println!("paused {}; can continue: {can_continue}", path.display());
 //!         }
 //!         // Outcome may gain variants in later versions.
 //!         other => println!("{other:?}"),
@@ -101,9 +101,10 @@
 //! arrived, saves the resume file and returns [`Outcome::Paused`], or the error
 //! when the part file could not be flushed to the disk, which also stops a
 //! running download by itself. Running the
-//! same request again continues from there, as long as the server still reports
-//! the same size, `ETag` and `Last-Modified`; if the file changed on the server,
-//! the download starts over cleanly instead of mixing old and new bytes. A killed
+//! same request again continues from there, as long as the server takes byte
+//! ranges and still reports the same size, `ETag` and `Last-Modified`; otherwise,
+//! as when the file changed on the server, the download starts over cleanly
+//! instead of mixing old and new bytes. A killed
 //! process resumes the same way, from the last checkpoint
 //! ([`DownloadOptions::checkpoint_interval`]).
 //!

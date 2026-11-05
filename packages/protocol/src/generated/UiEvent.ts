@@ -4,7 +4,6 @@ import type { AppSettings } from './AppSettings';
 import type { DownloadId } from './DownloadId';
 import type { DownloadSummary } from './DownloadSummary';
 import type { FileExistsQuestion } from './FileExistsQuestion';
-import type { ImportSummary } from './ImportSummary';
 import type { MediaChoice } from './MediaChoice';
 import type { NoticeId } from './NoticeId';
 import type { NoticePressed } from './NoticePressed';
@@ -30,7 +29,6 @@ export type UiEvent =
   | { type: 'captured'; data: DownloadSummary }
   | { type: 'confirmation_requested'; data: PendingCapture }
   | { type: 'storage_failed'; data: UserError }
-  | { type: 'settings_imported'; data: ImportSummary }
   | { type: 'media_choice_requested'; data: MediaChoice }
   | { type: 'file_exists_requested'; data: FileExistsQuestion }
   | { type: 'capture_repeated'; data: Repeated }
