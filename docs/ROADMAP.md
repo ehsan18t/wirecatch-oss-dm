@@ -342,6 +342,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 277. Switching kind can save a language this video lacks (fixed)
 278. Keys can go dead when two things leave during a dialog (fixed)
 279. No check catches a Settings row that wraps a lone word (won't fix (no sound cheap check: the font comes from the system, rows flex with the window, and tests use a text system that measures nothing))
+280. A very long queue name runs past the window in the queue menu (open)
 
 Done before the release:
 
