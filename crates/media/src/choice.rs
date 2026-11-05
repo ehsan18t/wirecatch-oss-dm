@@ -822,6 +822,19 @@ mod tests {
         assert_eq!(size_of(&offers[1], OutputFormat::Original), Some(1_200_000));
     }
 
+    /// Some pages name a stream's rate only as `vbr` or `abr`, with 0 for the part it lacks.
+    #[test]
+    fn a_stream_with_only_its_own_rate_is_sized_from_it() {
+        let offers = from_page(&info(
+            r#"{"title":"T","duration":60,"formats":[
+            {"format_id":"v","ext":"webm","vcodec":"vp9","acodec":"none","height":2160,"vbr":20000,"abr":0,"url":"u"},
+            {"format_id":"a","ext":"webm","vcodec":"none","acodec":"opus","vbr":0,"abr":160,"url":"u"}
+        ]}"#,
+        ))
+        .unwrap();
+        assert_eq!(offers[0].0.size, Some(151_200_000));
+    }
+
     #[test]
     fn a_stream_with_no_rate_or_no_length_stays_without_a_size() {
         for page in [

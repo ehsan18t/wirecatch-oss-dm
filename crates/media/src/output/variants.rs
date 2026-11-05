@@ -162,10 +162,14 @@ fn bytes_for(kbps: u32, duration_ms: Option<u64>) -> Option<u64> {
         .map(|d| u64::from(kbps).saturating_mul(d) / 8)
 }
 
-/// The size of a stream kept as it comes: what the page says, else its bit rate over its length, since pages often give no file size for their largest formats.
+/// The size of a stream kept as it comes: what the page says, else its bit rate over its length, since a page's HLS formats give no file size. yt-dlp writes 0 for the part a stream lacks (`vbr` on audio), so the first rate above 0 counts.
 pub(crate) fn stream_size(format: &Format, duration_ms: Option<u64>) -> Option<u64> {
     format.size().or_else(|| {
-        let kbps = f64_to_u64(rate(format).round()).filter(|kbps| *kbps > 0)?;
+        let kbps = [format.tbr, format.vbr, format.abr]
+            .into_iter()
+            .flatten()
+            .find(|kbps| *kbps > 0.0)?;
+        let kbps = f64_to_u64(kbps.round()).filter(|kbps| *kbps > 0)?;
         bytes_for(saturating_cast(kbps), duration_ms)
     })
 }
