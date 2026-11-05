@@ -75,7 +75,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-65  | fix(desktop): show all an import will change       | `fix/full-import-preview`        | 76, 148, 207                 | P2       | medium | none         | merged |
 | PR-66  | fix(desktop): show moved downloads in their place  | `fix/moved-row-position`         | 78                           | P2       | medium | none         | merged |
 | PR-67  | fix(queues): save whether a queue is in a run      | `fix/saved-queue-run`            | 79, 138                      | P2       | medium | none         | open   |
-| PR-68  | fix(desktop): keep one window per download         | `fix/one-window-per-download`    | 80, 139                      | P2       | medium | none         | open   |
+| PR-68  | fix(desktop): keep one window per download         | `fix/one-window-per-download`    | 80, 139                      | P2       | medium | none         | merged |
 | PR-69  | fix(core): keep a row's answers after a restart    | `fix/answers-survive-restart`    | 82, 83                       | P2       | medium | PR-04        | merged |
 | PR-70  | fix(core): answer a repeated capture once          | `fix/repeated-capture`           | 86, 151, 173                 | P2       | medium | none         | merged |
 | PR-71  | fix(engine): count transferred bytes correctly     | `fix/count-bytes`                | 87, 177, 180                 | P2       | small  | none         | merged |
@@ -978,7 +978,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/download_windows`, `crates/shell/src/download_windows.rs`, `crates/desktop/src/main_window/row_menu.rs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop -p wirecatch-shell`, `cargo clippy -p wirecatch-desktop -p wirecatch-shell`
-- **Status:** open
+- **Status:** merged
 
 ### PR-69 fix(core): keep a row's answers after a restart
 
