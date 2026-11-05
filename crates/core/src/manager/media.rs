@@ -158,7 +158,8 @@ struct Taken {
 
 /// Who picked a video's quality.
 enum Picker {
-    /// The person, in the quality window: the choices are remembered for next time.
+    /// The person, in the quality window: the choices are remembered for next time, while
+    /// `remember_choices` is on (D200).
     Person,
     /// The saved choices, without asking (D50); `instead_of` is the saved
     /// resolution the video did not offer.
@@ -377,10 +378,10 @@ impl Manager {
     /// `DownloadsChanged`.
     ///
     /// The selection may save it in another format, with subtitles and chapters
-    /// (D24); what it asks for must be among what the choice offered. The
-    /// choices are remembered in the settings (separately for videos and for
-    /// audio only), so the next window starts from them, with the resolution
-    /// unless the video did not offer the saved one (D50).
+    /// (D24); what it asks for must be among what the choice offered. While
+    /// `remember_choices` is on (D200), the choices are remembered in the settings
+    /// (separately for videos and for audio only), so the next window starts from
+    /// them, with the resolution unless the video did not offer the saved one (D50).
     ///
     /// An option whose video and audio must be joined, or that is converted,
     /// needs the media add-on; without it this fails with

@@ -1447,9 +1447,10 @@ Decided on 2026-11-05.
 2. Each notice is one banner with a full-width line for its words, its action if it has one (Show the old list), and Dismiss. Several stack in the order the core gave them.
 3. Each shows once per start. It stays until dismissed, also when the window is closed and opened again, and a reload after missed events does not bring back a dismissed one. The system notification is unchanged.
 4. A notice's words carry no path and no system error text: the store logs them. The not-private notice says the log has the folder's location.
+
 ### D200. Remembering a video's choices is separate from asking about it
 
-Decided on 2026-11-05. It amends D24.8, D50.2 and D50.6.
+Decided on 2026-11-05. It amends D24.8, D50.1, D50.2 and D50.6.
 
 1. "Remember these choices" (`MediaDefaults::remember_choices`, on by default, and on for settings saved before it existed) decides whether Download or Download later in the quality window saves the picks. Off, the picks apply to that video only and the saved choices stay. "Ask before each video" (`MediaDefaults::ask_each_time`) decides only whether the window opens.
 2. Together: with Ask on, the window opens on the saved choices, which are the last picks while Remember is on and stay put while it is off. With Ask off, no window opens and the video uses the saved choices; a window the fallback or the add-on still opens (D50.5) follows Remember as any other.
