@@ -455,6 +455,8 @@ pub(crate) fn parse_mdtm(text: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use wirecatch_test_support::PATIENCE;
+
     use super::*;
 
     /// A control connection to a local socket that sends `script`.
@@ -468,15 +470,10 @@ mod tests {
             // Keep the connection open so a reader waiting for more stalls.
             std::future::pending::<()>().await;
         });
-        let stream = Stream::connect(
-            &addr.into(),
-            None,
-            Duration::from_secs(5),
-            "test connection",
-        )
-        .await
-        .unwrap();
-        Control::new(stream, Duration::from_secs(2))
+        let stream = Stream::connect(&addr.into(), None, PATIENCE, "test connection")
+            .await
+            .unwrap();
+        Control::new(stream, PATIENCE)
     }
 
     #[tokio::test]

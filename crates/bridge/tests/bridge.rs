@@ -40,7 +40,7 @@ const FAKE_APP_MODE: &str = "WIRECATCH_TEST_FAKE_APP_MODE";
 const FAKE_APP_STARTED: &str = "WIRECATCH_TEST_FAKE_APP_STARTED";
 
 /// How long the fake app stays after the bridge has left, for the test's last check, which may never come; a helper process must not outlive its test by long.
-const LINGER: Duration = Duration::from_secs(10);
+const LINGER: Duration = PATIENCE;
 
 /// How long the fake app takes to come up, as a real app takes a moment to.
 const COMING_UP: Duration = Duration::from_millis(300);
