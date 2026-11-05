@@ -164,7 +164,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-154 | fix(protocol): let older apps' settings validate    | `fix/optional-validators`        | 275                          | P2       | small  | none         | open   |
 | PR-155 | fix(desktop): show the size of every video format   | `fix/format-sizes`               | 276                          | P3       | small  | none         | open   |
 | PR-156 | fix(core): save only languages a person picked      | `fix/picked-languages`           | 277                          | P3       | small  | none         | open   |
-| PR-157 | fix(desktop): keep keys when a dialog's parts leave | `fix/focus-both-gone`            | 278                          | P3       | small  | none         | open   |
+| PR-157 | fix(desktop): keep keys when a dialog's parts leave | `fix/focus-both-gone`            | 278                          | P3       | small  | none         | merged |
 | PR-158 | chore: check the width of Settings rows             | `chore/settings-row-width`       | 279                          | P3       | small  | none         | open   |
 
 ## Lanes
@@ -2064,7 +2064,7 @@ These are the open pull requests. A PR in one lane touches separate code from a 
 - **Touches:** crates/desktop
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-158 chore: check the width of Settings rows
 

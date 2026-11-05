@@ -340,7 +340,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 275. A new extension refuses an older app's settings (open)
 276. Some video formats show no size (open)
 277. Switching kind can save a language this video lacks (open)
-278. Keys can go dead when two things leave during a dialog (open)
+278. Keys can go dead when two things leave during a dialog (fixed)
 279. No check catches a Settings row that wraps a lone word (open)
 
 Done before the release:
