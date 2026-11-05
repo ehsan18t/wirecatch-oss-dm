@@ -5,7 +5,6 @@ use chrono::Local;
 use gpui_kit::assets::IconName as Lucide;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -25,7 +24,7 @@ use crate::backend::act;
 use crate::rows::Tally;
 use crate::text;
 use crate::ui::speed_graph::{SpeedHistory, speed_graph};
-use crate::ui::{QueueTile, Role, Typed as _, tokens};
+use crate::ui::{QueueTile, Role, Typed as _, tokens, tooltip};
 
 pub(super) const WIDTH: f32 = 256.;
 /// Queues shown before the rest fold away under "more queues".
@@ -192,7 +191,7 @@ impl MainWindow {
                 item.text_color(theme.muted_foreground)
                     .hover(|item| item.bg(theme.list_hover).text_color(theme.foreground))
             })
-            .tooltip(move |window, cx| Tooltip::new(label).build(window, cx))
+            .tooltip(tooltip::plain(label))
             .child(Icon::new(icon).with_size(tokens::ICON))
             .when(dot, |item| {
                 item.child(

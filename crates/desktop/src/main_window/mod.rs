@@ -332,6 +332,9 @@ pub struct MainWindow {
     /// Where the cursor's row was last drawn, for the keyboard's menu.
     cursor_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     folded: HashSet<Group>,
+    /// The row the command bar and a held selection take in turn.
+    row_focus: FocusHandle,
+    selection_took_row: bool,
     /// The title bar's search, which narrows the list to names and links holding it.
     search: Entity<InputState>,
     /// The links typed or pasted into the search.
@@ -495,6 +498,8 @@ impl MainWindow {
             all_queues: false,
             queue_speeds: HashMap::new(),
             focus,
+            row_focus: cx.focus_handle(),
+            selection_took_row: false,
             search,
             typed: links::Kept::default(),
             _subscriptions: vec![follow_system, redraw, searched, updates],
@@ -593,9 +598,18 @@ impl MainWindow {
                 self.step(Step::First, false, cx);
             }
         } else {
-            self.search
-                .update(cx, |search, cx| search.focus(window, cx));
+            self.focus_search(window, cx);
         }
+        cx.notify();
+    }
+
+    /// The selection's bar gives the row back, since the field sits under it.
+    fn focus_search(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        if self.selection_held(cx) {
+            self.clear_selection();
+        }
+        self.search
+            .update(cx, |search, cx| search.focus(window, cx));
         cx.notify();
     }
 
@@ -731,6 +745,14 @@ impl Render for MainWindow {
             self.sidebar(cx).into_any_element()
         };
         let background = cx.theme().background;
+        let held = self.selection_held(cx);
+        selection::row_taken(
+            &mut self.selection_took_row,
+            held,
+            (&self.row_focus, &self.focus),
+            window,
+            cx,
+        );
         v_flex()
             .id("main-window")
             .key_context(KEY_CONTEXT)
@@ -742,8 +764,7 @@ impl Render for MainWindow {
             .on_action(cx.listener(|this, _: &Dismiss, _, cx| this.dismiss(cx)))
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
                 this.page.screen = Screen::Downloads;
-                this.search
-                    .update(cx, |search, cx| search.focus(window, cx));
+                this.focus_search(window, cx);
             }))
             .on_action(cx.listener(|this, _: &ToggleSettings, _, cx| this.toggle_settings(cx)))
             .on_action(
@@ -769,14 +790,17 @@ impl Render for MainWindow {
             .child(match self.page.screen {
                 Screen::Downloads => layout::body(
                     navigation,
-                    self.command_bar(cx).into_any_element(),
+                    if self.selection_held(cx) {
+                        self.selection_bar(cx)
+                    } else {
+                        self.command_bar(cx).into_any_element()
+                    },
                     v_flex()
                         .flex_1()
                         .min_h_0()
                         .children(self.storage_banner(cx))
                         .children(Self::update_banner(cx))
                         .children(self.queue_header(cx))
-                        .children(self.selection_bar(cx))
                         .child(self.list(cx)),
                 ),
                 Screen::Settings => self.settings(cx),

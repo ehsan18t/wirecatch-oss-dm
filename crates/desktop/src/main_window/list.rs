@@ -32,7 +32,7 @@ use super::{Group, MainWindow, View, fixes, row_menu};
 use crate::backend::act;
 use crate::rows::Tally;
 use crate::ui::select_circle::{Picked, SelectCircle};
-use crate::ui::{FileTile, Role, Typed as _, icon, tokens};
+use crate::ui::{FileTile, Role, Typed as _, icon, tokens, tooltip};
 use crate::{files, text};
 
 /// Space before the circle column and after the figure.
@@ -704,14 +704,16 @@ fn folder_line(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> AnyEl
 
 /// A popover with a line's whole text, wrapped, over what a click on it does.
 fn whole(said: String, hint: &'static str, window: &mut Window, cx: &mut App) -> gpui_kit::AnyView {
-    Tooltip::element(move |_, cx| {
-        v_flex()
-            .max_w(px(420.))
-            .gap_1()
-            .child(div().text_role(Role::Body, cx).child(said.clone()))
-            .child(div().text_role(Role::Meta, cx).child(hint))
+    tooltip::unless_in_menu(window, cx, |window, cx| {
+        Tooltip::element(move |_, cx| {
+            v_flex()
+                .max_w(px(420.))
+                .gap_1()
+                .child(div().text_role(Role::Body, cx).child(said.clone()))
+                .child(div().text_role(Role::Meta, cx).child(hint))
+        })
+        .build(window, cx)
     })
-    .build(window, cx)
 }
 
 /// The figure at a row's end: how far work under way is, a finished file's size, or the state
@@ -815,30 +817,41 @@ fn row_actions(row: &DownloadSummary, cx: &mut Context<'_, MainWindow>) -> impl 
                 .iter()
                 .map(|(action, label, icon)| {
                     let (action, label) = (*action, *label);
-                    Button::new(ElementId::NamedInteger(label.into(), id.0.unsigned_abs()))
-                        .small()
-                        .ghost()
-                        .icon(icon.clone())
-                        .tooltip(label)
-                        .on_click(cx.listener(move |_, _, window, cx| {
-                            cx.stop_propagation();
-                            action.run(id, window, cx);
-                        }))
+                    div()
+                        .id(ElementId::NamedInteger(
+                            format!("{label}-tip").into(),
+                            id.0.unsigned_abs(),
+                        ))
+                        .tooltip(tooltip::plain(label))
+                        .child(
+                            Button::new(ElementId::NamedInteger(label.into(), id.0.unsigned_abs()))
+                                .small()
+                                .ghost()
+                                .icon(icon.clone())
+                                .on_click(cx.listener(move |_, _, window, cx| {
+                                    cx.stop_propagation();
+                                    action.run(id, window, cx);
+                                })),
+                        )
                 }),
         )
         .child(details_button(id, cx))
 }
 
-fn details_button(id: DownloadId, cx: &mut Context<'_, MainWindow>) -> Button {
-    Button::new(row_id("details", id))
-        .small()
-        .ghost()
-        .icon(IconName::Info)
-        .tooltip("Details")
-        .on_click(cx.listener(move |this, _, window, cx| {
-            cx.stop_propagation();
-            super::details::open(this.library.clone(), id, window, cx);
-        }))
+fn details_button(id: DownloadId, cx: &mut Context<'_, MainWindow>) -> impl IntoElement {
+    div()
+        .id(row_id("details-tip", id))
+        .tooltip(tooltip::plain("Details"))
+        .child(
+            Button::new(row_id("details", id))
+                .small()
+                .ghost()
+                .icon(IconName::Info)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    cx.stop_propagation();
+                    super::details::open(this.library.clone(), id, window, cx);
+                })),
+        )
 }
 
 /// The colour a status is drawn in: the accent for data that moves, the warning colour for a

@@ -10,7 +10,8 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{Icon, IconName, Sizable as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    App, Context, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _, Window,
+    App, Context, Div, InteractiveElement as _, IntoElement, ParentElement as _, Styled as _,
+    Window,
 };
 
 use wirecatch_protocol::app::{AppSettingsPatch, ListLines};
@@ -22,15 +23,19 @@ use crate::backend::act;
 use crate::links;
 use crate::ui::tokens;
 
+/// The row over the list, which the command bar and a held selection take in turn.
+pub(super) fn command_row() -> Div {
+    h_flex().pt_4().pb_2()
+}
+
 impl MainWindow {
     pub(super) fn command_bar(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let typed = self.typed_links(cx).urls.len();
         let first_run = self.is_first_run(cx);
-        h_flex()
+        command_row()
+            .track_focus(&self.row_focus)
             .key_context(super::SEARCH_CONTEXT)
             .px_5()
-            .pt_4()
-            .pb_2()
             .gap_2()
             .child(
                 Input::new(&self.search)

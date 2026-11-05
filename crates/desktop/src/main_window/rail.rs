@@ -2,7 +2,6 @@
 //! and the drawer that a narrow window opens over the list (D87.2, D91).
 
 use gpui_kit::assets::IconName as Lucide;
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -11,7 +10,7 @@ use gpui_kit::{
 };
 
 use super::{Group, MainWindow, Screen, View, sidebar};
-use crate::ui::{Role, Typed as _, tokens};
+use crate::ui::{Role, Typed as _, tokens, tooltip};
 
 /// The rail's width: an icon and its padding.
 pub(super) const WIDTH: f32 = 52.;
@@ -215,7 +214,7 @@ fn rail_button(
         .cursor_pointer()
         .text_color(theme.muted_foreground)
         .hover(|item| item.bg(theme.list_hover).text_color(theme.foreground))
-        .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx))
+        .tooltip(tooltip::plain(label))
 }
 
 /// A queue's initials for the rail: the first letters of its first two words, or its first two
