@@ -324,7 +324,7 @@ fn proxy_choices(library: &Entity<Library>, cx: &App) -> Vec<ProxyChoice> {
             .find(|server| server.id == id)
             .map_or_else(
                 || "A deleted proxy".to_owned(),
-                |server| proxy_dialog::shown_name(&server.settings),
+                |server| server.settings.shown_name(),
             ),
     };
     let mut items = vec![ProxyChoice {
