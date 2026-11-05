@@ -39,7 +39,7 @@ const FAKE_APP_MODE: &str = "WIRECATCH_TEST_FAKE_APP_MODE";
 /// A file `fake_app_process` creates as it starts, so a test knows the bridge has started it.
 const FAKE_APP_STARTED: &str = "WIRECATCH_TEST_FAKE_APP_STARTED";
 
-/// How long the fake app stays after the bridge has left, for the test's last check, which may never come; a helper process must not outlive its test by long.
+/// How long the fake app stays after the bridge has left, for the test's last check, however long a busy machine makes it take. A check that never comes leaves the helper running this long after its test.
 const LINGER: Duration = PATIENCE;
 
 /// How long the fake app takes to come up, as a real app takes a moment to.

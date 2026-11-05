@@ -930,7 +930,6 @@ async fn a_download_cannot_be_redirected_into_the_local_network_when_blocked() {
     dir.remove().unwrap();
 }
 
-/// Runs `req` on a task, and once `at_least` bytes arrived, saves "theirs" at `taken` the way another program would, then waits for the download's end.
 /// Waits until a download has `at_least` bytes, failing the test when it ends first or [`PATIENCE`] runs out.
 async fn reach<T>(progress: &Progress, at_least: u64, task: &tokio::task::JoinHandle<T>) {
     let deadline = Instant::now() + PATIENCE;
@@ -947,6 +946,7 @@ async fn reach<T>(progress: &Progress, at_least: u64, task: &tokio::task::JoinHa
     }
 }
 
+/// Runs `req` on a task, and once `at_least` bytes arrived, saves "theirs" at `taken` the way another program would, then waits for the download's end.
 async fn another_program_saves_meanwhile(
     req: DownloadRequest,
     at_least: u64,
