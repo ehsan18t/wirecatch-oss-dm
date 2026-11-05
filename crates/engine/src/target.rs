@@ -134,7 +134,7 @@ impl Destination {
                     ExistingFile::Refuse => Finish::Refuse,
                     _ => Finish::Replace,
                 };
-                let (target, resume) = plan_exact(path, finish, file)?;
+                let (target, resume) = plan_exact(path, finish, saved_url, file)?;
                 Plan::Planned(target, resume.map(Box::new))
             }
             Self::InFolder { dir, name } => {
@@ -225,16 +225,17 @@ fn target(file: PathBuf, finish: Finish) -> Target {
     }
 }
 
-/// [`Destination::Exact`]: the URL is not compared, only what the server says about the file. The path is the caller's, who owns who runs there, so a held lock does not stop this run.
+/// [`Destination::Exact`]: a resume compares only what the server says about the file, not the URL. The path is the caller's, who owns who runs there, so a held lock does not stop this run.
 fn plan_exact(
     path: PathBuf,
     finish: Finish,
+    url: &str,
     file: &Described,
 ) -> Result<(Target, Option<ResumeState>)> {
     let mut target = target(path, finish);
     target.lock = PartLock::open(&target.part).unwrap_or_default();
     let resume = match saved_state(&target.state)? {
-        Some(saved) if continues(&saved, &target, file)? => Some(saved),
+        Some(saved) if continues(&saved, url, &target, file)? => Some(saved),
         _ => None,
     };
     Ok((target, resume))
@@ -331,7 +332,7 @@ fn look_at_name(mut candidate: Target, url: &str, file: &Described) -> Result<Lo
         return Ok(Look::Occupied);
     };
     candidate.lock = lock;
-    if continues(&saved, &candidate, file)? {
+    if continues(&saved, url, &candidate, file)? {
         return Ok(Look::Take(Plan::Planned(candidate, Some(Box::new(saved)))));
     }
     // Same download, but it cannot continue (file changed, or no range support):
@@ -372,9 +373,10 @@ fn look_past_lost_state(mut candidate: Target, finished: bool) -> Look {
 
 /// Whether `saved` can continue as the download `file` describes, with its part
 /// file at `target` still the size of the whole file.
-fn continues(saved: &ResumeState, target: &Target, file: &Described) -> Result<bool> {
-    Ok(saved.can_resume(file.ranged, file.total, &file.validators)
-        && part_len(&target.part)? == file.total)
+fn continues(saved: &ResumeState, url: &str, target: &Target, file: &Described) -> Result<bool> {
+    let usable = saved.can_resume(file.ranged, file.total, &file.validators)
+        || (same_download(&saved.url, url) && saved.holds_all_of(file.total, &file.validators));
+    Ok(usable && part_len(&target.part)? == file.total)
 }
 
 /// The resume file at `path`, if there is one this engine can use. A damaged one is proof its data cannot be trusted, so it is logged and the download starts over. A read that failed proves nothing about the file (a virus scanner may hold it), so it ends the run with the files as they are.

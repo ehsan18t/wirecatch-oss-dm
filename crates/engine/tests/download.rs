@@ -391,6 +391,36 @@ async fn a_complete_part_file_of_unknown_size_is_finished_at_its_length() {
     dir.remove().unwrap();
 }
 
+/// A run into a folder or through a resolver learns its path from the answer: on a server without ranges that answers the same, the data left by a failed rename is finished, not fetched.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_complete_part_file_is_found_by_a_run_that_learns_its_path() {
+    let server = TestServer::start(
+        test_data(KIB_USIZE),
+        Config {
+            hold_bodies_from: Some(0),
+            ..Default::default()
+        },
+    )
+    .await;
+    let url = server.url("f.bin");
+    let saved = complete_run(url.as_str(), server.data.len());
+    for resolved in [false, true] {
+        let dir = private_dir("found-complete").unwrap();
+        left_complete(&dir, &saved, &server.data).unwrap();
+        let mut req = request(&server, "f.bin", &dir, 1);
+        if resolved {
+            let path = dir.join("f.bin");
+            req.resolve_path = Some(Arc::new(move |_: &RemoteFile| Ok(path.clone())));
+        }
+        let outcome = run(req).await.unwrap();
+
+        assert!(matches!(outcome, Outcome::Completed { .. }), "{outcome:?}");
+        assert_eq!(std::fs::read(dir.join("f.bin")).unwrap(), server.data);
+        assert_eq!(files_in(&dir), ["f.bin"]);
+        dir.remove().unwrap();
+    }
+}
+
 /// A file too short for the size its resume file saved is not complete, whatever the file says.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_part_file_shorter_than_its_saved_size_is_fetched_again() {
