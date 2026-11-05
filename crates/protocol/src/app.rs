@@ -608,11 +608,6 @@ pub struct MediaSelection {
     /// Add the video's chapters to the file, when the format can hold them.
     #[serde(default)]
     pub chapters: bool,
-    /// "Use these choices for every video" (D50): true, from now on a video downloads with the
-    /// choices made here without asking; false asks for each video again; `None` leaves that
-    /// as it is.
-    #[serde(default)]
-    pub every_video: Option<bool>,
 }
 
 /// What the quality window starts from (D24) and whether it opens at all (D50): the last

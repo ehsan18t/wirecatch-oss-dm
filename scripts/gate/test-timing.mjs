@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { filesMatching, GateError, ROOT } from './process.mjs';
 import { closingBracket, codeOnly } from './rust-attributes.mjs';
+import { declaredTestModules, isTestFile, testItems } from './test-code.mjs';
 
 /** What measures how long something took: an `Instant`'s `elapsed()` or `duration_since`, or the gap between two instants a test server recorded (`Seen::at`). */
 const MEASURED = String.raw`\.elapsed\(\)|duration_since\(|\.at\s*-`;
@@ -39,24 +40,12 @@ function durationConstants(code) {
 /** What only a window in which something must not happen does with its wait. */
 const NOTHING_CAME = /\.is_err\(\)|\.is_none\(\)/;
 
-/** A file that holds nothing but tests: an integration test, or a `tests.rs` module. */
-const TEST_FILE = /(?:^|\/)tests\/|(?:^|\/)tests\.rs$/;
-
 /** `[start, end)` of each `{ ... }` that opens where `pattern` ends. */
 function bracedRegions(code, pattern) {
   return [...code.matchAll(pattern)].map((match) => {
     const open = code.indexOf('{', match.index + match[0].length - 1);
     return [open, closingBracket(code, open)];
   });
-}
-
-/** Where the test code is: all of a test file, otherwise each module behind `#[cfg(test)]` or `#[cfg(all(test, ..))]`. */
-function testRegions(file, code) {
-  if (TEST_FILE.test(file)) return [[0, code.length]];
-  return bracedRegions(
-    code,
-    /#\[cfg\((?:all\()?test\b[^\]]*\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{/g,
-  );
 }
 
 /** The tests on tokio's paused clock: time moves there only when the test lets it, so a bound cannot race the machine. */
@@ -159,9 +148,9 @@ function throttledRacesIn(body) {
 /**
  * The places in one Rust file where a test races the machine, as `{ line, code }`: an upper bound on a measured duration, or a fixed `Duration` written into a wait that has to succeed. A `while` condition, and a wait whose test is that nothing came (`is_err()`, `is_none()`), are windows in which something must not happen, which can only miss a fault, so they are not races. Each statement is read on one line for the bounds, and duration names are read one function at a time.
  */
-export function timingRaces(file, text) {
+export function timingRaces(file, text, testModules = []) {
   const code = codeOnly(text);
-  const tests = testRegions(file, code);
+  const tests = isTestFile(file, testModules) ? [[0, code.length]] : testItems(code);
   if (tests.length === 0) return [];
   const paused = pausedRegions(code);
   const helpers = measuringHelpers(code);
@@ -193,9 +182,10 @@ export function timingRaces(file, text) {
 }
 
 function testTiming() {
+  const testModules = declaredTestModules();
   const hits = filesMatching(`${MEASURED}|Duration::from_|_bps|_server|throttle`, ['*.rs']).flatMap(
     (file) =>
-      timingRaces(file, readFileSync(join(ROOT, file), 'utf8')).map(
+      timingRaces(file, readFileSync(join(ROOT, file), 'utf8'), testModules).map(
         (hit) => `${file}:${String(hit.line)}: ${hit.code}`,
       ),
   );

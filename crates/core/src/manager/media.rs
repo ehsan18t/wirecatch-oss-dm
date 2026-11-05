@@ -380,8 +380,7 @@ impl Manager {
     /// (D24); what it asks for must be among what the choice offered. The
     /// choices are remembered in the settings (separately for videos and for
     /// audio only), so the next window starts from them, with the resolution
-    /// unless the video did not offer the saved one, and whether to ask for
-    /// the next video ([`MediaSelection::every_video`], D50).
+    /// unless the video did not offer the saved one (D50).
     ///
     /// An option whose video and audio must be joined, or that is converted,
     /// needs the media add-on; without it this fails with
@@ -1197,9 +1196,6 @@ impl Manager {
             return;
         };
         let mut new = state.settings.clone();
-        if let Some(every_video) = selection.every_video {
-            new.media.ask_each_time = !every_video;
-        }
         if choice.missing_quality.is_none() && selection.option_id != choice.start.option_id {
             if option.audio_only {
                 new.media.quality = VideoQuality::AudioOnly;

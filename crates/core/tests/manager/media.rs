@@ -422,22 +422,19 @@ async fn ask_opens_the_window_when_the_resolution_is_missing() -> TestResult {
     assert_eq!(choice.start.option_id, choice.options[0].id);
     assert_eq!(choice.options[0].height, Some(720));
 
-    let mut pick = select(&choice.options[1].id);
-    pick.every_video = Some(true);
+    let pick = select(&choice.options[1].id);
     let id = h.manager.choose_media(choice.id, pick).await.unwrap();
     assert_eq!(h.manager.get_download(id)?.media.unwrap().instead_of, None);
-    let media = h.manager.get_settings().media;
     assert_eq!(
-        (media.quality, media.ask_each_time),
-        (VideoQuality::Height(1080), false)
+        h.manager.get_settings().media.quality,
+        VideoQuality::Height(1080)
     );
     Ok(())
 }
 
-/// D50: the window starts on the saved resolution and keeps the one picked there,
-/// and "Use these choices for every video" decides whether the next video asks.
+/// D50: the window starts on the saved resolution and keeps the one picked there, and an answer leaves whether the next video asks as it is.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_window_remembers_the_resolution_and_whether_to_ask() -> TestResult {
+async fn the_window_remembers_the_resolution_and_leaves_whether_to_ask() -> TestResult {
     let server = FileServer::start().await;
     hls(&server, false, false);
     let h = Harness::new().await?;
@@ -448,13 +445,12 @@ async fn the_window_remembers_the_resolution_and_whether_to_ask() -> TestResult 
     assert_eq!(choice.start.option_id, choice.options[0].id);
     assert_eq!(choice.missing_quality, None);
 
-    let mut pick = select(&choice.options[1].id);
-    pick.every_video = Some(true);
+    let pick = select(&choice.options[1].id);
     h.manager.choose_media(choice.id, pick).await.unwrap();
     let media = h.manager.get_settings().media;
     assert_eq!(
         (media.quality, media.ask_each_time),
-        (VideoQuality::Height(360), false)
+        (VideoQuality::Height(360), true)
     );
     Ok(())
 }
