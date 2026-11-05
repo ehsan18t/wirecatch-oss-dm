@@ -916,8 +916,7 @@ export function isMediaSelection(value: unknown): value is MediaSelection {
     isArrayOf(value1['subtitles'], (value2: unknown) => typeof value2 === 'string') &&
     typeof value1['subtitle_files'] === 'boolean' &&
     isUnembeddedSubtitles(value1['unembedded_subtitles']) &&
-    typeof value1['chapters'] === 'boolean' &&
-    (typeof value1['every_video'] === 'boolean' || value1['every_video'] === null))(value);
+    typeof value1['chapters'] === 'boolean')(value);
 }
 
 /** Whether `value` has the shape of a {@link MediaSubtitle}; fields it does not name are not checked. */
