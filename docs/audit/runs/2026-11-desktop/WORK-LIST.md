@@ -137,7 +137,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-127 | fix(protocol): correct when a capture may erase    | `fix/capture-erase-doc`          | 250                          | P3       | small  | none         | merged |
 | PR-128 | test(extension): make the layout test's font load  | `test/layout-font`               | 251                          | P3       | small  | none         | merged |
 | PR-129 | fix(core): finish removals after a crash           | `fix/removal-after-crash`        | 252, 253                     | P3       | medium | none         | merged |
-| PR-130 | fix(desktop): act on a folded group's rows         | `fix/folded-group-ticks`         | 254                          | P3       | small  | none         | open   |
+| PR-130 | fix(desktop): act on a folded group's rows         | `fix/folded-group-ticks`         | 254                          | P3       | small  | none         | merged |
 | PR-131 | fix(media): keep the bar steady on a retry row     | `fix/retry-row-bar`              | 256                          | P3       | small  | none         | merged |
 | PR-132 | fix(desktop): stop page reads at a late quit       | `fix/page-read-at-quit`          | 255                          | P3       | small  | none         | merged |
 | PR-133 | fix(streams): hide tokens in key error paths       | `fix/key-error-path`             | 198                          | P3       | small  | none         | merged |
@@ -1724,7 +1724,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/desktop
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-131 fix(media): keep the bar steady on a retry row
 

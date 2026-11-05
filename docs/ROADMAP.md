@@ -316,7 +316,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 251. The layout test can fail on a font that did not load (fixed)
 252. A quit during a removal can leave part files behind (fixed)
 253. A quit right after a cancel can leave a part file (fixed)
-254. Ticking a folded group does nothing the person can act on (open)
+254. Ticking a folded group does nothing the person can act on (fixed)
 255. A page read can outlive the app after a quit past the limit (fixed)
 256. A retry on the best format can move the bar backwards (fixed)
 
