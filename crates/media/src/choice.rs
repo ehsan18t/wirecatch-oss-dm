@@ -555,12 +555,11 @@ fn video_offer(
         (Some(h), _) => format!("{h}p"),
         (None, _) => "Best quality".to_string(),
     };
-    let (id, ext, needs_ffmpeg, size) = if let Some(a) = audio {
+    let (id, ext, needs_ffmpeg) = if let Some(a) = audio {
         (
             ids(Some(&video.id), Some(&a.id)),
             output::kept_ext(Some(video), Some(a)),
             true,
-            video.size().zip(a.size()).map(|(x, y)| x.saturating_add(y)),
         )
     } else {
         let content = if video.has_video() {
@@ -569,7 +568,7 @@ fn video_offer(
             Content::Audio
         };
         let ext = safe_ext(video.ext.as_deref(), content);
-        (video.id.to_string(), ext, false, video.size())
+        (video.id.to_string(), ext, false)
     };
     let job = MediaJob::Page {
         video: Some(video.id.clone()),
@@ -579,12 +578,8 @@ fn video_offer(
         conversion_failed: false,
     };
     let label = format!("{quality}, {}", format_name(&ext));
-    let mut variants =
-        output::video_variants(&at, audios, (video, audio), &ext, height, duration_ms);
-    if let Some(first) = variants.first_mut() {
-        // The Original choice is exactly today's download, size included.
-        first.fit.size = size;
-    }
+    let variants = output::video_variants(&at, audios, (video, audio), &ext, height, duration_ms);
+    let size = variants.first().and_then(|original| original.fit.size);
     let plan = Plan {
         job,
         ext,
@@ -611,7 +606,7 @@ fn audio_offer(audios: &[&Format], duration_ms: Option<u64>) -> Option<Offer> {
         audio.id.to_string(),
         format!("Audio only, {}", format_name(&ext)),
         None,
-        audio.size(),
+        output::stream_size(audio, duration_ms),
         Plan {
             job: MediaJob::Page {
                 video: None,
@@ -803,6 +798,40 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(saved_as(&together[0]), [OutputFormat::Original]);
+    }
+
+    /// A page often gives no file size for its largest formats, only their bit rates.
+    #[test]
+    fn a_stream_kept_as_it_comes_is_sized_from_its_bit_rate() {
+        let offers = from_page(&info(
+            r#"{"title":"T","duration":60,"formats":[
+            {"format_id":"313","ext":"webm","vcodec":"vp9","acodec":"none","height":2160,"tbr":20000,"url":"u"},
+            {"format_id":"251","ext":"webm","vcodec":"none","acodec":"opus","abr":160,"url":"u"}
+        ]}"#,
+        ))
+        .unwrap();
+        let size_of = |offer: &Offer, format| {
+            let fit = offer.0.outputs.iter().find(|fit| fit.format == format);
+            fit.unwrap().size
+        };
+        let both = Some(151_200_000);
+        assert_eq!(offers[0].0.size, both);
+        assert_eq!(size_of(&offers[0], OutputFormat::Original), both);
+        assert_eq!(size_of(&offers[0], OutputFormat::Mkv), both);
+        assert_eq!(offers[1].0.size, Some(1_200_000));
+        assert_eq!(size_of(&offers[1], OutputFormat::Original), Some(1_200_000));
+    }
+
+    #[test]
+    fn a_stream_with_no_rate_or_no_length_stays_without_a_size() {
+        for page in [
+            r#"{"title":"T","duration":60,"formats":[{"format_id":"v","ext":"webm","vcodec":"vp9","acodec":"opus","height":720,"url":"u"}]}"#,
+            r#"{"title":"T","formats":[{"format_id":"v","ext":"webm","vcodec":"vp9","acodec":"opus","height":720,"tbr":900,"url":"u"}]}"#,
+        ] {
+            let offers = from_page(&info(page)).unwrap();
+            let original = offers[0].0.outputs.first().unwrap();
+            assert_eq!((offers[0].0.size, original.size), (None, None), "{page}");
+        }
     }
 
     /// Formats a page may offer that need ffmpeg to read them for "Save as".

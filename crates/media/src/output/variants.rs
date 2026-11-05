@@ -162,6 +162,14 @@ fn bytes_for(kbps: u32, duration_ms: Option<u64>) -> Option<u64> {
         .map(|d| u64::from(kbps).saturating_mul(d) / 8)
 }
 
+/// The size of a stream kept as it comes: what the page says, else its bit rate over its length, since pages often give no file size for their largest formats.
+pub(crate) fn stream_size(format: &Format, duration_ms: Option<u64>) -> Option<u64> {
+    format.size().or_else(|| {
+        let kbps = f64_to_u64(rate(format).round()).filter(|kbps| *kbps > 0)?;
+        bytes_for(saturating_cast(kbps), duration_ms)
+    })
+}
+
 /// The highest bit rate of `formats` at frame rate `fps`, for a row whose video runs at it. Another rate is never taken: without one at `fps` the row's video is converted (D24.2). A rate not said matches any.
 fn best_for_fps<'a>(
     formats: impl Iterator<Item = &'a Format>,
@@ -298,12 +306,12 @@ fn variant(
     };
     let video_size = match video_action {
         VideoAction::Encode { kbps, .. } => bytes_for(kbps, duration_ms),
-        _ => video.size(),
+        _ => stream_size(video, duration_ms),
     };
     let audio_size = match (audio_action, audio) {
         (AudioAction::Encode { kbps: Some(k), .. }, _) => bytes_for(k, duration_ms),
         (AudioAction::Encode { kbps: None, .. }, _) => None,
-        (_, Some(a)) => a.size(),
+        (_, Some(a)) => stream_size(a, duration_ms),
         (_, None) => Some(0),
     };
     Variant {
@@ -411,7 +419,7 @@ fn audio_variant(
     let size = match action {
         AudioAction::Encode { kbps: Some(k), .. } => bytes_for(k, duration_ms),
         AudioAction::Encode { kbps: None, .. } => None,
-        _ => source.size(),
+        _ => stream_size(source, duration_ms),
     };
     Variant {
         video: None,
