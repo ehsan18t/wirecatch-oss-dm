@@ -133,7 +133,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 68. Leftover proxy code from the earlier form has no caller (fixed)
 69. yt-dlp ignores proxy exceptions and the page's scheme (fixed)
 70. Choosing a path blocks an async thread on the disk, so a dead share stalls every command (fixed)
-71. A passing read error or a failed rename deletes a download's data (open)
+71. A passing read error or a failed rename deletes a download's data (fixed)
 72. The app quits before the Windows setup has asked for approval, so a refusal reaches no one (fixed)
 73. An AppImage restart can be lost while the old copy exits (fixed)
 74. A stored bad part can never be thrown away, so Refresh link cannot help (fixed)
@@ -329,8 +329,14 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 264. The proxy's shown name has two copies (fixed)
 265. A stream join reads only ffmpeg's last lines (fixed)
 266. A crash while placing a video can double its subtitles (fixed)
-267. No check finds shell functions nothing calls (open)
+267. No check finds shell functions nothing calls (won't fix (a word check is unsound and it needs name resolution; see item 273))
 268. A hanging test on Windows leaves no name or log (fixed)
+269. A mark written after a move's copy is lost (open)
+270. The timing check misreads some test code (open)
+271. A dialog can give focus back to a button that has gone (open)
+272. The extension writes the product name out by hand (open)
+273. Public shell items are used only in their own file (open)
+274. A partial file can continue under another sign-in (open)
 
 Done before the release:
 
