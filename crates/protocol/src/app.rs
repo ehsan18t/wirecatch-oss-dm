@@ -610,9 +610,10 @@ pub struct MediaSelection {
     pub chapters: bool,
 }
 
-/// What the quality window starts from (D24) and whether it opens at all (D50): the last
-/// choices, kept separately for videos and for audio only, the resolution, and what to do when
-/// a video does not offer it. Also in Settings, Media, and in the settings profile.
+/// What the quality window starts from (D24), whether it opens at all (D50) and whether a pick
+/// there is kept (D200): the saved choices, kept separately for videos and for audio only, the
+/// resolution, and what to do when a video does not offer it. Also in Settings, Media, and in
+/// the settings profile.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct MediaDefaults {
@@ -627,7 +628,12 @@ pub struct MediaDefaults {
     /// is to ask, or the media add-on must be installed first (D50).
     #[serde(default = "default_true")]
     pub ask_each_time: bool,
-    /// The resolution picked first; every pick from the quality window becomes it.
+    /// Save what is picked in the quality window when it is answered with Download or Download
+    /// later. Off, a pick applies to that video only (D200).
+    #[serde(default = "default_true")]
+    pub remember_choices: bool,
+    /// The resolution picked first; with
+    /// [`remember_choices`](Self::remember_choices), a pick from the quality window becomes it.
     #[serde(default, with = "known_or_default")]
     #[ts(as = "VideoQuality")]
     pub quality: VideoQuality,
@@ -643,6 +649,7 @@ impl Default for MediaDefaults {
             video: OutputDefaults::default(),
             audio: OutputDefaults::default(),
             ask_each_time: true,
+            remember_choices: true,
             quality: VideoQuality::default(),
             fallback: QualityFallback::default(),
         }
@@ -1295,6 +1302,9 @@ pub struct MediaDefaultsPatch {
     /// The new [`MediaDefaults::ask_each_time`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ask_each_time: Option<bool>,
+    /// The new [`MediaDefaults::remember_choices`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remember_choices: Option<bool>,
     /// The new [`MediaDefaults::quality`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quality: Option<VideoQuality>,
@@ -1634,6 +1644,7 @@ impl MediaDefaults {
             video,
             audio,
             ask_each_time,
+            remember_choices,
             quality,
             fallback,
         } = self;
@@ -1641,6 +1652,7 @@ impl MediaDefaults {
             video: video_patch,
             audio: audio_patch,
             ask_each_time: new_ask_each_time,
+            remember_choices: new_remember_choices,
             quality: new_quality,
             fallback: new_fallback,
         } = patch;
@@ -1651,6 +1663,7 @@ impl MediaDefaults {
             audio.apply(audio_patch);
         }
         set(ask_each_time, new_ask_each_time);
+        set(remember_choices, new_remember_choices);
         set(quality, new_quality);
         set(fallback, new_fallback);
     }
@@ -2296,6 +2309,12 @@ mod tests {
         assert_eq!(selection.output, OutputFormat::Original);
         assert_eq!(selection.audio_kbps, None);
         assert!(selection.subtitles.is_empty() && !selection.subtitle_files && !selection.chapters);
+    }
+
+    #[test]
+    fn older_settings_remember_choices() {
+        let media: MediaDefaults = serde_json::from_str(r#"{"ask_each_time":false}"#).unwrap();
+        assert!(media.remember_choices);
     }
 
     #[test]

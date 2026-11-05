@@ -211,6 +211,12 @@ pub fn shown_wait(row: &DownloadSummary) -> Option<&WaitReason> {
     }
 }
 
+/// The quality window's switch and its setting (D200).
+pub const REMEMBER_CHOICES: &str = "Remember these choices";
+
+/// The quality window's switch and its setting (D50).
+pub const ASK_EACH_VIDEO: &str = "Ask before each video";
+
 /// The formats a video can be saved as, in the order a menu lists them (`OutputFormat::saves_video`).
 pub const VIDEO_FORMATS: &[(OutputFormat, &str)] = &[
     (OutputFormat::Original, "Original"),

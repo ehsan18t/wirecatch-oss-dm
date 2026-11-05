@@ -98,6 +98,7 @@ fn media_patch(media: MediaDefaults) -> MediaDefaultsPatch {
         video,
         audio,
         ask_each_time,
+        remember_choices,
         quality,
         fallback,
     } = media;
@@ -105,6 +106,7 @@ fn media_patch(media: MediaDefaults) -> MediaDefaultsPatch {
         video: Some(output_patch(video)),
         audio: Some(output_patch(audio)),
         ask_each_time: Some(ask_each_time),
+        remember_choices: Some(remember_choices),
         quality: Some(quality),
         fallback: Some(fallback),
     }

@@ -868,6 +868,7 @@ pub(crate) fn browser_controls_cases() -> Vec<(BrowserControls, BrowserControlsP
                 max_concurrent_downloads: Some(1),
                 media: Some(MediaDefaultsPatch {
                     ask_each_time: Some(false),
+                    remember_choices: Some(false),
                     quality: Some(VideoQuality::Height(720)),
                     fallback: Some(QualityFallback::Higher),
                     video: Some(OutputDefaultsPatch {

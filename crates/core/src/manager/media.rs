@@ -1184,8 +1184,8 @@ impl Manager {
     }
 
     /// Keeps what was chosen for a video (or for audio only) as the next
-    /// window's starting point, in the settings (D24), and whether the next
-    /// video asks at all (D50). The resolution is kept when the video offered
+    /// window's starting point, in the settings (D24), unless the person keeps
+    /// their saved choices (D200). The resolution is kept when the video offered
     /// the saved one and another was picked; a quality offered in its original
     /// format only (a stream's) keeps the saved format, subtitles and chapters.
     fn remember_media_choice(&self, choice: &MediaChoice, selection: &MediaSelection) {
@@ -1195,6 +1195,9 @@ impl Manager {
         let Ok(mut state) = self.lock_open() else {
             return;
         };
+        if !state.settings.media.remember_choices {
+            return;
+        }
         let mut new = state.settings.clone();
         if choice.missing_quality.is_none() && selection.option_id != choice.start.option_id {
             if option.audio_only {

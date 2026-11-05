@@ -44,6 +44,7 @@ use super::run_record::{Look, RunRecord};
 use crate::backend::{Backend, act, said};
 use crate::library::Library;
 use crate::main_window::fixes::run_from_download_window;
+use crate::text::{ASK_EACH_VIDEO, REMEMBER_CHOICES};
 use crate::ui::small_title_bar::small_title_bar;
 use crate::ui::speed_graph::run_graph;
 use crate::ui::{Callout, Field, Role, Typed as _, tokens};
@@ -398,69 +399,111 @@ impl Render for DownloadWindow {
     }
 }
 
+/// A setting's switch along the window's foot.
+struct FootSwitch {
+    label: &'static str,
+    checked: bool,
+    patch: fn(bool) -> AppSettingsPatch,
+}
+
+impl FootSwitch {
+    fn row(self, cx: &App) -> AnyElement {
+        let Self {
+            label,
+            checked,
+            patch,
+        } = self;
+        h_flex()
+            .gap_2()
+            .child(
+                Switch::new(label)
+                    .small()
+                    .checked(checked)
+                    .accessibility_label(label)
+                    .on_click(move |on: &bool, window, cx| {
+                        let patch = patch(*on);
+                        act(window.window_handle(), cx, move |manager| {
+                            api::change_settings(manager, patch)
+                        });
+                    }),
+            )
+            .child(div().text_role(Role::Meta, cx).child(label))
+            .into_any_element()
+    }
+}
+
+fn media_patch(patch: MediaDefaultsPatch) -> AppSettingsPatch {
+    AppSettingsPatch {
+        media: Some(patch),
+        ..AppSettingsPatch::default()
+    }
+}
+
 impl DownloadWindow {
-    /// The switch along the window's foot, for what it shows: the same setting the extension's
-    /// popup and Settings have, which applies from the next download on.
+    /// The switches along the window's foot, for what it shows: the same settings the extension's
+    /// popup and Settings have, which apply at once, Cancel or not (D200).
     fn strip(&self, cx: &App) -> Option<AnyElement> {
         // Read only once there is something to show: a question's window first draws while the
         // library is still updating, and reading it then panics.
         let settings = || self.library.read(cx).settings.as_ref();
-        let (label, checked, patch): (_, _, fn(bool) -> AppSettingsPatch) =
-            match (self.shows, &self.question) {
-                (Shows::Question(_), Some(Question::Capture(_))) => (
-                    "Ask before each download",
-                    settings()?.extension.ask_before_download,
-                    |on| AppSettingsPatch {
-                        extension: Some(ExtensionSettingsPatch {
-                            ask_before_download: Some(on),
-                            ..ExtensionSettingsPatch::default()
-                        }),
-                        ..AppSettingsPatch::default()
+        let switches = match (self.shows, &self.question) {
+            (Shows::Question(_), Some(Question::Capture(_))) => vec![FootSwitch {
+                label: "Ask before each download",
+                checked: settings()?.extension.ask_before_download,
+                patch: |on| AppSettingsPatch {
+                    extension: Some(ExtensionSettingsPatch {
+                        ask_before_download: Some(on),
+                        ..ExtensionSettingsPatch::default()
+                    }),
+                    ..AppSettingsPatch::default()
+                },
+            }],
+            (Shows::Question(_), Some(Question::Choice(_))) => {
+                let media = &settings()?.media;
+                vec![
+                    FootSwitch {
+                        label: REMEMBER_CHOICES,
+                        checked: media.remember_choices,
+                        patch: |on| {
+                            media_patch(MediaDefaultsPatch {
+                                remember_choices: Some(on),
+                                ..MediaDefaultsPatch::default()
+                            })
+                        },
                     },
-                ),
-                (Shows::Question(_), Some(Question::Choice(_))) => (
-                    "Use my choices for every video",
-                    !settings()?.media.ask_each_time,
-                    |on| AppSettingsPatch {
-                        media: Some(MediaDefaultsPatch {
-                            ask_each_time: Some(!on),
-                            ..MediaDefaultsPatch::default()
-                        }),
-                        ..AppSettingsPatch::default()
+                    FootSwitch {
+                        label: ASK_EACH_VIDEO,
+                        checked: media.ask_each_time,
+                        patch: |on| {
+                            media_patch(MediaDefaultsPatch {
+                                ask_each_time: Some(on),
+                                ..MediaDefaultsPatch::default()
+                            })
+                        },
                     },
-                ),
-                (Shows::Download(_), _) => (
-                    "Show progress while downloading",
-                    settings()?.show_progress_windows,
-                    |on| AppSettingsPatch {
-                        show_progress_windows: Some(on),
-                        ..AppSettingsPatch::default()
-                    },
-                ),
-                _ => return None,
-            };
+                ]
+            }
+            (Shows::Download(_), _) => vec![FootSwitch {
+                label: "Show progress while downloading",
+                checked: settings()?.show_progress_windows,
+                patch: |on| AppSettingsPatch {
+                    show_progress_windows: Some(on),
+                    ..AppSettingsPatch::default()
+                },
+            }],
+            _ => return None,
+        };
+        let rows: Vec<AnyElement> = switches.into_iter().map(|switch| switch.row(cx)).collect();
         let theme = cx.theme();
         Some(
-            h_flex()
+            v_flex()
                 .px_4()
                 .py_2()
                 .gap_2()
                 .border_t_1()
                 .border_color(theme.border)
                 .bg(theme.sidebar)
-                .child(
-                    Switch::new("window-switch")
-                        .small()
-                        .checked(checked)
-                        .accessibility_label(label)
-                        .on_click(move |on: &bool, window, cx| {
-                            let patch = patch(*on);
-                            act(window.window_handle(), cx, move |manager| {
-                                api::change_settings(manager, patch)
-                            });
-                        }),
-                )
-                .child(div().text_role(Role::Meta, cx).child(label))
+                .children(rows)
                 .into_any_element(),
         )
     }

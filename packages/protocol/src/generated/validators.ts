@@ -854,6 +854,7 @@ export function isMediaDefaults(value: unknown): value is MediaDefaults {
     isOutputDefaults(value1['video']) &&
     isOutputDefaults(value1['audio']) &&
     typeof value1['ask_each_time'] === 'boolean' &&
+    typeof value1['remember_choices'] === 'boolean' &&
     isVideoQuality(value1['quality']) &&
     isQualityFallback(value1['fallback']))(value);
 }
@@ -865,6 +866,7 @@ export function isMediaDefaultsPatch(value: unknown): value is MediaDefaultsPatc
     (value1['video'] === undefined || isOutputDefaultsPatch(value1['video'])) &&
     (value1['audio'] === undefined || isOutputDefaultsPatch(value1['audio'])) &&
     (value1['ask_each_time'] === undefined || typeof value1['ask_each_time'] === 'boolean') &&
+    (value1['remember_choices'] === undefined || typeof value1['remember_choices'] === 'boolean') &&
     (value1['quality'] === undefined || isVideoQuality(value1['quality'])) &&
     (value1['fallback'] === undefined || isQualityFallback(value1['fallback'])))(value);
 }
