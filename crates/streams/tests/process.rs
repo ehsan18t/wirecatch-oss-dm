@@ -37,6 +37,17 @@ fn fake_program() -> TestResult<PathBuf> {
     Ok(path)
 }
 
+/// The stand-in for the app built beside [`fake_program`].
+#[cfg(unix)]
+fn fake_runner() -> TestResult<PathBuf> {
+    let program = fake_program()?;
+    let runner = program.with_file_name(format!("fake_runner{}", std::env::consts::EXE_SUFFIX));
+    if !runner.is_file() {
+        return Err(format!("{} is missing", runner.display()).into());
+    }
+    Ok(runner)
+}
+
 fn args(words: &[&str]) -> Vec<OsString> {
     words.iter().map(OsString::from).collect()
 }
@@ -673,5 +684,92 @@ async fn the_program_gets_the_environment_it_is_given_and_its_debug_hides_the_va
             "PATH unset"
         ]
     );
+    Ok(())
+}
+
+/// An app ended by a signal takes what it started with it, and still ends as that signal ends a program (D137).
+#[cfg(unix)]
+#[tokio::test]
+async fn a_signal_that_ends_the_app_ends_what_it_started() -> TestResult {
+    use std::os::unix::process::ExitStatusExt as _;
+    use tokio::io::AsyncBufReadExt as _;
+
+    for (name, number) in [
+        ("-TERM", libc::SIGTERM),
+        ("-HUP", libc::SIGHUP),
+        ("-INT", libc::SIGINT),
+    ] {
+        let (address, accepted) = holder_listener().await?;
+        let mut app = tokio::process::Command::new(fake_runner()?)
+            .arg(fake_program()?)
+            .args(["start-holder", &address])
+            .stdout(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()?;
+        let out = app.stdout.take().ok_or("the app has no output")?;
+        let mut lines = tokio::io::BufReader::new(out).lines();
+        let connection = within_patience(accepted)
+            .await
+            .map_err(|_| format!("the holder did not connect within {PATIENCE:?}"))???;
+        // Heard by the app, so the run has its program on record.
+        let said = within_patience(lines.next_line())
+            .await
+            .map_err(|_| format!("the app passed on nothing within {PATIENCE:?}"))??;
+        assert_eq!(said.as_deref(), Some("holding"));
+        let id = app.id().ok_or("the app has no id")?.to_string();
+        let sent = tokio::process::Command::new("kill")
+            .args([name, &id])
+            .status()
+            .await?;
+        assert!(sent.success());
+        holder_ended(connection).await?;
+        let ended = within_patience(app.wait())
+            .await
+            .map_err(|_| format!("the app was still running {PATIENCE:?} after {name}"))??;
+        assert_eq!(ended.signal(), Some(number), "{ended:?}");
+    }
+    Ok(())
+}
+
+/// A signal the app was started ignoring, as `nohup` does, stays ignored (D137): closing the terminal ends nothing.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_signal_the_app_ignores_ends_nothing() -> TestResult {
+    use std::os::unix::process::ExitStatusExt as _;
+    use tokio::io::AsyncBufReadExt as _;
+
+    let (address, accepted) = holder_listener().await?;
+    // An ignored signal stays ignored through `exec`.
+    let mut app = tokio::process::Command::new("sh")
+        .args(["-c", r#"trap "" HUP; exec "$@""#, "sh"])
+        .arg(fake_runner()?)
+        .arg(fake_program()?)
+        .args(["start-holder", &address])
+        .stdout(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+    let out = app.stdout.take().ok_or("the app has no output")?;
+    let mut lines = tokio::io::BufReader::new(out).lines();
+    let connection = within_patience(accepted)
+        .await
+        .map_err(|_| format!("the holder did not connect within {PATIENCE:?}"))???;
+    let said = within_patience(lines.next_line())
+        .await
+        .map_err(|_| format!("the app passed on nothing within {PATIENCE:?}"))??;
+    assert_eq!(said.as_deref(), Some("holding"));
+    let id = app.id().ok_or("the app has no id")?.to_string();
+    // In this order, so an app that took the first would end by it, not by the second.
+    for signal in ["-HUP", "-TERM"] {
+        let sent = tokio::process::Command::new("kill")
+            .args([signal, &id])
+            .status()
+            .await?;
+        assert!(sent.success());
+    }
+    holder_ended(connection).await?;
+    let ended = within_patience(app.wait())
+        .await
+        .map_err(|_| format!("the app was still running {PATIENCE:?} after -TERM"))??;
+    assert_eq!(ended.signal(), Some(libc::SIGTERM), "{ended:?}");
     Ok(())
 }

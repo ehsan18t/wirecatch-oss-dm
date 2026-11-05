@@ -28,9 +28,7 @@ pub(crate) fn web_address(base: &Url, reference: &str) -> Result<Url, ManifestEr
     if reference.len() > MAX_URL_LEN {
         return Err(ManifestError::LinkTooLong(reference.len()));
     }
-    let url = base
-        .join(reference)
-        .map_err(|_| ManifestError::BadLink(excerpt(reference)))?;
+    let url = base.join(reference).map_err(|_| ManifestError::BadLink)?;
     check_web_address(&url)?;
     Ok(url)
 }

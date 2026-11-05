@@ -14,7 +14,9 @@ use wirecatch_protocol::proxy::{
 use wirecatch_protocol::{ProxyServerId, Secret};
 use wirecatch_test_support::proxy::{SocksConfig, SocksServer};
 
-use crate::common::{Harness, TestResult, fast_server, is_running, throttled_server, wait_until};
+use crate::common::{
+    Harness, TestResult, fast_server, is_running, throttled_server, tune, wait_until,
+};
 
 /// A profile for `socks`, logged in as `user` when one is given.
 fn socks_profile(name: &str, socks: &SocksServer, user: &str) -> ProxyServerSettings {
@@ -327,6 +329,54 @@ async fn an_export_has_no_password_and_an_import_of_another_server_forgets_it() 
         here.manager.list_proxy_servers()[0].last_test.clone()
     })
     .await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_preview_shows_the_proxies_and_local_sites_an_import_would_change() -> TestResult {
+    let socks = socks_with_login().await;
+    let other = SocksServer::start(SocksConfig::default()).await;
+    let here = Harness::new().await?;
+    for (name, password) in [("Office", Some("secret")), ("Same", Some("secret"))] {
+        let server = if name == "Office" { &socks } else { &other };
+        here.manager
+            .create_proxy_server(draft(socks_profile(name, server, "alice"), password))?;
+    }
+    tune(&here.manager, |s| {
+        s.local_sites = vec!["old.example.com".into(), "kept.example.com".into()];
+    })?;
+
+    let elsewhere = Harness::new().await?;
+    for (name, server) in [("Office", &other), ("Same", &other), ("Home", &other)] {
+        elsewhere
+            .manager
+            .create_proxy_server(draft(socks_profile(name, server, "alice"), None))?;
+    }
+    tune(&elsewhere.manager, |s| {
+        s.local_sites = vec!["new.example.com".into(), "kept.example.com".into()];
+    })?;
+    let file = elsewhere.root.path().join("other.json");
+    elsewhere.manager.export_settings(&file).await?;
+
+    let preview = here.manager.preview_import(&file).await?;
+    assert_eq!(preview.proxies_added, ["Home"]);
+    assert_eq!(preview.proxies_updated, ["Office"]);
+    assert_eq!(preview.proxy_passwords_removed, ["Office"]);
+    assert_eq!(preview.local_sites_added, ["new.example.com"]);
+    assert_eq!(preview.local_sites_removed, ["old.example.com"]);
+
+    // Only a preview: nothing changed yet, and the import does what it said.
+    assert_eq!(here.manager.list_proxy_servers().len(), 2);
+    here.manager.import_settings(&file).await?;
+    let has_password = |name: &str| {
+        here.manager
+            .list_proxy_servers()
+            .iter()
+            .any(|p| p.settings.name == name && p.has_password)
+    };
+    assert!(!has_password("Office"));
+    assert!(has_password("Same"));
+    assert_eq!(here.manager.list_proxy_servers().len(), 3);
     Ok(())
 }
 

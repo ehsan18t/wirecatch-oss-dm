@@ -32,7 +32,7 @@ pub use error::{Result, SettingsError, SettingsFileError};
 
 pub use wirecatch_protocol::DEFAULT_QUEUE_ID;
 
-const MAX_QUEUE_NAME_CHARS: usize = 60;
+pub(crate) const MAX_QUEUE_NAME_CHARS: usize = 60;
 /// Speed limits are stored as signed 64-bit integers.
 const MAX_SPEED_LIMIT: u64 = i64::MAX as u64;
 

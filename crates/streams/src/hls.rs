@@ -966,7 +966,7 @@ a.ts
             ),
             (
                 "#EXTM3U\n#EXTINF:1,\nhttp://[::1\n".into(),
-                ManifestError::BadLink("http://[::1".into()),
+                ManifestError::BadLink,
             ),
         ] {
             assert_eq!(

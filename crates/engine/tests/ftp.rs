@@ -186,8 +186,12 @@ async fn resumes_after_cancel_without_downloading_again() {
     let outcome = download(request(&url, &dir, 2), progress, cancel)
         .await
         .unwrap();
-    let Outcome::Paused { remaining, .. } = outcome else {
-        panic!("expected Paused, got {outcome:?}")
+    let Outcome::Paused {
+        remaining: Some(remaining),
+        ..
+    } = outcome
+    else {
+        panic!("expected Paused with a known size, got {outcome:?}")
     };
     assert!(remaining > 0 && remaining < data.len() as u64);
     assert_eq!(files_in(&dir), ["file.bin.wcpart", "file.bin.wcstate"]);

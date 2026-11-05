@@ -11,7 +11,7 @@ use tokio::sync::Notify;
 use wirecatch_engine::{CancellationToken, Error as EngineError, PathRejected, Url};
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{AddRequest, CaptureConfirmation, DownloadStatus};
-use wirecatch_protocol::extension::{CaptureSource, NewDownload};
+use wirecatch_protocol::extension::{CaptureSource, MediaHint, MediaKind, NewDownload};
 use wirecatch_test_support::{PATIENCE, QUIET};
 
 use super::fake::{EngineFuture, FakeEngine, FakeRun};
@@ -42,6 +42,58 @@ fn media_requests_name_the_app_or_the_browser() {
         super::media::media_options(&origin, PrivateNetwork::Block, ProxyChoice::System).user_agent,
         "TestBrowser/1"
     );
+}
+
+// On this one-thread runtime the read spawned by `media_addon_ready` waits for the first `await`, so the stage still holds its token.
+#[tokio::test]
+async fn a_page_read_stops_with_the_manager() {
+    let dir = tempfile::tempdir().unwrap();
+    let folders = KnownFolders::under_home(dir.path().join("home"));
+    let manager = Manager::open(ManagerConfig::for_tests(dir.path().join("data"), folders))
+        .await
+        .unwrap();
+    let id = manager
+        .add_video_page(AddRequest {
+            url: "https://example.com/watch/7".to_owned().into(),
+            queue: None,
+            folder: None,
+            file_name: None,
+            start: true,
+        })
+        .unwrap();
+    manager.media_addon_ready();
+    let token = match &manager.lock().media.get(&id).unwrap().stage {
+        super::media::MediaStage::Analysing(token) => token.clone(),
+        _ => panic!("the page is not being read"),
+    };
+    assert!(!token.is_cancelled());
+    manager.shutdown().await;
+    assert!(token.is_cancelled());
+}
+
+#[tokio::test]
+async fn a_stream_read_stops_with_the_manager() {
+    let server = wirecatch_test_support::files::FileServer::start().await;
+    server.put("master.m3u8", "#EXTM3U\n");
+    server.hang("master.m3u8", true);
+    let dir = tempfile::tempdir().unwrap();
+    let folders = KnownFolders::under_home(dir.path().join("home"));
+    let manager = Manager::open(ManagerConfig::for_tests(dir.path().join("data"), folders))
+        .await
+        .unwrap();
+    let mut stream = capture(server.url("master.m3u8").as_str());
+    stream.media = Some(MediaHint {
+        kind: MediaKind::Hls,
+        title: None,
+    });
+    manager.add_capture(stream).await.unwrap();
+    let token = match manager.lock().media.iter().next().map(|(_, m)| &m.stage) {
+        Some(super::media::MediaStage::Analysing(token)) => token.clone(),
+        _ => panic!("the stream is not being read"),
+    };
+    assert!(!token.is_cancelled());
+    manager.shutdown().await;
+    assert!(token.is_cancelled());
 }
 
 /// A manager in a temporary folder whose runs are played by `engine`.

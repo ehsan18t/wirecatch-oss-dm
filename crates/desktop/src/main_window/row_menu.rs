@@ -204,6 +204,11 @@ fn actions(menu: PopupMenu, target: &Target) -> PopupMenu {
                 .icon(IconName::Info)
                 .on_click(move |_, window, cx| details::open(library.clone(), id, window, cx)),
         )
+        .item(
+            PopupMenuItem::new("Show progress window")
+                .icon(IconName::PanelBottomOpen)
+                .on_click(move |_, _, cx| crate::download_windows::show_download(id, cx)),
+        )
     })
     .separator()
 }

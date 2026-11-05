@@ -89,6 +89,7 @@ async fn a_duplicate_waits_for_an_answer_by_default() -> TestResult {
     assert_eq!(h.manager.pending_file_exists(), vec![question.clone()]);
     let waiting = h.wait_status(row.id, DownloadStatus::Paused).await;
     assert_eq!(waiting.done, 0);
+    assert_eq!(waiting.file_name, NAME, "the answer settles the name");
     assert_eq!(std::fs::read(dir.join(NAME))?, same_size());
 
     h.manager
@@ -184,6 +185,26 @@ async fn replace_and_keep_both_need_no_question_once_chosen() -> TestResult {
     let kept = h.wait_status(kept.id, DownloadStatus::Completed).await;
     assert_eq!(Path::new(&kept.path), dir.join("report (1).pdf"));
     assert_eq!(h.manager.pending_file_exists(), vec![]);
+    Ok(())
+}
+
+/// A server that gives no size offers nothing to compare, so the file is not called the same (D96).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_download_of_unknown_size_is_not_called_the_same_file() -> TestResult {
+    let server = TestServer::start(
+        test_data(LEN),
+        Config {
+            omit_length: true,
+            ..Config::default()
+        },
+    )
+    .await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let mut events = h.manager.subscribe();
+    add_into(&h, server.url("report").as_str(), &dir).await?;
+
+    assert!(!asked(&mut events).await?.same_file);
     Ok(())
 }
 

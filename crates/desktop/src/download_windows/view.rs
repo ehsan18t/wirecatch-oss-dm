@@ -27,8 +27,8 @@ use gpui_kit::{
 };
 use wirecatch_protocol::app::{
     AddonId, AddonRequestItem, AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus,
-    DownloadSummary, FileExistsAnswer, FileExistsChoice, FileExistsQuestion, MediaChoice,
-    MediaDefaultsPatch, PER_MILLE_DONE, PendingCapture, Question,
+    DownloadSummary, FileExistsAnswer, FileExistsChoice, FileExistsQuestion, FixAction,
+    MediaChoice, MediaDefaultsPatch, PER_MILLE_DONE, PendingCapture, Question,
 };
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
 use wirecatch_protocol::rules::QueueReason;
@@ -42,6 +42,7 @@ use super::media_form::{MediaAnswer, MediaForm};
 use super::run_record::{Look, RunRecord};
 use crate::backend::{Backend, act, said};
 use crate::library::Library;
+use crate::main_window::fixes::run_from_download_window;
 use crate::ui::small_title_bar::small_title_bar;
 use crate::ui::speed_graph::run_graph;
 use crate::ui::{Callout, Field, Role, Typed as _, tokens};
@@ -570,10 +571,10 @@ impl DownloadWindow {
     }
 
     fn confirm(&mut self, id: QuestionId, later: bool, cx: &mut Context<'_, Self>) {
-        let name = self.name.read(cx).value().trim().to_owned();
+        let name = self.name.read(cx).value();
         let confirmation = CaptureConfirmation {
             folder: self.folder.clone(),
-            file_name: (!name.is_empty()).then_some(name),
+            file_name: chosen_name(&name, self.core_name.as_deref()),
             queue: self.queue,
             later,
         };
@@ -645,10 +646,7 @@ impl DownloadWindow {
         v_flex()
             .gap_4()
             .child(heading(&question.file_name, &question.url, None, cx))
-            .child(div().child(format!(
-                "A file with this name is already in {}.",
-                text::folder(&question.folder)
-            )))
+            .child(div().child(text::file_exists_said(question)))
             .child(
                 Checkbox::new("file-exists-remember")
                     .label("Do the same every time")
@@ -715,7 +713,7 @@ impl DownloadWindow {
         let folder = Path::new(&row.path)
             .parent()
             .map(|folder| text::folder(&folder.to_string_lossy()));
-        let buttons = progress_buttons(id, row.status, cx);
+        let buttons = progress_buttons(&row, cx);
         let theme = cx.theme();
         v_flex()
             .min_h(px(FILE_CONTENT_HEIGHT))
@@ -841,7 +839,7 @@ impl DownloadWindow {
                         .flex_shrink_0()
                         .px_2p5()
                         .text_role(Role::Meta, cx)
-                        .child("The partial file was removed. Try again starts over."),
+                        .child("Anything downloaded so far was removed. Try again starts over."),
                 )
             })
             .child(div().relative().mt_1p5().flex_1().min_h_0().children(graph))
@@ -1135,11 +1133,12 @@ fn state_mark(row: &DownloadSummary, stalled: bool, cx: &App) -> Option<AnyEleme
 
 /// What a download's window offers in its state, the main one last. Hide leaves a download
 /// running; Close is for one with nothing left to run.
-fn progress_buttons(
-    id: DownloadId,
-    status: DownloadStatus,
-    cx: &mut Context<'_, DownloadWindow>,
-) -> Vec<Button> {
+fn progress_buttons(row: &DownloadSummary, cx: &mut Context<'_, DownloadWindow>) -> Vec<Button> {
+    let id = row.id;
+    let cancel = || {
+        button("progress-cancel", "Cancel", ButtonVariant::Ghost, false)
+            .on_click(move |_, window, cx| super::ask_to_cancel(id, window, cx))
+    };
     let command =
         |button_id,
          label,
@@ -1153,7 +1152,7 @@ fn progress_buttons(
         button("progress-leave", label, variant, false)
             .on_click(cx.listener(|view, _, _, cx| view.close(cx)))
     };
-    match status {
+    match row.status {
         DownloadStatus::Completed => vec![
             leave("Close", ButtonVariant::Ghost),
             button(
@@ -1167,12 +1166,7 @@ fn progress_buttons(
                 .on_click(move |_, window, cx| files::open(id, window, cx)),
         ],
         DownloadStatus::Paused => vec![
-            command(
-                "progress-cancel",
-                "Cancel",
-                ButtonVariant::Ghost,
-                api::cancel,
-            ),
+            cancel(),
             leave("Hide", ButtonVariant::Secondary),
             command(
                 "progress-resume",
@@ -1181,22 +1175,13 @@ fn progress_buttons(
                 api::resume,
             ),
         ],
-        DownloadStatus::Failed | DownloadStatus::Cancelled => vec![
-            leave("Close", ButtonVariant::Ghost),
-            command(
-                "progress-retry",
-                "Try again",
-                ButtonVariant::Primary,
-                api::retry,
-            ),
-        ],
+        DownloadStatus::Failed | DownloadStatus::Cancelled => {
+            std::iter::once(leave("Close", ButtonVariant::Ghost))
+                .chain(fix_buttons(row))
+                .collect()
+        }
         _ => vec![
-            command(
-                "progress-cancel",
-                "Cancel",
-                ButtonVariant::Ghost,
-                api::cancel,
-            ),
+            cancel(),
             leave("Hide", ButtonVariant::Secondary),
             command(
                 "progress-pause",
@@ -1206,6 +1191,30 @@ fn progress_buttons(
             ),
         ],
     }
+}
+
+/// The window's fixes for a download that ended without finishing, the main one last.
+fn fix_buttons(row: &DownloadSummary) -> Vec<Button> {
+    let id = row.id;
+    let fixes = super::fixes_offered(row);
+    let main = fixes.last().copied();
+    fixes
+        .into_iter()
+        .map(|fix| {
+            let button_id = if fix == FixAction::Retry {
+                "progress-retry"
+            } else {
+                "progress-fix"
+            };
+            let variant = if Some(fix) == main {
+                ButtonVariant::Primary
+            } else {
+                ButtonVariant::Secondary
+            };
+            button(button_id, text::fix_label(fix), variant, false)
+                .on_click(move |_, window, cx| run_from_download_window(id, fix, window, cx))
+        })
+        .collect()
 }
 
 /// A video page being read for its qualities.
@@ -1436,6 +1445,13 @@ fn button(id: &'static str, label: &'static str, variant: ButtonVariant, busy: b
         .disabled(busy)
 }
 
+/// The name the person chose in the field: a name left as proposed is no choice, so the server's
+/// answer may still improve it.
+fn chosen_name(field: &str, proposed: Option<&str>) -> Option<String> {
+    let name = field.trim();
+    (!name.is_empty() && Some(name) != proposed).then(|| name.to_owned())
+}
+
 /// Whether the core's name replaces what the field holds: never a name the person typed.
 fn core_name_applies(field: &str, last: Option<&str>, core: &str) -> bool {
     last.is_none_or(|last| last != core && field == last)
@@ -1531,6 +1547,20 @@ mod tests {
         ) -> impl gpui_kit::IntoElement {
             gpui_kit::div()
         }
+    }
+
+    #[test]
+    fn only_a_name_the_person_changed_counts_as_chosen() {
+        use super::chosen_name;
+
+        assert_eq!(chosen_name("get", Some("get")), None);
+        assert_eq!(chosen_name(" get ", Some("get")), None);
+        assert_eq!(chosen_name("", Some("get")), None);
+        assert_eq!(
+            chosen_name("report.pdf", Some("get")).as_deref(),
+            Some("report.pdf")
+        );
+        assert_eq!(chosen_name("get", None).as_deref(), Some("get"));
     }
 
     #[test]

@@ -467,8 +467,8 @@ fn activity(row: &DownloadSummary, cx: &App) -> impl IntoElement {
         })
 }
 
-/// The actions at the foot: quiet icon buttons on the left (show in folder, cancel, remove), and
-/// the one action its state calls for on the right.
+/// The actions at the foot: quiet icon buttons on the left, and the one action its state calls for
+/// on the right.
 fn footer(
     row: &DownloadSummary,
     library: Entity<Library>,
@@ -485,6 +485,14 @@ fn footer(
         .child(
             quiet("details-folder", IconName::FolderOpen, "Show in folder")
                 .on_click(move |_, window, cx| files::show_in_folder(id, window, cx)),
+        )
+        .child(
+            quiet(
+                "details-window",
+                IconName::PanelBottomOpen,
+                "Show progress window",
+            )
+            .on_click(move |_, _, cx| crate::download_windows::show_download(id, cx)),
         )
         .when(cancellable, |bar| {
             bar.child(

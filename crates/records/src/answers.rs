@@ -22,6 +22,16 @@ pub struct Expectation {
     pub name: Option<String>,
 }
 
+/// What a download's next run does with the data so far (D153).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NextRun {
+    #[default]
+    Continues,
+    /// The server takes no byte ranges or gave no size.
+    StartsOver,
+}
+
 /// Decisions a download's next run acts on.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -30,4 +40,6 @@ pub struct Answers {
     pub expect: Option<Expectation>,
     /// The name a download cancelled before its name was final left free for others; its next run is judged by it (D96).
     pub plain_name: Option<String>,
+    /// What the server's last answer means for the next run, so no message promises more.
+    pub next_run: NextRun,
 }

@@ -283,7 +283,7 @@ impl Manager {
         let needs_addon = source.kind == MediaKind::Page && state.addon.tools.is_none();
         // A window for the add-on opens anyway, and then shows the reading too.
         let quiet = !state.settings.media.ask_each_time && !needs_addon;
-        let token = CancellationToken::new();
+        let token = self.inner.stopped.child_token();
         let first_stage = if needs_addon {
             MediaStage::NeedsAddon
         } else {
@@ -614,7 +614,7 @@ impl Manager {
             let mut state = self.lock();
             for (id, pending) in state.media.iter_mut() {
                 if matches!(pending.stage, MediaStage::NeedsAddon) {
-                    let token = CancellationToken::new();
+                    let token = self.inner.stopped.child_token();
                     pending.stage = MediaStage::Analysing(token.clone());
                     started.push((*id, token));
                 }

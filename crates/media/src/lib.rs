@@ -149,6 +149,28 @@ impl MediaProgress {
         self.lock().parts.push(Part::Done(bytes));
     }
 
+    /// Counts `file`, finished, among the parts a later run keeps, whatever its server allows.
+    pub fn finish_file(&self, file: &Arc<Progress>) {
+        for part in &mut self.lock().parts {
+            if let Part::File(progress, _) = part
+                && Arc::ptr_eq(progress, file)
+            {
+                *part = Part::Done(file.done());
+            }
+        }
+    }
+
+    /// Whether a later run continues from anything this one has (D153).
+    pub fn keeps_data(&self) -> bool {
+        let state = self.lock();
+        let own = state.own.as_ref().is_some_and(|own| own.sum().0 > 0);
+        own || state.parts.iter().any(|part| match part {
+            Part::File(file, _) => file.done() > 0 && file.can_continue(),
+            Part::Stream(stream) => stream.segments_done() > 0,
+            Part::Done(bytes) => *bytes > 0,
+        })
+    }
+
     /// Marks ffmpeg as doing `step` now (with nothing of it known done yet), or,
     /// with `None`, as done.
     pub fn set_step(&self, step: Option<ProcessingStep>) {
@@ -441,6 +463,25 @@ mod tests {
         progress.expect_own([("137".to_owned(), Some(100)), ("140".to_owned(), None)].into_iter());
         progress.set_own("137", 100, Some(100));
         assert_eq!(progress.read().total, None);
+    }
+
+    /// A row with no saved formats runs yt-dlp's best selection, whose pick the page names as `137+140`.
+    #[test]
+    fn the_best_selections_total_waits_for_every_format_it_takes() {
+        let info: ytdlp::Info = serde_json::from_str(
+            r#"{"format_id":"137+140","formats":[
+                {"format_id":"137","filesize":100},{"format_id":"140"},{"format_id":"18","filesize":7}
+            ]}"#,
+        )
+        .unwrap();
+        let progress = MediaProgress::default();
+        progress.expect_own(info.best_formats().into_iter());
+        progress.set_own("137", 100, Some(100));
+        let reading = progress.read();
+        assert_eq!((reading.done, reading.total), (100, None));
+        progress.set_own("140", 1, Some(20));
+        let reading = progress.read();
+        assert_eq!((reading.done, reading.total), (101, Some(120)));
     }
 
     /// A second run, with the browser's sign-in, reports again the format it kept.
