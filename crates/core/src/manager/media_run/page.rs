@@ -123,12 +123,7 @@ pub(super) async fn page_attempt(
         // yt-dlp joins two formats into the container its own table picks (AV1 with AAC into MP4); the offer named the shared policy's.
         let merge_into = (video.is_some() && audio.is_some())
             .then(|| joined_container(stored_kept_ext(page), job));
-        let expected = if wanted.is_empty() {
-            info.best_formats()
-        } else {
-            found.iter().map(|f| (f.id.to_string(), f.size())).collect()
-        };
-        progress.expect_own(expected.into_iter());
+        progress.expect_own(formats_ytdlp_takes(&info, &found).into_iter());
         let format = ytdlp::selection(video.as_ref(), audio.as_ref());
         match ytdlp::download(&ctx, &format, merge_into, &work, progress, cancel).await {
             Ok(Fetched::Done(file)) => vec![file],
@@ -175,6 +170,14 @@ async fn formats_now(
         .await
         .map_err(|e| disk(&e, &job.output))?;
     Ok((video, audio))
+}
+
+/// The formats yt-dlp downloads and their sizes where the page says: those `found`, or with none named, what its best selection takes.
+pub(super) fn formats_ytdlp_takes(info: &Info, found: &[&Format]) -> Vec<(String, Option<u64>)> {
+    if found.is_empty() {
+        return info.best_formats();
+    }
+    found.iter().map(|f| (f.id.to_string(), f.size())).collect()
 }
 
 /// The one rate a yt-dlp process takes (D135).
