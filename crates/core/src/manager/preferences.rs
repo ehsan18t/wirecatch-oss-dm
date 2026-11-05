@@ -47,6 +47,18 @@ impl Manager {
         Ok(self.inner.folders.resolve(&folder)?)
     }
 
+    /// The folder `path` names on this machine.
+    ///
+    /// # Errors
+    ///
+    /// [`CoreError::Path`] when it names no folder here.
+    pub fn folder_here(
+        &self,
+        path: &wirecatch_protocol::app::PortablePath,
+    ) -> Result<std::path::PathBuf> {
+        Ok(self.inner.folders.resolve(path)?)
+    }
+
     /// The folder files of `category` go to when their queue has no folder of its own.
     ///
     /// # Errors

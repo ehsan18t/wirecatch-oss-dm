@@ -207,3 +207,15 @@ async fn a_site_that_names_no_host_is_refused_by_name() -> TestResult {
     assert_eq!(kept.ignored_sites, ["a.example"]);
     Ok(())
 }
+
+#[tokio::test]
+async fn a_folder_setting_reads_as_its_real_path() -> TestResult {
+    let h = Harness::new().await?;
+    let settings = h.manager.get_settings();
+    assert!(settings.default_folder.0.starts_with('{'));
+    assert_eq!(
+        h.manager.folder_here(&settings.default_folder)?,
+        h.manager.default_folder()?
+    );
+    Ok(())
+}

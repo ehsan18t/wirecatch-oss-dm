@@ -166,14 +166,14 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-156 | fix(core): save only languages a person picked     | `fix/picked-languages`           | 277                          | P3       | small  | none         | merged |
 | PR-157 | fix(desktop): keep keys when dialog parts leave    | `fix/focus-both-gone`            | 278                          | P3       | small  | none         | merged |
 | PR-158 | chore: check the width of Settings rows            | `chore/settings-row-width`       | 279                          | P3       | small  | none         | closed |
-| PR-159 | fix(desktop): keep long queue names in the menu    | `fix/queue-menu-width`           | 280                          | P3       | small  | none         | open   |
-| PR-160 | fix(desktop): keep the empty state under banners   | `fix/banner-stack`               | 281                          | P3       | small  | none         | open   |
+| PR-159 | fix(desktop): keep long queue names in the menu    | `fix/queue-menu-width`           | 280                          | P3       | small  | none         | merged |
+| PR-160 | fix(desktop): keep the empty state under banners   | `fix/banner-stack`               | 281                          | P3       | small  | none         | merged |
 | PR-161 | fix(core): keep one copy after a killed move       | `fix/killed-move-copies`         | 282                          | P3       | small  | none         | merged |
 | PR-162 | test(desktop): prove quit ends the process         | `test/quit-ends-process`         | 283                          | P3       | small  | none         | merged |
 
 ## Lanes
 
-PR-159 and PR-160 are open. Every other item is fixed or recorded as won't fix.
+No pull request is open. Every item is fixed or recorded as won't fix.
 
 Not yet tried against the real thing: the subtitle choice on a real yt-dlp page and through the add-on install, Asking turned off on a real download, and every Linux path. Reports say what each pull request did not test.
 
@@ -2090,7 +2090,7 @@ Not yet tried against the real thing: the subtitle choice on a real yt-dlp page 
 - **Touches:** crates/desktop
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-160 fix(desktop): keep the empty state under banners
 
@@ -2102,7 +2102,7 @@ Not yet tried against the real thing: the subtitle choice on a real yt-dlp page 
 - **Touches:** crates/desktop
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-161 fix(core): keep one copy after a killed move
 

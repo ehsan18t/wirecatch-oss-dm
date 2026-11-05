@@ -119,7 +119,7 @@ export const DOWNLOAD_WINDOW_WIDTH = 460;
  * The least height a download window keeps, in logical pixels, however little it shows:
  * below the shortest question, so every window fits what it asks.
  */
-export const DOWNLOAD_WINDOW_MIN_HEIGHT = 200;
+export const DOWNLOAD_WINDOW_MIN_HEIGHT = 120;
 
 /**
  * The most height a download window takes, in logical pixels, however much it shows: past
