@@ -19,7 +19,7 @@ pub use wirecatch_product::BRIDGE_FILE_NAME;
 
 /// Why the bridge could not be found, registered or run. Each message says what to do.
 #[derive(Debug, thiserror::Error)]
-pub enum BridgeError {
+enum BridgeError {
     #[error("Could not find the browser bridge next to the app.")]
     NoFolder,
     #[error("The browser bridge is in a temporary folder ({}), so it is not registered. Install {app}, or run it from a permanent folder.", .0.display(), app = crate::host::CHANNEL.name())]
@@ -95,7 +95,7 @@ pub async fn serve(listener: Listener, manager: Manager) {
     .await;
 }
 
-/// [`serve_unavailable`] with `reason` until the manager opens after all, then [`serve`].
+/// `serve_unavailable` with `reason` until the manager opens after all, then [`serve`].
 pub async fn serve_once_opened(core: &Core, mut listener: Listener, reason: String) {
     let manager = tokio::select! {
         () = serve_unavailable(&mut listener, reason) => return,
@@ -106,7 +106,7 @@ pub async fn serve_once_opened(core: &Core, mut listener: Listener, reason: Stri
 
 /// Serves clients while the download manager could not open: every request is answered with
 /// `reason`, so the extension tells the person what is wrong instead of waiting in silence.
-pub async fn serve_unavailable(listener: &mut Listener, reason: String) {
+async fn serve_unavailable(listener: &mut Listener, reason: String) {
     accept_loop(listener, move |connection| {
         let reason = reason.clone();
         async move { answer_unavailable(connection, &reason).await }
@@ -142,13 +142,9 @@ where
 /// Answers every request on `stream` with an "app unavailable" error carrying `reason`, until
 /// the client hangs up. Only a request's id is read, so a call this build cannot read whole,
 /// such as one from a newer extension, gets the same answer (D32), and a frame that is no
-/// request is passed over.
-///
-/// # Errors
-///
-/// Reading from `stream` failed or brought something that is not a frame within the size
-/// limit, or writing the answer failed.
-pub async fn answer_unavailable<S>(mut stream: S, reason: &str) -> std::io::Result<()>
+/// request is passed over. Fails when reading from `stream` fails or brings something that is
+/// not a frame within the size limit, or when writing the answer fails.
+async fn answer_unavailable<S>(mut stream: S, reason: &str) -> std::io::Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -194,27 +190,19 @@ where
 
 /// Where the bridge is: next to the app executable.
 #[must_use]
-pub fn bridge_path(app_exe: &Path) -> Option<PathBuf> {
+fn bridge_path(app_exe: &Path) -> Option<PathBuf> {
     app_exe.parent().map(|dir| dir.join(BRIDGE_FILE_NAME))
 }
 
 /// The bridge bundled with the app at `app_exe`.
-///
-/// # Errors
-///
-/// `app_exe` has no folder to look in.
-pub fn bundled_bridge(app_exe: &Path) -> Result<PathBuf, BridgeError> {
+fn bundled_bridge(app_exe: &Path) -> Result<PathBuf, BridgeError> {
     bridge_path(app_exe).ok_or(BridgeError::NoFolder)
 }
 
 /// The bridge to register for the app installed at `app_exe`: the one next to it, never one in
 /// a temporary location. An AppImage registers a private copy instead (`appimage::install_private_bridge`,
 /// on Unix only).
-///
-/// # Errors
-///
-/// No bridge can be found next to the app, or the bridge is in a temporary folder.
-pub fn bridge_to_register(app_exe: &Path) -> Result<PathBuf, BridgeError> {
+fn bridge_to_register(app_exe: &Path) -> Result<PathBuf, BridgeError> {
     let bundled = bundled_bridge(app_exe)?;
     if crate::appimage::is_temporary(&bundled) {
         return Err(BridgeError::Temporary(bundled));
@@ -226,7 +214,7 @@ pub fn bridge_to_register(app_exe: &Path) -> Result<PathBuf, BridgeError> {
 /// own endpoint, which the registered bridge does not use, and registering them would point
 /// every browser at a source checkout instead of the installed app.
 #[must_use]
-pub fn registers_on_start() -> bool {
+fn registers_on_start() -> bool {
     !crate::host::DEV_BUILD
 }
 
@@ -239,7 +227,7 @@ pub fn registers_on_start() -> bool {
 ///
 /// `find` picks the bridge to register, on that thread (under an AppImage it copies one out
 /// first, see [`crate::appimage`]); `None` registers nothing.
-pub fn register_in_background(find: impl FnOnce() -> Option<PathBuf> + Send + 'static) {
+fn register_in_background(find: impl FnOnce() -> Option<PathBuf> + Send + 'static) {
     let spawned = std::thread::Builder::new()
         .name("register-bridge".into())
         .spawn(move || {
@@ -257,7 +245,7 @@ pub fn register_in_background(find: impl FnOnce() -> Option<PathBuf> + Send + 's
 }
 
 /// Registers the bridge beside the running app, in the background, unless this is a debug build
-/// ([`registers_on_start`]). Under an AppImage a private copy in `data_dir` is registered.
+/// (`registers_on_start`). Under an AppImage a private copy in `data_dir` is registered.
 pub fn register_on_start(data_dir: &Path) {
     if !registers_on_start() {
         tracing::info!("debug build: not registering the browser bridge");
@@ -287,11 +275,7 @@ pub fn register_on_start(data_dir: &Path) {
 }
 
 /// Runs the bridge with one subcommand (`install` or `uninstall`) and waits for it.
-///
-/// # Errors
-///
-/// The bridge is missing, cannot be started, or exits with a failure.
-pub fn run_bridge(bridge: &Path, subcommand: &str) -> Result<(), BridgeError> {
+fn run_bridge(bridge: &Path, subcommand: &str) -> Result<(), BridgeError> {
     if !bridge.is_file() {
         return Err(BridgeError::Missing(bridge.to_owned()));
     }

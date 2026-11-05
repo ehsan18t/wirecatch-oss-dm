@@ -9,9 +9,9 @@ use crate::host::Core;
 pub const QUIT_PATIENCE: Duration = Duration::from_secs(15);
 
 /// The longest a quit waits for a manager that is still opening.
-pub const OPEN_PATIENCE: Duration = Duration::from_secs(10);
+const OPEN_PATIENCE: Duration = Duration::from_secs(10);
 
-/// Stops the manager in `core`, even one still opening, so every download continues next time: waits up to [`OPEN_PATIENCE`] for it to open, so a quit right after start still stops it cleanly, then up to [`QUIT_PATIENCE`] for it to stop. What is left then ends with the process.
+/// Stops the manager in `core`, even one still opening, so every download continues next time: waits up to `OPEN_PATIENCE` for it to open, so a quit right after start still stops it cleanly, then up to [`QUIT_PATIENCE`] for it to stop. What is left then ends with the process.
 pub async fn stop(core: &Core) {
     let manager = match tokio::time::timeout(OPEN_PATIENCE, core.manager()).await {
         Ok(Ok(manager)) => manager,

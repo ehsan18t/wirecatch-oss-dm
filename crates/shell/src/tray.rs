@@ -119,7 +119,7 @@ pub fn perform(
 }
 
 /// Longest tooltip every platform shows in full (Windows cuts tray tooltips at 127 characters).
-pub const MAX_TOOLTIP_CHARS: usize = 127;
+const MAX_TOOLTIP_CHARS: usize = 127;
 
 /// The tooltip when something keeps Wirecatch from working, cut to fit.
 #[must_use]

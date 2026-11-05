@@ -55,7 +55,7 @@ impl HandOverError {
 /// Shown by a copy of the app that finds another one already serving this user and cannot hand
 /// its launch over.
 #[must_use]
-pub fn already_running() -> String {
+fn already_running() -> String {
     format!(
         "{} is already running for you, so this copy will close. Look for its icon in the tray, or open it from the Start menu again.",
         crate::host::CHANNEL.name()
@@ -65,10 +65,10 @@ pub fn already_running() -> String {
 pub use wirecatch_protocol::launch::BACKGROUND_FLAG;
 
 /// Most links taken from one command line.
-pub const MAX_LAUNCH_LINKS: usize = MAX_OPEN_LINKS;
+const MAX_LAUNCH_LINKS: usize = MAX_OPEN_LINKS;
 
 /// Longest link taken from a command line, in bytes.
-pub const MAX_LINK_LEN: usize = 8 * KIB_USIZE;
+const MAX_LINK_LEN: usize = 8 * KIB_USIZE;
 
 /// How long a launch waits for a running copy to answer. Opening a long list, or repairing one,
 /// takes this copy no window and the person no action, so it may wait.
@@ -91,7 +91,7 @@ fn readable(args: impl IntoIterator<Item = OsString>) -> Vec<String> {
 }
 
 /// True when the command line asks to start without a window. `args` includes the program name.
-pub fn wants_background<I, S>(args: I) -> bool
+fn wants_background<I, S>(args: I) -> bool
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
@@ -168,7 +168,7 @@ pub fn without_punctuation(raw: &str) -> &str {
 }
 
 /// Web and FTP links on a command line (program name first), in order, for the Add dialog.
-/// Anything else on the command line is ignored, and at most [`MAX_LAUNCH_LINKS`] are taken.
+/// Anything else on the command line is ignored, and at most `MAX_LAUNCH_LINKS` are taken.
 pub fn links_from_args<I, S>(args: I) -> Vec<String>
 where
     I: IntoIterator<Item = S>,
