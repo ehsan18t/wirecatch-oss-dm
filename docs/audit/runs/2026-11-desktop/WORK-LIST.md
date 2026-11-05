@@ -98,7 +98,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-88  | fix(desktop): fix small faults in queue dialogs    | `fix/queue-dialogs`              | 120, 121, 165                | P2       | small  | none         | merged |
 | PR-89  | fix(desktop): make tray actions answer correctly   | `fix/tray-actions`               | 124, 160                     | P2       | small  | none         | merged |
 | PR-90  | fix(desktop): show a processing step as it is      | `fix/processing-step`            | 125, 228                     | P2       | small  | none         | merged |
-| PR-91  | fix(desktop): correct wording of app messages      | `fix/app-message-wording`        | 126, 161                     | P2       | small  | none         | open   |
+| PR-91  | fix(desktop): correct wording of app messages      | `fix/app-message-wording`        | 126, 161                     | P2       | small  | none         | merged |
 | PR-92  | fix: repair the repo's check scripts               | `fix/check-scripts`              | 129, 191, 238, 239, 240, 241 | P2       | medium | none         | merged |
 | PR-93  | fix(engine): lock the part file during a run       | `fix/part-file-lock`             | 130                          | P2       | medium | none         | merged |
 | PR-94  | fix(core): keep a video's work until it is placed  | `fix/work-until-placed`          | 133, 169                     | P2       | medium | PR-04        | merged |
@@ -1255,7 +1255,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/shell`, `crates/core/src/naming.rs`, `scripts/gate`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-shell -p wirecatch-core`, `cargo clippy -p wirecatch-shell -p wirecatch-core`. The log proposes a gate check for the product name in string literals; a gate script change is wide, so run `pnpm gate` once on the final tree if it is added.
-- **Status:** open
+- **Status:** merged
 
 ### PR-92 fix: repair the repo's check scripts
 

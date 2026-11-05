@@ -4,10 +4,22 @@ use std::io;
 
 use wirecatch_ipc::Elevation;
 
-/// Shown when Wirecatch is started with administrator rights.
-pub const ELEVATED_TITLE: &str = "Wirecatch does not need administrator rights";
-/// The explanation under [`ELEVATED_TITLE`].
-pub const ELEVATED_MESSAGE: &str = "Wirecatch was started as administrator, which would let other programs on this computer control it. Close this message and start Wirecatch normally.";
+use crate::host::CHANNEL;
+
+/// Shown when the app is started with administrator rights.
+#[must_use]
+pub fn elevated_title() -> String {
+    format!("{} does not need administrator rights", CHANNEL.name())
+}
+
+/// The explanation under [`elevated_title`].
+#[must_use]
+pub fn elevated_message() -> String {
+    let app = CHANNEL.name();
+    format!(
+        "{app} was started as administrator, which would let other programs on this computer control it. Close this message and start {app} normally."
+    )
+}
 
 /// What to do about how the process was started.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,7 +40,7 @@ pub fn decide(elevation: io::Result<Elevation>) -> Start {
             Start::Continue
         }
         Err(e) => {
-            tracing::warn!("could not tell whether Wirecatch runs as administrator: {e}");
+            tracing::warn!("could not tell whether the app runs as administrator: {e}");
             Start::Continue
         }
     }
@@ -36,12 +48,9 @@ pub fn decide(elevation: io::Result<Elevation>) -> Start {
 
 /// Shows the refusal. A message box, because nothing else of the app exists yet.
 pub fn explain_refusal() {
-    tracing::error!("{ELEVATED_TITLE}: {ELEVATED_MESSAGE}");
-    crate::message_box::show(
-        crate::message_box::Tone::Warning,
-        ELEVATED_TITLE,
-        ELEVATED_MESSAGE,
-    );
+    let (title, message) = (elevated_title(), elevated_message());
+    tracing::error!("{title}: {message}");
+    crate::message_box::show(crate::message_box::Tone::Warning, &title, &message);
 }
 
 #[cfg(test)]
@@ -67,9 +76,9 @@ mod tests {
 
     #[test]
     fn the_refusal_is_plain_language() {
-        for text in [ELEVATED_TITLE, ELEVATED_MESSAGE] {
+        for text in [elevated_title(), elevated_message()] {
             assert!(!text.contains('\u{2014}'), "{text}");
         }
-        assert!(ELEVATED_MESSAGE.ends_with('.'));
+        assert!(elevated_message().ends_with('.'));
     }
 }

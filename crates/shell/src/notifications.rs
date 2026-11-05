@@ -3,6 +3,7 @@
 //! or [`crate::browser_notices`]; when to tell is decided by [`crate::teller`].
 
 use std::path::Path;
+use std::sync::LazyLock;
 
 use wirecatch_protocol::app::{DownloadSummary, QueueReport, RETRY_FIXES};
 use wirecatch_protocol::desktop::Reveal;
@@ -90,7 +91,8 @@ pub fn chosen(notification: &Notification, button: Option<usize>) -> Option<Act>
 const OPEN: &str = "Open";
 const SHOW_IN_FOLDER: &str = "Show in folder";
 const TRY_AGAIN: &str = "Try again";
-const SHOW_IN_APP: &str = "Show in Wirecatch";
+static SHOW_IN_APP: LazyLock<String> =
+    LazyLock::new(|| format!("Show in {}", crate::host::CHANNEL.name()));
 
 /// Shows `rows` in the app: in `queue`, else in the queue they share, so a click lands where they
 /// are.
@@ -213,7 +215,7 @@ fn finished_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Noti
     Some(notification)
 }
 
-/// Show in folder when every file is in one folder, else Show in Wirecatch.
+/// Show in folder when every file is in one folder, else Show in the app.
 fn folder_or_app(rows: &[&DownloadSummary], first: DownloadId, queue: Option<QueueId>) -> Button {
     if shared_folder(rows).is_some() {
         Button {
@@ -222,7 +224,7 @@ fn folder_or_app(rows: &[&DownloadSummary], first: DownloadId, queue: Option<Que
         }
     } else {
         Button {
-            label: SHOW_IN_APP,
+            label: SHOW_IN_APP.as_str(),
             act: show(queue, rows),
         }
     }
@@ -258,7 +260,7 @@ fn failed_in(queue: Option<QueueId>, rows: &[&DownloadSummary]) -> Option<Notifi
             title: format!("{} failed", downloads(rows.len())),
             body: names(rows),
             buttons: vec![Button {
-                label: SHOW_IN_APP,
+                label: SHOW_IN_APP.as_str(),
                 act: show(queue, rows),
             }],
             click: show(queue, rows),
@@ -289,7 +291,7 @@ pub fn queue_done(report: &QueueReport) -> Option<Notification> {
             let button = match completed.first() {
                 Some(first) => folder_or_app(&completed, first.id, queue),
                 None => Button {
-                    label: SHOW_IN_APP,
+                    label: SHOW_IN_APP.as_str(),
                     act: show(queue, &all),
                 },
             };
@@ -420,7 +422,7 @@ pub(crate) mod tests {
     fn downloads_in_different_folders_are_shown_in_wirecatch() {
         let other = row(2, "videos", DownloadStatus::Completed);
         let notification = finished(&[&done(1), &other]).unwrap();
-        assert_eq!(labels(&notification), [SHOW_IN_APP]);
+        assert_eq!(labels(&notification), [SHOW_IN_APP.as_str()]);
     }
 
     #[test]
@@ -435,7 +437,7 @@ pub(crate) mod tests {
         assert_eq!(expired.click, reveal(Some(QueueId(1)), &[1]));
         let two = failed(&[&broken(1, None), &broken(2, None)]).unwrap();
         assert_eq!(two.title, "2 downloads failed");
-        assert_eq!(labels(&two), [SHOW_IN_APP]);
+        assert_eq!(labels(&two), [SHOW_IN_APP.as_str()]);
     }
 
     fn report(completed: Vec<DownloadSummary>, failed: Vec<DownloadSummary>) -> QueueReport {
@@ -461,7 +463,7 @@ pub(crate) mod tests {
         let all_failed =
             queue_done(&report(vec![], vec![broken(1, None), broken(2, None)])).unwrap();
         assert_eq!(all_failed.title, "Night: 2 downloads failed");
-        assert_eq!(labels(&all_failed), [SHOW_IN_APP]);
+        assert_eq!(labels(&all_failed), [SHOW_IN_APP.as_str()]);
         assert_eq!(queue_done(&report(vec![], vec![])), None);
     }
 
