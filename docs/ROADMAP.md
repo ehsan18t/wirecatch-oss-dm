@@ -325,7 +325,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 260. A startup notice covers the toolbar and Settings rows (open)
 261. The not-private notice carries a path and a long sentence (open)
 262. A kill during a removal can leave a moved copy behind (fixed)
-263. Some tests still throttle a server so connections join (open)
+263. Some tests still throttle a server so connections join (fixed)
 264. The proxy's shown name has two copies (fixed)
 265. A stream join reads only ffmpeg's last lines (fixed)
 266. A crash while placing a video can double its subtitles (fixed)
