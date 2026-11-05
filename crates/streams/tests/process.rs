@@ -687,7 +687,7 @@ async fn the_program_gets_the_environment_it_is_given_and_its_debug_hides_the_va
     Ok(())
 }
 
-/// An app ended by a signal takes what it started with it, and still ends as that signal ends a program (D137).
+/// An app ended by a signal takes what it started with it, and still ends as that signal ends a program (D137). `SIGKILL`, like a crash, gives it no chance to act (D222).
 #[cfg(unix)]
 #[tokio::test]
 async fn a_signal_that_ends_the_app_ends_what_it_started() -> TestResult {
@@ -698,6 +698,7 @@ async fn a_signal_that_ends_the_app_ends_what_it_started() -> TestResult {
         ("-TERM", libc::SIGTERM),
         ("-HUP", libc::SIGHUP),
         ("-INT", libc::SIGINT),
+        ("-KILL", libc::SIGKILL),
     ] {
         let (address, accepted) = holder_listener().await?;
         let mut app = tokio::process::Command::new(fake_runner()?)

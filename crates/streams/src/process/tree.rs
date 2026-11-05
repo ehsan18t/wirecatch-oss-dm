@@ -43,8 +43,44 @@ pub(super) struct Tree {
     group: Option<libc::pid_t>,
     #[cfg(unix)]
     exit: Option<tokio::task::JoinHandle<io::Result<()>>>,
+    /// Closing this, as the system does when the app dies by any means, kills the group (D222).
+    #[cfg(unix)]
+    app_alive: Option<io::PipeWriter>,
     #[cfg(windows)]
     job: Option<job::Job>,
+}
+
+/// Waits for its standard input to close, then kills its own group, which has no other way to learn the app has gone.
+#[cfg(unix)]
+const GROUP_WATCHER: &str = "read -r line; kill -s KILL 0";
+
+/// Puts a watcher in `group` and returns the end of the pipe that keeps it waiting. `None` when it cannot start: the programs still run, as they would without it.
+#[cfg(unix)]
+fn start_group_watcher(group: libc::pid_t) -> Option<io::PipeWriter> {
+    use std::process::Stdio;
+
+    let started = io::pipe().and_then(|(waits_on, app_alive)| {
+        let watcher = Command::new("/bin/sh")
+            .args(["-c", GROUP_WATCHER])
+            .env_clear()
+            .current_dir("/")
+            .stdin(Stdio::from(waits_on))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(group)
+            .spawn()?;
+        Ok((watcher, app_alive))
+    });
+    match started {
+        Ok((mut watcher, app_alive)) => {
+            tokio::spawn(async move { watcher.wait().await });
+            Some(app_alive)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "programs will outlive an app that crashes");
+            None
+        }
+    }
 }
 
 /// Starts `command` in a group of its own.
@@ -68,6 +104,7 @@ pub(super) async fn spawn(mut command: Command) -> io::Result<(Child, Tree)> {
             Tree {
                 group: Some(group),
                 exit: Some(exit),
+                app_alive: start_group_watcher(group),
             },
         ))
     }
@@ -149,11 +186,14 @@ impl Tree {
         }
     }
 
-    /// Forgets the group once the leader is reaped, so nothing is ever sent to its id again.
+    /// Forgets the group once the leader is reaped, so nothing is ever sent to its id again. The watcher, a member of the group so its id cannot be reused, ends what is left.
     pub(super) fn disarm(&mut self) {
         #[cfg(unix)]
-        if let Some(group) = self.group.take() {
-            on_signal::remove(group);
+        {
+            if let Some(group) = self.group.take() {
+                on_signal::remove(group);
+            }
+            self.app_alive = None;
         }
         #[cfg(windows)]
         {

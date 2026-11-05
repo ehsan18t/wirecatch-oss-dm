@@ -1023,7 +1023,7 @@ Decided on 2026-10-30 while building the GPUI shell (D95.5, D99.3). The Tauri ap
 1. One copy runs per user. A launch first claims the endpoint, as before, so the copy that holds it is the one running (D41).
 2. A launch that finds the endpoint taken connects to it as a client of the new kind `app` and asks the running copy for what its command line asks: `open_links` with its links (the main window comes up with the Add dialog holding them), `show_window` without links, and nothing for `--background` alone. Then it exits.
 3. `open_links` is part of protocol version 2, which is not released yet. It carries at most `MAX_OPEN_LINKS` links (20), the limit the command line already had; the app keeps the first ones. A running copy too old for it is asked only to show its window.
-4. The running copy answers only once its list has opened, so a launch that gets no answer keeps trying for a minute without showing anything. A launch that asks for nothing visible contacts no one. When nothing listens at the endpoint any more, the launch claims it after all. When the hand-over still fails (the running copy is too old to accept an `app` client, or never answered), the launch says that Wirecatch is already running, as the Tauri app does, and exits.
+4. The running copy answers only once its list has opened, so a launch that gets no answer keeps trying for a minute without showing anything. A launch that asks for nothing visible contacts no one. When nothing listens at the endpoint any more, the launch claims it after all. When the hand-over still fails (the running copy is too old to accept an `app` client, or never answered), the launch says that Wirecatch is already running, as the Tauri app does, and exits. On Linux, which has no message box without a toolkit, it says so in a system notification.
 5. Reading the command line and the hand-over live in `wirecatch-shell` (`launch`), which the Tauri app also reads its command line with.
 
 ### D104. The GPUI app's tray icon runs on its own message loop, with no GTK
@@ -1505,7 +1505,15 @@ Decided on 2026-11-05.
 
 Decided on 2026-11-05. A `.rpm` upgrade left the earlier copy running from its deleted program. That copy held the endpoint and refused the new version's `app` client (D103), so the new version closed, and on Linux the message saying so reaches only the log.
 
-1. The `.deb` and `.rpm` post-install hook (`config/templates/postinst.sh`) sends `SIGTERM` to every user's process whose program is the replaced `/usr/bin` app, as Windows closes a running copy before replacing its files. It then waits up to 10 seconds for each to exit and sends `SIGKILL` to any still there, so once the upgrade has finished no replaced copy holds the endpoint. A copy forced out this way cannot stop its media programs, the open roadmap item about a crash. Downloads running in it stop, and the app resumes them on its next start. A launch made while the package manager is still working can still reach the old copy and be refused.
+1. The `.deb` and `.rpm` post-install hook (`config/templates/postinst.sh`) sends `SIGTERM` to every user's process whose program is the replaced `/usr/bin` app, as Windows closes a running copy before replacing its files. It then waits up to 10 seconds for each to exit and sends `SIGKILL` to any still there, so once the upgrade has finished no replaced copy holds the endpoint. A copy forced out this way has no chance to stop its media programs, which D222 covers. Downloads running in it stop, and the app resumes them on its next start. A launch made while the package manager is still working can still reach the old copy and be refused.
 2. The post-install hook does it, not pre-removal: on an upgrade the package manager runs the old package's pre-removal script, which a new release cannot change, so only the new package's hook reaches every earlier version.
 3. A process counts only when its program reads as deleted. A copy of the new program and one started from elsewhere (an AppImage, a development build) stay up. The hook does not start the app again: a root script has no reliable way into each person's desktop session, and the next launch or sign-in starts it.
 4. The hook does not stop the bridge. A bridge connected to the stopped copy exits with it, and the extension's reconnect starts the new one. A bridge serving a copy started from elsewhere stays with that copy.
+
+### D222. A media program on Unix ends with the app, however the app ends
+
+Decided on 2026-11-05. It completes D137, which covers only a signal the app can handle.
+
+1. Each started program's process group holds a small watcher, a shell waiting on a pipe whose other end only the app holds. When the app dies, a crash or `SIGKILL` included, the system closes that end and the watcher kills its group, as closing a job does on Windows.
+2. `PR_SET_PDEATHSIG` does not do this: it fires when the thread that started the program exits, and it reaches only the program itself, not what that program started.
+3. A watcher that cannot start is logged and the program runs without it.
