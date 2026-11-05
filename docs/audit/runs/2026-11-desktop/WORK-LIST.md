@@ -146,7 +146,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-136 | fix(media): keep the bar steady past an estimate   | `fix/bar-past-estimate`          | 258                          | P3       | small  | none         | open   |
 | PR-137 | fix(desktop): keep finished group counts current   | `fix/finished-group-counts`      | 259                          | P3       | small  | none         | open   |
 | PR-138 | fix(desktop): keep startup notices out of the way  | `fix/startup-notice-place`       | 260, 261                     | P3       | small  | none         | open   |
-| PR-139 | fix(core): clean up a move a removal cut short     | `fix/removal-move-copy`          | 262                          | P3       | small  | none         | open   |
+| PR-139 | fix(core): clean up a move a removal cut short     | `fix/removal-move-copy`          | 262                          | P3       | small  | none         | merged |
 | PR-140 | test: hold servers instead of throttling to join   | `test/hold-to-join`              | 263                          | P3       | small  | none         | open   |
 | PR-141 | refactor(desktop): use the one proxy display name  | `refactor/one-proxy-name`        | 264                          | P3       | small  | none         | merged |
 | PR-142 | fix(streams): read all of ffmpeg's failure text    | `fix/ffmpeg-failure-text`        | 265                          | P3       | small  | none         | merged |
@@ -1844,7 +1844,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/core
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-140 test: hold servers instead of throttling to join
 

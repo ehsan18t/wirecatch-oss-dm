@@ -790,6 +790,8 @@ impl Entry {
         PendingDeletion {
             path: self.path().to_path_buf(),
             media: self.media_job.is_some(),
+            moving_to: self.files.moving.as_ref().map(|m| m.path.clone()),
+            finished: self.row.status == DownloadStatus::Completed,
         }
     }
 
