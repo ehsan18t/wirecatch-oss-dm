@@ -11,9 +11,8 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, WeakEntity, Window, WindowBounds, WindowOptions,
     div, point, px, size,
 };
-use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
-    AppSettingsPatch, DownloadStatus, DownloadSummary, NotifyOnFinish, UiEvent,
+    AppSettingsPatch, DownloadStatus, DownloadSummary, FixAction, NotifyOnFinish, UiEvent,
 };
 use wirecatch_protocol::desktop::FinishedQueue;
 use wirecatch_shell::api;
@@ -22,9 +21,10 @@ use wirecatch_shell::finished::{FinishedBook, queue_header};
 use wirecatch_shell::teller::Tell;
 
 use crate::backend::act;
-use crate::files;
+use crate::main_window::fixes::run_from_download_window;
 use crate::ui::small_title_bar::small_title_bar;
 use crate::ui::{Role, Typed as _};
+use crate::{files, text};
 
 const WIDTH: f32 = 380.;
 const HEIGHT: f32 = 420.;
@@ -237,16 +237,15 @@ fn queue_heading(queue: &FinishedQueue) -> String {
 /// One download that ended: its name, how it ended, and what can be done with it. Alone in the
 /// window, Open is its main button.
 fn finished_row(row: &DownloadSummary, alone: bool, cx: &App) -> AnyElement {
-    let id = row.id;
     let theme = cx.theme();
     let failed = row.status == DownloadStatus::Failed;
     let said = if failed {
         row.error.as_ref().map_or_else(
             || "Failed".to_owned(),
-            |error| crate::text::first_sentence(&error.message).to_owned(),
+            |error| text::first_sentence(&error.message).to_owned(),
         )
     } else {
-        crate::text::status_short(row)
+        text::status_short(row)
     };
     h_flex()
         .gap_2()
@@ -269,13 +268,14 @@ fn finished_row(row: &DownloadSummary, alone: bool, cx: &App) -> AnyElement {
                         .child(said),
                 ),
         )
-        .children(row_buttons(id, row.status, alone))
+        .children(row_buttons(row, alone))
         .into_any_element()
 }
 
-fn row_buttons(id: DownloadId, status: DownloadStatus, alone: bool) -> Vec<Button> {
+fn row_buttons(row: &DownloadSummary, alone: bool) -> Vec<Button> {
+    let id = row.id;
     let named = |name: &str| ElementId::NamedInteger(name.to_owned().into(), id.0.unsigned_abs());
-    match status {
+    match row.status {
         DownloadStatus::Completed => vec![
             Button::new(named("finished-folder"))
                 .ghost()
@@ -290,13 +290,30 @@ fn row_buttons(id: DownloadId, status: DownloadStatus, alone: bool) -> Vec<Butto
                 .label("Open")
                 .on_click(move |_, window, cx| files::open(id, window, cx)),
         ],
-        DownloadStatus::Failed => vec![
-            Button::new(named("finished-retry"))
-                .label("Try again")
-                .on_click(move |_, window, cx| {
-                    act(window.window_handle(), cx, move |m| api::retry(m, id));
-                }),
-        ],
+        DownloadStatus::Failed => {
+            let fixes = super::fixes_offered(row);
+            let main = fixes.last().copied();
+            fixes
+                .into_iter()
+                .map(|fix| {
+                    let name = if fix == FixAction::Retry {
+                        "finished-retry"
+                    } else {
+                        "finished-fix"
+                    };
+                    let shown = Button::new(named(name));
+                    if Some(fix) == main {
+                        shown
+                    } else {
+                        shown.ghost()
+                    }
+                    .label(text::fix_label(fix))
+                    .on_click(move |_, window, cx| {
+                        run_from_download_window(id, fix, window, cx);
+                    })
+                })
+                .collect()
+        }
         _ => Vec::new(),
     }
 }
