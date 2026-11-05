@@ -23,8 +23,8 @@ use wirecatch_core::{
     ReleaseFile, Sha256Digest,
 };
 use wirecatch_protocol::app::{
-    AddonId, AddonInfo, AddonState, MediaChoice, MediaSelection, OutputFormat, UiEvent,
-    UnembeddedSubtitles,
+    AddonId, AddonInfo, AddonState, LanguageSource, MediaChoice, MediaSelection, OutputFormat,
+    UiEvent, UnembeddedSubtitles,
 };
 use wirecatch_protocol::extension::{CaptureSource, MediaHint, MediaKind, NewDownload};
 
@@ -456,6 +456,7 @@ pub fn select(option: &str) -> MediaSelection {
         audio_kbps: None,
         subtitles: Vec::new(),
         subtitle_files: false,
+        languages: LanguageSource::Kept,
         unembedded_subtitles: UnembeddedSubtitles::Files,
         chapters: false,
     }

@@ -49,6 +49,7 @@ import type { HelloReply } from './HelloReply';
 import type { ImportPreview } from './ImportPreview';
 import type { ImportedFolder } from './ImportedFolder';
 import type { JarCookie } from './JarCookie';
+import type { LanguageSource } from './LanguageSource';
 import type { Link } from './Link';
 import type { LinkMatch } from './LinkMatch';
 import type { LinkProtocol } from './LinkProtocol';
@@ -795,6 +796,11 @@ export function isJarCookie(value: unknown): value is JarCookie {
     isSameSite(value1['same_site']))(value);
 }
 
+/** Whether `value` has the shape of a {@link LanguageSource}; fields it does not name are not checked. */
+export function isLanguageSource(value: unknown): value is LanguageSource {
+  return value === 'kept' || value === 'picked';
+}
+
 /** Whether `value` has the shape of a {@link Link}; fields it does not name are not checked. */
 export function isLink(value: unknown): value is Link {
   return typeof value === 'string';
@@ -918,6 +924,7 @@ export function isMediaSelection(value: unknown): value is MediaSelection {
     (typeof value1['audio_kbps'] === 'number' || value1['audio_kbps'] === null) &&
     isArrayOf(value1['subtitles'], (value2: unknown) => typeof value2 === 'string') &&
     typeof value1['subtitle_files'] === 'boolean' &&
+    isLanguageSource(value1['languages']) &&
     isUnembeddedSubtitles(value1['unembedded_subtitles']) &&
     typeof value1['chapters'] === 'boolean')(value);
 }

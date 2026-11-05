@@ -29,9 +29,9 @@ use wirecatch_media::choice::{self, Offer, Plan, Resolved};
 use wirecatch_media::{MediaJob, Pick, StoredMedia, describe, output, ytdlp};
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
-    AddonRequestItem, Category, MediaChoice, MediaReading, MediaSelection, MediaSubtitle,
-    MediaSummary, OutputFormat, PortablePath, Repeated, SubtitleChoice, UiEvent, UserError,
-    VideoQuality,
+    AddonRequestItem, Category, LanguageSource, MediaChoice, MediaReading, MediaSelection,
+    MediaSubtitle, MediaSummary, OutputFormat, PortablePath, Repeated, SubtitleChoice, UiEvent,
+    UserError, VideoQuality,
 };
 use wirecatch_protocol::extension::{AddAction, AddedDownload, MediaKind, NewDownload};
 use wirecatch_protocol::{DownloadId, QuestionId, QueueId};
@@ -1262,7 +1262,22 @@ fn remember_output(
     if selection.output != OutputFormat::Original && !selection.output.is_lossless() {
         defaults.audio_kbps = selection.audio_kbps;
     }
-    // Left as proposed, nothing was chosen: a saved language this video lacks stays saved (D195).
+    // A video with no subtitles shows no control for them, so nothing was chosen (D195.5).
+    if !choice.subtitles.is_empty() {
+        remember_subtitles(choice, selection, defaults, audio_only);
+    }
+    if choice.chapters {
+        defaults.chapters = selection.chapters;
+    }
+}
+
+fn remember_subtitles(
+    choice: &MediaChoice,
+    selection: &MediaSelection,
+    defaults: &mut wirecatch_protocol::app::OutputDefaults,
+    audio_only: bool,
+) {
+    // Left as proposed, nothing was chosen: a saved language this video lacks stays saved (D195.5).
     // `start` is the kind the window opened on, and ids of one language differ: compare languages.
     let opened_on_audio = choice
         .options
@@ -1280,21 +1295,19 @@ fn remember_output(
             defaults.subtitles_at_start(&choice.subtitles),
         )
     };
-    let languages = |ids: &[String]| output::remembered_subtitles(&choice.subtitles, ids);
-    if selection.subtitle_choice() != proposed
-        || languages(&selection.subtitles) != languages(&proposed_ids)
-    {
-        defaults.subtitles = selection.subtitle_choice();
-        if let Some((languages, auto)) =
-            output::remembered_subtitles(&choice.subtitles, &selection.subtitles)
-                .filter(|_| defaults.subtitles != SubtitleChoice::Off)
-        {
-            defaults.subtitle_languages = languages;
-            defaults.auto_subtitles |= auto;
-        }
+    let chosen = selection.subtitle_choice();
+    if chosen != proposed {
+        defaults.subtitles = chosen;
     }
-    if choice.chapters {
-        defaults.chapters = selection.chapters;
+    let languages = |ids: &[String]| output::remembered_subtitles(&choice.subtitles, ids);
+    let picked = languages(&selection.subtitles);
+    if selection.languages == LanguageSource::Picked
+        && chosen != SubtitleChoice::Off
+        && picked != languages(&proposed_ids)
+        && let Some((languages, auto)) = picked
+    {
+        defaults.subtitle_languages = languages;
+        defaults.auto_subtitles |= auto;
     }
 }
 
@@ -1452,6 +1465,7 @@ mod remember_tests {
         media.video.subtitle_languages = vec!["en".into()];
         let mut same_as_video = choice.start.clone();
         same_as_video.option_id = "audio".into();
+        same_as_video.languages = LanguageSource::Picked;
         remember_output(&choice, &same_as_video, &mut media, true);
         assert_eq!(media.audio.subtitles, SubtitleChoice::Files);
         assert_eq!(media.audio.subtitle_languages, ["en"]);
@@ -1481,6 +1495,38 @@ mod remember_tests {
         assert_eq!(media.audio.subtitle_languages, ["fr"]);
     }
 
+    /// Switching kind keeps the languages ticked: Download saves none of them unless they were picked.
+    #[test]
+    fn a_language_kept_from_the_other_kind_leaves_the_saved_one() {
+        let mut choice = offered_en();
+        choice.start.subtitles = vec!["sub:en".into()];
+        let mut media = MediaDefaults::default();
+        media.audio.subtitles = SubtitleChoice::Inside;
+        media.audio.subtitle_languages = vec!["fr".into()];
+        let mut selection = choice.start.clone();
+        selection.option_id = "audio".into();
+        remember_output(&choice, &selection, &mut media, true);
+        assert_eq!(media.audio.subtitles, SubtitleChoice::Inside);
+        assert_eq!(media.audio.subtitle_languages, ["fr"]);
+
+        selection.languages = LanguageSource::Picked;
+        remember_output(&choice, &selection, &mut media, true);
+        assert_eq!(media.audio.subtitle_languages, ["en"]);
+    }
+
+    /// With no subtitles to choose from the window shows no control, so nothing was chosen.
+    #[test]
+    fn a_video_without_subtitles_leaves_the_saved_choice_of_the_other_kind() {
+        let mut choice = offered_en();
+        choice.subtitles = Vec::new();
+        let mut media = MediaDefaults::default();
+        media.audio.subtitles = SubtitleChoice::Inside;
+        let mut selection = choice.start.clone();
+        selection.option_id = "audio".into();
+        remember_output(&choice, &selection, &mut media, true);
+        assert_eq!(media.audio.subtitles, SubtitleChoice::Inside);
+    }
+
     /// Off is saved as itself: the languages stay for when subtitles are switched on again.
     #[test]
     fn switching_off_keeps_the_saved_languages() {
@@ -1503,6 +1549,7 @@ mod remember_tests {
         let mut selection = choice.start.clone();
         selection.subtitles = vec!["sub:en".into()];
         selection.subtitle_files = true;
+        selection.languages = LanguageSource::Picked;
         remember_output(&choice, &selection, &mut media, true);
         assert_eq!(media.audio.subtitles, SubtitleChoice::Files);
         assert_eq!(media.audio.subtitle_languages, ["en"]);

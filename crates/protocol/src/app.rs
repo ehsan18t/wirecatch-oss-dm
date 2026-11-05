@@ -571,6 +571,18 @@ pub struct MediaSubtitle {
     pub auto: bool,
 }
 
+/// Where a quality window's subtitle languages came from (D195.5).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum LanguageSource {
+    /// The window's proposal, or what it kept while switching between a video and audio only.
+    #[default]
+    Kept,
+    /// The person changed the ticks, or switched subtitles on from off.
+    Picked,
+}
+
 /// The user's pick for a [`MediaChoice`]; absent fields keep the proposal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -600,6 +612,10 @@ pub struct MediaSelection {
     /// always save them as files.
     #[serde(default)]
     pub subtitle_files: bool,
+    /// Where the languages in [`subtitles`](Self::subtitles) came from; only picked ones may be
+    /// saved (D195.5).
+    #[serde(default)]
+    pub languages: LanguageSource,
     /// With subtitles inside the video, what happens to them when the format cannot hold any
     /// (Original, or audio only) (D93).
     #[serde(default, with = "known_or_default")]

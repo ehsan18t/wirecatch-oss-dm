@@ -5,8 +5,8 @@
 use gpui_kit::component::button::ToggleGroup;
 use gpui_kit::{App, ElementId, Window};
 use wirecatch_protocol::app::{
-    MediaChoice, MediaOption, MediaSelection, MediaSubtitle, OutputDefaults, OutputFit,
-    OutputFormat, StreamAction, SubtitleChoice, UnembeddedSubtitles,
+    LanguageSource, MediaChoice, MediaOption, MediaSelection, MediaSubtitle, OutputDefaults,
+    OutputFit, OutputFormat, StreamAction, SubtitleChoice, UnembeddedSubtitles,
 };
 use wirecatch_protocol::languages::LANGUAGES;
 use wirecatch_shell::host;
@@ -30,6 +30,8 @@ pub struct OutputChoice {
     pub subtitles: Vec<String>,
     /// What the person asked for; [`Self::subtitles_shown`] is what the format makes of it.
     pub wanted_subtitles: SubtitleChoice,
+    /// Whether the person chose the languages, not the window while switching kind (D195.5).
+    pub languages: LanguageSource,
     pub unembedded: UnembeddedSubtitles,
     pub chapters: bool,
 }
@@ -42,6 +44,7 @@ impl OutputChoice {
             kbps: start.audio_kbps,
             subtitles: listed_subtitles(offered, &start.subtitles),
             wanted_subtitles: start.subtitle_choice(),
+            languages: LanguageSource::Kept,
             unembedded: start.unembedded_subtitles,
             chapters: start.chapters,
         }
@@ -57,9 +60,21 @@ impl OutputChoice {
             .in_format(holds_subtitles(fit), self.unembedded)
     }
 
-    /// The person pressed `pick`. On from nothing selected takes what `saved` says, so on always
-    /// has a language.
+    /// The person pressed `pick`. Switching on from off stands by the languages it shows.
     pub fn choose_subtitles(
+        &mut self,
+        pick: SubtitleChoice,
+        offered: &[MediaSubtitle],
+        saved: &OutputDefaults,
+    ) {
+        if self.wanted_subtitles == SubtitleChoice::Off && pick != SubtitleChoice::Off {
+            self.languages = LanguageSource::Picked;
+        }
+        self.take_subtitles(pick, offered, saved);
+    }
+
+    /// On from nothing selected takes what `saved` says, so on always has a language.
+    fn take_subtitles(
         &mut self,
         pick: SubtitleChoice,
         offered: &[MediaSubtitle],
@@ -73,6 +88,7 @@ impl OutputChoice {
 
     /// The person changed the languages; with the last one gone, subtitles are off.
     pub fn pick_languages(&mut self, ids: &[String]) {
+        self.languages = LanguageSource::Picked;
         self.subtitles = ids.to_vec();
         if ids.is_empty() {
             self.wanted_subtitles = SubtitleChoice::Off;
@@ -100,11 +116,12 @@ impl OutputChoice {
             ),
             subtitles: self.subtitles.clone(),
             wanted_subtitles: self.wanted_subtitles,
+            languages: self.languages,
             unembedded: defaults.map_or(self.unembedded, |saved| saved.unembedded_subtitles),
             chapters: choice.chapters && defaults.is_some_and(|saved| saved.chapters),
         };
         if let Some(saved) = defaults {
-            switched.choose_subtitles(saved.subtitles, &choice.subtitles, saved);
+            switched.take_subtitles(saved.subtitles, &choice.subtitles, saved);
         }
         switched
     }
@@ -135,6 +152,7 @@ impl OutputChoice {
                 .collect()
         };
         selection.subtitle_files = self.wanted_subtitles == SubtitleChoice::Files;
+        selection.languages = self.languages;
         selection.unembedded_subtitles = self.unembedded;
         selection.chapters =
             self.chapters && choice.chapters && fit.is_some_and(|fit| fit.chapters);
@@ -557,6 +575,7 @@ mod tests {
             kbps: None,
             subtitles: vec!["a".to_owned()],
             wanted_subtitles: wanted,
+            languages: LanguageSource::Kept,
             unembedded,
             chapters: false,
         }
@@ -646,6 +665,42 @@ mod tests {
         assert_eq!(choice.wanted_subtitles, SubtitleChoice::Off);
         choice.choose_subtitles(SubtitleChoice::Inside, &offered, &saved);
         assert_eq!(choice.subtitles, ["auto:bn"], "the saved language");
+    }
+
+    #[test]
+    fn only_the_person_picks_languages() {
+        let offered = [subtitle("sub:en", "en", "English", false)];
+        let picked_after = |act: &dyn Fn(&mut OutputChoice)| {
+            let mut choice = choice_of(SubtitleChoice::Inside, UnembeddedSubtitles::Files);
+            act(&mut choice);
+            choice.languages == LanguageSource::Picked
+        };
+        let saved = OutputDefaults::default();
+        assert!(picked_after(&|c| c.pick_languages(&["sub:en".to_owned()])));
+        assert!(!picked_after(&|c| c.choose_subtitles(
+            SubtitleChoice::Files,
+            &offered,
+            &saved
+        )));
+        assert!(picked_after(&|c| {
+            c.choose_subtitles(SubtitleChoice::Off, &offered, &saved);
+            c.choose_subtitles(SubtitleChoice::Inside, &offered, &saved);
+        }));
+
+        let (_, page) = page_with_every_kind();
+        let option = page.options.first().unwrap().clone();
+        let on = OutputDefaults {
+            subtitles: SubtitleChoice::Files,
+            ..OutputDefaults::default()
+        };
+        let off = choice_of(SubtitleChoice::Off, UnembeddedSubtitles::Files);
+        let switched = off.switched(&option, &page, Some(&on));
+        assert_eq!(switched.wanted_subtitles, SubtitleChoice::Files);
+        assert_eq!(
+            switched.languages,
+            LanguageSource::Kept,
+            "the window switched it on"
+        );
     }
 
     #[test]
