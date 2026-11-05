@@ -84,7 +84,10 @@ pub trait Shell {
 pub fn still_starting() -> ProtocolError {
     ProtocolError {
         code: ErrorCode::AppUnavailable,
-        message: "Wirecatch is still starting. Try again in a moment.".to_owned(),
+        message: format!(
+            "{} is still starting. Try again in a moment.",
+            crate::host::CHANNEL.name()
+        ),
     }
 }
 

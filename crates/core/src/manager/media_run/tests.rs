@@ -11,7 +11,7 @@ use wirecatch_media::{MediaJob, MediaProgress, Pick};
 use wirecatch_sites::local_network::ChosenBy;
 
 use super::network::{format_rule, network_rule};
-use super::page::{address_gone, part_name, part_options};
+use super::page::{address_gone, formats_ytdlp_takes, part_name, part_options};
 use super::placement::{self, Placed, final_path, place, remember_placing};
 use super::workdir;
 use super::*;
@@ -51,6 +51,24 @@ fn a_refused_format_address_is_fetched_again_from_the_page() {
     assert!(!address_gone(&EngineError::Stalled {
         after: Duration::from_secs(30)
     }));
+}
+
+/// A row with no saved formats runs the best selection, so its total waits for each format that takes, not only the first to report.
+#[test]
+fn yt_dlps_formats_are_those_named_or_else_its_best_selection() {
+    let info: wirecatch_media::ytdlp::Info = serde_json::from_value(serde_json::json!({
+        "format_id": "137+140",
+        "formats": [{"format_id": "137", "filesize": 100}, {"format_id": "140"}],
+    }))
+    .unwrap();
+    assert_eq!(
+        formats_ytdlp_takes(&info, &[]),
+        [("137".to_owned(), Some(100)), ("140".to_owned(), None)]
+    );
+    assert_eq!(
+        formats_ytdlp_takes(&info, &[&info.formats[1]]),
+        [("140".to_owned(), None)]
+    );
 }
 
 #[tokio::test]
@@ -439,10 +457,7 @@ async fn a_waiting_file_belongs_to_its_link() {
     std::fs::write(dir.path().join("outside.ts"), b"x").unwrap();
     std::fs::write(
         work.join(workdir::PLACING),
-        format!(
-            "{mine}
-../outside.ts"
-        ),
+        format!("{}\n../outside.ts", placement::link_digest(mine.as_str())),
     )
     .unwrap();
     assert_eq!(waiting_to_place(&work, &mine).await, None);

@@ -1158,7 +1158,7 @@ async fn a_key_error_names_only_the_host() {
     dir.remove().unwrap();
 }
 
-/// A refused key and a refused segment name their address in the engine's error, whose signature must not reach what a person reads.
+/// A refused key and a refused segment name their address in the engine's error, whose signature, in the query or the path, must not reach what a person reads.
 #[tokio::test]
 async fn a_refused_address_shows_no_signature() {
     let server = FileServer::start().await;
@@ -1172,6 +1172,16 @@ async fn a_refused_address_shows_no_signature() {
             "seg.m3u8",
             "#EXTM3U\n#EXTINF:1,\ngone.ts?token=SECRET\n#EXT-X-ENDLIST\n",
             "gone.ts",
+        ),
+        (
+            "path-key.m3u8",
+            "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"SECRET/k\"\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n",
+            "SECRET/k",
+        ),
+        (
+            "path-seg.m3u8",
+            "#EXTM3U\n#EXTINF:1,\nSECRET/gone.ts\n#EXT-X-ENDLIST\n",
+            "SECRET/gone.ts",
         ),
     ] {
         server.put_typed(name, playlist, MPEGURL);
@@ -1187,4 +1197,23 @@ async fn a_refused_address_shows_no_signature() {
         assert!(shown.contains("403"), "{shown}");
         dir.remove().unwrap();
     }
+}
+
+/// A link that is no address cannot be cut to its site, so none of its text reaches what a person reads.
+#[tokio::test]
+async fn a_link_that_is_no_address_is_not_quoted() {
+    let server = FileServer::start().await;
+    server.put_typed(
+        "m.m3u8",
+        "#EXTM3U\n#EXTINF:1,\nhttp://[::1/SECRET and more\n#EXT-X-ENDLIST\n",
+        MPEGURL,
+    );
+    let dir = private_dir("hls-bad-link").unwrap();
+    let error = run(request(server.url("m.m3u8"), dir.join("v.ts")))
+        .await
+        .unwrap_err();
+    let shown = error.to_string();
+    assert!(!shown.contains("SECRET"), "{shown}");
+    assert!(shown.contains("not a valid address"), "{shown}");
+    dir.remove().unwrap();
 }

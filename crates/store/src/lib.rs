@@ -25,7 +25,7 @@ use wirecatch_protocol::{DownloadId, QueueId, UnixMillis};
 use wirecatch_files::{FileError, owner_only, with_suffix};
 use wirecatch_records::answers::Answers;
 use wirecatch_records::batch::StoredBatch;
-use wirecatch_records::files::DownloadFiles;
+use wirecatch_records::files::{DownloadFiles, PendingDeletion};
 use wirecatch_records::media::{MediaJob, StoredMedia, unreadable};
 use wirecatch_records::origin::{Origin, without_sign_in};
 use wirecatch_records::proxy::{Logins, SavedProxyServer};
@@ -194,6 +194,7 @@ const MIGRATIONS: &[&str] = &[
 const SETTINGS_KEY: &str = "app";
 const LAST_IDS_KEY: &str = "last_ids";
 const BATCHES_KEY: &str = "queue_batches";
+const PENDING_DELETIONS_KEY: &str = "pending_deletions";
 const PROXY_LOGINS_KEY: &str = "proxy_passwords";
 const PROXY_SERVERS_KEY: &str = "proxy_servers";
 
@@ -262,6 +263,7 @@ pub struct Snapshot {
     pub downloads: Vec<StoredDownload>,
     /// What each queue at work had finished or failed so far (D52).
     pub batches: Vec<StoredBatch>,
+    pub pending_deletions: Vec<PendingDeletion>,
     /// The passwords of the proxy servers (D71.2).
     pub proxy_logins: Logins,
     pub proxy_servers: Vec<SavedProxyServer>,
@@ -300,6 +302,7 @@ pub enum KeptValue {
     ProxyServers,
     ProxyPasswords,
     QueueBatches,
+    PendingDeletions,
 }
 
 /// Before the key of a value in the key-value table that could not be read, kept for a build or a person that can.
@@ -343,6 +346,7 @@ enum Op {
     SaveSettings(Box<AppSettings>),
     SaveLastIds(LastIds),
     SaveBatches(Vec<StoredBatch>),
+    SavePendingDeletions(Vec<PendingDeletion>),
     SaveProxyLogins(Logins),
     SaveProxyServers(Vec<SavedProxyServer>),
     /// Answers once every write sent before it has been tried.
@@ -367,6 +371,7 @@ impl std::fmt::Debug for Op {
             Op::SaveSettings(_) => "SaveSettings",
             Op::SaveLastIds(_) => "SaveLastIds",
             Op::SaveBatches(_) => "SaveBatches",
+            Op::SavePendingDeletions(_) => "SavePendingDeletions",
             Op::SaveProxyLogins(_) => "SaveProxyLogins",
             Op::SaveProxyServers(_) => "SaveProxyServers",
             Op::Flush(_) => "Flush",
@@ -497,6 +502,11 @@ impl Store {
     /// Replaces the saved batches of the queues at work.
     pub fn save_batches(&self, batches: Vec<StoredBatch>) {
         self.send(Op::SaveBatches(batches));
+    }
+
+    /// Replaces the partial files on record for deletion.
+    pub fn save_pending_deletions(&self, deletions: Vec<PendingDeletion>) {
+        self.send(Op::SavePendingDeletions(deletions));
     }
 
     /// Replaces the saved proxy passwords.
@@ -770,6 +780,7 @@ enum Target {
     Settings,
     LastIds,
     Batches,
+    PendingDeletions,
     ProxyLogins,
     ProxyServers,
     Nothing,
@@ -784,6 +795,7 @@ fn target_of(op: &Op) -> Target {
         Op::SaveSettings(_) => Target::Settings,
         Op::SaveLastIds(_) => Target::LastIds,
         Op::SaveBatches(_) => Target::Batches,
+        Op::SavePendingDeletions(_) => Target::PendingDeletions,
         Op::SaveProxyLogins(_) => Target::ProxyLogins,
         Op::SaveProxyServers(_) => Target::ProxyServers,
         Op::Flush(_) | Op::Close(_) => Target::Nothing,
@@ -897,6 +909,9 @@ fn apply(conn: &mut Connection, writes: &[Op]) -> rusqlite::Result<()> {
             Op::SaveSettings(settings) => write_value(&tx, SETTINGS_KEY, &**settings)?,
             Op::SaveLastIds(ids) => write_value(&tx, LAST_IDS_KEY, ids)?,
             Op::SaveBatches(batches) => write_value(&tx, BATCHES_KEY, batches)?,
+            Op::SavePendingDeletions(deletions) => {
+                write_value(&tx, PENDING_DELETIONS_KEY, deletions)?;
+            }
             Op::SaveProxyLogins(logins) => write_value(&tx, PROXY_LOGINS_KEY, logins)?,
             Op::SaveProxyServers(profiles) => write_value(&tx, PROXY_SERVERS_KEY, profiles)?,
             Op::Flush(_) | Op::Close(_) => {}
@@ -1389,6 +1404,14 @@ fn load(conn: &Connection) -> Result<Snapshot> {
             KeptValue::ProxyPasswords,
         )?
         .unwrap_or_default();
+    let pending_deletions = kept
+        .read(
+            conn,
+            PENDING_DELETIONS_KEY,
+            "deletions on record",
+            KeptValue::PendingDeletions,
+        )?
+        .unwrap_or_default();
     let proxy_servers = load_proxy_servers(conn, &mut kept)?;
 
     let queues = load_queues(conn, &mut kept)?;
@@ -1400,6 +1423,7 @@ fn load(conn: &Connection) -> Result<Snapshot> {
         queues,
         downloads,
         batches,
+        pending_deletions,
         proxy_logins,
         proxy_servers,
         recoveries: [

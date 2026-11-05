@@ -54,7 +54,13 @@ impl HandOverError {
 
 /// Shown by a copy of the app that finds another one already serving this user and cannot hand
 /// its launch over.
-pub const ALREADY_RUNNING: &str = "Wirecatch is already running for you, so this copy will close. Look for its icon in the tray, or open it from the Start menu again.";
+#[must_use]
+pub fn already_running() -> String {
+    format!(
+        "{} is already running for you, so this copy will close. Look for its icon in the tray, or open it from the Start menu again.",
+        crate::host::CHANNEL.name()
+    )
+}
 
 /// The flag the bridge (and the start-with-system entry) passes: run with no window.
 pub const BACKGROUND_FLAG: &str = "--background";
@@ -210,7 +216,7 @@ impl Launch {
             crate::message_box::show(
                 crate::message_box::Tone::Information,
                 crate::host::CHANNEL.name(),
-                ALREADY_RUNNING,
+                &already_running(),
             );
         });
     }
@@ -410,8 +416,9 @@ mod tests {
 
     #[test]
     fn the_already_running_message_is_plain() {
-        assert!(ALREADY_RUNNING.contains("already running"));
-        assert!(!ALREADY_RUNNING.contains('\u{2014}'));
+        let message = already_running();
+        assert!(message.contains("already running"));
+        assert!(!message.contains('\u{2014}'));
     }
 
     #[test]

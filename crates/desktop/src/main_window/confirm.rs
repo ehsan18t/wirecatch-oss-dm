@@ -193,12 +193,7 @@ pub(super) fn remove(
 }
 
 /// Asks before cancelling `ids`: they stop and lose what was downloaded, but stay in the list.
-pub(super) fn cancel(
-    library: &Entity<Library>,
-    ids: &[DownloadId],
-    window: &mut Window,
-    cx: &mut App,
-) {
+pub fn cancel(library: &Entity<Library>, ids: &[DownloadId], window: &mut Window, cx: &mut App) {
     let asked = Asked::read(library, &cancellable(&library.read(cx).downloads, ids), cx);
     if asked.count() == 0 {
         return;

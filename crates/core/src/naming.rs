@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use wirecatch_engine::{PART_EXT, STATE_EXT, Url, naming};
 use wirecatch_media::{stream_dir, work_dir};
+use wirecatch_product::PRODUCT_NAME;
 use wirecatch_protocol::DownloadId;
 
 use crate::error::{CoreError, Result};
@@ -140,7 +141,7 @@ fn checked(name: String) -> Result<String> {
     let lower = name.to_lowercase();
     if [PART_EXT, STATE_EXT].iter().any(|ext| lower.ends_with(ext)) {
         return Err(CoreError::Invalid(format!(
-            "File names cannot end in {PART_EXT} or {STATE_EXT}; Wirecatch uses those for downloads in progress. Choose another name."
+            "File names cannot end in {PART_EXT} or {STATE_EXT}; {PRODUCT_NAME} uses those for downloads in progress. Choose another name."
         )));
     }
     Ok(name)

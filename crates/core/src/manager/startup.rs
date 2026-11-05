@@ -88,6 +88,9 @@ fn kept_value(which: KeptValue) -> &'static str {
         KeptValue::ProxyPasswords => {
             "Wirecatch could not read the saved proxy passwords. Enter them again in Settings > Network."
         }
+        KeptValue::PendingDeletions => {
+            "Wirecatch could not read which leftover files of removed downloads it still had to delete, so some may stay in their folders."
+        }
         KeptValue::QueueBatches => {
             "Wirecatch could not read what each queue had finished so far, so the next summary of a queue may leave some downloads out."
         }

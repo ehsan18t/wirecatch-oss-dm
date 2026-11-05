@@ -79,8 +79,8 @@ impl Manager {
             FileExistsChoice::Cancel => {
                 if let Some(entry) = state.downloads.get_mut(&download) {
                     mark_cancelled(entry);
-                    self.discard_partial(entry);
                 }
+                self.discard_partial(state, download);
                 give_up_the_name(state, download);
                 WhenFileExists::Ask
             }

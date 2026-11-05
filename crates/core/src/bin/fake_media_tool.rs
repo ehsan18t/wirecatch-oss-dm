@@ -5,7 +5,7 @@
 //! folder it is installed in (so a test can prepare them before the install),
 //! and tests never reach the internet:
 //!
-//! - `yt-dlp`: appends each call to `calls.jsonl` (its arguments, and the cookies file's text and Unix mode at that moment). With `-J` it prints `info.json`, or fails with the text of `fail.txt` if that exists (or of `fail-without-cookies.txt`, when it exists and the call has no `--cookies`), after waiting `delay-ms` milliseconds if that exists. Otherwise it fails once with the text of `download-fail.txt` if that exists, deleting it, and else "downloads": writes a file at its `-o` template (extension `mp4`, or the text of `download-ext`), prints two progress lines in the format Wirecatch asks for, and prints the file's path. Asked for `--version`, it logs nothing and answers as `version` says: the version a test appended to its file (see `VERSION_MARK`), or the pinned one; it refuses to answer unless asked with `--ignore-config` and `--no-plugin-dirs`.
+//! - `yt-dlp`: appends each call to `calls.jsonl` (its arguments, the `ALL_PROXY` it was given, and the cookies file's text and Unix mode at that moment). With `-J` it prints `info.json`, or fails with the text of `fail.txt` if that exists (or of `fail-without-cookies.txt`, when it exists and the call has no `--cookies`), after waiting `delay-ms` milliseconds if that exists. Otherwise it fails once with the text of `download-fail.txt` if that exists, deleting it, and else "downloads": writes a file at its `-o` template (extension `mp4`, or the text of `download-ext`), prints two progress lines in the format Wirecatch asks for, and prints the file's path. Asked for `--version`, it logs nothing and answers as `version` says: the version a test appended to its file (see `VERSION_MARK`), or the pinned one; it refuses to answer unless asked with `--ignore-config` and `--no-plugin-dirs`.
 //! - `ffmpeg`: with `real-ffmpeg`, runs the program whose path that file holds with the same arguments, sharing the outputs, and ends as it does, so a test can use a real ffmpeg without installing a copy of it. Otherwise it checks every `-i file:<path>` input exists, waits `ffmpeg-delay-ms` milliseconds if that exists, then writes its arguments, one per line, into the output (its last argument, `file:<path>`). Asked for `-progress`, it first reports half of a two-second media done; a conversion (whose arguments, unlike a join's or a subtitle's, map chapters) fails with the text of `ffmpeg-fail.txt` if that exists.
 //! - `deno`: prints a version.
 //!
@@ -186,6 +186,7 @@ fn log_call(dir: &Path, args: &[String], cookies: Option<&PathBuf>) -> io::Resul
     let call = serde_json::json!({
         "args": args,
         "cwd": std::env::current_dir().ok(),
+        "all_proxy": std::env::var("ALL_PROXY").ok(),
         "cookies_path": cookies,
         "cookies": text,
         "cookies_mode": mode,

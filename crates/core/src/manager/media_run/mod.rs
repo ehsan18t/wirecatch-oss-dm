@@ -32,6 +32,7 @@ use wirecatch_protocol::app::UserError;
 use wirecatch_sites::local_network::{self, ChosenBy};
 use wirecatch_streams::{Choice, StreamProgress, StreamRequest};
 
+pub(super) use self::network::ytdlp_off_local_network;
 use self::page::run_page;
 use self::placement::{Reserve, Taken, finish, waiting_to_place};
 use super::Manager;
@@ -279,7 +280,6 @@ struct PageJob {
     keep_ext: Option<String>,
 }
 
-/// The error once every automatic try with fresh addresses was refused too.
 fn disk(error: &std::io::Error, near: &Path) -> UserError {
     let folder = near.parent().unwrap_or(near);
     wirecatch_messages::disk(error, folder)

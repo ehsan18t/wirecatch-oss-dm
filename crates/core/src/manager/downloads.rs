@@ -209,7 +209,7 @@ impl Manager {
         }
         if entry.row.status != DownloadStatus::Cancelled {
             mark_cancelled(entry);
-            self.discard_partial(entry);
+            self.discard_partial(&mut state, id);
             give_up_the_name(&mut state, id);
             self.save(&mut state, id);
             self.reconcile(&mut state);
@@ -241,15 +241,21 @@ impl Manager {
         .await
     }
 
-    /// Marks downloads as being removed and takes them off the saved list, so a quit before the removal ends cannot bring them back. Their files stay until [`finish_removing`](Self::finish_removing), which a quit waits for: a crash before then leaves files with no download.
+    /// Marks downloads as being removed and takes them off the saved list, so a quit before the removal ends cannot bring them back. Their files stay until [`finish_removing`](Self::finish_removing), which a quit waits for; the next start finishes what a kill cut short (D134).
     pub(super) fn begin_removing(&self, state: &mut State, ids: &[DownloadId]) {
         let mut begun = Vec::new();
         for id in ids {
             if let Ok(entry) = state.entry_mut(*id) {
                 entry.hold.begin_remove();
                 begun.push(*id);
+                if entry.row.status != DownloadStatus::Completed {
+                    let deletion = entry.pending_deletion();
+                    state.pending_deletions.insert(*id, deletion);
+                }
             }
         }
+        // Before the rows go: a kill between the two leaves a row, whose files the next start spares.
+        self.save_pending_deletions(state);
         self.inner.store.delete_downloads(begun);
     }
 
@@ -289,9 +295,7 @@ impl Manager {
 
         let mut finished_files = Vec::new();
         let mut subtitles = Vec::new();
-        let mut partials = Vec::new();
-        let mut removed = Vec::new();
-        let mut leaving = Vec::new();
+        let (mut partials, mut removed, mut leaving) = (Vec::new(), Vec::new(), Vec::new());
         {
             let mut state = self.lock();
             for id in ids {
@@ -320,12 +324,16 @@ impl Manager {
                     // An unfinished download has no file of its own at its final
                     // path yet; whatever is there belongs to someone else.
                     partials.push(entry.partial());
+                    // A move may have changed the path since the removal began.
+                    let deletion = entry.pending_deletion();
+                    state.pending_deletions.insert(*id, deletion);
                 }
                 removed.push(*id);
             }
             if removed.is_empty() {
                 return Ok(());
             }
+            self.save_pending_deletions(&state);
             finished_files = files_no_row_lists(&state, finished_files);
             // Only with the file itself: another row may keep it.
             for (id, file, beside) in subtitles {
@@ -337,7 +345,7 @@ impl Manager {
             }
             // After that check, which reads a claim as another download's. A new download's name must not meet files about to be deleted.
             leaving.retain(|(path, id)| state.claimed.reserve(path, *id));
-            self.emit(UiEvent::DownloadsRemoved(removed));
+            self.emit(UiEvent::DownloadsRemoved(removed.clone()));
             // Their queue may be done now; the ticker says so.
             self.inner.rows_changed.notify_one();
             self.reconcile(&mut state);
@@ -360,10 +368,20 @@ impl Manager {
         })
         .await?;
         let mut state = self.lock();
+        state
+            .pending_deletions
+            .retain(|id, _| !removed.contains(id));
+        self.save_pending_deletions(&state);
         for (path, id) in &leaving {
             state.claimed.release(path, *id);
         }
         Ok(())
+    }
+
+    pub(super) fn save_pending_deletions(&self, state: &State) {
+        self.inner
+            .store
+            .save_pending_deletions(state.pending_deletions.values().cloned().collect());
     }
 
     /// Hides downloads at once, as [`remove`](Self::remove) does, and finishes
@@ -581,8 +599,9 @@ impl Manager {
                 // The partial files of a cancelled download were deleted when it was
                 // cancelled; delete again if that happened before a restart.
                 if entry.row.status == DownloadStatus::Cancelled && entry.cleanup.is_none() {
-                    self.discard_partial(entry);
+                    self.discard_partial(&mut state, id);
                 }
+                let entry = state.entry_mut(id)?;
                 entry.row.status = DownloadStatus::Queued;
                 entry.row.error = None;
                 self.save(&mut state, id);

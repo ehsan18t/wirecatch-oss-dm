@@ -32,6 +32,8 @@ url.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
+# Stopping the programs when the app is ended by a signal (D137): on a thread of its own, which no runtime's end can leave swallowing the signal.
+signal-hook = { version = "0.3.18", default-features = false, features = ["iterator"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [

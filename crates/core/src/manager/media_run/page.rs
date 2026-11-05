@@ -15,7 +15,7 @@ use wirecatch_protocol::extension::Header;
 use wirecatch_streams::{StreamProgress, StreamRequest};
 
 use super::extras::fetch_extras;
-use super::network::network_rule;
+use super::network::{network_rule, ytdlp_off_local_network};
 use super::save::{joined_container, save, stored_kept_ext};
 use super::workdir::Downloaded;
 use super::{Job, PageError, PageJob, ROLES, disk, workdir};
@@ -81,6 +81,7 @@ pub(super) async fn page_attempt(
     let cookies = cookie_header(&job.origin);
     let proxy = wirecatch_settings::proxy::ytdlp_proxy(&job.options.proxy, &job.url);
     let ctx = ytdlp::Context {
+        off_local_network: off_local_network(job, proxy.as_deref()).await,
         tools,
         page: &job.url,
         cookies: cookies.as_deref(),
@@ -115,15 +116,14 @@ pub(super) async fn page_attempt(
         }
     } else {
         // A format Wirecatch cannot fetch itself: yt-dlp downloads the same
-        // selection. Its own requests are not covered by the
-        // local network rule below (see `network_rule`); yt-dlp makes them.
+        // selection, under the rule of its own (D136).
         if !cookie_formats_pass_the_rule(job, &found, cancel).await? {
             return Ok(MediaDone::Paused);
         }
         // yt-dlp joins two formats into the container its own table picks (AV1 with AAC into MP4); the offer named the shared policy's.
         let merge_into = (video.is_some() && audio.is_some())
             .then(|| joined_container(stored_kept_ext(page), job));
-        progress.expect_own(found.iter().map(|f| (f.id.to_string(), f.size())));
+        progress.expect_own(formats_ytdlp_takes(&info, &found).into_iter());
         let format = ytdlp::selection(video.as_ref(), audio.as_ref());
         match ytdlp::download(&ctx, &format, merge_into, &work, progress, cancel).await {
             Ok(Fetched::Done(file)) => vec![file],
@@ -172,6 +172,14 @@ async fn formats_now(
     Ok((video, audio))
 }
 
+/// The formats yt-dlp downloads and their sizes where the page says: those `found`, or with none named, what its best selection takes.
+pub(super) fn formats_ytdlp_takes(info: &Info, found: &[&Format]) -> Vec<(String, Option<u64>)> {
+    if found.is_empty() {
+        return info.best_formats();
+    }
+    found.iter().map(|f| (f.id.to_string(), f.size())).collect()
+}
+
 /// The one rate a yt-dlp process takes (D135).
 fn tightest_limit(job: &Job) -> Option<u64> {
     job.options
@@ -201,6 +209,10 @@ async fn cookie_formats_pass_the_rule(
         rule?;
     }
     Ok(true)
+}
+
+async fn off_local_network(job: &Job, proxy: Option<&str>) -> bool {
+    ytdlp_off_local_network(job.chosen_by, &job.url, proxy).await
 }
 
 /// Downloads the formats `found` side by side into `work`: their files, in the
