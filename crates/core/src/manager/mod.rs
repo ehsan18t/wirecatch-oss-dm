@@ -10,6 +10,7 @@ mod downloads;
 #[cfg(test)]
 mod fake;
 mod file_exists;
+mod file_type;
 mod handovers;
 mod media;
 

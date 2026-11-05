@@ -40,6 +40,8 @@ pub struct Answers {
     pub expect: Option<Expectation>,
     /// The name a download cancelled before its name was final left free for others; its next run is judged by it (D96).
     pub plain_name: Option<String>,
+    /// The name the person confirmed as proposed: a server's name may improve it but not change its file type unasked (D166).
+    pub confirmed_name: Option<String>,
     /// What the server's last answer means for the next run, so no message promises more.
     pub next_run: NextRun,
 }

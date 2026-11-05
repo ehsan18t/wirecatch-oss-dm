@@ -88,7 +88,7 @@ impl Manager {
         // (waiting for the person, or queued), the browser's copy is gone.
         if local_network::refuses(chosen_by, &url).await {
             return Err(CoreError::NotStarted(
-                wirecatch_messages::CAPTURE_TO_OWN_NETWORK.into(),
+                wirecatch_messages::capture_to_own_network(),
             ));
         }
         if let Some(joined) = self.join_unfinished(&capture, &url)? {
@@ -575,6 +575,10 @@ impl Manager {
                     chosen_by: pending.chosen_by,
                 },
                 wanted: Wanted {
+                    confirmed_name: answer
+                        .file_name
+                        .is_none()
+                        .then(|| proposal.file_name.clone()),
                     file_name: answer.file_name,
                     hint_name: Some(proposal.file_name.clone()),
                     folder,

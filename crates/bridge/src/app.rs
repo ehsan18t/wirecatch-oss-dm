@@ -6,6 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
+use wirecatch_product::PRODUCT_NAME;
 
 use tokio::time::{Instant, sleep_until, timeout_at};
 use wirecatch_ipc::{Connection, Endpoint, IpcError};
@@ -155,7 +156,7 @@ fn spawn_detached(program: &Path, args: &[OsString]) -> io::Result<()> {
         match crate::shell_parent::spawn(program, args, dir) {
             Ok(_) => return Ok(()),
             Err(e) => tracing::warn!(
-                "could not start Wirecatch from the desktop shell ({e}); starting it from here instead, so Task Manager may list it inside the browser"
+                "could not start {PRODUCT_NAME} from the desktop shell ({e}); starting it from here instead, so Task Manager may list it inside the browser"
             ),
         }
     }
@@ -182,7 +183,7 @@ fn spawn_detached(program: &Path, args: &[OsString]) -> io::Result<()> {
             Ok(_child) => return Ok(()),
             Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED.cast_signed()) => {
                 tracing::warn!(
-                    "the browser does not let the programs it starts leave its job, so Wirecatch is being started inside it. The browser may close Wirecatch when it closes the extension's connection; if that happens, open Wirecatch yourself (or let it start with the computer) so it keeps running"
+                    "the browser does not let the programs it starts leave its job, so {PRODUCT_NAME} is being started inside it. The browser may close {PRODUCT_NAME} when it closes the extension's connection; if that happens, open {PRODUCT_NAME} yourself (or let it start with the computer) so it keeps running"
                 );
                 command.creation_flags(base);
             }
@@ -230,26 +231,28 @@ impl Unavailable {
     pub(crate) fn not_running() -> Self {
         Self {
             code: ErrorCode::AppNotRunning,
-            message: "Wirecatch is not running. It starts again when the browser has a download for it, or when you open it.".to_owned(),
+            message: format!(
+                "{PRODUCT_NAME} is not running. It starts again when the browser has a download for it, or when you open it."
+            ),
         }
     }
 
     /// The connection to the app ended during the session.
     pub(crate) fn lost() -> Self {
-        Self::new(
-            "The connection to Wirecatch was closed. Try again; Wirecatch will be started if it is not running.",
-        )
+        Self::new(format!(
+            "The connection to {PRODUCT_NAME} was closed. Try again; {PRODUCT_NAME} will be started if it is not running."
+        ))
     }
 
     /// Starting the app failed outright.
     pub(crate) fn launch_failed(error: &io::Error) -> Self {
         if error.kind() == io::ErrorKind::NotFound {
-            Self::new(
-                "Wirecatch is not running, and the browser bridge could not find it to start it. Reinstall Wirecatch, or open it yourself, then try again.",
-            )
+            Self::new(format!(
+                "{PRODUCT_NAME} is not running, and the browser bridge could not find it to start it. Reinstall {PRODUCT_NAME}, or open it yourself, then try again."
+            ))
         } else {
             Self::new(format!(
-                "Wirecatch is not running and could not be started ({error}). Open Wirecatch yourself, then try again."
+                "{PRODUCT_NAME} is not running and could not be started ({error}). Open {PRODUCT_NAME} yourself, then try again."
             ))
         }
     }
@@ -257,14 +260,14 @@ impl Unavailable {
     /// The bridge could not work out how to start the app.
     pub(crate) fn cannot_start(reason: &str) -> Self {
         Self::new(format!(
-            "Wirecatch is not running and the browser bridge cannot start it ({reason}). Open Wirecatch yourself, then try again."
+            "{PRODUCT_NAME} is not running and the browser bridge cannot start it ({reason}). Open {PRODUCT_NAME} yourself, then try again."
         ))
     }
 
     /// The app was started but did not start listening in time.
     pub(crate) fn timed_out(budget: Duration) -> Self {
         Self::new(format!(
-            "Wirecatch was started but did not respond within {} seconds. Wait a moment, then try again. If this keeps happening, open Wirecatch yourself.",
+            "{PRODUCT_NAME} was started but did not respond within {} seconds. Wait a moment, then try again. If this keeps happening, open {PRODUCT_NAME} yourself.",
             budget.as_secs()
         ))
     }
@@ -272,20 +275,20 @@ impl Unavailable {
     /// Connecting failed for a reason other than "not running".
     pub(crate) fn from_ipc(error: &IpcError) -> Self {
         match error {
-            IpcError::WrongOwner { .. } | IpcError::EndpointTaken { .. } => Self::new(
-                "Wirecatch's connection point belongs to another user account on this computer, so nothing was sent to it. Another signed-in user may be trying to intercept your downloads. Ask the other users to sign out (or restart the computer), then open Wirecatch again.",
-            ),
-            IpcError::LowerRightsServer { .. } => Self::new(
-                "Wirecatch's connection point was made by a program running with fewer rights, so nothing was sent to it. That program may be trying to intercept your downloads. Open Wirecatch, then try again.",
-            ),
+            IpcError::WrongOwner { .. } | IpcError::EndpointTaken { .. } => Self::new(format!(
+                "{PRODUCT_NAME}'s connection point belongs to another user account on this computer, so nothing was sent to it. Another signed-in user may be trying to intercept your downloads. Ask the other users to sign out (or restart the computer), then open {PRODUCT_NAME} again."
+            )),
+            IpcError::LowerRightsServer { .. } => Self::new(format!(
+                "{PRODUCT_NAME}'s connection point was made by a program running with fewer rights, so nothing was sent to it. That program may be trying to intercept your downloads. Open {PRODUCT_NAME}, then try again."
+            )),
             IpcError::NoEndpointKey { .. }
             | IpcError::BadEndpointKey { .. }
             | IpcError::EndpointBusy { .. } => Self::new(error.to_string()),
             IpcError::UnsafeDirectory { .. } => Self::new(format!(
-                "Wirecatch could not be reached safely, so nothing was sent to it. {error}"
+                "{PRODUCT_NAME} could not be reached safely, so nothing was sent to it. {error}"
             )),
             other => Self::new(format!(
-                "Wirecatch could not be reached ({other}). Open Wirecatch, then try again."
+                "{PRODUCT_NAME} could not be reached ({other}). Open {PRODUCT_NAME}, then try again."
             )),
         }
     }
@@ -320,7 +323,10 @@ pub(crate) async fn connect_or_launch(
     };
 
     if let Err(e) = launcher.launch() {
-        tracing::error!("could not start Wirecatch ({}): {e}", launcher.describe());
+        tracing::error!(
+            "could not start {PRODUCT_NAME} ({}): {e}",
+            launcher.describe()
+        );
         return Err(Unavailable::launch_failed(&e));
     }
 
@@ -329,10 +335,10 @@ pub(crate) async fn connect_or_launch(
     loop {
         if Instant::now() >= deadline {
             return Err(if let Some(error) = why {
-                tracing::error!("Wirecatch could not be reached within {budget:?}: {error}");
+                tracing::error!("{PRODUCT_NAME} could not be reached within {budget:?}: {error}");
                 Unavailable::from_ipc(&error)
             } else {
-                tracing::error!("Wirecatch did not start listening within {budget:?}");
+                tracing::error!("{PRODUCT_NAME} did not start listening within {budget:?}");
                 Unavailable::timed_out(budget)
             });
         }
@@ -374,12 +380,12 @@ async fn attempt(
             | IpcError::BadEndpointKey { .. }),
         )) => {
             tracing::warn!(
-                "{error} Nothing was sent; starting Wirecatch, which moves to a new name or replaces a damaged key."
+                "{error} Nothing was sent; starting {PRODUCT_NAME}, which moves to a new name or replaces a damaged key."
             );
             Attempt::NotYet(Some(error))
         }
         Ok(Err(e)) => {
-            tracing::warn!("could not connect to Wirecatch: {e}");
+            tracing::warn!("could not connect to {PRODUCT_NAME}: {e}");
             Attempt::Failed(Unavailable::from_ipc(&e))
         }
         Err(_) => Attempt::Failed(Unavailable::timed_out(budget)),

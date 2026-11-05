@@ -11,6 +11,7 @@ use std::fmt::Write as _;
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use wirecatch_product::PRODUCT_NAME;
 
 use crate::IpcError;
 
@@ -80,7 +81,7 @@ pub(crate) fn read(folder: &Path) -> Result<EndpointKey, IpcError> {
         Stored::Missing => Err(IpcError::NoEndpointKey { path }),
         Stored::Damaged => Err(bad_key(
             &path,
-            "it does not hold a key Wirecatch wrote".into(),
+            format!("it does not hold a key {PRODUCT_NAME} wrote"),
         )),
     }
 }

@@ -6,6 +6,7 @@ mod again;
 mod common;
 mod fault_kill;
 mod file_exists;
+mod file_type;
 mod ftp;
 mod lifecycle;
 mod limits;

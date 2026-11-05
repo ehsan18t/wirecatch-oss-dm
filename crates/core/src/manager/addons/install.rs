@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use wirecatch_product::PRODUCT_NAME;
 
 use tracing::warn;
 use wirecatch_addons::manifest::{AddonComponent, ComponentId};
@@ -138,7 +139,7 @@ impl Manager {
                 }
                 Err(e) => {
                     failure.get_or_insert(
-                        format!("Something went wrong inside Wirecatch ({e}).").into(),
+                        format!("Something went wrong inside {PRODUCT_NAME} ({e}).").into(),
                     );
                 }
             }
@@ -302,7 +303,7 @@ pub(super) async fn confirm_version(
     // A run that did not succeed says nothing about which release this is: a full temporary folder or a security product can end a genuine one.
     if !ran.success() {
         return Err(format!(
-            "The downloaded {id} {version} ended with an error when asked which version it is, so it was not installed. Wirecatch tries again later."
+            "The downloaded {id} {version} ended with an error when asked which version it is, so it was not installed. {PRODUCT_NAME} tries again later."
         )
         .into());
     }

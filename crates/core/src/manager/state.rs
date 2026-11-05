@@ -15,8 +15,8 @@ use wirecatch_engine::{
 use wirecatch_media::{MediaJob, MediaProgress, Reading, StoredMedia};
 use wirecatch_protocol::UnixMillis;
 use wirecatch_protocol::app::{
-    AppSettings, Category, DownloadStatus, DownloadSummary, FileExistsQuestion, PendingCapture,
-    Queue, Setting, WhenFileExists,
+    AppSettings, Category, DownloadStatus, DownloadSummary, FileExistsQuestion, FileTypeQuestion,
+    PendingCapture, Queue, Setting, WhenFileExists,
 };
 use wirecatch_protocol::extension::NewDownload;
 use wirecatch_protocol::proxy::{ProxyServer, ProxyUse};
@@ -70,6 +70,7 @@ pub(super) struct State {
     /// Downloads paused until the person says what to do with the file already in their
     /// folder (D88). Ids from the same counter as `pending`.
     pub file_exists: BTreeMap<QuestionId, Asked>,
+    pub file_types: BTreeMap<QuestionId, FileTypeQuestion>,
     /// The media add-on.
     pub addon: AddonSlot,
     /// The Public Suffix List every decision about sites reads (D39, D44).
@@ -235,6 +236,8 @@ pub(super) struct Entry {
     pub on_existing: Option<OnExisting>,
     /// See [`Answers::plain_name`]. The row keeps showing it; only the path differs.
     pub plain_name: Option<String>,
+    /// See [`Answers::confirmed_name`].
+    pub confirmed_name: Option<String>,
     /// A server answered with the file, and the run stopped there for the one already in the folder, before a path was settled.
     pub offered_file: bool,
     /// Added in the app itself: if the server first answers with a web page while
@@ -280,6 +283,8 @@ pub(super) struct Run {
     pub stop: Option<Stop>,
     /// The file already in the folder, with [`Stop::FileExists`].
     pub found: Option<Found>,
+    /// The server's name, with [`Stop::FileTypeChanged`].
+    pub server_name: Option<String>,
     pub meter: SpeedMeter,
     /// The run's task, so a run that ignores its stop request can be abandoned.
     pub task: AbortHandle,
@@ -336,6 +341,8 @@ pub(super) enum Stop {
     ReadAsVideo,
     /// Its file is already in the folder (D88): what was found is [`Run::found`].
     FileExists,
+    /// The server's name changes the file type of the confirmed name (D166): it is [`Run::server_name`].
+    FileTypeChanged,
 }
 
 /// What a download that is being cancelled does once it has stopped.
@@ -773,6 +780,7 @@ impl Entry {
                 on_existing: self.on_existing,
                 expect: self.expect.clone(),
                 plain_name: self.plain_name.clone(),
+                confirmed_name: self.confirmed_name.clone(),
                 next_run: self.next_run,
             },
             files: self.files.clone(),
@@ -859,6 +867,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         on_existing: None,
         plain_name: None,
         next_run: NextRun::Continues,
+        confirmed_name: None,
         offered_file: false,
         stranded: None,
         files: DownloadFiles::default(),
@@ -891,6 +900,7 @@ mod tests {
                 marked: false,
                 stop: None,
                 found: None,
+                server_name: None,
                 meter: SpeedMeter::default(),
                 task: idle_task(),
             }),
@@ -901,6 +911,7 @@ mod tests {
             on_existing: None,
             plain_name: None,
             next_run: NextRun::Continues,
+            confirmed_name: None,
             offered_file: false,
             stranded: None,
             files: DownloadFiles::default(),

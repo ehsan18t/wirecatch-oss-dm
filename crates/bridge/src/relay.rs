@@ -26,6 +26,7 @@ use std::collections::{BTreeSet, VecDeque};
 use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
+use wirecatch_product::PRODUCT_NAME;
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, WriteHalf};
 use tokio::sync::mpsc;
@@ -86,7 +87,7 @@ where
             result = &mut connecting => break result,
             frame = incoming.recv(), if held.len() < MAX_HELD_WHILE_CONNECTING => {
                 let Some(frame) = frame else {
-                    tracing::info!("the browser closed the connection while Wirecatch was starting");
+                    tracing::info!("the browser closed the connection while {PRODUCT_NAME} was starting");
                     return Ended::BrowserClosed;
                 };
                 held.push_back(frame);
@@ -113,7 +114,9 @@ async fn refuse(frame: &RawFrame, outgoing: &mpsc::Sender<RawFrame>, why: &Unava
     if let Envelope::Request(Some(id)) = frame.envelope() {
         answer_error(outgoing, id, why.code, &why.message).await;
     } else {
-        tracing::warn!("dropped a message from the extension because Wirecatch is unavailable");
+        tracing::warn!(
+            "dropped a message from the extension because {PRODUCT_NAME} is unavailable"
+        );
     }
 }
 
@@ -169,7 +172,7 @@ where
             }
         }
         if let Err(e) = send(&mut to_app, &frame).await {
-            tracing::warn!("lost the connection to Wirecatch while sending: {e}");
+            tracing::warn!("lost the connection to {PRODUCT_NAME} while sending: {e}");
             drop(to_app);
             finish_reading(from_app).await;
             answer_pending(&pending, &outgoing).await;
@@ -215,11 +218,11 @@ where
                     }
                 }
                 Ok(None) => {
-                    tracing::info!("Wirecatch closed the connection");
+                    tracing::info!("{PRODUCT_NAME} closed the connection");
                     return;
                 }
                 Err(e) => {
-                    tracing::warn!("could not read from Wirecatch: {e}");
+                    tracing::warn!("could not read from {PRODUCT_NAME}: {e}");
                     return;
                 }
             }
@@ -233,7 +236,7 @@ async fn finish_reading(from_app: JoinHandle<()>) {
     if let Err(e) = reader_end(from_app).await
         && e.is_panic()
     {
-        tracing::error!("the reader of Wirecatch's messages stopped with a panic: {e}");
+        tracing::error!("the reader of {PRODUCT_NAME}'s messages stopped with a panic: {e}");
     }
 }
 

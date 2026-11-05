@@ -246,6 +246,7 @@ impl Manager {
             marked: false,
             stop: None,
             found: None,
+            server_name: None,
             meter: SpeedMeter::default(),
             task: task.abort_handle(),
         });
@@ -307,7 +308,7 @@ impl Manager {
             // Its server answered with a web page: the download gives way to reading the page.
             (_, Some(Stop::ReadAsVideo)) => answered_page = AnsweredPage::of(entry),
             // Its file is already in the folder: handled below, with the whole state.
-            (_, Some(Stop::FileExists)) => {}
+            (_, Some(Stop::FileExists | Stop::FileTypeChanged)) => {}
             // The status stays as it was, so the next start continues it.
             (_, Some(Stop::Shutdown)) => {
                 if entry.row.status == DownloadStatus::Processing {
@@ -332,18 +333,34 @@ impl Manager {
         if !finished {
             self.discard_after_stop(state, id, run.stop.as_ref());
         }
-        // Whatever stopped it since the duplicate was found decides instead; a later run finds it again.
-        if let Some(found) = found
-            && matches!(run.stop, None | Some(Stop::FileExists))
-        {
-            self.on_found(state, id, &found);
-        }
+        self.act_on_the_answer(state, id, run.stop, found, run.server_name.take());
         self.save(state, id);
         // First: the plan must see the read, or the run of a queue with nothing else left ends here (D155.3).
         if let Some(page) = answered_page {
             self.read_answered_page(state, id, page);
         }
         self.reconcile(state);
+    }
+
+    /// What the server's answer found, or the name it gave, if the run stopped for that. Whatever stopped it since decides instead, and a later run meets the same answer again.
+    fn act_on_the_answer(
+        &self,
+        state: &mut State,
+        id: DownloadId,
+        stop: Option<Stop>,
+        found: Option<Found>,
+        server_name: Option<String>,
+    ) {
+        if let Some(found) = found
+            && matches!(stop, None | Some(Stop::FileExists))
+        {
+            self.on_found(state, id, &found);
+        }
+        if let Some(server_name) = server_name
+            && matches!(stop, Some(Stop::FileTypeChanged))
+        {
+            self.ask_about_file_type(state, id, server_name);
+        }
     }
 
     /// A run that did not finish was stopped by `stop`: what cancelling or starting over leaves to do.

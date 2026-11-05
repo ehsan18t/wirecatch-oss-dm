@@ -1,6 +1,7 @@
 //! Which queue rules a new download (D72.3): the first kind of rule that applies, in the order site, file name, file type, category, protocol; within a kind, the most specific site, else the queue highest in the sidebar.
 
 use std::collections::BTreeSet;
+use wirecatch_product::PRODUCT_NAME;
 
 use regex::{Regex, RegexBuilder};
 use url::Url;
@@ -204,7 +205,7 @@ pub fn checked(mut rules: QueueRules) -> Result<QueueRules, String> {
     rules.file_names = cleaned(&rules.file_names, "file names", same_name, |name| {
         name_matcher(name, syntax)
             .map(|_| name.to_string())
-            .map_err(|_| format!("\"{name}\" is not a regular expression Wirecatch can use."))
+            .map_err(|_| format!("\"{name}\" is not a regular expression {PRODUCT_NAME} can use."))
     })?;
     rules.file_types = cleaned(&rules.file_types, "file types", Same::AnyCase, |kind| {
         normalize_file_type(kind).ok_or_else(|| format!("\"{kind}\" is not a file type."))

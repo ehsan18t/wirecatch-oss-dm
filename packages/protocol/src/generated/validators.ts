@@ -36,6 +36,8 @@ import type { ExtensionSettingsPatch } from './ExtensionSettingsPatch';
 import type { FileExistsAnswer } from './FileExistsAnswer';
 import type { FileExistsChoice } from './FileExistsChoice';
 import type { FileExistsQuestion } from './FileExistsQuestion';
+import type { FileTypeChoice } from './FileTypeChoice';
+import type { FileTypeQuestion } from './FileTypeQuestion';
 import type { FinishNoticeTime } from './FinishNoticeTime';
 import type { FinishedGroup } from './FinishedGroup';
 import type { FinishedList } from './FinishedList';
@@ -664,6 +666,22 @@ export function isFileExistsQuestion(value: unknown): value is FileExistsQuestio
     (isUnixMillis(value1['saved_at']) || value1['saved_at'] === null))(value);
 }
 
+/** Whether `value` has the shape of a {@link FileTypeChoice}; fields it does not name are not checked. */
+export function isFileTypeChoice(value: unknown): value is FileTypeChoice {
+  return value === 'keep_confirmed' || value === 'use_servers' || value === 'cancel';
+}
+
+/** Whether `value` has the shape of a {@link FileTypeQuestion}; fields it does not name are not checked. */
+export function isFileTypeQuestion(value: unknown): value is FileTypeQuestion {
+  return ((value1: unknown): boolean =>
+    isRecord(value1) &&
+    isQuestionId(value1['id']) &&
+    isDownloadId(value1['download']) &&
+    typeof value1['url'] === 'string' &&
+    typeof value1['confirmed_name'] === 'string' &&
+    typeof value1['server_name'] === 'string')(value);
+}
+
 /** Whether `value` has the shape of a {@link FinishNoticeTime}; fields it does not name are not checked. */
 export function isFinishNoticeTime(value: unknown): value is FinishNoticeTime {
   return (
@@ -1226,6 +1244,10 @@ export function isQuestion(value: unknown): value is Question {
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['kind'] === 'file_exists' && isFileExistsQuestion(value1['data']))(
       value,
+    ) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) && value1['kind'] === 'file_type' && isFileTypeQuestion(value1['data']))(
+      value,
     )
   );
 }
@@ -1588,6 +1610,10 @@ export function isUiEvent(value: unknown): value is UiEvent {
       isRecord(value1) &&
       value1['type'] === 'file_exists_requested' &&
       isFileExistsQuestion(value1['data']))(value) ||
+    ((value1: unknown): boolean =>
+      isRecord(value1) &&
+      value1['type'] === 'file_type_requested' &&
+      isFileTypeQuestion(value1['data']))(value) ||
     ((value1: unknown): boolean =>
       isRecord(value1) && value1['type'] === 'capture_repeated' && isRepeated(value1['data']))(
       value,

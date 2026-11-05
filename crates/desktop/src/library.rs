@@ -339,6 +339,7 @@ fn asked_question(event: &UiEvent) -> Option<QuestionId> {
         UiEvent::MediaAnalysing { id, .. } | UiEvent::AddonRequired { id, .. } => Some(*id),
         UiEvent::MediaChoiceRequested(choice) => Some(choice.id),
         UiEvent::FileExistsRequested(question) => Some(question.id),
+        UiEvent::FileTypeRequested(question) => Some(question.id),
         _ => None,
     }
 }

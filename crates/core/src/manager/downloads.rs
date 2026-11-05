@@ -202,7 +202,7 @@ impl Manager {
                 "This download has already finished, so there is nothing to cancel.",
             ));
         }
-        self.close_file_exists(&mut state, id);
+        self.close_questions_of(&mut state, id);
         let entry = state.entry_mut(id)?;
         if self.stop_run(entry, Stop::Cancel) {
             return Ok(());
@@ -306,7 +306,7 @@ impl Manager {
                 {
                     continue;
                 }
-                self.close_file_exists(&mut state, *id);
+                self.close_questions_of(&mut state, *id);
                 let Some(entry) = state.remove_entry(*id) else {
                     continue;
                 };
@@ -426,7 +426,7 @@ impl Manager {
             ));
         }
         entry.refuse_if_stranded()?;
-        self.close_file_exists(&mut state, id);
+        self.close_questions_of(&mut state, id);
         let entry = state.entry_mut(id)?;
         let same_site = Url::parse(&entry.row.url).is_ok_and(|old| old.origin() == url.origin());
         if !same_site {
@@ -570,7 +570,7 @@ impl Manager {
             }
         }
         for id in paused {
-            self.close_file_exists(&mut state, id);
+            self.close_questions_of(&mut state, id);
             self.save(&mut state, id);
         }
         self.reconcile(&mut state);
@@ -583,7 +583,7 @@ impl Manager {
     fn requeue(&self, id: DownloadId) -> Result<()> {
         let mut state = self.lock_open()?;
         state.entry_mut(id)?;
-        self.close_file_exists(&mut state, id);
+        self.close_questions_of(&mut state, id);
         // Trying again means the person has dealt with files a failed move left.
         state.release_stranded(id);
         let entry = state.entry_mut(id)?;
@@ -731,18 +731,17 @@ impl Manager {
         let media_job = media.and_then(|m| m.job);
         // The path is a guess until the server answers with its own name; a
         // media job's is final.
-        let naming = NameChoice {
-            settled: media_job.is_some(),
-            writing: false,
-            name: wanted.file_name,
-            folder: wanted.folder.map(|f| f.to_string_lossy().into_owned()),
-        };
         state.insert_entry(Entry {
             row,
             position,
             origin: fetch.origin,
             chosen_by: fetch.chosen_by,
-            naming,
+            naming: NameChoice {
+                settled: media_job.is_some(),
+                writing: false,
+                name: wanted.file_name,
+                folder: wanted.folder.map(|f| f.to_string_lossy().into_owned()),
+            },
             expect,
             run: None,
             resume_first: false,
@@ -751,6 +750,7 @@ impl Manager {
             hold: Hold::Free,
             on_existing: None,
             plain_name: None,
+            confirmed_name: wanted.confirmed_name,
             next_run: NextRun::Continues,
             offered_file: false,
             stranded: None,

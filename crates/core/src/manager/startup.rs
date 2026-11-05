@@ -1,4 +1,5 @@
 use std::path::Path;
+use wirecatch_product::PRODUCT_NAME;
 
 use wirecatch_protocol::app::StartupNotice;
 use wirecatch_store::{KeptValue, Recovery};
@@ -10,7 +11,7 @@ pub(super) fn list_recovered(recoveries: &[Recovery]) -> Option<StartupNotice> {
         [] => None,
         [one] => Some(recovered(one)),
         several => Some(StartupNotice {
-            title: "Wirecatch repaired its download list".to_owned(),
+            title: format!("{PRODUCT_NAME} repaired its download list"),
             message: several
                 .iter()
                 .map(|r| recovered(r).message)
@@ -27,7 +28,7 @@ pub(super) fn not_private(folder: &Path, reason: &str) -> StartupNotice {
     StartupNotice {
         title: "Other accounts may be able to read your download list".to_owned(),
         message: format!(
-            "Wirecatch could not make its folder {} private to your account ({reason}). The download list in it keeps the sign-ins websites gave for your downloads, so other accounts on this computer may be able to read them. Make sure your account owns the folder and that it is on a drive that keeps permissions, then open Wirecatch again.",
+            "{PRODUCT_NAME} could not make its folder {} private to your account ({reason}). The download list in it keeps the sign-ins websites gave for your downloads, so other accounts on this computer may be able to read them. Make sure your account owns the folder and that it is on a drive that keeps permissions, then open {PRODUCT_NAME} again.",
             folder.display()
         ),
         set_aside: false,
@@ -38,14 +39,16 @@ pub(super) fn not_private(folder: &Path, reason: &str) -> StartupNotice {
 fn recovered(recovery: &Recovery) -> StartupNotice {
     match recovery {
         Recovery::Damaged { .. } => StartupNotice {
-            title: "Wirecatch started a new download list".to_owned(),
-            message: "The download list was damaged, so Wirecatch set it aside and started an empty one. Files you already downloaded are still in their folders.".to_owned(),
+            title: format!("{PRODUCT_NAME} started a new download list"),
+            message: format!(
+                "The download list was damaged, so {PRODUCT_NAME} set it aside and started an empty one. Files you already downloaded are still in their folders."
+            ),
             set_aside: true,
         },
         Recovery::UnreadableKept(count) => StartupNotice {
             title: "Some downloads are hidden from the list".to_owned(),
             message: format!(
-                "Wirecatch could not read {count} {} in its list, perhaps saved by a newer version. {} kept for a version that can read {}, without {} sign-in. Files already downloaded are still in their folders.",
+                "{PRODUCT_NAME} could not read {count} {} in its list, perhaps saved by a newer version. {} kept for a version that can read {}, without {} sign-in. Files already downloaded are still in their folders.",
                 if *count == 1 { "download" } else { "downloads" },
                 if *count == 1 { "It is" } else { "They are" },
                 if *count == 1 { "it" } else { "them" },
@@ -54,9 +57,9 @@ fn recovered(recovery: &Recovery) -> StartupNotice {
             set_aside: false,
         },
         Recovery::ValuesReset { downloads } => StartupNotice {
-            title: "Wirecatch repaired some damaged values".to_owned(),
+            title: format!("{PRODUCT_NAME} repaired some damaged values"),
             message: format!(
-                "{downloads} {} in the list held an impossible size or progress, which Wirecatch reset.",
+                "{downloads} {} in the list held an impossible size or progress, which {PRODUCT_NAME} reset.",
                 if *downloads == 1 {
                     "download"
                 } else {
@@ -66,35 +69,47 @@ fn recovered(recovery: &Recovery) -> StartupNotice {
             set_aside: false,
         },
         Recovery::ValueKept(which) => StartupNotice {
-            title: "Wirecatch could not read part of its list".to_owned(),
-            message: kept_value(*which).to_owned(),
+            title: format!("{PRODUCT_NAME} could not read part of its list"),
+            message: kept_value(*which),
             set_aside: false,
         },
     }
 }
 
 /// What not being able to read `which` costs the person (D148).
-fn kept_value(which: KeptValue) -> &'static str {
+fn kept_value(which: KeptValue) -> String {
     match which {
         KeptValue::Settings => {
-            "Wirecatch could not read its settings, perhaps saved by a newer version, so it is using the defaults. Check your folders, limits and proxy in Settings."
+            format!(
+                "{PRODUCT_NAME} could not read its settings, perhaps saved by a newer version, so it is using the defaults. Check your folders, limits and proxy in Settings."
+            )
         }
         KeptValue::Queue => {
-            "Wirecatch could not read at least one of its queues, perhaps saved by a newer version. Their downloads moved to the default queue."
+            format!(
+                "{PRODUCT_NAME} could not read at least one of its queues, perhaps saved by a newer version. Their downloads moved to the default queue."
+            )
         }
         KeptValue::ProxyServers => {
-            "Wirecatch could not read a saved proxy server. Downloads that used it no longer go through it, so check the proxy in Settings > Network before they run."
+            format!(
+                "{PRODUCT_NAME} could not read a saved proxy server. Downloads that used it no longer go through it, so check the proxy in Settings > Network before they run."
+            )
         }
         KeptValue::ProxyPasswords => {
-            "Wirecatch could not read the saved proxy passwords. Enter them again in Settings > Network."
+            format!(
+                "{PRODUCT_NAME} could not read the saved proxy passwords. Enter them again in Settings > Network."
+            )
         }
         KeptValue::PendingDeletions => {
-            "Wirecatch could not read which leftover files of removed downloads it still had to delete, so some may stay in their folders."
+            format!(
+                "{PRODUCT_NAME} could not read which leftover files of removed downloads it still had to delete, so some may stay in their folders."
+            )
         }
         KeptValue::QueueBatches => {
-            "Wirecatch could not read what each queue had finished so far, so the next summary of a queue may leave some downloads out."
+            format!(
+                "{PRODUCT_NAME} could not read what each queue had finished so far, so the next summary of a queue may leave some downloads out."
+            )
         }
-        _ => "Wirecatch could not read a saved value and is using its default.",
+        _ => format!("{PRODUCT_NAME} could not read a saved value and is using its default."),
     }
 }
 

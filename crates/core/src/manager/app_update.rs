@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use wirecatch_product::PRODUCT_NAME;
 
 use tracing::info;
 use wirecatch_addons::archive;
@@ -268,13 +269,13 @@ fn usable_installer(
 
 fn unreachable_releases(reason: &str) -> CoreError {
     CoreError::UpdateCheckFailed(format!(
-        "Wirecatch could not look for a newer version ({reason}). Check your connection, then try again."
+        "{PRODUCT_NAME} could not look for a newer version ({reason}). Check your connection, then try again."
     ))
 }
 
 fn refused(reason: &str) -> CoreError {
     CoreError::UpdateCheckFailed(format!(
-        "A newer version of Wirecatch is out, but it was not offered because {reason}."
+        "A newer version of {PRODUCT_NAME} is out, but it was not offered because {reason}."
     ))
 }
 
