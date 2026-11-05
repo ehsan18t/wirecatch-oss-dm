@@ -269,6 +269,124 @@ async fn a_complete_part_file_is_finished_when_the_server_refuses() {
     dir.remove().unwrap();
 }
 
+/// A refused link finishes a complete part file, but never over a file the caller keeps.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_refused_link_does_not_finish_over_a_file_that_is_kept() {
+    let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
+    server.configure(|c| c.refuse_paths.push(("/f.bin".into(), 410)));
+    let dir = private_dir("kept-complete").unwrap();
+    let path = dir.join("f.bin");
+    let url = server.url("f.bin");
+    let saved = complete_run(url.as_str(), server.data.len());
+    left_complete(&dir, &saved, &server.data).unwrap();
+    std::fs::write(&path, b"theirs").unwrap();
+
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(path.clone());
+    req.if_exists = ExistingFile::Refuse;
+    let error = run(req).await.unwrap_err();
+
+    assert!(
+        matches!(&error, Error::TargetTaken { path: taken, .. } if *taken == path),
+        "{error:?}"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), b"theirs");
+    assert_eq!(
+        std::fs::read(dir.join("f.bin.wcpart")).unwrap(),
+        server.data
+    );
+    dir.remove().unwrap();
+}
+
+/// An answer that says nothing about the link ends the run, with the data kept for the next one.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_complete_part_file_waits_when_the_server_cannot_answer() {
+    let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
+    server.configure(|c| c.refuse_paths.push(("/f.bin".into(), 500)));
+    let dir = private_dir("no-answer-complete").unwrap();
+    let path = dir.join("f.bin");
+    let url = server.url("f.bin");
+    let saved = complete_run(url.as_str(), server.data.len());
+    left_complete(&dir, &saved, &server.data).unwrap();
+
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(path.clone());
+    req.options.max_retries = 0;
+    let error = run(req.clone()).await.unwrap_err();
+    assert!(
+        matches!(error, Error::HttpStatus { status: 500, .. }),
+        "{error:?}"
+    );
+    assert_eq!(files_in(&dir), ["f.bin.wcpart", "f.bin.wcstate"]);
+
+    server.configure(|c| {
+        c.refuse_paths.clear();
+        c.hold_bodies_from = Some(0);
+    });
+    run(req).await.unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
+/// A resume file that lists nothing left says nothing about a part file when it holds no size.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_part_file_with_no_saved_size_is_not_finished() {
+    let server = TestServer::start(test_data(KIB_USIZE), Config::default()).await;
+    server.configure(|c| c.refuse_paths.push(("/f.bin".into(), 410)));
+    let dir = private_dir("no-size-complete").unwrap();
+    let url = server.url("f.bin");
+    let saved = SavedRun {
+        total: None,
+        ..complete_run(url.as_str(), 0)
+    };
+    left_complete(&dir, &saved, b"cut").unwrap();
+
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(dir.join("f.bin"));
+    let error = run(req).await.unwrap_err();
+    assert!(
+        matches!(error, Error::HttpStatus { status: 410, .. }),
+        "{error:?}"
+    );
+    dir.remove().unwrap();
+}
+
+/// A server that gives no size: the length its whole answer came to is saved, so the next run finishes only a part file of that length.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_complete_part_file_of_unknown_size_is_finished_at_its_length() {
+    let server = TestServer::start(
+        test_data(KIB_USIZE),
+        Config {
+            omit_length: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    let dir = private_dir("unknown-size-complete").unwrap();
+    let path = dir.join("f.bin");
+    let part = dir.join("f.bin.wcpart");
+    std::fs::write(&path, b"theirs").unwrap();
+    let mut req = request(&server, "f.bin", &dir, 1);
+    req.exact_path = Some(path.clone());
+    req.if_exists = ExistingFile::Refuse;
+    let error = run(req.clone()).await.unwrap_err();
+    assert!(matches!(error, Error::TargetTaken { .. }), "{error:?}");
+    std::fs::remove_file(&path).unwrap();
+    server.configure(|c| c.refuse_paths.push(("/f.bin".into(), 410)));
+
+    std::fs::write(&part, b"cut").unwrap();
+    let error = run(req.clone()).await.unwrap_err();
+    assert!(
+        matches!(error, Error::HttpStatus { status: 410, .. }),
+        "{error:?}"
+    );
+
+    std::fs::write(&part, &server.data).unwrap();
+    run(req).await.unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), server.data);
+    dir.remove().unwrap();
+}
+
 /// A file too short for the size its resume file saved is not complete, whatever the file says.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_part_file_shorter_than_its_saved_size_is_fetched_again() {
