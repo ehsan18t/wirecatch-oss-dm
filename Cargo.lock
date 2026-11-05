@@ -10127,6 +10127,7 @@ dependencies = [
  "wirecatch-engine",
  "wirecatch-files",
  "wirecatch-messages",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-records",
  "wirecatch-sites",
@@ -10139,6 +10140,7 @@ name = "wirecatch-messages"
 version = "0.1.0"
 dependencies = [
  "wirecatch-engine",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-sites",
  "wirecatch-test-support",
@@ -10168,6 +10170,7 @@ dependencies = [
  "chrono",
  "regex",
  "url",
+ "wirecatch-product",
  "wirecatch-protocol",
 ]
 
@@ -10178,6 +10181,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-streams",
 ]
@@ -10191,6 +10195,7 @@ dependencies = [
  "tracing",
  "wirecatch-core",
  "wirecatch-engine",
+ "wirecatch-product",
  "wirecatch-protocol",
 ]
 
@@ -10206,6 +10211,7 @@ dependencies = [
  "tracing",
  "wirecatch-engine",
  "wirecatch-files",
+ "wirecatch-product",
  "wirecatch-protocol",
  "wirecatch-queues",
  "wirecatch-records",
@@ -10301,6 +10307,7 @@ dependencies = [
  "wirecatch-engine",
  "wirecatch-files",
  "wirecatch-logging",
+ "wirecatch-product",
  "wirecatch-test-support",
 ]
 

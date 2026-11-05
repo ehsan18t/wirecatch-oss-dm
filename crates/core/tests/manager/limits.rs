@@ -41,7 +41,7 @@ async fn queue_and_global_concurrency_limits_hold() -> TestResult {
         .unwrap();
     set_queue(&h, second.id, |q| q.max_concurrent = Setting::Own(3))?;
     let limits = HashMap::from([(DEFAULT_QUEUE_ID, 1), (second.id, 3)]);
-    let server = throttled_server(64 * KIB, 128 * KIB).await?;
+    let server = held_server(64 * KIB, 0).await?;
 
     let mut events = h.manager.subscribe();
     let mut ids = Vec::new();
@@ -68,6 +68,11 @@ async fn queue_and_global_concurrency_limits_hold() -> TestResult {
         }
         let total: u32 = per_queue.values().sum();
         assert!(total <= 3, "{total} downloads run at once");
+        // Only while they are held: a client that has every byte moves on before the server counts its answer as finished.
+        if total == 3 && peak < 3 {
+            assert!(server.stats.max_concurrent.load(Ordering::SeqCst) <= 3);
+            server.release_bodies();
+        }
         peak = peak.max(total);
         if rows.iter().all(|r| r.status == DownloadStatus::Completed) {
             break;
@@ -82,7 +87,6 @@ async fn queue_and_global_concurrency_limits_hold() -> TestResult {
         );
     }
     assert_eq!(peak, 3, "the global limit was never reached");
-    assert!(server.stats.max_concurrent.load(Ordering::SeqCst) <= 3);
     assert_eq!(server.stats.requests.load(Ordering::SeqCst), ids.len());
     Ok(())
 }

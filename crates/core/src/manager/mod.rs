@@ -10,6 +10,7 @@ mod downloads;
 #[cfg(test)]
 mod fake;
 mod file_exists;
+mod file_type;
 mod handovers;
 mod media;
 
@@ -53,7 +54,7 @@ use wirecatch_protocol::wire::{Event, MAX_OPEN_LINKS};
 use wirecatch_settings::folders::KnownFolders;
 use wirecatch_settings::proxy::ComputerProxy;
 use wirecatch_sites::public_suffix::SuffixList;
-use wirecatch_store::{FailureHandler, Recovery, Store};
+use wirecatch_store::{Recovery, SaveNews, SaveWatcher, Store};
 
 use crate::clock::{Clock, SystemClock};
 use crate::error::{CoreError, Result, blocking};
@@ -357,12 +358,17 @@ impl Drop for Inner {
     }
 }
 
-/// Tells the interface when the database could not save a change.
-fn storage_failures(ui_events: broadcast::Sender<UiEvent>) -> FailureHandler {
-    Box::new(move |reason: String| {
+/// Tells the interface when the database could not save a change, and when it can again.
+fn storage_news(ui_events: broadcast::Sender<UiEvent>) -> SaveWatcher {
+    Box::new(move |news| {
         publish(
             &ui_events,
-            UiEvent::StorageFailed(wirecatch_messages::storage_failed(&reason)),
+            match news {
+                SaveNews::Failed(reason) => {
+                    UiEvent::StorageFailed(wirecatch_messages::storage_failed(&reason))
+                }
+                SaveNews::Recovered => UiEvent::StorageRecovered,
+            },
         );
     })
 }
@@ -390,7 +396,7 @@ impl Manager {
     pub async fn open(config: ManagerConfig) -> Result<Self> {
         let runtime = Handle::current();
         let ui_events = broadcast::Sender::new(UI_EVENT_BUFFER);
-        let on_failure = storage_failures(ui_events.clone());
+        let on_save_news = storage_news(ui_events.clone());
         let dir = config.data_dir.clone();
         let addon_dir = wirecatch_addons::media_dir(&config.data_dir);
         let temp_dir = config.data_dir.join("tmp");
@@ -400,7 +406,7 @@ impl Manager {
         let notices_dir = dir.clone();
         let computer = config.computer_proxy.clone();
         let (store, mut restored, recoveries, not_private) = blocking(&runtime, move || {
-            let (store, mut snapshot) = Store::open(&dir, on_failure)?;
+            let (store, mut snapshot) = Store::open(&dir, on_save_news)?;
             let recoveries = std::mem::take(&mut snapshot.recoveries);
             let not_private = snapshot.not_private.take();
             let around = restore::Surroundings {

@@ -32,7 +32,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-22  | fix(store): open a list with an unreadable value   | `fix/unreadable-value-opens`     | 22                           | P1       | medium | none         | merged |
 | PR-23  | fix(media): offer only sources ffmpeg can read     | `fix/offer-readable-sources`     | 23                           | P1       | medium | none         | merged |
 | PR-24  | fix(media): fetch cookie-gated formats with yt-dlp | `fix/cookie-formats-ytdlp`       | 24                           | P1       | medium | none         | merged |
-| PR-25  | fix(store): say when saving fails or recovers      | `fix/save-failure-signal`        | 25, 84, 233                  | P2       | medium | none         | open   |
+| PR-25  | fix(store): say when saving fails or recovers      | `fix/save-failure-signal`        | 25, 84, 233                  | P2       | medium | none         | merged |
 | PR-26  | fix(store): keep values it cannot read             | `fix/keep-unreadable-values`     | 26                           | P2       | medium | none         | merged |
 | PR-27  | fix(core): keep a removal's record until it ends   | `fix/durable-removal`            | 27, 176                      | P2       | medium | none         | merged |
 | PR-28  | fix(engine): carry whether a download can resume   | `fix/can-resume-fact`            | 28                           | P2       | medium | none         | merged |
@@ -142,16 +142,16 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-132 | fix(desktop): stop page reads at a late quit       | `fix/page-read-at-quit`          | 255                          | P3       | small  | none         | merged |
 | PR-133 | fix(streams): hide tokens in key error paths       | `fix/key-error-path`             | 198                          | P3       | small  | none         | merged |
 | PR-134 | fix(desktop): draw the every-video tick            | `fix/every-video-tick`           | 148                          | P2       | small  | none         | open   |
-| PR-135 | fix(core): ask when a server changes the file type | `fix/ask-on-type-change`         | 257                          | P2       | medium | none         | open   |
+| PR-135 | fix(core): ask when a server changes the file type | `fix/ask-on-type-change`         | 257                          | P2       | medium | none         | merged |
 | PR-136 | fix(media): keep the bar steady past an estimate   | `fix/bar-past-estimate`          | 258                          | P3       | small  | none         | merged |
 | PR-137 | fix(desktop): keep finished group counts current   | `fix/finished-group-counts`      | 259                          | P3       | small  | none         | merged |
 | PR-138 | fix(desktop): keep startup notices out of the way  | `fix/startup-notice-place`       | 260, 261                     | P3       | small  | none         | open   |
 | PR-139 | fix(core): clean up a move a removal cut short     | `fix/removal-move-copy`          | 262                          | P3       | small  | none         | merged |
-| PR-140 | test: hold servers instead of throttling to join   | `test/hold-to-join`              | 263                          | P3       | small  | none         | open   |
+| PR-140 | test: hold servers instead of throttling to join   | `test/hold-to-join`              | 263                          | P3       | small  | none         | merged |
 | PR-141 | refactor(desktop): use the one proxy display name  | `refactor/one-proxy-name`        | 264                          | P3       | small  | none         | merged |
 | PR-142 | fix(streams): read all of ffmpeg's failure text    | `fix/ffmpeg-failure-text`        | 265                          | P3       | small  | none         | merged |
 | PR-143 | fix(core): keep one subtitle copy after a crash    | `fix/subtitle-after-crash`       | 266                          | P3       | small  | none         | merged |
-| PR-144 | chore: read the product name in every crate        | `chore/product-name-everywhere`  | 161                          | P3       | medium | none         | open   |
+| PR-144 | chore: read the product name in every crate        | `chore/product-name-everywhere`  | 161                          | P3       | medium | none         | merged |
 | PR-145 | fix(desktop): fix hover in the Settings navigation | `fix/settings-nav-hover`         | 162                          | P3       | small  | none         | open   |
 | PR-146 | chore: flag shell public items with no caller      | `chore/shell-unused-check`       | 267                          | P3       | small  | none         | open   |
 | PR-147 | test: limit each test's time on Windows            | `test/windows-test-limit`        | 268                          | P3       | small  | none         | merged |
@@ -473,7 +473,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/store`, `crates/core`, `crates/desktop/src/library.rs`, `crates/desktop/src/notices.rs`, `crates/desktop/src/main_window`
 - **Proof:** `25-2.patch`, `03-3.patch`. Run each alone: they do not stack.
 - **Checks:** `cargo test -p wirecatch-store -p wirecatch-core -p wirecatch-desktop`, `cargo clippy -p wirecatch-store -p wirecatch-core -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-26 fix(store): keep values it cannot read
 
@@ -1796,7 +1796,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/core, crates/desktop
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`, `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-136 fix(media): keep the bar steady past an estimate
 
@@ -1856,7 +1856,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/engine, crates/core
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo clippy -p wirecatch-engine`, `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-141 refactor(desktop): use the one proxy display name
 
@@ -1904,7 +1904,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/core, crates/media, crates/bridge, crates/messages, crates/ipc, crates/streams, scripts/gate
 - **Proof:** none
 - **Checks:** `node scripts/gate.mjs rust`
-- **Status:** open
+- **Status:** merged
 
 ### PR-145 fix(desktop): fix hover in the Settings navigation
 

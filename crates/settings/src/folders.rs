@@ -4,6 +4,7 @@
 //! settings profile exported on one machine resolves to the right folders on another.
 
 use std::path::{Component, Path, PathBuf, Prefix};
+use wirecatch_product::PRODUCT_NAME;
 
 use wirecatch_protocol::app::PortablePath;
 
@@ -36,7 +37,7 @@ pub enum PathError {
     /// A network folder (`\\server\share`) from a settings file, which is only used
     /// when the user chooses it on this computer.
     #[error(
-        "\"{0}\" is a network folder. Folders from a settings file must be on this computer; choose the network folder in Wirecatch if you want to use it."
+        "\"{0}\" is a network folder. Folders from a settings file must be on this computer; choose the network folder in {app} if you want to use it.", app = PRODUCT_NAME
     )]
     Network(String),
     /// A folder of [`KnownFolders::protected`] or a hidden folder in home, from a

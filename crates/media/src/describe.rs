@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 use std::path::Path;
+use wirecatch_product::PRODUCT_NAME;
 
 use wirecatch_protocol::app::{FixAction, UserError};
 use wirecatch_streams::process::RunError;
@@ -34,13 +35,13 @@ fn cannot_start(tools: &MediaTools, program: &str, error: &std::io::Error) -> Us
 pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
     match error {
         YtDlpError::Folder { source, .. } => retry(format!(
-            "Wirecatch could not prepare a folder for the media add-on ({source}). Check that the disk has free space, then try again."
+            "{PRODUCT_NAME} could not prepare a folder for the media add-on ({source}). Check that the disk has free space, then try again."
         )),
         YtDlpError::Cookies(source) => retry(format!(
-            "Wirecatch could not prepare the page's sign-in for the media add-on ({source}). Check that the disk has free space, then try again."
+            "{PRODUCT_NAME} could not prepare the page's sign-in for the media add-on ({source}). Check that the disk has free space, then try again."
         )),
         YtDlpError::Guard(source) => retry(format!(
-            "Wirecatch could not start what keeps the media add-on off your own network ({source}). Try again."
+            "{PRODUCT_NAME} could not start what keeps the media add-on off your own network ({source}). Try again."
         )),
         // The run has this rule only for a page on the internet, so its link was sent on from there.
         YtDlpError::LocalNetwork => wirecatch_messages::private_network(ChosenBy::Person),
@@ -60,7 +61,9 @@ pub fn ytdlp(error: &YtDlpError, tools: &MediaTools) -> UserError {
         }
         // The page is as long the next time, so trying again does not help.
         YtDlpError::OutputTooLarge => UserError {
-            message: "The media add-on described this page at a length Wirecatch does not read, so this video cannot be downloaded from it.".into(),
+            message: format!(
+                "The media add-on described this page at a length {PRODUCT_NAME} does not read, so this video cannot be downloaded from it."
+            ),
             fix: None,
         },
         YtDlpError::Task(error) => retry(format!(
@@ -193,7 +196,7 @@ fn ffmpeg_common(error: &FfmpegError, tools: &MediaTools) -> Option<UserError> {
         FfmpegError::Start(source) => cannot_start(tools, "ffmpeg", source),
         FfmpegError::UnknownFormat { role } => unknown_format(*role),
         FfmpegError::Unreadable { role, source } => retry(format!(
-            "Wirecatch could not read the downloaded {} to join it ({source}). Try again; the downloaded parts are kept.",
+            "{PRODUCT_NAME} could not read the downloaded {} to join it ({source}). Try again; the downloaded parts are kept.",
             role.name()
         )),
         _ => return None,
@@ -228,11 +231,11 @@ pub fn conversion(error: &FfmpegError, output: &OutputJob, tools: &MediaTools) -
     let failure = ffmpeg_failure(error);
     let message = if output.original {
         format!(
-            "Wirecatch downloaded the {what}, but could not add the subtitles or chapters to it{failure}. The download is kept: Try again only does this step again, and Keep the original saves it without them."
+            "{PRODUCT_NAME} downloaded the {what}, but could not add the subtitles or chapters to it{failure}. The download is kept: Try again only does this step again, and Keep the original saves it without them."
         )
     } else {
         format!(
-            "Wirecatch downloaded the {what}, but could not save it as {}{failure}. The download is kept: Try again only converts it again, and Keep the original saves it as it was downloaded ({}).",
+            "{PRODUCT_NAME} downloaded the {what}, but could not save it as {}{failure}. The download is kept: Try again only converts it again, and Keep the original saves it as it was downloaded ({}).",
             output.container.label(),
             format_name(&output.original_ext)
         )
@@ -252,7 +255,9 @@ pub fn addon_missing() -> UserError {
 /// A video waited for the add-on longer than the app waits.
 #[must_use]
 pub fn addon_waited_too_long() -> UserError {
-    retry("This video waited for the media add-on for a long time, so Wirecatch stopped waiting. Install the media add-on in Settings > Media, then try again.".into())
+    retry(format!(
+        "This video waited for the media add-on for a long time, so {PRODUCT_NAME} stopped waiting. Install the media add-on in Settings > Media, then try again."
+    ))
 }
 
 /// A video waited for the add-on, whose install failed.
@@ -268,7 +273,7 @@ pub fn refused_after_refreshing(status: Option<u16>) -> UserError {
         .map(|s| format!(" (it answered {s})"))
         .unwrap_or_default();
     retry(format!(
-        "The video's server kept refusing to send the video{answered}, even though Wirecatch tried again automatically several times with fresh addresses from the page. Sites sometimes refuse one video for a while. Try again later; what was already downloaded is kept."
+        "The video's server kept refusing to send the video{answered}, even though {PRODUCT_NAME} tried again automatically several times with fresh addresses from the page. Sites sometimes refuse one video for a while. Try again later; what was already downloaded is kept."
     ))
 }
 
@@ -286,20 +291,24 @@ pub fn quality_gone(quality: &str) -> UserError {
 /// The page gave a format an address that is not a valid link.
 #[must_use]
 pub fn invalid_format_address() -> UserError {
-    retry("The page gave an address for the video that is not valid. Try again; Wirecatch reads the page again.".into())
+    retry(format!(
+        "The page gave an address for the video that is not valid. Try again; {PRODUCT_NAME} reads the page again."
+    ))
 }
 
 /// The name of a format's server did not resolve, so where it leads could not be checked (D39).
 #[must_use]
 pub fn format_server_not_found() -> UserError {
-    retry("The server of this video's file could not be found, so Wirecatch could not check where it is and did not download it. Check your connection, then try again.".into())
+    retry(format!(
+        "The server of this video's file could not be found, so {PRODUCT_NAME} could not check where it is and did not download it. Check your connection, then try again."
+    ))
 }
 
 /// A step of the media run stopped without an answer (`detail`), which is a defect in the app.
 #[must_use]
 pub fn internal(detail: &dyn std::fmt::Display) -> UserError {
     retry(format!(
-        "Something went wrong inside Wirecatch ({detail}). Try again."
+        "Something went wrong inside {PRODUCT_NAME} ({detail}). Try again."
     ))
 }
 

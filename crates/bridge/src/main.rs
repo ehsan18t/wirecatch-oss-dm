@@ -16,6 +16,7 @@ use std::ffi::OsString;
 use std::io::{self, Write};
 use std::process::ExitCode;
 use std::thread;
+use wirecatch_product::PRODUCT_NAME;
 
 use tokio::sync::mpsc;
 use wirecatch_product::BRIDGE_EXECUTABLE;
@@ -46,7 +47,7 @@ fn usage() -> String {
     let bridge = BRIDGE_EXECUTABLE;
     format!(
         "\
-{bridge} connects the Wirecatch browser extension to the Wirecatch app.
+{bridge} connects the {PRODUCT_NAME} browser extension to the {PRODUCT_NAME} app.
 Browsers start it on their own; you do not need to run it.
 
 Usage:
@@ -87,7 +88,7 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
     let config = config::Config::embedded();
     if let Err(reason) = caller::identify(args, &config) {
         tracing::error!(
-            "refused to start: {reason}. The bridge only serves the Wirecatch extension. Run `{BRIDGE_EXECUTABLE} --help` for the commands you can use."
+            "refused to start: {reason}. The bridge only serves the {PRODUCT_NAME} extension. Run `{BRIDGE_EXECUTABLE} --help` for the commands you can use."
         );
         return ExitCode::FAILURE;
     }
@@ -145,7 +146,7 @@ fn native_messaging_host(args: &[OsString]) -> ExitCode {
     }));
     if ended == relay::Ended::AppClosed {
         // Exiting closes stdout, so the browser reports the port as disconnected. The extension then only checks whether Wirecatch is running; it starts it again only for a download.
-        tracing::info!("Wirecatch went away; closing so the extension can reconnect");
+        tracing::info!("{PRODUCT_NAME} went away; closing so the extension can reconnect");
     }
     // Dropping the runtime drops the app reader task and with it the last sender
     // to the stdout thread, which then finishes what is queued and stops. The

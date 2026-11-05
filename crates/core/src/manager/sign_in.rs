@@ -4,6 +4,7 @@
 //! plain note asking for a fresh link.
 
 use std::sync::{Arc, Weak};
+use wirecatch_product::PRODUCT_NAME;
 
 use chrono::TimeDelta;
 use std::time::Duration;
@@ -28,7 +29,7 @@ const LOOK_EVERY: TimeDelta = TimeDelta::hours(1);
 /// What a download whose sign-in was forgotten says when it needs a fresh link.
 pub(super) fn forgot_sign_in() -> String {
     format!(
-        "Wirecatch forgot the sign-in for this download after {FORGET_AFTER_DAYS} days; get a fresh link."
+        "{PRODUCT_NAME} forgot the sign-in for this download after {FORGET_AFTER_DAYS} days; get a fresh link."
     )
 }
 

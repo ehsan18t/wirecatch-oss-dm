@@ -6,6 +6,7 @@ use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use wirecatch_product::PRODUCT_NAME;
 
 use tracing::warn;
 use wirecatch_engine::CancellationToken;
@@ -64,7 +65,7 @@ pub enum FfmpegError {
         error: tokio::task::JoinError,
     },
     /// A downloaded file is in no format ffmpeg may read it as, so ffmpeg was not started.
-    #[error("the downloaded {} is in no format Wirecatch lets ffmpeg read", .role.name())]
+    #[error("the downloaded {} is in no format {app} lets ffmpeg read", .role.name(), app = PRODUCT_NAME)]
     UnknownFormat {
         /// Which download.
         role: Role,

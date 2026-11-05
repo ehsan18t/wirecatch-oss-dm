@@ -55,6 +55,7 @@ use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use wirecatch_product::PRODUCT_NAME;
 
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use wirecatch_protocol::secrets::HIDDEN;
@@ -152,7 +153,7 @@ impl fmt::Debug for Endpoint {
 pub enum IpcError {
     /// Nothing is listening at the endpoint, so the app is not running.
     #[error(
-        "Wirecatch is not running (nothing is listening at {endpoint}). Open Wirecatch and try again."
+        "{app} is not running (nothing is listening at {endpoint}). Open {app} and try again.", app = PRODUCT_NAME
     )]
     NotRunning {
         /// The endpoint that was tried.
@@ -160,7 +161,7 @@ pub enum IpcError {
     },
     /// Another listener already owns the endpoint.
     #[error(
-        "Another copy of Wirecatch is already listening at {endpoint}. Close it, or keep using that copy."
+        "Another copy of {app} is already listening at {endpoint}. Close it, or keep using that copy.", app = PRODUCT_NAME
     )]
     AlreadyInUse {
         /// The endpoint that is taken.
@@ -169,7 +170,7 @@ pub enum IpcError {
     /// The server at the endpoint belongs to a different user account. Nothing was
     /// sent to it.
     #[error(
-        "Refused to connect to {endpoint} because it belongs to another user account ({actual}), not to you ({expected}). Another user may be trying to intercept your downloads. Sign out the other users or restart the computer, then open Wirecatch again."
+        "Refused to connect to {endpoint} because it belongs to another user account ({actual}), not to you ({expected}). Another user may be trying to intercept your downloads. Sign out the other users or restart the computer, then open {app} again.", app = PRODUCT_NAME
     )]
     WrongOwner {
         /// The endpoint that was tried.
@@ -182,7 +183,7 @@ pub enum IpcError {
     /// (Windows) Every instance of the pipe stayed busy, which the app's own pipe never does
     /// for long: it keeps one waiting. Nothing was sent. A new try may pass.
     #[error(
-        "The connection point {endpoint} stayed busy, so nothing was sent to it. Open Wirecatch, then try again."
+        "The connection point {endpoint} stayed busy, so nothing was sent to it. Open {app}, then try again.", app = PRODUCT_NAME
     )]
     EndpointBusy {
         /// The endpoint that was tried.
@@ -191,7 +192,7 @@ pub enum IpcError {
     /// (Windows) The server at the endpoint is the user's own, but a program with fewer
     /// rights than the app made it (D130). Nothing was sent to it.
     #[error(
-        "Refused to connect to {endpoint} because a program running with fewer rights than Wirecatch (integrity level {level}) made it. That program may be trying to intercept your downloads. Open Wirecatch again, which moves to a new connection point."
+        "Refused to connect to {endpoint} because a program running with fewer rights than {app} (integrity level {level}) made it. That program may be trying to intercept your downloads. Open {app} again, which moves to a new connection point.", app = PRODUCT_NAME
     )]
     LowerRightsServer {
         /// The endpoint that was tried.
@@ -202,7 +203,7 @@ pub enum IpcError {
     /// The endpoint name is held by a different user account, so the listener did
     /// not start (and nothing was exposed).
     #[error(
-        "Another user account ({owner}) is holding the connection point {endpoint} that Wirecatch needs, so Wirecatch did not start listening and nothing was exposed. That account may be trying to intercept your downloads. Ask that user to sign out, or restart the computer, then open Wirecatch again."
+        "Another user account ({owner}) is holding the connection point {endpoint} that {app} needs, so {app} did not start listening and nothing was exposed. That account may be trying to intercept your downloads. Ask that user to sign out, or restart the computer, then open {app} again.", app = PRODUCT_NAME
     )]
     EndpointTaken {
         /// The endpoint that is taken.
@@ -225,8 +226,8 @@ pub enum IpcError {
     /// a snap or flatpak one, may). Treat it as [`IpcError::NotRunning`]: start the app, then
     /// read the key again.
     #[error(
-        "Wirecatch is not running, or has not started for this account since it was installed or updated ({} does not exist). Open Wirecatch, or if it is open, close it and open it again, then try again. If that does not help, the program asking cannot see your folders; install the browser from its maker's website instead of an app store.",
-        path.display()
+        "{app} is not running, or has not started for this account since it was installed or updated ({} does not exist). Open {app}, or if it is open, close it and open it again, then try again. If that does not help, the program asking cannot see your folders; install the browser from its maker's website instead of an app store.",
+        path.display(), app = PRODUCT_NAME
     )]
     NoEndpointKey {
         /// Where the key was looked for.
@@ -236,8 +237,8 @@ pub enum IpcError {
     /// name cannot be read from it. A client never writes it; a listener replaces a damaged
     /// key, but not one that is not private.
     #[error(
-        "The file {} that names Wirecatch's connection point cannot be used: {reason}. Close Wirecatch, delete the file, then open Wirecatch again.",
-        path.display()
+        "The file {} that names {app}'s connection point cannot be used: {reason}. Close {app}, delete the file, then open {app} again.",
+        path.display(), app = PRODUCT_NAME
     )]
     BadEndpointKey {
         /// The key file.

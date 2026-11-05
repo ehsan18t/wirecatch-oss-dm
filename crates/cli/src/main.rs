@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
+use wirecatch_product::PRODUCT_NAME;
 
 use anyhow::{Context, bail};
 use clap::Parser;
@@ -307,7 +308,10 @@ fn summary(outcome: &Outcome) -> (Ending, String) {
             ..
         } => {
             let kept = if *resumed_from > 0 {
-                format!(" ({} resumed from an earlier run)", HumanBytes(*resumed_from))
+                format!(
+                    " ({} resumed from an earlier run)",
+                    HumanBytes(*resumed_from)
+                )
             } else {
                 String::new()
             };
@@ -325,8 +329,9 @@ fn summary(outcome: &Outcome) -> (Ending, String) {
         ),
         _ => (
             Ending::Stopped,
-            "Wirecatch stopped before the download finished. Run the same command again to continue if the server allows it."
-                .to_owned(),
+            format!(
+                "{PRODUCT_NAME} stopped before the download finished. Run the same command again to continue if the server allows it."
+            ),
         ),
     }
 }

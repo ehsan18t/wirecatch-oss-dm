@@ -46,6 +46,7 @@ mod plan;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use wirecatch_product::PRODUCT_NAME;
 
 use serde::Deserialize;
 
@@ -157,7 +158,7 @@ pub(crate) fn uninstall(plan: &Plan, host: &mut dyn Host) -> Report {
                 delete_manifest(file, host, &mut report);
             }
             Ok(Some(_)) => report.ok(format!(
-                "Left {shown} in place: it was changed or written by another copy of Wirecatch"
+                "Left {shown} in place: it was changed or written by another copy of {PRODUCT_NAME}"
             )),
             Err(e) => report.fail(format!("Could not read {shown}: {e}")),
         }
@@ -190,7 +191,7 @@ fn remove_key(entry: &RegistryEntry, host: &mut dyn Host, report: &mut Report) {
         Ok(Some(bytes)) if bytes == entry.manifest_contents.as_bytes() => {}
         Ok(Some(_)) => {
             report.ok(format!(
-                "Left {name} in place: the manifest it points to belongs to another copy of Wirecatch"
+                "Left {name} in place: the manifest it points to belongs to another copy of {PRODUCT_NAME}"
             ));
             return;
         }
@@ -304,15 +305,21 @@ pub(crate) fn run(command: Command, scope: Scope) -> ExitCode {
     };
     let succeeded = report.failures == 0;
     let summary = succeeded.then_some(match (command, scope) {
-        (Command::Install, Scope::User) => "The Wirecatch browser bridge is registered.",
-        (Command::Install, Scope::Machine) => {
-            "The Wirecatch browser bridge is registered for every user of this computer."
+        (Command::Install, Scope::User) => {
+            format!("The {PRODUCT_NAME} browser bridge is registered.")
         }
-        (Command::Uninstall, _) => "The Wirecatch browser bridge is no longer registered.",
+        (Command::Install, Scope::Machine) => {
+            format!(
+                "The {PRODUCT_NAME} browser bridge is registered for every user of this computer."
+            )
+        }
+        (Command::Uninstall, _) => {
+            format!("The {PRODUCT_NAME} browser bridge is no longer registered.")
+        }
     });
     // The registration is done either way, so a report nobody can read (stdout
     // closed) is logged and does not change the exit code.
-    if let Err(e) = print_report(&report.lines, summary) {
+    if let Err(e) = print_report(&report.lines, summary.as_deref()) {
         tracing::warn!("could not write the report: {e}");
     }
     if succeeded {

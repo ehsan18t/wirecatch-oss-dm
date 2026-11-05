@@ -12,6 +12,7 @@ use std::os::windows::io::{AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHand
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::time::Duration;
+use wirecatch_product::PRODUCT_NAME;
 
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, PipeMode, ServerOptions};
 use tokio::time::{Instant, sleep};
@@ -497,7 +498,7 @@ fn check_client(
     };
     if !at_least_ours {
         return refused(format!(
-            "a program of yours running with fewer rights than Wirecatch (integrity level {})",
+            "a program of yours running with fewer rights than {PRODUCT_NAME} (integrity level {})",
             client.integrity
         ));
     }
