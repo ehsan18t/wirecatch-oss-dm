@@ -575,6 +575,10 @@ impl Manager {
                     chosen_by: pending.chosen_by,
                 },
                 wanted: Wanted {
+                    confirmed_name: answer
+                        .file_name
+                        .is_none()
+                        .then(|| proposal.file_name.clone()),
                     file_name: answer.file_name,
                     hint_name: Some(proposal.file_name.clone()),
                     folder,

@@ -27,8 +27,9 @@ use gpui_kit::{
 };
 use wirecatch_protocol::app::{
     AddonId, AddonRequestItem, AddonState, AppSettingsPatch, CaptureConfirmation, DownloadStatus,
-    DownloadSummary, FileExistsAnswer, FileExistsChoice, FileExistsQuestion, FixAction,
-    MediaChoice, MediaDefaultsPatch, PER_MILLE_DONE, PendingCapture, Question,
+    DownloadSummary, FileExistsAnswer, FileExistsChoice, FileExistsQuestion, FileTypeChoice,
+    FileTypeQuestion, FixAction, MediaChoice, MediaDefaultsPatch, PER_MILLE_DONE, PendingCapture,
+    Question,
 };
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
 use wirecatch_protocol::rules::QueueReason;
@@ -340,6 +341,7 @@ impl Render for DownloadWindow {
                 Question::Choice(choice) => self.media_form(&choice, window, cx),
                 Question::Addon(item) => self.addon_view(&item, cx),
                 Question::FileExists(question) => self.file_exists(&question, cx),
+                Question::FileType(question) => self.file_type(&question, cx),
             },
         };
         let strip = self.strip(cx);
@@ -685,6 +687,46 @@ impl DownloadWindow {
             move |m| async move { api::answer_file_exists(&m, id, answer).map(Some) },
             cx,
         );
+    }
+
+    /// A server's name of another file type than the confirmed one (D166).
+    fn file_type(&mut self, question: &FileTypeQuestion, cx: &mut Context<'_, Self>) -> AnyElement {
+        let id = question.id;
+        let busy = self.busy;
+        let choose = |button_id, label, variant, choice| {
+            button(button_id, label, variant, busy).on_click(cx.listener(move |view, _, _, cx| {
+                view.answer(
+                    move |m| async move { api::answer_file_type(&m, id, choice).map(Some) },
+                    cx,
+                );
+            }))
+        };
+        let buttons = vec![
+            choose(
+                "type-cancel",
+                "Cancel",
+                ButtonVariant::Ghost,
+                FileTypeChoice::Cancel,
+            ),
+            choose(
+                "type-server",
+                "Use server's name",
+                ButtonVariant::Secondary,
+                FileTypeChoice::UseServers,
+            ),
+            choose(
+                "type-keep",
+                "Keep my name",
+                ButtonVariant::Primary,
+                FileTypeChoice::KeepConfirmed,
+            ),
+        ];
+        v_flex()
+            .gap_4()
+            .child(heading(&question.confirmed_name, &question.url, None, cx))
+            .child(div().child(text::file_type_said(question)))
+            .child(actions(buttons))
+            .into_any_element()
     }
 
     /// A download's progress, or how it ended, with what can be done with it now. Every state

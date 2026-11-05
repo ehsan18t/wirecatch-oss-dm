@@ -33,6 +33,8 @@ pub(super) struct Wanted {
     pub file_name: Option<String>,
     /// The browser's name, shown until the server answers.
     pub hint_name: Option<String>,
+    /// See [`Answers::confirmed_name`](wirecatch_records::answers::Answers::confirmed_name).
+    pub confirmed_name: Option<String>,
     pub folder: Option<PathBuf>,
     pub category: Option<Category>,
 }

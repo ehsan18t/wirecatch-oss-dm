@@ -1796,6 +1796,8 @@ pub enum UiEvent {
     MediaChoiceRequested(MediaChoice),
     /// A download found its file already in the folder and asks what to do (D88).
     FileExistsRequested(FileExistsQuestion),
+    /// A server's name changes the file type of the name the person confirmed (D166).
+    FileTypeRequested(FileTypeQuestion),
     /// The browser sent a link that is already a question or a download in progress, which it
     /// joined instead of starting again: its window comes to the front (D89).
     CaptureRepeated(Repeated),
@@ -1965,6 +1967,36 @@ pub struct FileExistsAnswer {
     pub remember: bool,
 }
 
+/// A server named a file with another type than the name the person confirmed, and asks which
+/// to save it under (D166). The download is paused until the answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FileTypeQuestion {
+    /// Identifies this question.
+    pub id: QuestionId,
+    /// The download that asks.
+    pub download: DownloadId,
+    /// Where it is downloaded from, with any password removed.
+    pub url: String,
+    /// The name the person confirmed.
+    pub confirmed_name: String,
+    /// The name the server gave.
+    pub server_name: String,
+}
+
+/// The person's answer to a [`FileTypeQuestion`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum FileTypeChoice {
+    /// Save it under the name the person confirmed.
+    KeepConfirmed,
+    /// Save it under the server's name.
+    UseServers,
+    /// Cancel the download.
+    Cancel,
+}
+
 /// What a link the browser sent again joined (D89).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
@@ -2016,6 +2048,8 @@ pub enum Question {
     Addon(AddonRequestItem),
     /// A download whose file is already in the folder (D88).
     FileExists(FileExistsQuestion),
+    /// A download whose server changed the file type of the name the person confirmed (D166).
+    FileType(FileTypeQuestion),
 }
 
 impl Question {
@@ -2028,6 +2062,7 @@ impl Question {
             Question::Choice(choice) => choice.id,
             Question::Addon(page) => page.id,
             Question::FileExists(question) => question.id,
+            Question::FileType(question) => question.id,
         }
     }
 }

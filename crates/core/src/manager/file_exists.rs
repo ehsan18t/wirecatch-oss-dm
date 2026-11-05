@@ -197,9 +197,14 @@ impl Manager {
         self.emit(UiEvent::FileExistsRequested(question));
     }
 
-    /// Closes the open question of download `id`, if it has one: it was resumed, cancelled or
+    /// Closes the open questions of download `id`, if it has any: it was resumed, cancelled or
     /// removed instead of answered.
-    pub(super) fn close_file_exists(&self, state: &mut State, id: DownloadId) {
+    pub(super) fn close_questions_of(&self, state: &mut State, id: DownloadId) {
+        self.close_file_exists(state, id);
+        self.close_file_type(state, id);
+    }
+
+    fn close_file_exists(&self, state: &mut State, id: DownloadId) {
         let closed: Vec<QuestionId> = state
             .file_exists
             .values()
@@ -321,6 +326,7 @@ fn settle_at(entry: &mut super::state::Entry, path: &Path) {
     entry.row.file_name = naming::file_name_of(path);
     entry.naming.settled = true;
     entry.plain_name = None;
+    entry.confirmed_name = None;
     entry.expect = None;
     entry.video_check = false;
 }
