@@ -1329,3 +1329,9 @@ It amends D50.4. `MediaDefaults::start` is the only copy of the rule. The TypeSc
 ### D162. Settings lists the notice times it offers
 
 It amends D65.2. `START_NOTICE_TIMES` and `FINISH_NOTICE_TIMES` had no reader once the settings page was drawn in Rust: `FINISH_TIMES` and `START_TIMES` in `crates/desktop/src/main_window/settings/notifications.rs` hold the choices and their words. Each time stays its own enum in the protocol, with its seconds.
+
+### D173. A video's bar never falls past an estimate
+
+Decided on 2026-11-05.
+
+A yt-dlp row's total starts from the page's sizes, which may be estimates, and its bytes are real. When a larger size arrives while the run goes on, the row's total follows the bytes at the ratio already shown, until it reaches the real size, so the bar waits rather than falling. A format begun again shows its real total. Hiding the total until the sizes are real was rejected: a fragmented format only ever has an estimate, so its row would have no bar at all.
