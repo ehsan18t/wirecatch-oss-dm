@@ -33,14 +33,18 @@ async fn parallel_download_is_byte_identical() {
         test_data(8 * MIB_USIZE + 12_345),
         Config {
             ranges: true,
-            per_connection_bps: Some(8 * MIB),
             ..Default::default()
         },
     )
     .await;
     let dir = private_dir("parallel").unwrap();
 
-    let outcome = run(request(&server, "files/big.bin", &dir, 8))
+    let outcome = server
+        .hold_until_joined(
+            "files/big.bin",
+            2,
+            Box::pin(run(request(&server, "files/big.bin", &dir, 8))),
+        )
         .await
         .unwrap();
 
