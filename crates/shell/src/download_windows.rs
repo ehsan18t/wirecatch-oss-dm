@@ -24,10 +24,10 @@ pub const WINDOW_SIZE: (f64, f64) = (DOWNLOAD_WINDOW_WIDTH as f64, 600.0);
 pub const MIN_WINDOW_SIZE: (f64, f64) = (360.0, DOWNLOAD_WINDOW_MIN_HEIGHT as f64);
 
 /// The most a download window takes, in logical pixels: past it, its body scrolls.
-pub const MAX_WINDOW_HEIGHT: f64 = DOWNLOAD_WINDOW_MAX_HEIGHT as f64;
+const MAX_WINDOW_HEIGHT: f64 = DOWNLOAD_WINDOW_MAX_HEIGHT as f64;
 
 /// The space kept free above and below a window that fits its content, in logical pixels.
-pub const SCREEN_MARGIN: f64 = 48.0;
+const SCREEN_MARGIN: f64 = 48.0;
 
 /// The height a download window takes for content `wanted` pixels tall: what it needs, never
 /// less than the smallest window and never taller than the most a window takes or the screen it
@@ -321,7 +321,7 @@ fn whole_steps(length: f64) -> usize {
 
 /// Every open question's id, oldest first (ids only grow), each once.
 #[must_use]
-pub fn open_question_ids(
+fn open_question_ids(
     captures: &[PendingCapture],
     choices: &[MediaChoice],
     addon_pages: &[AddonRequestItem],

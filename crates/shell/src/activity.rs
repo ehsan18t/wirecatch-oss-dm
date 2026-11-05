@@ -90,7 +90,7 @@ impl Activity {
 
     /// Downloads moving bytes (or being joined) right now.
     #[must_use]
-    pub fn active(&self) -> usize {
+    fn active(&self) -> usize {
         self.rows.values().filter(|r| is_active(r.status)).count()
     }
 

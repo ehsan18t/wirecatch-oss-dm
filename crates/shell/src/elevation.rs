@@ -8,13 +8,13 @@ use crate::host::CHANNEL;
 
 /// Shown when the app is started with administrator rights.
 #[must_use]
-pub fn elevated_title() -> String {
+fn elevated_title() -> String {
     format!("{} does not need administrator rights", CHANNEL.name())
 }
 
 /// The explanation under [`elevated_title`].
 #[must_use]
-pub fn elevated_message() -> String {
+fn elevated_message() -> String {
     let app = CHANNEL.name();
     format!(
         "{app} was started as administrator, which would let other programs on this computer control it. Close this message and start {app} normally."

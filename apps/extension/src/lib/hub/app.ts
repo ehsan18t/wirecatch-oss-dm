@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@wirecatch/product';
 import {
   takesPrivateWindows,
   type AddedDownload,
@@ -80,7 +81,7 @@ export class AppCalls {
       this.#mayConnect(this.#timing.requestTimeoutMs),
     );
     if (reply.type !== 'download_added') {
-      throw new Error('Wirecatch gave an unexpected answer.');
+      throw new Error(`${PRODUCT_NAME} gave an unexpected answer.`);
     }
     return reply.data;
   }
@@ -92,7 +93,7 @@ export class AppCalls {
       { method: 'withdraw_download', params: { handover_id: handoverId } },
       connecting ? this.#mayConnect(withdrawTimeoutMs) : withdrawTimeoutMs,
     );
-    if (reply.type !== 'withdrawn') throw new Error('Wirecatch gave an unexpected answer.');
+    if (reply.type !== 'withdrawn') throw new Error(`${PRODUCT_NAME} gave an unexpected answer.`);
     return reply.data;
   }
 
@@ -214,7 +215,7 @@ export class AppCalls {
   /** A popup call: only to a connected app, since none of them is worth starting a closed one for. */
   async call(call: Call): Promise<Reply> {
     if (!this.connected) {
-      throw new Error('Wirecatch is not connected, so this cannot be done right now.');
+      throw new Error(`${PRODUCT_NAME} is not connected, so this cannot be done right now.`);
     }
     return this.#client.request(call, this.#timing.requestTimeoutMs);
   }

@@ -350,6 +350,8 @@ struct Inner {
     fake_mover: Mutex<Option<fake::FakeMover>>,
     #[cfg(test)]
     before_deleting: Mutex<Option<fake::BeforeDeleting>>,
+    #[cfg(test)]
+    before_marking: Mutex<Option<fake::BeforeMarking>>,
 }
 
 impl Drop for Inner {
@@ -465,6 +467,8 @@ impl Manager {
             fake_mover: Mutex::new(None),
             #[cfg(test)]
             before_deleting: Mutex::new(None),
+            #[cfg(test)]
+            before_marking: Mutex::new(None),
         });
         let manager = Manager { inner };
         manager.spawn_background_tasks();

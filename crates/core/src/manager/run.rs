@@ -228,7 +228,7 @@ impl Manager {
             file_work: file_work.clone(),
             reported: false,
         };
-        let (gauge, work) = work(cancel.clone(), file_work);
+        let (gauge, work) = work(cancel.clone(), file_work.clone());
         let cleanup = entry.cleanup.take();
         let task = self.spawn(async move {
             if let Some(deleted) = cleanup {
@@ -243,7 +243,8 @@ impl Manager {
             cancel,
             exited,
             gauge,
-            marked: false,
+            marking_done: false,
+            file_work,
             stop: None,
             found: None,
             server_name: None,
@@ -498,7 +499,7 @@ struct RunGuard {
 impl RunGuard {
     /// Records the engine's result and wakes everyone waiting for the run to end.
     async fn report(mut self, end: RunEnd) {
-        self.file_work.finished().await;
+        file_work_ended(&self.manager, self.id, self.run_id, &self.file_work).await;
         self.reported = true;
         if let Some(manager) = Manager::from_weak(&self.manager) {
             manager.finish(self.id, self.run_id, end);
@@ -518,13 +519,25 @@ impl Drop for RunGuard {
         let (manager, id, run_id) = (self.manager.clone(), self.id, self.run_id);
         let (exited, file_work) = (self.exited.clone(), self.file_work.clone());
         self.runtime.spawn(async move {
-            file_work.finished().await;
+            file_work_ended(&manager, id, run_id, &file_work).await;
             if let Some(manager) = Manager::from_weak(&manager) {
                 manager.finish(id, run_id, RunEnd::Vanished);
             }
             exited.cancel();
         });
     }
+}
+
+/// Waits for the file work of a run that has ended. The ticker adds to it until told not to, and work added after the wait would outlast the run.
+async fn file_work_ended(manager: &Weak<Inner>, id: DownloadId, run_id: u64, file_work: &FileWork) {
+    if let Some(manager) = Manager::from_weak(manager) {
+        let mut state = manager.lock();
+        let run = state.downloads.get_mut(&id).and_then(|e| e.run.as_mut());
+        if let Some(run) = run.filter(|run| run.id == run_id) {
+            run.marking_done = true;
+        }
+    }
+    file_work.finished().await;
 }
 
 /// Where a run saves its file.

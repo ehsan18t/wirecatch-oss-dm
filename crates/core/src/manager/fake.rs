@@ -31,6 +31,8 @@ pub(super) type FakeEngine = Arc<dyn Fn(FakeRun) -> EngineFuture + Send + Sync>;
 pub(super) type FakeMover = Arc<dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync>;
 /// Called before a removal deletes its files.
 pub(super) type BeforeDeleting = Arc<dyn Fn() + Send + Sync>;
+/// Called on the blocking pool before the ticker marks a part file.
+pub(super) type BeforeMarking = Arc<dyn Fn() + Send + Sync>;
 
 /// Starts `fake` on one run.
 pub(super) fn run(
@@ -73,6 +75,15 @@ impl Manager {
 
     pub(super) fn before_deleting(&self) -> Option<BeforeDeleting> {
         slot(&self.inner.before_deleting).clone()
+    }
+
+    /// Calls `hook` before the ticker marks a part file.
+    pub(super) fn use_before_marking(&self, hook: BeforeMarking) {
+        *slot(&self.inner.before_marking) = Some(hook);
+    }
+
+    pub(super) fn before_marking(&self) -> Option<BeforeMarking> {
+        slot(&self.inner.before_marking).clone()
     }
 
     /// Moves every later download's files with `mover` instead of the file
