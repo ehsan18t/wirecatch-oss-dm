@@ -166,8 +166,8 @@ async fn resumes_after_cancel_without_downloading_again() {
     let data = test_data(8 * MIB_USIZE);
     let mut config = serving(&data);
     config.login = Some(("alice".into(), "s3cret word".into()));
-    config.data_bps = Some(2 * MIB);
     let server = FtpServer::start(config).await;
+    server.hold_data_after(2 * MIB);
     let dir = private_dir("resume").unwrap();
     let url = server.url("ftp", "alice:s3cret%20word@", "pub/file.bin");
 
@@ -218,6 +218,7 @@ async fn resumes_after_cancel_without_downloading_again() {
         c.data_bps = Some(8 * MIB);
         c.hold_probe = Some(transfers_before);
     });
+    server.release_data();
     let resumed = tokio::time::timeout(PATIENCE, run(request(&url, &dir, 2)))
         .await
         .expect("the resumed download did not end: it waits on the held probe");
@@ -248,8 +249,8 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
     let data = test_data(8 * MIB_USIZE);
     let mut config = serving(&data);
     config.login = Some(("alice".into(), "s3cret".into()));
-    config.data_bps = Some(2 * MIB);
     let server = FtpServer::start(config).await;
+    server.hold_data_after(MIB);
     let dir = private_dir("old-state").unwrap();
     let url = server.url("ftp", "alice:s3cret@", "pub/file.bin");
     let pause_after = |bytes: u64| {
@@ -273,7 +274,10 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
     assert_ne!(state, with_password);
     std::fs::write(&state_path, with_password).unwrap();
 
-    // The next run continues it, and the resume file it leaves has no password.
+    // The next run continues it, and the resume file it leaves has no password. Its probe from byte 0 is broken off, so it is held and the rest is counted.
+    let probe = server.stats.transfers.load(Ordering::SeqCst);
+    server.configure(|c| c.hold_probe = Some(probe));
+    server.hold_data_after(2 * MIB + MIB / 2);
     let (cancel, progress) = pause_after(3 * MIB);
     let outcome = download(request(&url, &dir, 2), progress, cancel)
         .await
@@ -283,7 +287,7 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
     let state = std::fs::read_to_string(&state_path).unwrap();
     assert!(!state.contains("s3cret"), "the password is gone: {state}");
 
-    server.configure(|c| c.data_bps = None);
+    server.release_data();
     let (path, _, resumed_from) = completed(run(request(&url, &dir, 2)).await.unwrap());
     assert!(resumed_from >= 3 * MIB, "kept {resumed_from} bytes");
     assert!(
@@ -297,9 +301,9 @@ async fn an_old_resume_file_with_a_password_is_continued_and_cleaned() {
 #[tokio::test]
 async fn a_changed_file_starts_over_instead_of_resuming() {
     let data = test_data(4 * MIB_USIZE);
-    let mut config = serving(&data);
-    config.data_bps = Some(MIB);
+    let config = serving(&data);
     let server = FtpServer::start(config).await;
+    server.hold_data_after(MIB / 2);
     let dir = private_dir("changed").unwrap();
     let url = server.url("ftp", "", "pub/file.bin");
 
@@ -324,8 +328,8 @@ async fn a_changed_file_starts_over_instead_of_resuming() {
     server.configure(|c| {
         c.files = vec![("pub/file.bin".to_string(), Arc::new(new_data.clone()))];
         c.mdtm = Some("20260202030405".to_string());
-        c.data_bps = None;
     });
+    server.release_data();
     let (path, _, resumed_from) = completed(run(request(&url, &dir, 2)).await.unwrap());
     assert_eq!(resumed_from, 0);
     assert!(
@@ -744,9 +748,8 @@ fn patient_request(url: &Url, dir: &Path, connections: usize) -> DownloadRequest
 #[tokio::test]
 async fn pausing_while_the_server_holds_back_its_426_returns_at_once() {
     let data = test_data(8 * MIB_USIZE);
-    let mut config = serving(&data);
-    config.data_bps = Some(2 * MIB);
-    let server = FtpServer::start(config).await;
+    let server = FtpServer::start(serving(&data)).await;
+    server.hold_data_after(MIB);
     let dir = private_dir("held-426").unwrap();
     let url = server.url("ftp", "", "pub/file.bin");
 
@@ -788,9 +791,8 @@ async fn pausing_while_the_server_holds_back_its_426_returns_at_once() {
 #[tokio::test]
 async fn a_control_connection_is_reused_after_a_range_is_cut_short() {
     let data = test_data(8 * MIB_USIZE);
-    let mut config = serving(&data);
-    config.data_bps = Some(4 * MIB);
-    let server = FtpServer::start(config).await;
+    let server = FtpServer::start(serving(&data)).await;
+    server.hold_data_after(MIB);
     let dir = private_dir("reuse").unwrap();
     let url = server.url("ftp", "", "pub/file.bin");
 
@@ -807,7 +809,7 @@ async fn a_control_connection_is_reused_after_a_range_is_cut_short() {
     let logins_before = server.stats.count("USER");
     let transfers_before = server.stats.transfers.load(Ordering::SeqCst);
 
-    server.configure(|c| c.data_bps = None);
+    server.release_data();
     let (path, _, resumed_from) = completed(run(request(&url, &dir, 2)).await.unwrap());
 
     assert!(resumed_from > 0);
@@ -834,10 +836,10 @@ async fn a_control_connection_is_reused_after_a_range_is_cut_short() {
 async fn pausing_while_a_connection_waits_for_a_greeting_returns_at_once() {
     let data = test_data(8 * MIB_USIZE);
     let mut config = serving(&data);
-    config.data_bps = Some(2 * MIB);
     // Only the first session is greeted; the others wait forever.
     config.silent_after = Some(1);
     let server = FtpServer::start(config).await;
+    server.hold_data_after(MIB);
     let dir = private_dir("silent").unwrap();
 
     let cancel = CancellationToken::new();

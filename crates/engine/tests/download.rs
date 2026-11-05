@@ -171,12 +171,12 @@ async fn resumes_after_pause_without_downloading_again() {
         test_data(len),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB),
             etag: Some("\"v1\"".into()),
             ..Default::default()
         },
     )
     .await;
+    server.hold_bodies_after(MIB);
     let dir = private_dir("resume").unwrap();
 
     let paused = pause_midway(request(&server, "r.bin", &dir, 4), MIB)
@@ -186,6 +186,7 @@ async fn resumes_after_pause_without_downloading_again() {
     assert!(dir.join("r.bin.wcpart").exists() && dir.join("r.bin.wcstate").exists());
     let kept = kept_ranges(&dir.join("r.bin.wcstate"), len as u64).unwrap();
     let first_run = server.seen_at("r.bin").len();
+    server.release_bodies();
 
     // The second run's probe asks from byte 0, which the first run kept: the server holds that answer's body, so it sends nothing however long the engine takes to break it off, and an engine that read it on would stall and fail.
     server.configure(|c| {
@@ -232,7 +233,6 @@ async fn a_tampered_resume_file_starts_the_download_over() {
         test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB),
             etag: Some("\"v1\"".into()),
             ..Default::default()
         },
@@ -246,6 +246,7 @@ async fn a_tampered_resume_file_starts_the_download_over() {
         ("empty", vec![range(KIB, KIB)]),
     ] {
         let dir = private_dir("tampered").unwrap();
+        server.hold_bodies_after(64 * KIB);
         let paused = pause_midway(request(&server, "t.bin", &dir, 2), 64 * KIB)
             .await
             .unwrap();
@@ -253,6 +254,7 @@ async fn a_tampered_resume_file_starts_the_download_over() {
             matches!(paused, Outcome::Paused { .. }),
             "{case}: {paused:?}"
         );
+        server.release_bodies();
         let state_path = dir.join("t.bin.wcstate");
         let mut state: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
@@ -281,17 +283,18 @@ async fn a_resume_file_with_nothing_left_finishes_the_whole_file() {
         test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB),
             etag: Some("\"v1\"".into()),
             ..Default::default()
         },
     )
     .await;
+    server.hold_bodies_after(64 * KIB);
     let dir = private_dir("all-flushed").unwrap();
     let paused = pause_midway(request(&server, "f.bin", &dir, 2), 64 * KIB)
         .await
         .unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "{paused:?}");
+    server.release_bodies();
     let state_path = dir.join("f.bin.wcstate");
     let mut state: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
@@ -350,12 +353,12 @@ async fn starts_over_when_the_remote_file_changed() {
         test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB),
             etag: Some("\"v1\"".into()),
             ..Default::default()
         },
     )
     .await;
+    server.hold_bodies_after(256 * KIB);
     let dir = private_dir("changed").unwrap();
 
     let paused = pause_midway(request(&server, "c.bin", &dir, 4), 256 * KIB)
@@ -363,10 +366,8 @@ async fn starts_over_when_the_remote_file_changed() {
         .unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }));
 
-    server.configure(|c| {
-        c.per_connection_bps = None;
-        c.etag = Some("\"v2\"".into());
-    });
+    server.release_bodies();
+    server.configure(|c| c.etag = Some("\"v2\"".into()));
     let outcome = run(request(&server, "c.bin", &dir, 4)).await.unwrap();
 
     let Outcome::Completed {
@@ -690,12 +691,12 @@ async fn exact_path_continues_after_the_link_changes() {
         test_data(3 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB),
             etag: Some("\"same\"".into()),
             ..Default::default()
         },
     )
     .await;
+    server.hold_bodies_after(512 * KIB);
     let dir = private_dir("exact").unwrap();
     let target = dir.join("nested").join("video.mp4");
 
@@ -704,7 +705,7 @@ async fn exact_path_continues_after_the_link_changes() {
     let paused = pause_midway(first, 512 * KIB).await.unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
 
-    server.configure(|c| c.per_connection_bps = None);
+    server.release_bodies();
     let mut second = request(&server, "fresh-signed-link", &dir, 4);
     second.exact_path = Some(target.clone());
     let outcome = run(second).await.unwrap();
@@ -921,12 +922,12 @@ async fn a_resolved_path_resumes_later_as_exact_path() {
         test_data(3 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB),
             etag: Some("\"same\"".into()),
             ..Default::default()
         },
     )
     .await;
+    server.hold_bodies_after(512 * KIB);
     let dir = private_dir("resolver-resume").unwrap();
     let target = dir.join("picked").join("video.mp4");
 
@@ -938,7 +939,7 @@ async fn a_resolved_path_resumes_later_as_exact_path() {
     let paused = pause_midway(first, 512 * KIB).await.unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "got {paused:?}");
 
-    server.configure(|c| c.per_connection_bps = None);
+    server.release_bodies();
     let mut second = request(&server, "video", &dir, 4);
     second.exact_path = Some(target.clone());
     let outcome = run(second).await.unwrap();
@@ -1010,6 +1011,7 @@ async fn reach<T>(progress: &Progress, at_least: u64, task: &tokio::task::JoinHa
 
 /// Runs `req` on a task, and once `at_least` bytes arrived, saves "theirs" at `taken` the way another program would, then waits for the download's end.
 async fn another_program_saves_meanwhile(
+    server: &TestServer,
     req: DownloadRequest,
     at_least: u64,
     taken: PathBuf,
@@ -1022,28 +1024,31 @@ async fn another_program_saves_meanwhile(
         "a file is at the final name before the download finished"
     );
     std::fs::write(&taken, b"theirs")?;
+    server.release_bodies();
     Ok(task.await?)
 }
 
-/// A slow server with a 2 MiB file, so a download is still running when another program saves its file.
-async fn slow_server() -> TestServer {
-    TestServer::start(
+/// A server with a 2 MiB file that holds it after 256 KiB, so a download is still running when another program saves its file.
+async fn holding_server() -> TestServer {
+    let server = TestServer::start(
         test_data(2 * MIB_USIZE),
         Config {
             ranges: true,
-            per_connection_bps: Some(MIB),
             etag: Some("\"v1\"".into()),
             ..Default::default()
         },
     )
-    .await
+    .await;
+    server.hold_bodies_after(256 * KIB);
+    server
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_file_another_program_saves_meanwhile_is_never_replaced() {
-    let server = slow_server().await;
+    let server = holding_server().await;
     let dir = private_dir("taken-meanwhile").unwrap();
     let outcome = another_program_saves_meanwhile(
+        &server,
         request(&server, "t.bin", &dir, 2),
         256 * KIB,
         dir.join("t.bin"),
@@ -1063,14 +1068,18 @@ async fn a_file_another_program_saves_meanwhile_is_never_replaced() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_continued_download_never_replaces_a_file_saved_meanwhile() {
-    let server = slow_server().await;
+    let server = holding_server().await;
     let dir = private_dir("taken-continued").unwrap();
     let paused = pause_midway(request(&server, "t.bin", &dir, 2), 256 * KIB)
         .await
         .unwrap();
     assert!(matches!(paused, Outcome::Paused { .. }), "{paused:?}");
     assert_eq!(files_in(&dir), ["t.bin.wcpart", "t.bin.wcstate"]);
+    // The probe from byte 0 is broken off, so what it sent would not count.
+    server.configure(|c| c.hold_bodies_from = Some(0));
+    server.hold_bodies_after(512 * KIB);
     let outcome = another_program_saves_meanwhile(
+        &server,
         request(&server, "t.bin", &dir, 2),
         768 * KIB,
         dir.join("t.bin"),
@@ -1096,7 +1105,7 @@ async fn a_continued_download_never_replaces_a_file_saved_meanwhile() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_exact_path_that_refuses_to_replace_keeps_the_data_for_later() {
-    let server = slow_server().await;
+    let server = holding_server().await;
     let dir = private_dir("taken-exact").unwrap();
     let path = dir.join("exact.bin");
     let refusing = || {
@@ -1105,7 +1114,7 @@ async fn an_exact_path_that_refuses_to_replace_keeps_the_data_for_later() {
         req.if_exists = ExistingFile::Refuse;
         req
     };
-    let error = another_program_saves_meanwhile(refusing(), 256 * KIB, path.clone())
+    let error = another_program_saves_meanwhile(&server, refusing(), 256 * KIB, path.clone())
         .await
         .unwrap()
         .unwrap_err();

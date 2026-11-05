@@ -10,7 +10,7 @@ use wirecatch_core::{DEFAULT_QUEUE_ID, PROGRESS_TICK};
 use wirecatch_protocol::app::{DownloadStatus, QueueSettings, Setting, UiEvent};
 
 use crate::common::{
-    Harness, PATIENCE, TestResult, fast_server, is_running, throttled_server, tune,
+    Harness, PATIENCE, TestResult, fast_server, held_server, is_running, throttled_server, tune,
 };
 use wirecatch_engine::units::KIB;
 
@@ -32,7 +32,6 @@ fn set_queue(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn queue_and_global_concurrency_limits_hold() -> TestResult {
-    let server = throttled_server(64 * KIB, 128 * KIB).await?;
     let h = Harness::new().await?;
     tune(&h.manager, |s| s.max_concurrent_downloads = 3)?;
     set_queue(&h, DEFAULT_QUEUE_ID, |q| q.max_concurrent = Setting::Own(1))?;
@@ -42,6 +41,7 @@ async fn queue_and_global_concurrency_limits_hold() -> TestResult {
         .unwrap();
     set_queue(&h, second.id, |q| q.max_concurrent = Setting::Own(3))?;
     let limits = HashMap::from([(DEFAULT_QUEUE_ID, 1), (second.id, 3)]);
+    let server = throttled_server(64 * KIB, 128 * KIB).await?;
 
     let mut events = h.manager.subscribe();
     let mut ids = Vec::new();
@@ -89,7 +89,7 @@ async fn queue_and_global_concurrency_limits_hold() -> TestResult {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn lowering_a_limit_sends_extra_downloads_back_in_line() -> TestResult {
-    let server = throttled_server(256 * KIB, 64 * KIB).await?;
+    let server = held_server(256 * KIB, 0).await?;
     let h = Harness::new().await?;
     let a = h.add(&server.url("a.bin")).await?;
     let b = h.add(&server.url("b.bin")).await?;

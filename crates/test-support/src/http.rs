@@ -209,8 +209,8 @@ struct Inner {
     stats: Arc<Stats>,
     /// `true` while answers may go out; see [`TestServer::hold`].
     open: watch::Sender<bool>,
-    /// `true` while bodies may go out; see [`TestServer::hold_bodies`].
-    bodies_open: watch::Sender<bool>,
+    /// What bodies may send; see [`TestServer::hold_bodies_after`].
+    body_gate: Arc<ByteGate>,
     /// The path of every request so far, answered or not, in the order they arrived.
     arrived: watch::Sender<Vec<String>>,
 }
@@ -236,7 +236,7 @@ impl TestServer {
             config: Mutex::new(config),
             stats: stats.clone(),
             open: watch::Sender::new(true),
-            bodies_open: watch::Sender::new(true),
+            body_gate: Arc::default(),
             arrived: watch::Sender::new(Vec::new()),
         });
         let app = Router::new()
@@ -292,12 +292,17 @@ impl TestServer {
 
     /// Holds every body from now on: answers send their headers and then wait for [`release_bodies`](Self::release_bodies). For a test that acts once a client has read the headers, and before it can finish.
     pub fn hold_bodies(&self) {
-        self.inner.bodies_open.send_replace(false);
+        self.hold_bodies_after(0);
+    }
+
+    /// Lets bodies send `bytes` more in all, then holds them until [`release_bodies`](Self::release_bodies). For a test that acts once a client has that much, and before it can finish.
+    pub fn hold_bodies_after(&self, bytes: u64) {
+        self.inner.body_gate.hold_after(bytes);
     }
 
     /// Lets held bodies, and every later one, go out.
     pub fn release_bodies(&self) {
-        self.inner.bodies_open.send_replace(true);
+        self.inner.body_gate.open();
     }
 
     /// How many requests for `path` (a leading `/` is optional) have arrived so far,
@@ -574,21 +579,18 @@ fn body(
     let stats = request.inner.stats.clone();
     let held = config.hold_bodies_from == Some(range.start);
     let end = range.end;
-    let bodies_open = request.inner.bodies_open.subscribe();
+    let body_gate = request.inner.body_gate.clone();
     futures_util::stream::unfold((range.start, 0u64, live), move |(pos, sent, live)| {
         let data = data.clone();
         let stats = stats.clone();
         let sent_here = sent_here.clone();
-        let mut bodies_open = bodies_open.clone();
+        let body_gate = body_gate.clone();
         async move {
             if pos >= end {
                 return None;
             }
             if held {
                 std::future::pending::<()>().await;
-            }
-            if bodies_open.wait_for(|open| *open).await.is_err() {
-                return None;
             }
             if let Some(after) = abort_after
                 && sent >= after
@@ -600,7 +602,7 @@ fn body(
             if let Some(pause) = pause {
                 tokio::time::sleep(pause).await;
             }
-            let next = (pos + chunk as u64).min(end);
+            let next = pos + body_gate.take((chunk as u64).min(end - pos)).await;
             let bytes = data.slice(index(pos)..index(next));
             stats
                 .bytes_sent
@@ -609,6 +611,48 @@ fn body(
             Some((Ok(bytes), (next, sent + (next - pos), live)))
         }
     })
+}
+
+/// How many more bytes a server may send: without limit, or a count that holds what comes after it until the test opens the gate.
+#[derive(Debug)]
+pub(crate) struct ByteGate(watch::Sender<Option<u64>>);
+
+impl Default for ByteGate {
+    fn default() -> Self {
+        Self(watch::Sender::new(None))
+    }
+}
+
+impl ByteGate {
+    pub(crate) fn hold_after(&self, bytes: u64) {
+        self.0.send_replace(Some(bytes));
+    }
+
+    pub(crate) fn open(&self) {
+        self.0.send_replace(None);
+    }
+
+    /// Waits until some of `wanted` bytes may go out, and returns how many.
+    pub(crate) async fn take(&self, wanted: u64) -> u64 {
+        let mut changes = self.0.subscribe();
+        loop {
+            let mut granted = 0;
+            self.0.send_if_modified(|left| {
+                granted = left.map_or(wanted, |left| left.min(wanted));
+                if let Some(left) = left {
+                    *left -= granted;
+                }
+                false
+            });
+            if granted > 0 {
+                return granted;
+            }
+            // `self` holds the sender, so the wait cannot end in an error.
+            let (Ok(_) | Err(_)) = changes
+                .wait_for(|left| left.is_none_or(|left| left > 0))
+                .await;
+        }
+    }
 }
 
 /// How much of the body a connection throttled to `bps` bytes per second

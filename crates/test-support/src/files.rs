@@ -38,7 +38,7 @@ use axum::routing::get;
 use bytes::Bytes;
 use url::Url;
 
-use crate::http::{Seen, index, parse_range, path_key, throttled};
+use crate::http::{ByteGate, Seen, index, parse_range, path_key, throttled};
 
 /// One file and how it is served.
 #[derive(Clone, Default)]
@@ -52,6 +52,8 @@ struct File {
     delay: Duration,
     /// Bytes per second the body is sent at, if limited.
     bps: Option<u64>,
+    /// What the body may send, when a test holds it.
+    gate: Option<Arc<ByteGate>>,
     /// Requests are taken and never answered.
     hangs: bool,
 }
@@ -152,6 +154,24 @@ impl FileServer {
     /// If no file was put at `path`.
     pub fn hang(&self, path: &str, hangs: bool) {
         self.change(path, |file| file.hangs = hangs);
+    }
+
+    /// The file at `path` sends `bytes` in all from the next request on, then holds until [`release`](Self::release).
+    pub fn hold_after(&self, path: &str, bytes: u64) {
+        self.change(path, |file| {
+            let gate = ByteGate::default();
+            gate.hold_after(bytes);
+            file.gate = Some(Arc::new(gate));
+        });
+    }
+
+    /// Lets what `hold_after` held of the file at `path`, and all later answers, go out.
+    pub fn release(&self, path: &str) {
+        self.change(path, |file| {
+            if let Some(gate) = file.gate.take() {
+                gate.open();
+            }
+        });
     }
 
     /// The file at `path` is sent at `bps` bytes per second from the next
@@ -292,6 +312,21 @@ async fn serve(
     response.unwrap()
 }
 
+/// `body` in pieces, each as `gate` lets it go.
+fn gated(
+    body: Bytes,
+    gate: Arc<ByteGate>,
+) -> impl futures_util::Stream<Item = Result<Bytes, std::convert::Infallible>> {
+    futures_util::stream::unfold((body, gate), |(mut body, gate)| async move {
+        if body.is_empty() {
+            return None;
+        }
+        let granted = gate.take(body.len() as u64).await;
+        let piece = body.split_to(index(granted));
+        Some((Ok(piece), (body, gate)))
+    })
+}
+
 /// The file, or the part of it the `Range` header asks for.
 fn answer(file: &File, headers: &HeaderMap) -> (StatusCode, axum::http::Result<Response>) {
     let len = file.body.len() as u64;
@@ -320,9 +355,10 @@ fn answer(file: &File, headers: &HeaderMap) -> (StatusCode, axum::http::Result<R
     let builder = builder
         .status(status)
         .header(header::CONTENT_LENGTH, body.len());
-    let response = match file.bps {
-        Some(bps) => builder.body(Body::from_stream(throttled(body, bps))),
-        None => builder.body(Body::from(body)),
+    let response = match (&file.gate, file.bps) {
+        (Some(gate), _) => builder.body(Body::from_stream(gated(body, gate.clone()))),
+        (None, Some(bps)) => builder.body(Body::from_stream(throttled(body, bps))),
+        (None, None) => builder.body(Body::from(body)),
     };
     (status, response)
 }

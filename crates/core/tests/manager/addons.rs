@@ -178,8 +178,7 @@ async fn remove_deletes_the_add_on() -> TestResult {
 async fn stopping_a_first_install_leaves_nothing_behind() -> TestResult {
     let server = FileServer::start().await;
     let h = harness(publish(&server, &Releases::fake()?, "cx")?).await?;
-    // Slow enough to still be running when it is stopped.
-    server.throttle("cx/yt-dlp", Some(32 * KIB));
+    server.hold_after("cx/yt-dlp", 0);
     let mut ui = h.manager.subscribe();
     h.manager.install_addon(AddonId::Media).await.unwrap();
     wait_addon(&mut ui, "installing", |a| {
@@ -219,7 +218,7 @@ async fn stopping_an_update_keeps_the_installed_version_working() -> TestResult 
         None,
         OLD,
     )?;
-    server.throttle(&format!("rel/2026.09.30/{}", ytdlp_asset()), Some(16 * KIB));
+    server.hold_after(&format!("rel/2026.09.30/{}", ytdlp_asset()), 0);
     let mut ui = h.manager.subscribe();
     // A quiet update starts (auto_update_addons is on by default).
     h.manager.check_addon_updates().await.unwrap();
@@ -1316,7 +1315,7 @@ async fn the_add_on_is_not_removed_while_in_use() -> TestResult {
     let h = harness(publish(&server, &Releases::fake()?, "busy")?).await?;
     assert_eq!(install(&h).await?.state, AddonState::Installed);
     server.put("fmt/v.mp4", crate::common::test_data(400 * KIB_USIZE));
-    server.throttle("fmt/v.mp4", Some(50 * KIB));
+    server.hold_after("fmt/v.mp4", 64 * KIB);
     let info = serde_json::json!({"title": "Busy", "formats": [
         {"format_id": "1", "ext": "mp4", "vcodec": "avc1", "acodec": "mp4a", "height": 360,
          "protocol": "https", "url": server.url("fmt/v.mp4").as_str()}
@@ -1522,9 +1521,9 @@ async fn a_repair_replaces_a_damaged_ytdlp() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_add_on_removed_during_a_check_stays_removed() -> TestResult {
     let (server, h, _) = updatable("rm").await?;
-    // Valid JSON, long enough to be on its way while the add-on is removed.
-    server.put("api/releases", format!("[]{}", " ".repeat(64 * KIB_USIZE)));
-    server.throttle("api/releases", Some(64 * KIB));
+    // Valid JSON, on its way while the add-on is removed.
+    server.put("api/releases", "[]");
+    server.hold_after("api/releases", 0);
     let checking = {
         let manager = h.manager.clone();
         tokio::spawn(async move { manager.check_addon_updates().await })
@@ -1534,6 +1533,7 @@ async fn an_add_on_removed_during_a_check_stays_removed() -> TestResult {
     })
     .await;
     h.manager.remove_addon(AddonId::Media).await?;
+    server.release("api/releases");
     checking.await??;
     assert_eq!(h.manager.list_addons()[0].state, AddonState::NotInstalled);
     assert!(!path_exists(
