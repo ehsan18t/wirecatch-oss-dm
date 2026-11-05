@@ -710,9 +710,11 @@ async fn an_answered_replace_survives_a_restart() -> TestResult {
     let mut events = h.manager.subscribe();
     let row = add_into(&h, server.url("report").as_str(), &dir).await?;
     let question = asked(&mut events).await?;
+    // Before the answer starts a new body, and before the gate opens: the dropped one would take all it lets out.
+    server.wait_until_no_bodies().await;
+    server.hold_bodies_after(1024 * KIB);
     h.manager
         .answer_file_exists(question.id, answer(FileExistsChoice::Replace, false))?;
-    server.hold_bodies_after(1024 * KIB);
     h.wait_for(row.id, "some progress", |r| r.done > 0).await;
     h.manager.pause(row.id)?;
     h.wait_status(row.id, DownloadStatus::Paused).await;
