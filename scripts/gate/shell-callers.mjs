@@ -10,7 +10,7 @@ const TEST_CRATES = ['crates/e2e/', 'crates/test-support/'];
 const PUBLIC_ITEM =
   /^\s*pub\s+(?:(?:async|const|unsafe)\s+)*(?:fn|struct|enum|trait|type|const|static|mod)\s+(\w+)/gm;
 const LINE_COMMENT = /\/\/.*$/gm;
-const TEST_MODULE = /^(\s*)#\[cfg\(test\)\][\t\v\f\r \xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*\n\s*(?:pub\s+)?mod\s+\w+\s*\{[\s\S]*?^\1\}/gm;
+const TEST_MODULE = /^(\s*)#\[cfg\(test\)\][\t\v\f\r \xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*\n\s*(?:pub\s+)?mod\s+\w+\s*\{\s*\n[\s\S]*?^\1\}/gm;
 const WORD = /\w+/g;
 
 /** The code of a Rust file that a person's build runs: no comments, no test modules. */
