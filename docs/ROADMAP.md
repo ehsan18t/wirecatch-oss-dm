@@ -326,9 +326,9 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 261. The not-private notice carries a path and a long sentence (open)
 262. A kill during a removal can leave a moved copy behind (open)
 263. Some tests still throttle a server so connections join (open)
-264. The proxy's shown name has two copies (open)
-265. A stream join reads only ffmpeg's last lines (open)
-266. A crash while placing a video can double its subtitles (open)
+264. The proxy's shown name has two copies (fixed)
+265. A stream join reads only ffmpeg's last lines (fixed)
+266. A crash while placing a video can double its subtitles (fixed)
 267. No check finds shell functions nothing calls (open)
 268. A hanging test on Windows leaves no name or log (open)
 

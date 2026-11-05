@@ -1336,3 +1336,8 @@ Decided on 2026-11-05. It amends D132.3 and D134.1.
 
 1. A removal waits for a move under way, and by then the row and its record of the move have left the list. The deletion record therefore also names where the move is going, and a finished download gets a deletion record for as long as it moves. A move that starts after the removal began adds the target before its first file moves.
 2. A start deletes the temporary copies in that target's folder. For an unfinished download it also deletes the partial files at the target, unless a download holds that path or its old one. For a finished download it deletes nothing else: a kept file is the person's, and D134.2 still holds for one being deleted. A kill between a copy to another drive taking its name and the original's deletion leaves the whole file in both places, and the extra copy stays.
+### D172. A subtitle file's move is noted as the video's is
+
+Decided on 2026-11-05. It amends D132.4.
+
+Before each subtitle file moves from the work folder, its name and how it moves are noted there. A next run that finds the note and the subtitle file gone, or the two names one file, lists the file at the noted name and places no second copy. A note beside a different file says nothing, and the subtitle file takes a free name.
