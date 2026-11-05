@@ -118,7 +118,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-108 | refactor(engine): remove code with no effect       | `refactor/engine-no-op-code`     | 179, 181                     | P3       | small  | none         | merged |
 | PR-109 | refactor(streams): remove leftovers from the crate | `refactor/streams-leftovers`     | 192, 193, 194                | P3       | small  | none         | merged |
 | PR-110 | test(core): repair media run tests, doc comments   | `test/media-run-tidy`            | 195, 196                     | P3       | small  | none         | merged |
-| PR-111 | fix(streams): stop media programs on a signal      | `fix/media-programs-on-signal`   | 199                          | P3       | medium | none         | open   |
+| PR-111 | fix(streams): stop media programs on a signal      | `fix/media-programs-on-signal`   | 199                          | P3       | medium | none         | merged |
 | PR-112 | fix(desktop): correct system registration details  | `fix/system-registration`        | 202, 203, 204                | P3       | small  | none         | merged |
 | PR-113 | fix(desktop): give every window a native title     | `fix/native-window-title`        | 205                          | P3       | small  | none         | merged |
 | PR-114 | fix(desktop): steady the list under the pointer    | `fix/list-under-pointer`         | 210, 213                     | P3       | small  | none         | open   |
@@ -1496,7 +1496,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/streams/src/process/tree.rs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-streams`, `cargo clippy -p wirecatch-streams`, `node scripts/gate.mjs clippy-linux`. This is Linux only and has not been run.
-- **Status:** open
+- **Status:** merged
 
 ### PR-112 fix(desktop): correct system registration details
 
