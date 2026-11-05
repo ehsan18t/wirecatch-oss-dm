@@ -328,7 +328,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 263. Some tests still throttle a server so connections join (open)
 264. The proxy's shown name has two copies (open)
 265. A stream join reads only ffmpeg's last lines (open)
-266. A crash while placing a video can double its subtitles (open)
+266. A crash while placing a video can double its subtitles (fixed)
 267. No check finds shell functions nothing calls (open)
 268. A hanging test on Windows leaves no name or log (open)
 
