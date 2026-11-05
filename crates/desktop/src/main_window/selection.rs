@@ -59,7 +59,7 @@ impl DerefMut for Selected {
 /// change: status and queue, all it reads, move only with the lines.
 pub(super) struct Facts {
     from: FactsFrom,
-    /// How many selected rows the list shows.
+    /// How many selected rows the commands reach.
     pub count: usize,
     can: Applicable,
     pub ids: Rc<[DownloadId]>,
@@ -111,9 +111,13 @@ impl MainWindow {
             .collect()
     }
 
-    /// The rows of `laid` that are selected.
+    /// The rows of `laid` the selection's commands reach.
     fn chosen<'a>(&self, laid: &Laid, cx: &'a App) -> Vec<&'a DownloadSummary> {
-        selected_among(&laid.rows, &self.library.read(cx).downloads, &self.selected)
+        selected_among(
+            laid.under_commands(self.picked),
+            &self.library.read(cx).downloads,
+            &self.selected,
+        )
     }
 
     /// The selection's facts, worked out again only when they may differ.

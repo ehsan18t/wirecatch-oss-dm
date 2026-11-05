@@ -55,6 +55,8 @@ pub(super) struct Laid {
     /// The rows shown, by their index in the library, in the list's order.
     pub rows: Vec<usize>,
     pub ids: Rc<[DownloadId]>,
+    /// `rows` with each folded group's rows at its heading, in the list's order.
+    with_folded: Vec<usize>,
     /// Each group's downloads the search finds, folded or not.
     groups: [Rc<[DownloadId]>; Group::ALL.len()],
     /// The day headings, by their line.
@@ -116,13 +118,34 @@ impl Laid {
             .collect();
         let ids = ids_of(&rows, downloads);
         let groups = Group::ALL.map(|group| ids_of(&members[group.place()], downloads));
+        let mut with_folded = Vec::with_capacity(rows.len());
+        for line in &lines {
+            match line {
+                Line::Row(index, ..) => with_folded.push(*index),
+                Line::Heading(group, _) if asked.needle.is_empty() && asked.is_folded(*group) => {
+                    with_folded.extend(&members[group.place()]);
+                }
+                Line::Heading(..) | Line::Day(_) => {}
+            }
+        }
         Self {
             asked,
             lines,
             rows,
             ids,
+            with_folded,
             groups,
             days,
+        }
+    }
+
+    /// The rows the selection's commands reach, in the list's order: those shown, and for a
+    /// selection made `on_purpose` those of folded groups too (D160).
+    pub fn under_commands(&self, on_purpose: bool) -> &[usize] {
+        if on_purpose {
+            &self.with_folded
+        } else {
+            &self.rows
         }
     }
 
@@ -290,6 +313,21 @@ mod tests {
             *shown.group_ids(Group::UpNext),
             [DownloadId(1), DownloadId(3)]
         );
+    }
+
+    // A tick on a folded heading is on purpose and its circle shows it, so commands reach those rows. A row only clicked, then folded away, stays out of reach of Delete.
+    #[test]
+    fn commands_reach_folded_rows_only_for_a_selection_made_on_purpose() {
+        let downloads = [
+            row(1, 1, DownloadStatus::Queued),
+            row(2, 1, DownloadStatus::Downloading),
+            row(3, 1, DownloadStatus::Queued),
+        ];
+        let folded = laid(asked(View::All, "", &[Group::UpNext]), &downloads);
+        assert_eq!(folded.under_commands(true), [1, 0, 2]);
+        assert_eq!(folded.under_commands(false), [1]);
+        let open = laid(asked(View::All, "", &[]), &downloads);
+        assert_eq!(open.under_commands(true), open.under_commands(false));
     }
 
     #[test]
