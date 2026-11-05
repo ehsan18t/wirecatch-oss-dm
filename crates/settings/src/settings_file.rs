@@ -192,7 +192,8 @@ pub struct NewIds<Q, P> {
 /// Queue ids from another machine mean nothing here, so queues are matched by
 /// name: the profile's default queue updates this default queue, keeping the name it has
 /// here when another queue has the profile's, a queue with a known name updates that queue,
-/// the default one included, and the rest are added. Queues missing from the
+/// the default one too unless the profile's default queue already did, and the rest are
+/// added, under a free name when theirs is taken. Queues missing from the
 /// profile are kept, because downloads may still be in them. Proxy servers are matched by
 /// name the same way and never removed. A folder that does not
 /// exist on this machine (an absolute path from another system), or that is a
@@ -269,29 +270,34 @@ fn merge_queues(
     let mut queues = current.to_vec();
     let mut ids = HashMap::with_capacity(incoming.len());
     let (mut added, mut updated) = (Vec::new(), Vec::new());
+    let mut default_updated = false;
     for profile in incoming {
         let mut settings = crate::validate_queue(profile.settings, folders)?;
         if let Setting::Own(proxy) = settings.proxy {
             settings.proxy = local_proxy(proxy).map_or(Setting::Global, Setting::Own);
         }
+        let updates_default = profile.is_default && !default_updated;
         let name_taken = queues
             .iter()
             .any(|q| !q.is_default && q.settings.name.eq_ignore_ascii_case(&settings.name));
         let target = queues.iter_mut().find(|q| {
-            if profile.is_default {
+            if updates_default {
                 q.is_default
             } else {
-                q.settings.name.eq_ignore_ascii_case(&settings.name)
+                !(q.is_default && default_updated)
+                    && q.settings.name.eq_ignore_ascii_case(&settings.name)
             }
         });
+        default_updated |= updates_default;
         let local_id = if let Some(existing) = target {
             updated.push(existing.settings.name.clone());
-            if profile.is_default && name_taken {
+            if updates_default && name_taken {
                 settings.name.clone_from(&existing.settings.name);
             }
             existing.settings = settings;
             existing.id
         } else {
+            settings.name = free_queue_name(&queues, settings.name);
             added.push(settings.name.clone());
             let id = next_id();
             queues.push(Queue {
@@ -310,6 +316,28 @@ fn merge_queues(
         added,
         updated,
     })
+}
+
+/// `name`, or while a queue in `queues` has it, the first free `name (2)`, `name (3)`... within the limit on a name's length.
+fn free_queue_name(queues: &[Queue], name: String) -> String {
+    let taken = |name: &str| {
+        queues
+            .iter()
+            .any(|q| q.settings.name.eq_ignore_ascii_case(name))
+    };
+    if !taken(&name) {
+        return name;
+    }
+    // One more number than queues, so one of them is free.
+    (2..=queues.len() + 2)
+        .map(|n| {
+            let suffix = format!(" ({n})");
+            let room = crate::MAX_QUEUE_NAME_CHARS.saturating_sub(suffix.len());
+            let base: String = name.chars().take(room).collect();
+            format!("{}{suffix}", base.trim_end())
+        })
+        .find(|candidate| !taken(candidate))
+        .unwrap_or(name)
 }
 
 /// The proxy servers after adding or updating `incoming` by name.
@@ -1005,6 +1033,45 @@ mod tests {
         assert_eq!(imported.queues.len(), 1);
         assert!(imported.queues[0].is_default);
         assert_eq!(imported.queues[0].settings.max_concurrent, Setting::Own(7));
+    }
+
+    #[test]
+    fn a_queue_named_like_the_default_queue_the_file_already_updated_is_added_apart() {
+        let here = default_queue();
+        let main = here.settings.name.clone();
+        let mut file_default = default_queue();
+        file_default.id = QueueId(10);
+        file_default.settings.name = "Videos".into();
+        file_default.settings.max_concurrent = Setting::Own(7);
+        let mut file_main = queue(11, &main);
+        file_main.settings.max_concurrent = Setting::Own(3);
+        let mut profile = profile_with_queues(vec![file_default, file_main]);
+        profile.settings.extension.default_queue = QueueId(11);
+        let imported = merge(profile, &[here, queue(2, "Videos")], &folders(), || {
+            QueueId(3)
+        })
+        .unwrap();
+
+        let second = format!("{main} (2)");
+        assert_eq!(
+            queue_names(&imported),
+            [main.as_str(), "Videos", second.as_str()]
+        );
+        assert_eq!(imported.queues[0].settings.max_concurrent, Setting::Own(7));
+        assert_eq!(imported.queues[2].settings.max_concurrent, Setting::Own(3));
+        assert_eq!(imported.queues_updated, [main.as_str()]);
+        assert_eq!(imported.queues_added, [second.as_str()]);
+        assert_eq!(imported.settings.extension.default_queue, QueueId(3));
+    }
+
+    #[test]
+    fn a_name_made_free_stays_within_the_limit() {
+        let long = "n".repeat(crate::MAX_QUEUE_NAME_CHARS);
+        let taken = queue(2, &long);
+        let free = free_queue_name(&[taken], long.clone());
+        assert_eq!(free.chars().count(), crate::MAX_QUEUE_NAME_CHARS);
+        assert!(free.ends_with(" (2)"), "{free}");
+        assert_eq!(free_queue_name(&[], long.clone()), long);
     }
 
     // The default queue goes first whatever the file's order, so the name it had here is free

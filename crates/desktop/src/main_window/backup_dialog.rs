@@ -310,7 +310,7 @@ impl BackupForm {
             .filter_map(|id| library.addons.iter().find(|addon| addon.id == *id))
             .map(|addon| {
                 format!(
-                    "The file lists the {}, which is not installed here. Install it afterwards from Settings, Media; nothing is downloaded on import.",
+                    "The file lists the {}, which is not installed here. Install it afterwards from Settings > Media; nothing is downloaded on import.",
                     addon.name.to_lowercase()
                 )
             })
