@@ -5,12 +5,12 @@ use std::path::{Path, PathBuf};
 use wirecatch_engine::units::{KIB, KIB_USIZE};
 use wirecatch_protocol::app::{
     Category, DownloadStatus, DownloadSummary, FileExistsAnswer, FileExistsChoice,
-    FileExistsQuestion, UiEvent, WhenFileExists,
+    FileExistsQuestion, Schedule, TimeOfDay, UiEvent, WhenFileExists,
 };
 
-use wirecatch_core::{LinkFrom, RemoveFiles};
+use wirecatch_core::{DEFAULT_QUEUE_ID, LinkFrom, RemoveFiles};
 
-use crate::common::{Config, Harness, PATIENCE, TestResult, TestServer, test_data};
+use crate::common::{Config, Harness, PATIENCE, TestResult, TestServer, monday, test_data};
 
 const NAME: &str = "report.pdf";
 const LEN: usize = 4 * KIB_USIZE;
@@ -90,6 +90,37 @@ async fn partial_files_of_an_unknown_owner_stay_and_the_download_takes_a_free_na
     assert_eq!(std::fs::read(&done.path)?, server.data);
     assert_eq!(std::fs::read(&part)?, b"someone's");
     assert_eq!(h.manager.pending_file_exists(), vec![]);
+    Ok(())
+}
+
+/// The run a queue was started for goes on while its last download only waits for an answer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_queue_run_outlasts_the_question_of_its_last_download() -> TestResult {
+    let server = server().await;
+    let h = Harness::at(monday(1, 0)?).await?;
+    let mut queue = h
+        .manager
+        .list_queues()
+        .into_iter()
+        .find(|q| q.id == DEFAULT_QUEUE_ID)
+        .ok_or("the default queue is missing")?;
+    queue.settings.schedule = Some(Schedule {
+        start: TimeOfDay { hour: 2, minute: 0 },
+        stop: None,
+        days: vec![],
+    });
+    h.manager.update_queue(queue.id, queue.settings)?;
+    let dir = folder_with(&h, &same_size())?;
+    let mut events = h.manager.subscribe();
+    let row = add_into(&h, server.url("report").as_str(), &dir).await?;
+    assert_eq!(row.status, DownloadStatus::Queued);
+
+    h.manager.start_queue_now(DEFAULT_QUEUE_ID)?;
+    let question = asked(&mut events).await?;
+    h.wait_status(row.id, DownloadStatus::Paused).await;
+    h.manager
+        .answer_file_exists(question.id, answer(FileExistsChoice::KeepBoth, false))?;
+    h.wait_status(row.id, DownloadStatus::Completed).await;
     Ok(())
 }
 

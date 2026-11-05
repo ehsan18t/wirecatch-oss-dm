@@ -20,7 +20,7 @@ use wirecatch_queues::schedule;
 use wirecatch_shell::api;
 
 use super::drag::{self, DraggedQueue, DraggedRows};
-use super::{Group, MainWindow, Screen, View, proxy_dialog, queue_header};
+use super::{Group, MainWindow, Screen, View, queue_header};
 use crate::backend::act;
 use crate::rows::Tally;
 use crate::text;
@@ -418,7 +418,7 @@ impl MainWindow {
                 .proxies
                 .iter()
                 .find(|server| server.id == *id)
-                .map(|server| proxy_dialog::shown_name(&server.settings)),
+                .map(|server| server.settings.shown_name()),
             _ => None,
         };
         (rules, proxy)
@@ -668,7 +668,11 @@ fn summary(queue: &Queue, facts: &QueueFacts, proxy: Option<&str>) -> (Option<St
 pub(super) fn outside_schedule(queue: &Queue) -> Option<wirecatch_protocol::app::TimeOfDay> {
     let schedule = queue.settings.schedule.as_ref()?;
     (!queue.status.running_outside_schedule
-        && !schedule::allows(schedule, Local::now().naive_local()))
+        && !schedule::allows(
+            schedule,
+            queue.status.running_until_empty,
+            Local::now().naive_local(),
+        ))
     .then_some(schedule.start)
 }
 
@@ -811,6 +815,24 @@ mod tests {
                 ..QueueStatus::default()
             },
         }
+    }
+
+    /// The answer the core runs by: a start passed earlier today is no run.
+    #[test]
+    fn a_schedule_without_a_stop_is_outside_until_its_run_begins() {
+        let mut queue = queue(false);
+        let start = wirecatch_protocol::app::TimeOfDay {
+            hour: 22,
+            minute: 0,
+        };
+        queue.settings.schedule = Some(wirecatch_protocol::app::Schedule {
+            start,
+            stop: None,
+            days: vec![],
+        });
+        assert_eq!(outside_schedule(&queue), Some(start));
+        queue.status.running_until_empty = true;
+        assert_eq!(outside_schedule(&queue), None);
     }
 
     #[test]

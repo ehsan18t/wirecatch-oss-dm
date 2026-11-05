@@ -64,6 +64,8 @@ struct OwnProgress {
     formats: Vec<OwnFormat>,
     /// The format last reported on.
     current: Option<usize>,
+    /// The bytes and the total last read, whose ratio the bar shows.
+    shown: Option<(u64, u64)>,
 }
 
 #[derive(Debug)]
@@ -79,6 +81,7 @@ impl OwnProgress {
             .iter()
             .position(|f| f.id == id)
             .unwrap_or_else(|| {
+                self.shown = None;
                 self.formats.push(OwnFormat {
                     id: id.to_owned(),
                     done: 0,
@@ -108,6 +111,23 @@ impl OwnProgress {
             total = total.zip(size).map(|(all, size)| all.saturating_add(size));
         }
         (done, total)
+    }
+
+    /// `total` as read now: while one above what was shown would move the bar back, it follows `done` at the ratio shown, until the real one is reached (D173).
+    fn steady_total(&mut self, done: u64, total: u64) -> u64 {
+        let steady = match self.shown {
+            Some((shown_done, shown_total))
+                if total > shown_total && done >= shown_done && shown_done > 0 =>
+            {
+                let held = u128::from(done) * u128::from(shown_total) / u128::from(shown_done);
+                u64::try_from(held).map_or(total, |held| held.min(total))
+            }
+            _ => total,
+        };
+        if steady >= done {
+            self.shown = Some((done, steady));
+        }
+        steady
     }
 }
 
@@ -225,7 +245,8 @@ impl MediaProgress {
     }
 
     pub fn read(&self) -> Reading {
-        let state = self.lock();
+        let mut guard = self.lock();
+        let state = &mut *guard;
         let mut reading = Reading {
             processing: state
                 .step
@@ -277,8 +298,10 @@ impl MediaProgress {
         if parts.is_empty() {
             total = None;
         }
-        if let Some((own_done, own_total)) = state.own.as_ref().map(OwnProgress::sum) {
-            reading.answered |= state.own.as_ref().is_some_and(|o| o.current.is_some());
+        if let Some(own) = &mut state.own {
+            let (own_done, own_total) = own.sum();
+            let own_total = own_total.map(|total| own.steady_total(own_done, total));
+            reading.answered |= own.current.is_some();
             reading.done = reading.done.saturating_add(own_done);
             total = match (parts.is_empty(), own_total) {
                 (_, None) => None,
@@ -454,6 +477,88 @@ mod tests {
         progress.set_own("140", 20, Some(20));
         let reading = progress.read();
         assert_eq!((reading.done, reading.total), (120, Some(120)));
+    }
+
+    /// The page's size was an estimate: the real one above it holds the bar still until the bytes catch up, and the total ends at the real size.
+    #[test]
+    fn a_real_size_above_the_estimate_never_moves_the_bar_back() {
+        let progress = MediaProgress::default();
+        progress.expect_own([("137".to_owned(), Some(100))].into_iter());
+        let shown = |done, total| {
+            progress.set_own("137", done, Some(total));
+            let reading = progress.read();
+            (reading.done, reading.total)
+        };
+        assert_eq!(shown(50, 100), (50, Some(100)));
+        assert_eq!(shown(50, 200), (50, Some(100)));
+        assert_eq!(
+            progress.read().total,
+            Some(100),
+            "a second look changes nothing"
+        );
+        assert_eq!(shown(60, 200), (60, Some(120)));
+        assert_eq!(shown(100, 200), (100, Some(200)));
+        assert_eq!(shown(150, 200), (150, Some(200)));
+    }
+
+    /// yt-dlp's estimate of a fragmented format grows as it goes.
+    #[test]
+    fn a_growing_estimate_never_moves_the_bar_back() {
+        let progress = MediaProgress::default();
+        let (mut last_done, mut last_total) = (0_u64, 1_u64);
+        for (done, estimate) in [
+            (10, 40),
+            (20, 90),
+            (30, 95),
+            (40, 300),
+            (50, 310),
+            (299, 310),
+        ] {
+            progress.set_own("hls", done, Some(estimate));
+            let reading = progress.read();
+            let total = reading.total.unwrap();
+            assert!(
+                reading.done * last_total >= last_done * total,
+                "{}/{total} fell below {last_done}/{last_total}",
+                reading.done
+            );
+            (last_done, last_total) = (reading.done, total);
+        }
+        assert_eq!(progress.read().total, Some(310));
+    }
+
+    /// A format begun again has nothing to hold: the bar shows how far it really is.
+    #[test]
+    fn a_format_begun_again_reads_its_real_total() {
+        let progress = MediaProgress::default();
+        progress.set_own("137", 50, Some(100));
+        assert_eq!(progress.read().total, Some(100));
+        progress.set_own("137", 10, Some(200));
+        let reading = progress.read();
+        assert_eq!((reading.done, reading.total), (10, Some(200)));
+    }
+
+    /// A format no size was expected for is more to get, not a better estimate: the bar shows the real share.
+    #[test]
+    fn a_format_not_expected_reads_the_real_total() {
+        let progress = MediaProgress::default();
+        progress.set_own("video", 100, Some(100));
+        assert_eq!(progress.read().total, Some(100));
+        progress.set_own("audio", 10, Some(200));
+        let reading = progress.read();
+        assert_eq!((reading.done, reading.total), (110, Some(300)));
+    }
+
+    /// Bytes past the estimate show no total until a larger one is known, which then holds the bar where it was.
+    #[test]
+    fn bytes_past_the_estimate_keep_the_ratio_shown_before() {
+        let progress = MediaProgress::default();
+        progress.set_own("137", 90, Some(100));
+        assert_eq!(progress.read().total, Some(100));
+        progress.set_own("137", 110, Some(100));
+        assert_eq!(progress.read().total, None);
+        progress.set_own("137", 180, Some(400));
+        assert_eq!(progress.read().total, Some(200));
     }
 
     /// A format the page does not size leaves the total unknown rather than short.

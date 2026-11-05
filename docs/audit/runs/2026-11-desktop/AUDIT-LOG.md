@@ -103,7 +103,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 76  | The import preview hides proxy and local site changes                                             | `19-1` `27-2`                                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 77  | A missing library is not seen as a broken add-on, and can raise a system dialog                   | `Xsecurity-addon-unpacking-2` `B12-3`                                                              | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 78  | A download moved to another queue shows in the wrong place                                        | `23-1` `25-5`                                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
-| 79  | The window and a restart disagree with what a queue's run really is                               | `18-2` `18-3`                                                                                      | P2       | medium | P2, 2 findings, medium; clears the way for item 138                                                              | none                                          | open   |
+| 79  | The window and a restart disagree with what a queue's run really is                               | `18-2` `18-3`                                                                                      | P2       | medium | P2, 2 findings, medium; clears the way for item 138                                                              | none                                          | fixed  |
 | 80  | Answering the file-exists question opens a second window for the same download                    | `24-6` `U-7`                                                                                       | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 81  | Download windows offer only Try again, whatever fix the failure needs                             | `30-2` `Xfeature-behaviour-5`                                                                      | P2       | medium | P2, 2 findings, medium                                                                                           | none                                          | fixed  |
 | 82  | Refreshing the link cannot clear the check against what the browser saw                           | `Xpath-normal-download-3`                                                                          | P2       | small  | P2 with one finding; placed here because saving this check alone would remove the only way out of it             | `Xpath-normal-download-3`                     | fixed  |
@@ -162,7 +162,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 135 | Try again can never succeed after the list failed to open                                         | `Xdatabase-migrations-2`                                                                           | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 136 | Dragging moves rows the selection no longer shows                                                 | `25-4`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 137 | Reading a website's page with yt-dlp escapes the local network rule                               | `Xsecurity-bridge-and-pipe-input-2`                                                                | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
-| 138 | A queue's run ends while its last download only waits                                             | `18-1`                                                                                             | P2       | medium | P2, 1 finding, medium; after item 79                                                                             | none                                          | open   |
+| 138 | A queue's run ends while its last download only waits                                             | `18-1`                                                                                             | P2       | medium | P2, 1 finding, medium; after item 79                                                                             | none                                          | fixed  |
 | 139 | Nothing opens a download's window again after Hide                                                | `24-8`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 140 | A file too large for the disk is not noticed until it is full                                     | `01-3`                                                                                             | P2       | medium | P2, 1 finding, medium                                                                                            | none                                          | fixed  |
 | 141 | A crash at the end of a move leaves the list and the disk disagreeing                             | `Xcrash-and-resume-4`                                                                              | P2       | medium | P2, 1 finding, medium; after item 8                                                                              | none                                          | fixed  |
@@ -282,15 +282,15 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 255 | A page read can outlive the app after a quit past the limit                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10. Read from the code, not run.                                                        | none                                          | fixed  |
 | 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | none                                          | fixed  |
 | 257 | A server can change the type of a name the person confirmed                                       | found while fixing                                                                                 | P2       | medium | Found while reviewing PR-51.                                                                                     | none                                          | open   |
-| 258 | A real size above the estimate moves a video's bar backwards                                      | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-131. Read from the code, not run.                                                       | none                                          | open   |
+| 258 | A real size above the estimate moves a video's bar backwards                                      | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-131. Read from the code, not run.                                                       | none                                          | fixed  |
 | 259 | A finished group's heading counts go stale                                                        | found while fixing                                                                                 | P3       | small  | Found while fixing PR-41.                                                                                        | none                                          | open   |
 | 260 | A startup notice covers the toolbar and Settings rows                                             | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | open   |
 | 261 | The not-private notice carries a path and a long sentence                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | open   |
-| 262 | A kill during a removal can leave a moved copy behind                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-129.                                                                                    | none                                          | open   |
+| 262 | A kill during a removal can leave a moved copy behind                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-129.                                                                                    | none                                          | fixed  |
 | 263 | Some tests still throttle a server so connections join                                            | found while fixing                                                                                 | P3       | small  | Found while fixing PR-126.                                                                                       | none                                          | open   |
-| 264 | The proxy's shown name has two copies                                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-116.                                                                                    | none                                          | open   |
-| 265 | A stream join reads only ffmpeg's last lines                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-105.                                                                                                  | none                                          | open   |
-| 266 | A crash while placing a video can double its subtitles                                            | found while fixing                                                                                 | P3       | small  | Left by PR-94.                                                                                                   | none                                          | open   |
+| 264 | The proxy's shown name has two copies                                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-116.                                                                                    | none                                          | fixed  |
+| 265 | A stream join reads only ffmpeg's last lines                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-105.                                                                                                  | none                                          | fixed  |
+| 266 | A crash while placing a video can double its subtitles                                            | found while fixing                                                                                 | P3       | small  | Left by PR-94.                                                                                                   | none                                          | fixed  |
 | 267 | No check finds shell functions nothing calls                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-98.                                                                                                   | none                                          | open   |
 | 268 | A hanging test on Windows leaves no name or log                                                   | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-11.                                                                                     | none                                          | open   |
 
@@ -1678,7 +1678,7 @@ P2, medium, fixed.
 
 ### 79. The window and a restart disagree with what a queue's run really is
 
-P2, medium, open.
+P2, medium, fixed.
 
 Whether a queue is in a run lives in a private unsaved `Gate` flag beside the saved `running_outside_schedule`. The sidebar reads `allows` and the core reads `Gate`, so at 22:30 after a run the core waits while the sidebar says "1 waiting" with no Start now. A restart drops a run unless a download was running at that moment.
 
@@ -2628,7 +2628,7 @@ P2, medium, fixed.
 
 ### 138. A queue's run ends while its last download only waits
 
-P2, medium, open.
+P2, medium, fixed.
 
 `has_work` looks only at running or waiting entries. A last download that is only waiting for an answer, or held for a move, lets the run end, and it then waits for the next start. Only pressing Start now recovers, which depends on item 79.
 
@@ -4561,7 +4561,7 @@ A confirmed name that was not edited is sent as no choice, so the server's `Cont
 
 ### 258. A real size above the estimate moves a video's bar backwards
 
-P3, small, open.
+P3, small, fixed.
 
 A yt-dlp row seeds its total from the page's sizes. A real size above a `filesize_approx` seed, or a growing `total_bytes_estimate`, raises the total and drops the bar.
 
@@ -4609,7 +4609,7 @@ P3, small, open.
 
 ### 262. A kill during a removal can leave a moved copy behind
 
-P3, small, open.
+P3, small, fixed.
 
 A removal can wait on a move to another drive. The row and its move record are gone by then, so a kill leaves a `.wirecatch-move-N` copy, possibly many gigabytes, that nothing cleans.
 
@@ -4633,7 +4633,7 @@ A few tests set a throttle with no action behind it, so that connections join be
 
 ### 264. The proxy's shown name has two copies
 
-P3, small, open.
+P3, small, fixed.
 
 `proxy_dialog::shown_name` repeats `ProxyServerSettings::shown_name`, and the sidebar imports the dialog just to call it.
 
@@ -4645,7 +4645,7 @@ P3, small, open.
 
 ### 265. A stream join reads only ffmpeg's last lines
 
-P3, small, open.
+P3, small, fixed.
 
 The stream join's `Error::Ffmpeg` keeps ffmpeg's last three lines (`SUMMARY_LINES`), so a cause named earlier shows the general sentence.
 
@@ -4657,7 +4657,7 @@ The stream join's `Error::Ffmpeg` keeps ffmpeg's last three lines (`SUMMARY_LINE
 
 ### 266. A crash while placing a video can double its subtitles
 
-P3, small, open.
+P3, small, fixed.
 
 A crash between a subtitle's link and its discard places it again under the keep-both rule, giving `Clip.en (1).srt`.
 

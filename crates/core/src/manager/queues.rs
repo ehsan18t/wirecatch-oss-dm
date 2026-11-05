@@ -214,11 +214,11 @@ fn ensure_proxy_saved(state: &State, settings: &QueueSettings) -> Result<()> {
     }
 }
 
-/// A changed schedule restarts the gate's bookkeeping.
+/// A changed schedule ends the run of the old one.
 pub(super) fn apply_to_slot(slot: &mut QueueSlot, settings: QueueSettings) {
     let old = &slot.queue.settings;
     if old.schedule != settings.schedule {
-        slot.gate.reset();
+        slot.queue.status.running_until_empty = false;
     }
     if old.speed_limit != settings.speed_limit {
         slot.limiter.set_limit(settings.speed_limit.own());

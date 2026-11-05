@@ -34,7 +34,7 @@ impl Taken {
     }
 }
 
-/// Where [`place`] put a finished file.
+/// Where [`place_noting`] put a finished file.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Placed {
     At(PathBuf),
@@ -75,38 +75,29 @@ pub(super) async fn finish(
     let moved = job
         .file_work
         .spawn_blocking(move || -> std::io::Result<MediaDone> {
-            let (target, bytes) = if let Some(target) = placed_before(&file, &work) {
-                let bytes = std::fs::metadata(&target)?.len();
-                (target, bytes)
-            } else {
-                // On disk before the work folder goes, so a power cut cannot lose both it and its sources.
-                wirecatch_files::whole_file::flush(&file)?;
-                // Marked before it is put in place, so it is never there unmarked.
-                wirecatch_files::zone::mark(&file, &url, referrer.as_deref());
-                placing();
-                remember_placing(&work, &url, &file, &sidecars)?;
-                let note = |how: Moving, to: &Path| note_move(&work, how, to);
-                match place_noting(&file, &planned, &reserve, taken, &note)? {
-                    Placed::At(target) => {
-                        let bytes = std::fs::metadata(&target)?.len();
-                        (target, bytes)
+            let (target, bytes) =
+                if let Some(target) = placed_before(&file, &work, workdir::PLACING_TO) {
+                    let bytes = std::fs::metadata(&target)?.len();
+                    (target, bytes)
+                } else {
+                    // On disk before the work folder goes, so a power cut cannot lose both it and its sources.
+                    wirecatch_files::whole_file::flush(&file)?;
+                    // Marked before it is put in place, so it is never there unmarked.
+                    wirecatch_files::zone::mark(&file, &url, referrer.as_deref());
+                    placing();
+                    remember_placing(&work, &url, &file, &sidecars)?;
+                    let note = |how: Moving, to: &Path| note_move(&work, how, to);
+                    match place_noting(&file, &planned, &reserve, taken, &note)? {
+                        Placed::At(target) => {
+                            let bytes = std::fs::metadata(&target)?.len();
+                            (target, bytes)
+                        }
+                        Placed::Kept { path, size } => (path, size),
+                        // The work folder stays, with the file in it, for the answer.
+                        Placed::Asks(found) => return Ok(MediaDone::FileExists(found)),
                     }
-                    Placed::Kept { path, size } => (path, size),
-                    // The work folder stays, with the file in it, for the answer.
-                    Placed::Asks(found) => return Ok(MediaDone::FileExists(found)),
-                }
-            };
-            let anywhere: Reserve = Arc::new(|_: &Path, _| true);
-            let mut placed = Vec::new();
-            for (subtitle, language) in &sidecars {
-                wirecatch_files::zone::mark(subtitle, &url, referrer.as_deref());
-                let beside = sidecar_path(&target, language);
-                match place(subtitle, &beside, &anywhere, Taken::KeepBoth) {
-                    Ok(Placed::At(path)) => placed.push(path),
-                    Ok(Placed::Kept { .. } | Placed::Asks(_)) => {}
-                    Err(e) => warn!(error = %e, "could not put a subtitle file next to the video"),
-                }
-            }
+                };
+            let placed = place_subtitles(&sidecars, &target, &work, &url, referrer.as_deref());
             wirecatch_files::discard::dir(&work);
             Ok(MediaDone::Completed {
                 path: target,
@@ -117,6 +108,34 @@ pub(super) async fn finish(
         .await
         .map_err(|e| describe::internal(&e))?;
     moved.map_err(|e| disk(&e, output))
+}
+
+/// Puts each subtitle file next to `video`, and returns where they went. One that cannot be placed is logged, as the video is whole without it.
+fn place_subtitles(
+    sidecars: &[(PathBuf, String)],
+    video: &Path,
+    work: &Path,
+    url: &str,
+    referrer: Option<&str>,
+) -> Vec<PathBuf> {
+    let anywhere: Reserve = Arc::new(|_: &Path, _| true);
+    let mut placed = Vec::new();
+    for (subtitle, language) in sidecars {
+        let name = crate::naming::file_name_of(subtitle);
+        if let Some(target) = placed_before(subtitle, work, &workdir::placing_subtitle_to(&name)) {
+            placed.push(target);
+            continue;
+        }
+        wirecatch_files::zone::mark(subtitle, url, referrer);
+        let beside = sidecar_path(video, language);
+        let note = |how: Moving, to: &Path| note_subtitle_move(work, &name, how, to);
+        match place_noting(subtitle, &beside, &anywhere, Taken::KeepBoth, &note) {
+            Ok(Placed::At(path)) => placed.push(path),
+            Ok(Placed::Kept { .. } | Placed::Asks(_)) => {}
+            Err(e) => warn!(error = %e, "could not put a subtitle file next to the video"),
+        }
+    }
+    placed
 }
 
 pub(super) fn link_digest(url: &str) -> String {
@@ -161,25 +180,39 @@ impl Moving {
 }
 
 pub(super) fn note_move(work: &Path, how: Moving, to: &Path) -> std::io::Result<()> {
+    note_move_in(work, workdir::PLACING_TO, how, to)
+}
+
+/// Notes the move of the subtitle file named `subtitle`.
+pub(super) fn note_subtitle_move(
+    work: &Path,
+    subtitle: &str,
+    how: Moving,
+    to: &Path,
+) -> std::io::Result<()> {
+    note_move_in(work, &workdir::placing_subtitle_to(subtitle), how, to)
+}
+
+fn note_move_in(work: &Path, note: &str, how: Moving, to: &Path) -> std::io::Result<()> {
     let how = match how {
         Moving::ToFreeName => Moving::FREE,
         Moving::OntoTakenName => Moving::TAKEN,
     };
     let name = crate::naming::file_name_of(to);
-    std::fs::write(work.join(workdir::PLACING_TO), format!("{how}\n{name}"))
+    std::fs::write(work.join(note), format!("{how}\n{name}"))
 }
 
-/// How the last move was noted and the file now at its name, when there is one.
-fn noted_move(work: &Path) -> Option<(String, PathBuf)> {
-    let note = std::fs::read_to_string(work.join(workdir::PLACING_TO)).ok()?;
+/// How the last move was noted in `note` and the file now at its name, when there is one.
+fn noted_move(work: &Path, note: &str) -> Option<(String, PathBuf)> {
+    let note = std::fs::read_to_string(work.join(note)).ok()?;
     let (how, name) = note.split_once('\n')?;
     let target = work.parent()?.join(name);
     (workdir::plain_name(name) && target.is_file()).then(|| (how.to_owned(), target))
 }
 
 /// Where an earlier run put `file`, when it died between that and removing `work`. A file still in `work` was linked to its free name and not yet discarded only if the two are one file: a note stays after a move that failed, and another file can take the name later.
-fn placed_before(file: &Path, work: &Path) -> Option<PathBuf> {
-    let (how, target) = noted_move(work)?;
+fn placed_before(file: &Path, work: &Path, note: &str) -> Option<PathBuf> {
+    let (how, target) = noted_move(work, note)?;
     if !file.exists() {
         return Some(target);
     }
@@ -210,11 +243,20 @@ pub(super) async fn waiting_to_place(
     let name = lines.next()?.trim();
     let file = inside(name).or_else(|| {
         let file = work.join(name);
-        (file.parent() == Some(work) && noted_move(work).is_some()).then_some(file)
+        (file.parent() == Some(work) && noted_move(work, workdir::PLACING_TO).is_some())
+            .then_some(file)
     })?;
+    let subtitle = |name: &str| {
+        inside(name).or_else(|| {
+            let file = work.join(name);
+            (file.parent() == Some(work)
+                && noted_move(work, &workdir::placing_subtitle_to(name)).is_some())
+            .then_some(file)
+        })
+    };
     let sidecars = lines
         .filter_map(|line| line.split_once('\t'))
-        .filter_map(|(name, language)| Some((inside(name)?, language.to_string())))
+        .filter_map(|(name, language)| Some((subtitle(name)?, language.to_string())))
         .collect();
     Some((file, sidecars))
 }
@@ -286,17 +328,7 @@ pub(super) const MAX_NAME_ATTEMPTS: u64 = 10_000;
 /// Moves the finished `file` to `planned` (with the file's own media
 /// extension, see [`final_path`]). When a file in the folder has that name, `taken` says what
 /// happens; keeping both, or a name another download holds, goes on to `name (1).ext` and so on,
-/// and never replaces a file. Blocks on the disk.
-pub(super) fn place(
-    file: &Path,
-    planned: &Path,
-    reserve: &Reserve,
-    taken: Taken,
-) -> std::io::Result<Placed> {
-    place_noting(file, planned, reserve, taken, &|_, _| Ok(()))
-}
-
-/// [`place`], calling `note` before each move of the file.
+/// and never replaces a file. Calls `note` before each move of the file. Blocks on the disk.
 pub(super) fn place_noting(
     file: &Path,
     planned: &Path,

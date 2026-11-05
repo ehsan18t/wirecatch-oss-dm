@@ -12,4 +12,9 @@ export type QueueStatus = {
    * or paused, then the schedule applies again.
    */
   running_outside_schedule: boolean;
+  /**
+   * A schedule without a stop time has passed its start: the queue runs until it has nothing
+   * left to do, then waits for the next start.
+   */
+  running_until_empty: boolean;
 };

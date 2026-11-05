@@ -92,6 +92,24 @@ pub(super) struct MediaPending {
     pub replaces: Vec<DownloadId>,
 }
 
+impl MediaPending {
+    /// The queue whose run waits for this, when a download gave way to it (D155.3).
+    fn arrival(&self) -> Option<QueueId> {
+        (!self.replaces.is_empty()).then_some(self.placed.queue)
+    }
+}
+
+/// Takes out media `id`, whose read ended in `error`. Its queue's run stays open until what comes of it is in the list.
+fn take_unread(
+    state: &mut State,
+    id: QuestionId,
+    error: UserError,
+) -> Option<(MediaPending, UserError)> {
+    let pending = state.media.remove(&id)?;
+    state.arriving.extend(pending.arrival());
+    Some((pending, error))
+}
+
 /// How a capture or a link added in the app waits for its quality to be chosen.
 pub(super) struct Held {
     /// The extension's handover ids for it; none for a link added in the app.
@@ -487,6 +505,7 @@ impl Manager {
             let Some(pending) = state.media.remove(&id) else {
                 return Err(CoreError::ConfirmationNotFound(id));
             };
+            state.arriving.extend(pending.arrival());
             // The app's from now on: a withdrawal while it is added finds it started (CORE-4).
             for handover in &pending.handovers {
                 state.handovers.retarget(handover, Target::Confirming(id));
@@ -501,8 +520,34 @@ impl Manager {
         })
     }
 
-    /// Adds the download `taken` was chosen for, or puts its question back when it cannot be added.
+    /// [`add_taken`](Self::add_taken), with the queue's run kept open until it is done.
     async fn add_chosen(
+        &self,
+        id: QuestionId,
+        taken: Taken,
+        selection: MediaSelection,
+        picker: Picker,
+    ) -> Result<wirecatch_protocol::DownloadId> {
+        let arrival = taken.pending.arrival();
+        let added = self.add_taken(id, taken, selection, picker).await;
+        self.arrived(arrival);
+        added
+    }
+
+    /// No longer keeps the run of the queue `arrival` names open.
+    fn arrived(&self, arrival: Option<QueueId>) {
+        let Some(queue) = arrival else {
+            return;
+        };
+        let mut state = self.lock();
+        if let Some(place) = state.arriving.iter().position(|q| *q == queue) {
+            state.arriving.swap_remove(place);
+        }
+        self.reconcile(&mut state);
+    }
+
+    /// Adds the download `taken` was chosen for, or puts its question back when it cannot be added.
+    async fn add_taken(
         &self,
         id: QuestionId,
         taken: Taken,
@@ -737,6 +782,7 @@ impl Manager {
         }
         if let Some((pending, error)) = self.offer(id, found) {
             warn!(error = %error.message, "media could not be read");
+            let arrival = pending.arrival();
             if pending.page_otherwise {
                 self.emit(UiEvent::ConfirmationClosed { id });
                 self.add_page_as_file(pending).await;
@@ -745,6 +791,7 @@ impl Manager {
                 self.record_media_failure(pending, error).await;
                 self.emit(UiEvent::ConfirmationClosed { id });
             }
+            self.arrived(arrival);
         }
     }
 
@@ -833,7 +880,7 @@ impl Manager {
                 }
                 None
             }
-            Err(error) => state.media.remove(&id).map(|pending| (pending, error)),
+            Err(error) => take_unread(&mut state, id, error),
         }
     }
 

@@ -1337,3 +1337,27 @@ Decided on 2026-11-05. D58 stands: the tests stay under `cargo test`, with no ca
 1. The `test` and `test-http3` checks read `cargo test`'s output. libtest prints a notice for a test still running at 60 seconds; a test with no result four minutes after that fails the check by name (`scripts/gate/test-limit.mjs`). Five minutes is more than two `PATIENCE` waits that run out, and far enough inside the Rust job's 20 minutes (D57) that the job is not cancelled and its log is kept.
 2. A hang stops `cargo test` and the program it runs, so the test binaries after it do not run, also under `--no-fail-fast`. libtest gives no way to stop one test.
 3. This holds on every system and for every run of the checks, so there is one way the tests run. libtest gives no notice when it runs one test at a time (a machine with one core, or `--test-threads=1`); such a run has no limit. Neither has a test target without libtest: `crates/logging`'s `harness = false` test. On Unix a program a test puts in its own process group outlives the stop.
+### D173. A video's bar never falls past an estimate
+
+Decided on 2026-11-05.
+
+A yt-dlp row's total starts from the page's sizes, which may be estimates, and its bytes are real. When a larger size arrives while the run goes on, the row's total follows the bytes at the ratio already shown, until it reaches the real size, so the bar waits rather than falling. A format begun again, or one not listed before, shows the real total. Hiding the total until the sizes are real was rejected: a fragmented format only ever has an estimate, so its row would have no bar at all.
+### D171. A removal keeps a move's target on record
+
+Decided on 2026-11-05. It amends D132.3 and D134.1.
+
+1. A removal waits for a move under way, and by then the row and its record of the move have left the list. The deletion record therefore also names where the move is going, and a finished download gets a deletion record for as long as it moves. A move that starts after the removal began adds the target before its first file moves.
+2. A start deletes the temporary copies in that target's folder. For an unfinished download it also deletes the partial files at the target, unless a download holds that path or its old one. For a finished download it deletes nothing else: a kept file is the person's, and D134.2 still holds for one being deleted. A kill between a copy to another drive taking its name and the original's deletion leaves the whole file in both places, and the extra copy stays.
+### D172. A subtitle file's move is noted as the video's is
+
+Decided on 2026-11-05. It amends D132.4.
+
+Before each subtitle file moves from the work folder, its name and how it moves are noted there. A next run that finds the note and the subtitle file gone, or the two names one file, lists the file at the noted name and places no second copy. A note beside a different file says nothing, and the subtitle file takes a free name.
+
+### D155. Whether a queue is in a run is saved, and the window reads it
+
+Decided on 2026-11-05.
+
+1. A schedule without a stop time starts a run at its start, which lasts until the queue has nothing left. That run is `QueueStatus::running_until_empty`, saved with the queue next to `running_outside_schedule`. So a restart keeps a run whether or not a download was running, and never starts one. A question about a file in the folder is held in memory only, so a kill ends a run that had nothing else left.
+2. `schedule::allows` is the one answer: inside the window, or during a run. The core and the sidebar both read it, so the queue's line and Start now follow what really decides. Between runs a queue without a stop time is outside its schedule all day, and offers Start now.
+3. A run keeps going for a download that only waits: its question about a file in the folder, its move, or the page read for its video, up to the row that replaces it (`State::arriving`). A link added to the queue meanwhile starts at once, as part of the run.
