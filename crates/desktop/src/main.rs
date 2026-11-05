@@ -188,7 +188,13 @@ mod tests {
     #[test]
     fn only_a_pop_up_cannot_be_resized() {
         assert!(window_options().is_resizable);
-        let bounds = Bounds::default();
-        assert!(!popup_window_options(bounds).is_resizable);
+        let bounds = Bounds::new(gpui_kit::point(px(10.), px(20.)), size(px(460.), px(600.)));
+        let popup = popup_window_options(bounds);
+        assert!(!popup.is_resizable);
+        assert_eq!(
+            popup.window_min_size.map(|least| least.width),
+            Some(bounds.size.width),
+            "Linux ignores is_resizable: this alone keeps a window manager from narrowing it"
+        );
     }
 }
