@@ -640,7 +640,14 @@ mod tests {
             ),
             (
                 MediaDefaults::inline(&cfg),
-                &["video", "audio", "ask_each_time", "quality", "fallback"],
+                &[
+                    "video",
+                    "audio",
+                    "ask_each_time",
+                    "remember_choices",
+                    "quality",
+                    "fallback",
+                ],
             ),
             (
                 OutputDefaults::inline(&cfg),

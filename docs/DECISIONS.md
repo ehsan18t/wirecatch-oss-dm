@@ -1476,5 +1476,5 @@ Decided on 2026-11-05. It adds to D32.5.
 
 1. The extension checks what the app answers against the generated guards, and a guard requires every field its type does not mark optional. So a new extension refuses a whole answer from an app that does not send a field, even though Rust reads the same answer with `#[serde(default)]`. A new field in an answer to the extension (any type a `Reply` or `Event` the extension reads holds) is written `#[ts(as = "Option<T>", optional)]`, and its reader says what a missing one means or hides the control, since a patch naming a field the app lacks is refused.
 2. `#[serde(default)]` alone does not make a field optional in TypeScript. Most such defaults are for reading saved settings, and a guard that let a field through while its type promised it would hide the gap from every reader.
-3. The fields every app from the first release on sends stay required, so readers need no branch that never runs. `remember_choices` is optional as the newest of them, and because the extension does not read it.
+3. Every field at the first release stays required: no version has been released, so every app sends them, and readers need no branch that never runs.
 4. The test `the_required_fields_of_answers_to_the_extension_are_settled` lists what the generated types require and fails on a new required field.

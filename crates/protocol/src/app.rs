@@ -644,10 +644,8 @@ pub struct MediaDefaults {
     #[serde(default = "default_true")]
     pub ask_each_time: bool,
     /// Save what is picked in the quality window when it is answered with Download or Download
-    /// later. Off, a pick applies to that video only (D200). An app from before it sends none,
-    /// so the extension reads it as optional (D210).
+    /// later. Off, a pick applies to that video only (D200).
     #[serde(default = "default_true")]
-    #[ts(as = "Option<bool>", optional)]
     pub remember_choices: bool,
     /// The resolution picked first; with
     /// [`remember_choices`](Self::remember_choices), a pick from the quality window becomes it.

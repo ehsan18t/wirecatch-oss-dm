@@ -49,24 +49,6 @@ describe('applyBrowserControlsPatch', () => {
   });
 });
 
-describe('browser controls from an app that sends no remember_choices', () => {
-  const [first] = fixtures.apply_browser_controls;
-  if (!first) throw new Error('No browser controls fixture.');
-  const media = Object.entries(first.before.media).filter(([key]) => key !== 'remember_choices');
-  const controls = { ...first.before, media: Object.fromEntries(media) };
-
-  it('pass the guard the extension checks replies with', () => {
-    expect(isBrowserControls(controls)).toBe(true);
-  });
-
-  it('still take a patch, and stay without the field', () => {
-    if (!isBrowserControls(controls)) throw new Error('The controls did not pass the guard.');
-    const after = applyBrowserControlsPatch(controls, { max_concurrent_downloads: 7 });
-    expect(after.max_concurrent_downloads).toBe(7);
-    expect(after.media).not.toHaveProperty('remember_choices');
-  });
-});
-
 describe('applyExtensionSettingsPatch', () => {
   it('applies every patch the way the app applies it', () => {
     expect(fixtures.apply_extension_settings.length).toBeGreaterThan(0);
