@@ -282,11 +282,11 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 255 | A page read can outlive the app after a quit past the limit                                       | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-10. Read from the code, not run.                                                        | none                                          | fixed  |
 | 256 | A retry on the best format can move the bar backwards                                             | found while fixing                                                                                 | P3       | small  | Left by PR-76.                                                                                                   | none                                          | fixed  |
 | 257 | A server can change the type of a name the person confirmed                                       | found while fixing                                                                                 | P2       | medium | Found while reviewing PR-51.                                                                                     | none                                          | open   |
-| 258 | A real size above the estimate moves a video's bar backwards                                      | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-131. Read from the code, not run.                                                       | none                                          | open   |
+| 258 | A real size above the estimate moves a video's bar backwards                                      | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-131. Read from the code, not run.                                                       | none                                          | fixed  |
 | 259 | A finished group's heading counts go stale                                                        | found while fixing                                                                                 | P3       | small  | Found while fixing PR-41.                                                                                        | none                                          | open   |
 | 260 | A startup notice covers the toolbar and Settings rows                                             | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | open   |
 | 261 | The not-private notice carries a path and a long sentence                                         | found while fixing                                                                                 | P3       | small  | Found while fixing PR-102.                                                                                       | none                                          | open   |
-| 262 | A kill during a removal can leave a moved copy behind                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-129.                                                                                    | none                                          | open   |
+| 262 | A kill during a removal can leave a moved copy behind                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-129.                                                                                    | none                                          | fixed  |
 | 263 | Some tests still throttle a server so connections join                                            | found while fixing                                                                                 | P3       | small  | Found while fixing PR-126.                                                                                       | none                                          | open   |
 | 264 | The proxy's shown name has two copies                                                             | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-116.                                                                                    | none                                          | fixed  |
 | 265 | A stream join reads only ffmpeg's last lines                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-105.                                                                                                  | none                                          | fixed  |
@@ -4561,7 +4561,7 @@ A confirmed name that was not edited is sent as no choice, so the server's `Cont
 
 ### 258. A real size above the estimate moves a video's bar backwards
 
-P3, small, open.
+P3, small, fixed.
 
 A yt-dlp row seeds its total from the page's sizes. A real size above a `filesize_approx` seed, or a growing `total_bytes_estimate`, raises the total and drops the bar.
 
@@ -4609,7 +4609,7 @@ P3, small, open.
 
 ### 262. A kill during a removal can leave a moved copy behind
 
-P3, small, open.
+P3, small, fixed.
 
 A removal can wait on a move to another drive. The row and its move record are gone by then, so a kill leaves a `.wirecatch-move-N` copy, possibly many gigabytes, that nothing cleans.
 

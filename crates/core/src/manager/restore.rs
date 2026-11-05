@@ -20,7 +20,7 @@ use wirecatch_store::{Snapshot, Store, StoredDownload};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::questions;
-use super::relocate::{files_that_arrived, finish_interrupted_move};
+use super::relocate::{discard_staged, files_that_arrived, finish_interrupted_move};
 use super::run::mark_completed;
 use super::state::{Counters, Entry, Hold, Partial, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
@@ -185,15 +185,28 @@ fn restore_downloads(
 
 /// Deletes what a kill cut short (D134).
 fn finish_deletions(state: &State, deletions: &[PendingDeletion]) {
-    for deletion in deletions {
-        // A download at that path came back because a kill beat its row's deletion, and those files are its own, unless the row is the cancelled one the record is for.
-        let spared = state
+    // A download at that path came back because a kill beat its row's deletion, and those files are its own, unless the row is the cancelled one the record is for.
+    let spared = |path: &Path| {
+        state
             .claimed
-            .holder(&deletion.path)
+            .holder(path)
             .and_then(|holder| state.downloads.get(&holder))
-            .is_some_and(|holder| holder.row.status != DownloadStatus::Cancelled);
-        if !spared {
-            Partial::of(deletion).delete();
+            .is_some_and(|holder| holder.row.status != DownloadStatus::Cancelled)
+    };
+    for deletion in deletions {
+        if let Some(target) = &deletion.moving_to {
+            discard_staged(target.parent().unwrap_or(Path::new("")));
+        }
+        if deletion.finished || spared(&deletion.path) {
+            continue;
+        }
+        Partial::of(deletion).delete();
+        if let Some(target) = deletion.moving_to.as_ref().filter(|to| !spared(to)) {
+            Partial::of(&PendingDeletion {
+                path: target.clone(),
+                ..deletion.clone()
+            })
+            .delete();
         }
     }
 }
@@ -472,6 +485,8 @@ mod tests {
             pending_deletions: vec![PendingDeletion {
                 path: PathBuf::from(&row.summary.path),
                 media: false,
+                moving_to: None,
+                finished: false,
             }],
             downloads: vec![row],
             ..Snapshot::default()
@@ -509,12 +524,100 @@ mod tests {
             pending_deletions: vec![PendingDeletion {
                 path: path.clone(),
                 media: false,
+                moving_to: None,
+                finished: false,
             }],
             ..Snapshot::default()
         };
         let restored = restore(snapshot, &nowhere(&|_| None));
         assert!(part.exists(), "the download's own file was deleted");
         assert!(restored.deletions_finished);
+    }
+
+    /// A kill during a removal that waited on a move: the row is gone, and the record is all that names the target.
+    #[test]
+    fn a_start_clears_what_a_removals_move_left_in_its_target() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (from, to) = (source.path().join("a.bin"), target.path().join("a.bin"));
+        let [old_part, _] = crate::naming::partial_files(&from);
+        let [new_part, _] = crate::naming::partial_files(&to);
+        let staged = target.path().join(".wirecatch-move-0");
+        for file in [&old_part, &new_part, &staged] {
+            std::fs::write(file, b"left").unwrap();
+        }
+        let snapshot = Snapshot {
+            pending_deletions: vec![PendingDeletion {
+                path: from,
+                media: false,
+                moving_to: Some(to),
+                finished: false,
+            }],
+            ..Snapshot::default()
+        };
+        let restored = restore(snapshot, &nowhere(&|_| None));
+        assert!(!staged.exists(), "the copy under way stayed");
+        assert!(!new_part.exists(), "the moved part file stayed");
+        assert!(!old_part.exists(), "the part file stayed");
+        assert!(restored.deletions_finished);
+    }
+
+    /// A finished file's move leaves only its copy to clear: a part file beside either path is someone else's.
+    #[test]
+    fn a_start_clears_only_the_copy_of_a_finished_files_move() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (from, to) = (source.path().join("a.bin"), target.path().join("a.bin"));
+        let [old_part, _] = crate::naming::partial_files(&from);
+        let [new_part, _] = crate::naming::partial_files(&to);
+        let staged = target.path().join(".wirecatch-move-0");
+        for file in [&from, &old_part, &new_part, &staged] {
+            std::fs::write(file, b"left").unwrap();
+        }
+        let snapshot = Snapshot {
+            pending_deletions: vec![PendingDeletion {
+                path: from.clone(),
+                media: false,
+                moving_to: Some(to),
+                finished: true,
+            }],
+            ..Snapshot::default()
+        };
+        restore(snapshot, &nowhere(&|_| None));
+        assert!(!staged.exists(), "the copy under way stayed");
+        assert!(from.exists() && old_part.exists() && new_part.exists());
+    }
+
+    /// A kill beat the row's deletion and the row came back: its files are its own, wherever its move got to.
+    #[test]
+    fn a_deletion_on_record_spares_a_download_that_came_back_from_its_move() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (from, to) = (source.path().join("a.bin"), target.path().join("a.bin"));
+        let [old_part, _] = crate::naming::partial_files(&from);
+        let [new_part, _] = crate::naming::partial_files(&to);
+        let staged = target.path().join(".wirecatch-move-0");
+        for file in [&old_part, &new_part, &staged] {
+            std::fs::write(file, b"kept").unwrap();
+        }
+        let mut row = stored(1, 1, DownloadStatus::Paused);
+        row.summary.path = from.to_string_lossy().into_owned();
+        let snapshot = Snapshot {
+            downloads: vec![row],
+            pending_deletions: vec![PendingDeletion {
+                path: from,
+                media: false,
+                moving_to: Some(to),
+                finished: false,
+            }],
+            ..Snapshot::default()
+        };
+        restore(snapshot, &nowhere(&|_| None));
+        assert!(
+            old_part.exists() && new_part.exists(),
+            "its file was deleted"
+        );
+        assert!(
+            !staged.exists(),
+            "no move runs at a start, so the copy is nobody's"
+        );
     }
 
     /// The proxy a run is shown going through comes from the system's setting as last read, not read again under the manager's lock.
