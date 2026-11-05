@@ -4,7 +4,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
-use wirecatch_protocol::app::{AppSettings, Category, DownloadStatus, QueueSettings, UserError};
+use wirecatch_protocol::app::{
+    AppSettings, Category, DownloadStatus, QueueSettings, SubtitleChoice, UserError,
+};
 use wirecatch_protocol::rules::QueueReason;
 use wirecatch_records::answers::Answers;
 use wirecatch_records::batch::StoredBatch;
@@ -99,6 +101,17 @@ fn a_page_saved_with_its_selection_reads_from_its_ids() {
             conversion_failed: false,
         })
     );
+}
+
+/// Settings saved before Off had a value: an empty language list was off, and the rest kept
+/// where the subtitles went (D195).
+#[test]
+fn older_settings_keep_how_a_video_kept_its_subtitles() {
+    let json = fs::read_to_string(samples().join("settings/before_subtitle_choice.json")).unwrap();
+    let media = serde_json::from_str::<AppSettings>(&json).unwrap().media;
+    assert_eq!(media.video.subtitles, SubtitleChoice::Files);
+    assert_eq!(media.video.subtitle_languages, ["en"]);
+    assert_eq!(media.audio.subtitles, SubtitleChoice::Off);
 }
 
 fn output(path: &str) -> Option<OutputJob> {

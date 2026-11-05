@@ -10,7 +10,7 @@ use wirecatch_engine::numeric::{approx_f64, f64_to_u64};
 
 use wirecatch_protocol::app::{
     FixAction, MediaChoice, MediaOption, MediaSelection, OutputFit, OutputFormat, StreamAction,
-    UnembeddedSubtitles, UserError,
+    SubtitleChoice, UserError,
 };
 use wirecatch_streams::{AudioTrack, Choice, StreamInfo, VideoTrack};
 
@@ -160,10 +160,10 @@ impl Plan {
             .iter()
             .find(|v| v.fit.format == selection.output)
             .is_some_and(|v| v.fit.embeds_subtitles);
-        if !selection.subtitle_files
-            && !holds_subtitles
-            && selection.unembedded_subtitles == UnembeddedSubtitles::Skip
-        {
+        let subtitles = selection
+            .subtitle_choice()
+            .in_format(holds_subtitles, selection.unembedded_subtitles);
+        if subtitles == SubtitleChoice::Off {
             picks.clear();
         }
         let plain = selection.output == OutputFormat::Original
@@ -192,7 +192,7 @@ impl Plan {
             video: variant.video_action,
             audio,
             subtitles: picks,
-            subtitle_files: selection.subtitle_files || !variant.fit.embeds_subtitles,
+            subtitle_files: subtitles == SubtitleChoice::Files,
             extras: Extras {
                 chapters: selection.chapters && choice.chapters && variant.fit.chapters,
                 tags: selection.output != OutputFormat::Original && !variant.container.is_video(),
@@ -661,6 +661,7 @@ fn nothing() -> UserError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wirecatch_protocol::app::UnembeddedSubtitles;
 
     fn page_offers(json: &str) -> Vec<Offer> {
         from_page(&serde_json::from_str::<Info>(json).unwrap()).unwrap()

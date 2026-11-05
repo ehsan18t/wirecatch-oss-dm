@@ -8,7 +8,7 @@ use wirecatch_core::CoreError;
 use wirecatch_protocol::DownloadId;
 use wirecatch_protocol::app::{
     AddonState, Category, DownloadStatus, FixAction, MediaChoice, MediaSelection, OutputFormat,
-    ProcessingStep, StreamAction,
+    ProcessingStep, StreamAction, SubtitleChoice,
 };
 use wirecatch_protocol::extension::MediaKind;
 
@@ -261,7 +261,8 @@ async fn a_video_saved_as_mp4_is_converted_with_subtitles_and_chapters() -> Test
     let video = h.manager.get_settings().media.video;
     assert_eq!(video.format, OutputFormat::Mp4);
     assert_eq!(video.subtitle_languages, ["en", "de"]);
-    assert!(video.auto_subtitles && video.chapters && !video.subtitle_files);
+    assert!(video.auto_subtitles && video.chapters);
+    assert_eq!(video.subtitles, SubtitleChoice::Inside);
     assert_eq!(
         h.manager.get_settings().media.audio.format,
         OutputFormat::Original

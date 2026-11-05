@@ -119,6 +119,7 @@ import type { SettingsFileQueue } from './SettingsFileQueue';
 import type { StartNoticeTime } from './StartNoticeTime';
 import type { StartupNotice } from './StartupNotice';
 import type { StreamAction } from './StreamAction';
+import type { SubtitleChoice } from './SubtitleChoice';
 import type { SuffixListInfo } from './SuffixListInfo';
 import type { Theme } from './Theme';
 import type { TimeOfDay } from './TimeOfDay';
@@ -1045,7 +1046,7 @@ export function isOutputDefaults(value: unknown): value is OutputDefaults {
     (typeof value1['audio_kbps'] === 'number' || value1['audio_kbps'] === null) &&
     isArrayOf(value1['subtitle_languages'], (value2: unknown) => typeof value2 === 'string') &&
     typeof value1['auto_subtitles'] === 'boolean' &&
-    typeof value1['subtitle_files'] === 'boolean' &&
+    isSubtitleChoice(value1['subtitles']) &&
     isUnembeddedSubtitles(value1['unembedded_subtitles']) &&
     typeof value1['chapters'] === 'boolean')(value);
 }
@@ -1061,7 +1062,7 @@ export function isOutputDefaultsPatch(value: unknown): value is OutputDefaultsPa
     (value1['subtitle_languages'] === undefined ||
       isArrayOf(value1['subtitle_languages'], (value2: unknown) => typeof value2 === 'string')) &&
     (value1['auto_subtitles'] === undefined || typeof value1['auto_subtitles'] === 'boolean') &&
-    (value1['subtitle_files'] === undefined || typeof value1['subtitle_files'] === 'boolean') &&
+    (value1['subtitles'] === undefined || isSubtitleChoice(value1['subtitles'])) &&
     (value1['unembedded_subtitles'] === undefined ||
       isUnembeddedSubtitles(value1['unembedded_subtitles'])) &&
     (value1['chapters'] === undefined || typeof value1['chapters'] === 'boolean'))(value);
@@ -1541,6 +1542,11 @@ export function isStartupNotice(value: unknown): value is StartupNotice {
 /** Whether `value` has the shape of a {@link StreamAction}; fields it does not name are not checked. */
 export function isStreamAction(value: unknown): value is StreamAction {
   return value === 'none' || value === 'copy' || value === 'encode';
+}
+
+/** Whether `value` has the shape of a {@link SubtitleChoice}; fields it does not name are not checked. */
+export function isSubtitleChoice(value: unknown): value is SubtitleChoice {
+  return value === 'off' || value === 'inside' || value === 'files';
 }
 
 /** Whether `value` has the shape of a {@link SuffixListInfo}; fields it does not name are not checked. */

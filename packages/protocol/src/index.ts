@@ -129,6 +129,7 @@ export type { SettingsFileQueue } from './generated/SettingsFileQueue';
 export type { StartNoticeTime } from './generated/StartNoticeTime';
 export type { StartupNotice } from './generated/StartupNotice';
 export type { StreamAction } from './generated/StreamAction';
+export type { SubtitleChoice } from './generated/SubtitleChoice';
 export type { SuffixListInfo } from './generated/SuffixListInfo';
 export type { Theme } from './generated/Theme';
 export type { TimeOfDay } from './generated/TimeOfDay';

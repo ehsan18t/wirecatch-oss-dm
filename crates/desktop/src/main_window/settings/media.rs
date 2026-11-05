@@ -9,14 +9,14 @@ use gpui_kit::component::setting::{SettingField, SettingGroup, SettingItem, Sett
 use gpui_kit::{App, Axis, Entity, IntoElement as _, SharedString, Styled as _, px};
 use wirecatch_protocol::app::{
     AddonId, AppSettings, AppSettingsPatch, MediaDefaultsPatch, OutputDefaultsPatch, OutputFormat,
-    QualityFallback, UnembeddedSubtitles, Update, VideoQuality,
+    QualityFallback, SubtitleChoice, UnembeddedSubtitles, Update, VideoQuality,
 };
 use wirecatch_protocol::extension::ExtensionSettingsPatch;
 use wirecatch_protocol::languages::LANGUAGES;
 use wirecatch_shell::host;
 
 use super::{Typing, change, choice, current, list_field, switch};
-use crate::download_windows::media_output::nearest_kbps;
+use crate::download_windows::media_output::{nearest_kbps, subtitle_toggle};
 use crate::library::Library;
 use crate::text::{ASK_EACH_VIDEO, AUDIO_FORMATS, REMEMBER_CHOICES, VIDEO_FORMATS};
 
@@ -35,12 +35,12 @@ const FALLBACKS: &[(QualityFallback, &str)] = &[
     (QualityFallback::Higher, "Next higher"),
     (QualityFallback::Ask, "Ask me"),
 ];
-const PLACEMENTS: &[(bool, &str)] = &[(false, "Inside the video"), (true, "As separate files")];
 const UNEMBEDDED: &[(UnembeddedSubtitles, &str)] = &[
     (UnembeddedSubtitles::Files, "Save them as separate files"),
     (UnembeddedSubtitles::Skip, "Leave them out"),
 ];
 const USUAL: &str = "usual";
+const SUBTITLE_LANGUAGES_HELP: &str = "The creator's subtitles, or auto-generated ones if allowed. Languages a video doesn't have are skipped. With none chosen, the video's own language is used.";
 
 pub(super) fn page(library: &Entity<Library>, cx: &App) -> SettingPage {
     SettingPage::new(super::Page::Media.title())
@@ -272,68 +272,104 @@ fn video_sites(library: &Entity<Library>) -> SettingItem {
                 .keywords(["sites", "video", "pages"])
 }
 
-/// Where a video's subtitles go, and auto-generated ones.
+/// The subtitle control the quality window has, showing what `read` comes to (D195).
+fn subtitle_field(
+    library: &Entity<Library>,
+    id: &'static str,
+    holds: bool,
+    read: fn(&AppSettings) -> SubtitleChoice,
+    patch: fn(SubtitleChoice) -> AppSettingsPatch,
+) -> SettingField<SharedString> {
+    let library = library.clone();
+    SettingField::render(move |_, _, cx| {
+        let shown = current(&library, cx, read, SubtitleChoice::Off);
+        subtitle_toggle(
+            id,
+            shown,
+            holds,
+            move |pick, _, cx| change(patch(*pick), cx),
+            cx,
+        )
+        .into_any_element()
+    })
+}
+
+/// Which subtitle languages to take.
+fn languages_item(
+    library: &Entity<Library>,
+    key: &'static str,
+    read: fn(&AppSettings) -> Vec<String>,
+    patch: fn(Vec<String>) -> AppSettingsPatch,
+) -> SettingItem {
+    SettingItem::new("Subtitle languages", languages(library, key, read, patch))
+        .description(SUBTITLE_LANGUAGES_HELP)
+        .keywords(["subtitles", "captions", "languages"])
+}
+
+fn auto_subtitles_item(
+    library: &Entity<Library>,
+    read: fn(&AppSettings) -> bool,
+    patch: fn(bool) -> AppSettingsPatch,
+) -> SettingItem {
+    SettingItem::new("Use auto-generated subtitles", switch(library, read, patch))
+        .description("Used when a language has no subtitles written by people.")
+        .keywords(["subtitles", "captions", "auto"])
+}
+
+/// How a video keeps its subtitles, then what only applies when it keeps them.
 fn video_subtitles(library: &Entity<Library>, cx: &App) -> SettingGroup {
-    let in_files = current(library, cx, |s| s.media.video.subtitle_files, false);
-    let group = SettingGroup::new()
-        .title("Video subtitles")
-        .item(
-            SettingItem::new(
-                "Subtitle languages",
-                languages(
-                    library,
-                    "video-languages",
-                    |s| s.media.video.subtitle_languages.clone(),
-                    |languages| {
-                        video_patch(OutputDefaultsPatch {
-                            subtitle_languages: Some(languages),
-                            ..OutputDefaultsPatch::default()
-                        })
-                    },
-                ),
-            )
-            .description("The creator's subtitles, or auto-generated ones if allowed. Languages a video doesn't have are skipped.")
-            .keywords(["subtitles", "captions", "languages"]),
+    let choice_now = current(
+        library,
+        cx,
+        |s| s.media.video.subtitles,
+        SubtitleChoice::Off,
+    );
+    let group = SettingGroup::new().title("Video subtitles").item(
+        SettingItem::new(
+            "Subtitles",
+            subtitle_field(
+                library,
+                "video-subtitles",
+                true,
+                |s| s.media.video.subtitles,
+                |subtitles| {
+                    video_patch(OutputDefaultsPatch {
+                        subtitles: Some(subtitles),
+                        ..OutputDefaultsPatch::default()
+                    })
+                },
+            ),
         )
-        .item(
-            SettingItem::new(
-                "Use auto-generated subtitles",
-                switch(
-                    library,
-                    |s| s.media.video.auto_subtitles,
-                    |on| {
-                        video_patch(OutputDefaultsPatch {
-                            auto_subtitles: Some(on),
-                            ..OutputDefaultsPatch::default()
-                        })
-                    },
-                ),
-            )
-            .description("Used when a language has no subtitles written by people.")
-            .keywords(["subtitles", "captions", "auto"]),
-        )
-        .item(
-            SettingItem::new(
-                "Subtitles",
-                choice(
-                    library,
-                    PLACEMENTS,
-                    |s| s.media.video.subtitle_files,
-                    |files| {
-                        video_patch(OutputDefaultsPatch {
-                            subtitle_files: Some(files),
-                            ..OutputDefaultsPatch::default()
-                        })
-                    },
-                ),
-            )
-            .description(
-                "Inside the video file, where players show them, or as .srt files next to it.",
-            )
-            .keywords(["subtitles", "srt", "embed"]),
-        );
+        .description("In the video file, where players show them, or as .srt files next to it.")
+        .keywords(["subtitles", "captions", "srt", "embed", "off"]),
+    );
+    if choice_now == SubtitleChoice::Off {
+        return group;
+    }
+    let group = group
+        .item(languages_item(
+            library,
+            "video-languages",
+            |s| s.media.video.subtitle_languages.clone(),
+            |languages| {
+                video_patch(OutputDefaultsPatch {
+                    subtitle_languages: Some(languages),
+                    ..OutputDefaultsPatch::default()
+                })
+            },
+        ))
+        .item(auto_subtitles_item(
+            library,
+            |s| s.media.video.auto_subtitles,
+            |on| {
+                video_patch(OutputDefaultsPatch {
+                    auto_subtitles: Some(on),
+                    ..OutputDefaultsPatch::default()
+                })
+            },
+        ));
     // Asked only while subtitles go inside the video (D93).
-    if !in_files {
+    if choice_now == SubtitleChoice::Inside {
         return group.item(
             SettingItem::new(
                 "If the format can't hold subtitles",
@@ -375,59 +411,85 @@ fn audio(library: &Entity<Library>, cx: &App) -> SettingGroup {
                 .keywords(["bitrate", "kbps", "quality"]),
         );
     }
+    audio_subtitles(group, library, cx).item(
+        SettingItem::new(
+            "Add chapters",
+            switch(
+                library,
+                |s| s.media.audio.chapters,
+                |on| {
+                    audio_patch(OutputDefaultsPatch {
+                        chapters: Some(on),
+                        ..OutputDefaultsPatch::default()
+                    })
+                },
+            ),
+        )
+        .description("Adds the video's chapters to M4A files.")
+        .keywords(["chapters"]),
+    )
+}
+
+/// How audio keeps its subtitles, then what only applies when it keeps them.
+fn audio_subtitles(mut group: SettingGroup, library: &Entity<Library>, cx: &App) -> SettingGroup {
+    let on = current(
+        library,
+        cx,
+        |s| audio_subtitles_shown(s) != SubtitleChoice::Off,
+        false,
+    );
+    group = group.item(
+        SettingItem::new(
+            "Subtitles",
+            subtitle_field(
+                library,
+                "audio-subtitles",
+                false,
+                audio_subtitles_shown,
+                |subtitles| {
+                    audio_patch(OutputDefaultsPatch {
+                        subtitles: Some(subtitles),
+                        ..OutputDefaultsPatch::default()
+                    })
+                },
+            ),
+        )
+        .description(
+            "Audio files cannot hold subtitles, so they are saved as .srt files next to the file.",
+        )
+        .keywords(["subtitles", "captions", "srt", "off"]),
+    );
+    if on {
+        group = group
+            .item(languages_item(
+                library,
+                "audio-languages",
+                |s| s.media.audio.subtitle_languages.clone(),
+                |languages| {
+                    audio_patch(OutputDefaultsPatch {
+                        subtitle_languages: Some(languages),
+                        ..OutputDefaultsPatch::default()
+                    })
+                },
+            ))
+            .item(auto_subtitles_item(
+                library,
+                |s| s.media.audio.auto_subtitles,
+                |on| {
+                    audio_patch(OutputDefaultsPatch {
+                        auto_subtitles: Some(on),
+                        ..OutputDefaultsPatch::default()
+                    })
+                },
+            ));
+    }
     group
-        .item(
-            SettingItem::new(
-                "Subtitle languages",
-                languages(
-                    library,
-                    "audio-languages",
-                    |s| s.media.audio.subtitle_languages.clone(),
-                    |languages| {
-                        audio_patch(OutputDefaultsPatch {
-                            subtitle_languages: Some(languages),
-                            ..OutputDefaultsPatch::default()
-                        })
-                    },
-                ),
-            )
-            .description("Saved as .srt files next to the audio file.")
-            .keywords(["subtitles", "captions", "languages"]),
-        )
-        .item(
-            SettingItem::new(
-                "Use auto-generated subtitles",
-                switch(
-                    library,
-                    |s| s.media.audio.auto_subtitles,
-                    |on| {
-                        audio_patch(OutputDefaultsPatch {
-                            auto_subtitles: Some(on),
-                            ..OutputDefaultsPatch::default()
-                        })
-                    },
-                ),
-            )
-            .description("Used when a language has no subtitles written by people.")
-            .keywords(["subtitles", "captions", "auto"]),
-        )
-        .item(
-            SettingItem::new(
-                "Add chapters",
-                switch(
-                    library,
-                    |s| s.media.audio.chapters,
-                    |on| {
-                        audio_patch(OutputDefaultsPatch {
-                            chapters: Some(on),
-                            ..OutputDefaultsPatch::default()
-                        })
-                    },
-                ),
-            )
-            .description("Adds the video's chapters to M4A files.")
-            .keywords(["chapters"]),
-        )
+}
+
+/// What the saved audio choice comes to: no audio format holds subtitles.
+fn audio_subtitles_shown(settings: &AppSettings) -> SubtitleChoice {
+    let audio = &settings.media.audio;
+    audio.subtitles.in_format(false, audio.unembedded_subtitles)
 }
 
 /// The audio format; a new one keeps the bit rate nearest the one chosen, when it has a choice.
@@ -603,7 +665,7 @@ fn languages(
         }
         Combobox::new(&state)
             .w(px(280.))
-            .placeholder("None")
+            .placeholder("The video's language")
             .search_placeholder("Search languages")
             .into_any_element()
     })

@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use crate::app::{
     MediaDefaults, MediaOption, MediaSelection, MediaSubtitle, OutputDefaults, OutputFormat,
-    QualityFallback, StreamAction, VideoQuality,
+    QualityFallback, StreamAction, SubtitleChoice, VideoQuality,
 };
 
 /// Where a video's quality window starts, and whether it must open.
@@ -133,16 +133,55 @@ impl OutputDefaults {
             later: false,
             output: OutputFormat::Original,
             audio_kbps: None,
-            subtitles: preselected_subtitles(
-                subtitles,
-                &self.subtitle_languages,
-                self.auto_subtitles,
-            ),
-            subtitle_files: self.subtitle_files,
+            subtitles: self.subtitles_at_start(subtitles),
+            subtitle_files: self.subtitles == SubtitleChoice::Files,
             unembedded_subtitles: self.unembedded_subtitles,
             chapters: chapters && self.chapters,
         }
     }
+
+    /// The subtitles a video starts with: none when off, else the saved languages it has, else,
+    /// with none saved, its own language. A saved language it lacks is not replaced (D50.3).
+    #[must_use]
+    pub fn subtitles_at_start(&self, offered: &[MediaSubtitle]) -> Vec<String> {
+        match self.subtitles {
+            SubtitleChoice::Off => Vec::new(),
+            _ if self.subtitle_languages.is_empty() => own_language(offered),
+            _ => preselected_subtitles(offered, &self.subtitle_languages, self.auto_subtitles),
+        }
+    }
+
+    /// The subtitles switching on takes (D195): the saved languages the video has, else its own
+    /// language, so on never has nothing selected while it offers any.
+    #[must_use]
+    pub fn subtitles_when_switched_on(&self, offered: &[MediaSubtitle]) -> Vec<String> {
+        let saved = preselected_subtitles(offered, &self.subtitle_languages, self.auto_subtitles);
+        if saved.is_empty() {
+            own_language(offered)
+        } else {
+            saved
+        }
+    }
+}
+
+/// The subtitle of the video's own language: the auto-generated ones are in it, YouTube's `-orig`
+/// naming it among several, and one written by people comes before them; else the first offered.
+fn own_language(offered: &[MediaSubtitle]) -> Vec<String> {
+    let own = offered
+        .iter()
+        .find(|s| s.auto && s.id.ends_with("-orig"))
+        .or_else(|| offered.iter().find(|s| s.auto));
+    let written = own.and_then(|own| {
+        offered
+            .iter()
+            .find(|s| !s.auto && same_language(&s.language, &own.language))
+    });
+    written
+        .or(own)
+        .or_else(|| offered.first())
+        .map(|s| s.id.clone())
+        .into_iter()
+        .collect()
 }
 
 /// The audio quality to start from for `format`, whose audio is `audio`: none for a format
@@ -403,6 +442,54 @@ mod tests {
         );
     }
 
+    /// Off takes nothing whatever is saved; on takes the saved languages the video has, and only
+    /// with none saved its own language: a saved language it lacks is not replaced.
+    #[test]
+    fn a_video_starts_with_what_the_saved_choice_says() {
+        let offered = test_subtitles();
+        let mut saved = OutputDefaults {
+            subtitle_languages: vec!["bn".to_owned()],
+            ..OutputDefaults::default()
+        };
+        assert_eq!(saved.subtitles_at_start(&offered), Vec::<String>::new());
+        saved.subtitles = SubtitleChoice::Inside;
+        assert_eq!(saved.subtitles_at_start(&offered), ["auto:bn"]);
+        saved.subtitle_languages = vec!["fr".to_owned()];
+        assert_eq!(saved.subtitles_at_start(&offered), Vec::<String>::new());
+        saved.subtitle_languages = Vec::new();
+        assert_eq!(saved.subtitles_at_start(&offered), ["en"]);
+    }
+
+    /// The saved language, else the video's own: written by people if it has that, else the
+    /// auto-generated one, else whatever comes first.
+    #[test]
+    fn switching_on_always_selects_something_a_video_offers() {
+        let subtitle = |id: &str, language: &str, auto: bool| MediaSubtitle {
+            id: id.into(),
+            language: language.into(),
+            name: language.into(),
+            auto,
+        };
+        let saved = OutputDefaults {
+            subtitle_languages: vec!["pt".to_owned()],
+            ..OutputDefaults::default()
+        };
+        assert_eq!(saved.subtitles_when_switched_on(&test_subtitles()), ["pt"]);
+
+        let own = |offered: &[MediaSubtitle]| {
+            OutputDefaults::default().subtitles_when_switched_on(offered)
+        };
+        let spoken = [
+            subtitle("auto:bn", "bn", true),
+            subtitle("auto:en-orig", "en", true),
+        ];
+        assert_eq!(own(&spoken), ["auto:en-orig"]);
+        let with_written = [subtitle("sub:en", "en-GB", false), spoken[1].clone()];
+        assert_eq!(own(&with_written), ["sub:en"]);
+        assert_eq!(own(&[subtitle("sub:fr", "fr", false)]), ["sub:fr"]);
+        assert_eq!(own(&[]), Vec::<String>::new());
+    }
+
     /// The saved format when the quality offers it, else the original; the nearest audio
     /// quality; chapters only when the video has them.
     #[test]
@@ -419,8 +506,12 @@ mod tests {
             (OutputFormat::Original, true)
         );
         assert!(!s.start(&options, &[], false).selection.chapters);
-        s.video.subtitle_files = true;
-        assert!(s.start(&options, &[], true).selection.subtitle_files);
+        s.video.subtitles = SubtitleChoice::Files;
+        assert!(
+            s.start(&options, &test_subtitles(), true)
+                .selection
+                .subtitle_files
+        );
         s.quality = VideoQuality::AudioOnly;
         let audio = s.start(&options, &[], false).selection;
         assert!(!audio.subtitle_files, "audio has saved choices of its own");
