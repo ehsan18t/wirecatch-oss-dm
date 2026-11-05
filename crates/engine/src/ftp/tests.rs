@@ -10,8 +10,8 @@ use super::*;
 use crate::download::{DownloadRequest, Outcome, download_with};
 use crate::http::Clients;
 use crate::progress::Progress;
-use crate::units::{MIB, MIB_USIZE};
-use wirecatch_test_support::ftp::{FtpConfig, FtpServer, Quirk, test_tls};
+use crate::units::MIB_USIZE;
+use wirecatch_test_support::ftp::{FtpConfig, FtpServer, HoldData, Quirk, test_tls};
 use wirecatch_test_support::private_dir;
 
 fn url(s: &str) -> Url {
@@ -154,7 +154,10 @@ fn served(file: &[u8]) -> FtpConfig {
     FtpConfig {
         files: vec![("file.bin".to_string(), Arc::new(file.to_vec()))],
         login: Some(("alice".into(), "pw".into())),
-        data_bps: Some(8 * MIB),
+        hold_data_until: Some(HoldData {
+            transfers: 2,
+            ..HoldData::default()
+        }),
         ..Default::default()
     }
 }

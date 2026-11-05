@@ -533,6 +533,8 @@ async fn naming_server(name: &str) -> TestServer {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn keep_existing_takes_the_category_of_the_servers_name() -> TestResult {
     let server = naming_server(NAME).await;
+    // Until it answers, the category is the link's guess.
+    server.hold();
     let h = Harness::new().await?;
     choose(&h, WhenFileExists::KeepExisting)?;
     let dir = folder_with(&h, &same_size())?;
@@ -542,6 +544,7 @@ async fn keep_existing_takes_the_category_of_the_servers_name() -> TestResult {
         })
         .await?;
     assert_eq!(row.category, Category::Archive);
+    server.release();
     let done = h.wait_status(row.id, DownloadStatus::Completed).await;
     assert_eq!(done.category, Category::Document);
     Ok(())

@@ -700,7 +700,7 @@ mod tests {
     }
 
     // The reason reported is the last attempt's: a key that appeared once the app started, with nothing listening yet, is a slow start, not a missing key.
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn the_last_attempt_decides_what_is_reported() {
         let (endpoint, dir) = test_endpoint();
         let missing = dir.path().join("Wirecatch").join("endpoint-key");

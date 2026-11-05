@@ -14,9 +14,11 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 use url::Url;
 
-use crate::TestCertificate;
 use crate::http::{index, time_to_send};
+use crate::{PATIENCE, TestCertificate};
 
+/// How often a held transfer looks whether it may send.
+const HOLD_LOOK: Duration = Duration::from_millis(5);
 /// How long a `RETR` waits for the client to open the data connection.
 const DATA_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Most bytes written to a data connection at once.
@@ -96,8 +98,19 @@ pub struct FtpConfig {
     /// Only that transfer is held, so a resumed range that starts at byte 0 is
     /// sent as usual.
     pub hold_probe: Option<usize>,
+    /// Every data connection sends nothing until this many have happened, so a client's other connections join in however slow the machine is. Waits at most [`PATIENCE`], then sends, and the test's count fails.
+    pub hold_data_until: Option<HoldData>,
     /// Ways the server misbehaves.
     pub quirks: Vec<Quirk>,
+}
+
+/// What a transfer waits for before it sends; see [`FtpConfig::hold_data_until`].
+#[derive(Clone, Copy, Debug, Default)]
+pub struct HoldData {
+    /// Transfers started.
+    pub transfers: usize,
+    /// Sessions turned away by [`FtpConfig::max_sessions`].
+    pub refused: usize,
 }
 
 impl FtpConfig {
@@ -128,6 +141,7 @@ impl Default for FtpConfig {
             hold_abort_reply: None,
             silent_after: None,
             hold_probe: None,
+            hold_data_until: None,
             quirks: Vec::new(),
         }
     }
@@ -169,6 +183,17 @@ pub struct FtpStats {
 }
 
 impl FtpStats {
+    /// Waits until `hold` has happened, at most [`PATIENCE`].
+    async fn wait_for(&self, hold: HoldData) {
+        let deadline = Instant::now() + PATIENCE;
+        while (self.transfers.load(Ordering::SeqCst) < hold.transfers
+            || self.refused.load(Ordering::SeqCst) < hold.refused)
+            && Instant::now() < deadline
+        {
+            tokio::time::sleep(HOLD_LOOK).await;
+        }
+    }
+
     /// A copy of every command received so far.
     #[must_use]
     pub fn commands(&self) -> Vec<String> {
@@ -596,6 +621,9 @@ impl Session<'_> {
             .map(|(_, after)| after);
         let throttle = self.config.data_bps;
         let counts = (self.stats, &*sent_here);
+        if let Some(hold) = self.config.hold_data_until {
+            self.stats.wait_for(hold).await;
+        }
         let sent = if offset == 0 && self.config.hold_probe == Some(transfer) {
             held(&mut data).await
         } else {
