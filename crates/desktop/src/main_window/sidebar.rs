@@ -20,7 +20,7 @@ use wirecatch_queues::schedule;
 use wirecatch_shell::api;
 
 use super::drag::{self, DraggedQueue, DraggedRows};
-use super::{Group, MainWindow, Screen, View, proxy_dialog, queue_header};
+use super::{Group, MainWindow, Screen, View, queue_header};
 use crate::backend::act;
 use crate::rows::Tally;
 use crate::text;
@@ -418,7 +418,7 @@ impl MainWindow {
                 .proxies
                 .iter()
                 .find(|server| server.id == *id)
-                .map(|server| proxy_dialog::shown_name(&server.settings)),
+                .map(|server| server.settings.shown_name()),
             _ => None,
         };
         (rules, proxy)
