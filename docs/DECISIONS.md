@@ -1499,3 +1499,11 @@ Decided on 2026-11-05.
 2. The height still follows the content: `fit` calls `Window::resize`, which `is_resizable` does not limit on any platform. On Windows the window only loses `WS_THICKFRAME` and `WS_MAXIMIZEBOX`, so its edges stop being resize areas, a double click on its title bar does nothing, and `SetWindowPos` still sets its size.
 3. Linux never reads `is_resizable`. The setting stops the app's own client-side edges from starting a resize (`Window::start_window_resize`), but a window manager's frame or shortcut can still resize the window, and GPUI offers no maximum size to prevent it. So the window's minimum width is the width it opens at, which keeps the buttons from overlapping; growing wider does no harm.
 4. At the fixed width the queue picker shrinks and truncates its name before anything overlaps, however long the name and whichever buttons sit beside it.
+
+### D221. A Linux package upgrade stops the copy it replaced
+
+Decided on 2026-11-05. A `.rpm` upgrade left the earlier copy running from its deleted program. That copy held the endpoint and refused the new version's `app` client (D103), so the new version closed, and on Linux the message saying so reaches only the log.
+
+1. The `.deb` and `.rpm` post-install hook (`config/templates/postinst.sh`) sends `SIGTERM` to every user's process whose program is the replaced `/usr/bin` app, as Windows closes a running copy before replacing its files. Downloads running in it stop, and the app resumes them on its next start.
+2. The post-install hook does it, not pre-removal: on an upgrade the package manager runs the old package's pre-removal script, which a new release cannot change, so only the new package's hook reaches every earlier version.
+3. A process counts only when its program reads as deleted. A copy of the new program and one started from elsewhere (an AppImage, a development build) stay up. The hook does not start the app again: a root script has no reliable way into each person's desktop session, and the next launch or sign-in starts it.
