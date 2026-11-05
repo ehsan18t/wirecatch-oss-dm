@@ -24,7 +24,7 @@ use wirecatch_protocol::wire::QueueSummary;
 use wirecatch_protocol::{DownloadId, ProxyServerId, QuestionId, QueueId};
 use wirecatch_queues::schedule::Gate;
 use wirecatch_records::answers::Answers;
-pub(super) use wirecatch_records::answers::{Expectation, OnExisting};
+pub(super) use wirecatch_records::answers::{Expectation, NextRun, OnExisting};
 use wirecatch_records::files::{DownloadFiles, PendingDeletion};
 use wirecatch_settings::folders::KnownFolders;
 use wirecatch_settings::proxy::{ComputerProxy, Logins, SavedProxyServer};
@@ -242,6 +242,8 @@ pub(super) struct Entry {
     /// the media add-on is installed, that page is read for its video instead
     /// (D51).
     pub video_check: bool,
+    /// See [`Answers::next_run`].
+    pub next_run: NextRun,
 }
 
 /// A [`FileExistsQuestion`] and the file it is about, whose path its words may not hold exactly
@@ -302,6 +304,14 @@ impl Gauge {
                 retry_at: None,
             },
             Gauge::Media(m) => m.read(),
+        }
+    }
+
+    /// Whether a later run continues from what this one kept.
+    pub fn can_continue(&self) -> bool {
+        match self {
+            Gauge::Engine(p) => p.can_continue(),
+            Gauge::Media(m) => m.keeps_data(),
         }
     }
 }
@@ -764,6 +774,7 @@ impl Entry {
                 on_existing: self.on_existing,
                 expect: self.expect.clone(),
                 plain_name: self.plain_name.clone(),
+                next_run: self.next_run,
             },
             files: self.files.clone(),
         }
@@ -846,6 +857,7 @@ pub(super) fn idle_entry(url: &str, chosen_by: ChosenBy) -> Entry {
         hold: Hold::Free,
         on_existing: None,
         plain_name: None,
+        next_run: NextRun::Continues,
         offered_file: false,
         stranded: None,
         files: DownloadFiles::default(),
@@ -887,6 +899,7 @@ mod tests {
             hold: Hold::Free,
             on_existing: None,
             plain_name: None,
+            next_run: NextRun::Continues,
             offered_file: false,
             stranded: None,
             files: DownloadFiles::default(),

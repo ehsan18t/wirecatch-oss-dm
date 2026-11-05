@@ -149,6 +149,28 @@ impl MediaProgress {
         self.lock().parts.push(Part::Done(bytes));
     }
 
+    /// Counts `file`, finished, among the parts a later run keeps, whatever its server allows.
+    pub fn finish_file(&self, file: &Arc<Progress>) {
+        for part in &mut self.lock().parts {
+            if let Part::File(progress, _) = part
+                && Arc::ptr_eq(progress, file)
+            {
+                *part = Part::Done(file.done());
+            }
+        }
+    }
+
+    /// Whether a later run continues from anything this one has (D153).
+    pub fn keeps_data(&self) -> bool {
+        let state = self.lock();
+        let own = state.own.as_ref().is_some_and(|own| own.sum().0 > 0);
+        own || state.parts.iter().any(|part| match part {
+            Part::File(file, _) => file.done() > 0 && file.can_continue(),
+            Part::Stream(stream) => stream.segments_done() > 0,
+            Part::Done(bytes) => *bytes > 0,
+        })
+    }
+
     /// Marks ffmpeg as doing `step` now (with nothing of it known done yet), or,
     /// with `None`, as done.
     pub fn set_step(&self, step: Option<ProcessingStep>) {

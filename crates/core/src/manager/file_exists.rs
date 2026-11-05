@@ -130,14 +130,15 @@ impl Manager {
         let size = naming::file_size(path)?;
         // No download holds this path, so what lies beside the file is left over.
         naming::discard_partials_of_other_links(path, &url);
-        let same_size = |total: Option<u64>| total.is_none_or(|total| total == size);
-        let same_history = history.is_none_or(|(same_link, total)| same_link && same_size(total));
+        let same_history = history
+            .is_none_or(|(same_link, total)| same_link && total.is_none_or(|total| total == size));
         Some(Found {
             path: path.to_path_buf(),
             size,
             saved_at: saved_at(path),
             then,
-            same: same_size(remote.total) && same_history,
+            // A server that gives no size offers nothing to compare (D96).
+            same: remote.total == Some(size) && same_history,
         })
     }
 
