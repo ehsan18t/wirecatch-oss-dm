@@ -212,9 +212,12 @@ pub(super) fn page() -> SettingPage {
 
 #[cfg(test)]
 mod tests {
+    use super::super::selection;
     use super::*;
+    use gpui_kit::component::button::Button;
     use gpui_kit::component::input::{Input, InputState};
-    use gpui_kit::component::v_flex;
+    use gpui_kit::component::{h_flex, v_flex};
+    use gpui_kit::prelude::FluentBuilder as _;
     use gpui_kit::{
         AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
         Render, TestAppContext, Window,
@@ -281,6 +284,67 @@ mod tests {
         cx.simulate_keystrokes(keys);
         let value = search.read_with(cx, |search, _| search.value().to_string());
         root.read_with(cx, |root, _| (value, root.pauses, root.opens, root.helps))
+    }
+
+    /// The tree `MainWindow::render` builds around the row the selection takes.
+    struct RowInWindow {
+        focus: FocusHandle,
+        row: FocusHandle,
+        command: FocusHandle,
+        held: bool,
+        was_held: bool,
+        dismissals: usize,
+    }
+
+    impl Render for RowInWindow {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+            selection::row_taken(
+                &mut self.was_held,
+                self.held,
+                (&self.row, &self.focus),
+                window,
+                cx,
+            );
+            v_flex()
+                .id("main-window")
+                .key_context(KEY_CONTEXT)
+                .track_focus(&self.focus)
+                .on_action(cx.listener(|this, _: &Dismiss, _, _| this.dismissals += 1))
+                .child(h_flex().track_focus(&self.row).when(!self.held, |row| {
+                    row.child(Button::new("sort").track_focus(&self.command))
+                }))
+        }
+    }
+
+    #[gpui_kit::test]
+    fn the_window_keys_still_work_when_the_focused_button_leaves_with_the_row(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(|cx| {
+            gpui_kit::component::init(cx);
+            bind(cx);
+        });
+        let (root, cx) = cx.add_window_view(|_, cx| RowInWindow {
+            focus: cx.focus_handle(),
+            row: cx.focus_handle(),
+            command: cx.focus_handle(),
+            held: false,
+            was_held: false,
+            dismissals: 0,
+        });
+        cx.run_until_parked();
+        let command = root.read_with(cx, |root, _| root.command.clone());
+        cx.update(|window, cx| command.focus(window, cx));
+        cx.run_until_parked();
+
+        root.update(cx, |root, cx| {
+            root.held = true;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes("escape");
+
+        assert_eq!(root.read_with(cx, |root, _| root.dismissals), 1);
     }
 
     #[gpui_kit::test]

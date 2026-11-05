@@ -260,7 +260,7 @@ fn general() -> Vec<Entry> {
         ),
         entry("Search the list", "find filter", |main, w, cx| {
             main.page.screen = Screen::Downloads;
-            main.search.update(cx, |search, cx| search.focus(w, cx));
+            main.focus_search(w, cx);
         }),
         entry("Pause every download", "stop all", |_, w, cx| {
             act(w.window_handle(), cx, api::pause_all);

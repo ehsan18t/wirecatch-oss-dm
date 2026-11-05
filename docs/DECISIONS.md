@@ -1376,6 +1376,14 @@ Decided on 2026-11-05.
 1. A schedule without a stop time starts a run at its start, which lasts until the queue has nothing left. That run is `QueueStatus::running_until_empty`, saved with the queue next to `running_outside_schedule`. So a restart keeps a run whether or not a download was running, and never starts one. A question about a file in the folder is held in memory only, so a kill ends a run that had nothing else left.
 2. `schedule::allows` is the one answer: inside the window, or during a run. The core and the sidebar both read it, so the queue's line and Start now follow what really decides. Between runs a queue without a stop time is outside its schedule all day, and offers Start now.
 3. A run keeps going for a download that only waits: its question about a file in the folder, its move, or the page read for its video, up to the row that replaces it (`State::arriving`). A link added to the queue meanwhile starts at once, as part of the run.
+
+### D168. A held selection takes the command bar's row
+
+Decided on 2026-11-05. Its row is the same height as the command bar's, so ticking a row moves nothing under the pointer.
+
+1. While a selection is held (D160), its bar replaces the search field and the buttons beside it. Clearing the selection brings them back with what the field held.
+2. Going to the search (Ctrl+K, F6) clears the selection first. When the row changes hands, focus inside it moves to the list, so typing cannot narrow the list unseen and the window's keys keep working.
+3. No tooltip shows while focus is inside a `PopupMenu`. Tooltips over rows and on the rail go through `ui::tooltip`; a tooltip on other buttons is left, as the kit's `Button` has no way to hold one back.
 ### D167. The could-not-save banner follows the saves
 
 Decided on 2026-11-05.

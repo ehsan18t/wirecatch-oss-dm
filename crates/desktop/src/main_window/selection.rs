@@ -1,6 +1,6 @@
 //! Choosing downloads in the list: a click picks one and shows its details, Ctrl+click adds or
 //! takes one away, Shift+click and Shift with the arrows take a range, and the arrows move a
-//! cursor. A selection built on purpose gets a bar over the list with what it can do.
+//! cursor. A selection built on purpose takes the command bar's row with what it can do.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -13,8 +13,8 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, App, Context, IntoElement, Modifiers, ParentElement as _, Styled as _, Window, div,
-    px,
+    AnyElement, App, Context, FocusHandle, InteractiveElement as _, IntoElement, Modifiers,
+    ParentElement as _, Styled as _, Window, div, px,
 };
 use wirecatch_protocol::app::DownloadSummary;
 use wirecatch_protocol::wire::ProtocolError;
@@ -324,27 +324,30 @@ impl MainWindow {
         )
     }
 
-    /// The bar over the list while a selection is built up on purpose: several downloads, or one
-    /// added with Ctrl. A row only clicked has its details instead.
-    pub(super) fn selection_bar(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
+    /// Whether the selection is built up on purpose: several downloads, or one added with Ctrl. A
+    /// row only clicked has its details instead.
+    pub(super) fn selection_held(&self, cx: &App) -> bool {
         if self.selected.len() < 2 && !self.picked {
-            return None;
+            return false;
         }
+        holds_on_purpose(self.selection_facts(cx).count, self.picked)
+    }
+
+    /// The bar that takes the command bar's row while the selection is held.
+    pub(super) fn selection_bar(&self, cx: &mut Context<'_, Self>) -> AnyElement {
         let facts = self.selection_facts(cx);
         let count = facts.count;
-        if count < 2 && !(self.picked && count == 1) {
-            return None;
-        }
         let folded = facts.folded.clone();
         let ids = facts.ids.clone();
         let theme = cx.theme();
         let library = self.library.clone();
         let bar = h_flex()
+            .flex_1()
             .mx_1()
-            .mb_2()
+            // The command bar's field is this tall, so swapping the two moves nothing under the pointer.
+            .h_8()
             .pl(px(list::PAD - 2.))
             .pr_2()
-            .py_1()
             .gap_1()
             .rounded(theme.radius)
             .bg(theme.list_active)
@@ -378,8 +381,29 @@ impl MainWindow {
                         cx.notify();
                     })),
             );
-        Some(bar.into_any_element())
+        super::command_bar::command_row()
+            .track_focus(&self.row_focus)
+            .child(bar)
+            .into_any_element()
     }
+}
+
+/// When the selection takes or gives back the row, focus inside it moves to `focus.1`, the list: the element holding it is about to go, which would leave the window's actions out of reach, and the search field typed into unseen would narrow the list.
+pub(super) fn row_taken(
+    was_held: &mut bool,
+    held: bool,
+    focus: (&FocusHandle, &FocusHandle),
+    window: &mut Window,
+    cx: &mut App,
+) {
+    if std::mem::replace(was_held, held) != held && focus.0.contains_focused(window, cx) {
+        focus.1.focus(window, cx);
+    }
+}
+
+/// How many rows the commands reach decides whether the selection counts as held.
+fn holds_on_purpose(count: usize, picked: bool) -> bool {
+    count >= 2 || (picked && count == 1)
 }
 
 /// A command the bar offers when some of the selection takes it.
@@ -599,6 +623,14 @@ mod tests {
     use super::super::laid::Asked;
     use super::super::{View, sort};
     use super::*;
+
+    #[test]
+    fn a_selection_is_held_when_built_on_purpose() {
+        assert!(holds_on_purpose(2, false));
+        assert!(holds_on_purpose(1, true));
+        assert!(!holds_on_purpose(1, false));
+        assert!(!holds_on_purpose(0, true));
+    }
 
     #[test]
     fn a_refusal_does_not_stop_the_rest_and_the_first_is_told() {
