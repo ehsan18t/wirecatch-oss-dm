@@ -6,172 +6,174 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 
 ## All pull requests
 
-| PR     | Title                                              | Branch                           | Items                        | Severity | Effort | Depends on   | Status |
-| ------ | -------------------------------------------------- | -------------------------------- | ---------------------------- | -------- | ------ | ------------ | ------ |
-| PR-01  | fix(core): stop two downloads writing one file     | `fix/one-writer-per-file`        | 1                            | P0       | large  | none         | merged |
-| PR-02  | fix(core): keep folders when removing a download   | `fix/remove-keeps-folders`       | 2                            | P0       | small  | none         | merged |
-| PR-03  | fix(engine): stop calling a cut-off file complete  | `fix/cut-off-unknown-size`       | 3                            | P0       | small  | none         | merged |
-| PR-04  | fix(core): save whether a row wrote its own file   | `fix/row-wrote-its-file`         | 4                            | P1       | medium | none         | merged |
-| PR-05  | fix(core): keep a browser capture that asks first  | `fix/capture-meets-ask`          | 5                            | P1       | small  | none         | merged |
-| PR-06  | fix(desktop): trust APPIMAGE only for this program | `fix/appimage-variable`          | 6                            | P1       | small  | none         | merged |
-| PR-07  | fix(desktop): name the official online sources     | `fix/official-sources`           | 7                            | P1       | small  | PR-06        | merged |
-| PR-08  | fix(core): copy moved files under a temporary name | `fix/staged-move-copy`           | 8, 104                       | P2       | medium | none         | merged |
-| PR-09  | fix(core): wait for moves before quitting          | `fix/quit-waits-for-moves`       | 9                            | P1       | medium | PR-08        | merged |
-| PR-10  | fix(desktop): end the process at the quit limit    | `fix/quit-limit-ends-process`    | 9, 10                        | P1       | medium | PR-08, PR-09 | merged |
-| PR-11  | fix(core): apply the file-exists rule to all names | `fix/file-exists-rule-all-names` | 11                           | P1       | medium | PR-01, PR-05 | merged |
-| PR-12  | fix(settings): protect app folders on Windows      | `fix/protect-run-folders`        | 12                           | P1       | medium | none         | merged |
-| PR-13  | fix(core): tie a media work folder to its run      | `fix/work-folder-follows-run`    | 13                           | P2       | medium | none         | merged |
-| PR-14  | fix(core): stop reusing another link's media parts | `fix/media-work-identity`        | 14                           | P1       | medium | PR-13        | merged |
-| PR-15  | fix(desktop): let text fields keep their own keys  | `fix/field-keys-first`           | 15                           | P1       | small  | none         | merged |
-| PR-16  | fix(streams): limit the qualities of HLS playlists | `fix/limit-hls-qualities`        | 16                           | P1       | small  | none         | merged |
-| PR-17  | fix(streams): refuse segments that are not media   | `fix/check-segment-bodies`       | 17                           | P1       | medium | none         | merged |
-| PR-18  | fix(ipc): refuse a lower-integrity stand-in pipe   | `fix/pipe-integrity-check`       | 18                           | P1       | medium | none         | merged |
-| PR-19  | fix(streams): limit DASH addresses while building  | `fix/dash-address-limit`         | 19                           | P1       | small  | none         | merged |
-| PR-20  | fix(engine): fail a run when a flush fails         | `fix/keep-failed-flush`          | 20                           | P1       | small  | none         | merged |
-| PR-21  | fix(engine): renew an expired redirect target      | `fix/expired-redirect-target`    | 21                           | P1       | small  | none         | merged |
-| PR-22  | fix(store): open a list with an unreadable value   | `fix/unreadable-value-opens`     | 22                           | P1       | medium | none         | merged |
-| PR-23  | fix(media): offer only sources ffmpeg can read     | `fix/offer-readable-sources`     | 23                           | P1       | medium | none         | merged |
-| PR-24  | fix(media): fetch cookie-gated formats with yt-dlp | `fix/cookie-formats-ytdlp`       | 24                           | P1       | medium | none         | merged |
-| PR-25  | fix(store): say when saving fails or recovers      | `fix/save-failure-signal`        | 25, 84, 233                  | P2       | medium | none         | merged |
-| PR-26  | fix(store): keep values it cannot read             | `fix/keep-unreadable-values`     | 26                           | P2       | medium | none         | merged |
-| PR-27  | fix(core): keep a removal's record until it ends   | `fix/durable-removal`            | 27, 176                      | P2       | medium | none         | merged |
-| PR-28  | fix(engine): carry whether a download can resume   | `fix/can-resume-fact`            | 28                           | P2       | medium | none         | merged |
-| PR-29  | fix(desktop): show suffix list state in Settings   | `fix/suffix-list-settings`       | 29, 107                      | P2       | medium | none         | merged |
-| PR-30  | perf(desktop): stop redoing list work every frame  | `perf/list-work-per-frame`       | 30                           | P2       | large  | none         | merged |
-| PR-31  | fix(desktop): correct links, folder in add dialog  | `fix/add-dialog-links`           | 31, 56, 128                  | P2       | small  | none         | merged |
-| PR-32  | fix(engine): read server file names correctly      | `fix/server-file-names`          | 32, 50, 64                   | P2       | medium | none         | merged |
-| PR-33  | fix(streams): finish a joined video safely         | `fix/finish-video-safely`        | 33, 67, 200                  | P2       | medium | none         | merged |
-| PR-34  | fix(bridge): start the app on a damaged key        | `fix/bridge-damaged-key`         | 34, 153                      | P2       | small  | none         | merged |
-| PR-35  | fix(core): keep rows right through file questions  | `fix/rows-through-questions`     | 35, 66, 85                   | P2       | medium | none         | merged |
-| PR-36  | fix(settings): read proxy values so they can work  | `fix/usable-proxy-values`        | 36, 115, 220                 | P2       | medium | none         | merged |
-| PR-37  | fix(core): keep a name when a link becomes a page  | `fix/page-keeps-name`            | 37, 175                      | P2       | medium | none         | merged |
-| PR-38  | fix(media): read all of yt-dlp's page description  | `fix/read-whole-page-info`       | 38, 61                       | P2       | medium | none         | merged |
-| PR-39  | fix(engine): reuse part files under other names    | `fix/find-own-part-file`         | 39                           | P2       | medium | PR-93        | merged |
-| PR-40  | fix(core): report whether the add-on works         | `fix/addon-usable`               | 40, 53                       | P2       | medium | none         | merged |
-| PR-41  | fix(desktop): keep notices in step with downloads  | `fix/notices-follow-downloads`   | 41, 123, 232                 | P2       | medium | none         | merged |
-| PR-42  | fix(engine): hold FTP to the local network rule    | `fix/ftp-local-network`          | 42, 43                       | P2       | medium | none         | merged |
-| PR-43  | refactor(sites): merge the host-under-site checks  | `refactor/one-host-under-site`   | 44                           | P3       | medium | none         | merged |
-| PR-44  | fix(engine): normalise ftps hosts when parsing     | `fix/normal-ftps-hosts`          | 45                           | P2       | small  | PR-43        | merged |
-| PR-45  | fix: hide only what is secret in a log line        | `fix/log-redaction-edges`        | 46, 222                      | P2       | small  | none         | merged |
-| PR-46  | fix(core): keep link passwords out of questions    | `fix/question-link-password`     | 47                           | P2       | medium | PR-45        | merged |
-| PR-47  | fix(core): see finished files beside resume files  | `fix/finished-beside-resume`     | 48, 174                      | P2       | small  | PR-04        | merged |
-| PR-48  | fix(media): make any video title safe as a name    | `fix/safe-video-titles`          | 49, 95                       | P2       | small  | none         | merged |
-| PR-49  | fix(messages): give advice that fits the failure   | `fix/advice-fits-failure`        | 51, 105, 106, 206            | P2       | medium | none         | merged |
-| PR-50  | fix(store): keep a set-aside list for a full month | `fix/set-aside-month`            | 52, 156, 237                 | P2       | small  | none         | merged |
-| PR-51  | fix(desktop): correct what download questions say  | `fix/download-questions`         | 54, 122, 231                 | P2       | medium | none         | merged |
-| PR-52  | fix(desktop): give download windows the right fix  | `fix/window-fix-buttons`         | 55, 81                       | P2       | medium | none         | merged |
-| PR-53  | fix(desktop): make settings actions answer back    | `fix/settings-answers`           | 57, 127, 230                 | P2       | medium | none         | merged |
-| PR-54  | fix(core): handle typed names in media downloads   | `fix/typed-media-names`          | 58, 132                      | P2       | medium | none         | merged |
-| PR-55  | fix(desktop): follow an installer through setup    | `fix/installer-lifecycle`        | 59, 72                       | P2       | medium | none         | merged |
-| PR-56  | fix(core): offer updates only when they can work   | `fix/honest-update-offers`       | 60, 185, 186, 187            | P2       | medium | none         | merged |
-| PR-57  | fix(streams): stop trusting bad work folder data   | `fix/work-folder-trust`          | 62, 74                       | P2       | medium | none         | merged |
-| PR-58  | fix(streams): report how a program really ended    | `fix/program-end-report`         | 63, 77, 157                  | P2       | medium | none         | merged |
-| PR-59  | fix(cli): report stops, speed, errors correctly    | `fix/cli-reports`                | 65, 91, 182                  | P2       | medium | none         | merged |
-| PR-60  | fix(core): apply proxy exceptions to yt-dlp        | `fix/ytdlp-proxy-exceptions`     | 68, 69                       | P2       | small  | none         | merged |
-| PR-61  | fix(core): move path checks off async threads      | `fix/path-checks-off-async`      | 70                           | P2       | medium | none         | merged |
-| PR-62  | fix(engine): handle resume files more safely       | `fix/safer-resume-files`         | 71, 88, 89, 158              | P2       | medium | none         | merged |
-| PR-63  | fix(desktop): make an AppImage restart reliable    | `fix/appimage-restart`           | 73, 184                      | P2       | medium | none         | merged |
-| PR-64  | fix(core): read the page again after a refusal     | `fix/reread-refused-page`        | 75, 134, 145                 | P2       | medium | none         | merged |
-| PR-65  | fix(desktop): show all an import will change       | `fix/full-import-preview`        | 76, 148, 207                 | P2       | medium | none         | merged |
-| PR-66  | fix(desktop): show moved downloads in their place  | `fix/moved-row-position`         | 78                           | P2       | medium | none         | merged |
-| PR-67  | fix(queues): save whether a queue is in a run      | `fix/saved-queue-run`            | 79, 138                      | P2       | medium | none         | merged |
-| PR-68  | fix(desktop): keep one window per download         | `fix/one-window-per-download`    | 80, 139                      | P2       | medium | none         | merged |
-| PR-69  | fix(core): keep a row's answers after a restart    | `fix/answers-survive-restart`    | 82, 83                       | P2       | medium | PR-04        | merged |
-| PR-70  | fix(core): answer a repeated capture once          | `fix/repeated-capture`           | 86, 151, 173                 | P2       | medium | none         | merged |
-| PR-71  | fix(engine): count transferred bytes correctly     | `fix/count-bytes`                | 87, 177, 180                 | P2       | small  | none         | merged |
-| PR-72  | fix(engine): read range answers as they are        | `fix/range-answers`              | 90, 178                      | P2       | small  | PR-120       | merged |
-| PR-73  | fix(desktop): handle odd launches safely           | `fix/odd-launches`               | 92, 131                      | P2       | medium | none         | merged |
-| PR-74  | fix(desktop): close the app before uninstalling    | `fix/uninstall-closes-app`       | 93                           | P2       | small  | none         | merged |
-| PR-75  | fix: correct faults in the linux packages          | `fix/linux-packages`             | 94, 188, 189, 190            | P2       | medium | none         | merged |
-| PR-76  | fix(media): track, limit yt-dlp's own downloads    | `fix/ytdlp-progress-limit`       | 96, 98                       | P2       | small  | none         | merged |
-| PR-77  | fix(media): make quality offers match downloads    | `fix/quality-offers`             | 97, 99, 197                  | P2       | medium | none         | merged |
-| PR-78  | fix(streams): read HLS masters, keys correctly     | `fix/hls-masters-keys`           | 100, 101, 102, 198           | P2       | medium | none         | merged |
-| PR-79  | fix(desktop): tell loading from a failed list      | `fix/list-open-states`           | 103, 135, 211                | P2       | medium | none         | merged |
-| PR-80  | fix(core): correct how the add-on updates itself   | `fix/addon-updates`              | 108, 109, 110, 159, 208, 209 | P2       | medium | none         | merged |
-| PR-81  | fix(desktop): act on the rows the view shows       | `fix/selection-commands`         | 111, 136, 212                | P2       | medium | none         | merged |
-| PR-82  | fix(desktop): tidy navigation after a page opens   | `fix/navigation-state`           | 112, 162                     | P2       | small  | none         | merged |
-| PR-83  | fix(desktop): offer only actions that apply        | `fix/offers-that-apply`          | 113, 163, 166                | P2       | medium | none         | merged |
-| PR-84  | fix(sites): correct what counts as a local page    | `fix/what-counts-local`          | 114, 215, 244                | P2       | small  | none         | merged |
-| PR-85  | fix(desktop): say what the proxy form will save    | `fix/proxy-form-truth`           | 116, 221                     | P2       | small  | none         | merged |
-| PR-86  | fix(queues): hold queue slots to the real limit    | `fix/queue-slots`                | 117, 118                     | P2       | small  | none         | merged |
-| PR-87  | fix(queues): make rules match the way they read    | `fix/rules-match-text`           | 119, 223, 224                | P2       | small  | none         | merged |
-| PR-88  | fix(desktop): fix small faults in queue dialogs    | `fix/queue-dialogs`              | 120, 121, 165                | P2       | small  | none         | merged |
-| PR-89  | fix(desktop): make tray actions answer correctly   | `fix/tray-actions`               | 124, 160                     | P2       | small  | none         | merged |
-| PR-90  | fix(desktop): show a processing step as it is      | `fix/processing-step`            | 125, 228                     | P2       | small  | none         | merged |
-| PR-91  | fix(desktop): correct wording of app messages      | `fix/app-message-wording`        | 126, 161                     | P2       | small  | none         | merged |
-| PR-92  | fix: repair the repo's check scripts               | `fix/check-scripts`              | 129, 191, 238, 239, 240, 241 | P2       | medium | none         | merged |
-| PR-93  | fix(engine): lock the part file during a run       | `fix/part-file-lock`             | 130                          | P2       | medium | none         | merged |
-| PR-94  | fix(core): keep a video's work until it is placed  | `fix/work-until-placed`          | 133, 169                     | P2       | medium | PR-04        | merged |
-| PR-95  | fix(core): apply the local rule to yt-dlp reads    | `fix/ytdlp-local-rule`           | 137                          | P2       | medium | none         | merged |
-| PR-96  | fix(engine): check free space before a download    | `fix/free-space-check`           | 140                          | P2       | medium | none         | merged |
-| PR-97  | fix(core): record every file of a move up front    | `fix/record-moves`               | 141, 201, 246                | P2       | medium | PR-04, PR-08 | merged |
-| PR-98  | chore: remove code nothing calls                   | `chore/remove-dead-commands`     | 142, 235, 236                | P3       | medium | none         | merged |
-| PR-99  | test: wait under PATIENCE in every test            | `test/patience-waits`            | 143, 242                     | P3       | medium | none         | merged |
-| PR-100 | test: stop racing real-clock limits in tests       | `test/no-clock-races`            | 144, 167                     | P3       | medium | none         | merged |
-| PR-101 | test: share test values through test-support       | `test/shared-test-values`        | 146, 147, 149, 183           | P3       | medium | none         | merged |
-| PR-102 | fix(desktop): show startup notices only once       | `fix/startup-notices-once`       | 150, 214                     | P3       | medium | none         | merged |
-| PR-103 | fix(core): let a person's stop win                 | `fix/person-stop-wins`           | 152, 172                     | P3       | small  | none         | merged |
-| PR-104 | fix(engine): tighten network guard edge cases      | `fix/net-guard-edges`            | 154, 155, 216, 217           | P3       | medium | none         | merged |
-| PR-105 | fix(media): word program failures plainly          | `fix/word-program-failures`      | 164                          | P3       | small  | none         | merged |
-| PR-106 | refactor(desktop): share repeated form logic       | `refactor/share-form-logic`      | 168                          | P3       | medium | none         | merged |
-| PR-107 | fix: write kept files whole before replacing       | `fix/write-kept-files-whole`     | 170, 171                     | P3       | small  | none         | merged |
-| PR-108 | refactor(engine): remove code with no effect       | `refactor/engine-no-op-code`     | 179, 181                     | P3       | small  | none         | merged |
-| PR-109 | refactor(streams): remove leftovers from the crate | `refactor/streams-leftovers`     | 192, 193, 194                | P3       | small  | none         | merged |
-| PR-110 | test(core): repair media run tests, doc comments   | `test/media-run-tidy`            | 195, 196                     | P3       | small  | none         | merged |
-| PR-111 | fix(streams): stop media programs on a signal      | `fix/media-programs-on-signal`   | 199                          | P3       | medium | none         | merged |
-| PR-112 | fix(desktop): correct system registration details  | `fix/system-registration`        | 202, 203, 204                | P3       | small  | none         | merged |
-| PR-113 | fix(desktop): give every window a native title     | `fix/native-window-title`        | 205                          | P3       | small  | none         | merged |
-| PR-114 | fix(desktop): steady the list under the pointer    | `fix/list-under-pointer`         | 210, 213                     | P3       | small  | none         | merged |
-| PR-115 | fix(core): keep only finished proxy test results   | `fix/proxy-test-results`         | 218, 219                     | P3       | small  | none         | merged |
-| PR-116 | fix(desktop): correct what queue pages say         | `fix/queue-page-text`            | 225, 226, 227                | P3       | small  | none         | merged |
-| PR-117 | fix(desktop): keep a system accent readable        | `fix/system-accent-contrast`     | 229                          | P3       | small  | none         | merged |
-| PR-118 | fix(protocol): correct two language names          | `fix/language-names`             | 234                          | P3       | small  | none         | merged |
-| PR-119 | fix(desktop): retry deleting a roaming data folder | `fix/roaming-folder-retry`       | 243                          | P3       | small  | none         | merged |
-| PR-120 | test(engine): keep the download fault tests        | `test/keep-fault-tests`          | none                         | none     | medium | PR-39        | merged |
-| PR-121 | fix(core): save a run's record before its rename   | `fix/record-before-rename`       | 245                          | P2       | medium | none         | merged |
-| PR-122 | fix(core): tie a stream's work folder to its link  | `fix/stream-work-identity`       | 14                           | P1       | medium | none         | merged |
-| PR-123 | fix(core): finish removals a quit cut short        | `fix/removal-after-quit`         | 252                          | P3       | small  | none         | merged |
-| PR-124 | test: tidy test comments in ipc and bridge         | `test/ipc-bridge-comments`       | 247                          | P3       | small  | none         | merged |
-| PR-125 | chore: guard whole-folder deletes with a lint      | `chore/folder-delete-lint`       | 248                          | P3       | medium | none         | merged |
-| PR-126 | test: catch server races in the timing check       | `test/timing-server-races`       | 249                          | P3       | medium | PR-100       | merged |
-| PR-127 | fix(protocol): correct when a capture may erase    | `fix/capture-erase-doc`          | 250                          | P3       | small  | none         | merged |
-| PR-128 | test(extension): make the layout test's font load  | `test/layout-font`               | 251                          | P3       | small  | none         | merged |
-| PR-129 | fix(core): finish removals after a crash           | `fix/removal-after-crash`        | 252, 253                     | P3       | medium | none         | merged |
-| PR-130 | fix(desktop): act on a folded group's rows         | `fix/folded-group-ticks`         | 254                          | P3       | small  | none         | merged |
-| PR-131 | fix(media): keep the bar steady on a retry row     | `fix/retry-row-bar`              | 256                          | P3       | small  | none         | merged |
-| PR-132 | fix(desktop): stop page reads at a late quit       | `fix/page-read-at-quit`          | 255                          | P3       | small  | none         | merged |
-| PR-133 | fix(streams): hide tokens in key error paths       | `fix/key-error-path`             | 198                          | P3       | small  | none         | merged |
-| PR-134 | fix(desktop): draw the every-video tick            | `fix/every-video-tick`           | 148                          | P2       | small  | none         | merged |
-| PR-135 | fix(core): ask when a server changes the file type | `fix/ask-on-type-change`         | 257                          | P2       | medium | none         | merged |
-| PR-136 | fix(media): keep the bar steady past an estimate   | `fix/bar-past-estimate`          | 258                          | P3       | small  | none         | merged |
-| PR-137 | fix(desktop): keep finished group counts current   | `fix/finished-group-counts`      | 259                          | P3       | small  | none         | merged |
-| PR-138 | fix(desktop): keep startup notices out of the way  | `fix/startup-notice-place`       | 260, 261                     | P3       | small  | none         | merged |
-| PR-139 | fix(core): clean up a move a removal cut short     | `fix/removal-move-copy`          | 262                          | P3       | small  | none         | merged |
-| PR-140 | test: hold servers instead of throttling to join   | `test/hold-to-join`              | 263                          | P3       | small  | none         | merged |
-| PR-141 | refactor(desktop): use the one proxy display name  | `refactor/one-proxy-name`        | 264                          | P3       | small  | none         | merged |
-| PR-142 | fix(streams): read all of ffmpeg's failure text    | `fix/ffmpeg-failure-text`        | 265                          | P3       | small  | none         | merged |
-| PR-143 | fix(core): keep one subtitle copy after a crash    | `fix/subtitle-after-crash`       | 266                          | P3       | small  | none         | merged |
-| PR-144 | chore: read the product name in every crate        | `chore/product-name-everywhere`  | 161                          | P3       | medium | none         | merged |
-| PR-145 | fix(desktop): fix hover in the Settings navigation | `fix/settings-nav-hover`         | 162                          | P3       | small  | none         | open   |
-| PR-146 | chore: flag shell public items with no caller      | `chore/shell-unused-check`       | 267                          | P3       | small  | none         | closed |
-| PR-147 | test: limit each test's time on Windows            | `test/windows-test-limit`        | 268                          | P3       | small  | none         | merged |
-| PR-148 | fix(core): keep a mark a move would lose           | `fix/mark-across-move`           | 269                          | P3       | small  | none         | merged |
-| PR-149 | test: read test code one way in the checks         | `test/one-test-reading`          | 270                          | P3       | small  | none         | merged |
-| PR-150 | fix(desktop): keep keys when a dialog closes       | `fix/focus-after-dialog`         | 271                          | P3       | small  | none         | merged |
-| PR-151 | chore(extension): read the product name            | `chore/extension-product-name`   | 272                          | P3       | small  | none         | merged |
-| PR-152 | refactor(shell): make local items private          | `refactor/shell-private-items`   | 273                          | P3       | small  | none         | merged |
-| PR-153 | fix(engine): tell sign-ins apart when resuming     | `fix/resume-sign-in`             | 274                          | P3       | small  | none         | open   |
+| PR     | Title                                               | Branch                           | Items                        | Severity | Effort | Depends on   | Status |
+| ------ | --------------------------------------------------- | -------------------------------- | ---------------------------- | -------- | ------ | ------------ | ------ |
+| PR-01  | fix(core): stop two downloads writing one file      | `fix/one-writer-per-file`        | 1                            | P0       | large  | none         | merged |
+| PR-02  | fix(core): keep folders when removing a download    | `fix/remove-keeps-folders`       | 2                            | P0       | small  | none         | merged |
+| PR-03  | fix(engine): stop calling a cut-off file complete   | `fix/cut-off-unknown-size`       | 3                            | P0       | small  | none         | merged |
+| PR-04  | fix(core): save whether a row wrote its own file    | `fix/row-wrote-its-file`         | 4                            | P1       | medium | none         | merged |
+| PR-05  | fix(core): keep a browser capture that asks first   | `fix/capture-meets-ask`          | 5                            | P1       | small  | none         | merged |
+| PR-06  | fix(desktop): trust APPIMAGE only for this program  | `fix/appimage-variable`          | 6                            | P1       | small  | none         | merged |
+| PR-07  | fix(desktop): name the official online sources      | `fix/official-sources`           | 7                            | P1       | small  | PR-06        | merged |
+| PR-08  | fix(core): copy moved files under a temporary name  | `fix/staged-move-copy`           | 8, 104                       | P2       | medium | none         | merged |
+| PR-09  | fix(core): wait for moves before quitting           | `fix/quit-waits-for-moves`       | 9                            | P1       | medium | PR-08        | merged |
+| PR-10  | fix(desktop): end the process at the quit limit     | `fix/quit-limit-ends-process`    | 9, 10                        | P1       | medium | PR-08, PR-09 | merged |
+| PR-11  | fix(core): apply the file-exists rule to all names  | `fix/file-exists-rule-all-names` | 11                           | P1       | medium | PR-01, PR-05 | merged |
+| PR-12  | fix(settings): protect app folders on Windows       | `fix/protect-run-folders`        | 12                           | P1       | medium | none         | merged |
+| PR-13  | fix(core): tie a media work folder to its run       | `fix/work-folder-follows-run`    | 13                           | P2       | medium | none         | merged |
+| PR-14  | fix(core): stop reusing another link's media parts  | `fix/media-work-identity`        | 14                           | P1       | medium | PR-13        | merged |
+| PR-15  | fix(desktop): let text fields keep their own keys   | `fix/field-keys-first`           | 15                           | P1       | small  | none         | merged |
+| PR-16  | fix(streams): limit the qualities of HLS playlists  | `fix/limit-hls-qualities`        | 16                           | P1       | small  | none         | merged |
+| PR-17  | fix(streams): refuse segments that are not media    | `fix/check-segment-bodies`       | 17                           | P1       | medium | none         | merged |
+| PR-18  | fix(ipc): refuse a lower-integrity stand-in pipe    | `fix/pipe-integrity-check`       | 18                           | P1       | medium | none         | merged |
+| PR-19  | fix(streams): limit DASH addresses while building   | `fix/dash-address-limit`         | 19                           | P1       | small  | none         | merged |
+| PR-20  | fix(engine): fail a run when a flush fails          | `fix/keep-failed-flush`          | 20                           | P1       | small  | none         | merged |
+| PR-21  | fix(engine): renew an expired redirect target       | `fix/expired-redirect-target`    | 21                           | P1       | small  | none         | merged |
+| PR-22  | fix(store): open a list with an unreadable value    | `fix/unreadable-value-opens`     | 22                           | P1       | medium | none         | merged |
+| PR-23  | fix(media): offer only sources ffmpeg can read      | `fix/offer-readable-sources`     | 23                           | P1       | medium | none         | merged |
+| PR-24  | fix(media): fetch cookie-gated formats with yt-dlp  | `fix/cookie-formats-ytdlp`       | 24                           | P1       | medium | none         | merged |
+| PR-25  | fix(store): say when saving fails or recovers       | `fix/save-failure-signal`        | 25, 84, 233                  | P2       | medium | none         | merged |
+| PR-26  | fix(store): keep values it cannot read              | `fix/keep-unreadable-values`     | 26                           | P2       | medium | none         | merged |
+| PR-27  | fix(core): keep a removal's record until it ends    | `fix/durable-removal`            | 27, 176                      | P2       | medium | none         | merged |
+| PR-28  | fix(engine): carry whether a download can resume    | `fix/can-resume-fact`            | 28                           | P2       | medium | none         | merged |
+| PR-29  | fix(desktop): show suffix list state in Settings    | `fix/suffix-list-settings`       | 29, 107                      | P2       | medium | none         | merged |
+| PR-30  | perf(desktop): stop redoing list work every frame   | `perf/list-work-per-frame`       | 30                           | P2       | large  | none         | merged |
+| PR-31  | fix(desktop): correct links, folder in add dialog   | `fix/add-dialog-links`           | 31, 56, 128                  | P2       | small  | none         | merged |
+| PR-32  | fix(engine): read server file names correctly       | `fix/server-file-names`          | 32, 50, 64                   | P2       | medium | none         | merged |
+| PR-33  | fix(streams): finish a joined video safely          | `fix/finish-video-safely`        | 33, 67, 200                  | P2       | medium | none         | merged |
+| PR-34  | fix(bridge): start the app on a damaged key         | `fix/bridge-damaged-key`         | 34, 153                      | P2       | small  | none         | merged |
+| PR-35  | fix(core): keep rows right through file questions   | `fix/rows-through-questions`     | 35, 66, 85                   | P2       | medium | none         | merged |
+| PR-36  | fix(settings): read proxy values so they can work   | `fix/usable-proxy-values`        | 36, 115, 220                 | P2       | medium | none         | merged |
+| PR-37  | fix(core): keep a name when a link becomes a page   | `fix/page-keeps-name`            | 37, 175                      | P2       | medium | none         | merged |
+| PR-38  | fix(media): read all of yt-dlp's page description   | `fix/read-whole-page-info`       | 38, 61                       | P2       | medium | none         | merged |
+| PR-39  | fix(engine): reuse part files under other names     | `fix/find-own-part-file`         | 39                           | P2       | medium | PR-93        | merged |
+| PR-40  | fix(core): report whether the add-on works          | `fix/addon-usable`               | 40, 53                       | P2       | medium | none         | merged |
+| PR-41  | fix(desktop): keep notices in step with downloads   | `fix/notices-follow-downloads`   | 41, 123, 232                 | P2       | medium | none         | merged |
+| PR-42  | fix(engine): hold FTP to the local network rule     | `fix/ftp-local-network`          | 42, 43                       | P2       | medium | none         | merged |
+| PR-43  | refactor(sites): merge the host-under-site checks   | `refactor/one-host-under-site`   | 44                           | P3       | medium | none         | merged |
+| PR-44  | fix(engine): normalise ftps hosts when parsing      | `fix/normal-ftps-hosts`          | 45                           | P2       | small  | PR-43        | merged |
+| PR-45  | fix: hide only what is secret in a log line         | `fix/log-redaction-edges`        | 46, 222                      | P2       | small  | none         | merged |
+| PR-46  | fix(core): keep link passwords out of questions     | `fix/question-link-password`     | 47                           | P2       | medium | PR-45        | merged |
+| PR-47  | fix(core): see finished files beside resume files   | `fix/finished-beside-resume`     | 48, 174                      | P2       | small  | PR-04        | merged |
+| PR-48  | fix(media): make any video title safe as a name     | `fix/safe-video-titles`          | 49, 95                       | P2       | small  | none         | merged |
+| PR-49  | fix(messages): give advice that fits the failure    | `fix/advice-fits-failure`        | 51, 105, 106, 206            | P2       | medium | none         | merged |
+| PR-50  | fix(store): keep a set-aside list for a full month  | `fix/set-aside-month`            | 52, 156, 237                 | P2       | small  | none         | merged |
+| PR-51  | fix(desktop): correct what download questions say   | `fix/download-questions`         | 54, 122, 231                 | P2       | medium | none         | merged |
+| PR-52  | fix(desktop): give download windows the right fix   | `fix/window-fix-buttons`         | 55, 81                       | P2       | medium | none         | merged |
+| PR-53  | fix(desktop): make settings actions answer back     | `fix/settings-answers`           | 57, 127, 230                 | P2       | medium | none         | merged |
+| PR-54  | fix(core): handle typed names in media downloads    | `fix/typed-media-names`          | 58, 132                      | P2       | medium | none         | merged |
+| PR-55  | fix(desktop): follow an installer through setup     | `fix/installer-lifecycle`        | 59, 72                       | P2       | medium | none         | merged |
+| PR-56  | fix(core): offer updates only when they can work    | `fix/honest-update-offers`       | 60, 185, 186, 187            | P2       | medium | none         | merged |
+| PR-57  | fix(streams): stop trusting bad work folder data    | `fix/work-folder-trust`          | 62, 74                       | P2       | medium | none         | merged |
+| PR-58  | fix(streams): report how a program really ended     | `fix/program-end-report`         | 63, 77, 157                  | P2       | medium | none         | merged |
+| PR-59  | fix(cli): report stops, speed, errors correctly     | `fix/cli-reports`                | 65, 91, 182                  | P2       | medium | none         | merged |
+| PR-60  | fix(core): apply proxy exceptions to yt-dlp         | `fix/ytdlp-proxy-exceptions`     | 68, 69                       | P2       | small  | none         | merged |
+| PR-61  | fix(core): move path checks off async threads       | `fix/path-checks-off-async`      | 70                           | P2       | medium | none         | merged |
+| PR-62  | fix(engine): handle resume files more safely        | `fix/safer-resume-files`         | 71, 88, 89, 158              | P2       | medium | none         | merged |
+| PR-63  | fix(desktop): make an AppImage restart reliable     | `fix/appimage-restart`           | 73, 184                      | P2       | medium | none         | merged |
+| PR-64  | fix(core): read the page again after a refusal      | `fix/reread-refused-page`        | 75, 134, 145                 | P2       | medium | none         | merged |
+| PR-65  | fix(desktop): show all an import will change        | `fix/full-import-preview`        | 76, 148, 207                 | P2       | medium | none         | merged |
+| PR-66  | fix(desktop): show moved downloads in their place   | `fix/moved-row-position`         | 78                           | P2       | medium | none         | merged |
+| PR-67  | fix(queues): save whether a queue is in a run       | `fix/saved-queue-run`            | 79, 138                      | P2       | medium | none         | merged |
+| PR-68  | fix(desktop): keep one window per download          | `fix/one-window-per-download`    | 80, 139                      | P2       | medium | none         | merged |
+| PR-69  | fix(core): keep a row's answers after a restart     | `fix/answers-survive-restart`    | 82, 83                       | P2       | medium | PR-04        | merged |
+| PR-70  | fix(core): answer a repeated capture once           | `fix/repeated-capture`           | 86, 151, 173                 | P2       | medium | none         | merged |
+| PR-71  | fix(engine): count transferred bytes correctly      | `fix/count-bytes`                | 87, 177, 180                 | P2       | small  | none         | merged |
+| PR-72  | fix(engine): read range answers as they are         | `fix/range-answers`              | 90, 178                      | P2       | small  | PR-120       | merged |
+| PR-73  | fix(desktop): handle odd launches safely            | `fix/odd-launches`               | 92, 131                      | P2       | medium | none         | merged |
+| PR-74  | fix(desktop): close the app before uninstalling     | `fix/uninstall-closes-app`       | 93                           | P2       | small  | none         | merged |
+| PR-75  | fix: correct faults in the linux packages           | `fix/linux-packages`             | 94, 188, 189, 190            | P2       | medium | none         | merged |
+| PR-76  | fix(media): track, limit yt-dlp's own downloads     | `fix/ytdlp-progress-limit`       | 96, 98                       | P2       | small  | none         | merged |
+| PR-77  | fix(media): make quality offers match downloads     | `fix/quality-offers`             | 97, 99, 197                  | P2       | medium | none         | merged |
+| PR-78  | fix(streams): read HLS masters, keys correctly      | `fix/hls-masters-keys`           | 100, 101, 102, 198           | P2       | medium | none         | merged |
+| PR-79  | fix(desktop): tell loading from a failed list       | `fix/list-open-states`           | 103, 135, 211                | P2       | medium | none         | merged |
+| PR-80  | fix(core): correct how the add-on updates itself    | `fix/addon-updates`              | 108, 109, 110, 159, 208, 209 | P2       | medium | none         | merged |
+| PR-81  | fix(desktop): act on the rows the view shows        | `fix/selection-commands`         | 111, 136, 212                | P2       | medium | none         | merged |
+| PR-82  | fix(desktop): tidy navigation after a page opens    | `fix/navigation-state`           | 112, 162                     | P2       | small  | none         | merged |
+| PR-83  | fix(desktop): offer only actions that apply         | `fix/offers-that-apply`          | 113, 163, 166                | P2       | medium | none         | merged |
+| PR-84  | fix(sites): correct what counts as a local page     | `fix/what-counts-local`          | 114, 215, 244                | P2       | small  | none         | merged |
+| PR-85  | fix(desktop): say what the proxy form will save     | `fix/proxy-form-truth`           | 116, 221                     | P2       | small  | none         | merged |
+| PR-86  | fix(queues): hold queue slots to the real limit     | `fix/queue-slots`                | 117, 118                     | P2       | small  | none         | merged |
+| PR-87  | fix(queues): make rules match the way they read     | `fix/rules-match-text`           | 119, 223, 224                | P2       | small  | none         | merged |
+| PR-88  | fix(desktop): fix small faults in queue dialogs     | `fix/queue-dialogs`              | 120, 121, 165                | P2       | small  | none         | merged |
+| PR-89  | fix(desktop): make tray actions answer correctly    | `fix/tray-actions`               | 124, 160                     | P2       | small  | none         | merged |
+| PR-90  | fix(desktop): show a processing step as it is       | `fix/processing-step`            | 125, 228                     | P2       | small  | none         | merged |
+| PR-91  | fix(desktop): correct wording of app messages       | `fix/app-message-wording`        | 126, 161                     | P2       | small  | none         | merged |
+| PR-92  | fix: repair the repo's check scripts                | `fix/check-scripts`              | 129, 191, 238, 239, 240, 241 | P2       | medium | none         | merged |
+| PR-93  | fix(engine): lock the part file during a run        | `fix/part-file-lock`             | 130                          | P2       | medium | none         | merged |
+| PR-94  | fix(core): keep a video's work until it is placed   | `fix/work-until-placed`          | 133, 169                     | P2       | medium | PR-04        | merged |
+| PR-95  | fix(core): apply the local rule to yt-dlp reads     | `fix/ytdlp-local-rule`           | 137                          | P2       | medium | none         | merged |
+| PR-96  | fix(engine): check free space before a download     | `fix/free-space-check`           | 140                          | P2       | medium | none         | merged |
+| PR-97  | fix(core): record every file of a move up front     | `fix/record-moves`               | 141, 201, 246                | P2       | medium | PR-04, PR-08 | merged |
+| PR-98  | chore: remove code nothing calls                    | `chore/remove-dead-commands`     | 142, 235, 236                | P3       | medium | none         | merged |
+| PR-99  | test: wait under PATIENCE in every test             | `test/patience-waits`            | 143, 242                     | P3       | medium | none         | merged |
+| PR-100 | test: stop racing real-clock limits in tests        | `test/no-clock-races`            | 144, 167                     | P3       | medium | none         | merged |
+| PR-101 | test: share test values through test-support        | `test/shared-test-values`        | 146, 147, 149, 183           | P3       | medium | none         | merged |
+| PR-102 | fix(desktop): show startup notices only once        | `fix/startup-notices-once`       | 150, 214                     | P3       | medium | none         | merged |
+| PR-103 | fix(core): let a person's stop win                  | `fix/person-stop-wins`           | 152, 172                     | P3       | small  | none         | merged |
+| PR-104 | fix(engine): tighten network guard edge cases       | `fix/net-guard-edges`            | 154, 155, 216, 217           | P3       | medium | none         | merged |
+| PR-105 | fix(media): word program failures plainly           | `fix/word-program-failures`      | 164                          | P3       | small  | none         | merged |
+| PR-106 | refactor(desktop): share repeated form logic        | `refactor/share-form-logic`      | 168                          | P3       | medium | none         | merged |
+| PR-107 | fix: write kept files whole before replacing        | `fix/write-kept-files-whole`     | 170, 171                     | P3       | small  | none         | merged |
+| PR-108 | refactor(engine): remove code with no effect        | `refactor/engine-no-op-code`     | 179, 181                     | P3       | small  | none         | merged |
+| PR-109 | refactor(streams): remove leftovers from the crate  | `refactor/streams-leftovers`     | 192, 193, 194                | P3       | small  | none         | merged |
+| PR-110 | test(core): repair media run tests, doc comments    | `test/media-run-tidy`            | 195, 196                     | P3       | small  | none         | merged |
+| PR-111 | fix(streams): stop media programs on a signal       | `fix/media-programs-on-signal`   | 199                          | P3       | medium | none         | merged |
+| PR-112 | fix(desktop): correct system registration details   | `fix/system-registration`        | 202, 203, 204                | P3       | small  | none         | merged |
+| PR-113 | fix(desktop): give every window a native title      | `fix/native-window-title`        | 205                          | P3       | small  | none         | merged |
+| PR-114 | fix(desktop): steady the list under the pointer     | `fix/list-under-pointer`         | 210, 213                     | P3       | small  | none         | merged |
+| PR-115 | fix(core): keep only finished proxy test results    | `fix/proxy-test-results`         | 218, 219                     | P3       | small  | none         | merged |
+| PR-116 | fix(desktop): correct what queue pages say          | `fix/queue-page-text`            | 225, 226, 227                | P3       | small  | none         | merged |
+| PR-117 | fix(desktop): keep a system accent readable         | `fix/system-accent-contrast`     | 229                          | P3       | small  | none         | merged |
+| PR-118 | fix(protocol): correct two language names           | `fix/language-names`             | 234                          | P3       | small  | none         | merged |
+| PR-119 | fix(desktop): retry deleting a roaming data folder  | `fix/roaming-folder-retry`       | 243                          | P3       | small  | none         | merged |
+| PR-120 | test(engine): keep the download fault tests         | `test/keep-fault-tests`          | none                         | none     | medium | PR-39        | merged |
+| PR-121 | fix(core): save a run's record before its rename    | `fix/record-before-rename`       | 245                          | P2       | medium | none         | merged |
+| PR-122 | fix(core): tie a stream's work folder to its link   | `fix/stream-work-identity`       | 14                           | P1       | medium | none         | merged |
+| PR-123 | fix(core): finish removals a quit cut short         | `fix/removal-after-quit`         | 252                          | P3       | small  | none         | merged |
+| PR-124 | test: tidy test comments in ipc and bridge          | `test/ipc-bridge-comments`       | 247                          | P3       | small  | none         | merged |
+| PR-125 | chore: guard whole-folder deletes with a lint       | `chore/folder-delete-lint`       | 248                          | P3       | medium | none         | merged |
+| PR-126 | test: catch server races in the timing check        | `test/timing-server-races`       | 249                          | P3       | medium | PR-100       | merged |
+| PR-127 | fix(protocol): correct when a capture may erase     | `fix/capture-erase-doc`          | 250                          | P3       | small  | none         | merged |
+| PR-128 | test(extension): make the layout test's font load   | `test/layout-font`               | 251                          | P3       | small  | none         | merged |
+| PR-129 | fix(core): finish removals after a crash            | `fix/removal-after-crash`        | 252, 253                     | P3       | medium | none         | merged |
+| PR-130 | fix(desktop): act on a folded group's rows          | `fix/folded-group-ticks`         | 254                          | P3       | small  | none         | merged |
+| PR-131 | fix(media): keep the bar steady on a retry row      | `fix/retry-row-bar`              | 256                          | P3       | small  | none         | merged |
+| PR-132 | fix(desktop): stop page reads at a late quit        | `fix/page-read-at-quit`          | 255                          | P3       | small  | none         | merged |
+| PR-133 | fix(streams): hide tokens in key error paths        | `fix/key-error-path`             | 198                          | P3       | small  | none         | merged |
+| PR-134 | fix(desktop): draw the every-video tick             | `fix/every-video-tick`           | 148                          | P2       | small  | none         | merged |
+| PR-135 | fix(core): ask when a server changes the file type  | `fix/ask-on-type-change`         | 257                          | P2       | medium | none         | merged |
+| PR-136 | fix(media): keep the bar steady past an estimate    | `fix/bar-past-estimate`          | 258                          | P3       | small  | none         | merged |
+| PR-137 | fix(desktop): keep finished group counts current    | `fix/finished-group-counts`      | 259                          | P3       | small  | none         | merged |
+| PR-138 | fix(desktop): keep startup notices out of the way   | `fix/startup-notice-place`       | 260, 261                     | P3       | small  | none         | merged |
+| PR-139 | fix(core): clean up a move a removal cut short      | `fix/removal-move-copy`          | 262                          | P3       | small  | none         | merged |
+| PR-140 | test: hold servers instead of throttling to join    | `test/hold-to-join`              | 263                          | P3       | small  | none         | merged |
+| PR-141 | refactor(desktop): use the one proxy display name   | `refactor/one-proxy-name`        | 264                          | P3       | small  | none         | merged |
+| PR-142 | fix(streams): read all of ffmpeg's failure text     | `fix/ffmpeg-failure-text`        | 265                          | P3       | small  | none         | merged |
+| PR-143 | fix(core): keep one subtitle copy after a crash     | `fix/subtitle-after-crash`       | 266                          | P3       | small  | none         | merged |
+| PR-144 | chore: read the product name in every crate         | `chore/product-name-everywhere`  | 161                          | P3       | medium | none         | merged |
+| PR-145 | fix(desktop): fix hover in the Settings navigation  | `fix/settings-nav-hover`         | 162                          | P3       | small  | none         | closed |
+| PR-146 | chore: flag shell public items with no caller       | `chore/shell-unused-check`       | 267                          | P3       | small  | none         | closed |
+| PR-147 | test: limit each test's time on Windows             | `test/windows-test-limit`        | 268                          | P3       | small  | none         | merged |
+| PR-148 | fix(core): keep a mark a move would lose            | `fix/mark-across-move`           | 269                          | P3       | small  | none         | merged |
+| PR-149 | test: read test code one way in the checks          | `test/one-test-reading`          | 270                          | P3       | small  | none         | merged |
+| PR-150 | fix(desktop): keep keys when a dialog closes        | `fix/focus-after-dialog`         | 271                          | P3       | small  | none         | merged |
+| PR-151 | chore(extension): read the product name             | `chore/extension-product-name`   | 272                          | P3       | small  | none         | merged |
+| PR-152 | refactor(shell): make local items private           | `refactor/shell-private-items`   | 273                          | P3       | small  | none         | merged |
+| PR-153 | fix(engine): tell sign-ins apart when resuming      | `fix/resume-sign-in`             | 274                          | P3       | small  | none         | closed |
+| PR-154 | fix(protocol): let older apps' settings validate    | `fix/optional-validators`        | 275                          | P2       | small  | none         | open   |
+| PR-155 | fix(desktop): show the size of every video format   | `fix/format-sizes`               | 276                          | P3       | small  | none         | open   |
+| PR-156 | fix(core): save only languages a person picked      | `fix/picked-languages`           | 277                          | P3       | small  | none         | open   |
+| PR-157 | fix(desktop): keep keys when a dialog's parts leave | `fix/focus-both-gone`            | 278                          | P3       | small  | none         | open   |
+| PR-158 | chore: check the width of Settings rows             | `chore/settings-row-width`       | 279                          | P3       | small  | none         | open   |
 
 ## Lanes
 
 These are the open pull requests. A PR in one lane touches separate code from a PR in another, so the two can run side by side. Inside a lane, go one at a time, in order. Dependencies still apply across lanes.
 
-- **Core downloads** (`crates/core` outside media runs, proxies, queues and updates): PR-148, PR-153.
-- **Main window** (`crates/desktop/src/main_window`, the Add dialog, the tray): PR-138, PR-145, PR-150.
-- **Repo and packaging** (`scripts`, `config`, `.github`, packaging, `crates/logging`): PR-149, PR-151.
-- **Start, quit, updates** (`crates/shell`): PR-152.
-
-Known overlaps, where a PR reaches into another lane, so do not run these pairs at once: PR-97 and PR-121 add to the saved row in `crates/records` and `crates/store`, so keep them apart from the Saved list lane. PR-25 touches `notices_bar.rs` and `library.rs`, and PR-51 and PR-68 touch `list.rs`, `text.rs` or `row_menu.rs`, all in the Main window lane. PR-30 changes how `crates/desktop/src/library.rs` tells the window of changes, so finish it before other PRs that observe the list, such as PR-66 and PR-102.
+- **Core downloads** (`crates/core`): PR-156.
+- **Main window** (`crates/desktop`): PR-155, PR-157.
+- **Repo and packaging** (`scripts`, `crates/protocol`, `packages/protocol`): PR-154, PR-158.
 
 ## Pull requests
 
@@ -1918,7 +1920,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/desktop
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** closed without merging: accepted as a known library glitch
 
 ### PR-146 chore: flag shell public items with no caller
 
@@ -1965,7 +1967,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Depends on:** none
 - **Touches:** scripts/gate
 - **Proof:** none
-- **Checks:** `node --test scripts/gate`
+- **Checks:** `node --test "scripts/gate/*.test.mjs"`
 - **Status:** merged
 
 ### PR-150 fix(desktop): keep keys when a dialog closes
@@ -2014,4 +2016,64 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/engine
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-engine`, `cargo clippy -p wirecatch-engine`
+- **Status:** closed without merging: accepted
+
+### PR-154 fix(protocol): let older apps' settings validate
+
+- **Branch:** `fix/optional-validators`
+- **Items:** 275 (P2). Highest: P2.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/protocol, packages/protocol
+- **Proof:** none
+- **Checks:** `pnpm protocol:generate`, `pnpm --filter protocol check`
+- **Status:** open
+
+### PR-155 fix(desktop): show the size of every video format
+
+- **Branch:** `fix/format-sizes`
+- **Items:** 276 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/desktop, crates/media
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
+- **Status:** open
+
+### PR-156 fix(core): save only languages a person picked
+
+- **Branch:** `fix/picked-languages`
+- **Items:** 277 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/core, crates/desktop
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
+- **Status:** open
+
+### PR-157 fix(desktop): keep keys when a dialog's parts leave
+
+- **Branch:** `fix/focus-both-gone`
+- **Items:** 278 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/desktop
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
+- **Status:** open
+
+### PR-158 chore: check the width of Settings rows
+
+- **Branch:** `chore/settings-row-width`
+- **Items:** 279 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** scripts/gate
+- **Proof:** none
+- **Checks:** `node --test "scripts/gate/*.test.mjs"`
 - **Status:** open

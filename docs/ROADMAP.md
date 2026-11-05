@@ -224,7 +224,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 159. Add-on release files of skipped versions stay in the work folder (fixed)
 160. Tray ticks flip on a repeat click, and & in a name shows wrongly (fixed)
 161. Messages name the product with a literal (fixed)
-162. A navigation item left behind keeps its hover colour until the mouse moves (open)
+162. A navigation item left behind keeps its hover colour until the mouse moves (won't fix (the sidebar is fixed; the Settings navigation is drawn by gpui-component, and the colour clears on the next mouse move))
 163. Empty pages offer Pause all or Resume all (fixed)
 164. Listed above as "A failed video shows the add-on's raw output" (fixed)
 165. New queue and New proxy do not put the cursor in the Name field (fixed)
@@ -336,7 +336,12 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 271. A dialog can give focus back to a button that has gone (fixed)
 272. The extension writes the product name out by hand (fixed)
 273. Public shell items are used only in their own file (fixed)
-274. A partial file can continue under another sign-in (open)
+274. A partial file can continue under another sign-in (won't fix (rare, a mixed file is the only harm, and a refreshed sign-in must keep its progress))
+275. A new extension refuses an older app's settings (open)
+276. Some video formats show no size (open)
+277. Switching kind can save a language this video lacks (open)
+278. Keys can go dead when two things leave during a dialog (open)
+279. No check catches a Settings row that wraps a lone word (open)
 
 Done before the release:
 
