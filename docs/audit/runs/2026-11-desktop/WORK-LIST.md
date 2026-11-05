@@ -153,21 +153,23 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-143 | fix(core): keep one subtitle copy after a crash    | `fix/subtitle-after-crash`       | 266                          | P3       | small  | none         | merged |
 | PR-144 | chore: read the product name in every crate        | `chore/product-name-everywhere`  | 161                          | P3       | medium | none         | merged |
 | PR-145 | fix(desktop): fix hover in the Settings navigation | `fix/settings-nav-hover`         | 162                          | P3       | small  | none         | open   |
-| PR-146 | chore: flag shell public items with no caller      | `chore/shell-unused-check`       | 267                          | P3       | small  | none         | open   |
+| PR-146 | chore: flag shell public items with no caller      | `chore/shell-unused-check`       | 267                          | P3       | small  | none         | closed |
 | PR-147 | test: limit each test's time on Windows            | `test/windows-test-limit`        | 268                          | P3       | small  | none         | merged |
+| PR-148 | fix(core): keep a mark a move would lose           | `fix/mark-across-move`           | 269                          | P3       | small  | none         | open   |
+| PR-149 | test: read test code one way in the checks         | `test/one-test-reading`          | 270                          | P3       | small  | none         | open   |
+| PR-150 | fix(desktop): keep keys when a dialog closes       | `fix/focus-after-dialog`         | 271                          | P3       | small  | none         | open   |
+| PR-151 | chore(extension): read the product name            | `chore/extension-product-name`   | 272                          | P3       | small  | none         | open   |
+| PR-152 | refactor(shell): make local items private          | `refactor/shell-private-items`   | 273                          | P3       | small  | none         | open   |
+| PR-153 | fix(engine): tell sign-ins apart when resuming     | `fix/resume-sign-in`             | 274                          | P3       | small  | none         | open   |
 
 ## Lanes
 
 These are the open pull requests. A PR in one lane touches separate code from a PR in another, so the two can run side by side. Inside a lane, go one at a time, in order. Dependencies still apply across lanes.
 
-- **Core downloads** (`crates/core` outside media runs, proxies, queues and updates): PR-139, PR-143.
-- **Video and audio** (`crates/streams`, `crates/media`, media runs in `crates/core`): PR-136, PR-142.
-- **Saved list** (`crates/store`): PR-25.
-- **Main window** (`crates/desktop/src/main_window`, the Add dialog, the tray): PR-114, PR-134, PR-138, PR-141, PR-145.
-- **Download windows** (`crates/desktop/src/download_windows`, the windows and notices in `crates/shell`): PR-137.
-- **Repo and packaging** (`scripts`, `config`, `.github`, packaging, `crates/logging`): PR-140, PR-144, PR-146, PR-147.
-
-These cross lanes, so run each with nothing else touching the crates it names: PR-29, PR-62, PR-67, PR-98, PR-101, PR-135.
+- **Core downloads** (`crates/core` outside media runs, proxies, queues and updates): PR-148, PR-153.
+- **Main window** (`crates/desktop/src/main_window`, the Add dialog, the tray): PR-138, PR-145, PR-150.
+- **Repo and packaging** (`scripts`, `config`, `.github`, packaging, `crates/logging`): PR-149, PR-151.
+- **Start, quit, updates** (`crates/shell`): PR-152.
 
 Known overlaps, where a PR reaches into another lane, so do not run these pairs at once: PR-97 and PR-121 add to the saved row in `crates/records` and `crates/store`, so keep them apart from the Saved list lane. PR-25 touches `notices_bar.rs` and `library.rs`, and PR-51 and PR-68 touch `list.rs`, `text.rs` or `row_menu.rs`, all in the Main window lane. PR-30 changes how `crates/desktop/src/library.rs` tells the window of changes, so finish it before other PRs that observe the list, such as PR-66 and PR-102.
 
@@ -1928,7 +1930,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** scripts/gate
 - **Proof:** none
 - **Checks:** `node scripts/gate.mjs repo`
-- **Status:** open
+- **Status:** closed without merging
 
 ### PR-147 test: limit each test's time on Windows
 
@@ -1941,3 +1943,75 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Proof:** none
 - **Checks:** `node scripts/gate.mjs repo`
 - **Status:** merged
+
+### PR-148 fix(core): keep a mark a move would lose
+
+- **Branch:** `fix/mark-across-move`
+- **Items:** 269 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/core, crates/files
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-core`, `cargo clippy -p wirecatch-core`
+- **Status:** open
+
+### PR-149 test: read test code one way in the checks
+
+- **Branch:** `test/one-test-reading`
+- **Items:** 270 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** scripts/gate
+- **Proof:** none
+- **Checks:** `node --test scripts/gate`
+- **Status:** open
+
+### PR-150 fix(desktop): keep keys when a dialog closes
+
+- **Branch:** `fix/focus-after-dialog`
+- **Items:** 271 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** What PR-114 left.
+- **Depends on:** none
+- **Touches:** crates/desktop
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
+- **Status:** open
+
+### PR-151 chore(extension): read the product name
+
+- **Branch:** `chore/extension-product-name`
+- **Items:** 272 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** apps/extension, packages/eslint-config
+- **Proof:** none
+- **Checks:** `pnpm --filter extension check`
+- **Status:** open
+
+### PR-152 refactor(shell): make local items private
+
+- **Branch:** `refactor/shell-private-items`
+- **Items:** 273 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item.
+- **Depends on:** none
+- **Touches:** crates/shell
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-shell`, `cargo clippy -p wirecatch-shell`
+- **Status:** open
+
+### PR-153 fix(engine): tell sign-ins apart when resuming
+
+- **Branch:** `fix/resume-sign-in`
+- **Items:** 274 (P3). Highest: P3.
+- **Effort:** small
+- **Why:** Own item. Needs a decision first.
+- **Depends on:** none
+- **Touches:** crates/engine
+- **Proof:** none
+- **Checks:** `cargo test -p wirecatch-engine`, `cargo clippy -p wirecatch-engine`
+- **Status:** open
