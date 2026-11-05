@@ -219,8 +219,9 @@ mod tests {
     use gpui_kit::prelude::FluentBuilder as _;
     use gpui_kit::{
         AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _, IntoElement,
-        Render, Subscription, TestAppContext, VisualTestContext, Window, WindowOptions,
+        Render, Subscription, TestAppContext, VisualTestContext, Window, WindowOptions, div,
     };
+    use std::cell::Cell;
 
     /// The tree `MainWindow::render` and `command_bar` build around the search field.
     struct SearchInWindow {
@@ -367,6 +368,36 @@ mod tests {
         cx.update(|window, cx| crate::ui::dialog::open(window, cx, |dialog, _, _| dialog));
         cx.run_until_parked();
 
+        take_the_row(&root, cx);
+        cx.update(WindowExt::close_dialog);
+        cx.run_until_parked();
+        cx.simulate_keystrokes("escape");
+
+        assert_eq!(root.read_with(cx, |root, _| root.dismissals), 1);
+    }
+
+    #[gpui_kit::test]
+    fn the_window_keys_still_work_when_the_dialogs_field_and_the_opener_both_left(
+        cx: &mut TestAppContext,
+    ) {
+        let (root, cx) = row_window(cx);
+        let field = cx.update(|_, cx| cx.focus_handle());
+        let field_shown = Rc::new(Cell::new(true));
+        cx.update(|window, cx| {
+            let (field, field_shown) = (field.clone(), field_shown.clone());
+            crate::ui::dialog::open(window, cx, move |dialog, _, _| {
+                dialog.when(field_shown.get(), |dialog| {
+                    dialog.child(div().id("field").track_focus(&field))
+                })
+            });
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| field.focus(window, cx));
+        cx.run_until_parked();
+
+        field_shown.set(false);
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
         take_the_row(&root, cx);
         cx.update(WindowExt::close_dialog);
         cx.run_until_parked();

@@ -1438,7 +1438,8 @@ Decided on 2026-11-05. It amends D171.
 Decided on 2026-11-05. It carries out D168.2.
 
 1. When the element holding focus leaves the main window, such as a button that left with its row, or one a closing dialog gives focus back to, focus moves to the list, so the window's keys keep working.
-2. While a dialog is open, focus stays out of the list, so the keys cannot act on the rows behind the dialog.
+2. While a dialog is open, focus stays out of the list, so the keys cannot act on the rows behind the dialog. When the element holding focus inside the dialog leaves, the dialog takes focus, so the dialog's own keys keep working and closing it still falls to the list when its opener has gone too.
+
 ### D190. A start's notices wait in a banner above the list
 
 Decided on 2026-11-05.
