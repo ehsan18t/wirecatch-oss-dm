@@ -1445,7 +1445,6 @@ fn button(id: &'static str, label: &'static str, variant: ButtonVariant, busy: b
         .disabled(busy)
 }
 
-/// Whether the core's name replaces what the field holds: never a name the person typed.
 /// The name the person chose in the field: a name left as proposed is no choice, so the server's
 /// answer may still improve it.
 fn chosen_name(field: &str, proposed: Option<&str>) -> Option<String> {
@@ -1453,6 +1452,7 @@ fn chosen_name(field: &str, proposed: Option<&str>) -> Option<String> {
     (!name.is_empty() && Some(name) != proposed).then(|| name.to_owned())
 }
 
+/// Whether the core's name replaces what the field holds: never a name the person typed.
 fn core_name_applies(field: &str, last: Option<&str>, core: &str) -> bool {
     last.is_none_or(|last| last != core && field == last)
 }

@@ -532,7 +532,7 @@ fn file_exists_said_on(
     let which = if question.same_file {
         "A file that looks like the same one"
     } else {
-        "A different file with this name"
+        "Another file with this name"
     };
     let bytes = format_bytes(question.size);
     let facts = match question.saved_at {
@@ -807,7 +807,7 @@ mod tests {
         );
         assert_eq!(
             said(false, None),
-            format!("A different file with this name is already in {folder} (2.00 KB).")
+            format!("Another file with this name is already in {folder} (2.00 KB).")
         );
     }
 
