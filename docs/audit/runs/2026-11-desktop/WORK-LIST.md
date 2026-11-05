@@ -154,7 +154,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-144 | chore: read the product name in every crate        | `chore/product-name-everywhere`  | 161                          | P3       | medium | none         | open   |
 | PR-145 | fix(desktop): fix hover in the Settings navigation | `fix/settings-nav-hover`         | 162                          | P3       | small  | none         | open   |
 | PR-146 | chore: flag shell public items with no caller      | `chore/shell-unused-check`       | 267                          | P3       | small  | none         | open   |
-| PR-147 | test: limit each test's time on Windows            | `test/windows-test-limit`        | 268                          | P3       | small  | none         | open   |
+| PR-147 | test: limit each test's time on Windows            | `test/windows-test-limit`        | 268                          | P3       | small  | none         | merged |
 
 ## Lanes
 
@@ -1940,4 +1940,4 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** scripts/gate, .github
 - **Proof:** none
 - **Checks:** `node scripts/gate.mjs repo`
-- **Status:** open
+- **Status:** merged

@@ -292,7 +292,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 265 | A stream join reads only ffmpeg's last lines                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-105.                                                                                                  | none                                          | fixed  |
 | 266 | A crash while placing a video can double its subtitles                                            | found while fixing                                                                                 | P3       | small  | Left by PR-94.                                                                                                   | none                                          | fixed  |
 | 267 | No check finds shell functions nothing calls                                                      | found while fixing                                                                                 | P3       | small  | Left by PR-98.                                                                                                   | none                                          | open   |
-| 268 | A hanging test on Windows leaves no name or log                                                   | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-11.                                                                                     | none                                          | open   |
+| 268 | A hanging test on Windows leaves no name or log                                                   | found while fixing                                                                                 | P3       | small  | Found while reviewing PR-11.                                                                                     | none                                          | fixed  |
 
 ## Items
 
@@ -4681,7 +4681,7 @@ Item 142 removed the public items of `crates/shell` with no caller, but proposed
 
 ### 268. A hanging test on Windows leaves no name or log
 
-P3, small, open.
+P3, small, fixed.
 
 A Windows test job was cancelled at the 20 minute limit and its log was lost, so the hanging test was never named. The cause was never found.
 
