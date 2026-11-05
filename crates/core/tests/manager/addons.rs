@@ -1332,29 +1332,9 @@ async fn the_add_on_is_not_removed_while_in_use() -> TestResult {
         ))
         .await
         .unwrap();
-    let choice = next_event(&mut ui, "a choice", |e| match e {
-        UiEvent::MediaChoiceRequested(c) => Some(c.clone()),
-        _ => None,
-    })
-    .await;
+    let choice = crate::media_support::choice_requested(&mut ui).await;
     h.manager
-        .choose_media(
-            choice.id,
-            wirecatch_protocol::app::MediaSelection {
-                option_id: "1".into(),
-                folder: None,
-                file_name: None,
-                queue: None,
-                later: false,
-                output: wirecatch_protocol::app::OutputFormat::default(),
-                audio_kbps: None,
-                subtitles: Vec::new(),
-                subtitle_files: false,
-                unembedded_subtitles: wirecatch_protocol::app::UnembeddedSubtitles::Files,
-                chapters: false,
-                every_video: None,
-            },
-        )
+        .choose_media(choice.id, crate::media_support::select("1"))
         .await
         .unwrap();
     let id = h.manager.list_downloads()[0].id;

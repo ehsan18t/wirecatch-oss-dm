@@ -17,7 +17,7 @@ use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 
 use crate::TestCertificate;
-use crate::http::index;
+use crate::http::{asked_range, index, parse_range};
 
 /// How much the QUIC server may have in flight on one connection.
 const QUIC_SEND_WINDOW: u64 = 32 * 1024 * 1024;
@@ -41,37 +41,21 @@ pub struct Counts {
 /// How many bytes a request asks for: `u64::MAX` for a range with no end, or
 /// for no range at all.
 fn asked(headers: &HeaderMap) -> u64 {
-    headers
-        .get(RANGE)
-        .and_then(|v| std::str::from_utf8(v.as_bytes()).ok())
-        .and_then(|v| v.strip_prefix("bytes="))
-        .and_then(|v| v.split_once('-'))
-        .and_then(|(first, last)| Some((first.parse::<u64>().ok()?, last.parse::<u64>().ok()?)))
-        .map_or(u64::MAX, |(start, last)| {
-            last.saturating_sub(start).saturating_add(1)
-        })
-}
-
-/// `bytes=a-b` or `bytes=a-` as a half-open range within `len`.
-fn range(headers: &HeaderMap, len: u64) -> Option<(u64, u64)> {
-    let spec = std::str::from_utf8(headers.get(RANGE)?.as_bytes())
-        .ok()?
-        .strip_prefix("bytes=")?;
-    let (first, last) = spec.split_once('-')?;
-    let start: u64 = first.parse().ok()?;
-    let end = if last.is_empty() {
-        len
-    } else {
-        last.parse::<u64>().ok()?.saturating_add(1).min(len)
-    };
-    (start < end).then_some((start, end))
+    match asked_range(headers) {
+        Some((start, Some(last))) => last.saturating_sub(start).saturating_add(1),
+        _ => u64::MAX,
+    }
 }
 
 /// The status, headers and body slice for a request.
 fn answer(data: &Bytes, headers: &HeaderMap) -> (StatusCode, HeaderMap, Bytes) {
     let len = data.len() as u64;
     let mut out = HeaderMap::new();
-    let (status, start, end) = match range(headers, len) {
+    let (status, start, end) = match parse_range(headers, len) {
+        Some((start, _)) if start >= len => {
+            out.insert(CONTENT_RANGE, format!("bytes */{len}").parse().unwrap());
+            (StatusCode::RANGE_NOT_SATISFIABLE, 0, 0)
+        }
         Some((start, end)) => {
             let value = format!("bytes {start}-{}/{len}", end - 1);
             out.insert(CONTENT_RANGE, value.parse().unwrap());
@@ -302,5 +286,20 @@ impl Blackhole {
 impl Drop for Blackhole {
     fn drop(&mut self) {
         self.reader.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_range_past_the_end_is_refused_as_on_the_other_servers() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RANGE, "bytes=10-".parse().unwrap());
+        let (status, out, body) = answer(&Bytes::from_static(b"0123456789"), &headers);
+        assert_eq!(status, StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(out[CONTENT_RANGE], "bytes */10");
+        assert!(body.is_empty());
     }
 }

@@ -62,8 +62,7 @@ pub fn already_running() -> String {
     )
 }
 
-/// The flag the bridge (and the start-with-system entry) passes: run with no window.
-pub const BACKGROUND_FLAG: &str = "--background";
+pub use wirecatch_protocol::launch::BACKGROUND_FLAG;
 
 /// Most links taken from one command line.
 pub const MAX_LAUNCH_LINKS: usize = MAX_OPEN_LINKS;
@@ -357,7 +356,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_launch_asking_for_nothing_visible_contacts_no_one() {
-        let launch = Launch::from_args(&args(&["app", "--background"]));
+        let launch = Launch::from_args(&args(&["app", BACKGROUND_FLAG]));
         let mut tries = 0;
         let handed = hand_over_patiently(&launch, || {
             tries += 1;
@@ -423,9 +422,9 @@ mod tests {
 
     #[test]
     fn background_flag_is_read_after_the_program_name() {
-        assert!(wants_background(["wirecatch-app", "--background"]));
+        assert!(wants_background(["wirecatch-app", BACKGROUND_FLAG]));
         assert!(!wants_background(["wirecatch-app"]));
-        assert!(!wants_background(["--background"]));
+        assert!(!wants_background([BACKGROUND_FLAG]));
         assert!(!wants_background(["wirecatch-app", "--backgrounds"]));
     }
 
@@ -434,7 +433,7 @@ mod tests {
         let found = links_from_args([
             "C:\\Apps\\wirecatch-app.exe",
             "https://example.com/a.zip",
-            "--background",
+            BACKGROUND_FLAG,
             "notes.txt",
             "http://example.com/B",
             "ftp://files.example.com/c.iso",
@@ -528,8 +527,8 @@ mod tests {
         for (command_line, says) in [
             (&["app"][..], true),
             (&["app", "https://x.example/f"][..], true),
-            (&["app", "--background", "https://x.example/f"][..], true),
-            (&["app", "--background"][..], false),
+            (&["app", BACKGROUND_FLAG, "https://x.example/f"][..], true),
+            (&["app", BACKGROUND_FLAG][..], false),
         ] {
             let mut said = false;
             Launch::from_args(&args(command_line)).speak_if_shown(|| said = true);
@@ -539,16 +538,16 @@ mod tests {
 
     #[test]
     fn a_background_launch_shows_nothing_unless_it_brings_a_link() {
-        assert!(!Launch::from_args(&args(&["app", "--background"])).shows_window());
+        assert!(!Launch::from_args(&args(&["app", BACKGROUND_FLAG])).shows_window());
         assert!(Launch::from_args(&args(&["app"])).shows_window());
-        let with_link = Launch::from_args(&args(&["app", "--background", "https://x.example/f"]));
+        let with_link = Launch::from_args(&args(&["app", BACKGROUND_FLAG, "https://x.example/f"]));
         assert!(with_link.shows_window());
         assert_eq!(with_link.links, ["https://x.example/f"]);
     }
 
     #[test]
     fn a_launch_is_handed_over_as_the_running_copy_can_take_it() {
-        let quiet = Launch::from_args(&args(&["app", "--background"]));
+        let quiet = Launch::from_args(&args(&["app", BACKGROUND_FLAG]));
         assert_eq!(quiet.call(2), None);
         assert_eq!(
             Launch::from_args(&args(&["app"])).call(2),

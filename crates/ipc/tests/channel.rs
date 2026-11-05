@@ -30,12 +30,14 @@ async fn a_channels_endpoint_carries_the_key_its_listener_wrote() {
 
     // Before the app first listens, a client finds no key and makes none.
     match endpoint_for(Channel::Dev) {
-        Err(IpcError::NoEndpointKey { path }) => assert_eq!(path, folder.join("endpoint-key")),
+        Err(IpcError::NoEndpointKey { path }) => {
+            assert_eq!(path, folder.join(wirecatch_ipc::KEY_FILE));
+        }
         other => panic!("expected NoEndpointKey, got {other:?}"),
     }
 
     let mut listener = Listener::bind_keyed(Channel::Dev, &folders).unwrap();
-    let key = std::fs::read_to_string(folder.join("endpoint-key")).unwrap();
+    let key = std::fs::read_to_string(folder.join(wirecatch_ipc::KEY_FILE)).unwrap();
     let name = listener.endpoint().as_os_str().to_string_lossy();
     #[cfg(windows)]
     assert!(

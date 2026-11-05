@@ -24,9 +24,6 @@ const MAX_RETRY: Duration = Duration::from_millis(250);
 /// folder as the bridge (D19).
 pub(crate) use wirecatch_product::APP_FILE_NAME;
 
-/// Argument that starts the app without opening its window.
-pub(crate) const BACKGROUND_ARG: &str = "--background";
-
 /// Overrides used by the end-to-end tests, present only when the non-default
 /// `test-overrides` cargo feature is enabled (which `tests/bridge.rs` requires).
 ///
@@ -43,12 +40,7 @@ pub(crate) const BACKGROUND_ARG: &str = "--background";
 /// whatever it reaches belongs to the current user either way.)
 #[cfg(feature = "test-overrides")]
 pub(crate) mod test_overrides {
-    /// See the module documentation.
-    pub(crate) const ENDPOINT_VAR: &str = "WIRECATCH_BRIDGE_TEST_ENDPOINT";
-    /// See the module documentation.
-    pub(crate) const LAUNCH_VAR: &str = "WIRECATCH_BRIDGE_TEST_LAUNCH";
-    /// See the module documentation.
-    pub(crate) const START_BUDGET_VAR: &str = "WIRECATCH_BRIDGE_TEST_START_BUDGET_MS";
+    pub(crate) use wirecatch_protocol::launch::{ENDPOINT_VAR, LAUNCH_VAR, START_BUDGET_VAR};
 }
 
 /// How long to wait for a started app to listen.
@@ -133,7 +125,7 @@ impl ProcessLauncher {
     pub(crate) fn for_app(app: PathBuf) -> Self {
         Self {
             program: app,
-            args: vec![OsString::from(BACKGROUND_ARG)],
+            args: vec![OsString::from(wirecatch_protocol::launch::BACKGROUND_FLAG)],
         }
     }
 }
@@ -421,7 +413,10 @@ mod tests {
     #[test]
     fn the_app_is_started_in_the_background() {
         let launcher = ProcessLauncher::for_app(PathBuf::from("app"));
-        assert_eq!(launcher.args, [OsString::from("--background")]);
+        assert_eq!(
+            launcher.args,
+            [OsString::from(wirecatch_protocol::launch::BACKGROUND_FLAG)]
+        );
     }
 
     /// A fresh endpoint nobody else uses, in a private folder of its own that
@@ -620,7 +615,7 @@ mod tests {
     async fn a_damaged_key_starts_the_app_that_replaces_it() {
         let dir = private_dir("bridge-damaged-key").unwrap();
         let folders = keyed_in(dir.path().to_path_buf());
-        let key = dir.path().join("endpoint-key");
+        let key = dir.path().join(wirecatch_ipc::KEY_FILE);
         std::fs::write(&key, "not a key").unwrap();
         // A key others can read is refused, not replaced.
         #[cfg(unix)]
@@ -648,7 +643,7 @@ mod tests {
     #[test]
     fn a_bad_key_gives_only_its_own_advice() {
         let bad = IpcError::BadEndpointKey {
-            path: "endpoint-key".into(),
+            path: wirecatch_ipc::KEY_FILE.into(),
             reason: "it does not hold a key Wirecatch wrote".into(),
         };
         let message = Unavailable::from_ipc(&bad).message;
@@ -680,7 +675,7 @@ mod tests {
     #[tokio::test]
     async fn a_key_that_never_appears_is_reported_with_its_own_advice() {
         let (endpoint, dir) = test_endpoint();
-        let missing = dir.path().join("Wirecatch").join("endpoint-key");
+        let missing = dir.path().join("Wirecatch").join(wirecatch_ipc::KEY_FILE);
         let launches = Arc::new(Mutex::new(0));
         let app = DelayedApp {
             endpoint,
@@ -703,7 +698,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn the_last_attempt_decides_what_is_reported() {
         let (endpoint, dir) = test_endpoint();
-        let missing = dir.path().join("Wirecatch").join("endpoint-key");
+        let missing = dir.path().join("Wirecatch").join(wirecatch_ipc::KEY_FILE);
         let app = DelayedApp {
             endpoint: endpoint.clone(),
             delay: Duration::from_secs(30),

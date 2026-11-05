@@ -88,21 +88,12 @@ async fn an_ftp_capture_that_fails_leaves_the_download_to_the_browser() -> TestR
     let h = Harness::new().await?;
     let capture = NewDownload {
         handover_id: "ftp-1".into(),
-        url: server.url("ftp", "bob:pw@", "gone.iso").into(),
         // A page on the person's network, whose links may lead there (D39).
         referrer: Some("http://intranet.test/".into()),
         page_url: Some("http://intranet.test/".into()),
-        frame_url: None,
         suggested_name: Some("gone.iso".into()),
-        mime: None,
-        size_hint: None,
-        cookies: None,
-        cookie_jar: None,
-        user_agent: None,
-        extra_headers: vec![],
         source: CaptureSource::ContextMenu,
-        queue: None,
-        media: None,
+        ..wirecatch_test_support::downloads::capture(server.url("ftp", "bob:pw@", "gone.iso"))
     };
     let error = h.manager.add_capture(capture).await.unwrap_err();
     let CoreError::NotStarted(reason) = &error else {

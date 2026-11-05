@@ -167,8 +167,6 @@ pub struct FtpStats {
     current_transfers: AtomicUsize,
     /// Most transfers running at the same time.
     pub max_transfers: AtomicUsize,
-    /// File bytes sent over data connections.
-    pub bytes_sent: AtomicU64,
     /// What data connections may send; see [`FtpServer::hold_data_after`].
     data_gate: ByteGate,
     /// `REST` offsets the transfers started from.
@@ -741,7 +739,6 @@ async fn send_file(
         let n = end - position;
         position = end;
         sent += n;
-        stats.bytes_sent.fetch_add(n, Ordering::Relaxed);
         sent_here.fetch_add(n, Ordering::SeqCst);
         if let Some(bps) = bps
             && let Some(wait) = time_to_send(sent, bps).checked_sub(start.elapsed())

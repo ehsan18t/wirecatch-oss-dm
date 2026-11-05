@@ -22,12 +22,15 @@ use wirecatch_core::{
     AddonComponent, AddonFile, ArchiveKind, ComponentId, Fingerprint, MediaAddonSources, PinnedKey,
     ReleaseFile, Sha256Digest,
 };
-use wirecatch_protocol::app::{AddonId, AddonInfo, AddonState, UiEvent};
+use wirecatch_protocol::app::{
+    AddonId, AddonInfo, AddonState, MediaChoice, MediaSelection, OutputFormat, UiEvent,
+    UnembeddedSubtitles,
+};
 use wirecatch_protocol::extension::{CaptureSource, MediaHint, MediaKind, NewDownload};
 
 pub use wirecatch_test_support::files::FileServer;
 
-use crate::common::{Harness, PATIENCE, TestResult};
+use crate::common::{Harness, PATIENCE, TestResult, test_data};
 
 /// The `fake_media_tool` program, which cargo builds for this crate's tests.
 pub fn fake_tool() -> TestResult<Vec<u8>> {
@@ -372,23 +375,16 @@ pub fn media_capture(url: impl AsRef<str>, kind: MediaKind, title: Option<&str>)
     let url = url.as_ref();
     NewDownload {
         handover_id: format!("media-{url}"),
-        url: url.to_string(),
         referrer: Some("https://videos.test/watch".into()),
         page_url: Some("https://videos.test/watch".into()),
-        frame_url: None,
-        suggested_name: None,
-        mime: None,
-        size_hint: None,
         cookies: Some("session=abc123; theme=dark".into()),
-        cookie_jar: None,
         user_agent: Some("TestBrowser/2".into()),
-        extra_headers: vec![],
         source: CaptureSource::MediaButton,
-        queue: None,
         media: Some(MediaHint {
             kind,
             title: title.map(str::to_string),
         }),
+        ..wirecatch_test_support::downloads::capture(url)
     }
 }
 
@@ -446,4 +442,39 @@ pub fn use_real_ffmpeg(h: &Harness, ffmpeg: &Path) -> TestResult {
 /// Whether `path` exists.
 pub fn path_exists(path: impl AsRef<Path>) -> bool {
     path.as_ref().exists()
+}
+
+/// The choice of option `option`, with everything else as the window starts it.
+pub fn select(option: &str) -> MediaSelection {
+    MediaSelection {
+        option_id: option.into(),
+        folder: None,
+        file_name: None,
+        queue: None,
+        later: false,
+        output: OutputFormat::default(),
+        audio_kbps: None,
+        subtitles: Vec::new(),
+        subtitle_files: false,
+        unembedded_subtitles: UnembeddedSubtitles::Files,
+        chapters: false,
+        every_video: None,
+    }
+}
+
+/// `len` bytes of test data that start like an MP4 file, so the join hands
+/// them to (the fake) ffmpeg instead of refusing them as an unknown format.
+pub fn mp4_data(len: usize) -> Vec<u8> {
+    let mut data = test_data(len);
+    data[..8].copy_from_slice(b"\0\0\0\x18ftyp");
+    data
+}
+
+/// The next media choice the app asks of the person.
+pub async fn choice_requested(ui: &mut broadcast::Receiver<UiEvent>) -> MediaChoice {
+    next_event(ui, "a media choice", |e| match e {
+        UiEvent::MediaChoiceRequested(c) => Some(c.clone()),
+        _ => None,
+    })
+    .await
 }

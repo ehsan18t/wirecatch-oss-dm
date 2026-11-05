@@ -265,20 +265,12 @@ async fn accept_loop(
 pub fn capture(url: &str, handover_id: &str) -> NewDownload {
     NewDownload {
         handover_id: handover_id.to_string(),
-        url: url.to_string(),
         referrer: Some("http://127.0.0.1/page".into()),
         page_url: Some("http://127.0.0.1/page".into()),
-        frame_url: None,
-        suggested_name: None,
         mime: Some("application/octet-stream".into()),
-        size_hint: None,
         cookies: Some("session=e2e-cookie".into()),
-        cookie_jar: None,
         user_agent: Some("WirecatchE2E/1.0".into()),
-        extra_headers: Vec::new(),
-        source: wirecatch_protocol::extension::CaptureSource::BrowserDownload,
-        queue: None,
-        media: None,
+        ..wirecatch_test_support::downloads::capture(url)
     }
 }
 

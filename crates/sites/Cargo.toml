@@ -30,7 +30,7 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-wirecatch-test-support = { path = "../test-support" }
+wirecatch-test-support = { path = "../test-support", features = ["downloads"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]

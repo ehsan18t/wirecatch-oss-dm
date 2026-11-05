@@ -797,17 +797,17 @@ mod tests {
         let new = root.path().join("Local").join("Wirecatch");
         std::fs::create_dir_all(&new).unwrap();
         std::fs::write(
-            new.join("endpoint-key"),
+            new.join(wirecatch_ipc::KEY_FILE),
             b"0123456789abcdef0123456789abcdef",
         )
         .unwrap();
-        let lock = std::fs::File::create(new.join("endpoint-key.lock")).unwrap();
+        let lock = std::fs::File::create(new.join(wirecatch_ipc::LOCK_FILE)).unwrap();
         lock.try_lock().unwrap();
 
         assert_eq!(migrate(&old, &new), (new.clone(), Migration::Merged));
         assert_moved_into(&new, &old);
         assert_eq!(
-            std::fs::read(new.join("endpoint-key")).unwrap(),
+            std::fs::read(new.join(wirecatch_ipc::KEY_FILE)).unwrap(),
             b"0123456789abcdef0123456789abcdef"
         );
     }

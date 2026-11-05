@@ -260,7 +260,10 @@ mod tests {
             r"C:\Users\A B\AppData\Local\Wirecatch\{}.exe",
             wirecatch_product::APP_EXECUTABLE
         );
-        let line = command_line(Path::new(&app), &[OsString::from("--background")]);
+        let line = command_line(
+            Path::new(&app),
+            &[OsString::from(wirecatch_protocol::launch::BACKGROUND_FLAG)],
+        );
         assert_eq!(line, OsString::from(format!(r#""{app}" --background"#)));
         let tricky = command_line(
             Path::new(r"C:\x.exe"),

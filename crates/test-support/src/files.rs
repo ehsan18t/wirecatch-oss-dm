@@ -275,30 +275,21 @@ async fn serve(
             (file.clone(), failing)
         })
     };
-    let (status, response) = match file {
+    let (status, response) = match &file {
         None => (
             StatusCode::NOT_FOUND,
             Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::empty()),
         ),
-        Some((file, failing)) => {
-            if file.hangs {
-                std::future::pending::<()>().await;
-            }
-            if !file.delay.is_zero() {
-                tokio::time::sleep(file.delay).await;
-            }
-            if failing {
-                let status = StatusCode::from_u16(file.fail_status).unwrap();
-                (
-                    status,
-                    Response::builder().status(status).body(Body::empty()),
-                )
-            } else {
-                answer(&file, &headers)
-            }
+        Some((file, true)) => {
+            let status = StatusCode::from_u16(file.fail_status).unwrap();
+            (
+                status,
+                Response::builder().status(status).body(Body::empty()),
+            )
         }
+        Some((file, false)) => answer(file, &headers),
     };
     inner.log.lock().unwrap().push(Seen {
         at: Instant::now(),
@@ -309,6 +300,14 @@ async fn serve(
         peer,
         sent: Arc::default(),
     });
+    if let Some((file, _)) = file {
+        if file.hangs {
+            std::future::pending::<()>().await;
+        }
+        if !file.delay.is_zero() {
+            tokio::time::sleep(file.delay).await;
+        }
+    }
     response.unwrap()
 }
 
