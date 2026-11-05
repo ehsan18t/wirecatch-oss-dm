@@ -55,7 +55,6 @@ export type { Header } from './generated/Header';
 export type { Hello } from './generated/Hello';
 export type { HelloReply } from './generated/HelloReply';
 export type { ImportPreview } from './generated/ImportPreview';
-export type { ImportSummary } from './generated/ImportSummary';
 export type { ImportedFolder } from './generated/ImportedFolder';
 export type { JarCookie } from './generated/JarCookie';
 export type { Link } from './generated/Link';

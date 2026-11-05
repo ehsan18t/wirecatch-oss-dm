@@ -49,7 +49,7 @@ Superseded in part by D23: a captured download now opens its own window first by
 ### D6. Settings import and export
 
 - Export produces one versioned JSON file (Settings profile). Import applies it, migrating older versions forward.
-- Included: all settings, queues and schedules, categories and folder rules, site rules, Extension settings, list of installed Add-ons (reinstalled on import).
+- Included: all settings, queues and schedules, categories and folder rules, site rules, Extension settings, proxy servers without their passwords, local network sites, list of installed Add-ons (offered on import, never installed by it). The import's preview names every queue, proxy server, saved password and local network site it would change.
 - Paths are stored portably, for example `{Downloads}/Video`, so a profile exported on Windows imports cleanly on Linux.
 - Excluded by default: download history and saved site credentials. Credentials live in the OS keychain and are only exported if the user ticks an option, in which case the file is encrypted with a passphrase.
 
