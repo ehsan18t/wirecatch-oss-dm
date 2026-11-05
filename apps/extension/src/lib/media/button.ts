@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from '@wirecatch/product';
 /**
  * The "Download" button shown over video and audio on web pages. Runs in a content
  * script, so it is plain DOM with no framework, and it lives in a closed shadow root:
@@ -114,7 +115,7 @@ export class MediaButton {
     this.button = doc.createElement('button');
     this.button.type = 'button';
     this.button.className = 'b';
-    this.button.setAttribute('aria-label', 'Download with Wirecatch');
+    this.button.setAttribute('aria-label', `Download with ${PRODUCT_NAME}`);
     this.#label = doc.createElement('span');
     this.#label.textContent = 'Download';
     this.button.append(icon(doc), this.#label);
@@ -499,7 +500,7 @@ export class MediaButton {
       // The extension was updated or reloaded since this page loaded.
       answer = {
         ok: false,
-        message: 'Wirecatch could not be reached. Reload this page, then try again.',
+        message: `${PRODUCT_NAME} could not be reached. Reload this page, then try again.`,
       };
     }
     this.#busy = false;

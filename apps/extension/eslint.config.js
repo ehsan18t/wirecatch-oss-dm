@@ -1,4 +1,5 @@
 import { globals, wirecatch } from '@wirecatch/eslint-config';
+import { PRODUCT_NAME } from '@wirecatch/product';
 import svelteConfig from './svelte.config.js';
 
 const BACKGROUND_ONLY =
@@ -33,6 +34,10 @@ export default wirecatch({
           { factories: [{ name: 'fallback', module: 'diag/log' }] },
         ],
       },
+    },
+    {
+      files: ['src/**'],
+      rules: { 'wirecatch/no-product-name': ['error', { name: PRODUCT_NAME }] },
     },
     {
       // Code that runs in pages imports nothing that only the background or the popup uses.

@@ -1,5 +1,6 @@
 <script lang="ts">
   // How videos and audio download, folded under one line that says what they are set to (D61): the button over videos and the keyboard shortcut (D70), the resolution and what to take when a video lacks it, the formats, subtitles, chapters and the audio quality, with the app's own choices (`@wirecatch/protocol` media-choices). Every change is saved in the app.
+  import { PRODUCT_NAME } from '@wirecatch/product';
   import {
     AUDIO_OUTPUT_FORMATS,
     FALLBACK_CHOICES,
@@ -98,7 +99,7 @@
   </SettingRow>
   {#if controls === null}
     <p class="px-4 py-3 text-small text-ink-muted">
-      Update Wirecatch to choose how videos download from here.
+      Update {PRODUCT_NAME} to choose how videos download from here.
     </p>
   {:else}
     {const media = $derived(controls.media)}

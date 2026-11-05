@@ -1,4 +1,5 @@
 /** What the popup needs to know about the connection to the app, and how to explain problems. */
+import { PRODUCT_NAME } from '@wirecatch/product';
 import type { ErrorCode, ProtocolError } from '@wirecatch/protocol';
 import {
   fields,
@@ -141,33 +142,33 @@ export function describeProblem(kind: ProblemKind): ProblemText {
   switch (kind) {
     case 'host_missing':
       return {
-        title: 'Wirecatch is not installed, or not set up for this browser.',
-        fix: 'Install Wirecatch, or open it once so it can connect to this browser.',
+        title: `${PRODUCT_NAME} is not installed, or not set up for this browser.`,
+        fix: `Install ${PRODUCT_NAME}, or open it once so it can connect to this browser.`,
       };
     case 'host_untrusted':
       return {
-        title: 'Wirecatch does not recognize this copy of the extension.',
-        fix: 'Install the extension from the Wirecatch website or store, or update Wirecatch.',
+        title: `${PRODUCT_NAME} does not recognize this copy of the extension.`,
+        fix: `Install the extension from the ${PRODUCT_NAME} website or store, or update ${PRODUCT_NAME}.`,
       };
     case 'app_unavailable':
       return {
-        title: 'The Wirecatch app could not be started.',
-        fix: 'Open the Wirecatch app yourself, then click Try again.',
+        title: `The ${PRODUCT_NAME} app could not be started.`,
+        fix: `Open the ${PRODUCT_NAME} app yourself, then click Try again.`,
       };
     case 'app_closed':
       return {
-        title: 'Wirecatch is not running.',
+        title: `${PRODUCT_NAME} is not running.`,
         fix: 'It starts automatically when the browser has a download for it. You can also connect it now.',
       };
     case 'version_mismatch':
       return {
-        title: 'This extension and the Wirecatch app versions do not match.',
-        fix: 'Update the Wirecatch app and this extension to their latest versions.',
+        title: `This extension and the ${PRODUCT_NAME} app versions do not match.`,
+        fix: `Update the ${PRODUCT_NAME} app and this extension to their latest versions.`,
       };
     case 'disconnected':
       return {
-        title: 'The connection to Wirecatch was lost.',
-        fix: 'Wirecatch reconnects automatically. If this keeps happening, restart the Wirecatch app.',
+        title: `The connection to ${PRODUCT_NAME} was lost.`,
+        fix: `${PRODUCT_NAME} reconnects automatically. If this keeps happening, restart the ${PRODUCT_NAME} app.`,
       };
   }
 }
