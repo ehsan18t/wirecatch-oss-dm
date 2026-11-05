@@ -381,6 +381,14 @@ impl StreamProgress {
         self.bytes.fetch_add(bytes, Ordering::Relaxed);
     }
 
+    /// Takes back bytes counted for data that was thrown away.
+    pub(crate) fn remove_bytes(&self, bytes: u64) {
+        self.bytes
+            .update(Ordering::Relaxed, Ordering::Relaxed, |b| {
+                b.saturating_sub(bytes)
+            });
+    }
+
     pub(crate) fn segment_done(&self) {
         self.segments_done.fetch_add(1, Ordering::Relaxed);
     }

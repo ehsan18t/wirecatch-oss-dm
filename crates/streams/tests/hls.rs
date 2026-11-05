@@ -13,10 +13,10 @@ use wirecatch_engine::units::MIB_USIZE;
 use wirecatch_engine::{CancellationToken, RateLimiter};
 use wirecatch_streams::{
     Choice, Error, KeyProblem, Outcome, PrivateNetwork, Role, Stage, StreamKind, StreamProgress,
-    download, inspect,
+    StreamRequest, download, inspect,
 };
 use wirecatch_test_support::files::FileServer;
-use wirecatch_test_support::{PATIENCE, TestResult, private_dir, ts_segment};
+use wirecatch_test_support::{PATIENCE, PrivateDir, TestResult, private_dir, ts_segment};
 
 mod common;
 use common::{options, request, run};
@@ -420,6 +420,97 @@ async fn resuming_after_a_cancel_fetches_only_the_missing_segments() {
     unique.sort();
     unique.dedup();
     assert_eq!(unique.len(), again.len());
+    dir.remove().unwrap();
+}
+
+/// Bytes of the second segment that [`pause_in_a_segment`] lets arrive.
+const CUT_AT: usize = 30_000;
+
+/// A download of three segments, paused with [`CUT_AT`] bytes of the second, larger one on disk; then the server answers in full again. Returns the request, the segments and the folder.
+async fn pause_in_a_segment(
+    server: &FileServer,
+    folder: &str,
+) -> TestResult<(StreamRequest, Segments, PrivateDir)> {
+    let mut segments = media_playlist(server, "c", 3, 8)?;
+    segments[1] = ts_segment(8_888, 2 * CUT_AT);
+    server.put("c/seg1.ts", segments[1].clone());
+    server.hold_after("c/seg1.ts", CUT_AT as u64);
+    let dir = private_dir(folder)?;
+    let mut req = request(server.url("c/index.m3u8"), dir.join("v.ts"));
+    req.options.connections = 1;
+
+    let progress = Arc::new(StreamProgress::default());
+    let cancel = CancellationToken::new();
+    let task = tokio::spawn(download(req.clone(), progress.clone(), cancel.clone()));
+    let deadline = tokio::time::Instant::now() + PATIENCE;
+    while progress.bytes() < (segments[0].len() + CUT_AT) as u64 {
+        assert!(!task.is_finished(), "the download ended early");
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the segment never came"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    cancel.cancel();
+    let paused = task.await??;
+    assert!(matches!(paused, Outcome::Paused { .. }), "{paused:?}");
+    server.release("c/seg1.ts");
+    Ok((req, segments, dir))
+}
+
+/// The second segment's requests from `before` on, by the range each asked for.
+fn asked_since(server: &FileServer, before: usize) -> Vec<Option<(u64, Option<u64>)>> {
+    server.seen_at("c/seg1.ts")[before..]
+        .iter()
+        .map(wirecatch_test_support::http::Seen::range)
+        .collect()
+}
+
+/// A segment cut off by a pause keeps what arrived: the next run asks only for the rest of it.
+#[tokio::test]
+async fn resuming_continues_a_segment_cut_off_by_a_pause() {
+    let server = FileServer::start().await;
+    let (req, segments, dir) = pause_in_a_segment(&server, "hls-cut-segment")
+        .await
+        .unwrap();
+    let before = server.requests("c/seg1.ts");
+
+    let progress = Arc::new(StreamProgress::default());
+    let (path, _) = completed(
+        download(req, progress.clone(), CancellationToken::new())
+            .await
+            .unwrap(),
+    );
+    assert_eq!(std::fs::read(path).unwrap(), segments.concat());
+    assert_eq!(
+        asked_since(&server, before),
+        [Some((CUT_AT as u64, None))],
+        "the cut segment from where it stopped"
+    );
+    assert_eq!(progress.bytes(), segments.concat().len() as u64);
+    dir.remove().unwrap();
+}
+
+/// A cut segment the server can no longer continue (the file there is now shorter) is fetched whole, and counted once.
+#[tokio::test]
+async fn a_cut_segment_that_cannot_continue_is_fetched_whole() {
+    let server = FileServer::start().await;
+    let (req, mut segments, dir) = pause_in_a_segment(&server, "hls-cut-changed")
+        .await
+        .unwrap();
+    segments[1] = ts_segment(9_999, CUT_AT / 2);
+    server.put("c/seg1.ts", segments[1].clone());
+    let before = server.requests("c/seg1.ts");
+
+    let progress = Arc::new(StreamProgress::default());
+    let (path, _) = completed(
+        download(req, progress.clone(), CancellationToken::new())
+            .await
+            .unwrap(),
+    );
+    assert_eq!(std::fs::read(path).unwrap(), segments.concat());
+    assert_eq!(asked_since(&server, before).last(), Some(&None));
+    assert_eq!(progress.bytes(), segments.concat().len() as u64);
     dir.remove().unwrap();
 }
 
