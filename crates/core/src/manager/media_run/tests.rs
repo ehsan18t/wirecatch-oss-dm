@@ -841,24 +841,28 @@ async fn failure_of_parts(found: &[Format]) -> String {
     let dir = tempfile::tempdir().unwrap();
     let work = dir.path().join("Clip.mp4.wcmedia");
     std::fs::create_dir(&work).unwrap();
-    let mut job = job_at(dir.path(), &dir.path().join("Clip.mp4"), LINK, Taken::default());
+    let mut job = job_at(dir.path(), &dir.path().join("Clip.mp4"), LINK, Taken::Ask);
     job.options.stall_timeout = Duration::from_millis(100);
     job.options.max_retries = 0;
     job.chosen_by = ChosenBy::Person;
+    // A page on the same machine as its formats, which it may then reach.
+    job.url = Url::parse("http://127.0.0.1/watch").unwrap();
     let found: Vec<&Format> = found.iter().collect();
     let progress = MediaProgress::default();
     let ended = fetch_parts(&job, &found, &work, &progress, &CancellationToken::new()).await;
     match ended {
-        Err(super::page::PageError::Failed(error)) => error.message,
-        other => panic!("not a failure: {:?}", other.map(|files| files.is_some()).is_ok()),
+        Err(PageError::Failed(error)) => error.message,
+        Err(PageError::Refused { status }) => panic!("refused: {status:?}"),
+        Ok(files) => panic!("not a failure: {files:?}"),
     }
 }
 
-/// A server without ranges that holds every body: its part stalls before its first byte.
-async fn stalling_server() -> wirecatch_test_support::http::TestServer {
+/// A server that holds every body: its part stalls before its first byte.
+async fn stalling_server(ranges: bool) -> wirecatch_test_support::http::TestServer {
     wirecatch_test_support::http::TestServer::start(
         wirecatch_test_support::test_data(1024),
         wirecatch_test_support::http::Config {
+            ranges,
             hold_bodies_from: Some(0),
             ..Default::default()
         },
@@ -868,7 +872,7 @@ async fn stalling_server() -> wirecatch_test_support::http::TestServer {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_part_that_stalls_before_its_first_byte_is_not_promised_a_kept_part() {
-    let stalling = stalling_server().await;
+    let stalling = stalling_server(true).await;
     let told = failure_of_parts(&[format_at("137", &stalling.url("v.mp4"))]).await;
     assert!(told.contains("stopped sending data"), "{told}");
     assert!(!told.contains("is kept"), "{told}");
@@ -881,7 +885,7 @@ async fn a_finished_part_is_kept_when_the_other_cannot_continue() {
         wirecatch_test_support::http::Config::default(),
     )
     .await;
-    let stalling = stalling_server().await;
+    let stalling = stalling_server(false).await;
     let told = failure_of_parts(&[
         format_at("137", &finishing.url("v.mp4")),
         format_at("140", &stalling.url("a.m4a")),

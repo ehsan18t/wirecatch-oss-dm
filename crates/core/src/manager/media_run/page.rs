@@ -267,6 +267,16 @@ pub(super) async fn fetch_parts(
     Ok(Some(files))
 }
 
+fn worked_so_far(progress: &MediaProgress) -> wirecatch_messages::Worked {
+    if progress.keeps_data() {
+        wirecatch_messages::Worked::Before
+    } else if progress.read().answered {
+        wirecatch_messages::Worked::BeforeStartsOver
+    } else {
+        wirecatch_messages::Worked::Never
+    }
+}
+
 /// Downloads one format into the work folder: `Ok(None)` when stopped. A part
 /// finished in an earlier run or attempt (its `.done` marker names its file) is
 /// not downloaded again.
@@ -347,14 +357,8 @@ pub(super) async fn fetch_part(
             Err(e) if address_gone(&e) => return Err(refused(&e)),
             Err(e) => {
                 let folder = job.output.parent().unwrap_or(Path::new(""));
-                let worked = if progress.keeps_data() {
-                    wirecatch_messages::Worked::Before
-                } else if progress.read().answered {
-                    wirecatch_messages::Worked::BeforeStartsOver
-                } else {
-                    wirecatch_messages::Worked::Never
-                };
-                return Err(wirecatch_messages::describe(&e, folder, worked).into());
+                let told = wirecatch_messages::describe(&e, folder, worked_so_far(progress));
+                return Err(told.into());
             }
         }
     };
