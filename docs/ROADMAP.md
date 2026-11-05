@@ -39,10 +39,6 @@ Set with the maintainer on 2026-10-30, and extended on 2026-10-31 with items 8 t
 
 Open, found on 2026-11-04. Whether the release waits for them is not decided.
 
-To fix:
-
-- **A long extensions field in Settings shows part of a second line.** In Saving files, a file type whose extensions do not fit on one line shows the top of the next line cut off at the field's foot.
-
 Not tested yet:
 
 - **A real package upgrade.** The post-install hook (D221) has run only against stand-in programs in a test.

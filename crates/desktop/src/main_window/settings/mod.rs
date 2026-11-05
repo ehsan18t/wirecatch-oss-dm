@@ -350,6 +350,11 @@ fn list_field(
                 .placeholder(placeholder)
                 .default_value(shown.clone())
         });
+        // Its first layout wraps the text without counting the rows, so a long first value shows cut off until edited.
+        let fitted = input.clone();
+        window.on_next_frame(move |_, cx| {
+            fitted.update(cx, |state, cx| state.set_auto_grow(min, max, cx));
+        });
         let saving = cx.subscribe(
             &input,
             move |list: &mut List, input, event: &InputEvent, cx| {
