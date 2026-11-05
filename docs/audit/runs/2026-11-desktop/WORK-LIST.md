@@ -59,7 +59,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-49  | fix(messages): give advice that fits the failure   | `fix/advice-fits-failure`        | 51, 105, 106, 206            | P2       | medium | none         | merged |
 | PR-50  | fix(store): keep a set-aside list for a full month | `fix/set-aside-month`            | 52, 156, 237                 | P2       | small  | none         | merged |
 | PR-51  | fix(desktop): correct what download questions say  | `fix/download-questions`         | 54, 122, 231                 | P2       | medium | none         | open   |
-| PR-52  | fix(desktop): give download windows the right fix  | `fix/window-fix-buttons`         | 55, 81                       | P2       | medium | none         | open   |
+| PR-52  | fix(desktop): give download windows the right fix  | `fix/window-fix-buttons`         | 55, 81                       | P2       | medium | none         | merged |
 | PR-53  | fix(desktop): make settings actions answer back    | `fix/settings-answers`           | 57, 127, 230                 | P2       | medium | none         | merged |
 | PR-54  | fix(core): handle typed names in media downloads   | `fix/typed-media-names`          | 58, 132                      | P2       | medium | none         | merged |
 | PR-55  | fix(desktop): follow an installer through setup    | `fix/installer-lifecycle`        | 59, 72                       | P2       | medium | none         | merged |
@@ -98,7 +98,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-88  | fix(desktop): fix small faults in queue dialogs    | `fix/queue-dialogs`              | 120, 121, 165                | P2       | small  | none         | merged |
 | PR-89  | fix(desktop): make tray actions answer correctly   | `fix/tray-actions`               | 124, 160                     | P2       | small  | none         | merged |
 | PR-90  | fix(desktop): show a processing step as it is      | `fix/processing-step`            | 125, 228                     | P2       | small  | none         | merged |
-| PR-91  | fix(desktop): correct wording of app messages      | `fix/app-message-wording`        | 126, 161                     | P2       | small  | none         | open   |
+| PR-91  | fix(desktop): correct wording of app messages      | `fix/app-message-wording`        | 126, 161                     | P2       | small  | none         | merged |
 | PR-92  | fix: repair the repo's check scripts               | `fix/check-scripts`              | 129, 191, 238, 239, 240, 241 | P2       | medium | none         | merged |
 | PR-93  | fix(engine): lock the part file during a run       | `fix/part-file-lock`             | 130                          | P2       | medium | none         | merged |
 | PR-94  | fix(core): keep a video's work until it is placed  | `fix/work-until-placed`          | 133, 169                     | P2       | medium | PR-04        | merged |
@@ -118,7 +118,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-108 | refactor(engine): remove code with no effect       | `refactor/engine-no-op-code`     | 179, 181                     | P3       | small  | none         | merged |
 | PR-109 | refactor(streams): remove leftovers from the crate | `refactor/streams-leftovers`     | 192, 193, 194                | P3       | small  | none         | merged |
 | PR-110 | test(core): repair media run tests, doc comments   | `test/media-run-tidy`            | 195, 196                     | P3       | small  | none         | merged |
-| PR-111 | fix(streams): stop media programs on a signal      | `fix/media-programs-on-signal`   | 199                          | P3       | medium | none         | open   |
+| PR-111 | fix(streams): stop media programs on a signal      | `fix/media-programs-on-signal`   | 199                          | P3       | medium | none         | merged |
 | PR-112 | fix(desktop): correct system registration details  | `fix/system-registration`        | 202, 203, 204                | P3       | small  | none         | merged |
 | PR-113 | fix(desktop): give every window a native title     | `fix/native-window-title`        | 205                          | P3       | small  | none         | merged |
 | PR-114 | fix(desktop): steady the list under the pointer    | `fix/list-under-pointer`         | 210, 213                     | P3       | small  | none         | open   |
@@ -136,7 +136,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-126 | test: catch server races in the timing check       | `test/timing-server-races`       | 249                          | P3       | medium | PR-100       | open   |
 | PR-127 | fix(protocol): correct when a capture may erase    | `fix/capture-erase-doc`          | 250                          | P3       | small  | none         | merged |
 | PR-128 | test(extension): make the layout test's font load  | `test/layout-font`               | 251                          | P3       | small  | none         | merged |
-| PR-129 | fix(core): finish removals after a crash           | `fix/removal-after-crash`        | 252, 253                     | P3       | medium | none         | open   |
+| PR-129 | fix(core): finish removals after a crash           | `fix/removal-after-crash`        | 252, 253                     | P3       | medium | none         | merged |
 | PR-130 | fix(desktop): act on a folded group's rows         | `fix/folded-group-ticks`         | 254                          | P3       | small  | none         | open   |
 | PR-131 | fix(media): keep the bar steady on a retry row     | `fix/retry-row-bar`              | 256                          | P3       | small  | none         | open   |
 | PR-132 | fix(desktop): stop page reads at a late quit       | `fix/page-read-at-quit`          | 255                          | P3       | small  | none         | open   |
@@ -786,7 +786,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/download_windows`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`. If `crates/protocol` changes, `pnpm protocol:generate` and `pnpm gate` once on the final tree.
-- **Status:** open
+- **Status:** merged
 
 ### PR-53 fix(desktop): make settings actions answer back
 
@@ -1255,7 +1255,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/shell`, `crates/core/src/naming.rs`, `scripts/gate`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-shell -p wirecatch-core`, `cargo clippy -p wirecatch-shell -p wirecatch-core`. The log proposes a gate check for the product name in string literals; a gate script change is wide, so run `pnpm gate` once on the final tree if it is added.
-- **Status:** open
+- **Status:** merged
 
 ### PR-92 fix: repair the repo's check scripts
 
@@ -1496,7 +1496,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/streams/src/process/tree.rs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-streams`, `cargo clippy -p wirecatch-streams`, `node scripts/gate.mjs clippy-linux`. This is Linux only and has not been run.
-- **Status:** open
+- **Status:** merged
 
 ### PR-112 fix(desktop): correct system registration details
 
@@ -1712,7 +1712,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** crates/core, crates/store
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-core -p wirecatch-store`, `cargo clippy -p wirecatch-core -p wirecatch-store`
-- **Status:** open
+- **Status:** merged
 
 ### PR-130 fix(desktop): act on a folded group's rows
 

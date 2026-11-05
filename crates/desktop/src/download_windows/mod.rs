@@ -13,10 +13,12 @@ mod view;
 use std::collections::HashMap;
 
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, Entity, Global, WeakEntity, WindowBounds,
-    WindowOptions, point, px, size,
+    AnyWindowHandle, App, AppContext as _, Bounds, Entity, Global, WeakEntity, Window,
+    WindowBounds, WindowOptions, point, px, size,
 };
-use wirecatch_protocol::app::{Repeated, UiEvent};
+use wirecatch_protocol::app::{
+    DownloadStatus, DownloadSummary, FixAction, RETRY_FIXES, Repeated, UiEvent,
+};
 use wirecatch_protocol::{DownloadId, QuestionId};
 use wirecatch_shell::download_windows::{
     Area, MIN_WINDOW_SIZE, OpenWindow, Registry, Shows, Step, WINDOW_SIZE, place,
@@ -91,6 +93,23 @@ pub fn show_all(open: &[QuestionId], cx: &mut App) {
 pub fn show_download(id: DownloadId, cx: &mut App) {
     let step = update(cx, |registry| registry.show_download(id));
     run(vec![step], cx);
+}
+
+/// Asks before cancelling download `id`, as the list does (D23.4).
+fn ask_to_cancel(id: DownloadId, window: &mut Window, cx: &mut App) {
+    let library = cx.global::<Windows>().library.clone();
+    crate::main_window::confirm::cancel(&library, &[id], window, cx);
+}
+
+/// What a failed download's window offers it, the main one last: its fix, with Try again while
+/// trying again can carry the fix out (`RETRY_FIXES`).
+fn fixes_offered(row: &DownloadSummary) -> Vec<FixAction> {
+    let fix = row.error.as_ref().and_then(|error| error.fix);
+    match fix.filter(|_| row.status == DownloadStatus::Failed) {
+        None | Some(FixAction::Retry) => vec![FixAction::Retry],
+        Some(fix) if RETRY_FIXES.contains(&fix) => vec![fix, FixAction::Retry],
+        Some(fix) => vec![fix],
+    }
 }
 
 fn ask(id: QuestionId, cx: &mut App) {
@@ -229,4 +248,83 @@ fn logical(value: f64) -> f32 {
     wirecatch_engine::numeric::f64_to_u64(value.round())
         .and_then(|whole| u16::try_from(whole).ok())
         .map_or(0., f32::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_kit::TestAppContext;
+    use gpui_kit::component::WindowExt as _;
+    use wirecatch_protocol::app::UserError;
+    use wirecatch_test_support::downloads::download;
+
+    use super::*;
+
+    fn failed_with(fix: Option<FixAction>) -> DownloadSummary {
+        DownloadSummary {
+            status: DownloadStatus::Failed,
+            error: Some(UserError {
+                message: "It failed.".to_owned(),
+                fix,
+            }),
+            ..download(1)
+        }
+    }
+
+    #[test]
+    fn a_failure_offers_its_fix_and_try_again_only_where_that_helps() {
+        use FixAction::{ChangeQueue, ChooseFolder, FreeDiskSpace, KeepOriginal};
+        use FixAction::{ProxySettings, RefreshLink, Retry};
+
+        assert_eq!(fixes_offered(&failed_with(None)), [Retry]);
+        assert_eq!(fixes_offered(&failed_with(Some(Retry))), [Retry]);
+        assert_eq!(
+            fixes_offered(&failed_with(Some(FreeDiskSpace))),
+            [FreeDiskSpace, Retry]
+        );
+        for fix in [
+            RefreshLink,
+            ChooseFolder,
+            KeepOriginal,
+            ProxySettings,
+            ChangeQueue,
+        ] {
+            assert_eq!(fixes_offered(&failed_with(Some(fix))), [fix]);
+        }
+    }
+
+    #[test]
+    fn a_cancelled_download_offers_try_again_whatever_its_last_error() {
+        let cancelled = DownloadSummary {
+            status: DownloadStatus::Cancelled,
+            ..failed_with(Some(FixAction::RefreshLink))
+        };
+        assert_eq!(fixes_offered(&cancelled), [FixAction::Retry]);
+    }
+
+    #[gpui_kit::test]
+    fn cancelling_from_a_download_window_asks_first(cx: &mut TestAppContext) {
+        let id = DownloadId(1);
+        cx.update(|cx| {
+            gpui_kit::component::init(cx);
+            let library = cx.new(|_| {
+                let mut library = Library::empty();
+                library.downloads.replace(vec![DownloadSummary {
+                    status: DownloadStatus::Downloading,
+                    ..download(id.0)
+                }]);
+                library
+            });
+            init(&library, cx);
+            show_download(id, cx);
+        });
+        cx.run_until_parked();
+        let shown = cx.windows()[0];
+        let asked = shown
+            .update(cx, |_, window, cx| {
+                ask_to_cancel(id, window, cx);
+                window.has_active_dialog(cx)
+            })
+            .unwrap();
+        assert!(asked);
+    }
 }

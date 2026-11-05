@@ -4,11 +4,11 @@
 mod applies;
 mod backup_dialog;
 mod command_bar;
-mod confirm;
+pub mod confirm;
 mod details;
 mod drag;
 mod empty;
-mod fixes;
+pub mod fixes;
 mod keymap;
 mod laid;
 mod link_trial;
@@ -391,8 +391,8 @@ impl MainWindow {
         cx.notify();
     }
 
-    /// Shows `reveal`'s downloads selected in their queue, the first in view, or in every download
-    /// when the queue is gone (D98); or the settings page it names.
+    /// Shows `reveal`'s downloads selected in their queue, the first in view and its details open
+    /// when asked, or in every download when the queue is gone (D98); or the settings page it names.
     fn reveal(&mut self, reveal: &Reveal, window: &mut Window, cx: &mut Context<'_, Self>) {
         if reveal.browser_settings {
             return self.open_settings(settings::Page::Browser, cx);
@@ -424,6 +424,9 @@ impl MainWindow {
         self.picked = reveal.ids.len() > 1;
         if let Some(first) = reveal.ids.first() {
             self.scroll_to_row(*first, cx);
+            if reveal.details {
+                details::open(self.library.clone(), *first, window, cx);
+            }
         }
     }
 
