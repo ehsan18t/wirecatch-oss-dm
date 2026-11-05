@@ -8,7 +8,10 @@ import { closingBracket, codeOnly, splitTopLevel } from './rust-attributes.mjs';
 const TEST_FILE = /(?:^|\/)tests\/|(?:^|\/)tests\.rs$/;
 const TEST_ATTRIBUTE = /#\[(?:tokio::)?test\b|#\[cfg\(/g;
 const FEATURE = /^feature\s*=/;
-const MODULE_DECLARATION = /^(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;/;
+const MODULE_DECLARATION = /^(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;/;
+/** What opens an item or statement, past its attributes and visibility; a field, variant or argument opens with none of these. */
+const DECLARATION =
+  /^\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?(?:async|const|enum|extern|fn|impl|let|macro_rules|mod|static|struct|trait|type|union|unsafe|use)\b/;
 /** Files whose submodules sit beside them, not in a folder of their own name. */
 const FOLDER_ROOT = /(?:^|\/)(?:lib|main|mod)\.rs$/;
 
@@ -34,15 +37,21 @@ function testAttributes(code) {
     .map((match) => [match.index, closingBracket(code, match.index + 1)]);
 }
 
-/** Where the item from `start` ends: past its body, at its semicolon outside brackets, or at the `}` around a field. */
+/** Where the item from `start` ends: past its body, at its semicolon outside brackets, or at the bracket around a field or parameter. A comma ends only a field, variant, parameter or argument: `<` is not tracked, so in `fn a<T, U>()` it is inside the item. */
 function itemEnd(code, start) {
+  const commaEnds = !DECLARATION.test(code.slice(start));
   let depth = 0;
   for (let i = start; i < code.length; i += 1) {
-    if ('(['.includes(code[i])) depth += 1;
-    else if (')]'.includes(code[i])) depth -= 1;
-    else if (depth === 0 && code[i] === ';') return i + 1;
-    else if (depth === 0 && code[i] === '{') return closingBracket(code, i);
-    else if (depth === 0 && code[i] === '}') return i;
+    const c = code[i];
+    if ('(['.includes(c)) depth += 1;
+    else if (')]'.includes(c)) {
+      if (depth === 0) return i;
+      depth -= 1;
+    } else if (depth === 0) {
+      if (c === ';' || (c === ',' && commaEnds)) return i + 1;
+      if (c === '{') return closingBracket(code, i);
+      if (c === '}') return i;
+    }
   }
   return code.length;
 }

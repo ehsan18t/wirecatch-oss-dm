@@ -20,9 +20,47 @@ test('an item with a semicolon in its type ends at its own semicolon', () => {
 });
 
 test('a field only tests build does not reach past its struct', () => {
-  assert.deepEqual(items('struct S {', '    #[cfg(test)]', '    a: u8,', '}', 'fn b() {}'), [
-    '#[cfg(test)]\n    a: u8,\n',
+  assert.deepEqual(items('struct S {', '    #[cfg(test)]', '    a: u8', '}', 'fn b() {}'), [
+    '#[cfg(test)]\n    a: u8\n',
   ]);
+});
+
+test('a parameter only tests build does not reach past its parameter list', () => {
+  assert.deepEqual(items('fn a(#[cfg(test)] h: u8) {', '    real();', '}'), ['#[cfg(test)] h: u8']);
+  assert.deepEqual(items('fn a(#[cfg(test)] h: u8, b: u8) {', '    real();', '}'), [
+    '#[cfg(test)] h: u8,',
+  ]);
+  assert.deepEqual(items('let a = [#[cfg(test)] 1];', 'real();'), ['#[cfg(test)] 1']);
+});
+
+test('a field or variant only tests build ends at its comma', () => {
+  assert.deepEqual(items('struct S {', '    #[cfg(test)]', '    a: u8,', '    b: u8,', '}'), [
+    '#[cfg(test)]\n    a: u8,',
+  ]);
+  assert.deepEqual(
+    items('struct S {', '    #[cfg(test)]', '    pub a: (u8, u8),', '    b: u8,', '}'),
+    ['#[cfg(test)]\n    pub a: (u8, u8),'],
+  );
+  assert.deepEqual(items('enum E {', '    #[cfg(test)]', '    A(u8, u8),', '    B,', '}'), [
+    '#[cfg(test)]\n    A(u8, u8),',
+  ]);
+});
+
+test('a comma in an item with generics does not end it', () => {
+  for (const item of [
+    'fn a<T, U>() {}',
+    'pub(crate) fn a<T, U>() {}',
+    'struct S<T, U> {}',
+    'impl<T, U> S<T, U> {}',
+    'const A: M<u8, u8> = b();',
+    'static A: M<u8, u8> = b();',
+    'type A = M<u8, u8>;',
+    'use a::{b, c}',
+    'let a: M<u8, u8> = b();',
+    '#[inline] fn a<T, U>() {}',
+  ]) {
+    assert.deepEqual(items('#[test]', item, 'fn real() {}'), [`#[test]\n${item}`], item);
+  }
 });
 
 test("a cfg a person's build can hold is not a test item", () => {
@@ -48,10 +86,6 @@ test('a file behind a test-only module declaration is test code', () => {
   assert.deepEqual(folders('crates/a/src/x.rs', '#[cfg(test)]', 'mod fake;'), [
     'crates/a/src/x/fake',
   ]);
-  assert.deepEqual(
-    folders('crates/a/src/lib.rs', '#[cfg(test)]', '#[path = "other.rs"]', 'mod fake;'),
-    ['crates/a/src/fake'],
-  );
   const under = ['crates/a/src/fake'];
   assert.ok(isTestFile('crates/a/src/fake.rs', under));
   assert.ok(isTestFile('crates/a/src/fake/mod.rs', under));
