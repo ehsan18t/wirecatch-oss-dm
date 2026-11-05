@@ -726,10 +726,15 @@ impl MainWindow {
     }
 }
 
-/// The element holding focus left the window, which leaves the window's keys out of reach (D182). An open dialog keeps the keyboard from the list behind it.
+/// The element holding focus left the window, which leaves the window's keys out of reach (D182). An open dialog keeps the keyboard from the list behind it, and takes focus itself: GPUI reports a loss only from a frame with focus, so focus lost now would go unreported when the dialog closes.
 fn list_takes_lost_focus(list: &FocusHandle, window: &mut Window, cx: &mut App) {
     if !window.has_active_dialog(cx) {
         list.focus(window, cx);
+    } else if let Some(holder) = window
+        .focus_lost_restore_target(cx)
+        .filter(|holder| holder != list)
+    {
+        holder.focus(window, cx);
     }
 }
 
