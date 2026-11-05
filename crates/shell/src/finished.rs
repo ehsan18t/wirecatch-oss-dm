@@ -21,12 +21,7 @@ impl FinishedBook {
         if ended.is_empty() {
             return false;
         }
-        for group in &mut self.list.groups {
-            group
-                .downloads
-                .retain(|d| !ended.iter().any(|e| e.id == d.id));
-        }
-        self.list.groups.retain(|g| !g.downloads.is_empty());
+        self.update_rows(|listed| !ended.iter().any(|e| e.id == listed.id));
         let newest_first = ended.iter().rev().cloned();
         match self.list.groups.first_mut() {
             Some(top) if queue.is_none() && top.queue.is_none() => {
@@ -57,22 +52,15 @@ impl FinishedBook {
         }
         match event {
             UiEvent::DownloadsChanged(rows) => {
-                for listed in self
-                    .list
-                    .groups
-                    .iter_mut()
-                    .flat_map(|g| g.downloads.iter_mut())
-                {
+                self.update_rows(|listed| {
                     if let Some(row) = rows.iter().find(|r| r.id == listed.id) {
                         listed.clone_from(row);
                     }
-                }
+                    true
+                });
             }
             UiEvent::DownloadsRemoved(ids) => {
-                for group in &mut self.list.groups {
-                    group.downloads.retain(|d| !ids.contains(&d.id));
-                }
-                self.list.groups.retain(|g| !g.downloads.is_empty());
+                self.update_rows(|listed| !ids.contains(&listed.id));
             }
             _ => {}
         }
@@ -80,12 +68,36 @@ impl FinishedBook {
 
     /// Brings the rows it lists up to date with `rows`, the whole list after missed events.
     pub fn reload(&mut self, rows: &[DownloadSummary]) {
-        for group in &mut self.list.groups {
-            group.downloads = group
-                .downloads
-                .iter()
-                .filter_map(|listed| rows.iter().find(|row| row.id == listed.id).cloned())
-                .collect();
+        self.update_rows(|listed| {
+            let row = rows.iter().find(|row| row.id == listed.id);
+            if let Some(row) = row {
+                listed.clone_from(row);
+            }
+            row.is_some()
+        });
+    }
+
+    /// Runs `update` on every listed row, dropping those it returns false for and the groups left
+    /// empty. Heading counts move by what changed: they also cover rows past
+    /// [`MAX_FINISHED_LISTED`], so counting the listed rows again would lose those (D176).
+    fn update_rows(&mut self, mut update: impl FnMut(&mut DownloadSummary) -> bool) {
+        for FinishedGroup { queue, downloads } in &mut self.list.groups {
+            downloads.retain_mut(|row| {
+                let before = row.status;
+                let keep = update(row);
+                if let Some(queue) = queue {
+                    let after = keep.then_some(row.status);
+                    if after != Some(before) {
+                        if let Some(count) = heading_count(queue, before) {
+                            *count = count.saturating_sub(1);
+                        }
+                        if let Some(count) = after.and_then(|status| heading_count(queue, status)) {
+                            *count = count.saturating_add(1);
+                        }
+                    }
+                }
+                keep
+            });
         }
         self.list.groups.retain(|g| !g.downloads.is_empty());
     }
@@ -94,6 +106,15 @@ impl FinishedBook {
     #[must_use]
     pub fn list(&self) -> &FinishedList {
         &self.list
+    }
+}
+
+/// The count on a queue's heading that a row of `status` belongs to; a row that has not ended has none.
+fn heading_count(queue: &mut FinishedQueue, status: DownloadStatus) -> Option<&mut u32> {
+    match status {
+        DownloadStatus::Completed => Some(&mut queue.completed),
+        DownloadStatus::Failed => Some(&mut queue.failed),
+        _ => None,
     }
 }
 
@@ -228,6 +249,70 @@ mod tests {
             DownloadId(2),
         ]));
         assert!(book.list().groups.is_empty(), "{:?}", book.list());
+    }
+
+    /// A queue's group: downloads 1 and 2 finished, 3 failed.
+    fn night_group() -> FinishedBook {
+        let rows = [
+            ended(1, DownloadStatus::Completed),
+            ended(2, DownloadStatus::Completed),
+            ended(3, DownloadStatus::Failed),
+        ];
+        let mut book = FinishedBook::default();
+        book.add(Some(queue_header(QueueId(4), "Night", &rows)), &rows);
+        book
+    }
+
+    fn counts(book: &FinishedBook) -> (u32, u32) {
+        let queue = book.list().groups[0].queue.as_ref().unwrap();
+        (queue.completed, queue.failed)
+    }
+
+    #[test]
+    fn a_groups_heading_counts_follow_its_rows() {
+        let mut book = night_group();
+        book.follow(&UiEvent::DownloadsChanged(vec![ended(
+            3,
+            DownloadStatus::Completed,
+        )]));
+        assert_eq!(counts(&book), (3, 0), "a failed download finished");
+        book.follow(&UiEvent::DownloadsChanged(vec![ended(
+            1,
+            DownloadStatus::Downloading,
+        )]));
+        assert_eq!(counts(&book), (2, 0), "a finished download runs again");
+        book.follow(&UiEvent::DownloadsRemoved(vec![DownloadId(2)]));
+        assert_eq!(counts(&book), (1, 0), "a finished download was removed");
+    }
+
+    #[test]
+    fn a_reload_brings_the_heading_counts_along() {
+        let mut book = night_group();
+        book.reload(&[
+            ended(1, DownloadStatus::Failed),
+            ended(3, DownloadStatus::Failed),
+        ]);
+        assert_eq!(counts(&book), (0, 2));
+    }
+
+    #[test]
+    fn a_download_that_ends_again_leaves_its_old_groups_counts() {
+        let mut book = night_group();
+        book.add(None, &[ended(5, DownloadStatus::Completed)]);
+        book.add(None, &[ended(3, DownloadStatus::Completed)]);
+        let night = book.list().groups[1].queue.as_ref().unwrap();
+        assert_eq!((night.completed, night.failed), (2, 0));
+    }
+
+    #[test]
+    fn the_counts_keep_the_downloads_a_full_group_does_not_list() {
+        let rows: Vec<_> = (0..150)
+            .map(|n| ended(n, DownloadStatus::Completed))
+            .collect();
+        let mut book = FinishedBook::default();
+        book.add(Some(queue_header(QueueId(4), "Night", &rows)), &rows);
+        book.follow(&UiEvent::DownloadsRemoved(vec![DownloadId(149)]));
+        assert_eq!(counts(&book), (149, 0));
     }
 
     #[test]
