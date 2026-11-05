@@ -23,6 +23,7 @@ async fn server_naming(name: &str, len: usize, bps: Option<u64>) -> TestServer {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_servers_name_decides_name_category_and_folder() -> TestResult {
     let server = server_naming("Holiday Movie.mp4", 512 * KIB_USIZE, Some(128 * KIB)).await;
+    server.hold();
     let mut h = Harness::new().await?;
     let mut events = h.manager.subscribe();
     let row = h.add(&server.url("dl?id=1")).await?;
@@ -31,6 +32,7 @@ async fn the_servers_name_decides_name_category_and_folder() -> TestResult {
         (row.file_name.as_str(), row.category),
         ("dl", Category::Other)
     );
+    server.release();
 
     let answered = h
         .wait_for(row.id, "the server's answer", |r| r.done > 0)
