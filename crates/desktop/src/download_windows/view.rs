@@ -419,11 +419,11 @@ impl DownloadWindow {
                     },
                 ),
                 (Shows::Question(_), Some(Question::Choice(_))) => (
-                    "Ask before each video",
-                    settings()?.media.ask_each_time,
+                    "Use my choices for every video",
+                    !settings()?.media.ask_each_time,
                     |on| AppSettingsPatch {
                         media: Some(MediaDefaultsPatch {
-                            ask_each_time: Some(on),
+                            ask_each_time: Some(!on),
                             ..MediaDefaultsPatch::default()
                         }),
                         ..AppSettingsPatch::default()

@@ -227,11 +227,7 @@ impl Library {
                 let stops = next.is_err();
                 let alive = this.update(cx, |library, cx| match next {
                     Ok(event) => library.apply(event, cx),
-                    Err(RecvError::Lagged(_)) => {
-                        // The lost event may be a retry's answer.
-                        library.storage_retrying = false;
-                        Self::load(cx);
-                    }
+                    Err(RecvError::Lagged(_)) => library.reload_after_lag(cx),
                     Err(RecvError::Closed) => {}
                 });
                 if alive.is_err() || stops {
@@ -240,6 +236,12 @@ impl Library {
             }
         })
         .detach();
+    }
+
+    fn reload_after_lag(&mut self, cx: &mut Context<'_, Self>) {
+        // The lost event may be a retry's answer.
+        self.storage_retrying = false;
+        Self::load(cx);
     }
 
     fn apply(&mut self, event: UiEvent, cx: &mut Context<'_, Self>) {
