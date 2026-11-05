@@ -58,7 +58,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-48  | fix(media): make any video title safe as a name    | `fix/safe-video-titles`          | 49, 95                       | P2       | small  | none         | merged |
 | PR-49  | fix(messages): give advice that fits the failure   | `fix/advice-fits-failure`        | 51, 105, 106, 206            | P2       | medium | none         | merged |
 | PR-50  | fix(store): keep a set-aside list for a full month | `fix/set-aside-month`            | 52, 156, 237                 | P2       | small  | none         | merged |
-| PR-51  | fix(desktop): correct what download questions say  | `fix/download-questions`         | 54, 122, 231                 | P2       | medium | none         | open   |
+| PR-51  | fix(desktop): correct what download questions say  | `fix/download-questions`         | 54, 122, 231                 | P2       | medium | none         | merged |
 | PR-52  | fix(desktop): give download windows the right fix  | `fix/window-fix-buttons`         | 55, 81                       | P2       | medium | none         | merged |
 | PR-53  | fix(desktop): make settings actions answer back    | `fix/settings-answers`           | 57, 127, 230                 | P2       | medium | none         | merged |
 | PR-54  | fix(core): handle typed names in media downloads   | `fix/typed-media-names`          | 58, 132                      | P2       | medium | none         | merged |
@@ -774,7 +774,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/download_windows`, `crates/desktop/src/main_window/list.rs`, `crates/desktop/src/text.rs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`
-- **Status:** open
+- **Status:** merged
 
 ### PR-52 fix(desktop): give download windows the right fix
 
