@@ -10,6 +10,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::host::CHANNEL;
+
 /// Why the bridge cannot be registered from this AppImage. Each message says what to do.
 #[derive(Debug, thiserror::Error)]
 pub enum AppImageError {
@@ -20,14 +22,15 @@ pub enum AppImageError {
     )]
     NotPlain(String),
     #[error(
-        "The AppImage is in a temporary folder ({0}). Move it somewhere permanent, for example ~/Applications, so your browser can start Wirecatch."
+        "The AppImage is in a temporary folder ({0}). Move it somewhere permanent, for example ~/Applications, so your browser can start {app}.",
+        app = CHANNEL.name()
     )]
     Temporary(String),
-    #[error("{} is not a plain folder (it may be a link to somewhere else), so Wirecatch will not put the browser bridge there. Delete it and start Wirecatch again.", .0.display())]
+    #[error("{} is not a plain folder (it may be a link to somewhere else), so {app} will not put the browser bridge there. Delete it and start {app} again.", .0.display(), app = CHANNEL.name())]
     NotPlainFolder(PathBuf),
-    #[error("{} belongs to another user account, so Wirecatch will not put the browser bridge there. Delete it and start Wirecatch again.", .0.display())]
+    #[error("{} belongs to another user account, so {app} will not put the browser bridge there. Delete it and start {app} again.", .0.display(), app = CHANNEL.name())]
     OtherOwner(PathBuf),
-    #[error("Could not {what} in {} ({source}), so browsers cannot reach Wirecatch from this AppImage.", .folder.display())]
+    #[error("Could not {what} in {} ({source}), so browsers cannot reach {app} from this AppImage.", .folder.display(), app = CHANNEL.name())]
     Io {
         what: &'static str,
         folder: PathBuf,
@@ -103,8 +106,9 @@ pub fn launcher_script(appimage: &Path) -> Result<String, AppImageError> {
     if is_temporary(appimage) {
         return Err(AppImageError::Temporary(text.to_owned()));
     }
+    let app = CHANNEL.name();
     Ok(format!(
-        "#!/bin/sh\n# Starts Wirecatch from its AppImage for the browser bridge. Written by Wirecatch on each start.\nexec {} \"$@\"\n",
+        "#!/bin/sh\n# Starts {app} from its AppImage for the browser bridge. Written by {app} on each start.\nexec {} \"$@\"\n",
         shell_quote(text)
     ))
 }

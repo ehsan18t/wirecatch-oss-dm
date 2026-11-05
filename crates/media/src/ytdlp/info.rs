@@ -365,6 +365,20 @@ impl Info {
         }
     }
 
+    /// What [`selection`] takes with no format named, with each size the page gives: `-J` names that pick at the top level, as `137+140` for two formats.
+    #[must_use]
+    pub fn best_formats(&self) -> Vec<(String, Option<u64>)> {
+        let formats = self.all_formats();
+        self.format_id
+            .iter()
+            .flat_map(|ids| ids.split('+'))
+            .map(|id| {
+                let listed = formats.iter().find(|f| f.id.to_string() == id);
+                (id.to_owned(), listed.and_then(Format::size))
+            })
+            .collect()
+    }
+
     /// The one format a page describes at the top level, from the same fields a listed format has.
     fn top_level_format(&self, url: &str) -> Format {
         let id = self

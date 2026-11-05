@@ -188,7 +188,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 123. A failure notice in the browser loses its buttons after 32 later notices (open)
 124. A tray action that fails tells the person nothing (fixed)
 125. An unfinished download reads 100% (fixed)
-126. A finished download whose file is gone gets advice it cannot follow (open)
+126. A finished download whose file is gone gets advice it cannot follow (fixed)
 127. Settings, Media shows an empty Resolution after a rarer quality (fixed)
 128. The Add dialog says By file type for downloads going to a queue's folder (fixed)
 129. scripts/linux-test.sh can never pass (fixed)
@@ -260,8 +260,8 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 195. The path-escape half of a media test cannot fail (fixed)
 196. Doc comments on media runs sit on the wrong items (fixed)
 197. Sizes and bit rates a page chooses are added without a check (fixed)
-198. The key error prints the whole signed address (open)
-199. On Linux, media programs may outlive an app ended by a signal (open)
+198. The key error prints the whole signed address (fixed)
+199. On Linux, media programs may outlive an app ended by a signal (fixed)
 200. Placing a finished video has its own weaker no-replace move (fixed)
 201. Moving a finished video leaves its subtitle files behind (fixed)
 202. A failed browser registration logs no reason (fixed)
@@ -318,7 +318,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 253. A quit right after a cancel can leave a part file (fixed)
 254. Ticking a folded group does nothing the person can act on (open)
 255. A page read can outlive the app after a quit past the limit (open)
-256. A retry on the best format can move the bar backwards (open)
+256. A retry on the best format can move the bar backwards (fixed)
 
 Done before the release:
 
