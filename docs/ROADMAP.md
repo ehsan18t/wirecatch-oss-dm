@@ -333,7 +333,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 268. A hanging test on Windows leaves no name or log (fixed)
 269. A mark written after a move's copy is lost (fixed)
 270. The timing check misreads some test code (fixed)
-271. A dialog can give focus back to a button that has gone (open)
+271. A dialog can give focus back to a button that has gone (fixed)
 272. The extension writes the product name out by hand (fixed)
 273. Public shell items are used only in their own file (fixed)
 274. A partial file can continue under another sign-in (open)

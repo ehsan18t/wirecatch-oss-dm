@@ -33,7 +33,6 @@ impl MainWindow {
         let typed = self.typed_links(cx).urls.len();
         let first_run = self.is_first_run(cx);
         command_row()
-            .track_focus(&self.row_focus)
             .key_context(super::SEARCH_CONTEXT)
             .px_5()
             .gap_2()
