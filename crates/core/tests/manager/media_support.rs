@@ -458,7 +458,6 @@ pub fn select(option: &str) -> MediaSelection {
         subtitle_files: false,
         unembedded_subtitles: UnembeddedSubtitles::Files,
         chapters: false,
-        every_video: None,
     }
 }
 
