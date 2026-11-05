@@ -1365,7 +1365,7 @@ A yt-dlp row's total starts from the page's sizes, which may be estimates, and i
 Decided on 2026-11-05. It amends D132.3 and D134.1.
 
 1. A removal waits for a move under way, and by then the row and its record of the move have left the list. The deletion record therefore also names where the move is going, and a finished download gets a deletion record for as long as it moves. A move that starts after the removal began adds the target before its first file moves.
-2. A start deletes the temporary copies in that target's folder. For an unfinished download it also deletes the partial files at the target, unless a download holds that path or its old one. For a finished download it deletes nothing else: a kept file is the person's, and D134.2 still holds for one being deleted. A kill between a copy to another drive taking its name and the original's deletion leaves the whole file in both places, and the extra copy stays.
+2. A start deletes the temporary copies in that target's folder. For an unfinished download it also deletes the partial files at the target, unless a download holds that path or its old one. For a finished download it deletes nothing else: a kept file is the person's, and D134.2 still holds for one being deleted. When a kill falls between a copy to another drive taking its name and the original's deletion, the start finishes the move by the rule of D132.2, so one copy is left, at the new place. An original at a path a download now holds stays.
 
 ### D172. A subtitle file's move is noted as the video's is
 

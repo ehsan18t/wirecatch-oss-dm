@@ -375,24 +375,7 @@ pub(super) fn finish_interrupted_move(entry: &mut Entry, record: &MoveUnderWay) 
     if !record.files.iter().any(has_arrived) {
         return;
     }
-    let mut stuck = None;
-    for file in &record.files {
-        let moved = if has_arrived(file) {
-            match std::fs::remove_file(&file.from) {
-                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
-                _ => Ok(()),
-            }
-        } else if file.from.exists() {
-            move_file(&file.from, &file.to)
-        } else {
-            Ok(())
-        };
-        if let Err(source) = moved {
-            warn!(from = %file.from.display(), to = %file.to.display(), error = %source, "could not finish a move a kill cut short");
-            stuck.get_or_insert((file, source));
-        }
-    }
-    match stuck {
+    match finish_files(&record.files) {
         // A finished file is whole at its new place; only a subtitle file can have stayed.
         Some((file, source)) if entry.row.status != DownloadStatus::Completed => {
             let stranded: Vec<String> = record
@@ -424,6 +407,35 @@ pub(super) fn finish_interrupted_move(entry: &mut Entry, record: &MoveUnderWay) 
             entry.files.follow(&files_that_arrived(&record.files));
         }
     }
+}
+
+/// Finishes the move of a finished row a removal took off the list, so one copy of each file is left (D171). Blocks on the disk.
+pub(super) fn finish_removed_move(files: &[MovedFile]) {
+    if files.iter().any(has_arrived) {
+        _ = finish_files(files);
+    }
+}
+
+/// Takes each of `files` to its new place. What cannot go is logged; returns the first of those.
+fn finish_files(files: &[MovedFile]) -> Option<(&MovedFile, io::Error)> {
+    let mut stuck = None;
+    for file in files {
+        let moved = if has_arrived(file) {
+            match std::fs::remove_file(&file.from) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            }
+        } else if file.from.exists() {
+            move_file(&file.from, &file.to)
+        } else {
+            Ok(())
+        };
+        if let Err(source) = moved {
+            warn!(from = %file.from.display(), to = %file.to.display(), error = %source, "could not finish a move a kill cut short");
+            stuck.get_or_insert((file, source));
+        }
+    }
+    stuck
 }
 
 /// Those of `files` now only at their new place. A file at the new place of one that could not follow is someone else's, and must not be listed as the download's.

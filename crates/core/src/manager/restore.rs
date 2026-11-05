@@ -20,7 +20,9 @@ use wirecatch_store::{Snapshot, Store, StoredDownload};
 use super::addons::AddonSlot;
 use super::handovers::Handovers;
 use super::questions;
-use super::relocate::{discard_staged, files_that_arrived, finish_interrupted_move};
+use super::relocate::{
+    discard_staged, files_that_arrived, finish_interrupted_move, finish_removed_move,
+};
 use super::run::mark_completed;
 use super::state::{Counters, Entry, Hold, Partial, QueueSlot, State};
 use super::suffix_list::SuffixCheck;
@@ -228,7 +230,11 @@ fn finish_deletions(state: &State, deletions: &[PendingDeletion]) {
         if let Some(target) = &deletion.moving_to {
             discard_staged(target.parent().unwrap_or(Path::new("")));
         }
-        if deletion.finished || spared(&deletion.path) {
+        if spared(&deletion.path) {
+            continue;
+        }
+        if deletion.finished {
+            finish_removed_move(&deletion.moving_files);
             continue;
         }
         Partial::of(deletion).delete();
@@ -616,6 +622,66 @@ mod tests {
         restore(snapshot, &nowhere(&|_| None));
         assert!(!staged.exists(), "the copy under way stayed");
         assert!(from.exists() && old_part.exists() && new_part.exists());
+    }
+
+    fn finished_removal_of(from: &Path, to: &Path) -> PendingDeletion {
+        PendingDeletion {
+            path: from.to_path_buf(),
+            media: false,
+            moving_to: Some(to.to_path_buf()),
+            moving_files: vec![pair(from, to)],
+            finished: true,
+        }
+    }
+
+    /// The copy took its name and a kill beat deleting the original: one whole file is left, at the new place.
+    #[test]
+    fn a_kill_after_a_removals_copy_leaves_one_copy_of_a_kept_file() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (from, to) = (source.path().join("a.bin"), target.path().join("a.bin"));
+        std::fs::write(&from, b"the file").unwrap();
+        std::fs::write(&to, b"the file").unwrap();
+        let snapshot = Snapshot {
+            pending_deletions: vec![finished_removal_of(&from, &to)],
+            ..Snapshot::default()
+        };
+        restore(snapshot, &nowhere(&|_| None));
+        assert!(to.exists(), "the file at its new place went");
+        assert!(!from.exists(), "the original stayed as a second copy");
+    }
+
+    /// Another size at the new place is another program's file, so the original is the only copy.
+    #[test]
+    fn a_kill_during_a_removals_move_keeps_an_original_nothing_replaced() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (from, to) = (source.path().join("a.bin"), target.path().join("a.bin"));
+        std::fs::write(&from, b"the file").unwrap();
+        std::fs::write(&to, b"someone else's").unwrap();
+        let snapshot = Snapshot {
+            pending_deletions: vec![finished_removal_of(&from, &to)],
+            ..Snapshot::default()
+        };
+        restore(snapshot, &nowhere(&|_| None));
+        assert_eq!(std::fs::read(&from).unwrap(), b"the file");
+        assert_eq!(std::fs::read(&to).unwrap(), b"someone else's");
+    }
+
+    /// A new download has taken the old name since: what lies there is left to it.
+    #[test]
+    fn a_kill_after_a_removals_copy_spares_a_download_at_the_old_path() {
+        let (source, target) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (from, to) = (source.path().join("a.bin"), target.path().join("a.bin"));
+        std::fs::write(&from, b"the file").unwrap();
+        std::fs::write(&to, b"the file").unwrap();
+        let mut row = stored(2, 1, DownloadStatus::Paused);
+        row.summary.path = from.to_string_lossy().into_owned();
+        let snapshot = Snapshot {
+            downloads: vec![row],
+            pending_deletions: vec![finished_removal_of(&from, &to)],
+            ..Snapshot::default()
+        };
+        restore(snapshot, &nowhere(&|_| None));
+        assert!(from.exists() && to.exists());
     }
 
     /// The row that moved the file has gone with its record of the move: the other row of that file follows it, and its subtitle file with it.

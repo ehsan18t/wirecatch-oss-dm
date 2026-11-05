@@ -342,7 +342,7 @@ To work through them, follow `docs/audit/runs/2026-11-desktop/WORK-LIST.md`: wha
 279. No check catches a Settings row that wraps a lone word (won't fix (no sound cheap check: the font comes from the system, rows flex with the window, and tests use a text system that measures nothing))
 280. A very long queue name runs past the window in the queue menu (open)
 281. Stacked banners can clip the empty state (open)
-282. A kill during a move may leave two copies of a kept file (open)
+282. A kill during a move may leave two copies of a kept file (fixed)
 283. The quit test still passes if quit stops ending the process (open)
 284. Streams on one site can share parts when only signing values differ (won't fix (by design: a refreshed stream must keep its segments, and these links match in final name, segment paths and piece counts))
 285. A crash between a stream's join and its first note downloads it again (won't fix (the window is short and the only cost is the repeated download; the joined file is already flushed))
