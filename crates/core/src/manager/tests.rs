@@ -180,12 +180,18 @@ fn add_request(url: &str) -> AddRequest {
 async fn a_download_being_removed_cannot_be_brought_back() {
     let runs = Arc::new(AtomicUsize::new(0));
     let counted = runs.clone();
-    let engine = move |run: FakeRun| {
+    // The run ignores being asked to stop until the test lets it go, and the stop timeout outlasts the test.
+    let let_go = Arc::new(Notify::new());
+    let held = let_go.clone();
+    let engine = move |_run: FakeRun| -> EngineFuture {
         counted.fetch_add(1, Ordering::SeqCst);
-        deaf(run)
+        let held = held.clone();
+        Box::pin(async move {
+            held.notified().await;
+            Err(EngineError::Cancelled)
+        })
     };
-    let stop_timeout = Duration::from_secs(1);
-    let (manager, dir) = manager_with(engine, stop_timeout, DEFAULT_CAPTURE_TIMEOUT).await;
+    let (manager, dir) = manager_with(engine, 2 * PATIENCE, DEFAULT_CAPTURE_TIMEOUT).await;
     let id = manager
         .add_download(add_request("https://example.com/gone.bin"))
         .await
@@ -222,6 +228,7 @@ async fn a_download_being_removed_cannot_be_brought_back() {
         [] as [wirecatch_protocol::app::DownloadSummary; 0]
     );
 
+    let_go.notify_one();
     removal.await.unwrap().unwrap();
     tokio::time::sleep(QUIET).await;
     assert!(manager.lock().downloads.is_empty());

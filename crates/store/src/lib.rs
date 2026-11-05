@@ -2650,7 +2650,7 @@ mod tests {
             .unwrap();
         drop(conn);
 
-        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(
             snapshot.recoveries,
             vec![Recovery::ValuesReset { downloads: 2 }]
@@ -2660,6 +2660,7 @@ mod tests {
         repaired.summary.done = 0;
         let expected = vec![download(1), repaired, finished];
         assert_eq!(snapshot.downloads, expected);
+        store.close(PATIENCE).await;
 
         let (_, again) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(again.recoveries, vec![], "told once");
@@ -2721,7 +2722,7 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
+        let (store, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.recoveries, vec![Recovery::UnreadableKept(1)]);
         assert_eq!(snapshot.downloads, vec![download(1)]);
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
@@ -2733,6 +2734,7 @@ mod tests {
         drop(conn);
         assert!(!origin.contains("secret"), "{origin}");
         assert!(origin.contains("Referer"), "{origin}");
+        store.close(PATIENCE).await;
 
         let (_, again) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(again.recoveries, vec![], "told once");
@@ -3189,8 +3191,10 @@ mod tests {
     #[test]
     fn migrations_run_once() {
         let dir = tempfile::tempdir().unwrap();
-        drop(Store::open(dir.path(), ignore_failures()).unwrap());
-        drop(Store::open(dir.path(), ignore_failures()).unwrap());
+        for _ in 0..2 {
+            let (store, _) = Store::open(dir.path(), ignore_failures()).unwrap();
+            close(&store);
+        }
         let conn = Connection::open(dir.path().join(DATABASE_FILE)).unwrap();
         let version: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
@@ -3208,7 +3212,7 @@ mod tests {
         conn.execute("UPDATE downloads SET status = 'exploded' WHERE id = 2", [])
             .unwrap();
         // One store at a time has the list.
-        store.close(Duration::from_secs(5)).await;
+        store.close(PATIENCE).await;
         let (_, snapshot) = Store::open(dir.path(), ignore_failures()).unwrap();
         assert_eq!(snapshot.downloads, vec![download(1)]);
     }

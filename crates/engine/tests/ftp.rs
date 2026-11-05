@@ -12,7 +12,7 @@ use wirecatch_engine::{
     CancellationToken, DownloadRequest, Error, ManualProxies, Outcome, PrivateNetwork, Progress,
     ProxyChoice, Url, download,
 };
-use wirecatch_test_support::ftp::{FtpConfig, FtpServer, Quirk, Refuse};
+use wirecatch_test_support::ftp::{FtpConfig, FtpServer, HoldData, Quirk, Refuse};
 use wirecatch_test_support::{PATIENCE, TestResult, files_in, private_dir, test_data};
 
 fn serving(data: &[u8]) -> FtpConfig {
@@ -114,8 +114,10 @@ async fn a_chosen_link_to_the_local_network_goes_through() -> TestResult {
 async fn plain_download_is_byte_identical_over_parallel_connections() {
     let data = test_data(8 * MIB_USIZE + 12_345);
     let mut config = serving(&data);
-    // Slow enough per connection that the other connections join in.
-    config.data_bps = Some(8 * MIB);
+    config.hold_data_until = Some(HoldData {
+        transfers: 2,
+        ..HoldData::default()
+    });
     let server = FtpServer::start(config).await;
     let dir = private_dir("parallel").unwrap();
 
@@ -333,7 +335,10 @@ async fn completes_within_session_limit(refuse: Refuse, test: &str) -> TestResul
     let data = test_data(8 * MIB_USIZE);
     let mut config = serving(&data);
     config.max_sessions = Some((2, refuse));
-    config.data_bps = Some(8 * MIB);
+    config.hold_data_until = Some(HoldData {
+        transfers: 2,
+        refused: 1,
+    });
     let server = FtpServer::start(config).await;
     let dir = private_dir(test)?;
 
@@ -593,7 +598,10 @@ async fn the_size_from_the_transfer_reply_is_used_without_size_support() {
     let data = test_data(4 * MIB_USIZE);
     let mut config = serving(&data);
     config.quirks.push(Quirk::NoSize);
-    config.data_bps = Some(8 * MIB);
+    config.hold_data_until = Some(HoldData {
+        transfers: 2,
+        ..HoldData::default()
+    });
     let server = FtpServer::start(config).await;
     let dir = private_dir("no-size").unwrap();
 

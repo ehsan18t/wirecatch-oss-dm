@@ -159,9 +159,18 @@ async fn a_part_file_left_by_a_crash_is_picked_up_again() -> TestResult {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_same_server_name_twice_gets_a_free_name() -> TestResult {
     let server = server_naming("report.pdf", 4 * KIB_USIZE, None).await;
+    // No body until both have their names: a first download that ended sooner would turn the second's name into a question.
+    server.hold_bodies();
     let h = Harness::new().await?;
     let first = h.add(&server.url("a")).await?.id;
     let second = h.add(&server.url("b")).await?.id;
+    for id in [first, second] {
+        h.wait_for(id, "the server's name", |row| {
+            row.file_name.starts_with("report")
+        })
+        .await;
+    }
+    server.release_bodies();
     let first = h.wait_status(first, DownloadStatus::Completed).await;
     let second = h.wait_status(second, DownloadStatus::Completed).await;
     let mut names = [first.file_name, second.file_name];
