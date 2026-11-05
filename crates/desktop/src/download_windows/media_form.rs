@@ -27,8 +27,7 @@ use wirecatch_shell::{api, host};
 
 use super::media_output::{
     OutputChoice, conversion_note, fit_for, format_label, holds_subtitles, kbps_for, quality_notes,
-    shown_subtitles, size_for, subtitle_reason, subtitle_toggle, subtitles_added_note,
-    video_length,
+    shown_subtitles, size_for, subtitle_reason, subtitle_toggle, video_length,
 };
 use super::view::{earlier_chip, folder_box, queue_badge_picker};
 use crate::backend::Backend;
@@ -634,10 +633,6 @@ impl MediaForm {
                     .into_any_element(),
             );
         }
-        rows.extend(
-            fit.and_then(|fit| subtitles_added_note(fit, shown))
-                .map(|text| note(text.to_owned(), cx)),
-        );
         rows
     }
 
