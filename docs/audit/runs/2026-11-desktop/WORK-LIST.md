@@ -121,7 +121,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-111 | fix(streams): stop media programs on a signal      | `fix/media-programs-on-signal`   | 199                          | P3       | medium | none         | merged |
 | PR-112 | fix(desktop): correct system registration details  | `fix/system-registration`        | 202, 203, 204                | P3       | small  | none         | merged |
 | PR-113 | fix(desktop): give every window a native title     | `fix/native-window-title`        | 205                          | P3       | small  | none         | merged |
-| PR-114 | fix(desktop): steady the list under the pointer    | `fix/list-under-pointer`         | 210, 213                     | P3       | small  | none         | open   |
+| PR-114 | fix(desktop): steady the list under the pointer    | `fix/list-under-pointer`         | 210, 213                     | P3       | small  | none         | merged |
 | PR-115 | fix(core): keep only finished proxy test results   | `fix/proxy-test-results`         | 218, 219                     | P3       | small  | none         | merged |
 | PR-116 | fix(desktop): correct what queue pages say         | `fix/queue-page-text`            | 225, 226, 227                | P3       | small  | none         | merged |
 | PR-117 | fix(desktop): keep a system accent readable        | `fix/system-accent-contrast`     | 229                          | P3       | small  | none         | merged |
@@ -1544,7 +1544,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/desktop/src/main_window`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-desktop`, `cargo clippy -p wirecatch-desktop`; look at the list in both themes.
-- **Status:** open
+- **Status:** merged
 
 ### PR-115 fix(core): keep only finished proxy test results
 
