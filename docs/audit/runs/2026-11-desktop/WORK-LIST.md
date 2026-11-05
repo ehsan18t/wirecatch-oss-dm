@@ -107,7 +107,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-97  | fix(core): record every file of a move up front    | `fix/record-moves`               | 141, 201, 246                | P2       | medium | PR-04, PR-08 | merged |
 | PR-98  | chore: remove code nothing calls                   | `chore/remove-dead-commands`     | 142, 235, 236                | P3       | medium | none         | open   |
 | PR-99  | test: wait under PATIENCE in every test            | `test/patience-waits`            | 143, 242                     | P3       | medium | none         | open   |
-| PR-100 | test: stop racing real-clock limits in tests       | `test/no-clock-races`            | 144, 167                     | P3       | medium | none         | open   |
+| PR-100 | test: stop racing real-clock limits in tests       | `test/no-clock-races`            | 144, 167                     | P3       | medium | none         | merged |
 | PR-101 | test: share test values through test-support       | `test/shared-test-values`        | 146, 147, 149, 183           | P3       | medium | none         | open   |
 | PR-102 | fix(desktop): show startup notices only once       | `fix/startup-notices-once`       | 150, 214                     | P3       | medium | none         | merged |
 | PR-103 | fix(core): let a person's stop win                 | `fix/person-stop-wins`           | 152, 172                     | P3       | small  | none         | merged |
@@ -1364,7 +1364,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/store`, `crates/sites`, `crates/streams/tests`, `crates/bridge/tests`, `crates/core/tests`, `crates/engine/tests`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-store -p wirecatch-sites -p wirecatch-streams -p wirecatch-bridge -p wirecatch-core -p wirecatch-engine`
-- **Status:** open
+- **Status:** merged
 
 ### PR-101 test: share test values through test-support
 
