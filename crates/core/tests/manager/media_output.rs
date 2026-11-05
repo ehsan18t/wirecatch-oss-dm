@@ -204,6 +204,7 @@ async fn a_video_saved_as_mp4_is_converted_with_subtitles_and_chapters() -> Test
     let uhd = choice.options[0].id.clone();
     let mut pick = selection(&uhd, OutputFormat::Mp4);
     pick.subtitles = vec!["sub:en".into(), "auto:de-orig".into()];
+    pick.languages_picked = true;
     pick.chapters = true;
     let id = h.manager.choose_media(choice.id, pick).await.unwrap();
 
@@ -300,6 +301,7 @@ async fn audio_saved_as_mp3_gets_tags_a_cover_and_subtitle_files() -> TestResult
     let mut pick = selection(&audio.id, OutputFormat::Mp3);
     pick.audio_kbps = Some(320);
     pick.subtitles = vec!["sub:en".into()];
+    pick.languages_picked = true;
     let id = h.manager.choose_media(choice.id, pick).await.unwrap();
     let done = h.wait_status(id, DownloadStatus::Completed).await;
     assert_eq!(

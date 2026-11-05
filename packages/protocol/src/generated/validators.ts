@@ -918,6 +918,7 @@ export function isMediaSelection(value: unknown): value is MediaSelection {
     (typeof value1['audio_kbps'] === 'number' || value1['audio_kbps'] === null) &&
     isArrayOf(value1['subtitles'], (value2: unknown) => typeof value2 === 'string') &&
     typeof value1['subtitle_files'] === 'boolean' &&
+    typeof value1['languages_picked'] === 'boolean' &&
     isUnembeddedSubtitles(value1['unembedded_subtitles']) &&
     typeof value1['chapters'] === 'boolean')(value);
 }

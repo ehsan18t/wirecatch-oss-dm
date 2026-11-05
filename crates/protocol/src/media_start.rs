@@ -135,6 +135,7 @@ impl OutputDefaults {
             audio_kbps: None,
             subtitles: self.subtitles_at_start(subtitles),
             subtitle_files: self.subtitles == SubtitleChoice::Files,
+            languages_picked: false,
             unembedded_subtitles: self.unembedded_subtitles,
             chapters: chapters && self.chapters,
         }

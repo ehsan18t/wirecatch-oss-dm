@@ -46,6 +46,11 @@ export type MediaSelection = {
    */
   subtitle_files: boolean;
   /**
+   * The person chose the languages in [`subtitles`](Self::subtitles), so they may be saved;
+   * ones the window only kept while switching kind are not (D195.5).
+   */
+  languages_picked: boolean;
+  /**
    * With subtitles inside the video, what happens to them when the format cannot hold any
    * (Original, or audio only) (D93).
    */

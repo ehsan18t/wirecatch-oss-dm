@@ -991,6 +991,7 @@ mod tests {
             audio_kbps: None,
             subtitles: Vec::new(),
             subtitle_files: false,
+            languages_picked: false,
             unembedded_subtitles: UnembeddedSubtitles::Files,
             chapters: false,
         }

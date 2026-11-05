@@ -600,6 +600,10 @@ pub struct MediaSelection {
     /// always save them as files.
     #[serde(default)]
     pub subtitle_files: bool,
+    /// The person chose the languages in [`subtitles`](Self::subtitles), so they may be saved;
+    /// ones the window only kept while switching kind are not (D195.5).
+    #[serde(default)]
+    pub languages_picked: bool,
     /// With subtitles inside the video, what happens to them when the format cannot hold any
     /// (Original, or audio only) (D93).
     #[serde(default, with = "known_or_default")]
