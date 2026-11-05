@@ -592,6 +592,34 @@ fn hls_for_mkv(server: &FileServer) {
     }
 }
 
+/// A video goes straight to its typed name, with no server's answer to settle it: a slash in it is still part of the name.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_slash_in_a_typed_video_name_keeps_the_words_before_it() -> TestResult {
+    let server = FileServer::start().await;
+    hls_for_mkv(&server);
+    let h = harness(publish(&server, &Releases::fake()?, "r")?).await?;
+    assert_eq!(install(&h).await?.state, AddonState::Installed);
+    let mut ui = h.manager.subscribe();
+    h.manager
+        .add_capture(media_capture(
+            server.url("mkv/master.m3u8"),
+            MediaKind::Hls,
+            None,
+        ))
+        .await?;
+    let choice = choice_requested(&mut ui).await;
+    let video = choice.options.iter().find(|o| !o.audio_only).unwrap();
+    let mut selection = select(&video.id);
+    selection.file_name = Some("AC/DC Live".into());
+    let id = h.manager.choose_media(choice.id, selection).await?;
+    let done = h.wait_status(id, DownloadStatus::Completed).await;
+    assert_eq!(
+        Path::new(&done.path).file_stem().and_then(|n| n.to_str()),
+        Some("AC-DC Live")
+    );
+    Ok(())
+}
+
 /// A typed name that core cut to length, and that is numbered when the file is put in place because a file has the name and the setting keeps both (D96), still finishes when the join changes its extension: it is longer than the names the engine makes itself. Chinese takes three bytes a character but one UTF-16 unit, so the work folders under its name stay within what Windows starts a program in.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_long_numbered_name_finishes_in_the_container_the_join_picks() -> TestResult {
