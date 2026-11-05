@@ -69,7 +69,7 @@ An item fixed only in part stays open in `AUDIT-LOG.md` with what is left, and t
 | PR-59  | fix(cli): report stops, speed, errors correctly    | `fix/cli-reports`                | 65, 91, 182                  | P2       | medium | none         | merged |
 | PR-60  | fix(core): apply proxy exceptions to yt-dlp        | `fix/ytdlp-proxy-exceptions`     | 68, 69                       | P2       | small  | none         | merged |
 | PR-61  | fix(core): move path checks off async threads      | `fix/path-checks-off-async`      | 70                           | P2       | medium | none         | merged |
-| PR-62  | fix(engine): handle resume files more safely       | `fix/safer-resume-files`         | 71, 88, 89, 158              | P2       | medium | none         | open   |
+| PR-62  | fix(engine): handle resume files more safely       | `fix/safer-resume-files`         | 71, 88, 89, 158              | P2       | medium | none         | merged |
 | PR-63  | fix(desktop): make an AppImage restart reliable    | `fix/appimage-restart`           | 73, 184                      | P2       | medium | none         | merged |
 | PR-64  | fix(core): read the page again after a refusal     | `fix/reread-refused-page`        | 75, 134, 145                 | P2       | medium | none         | merged |
 | PR-65  | fix(desktop): show all an import will change       | `fix/full-import-preview`        | 76, 148, 207                 | P2       | medium | none         | merged |
@@ -918,7 +918,7 @@ Known overlaps, where a PR reaches into another lane, so do not run these pairs 
 - **Touches:** `crates/engine`, `crates/streams/src/workdir.rs`, `crates/core/src/naming.rs`
 - **Proof:** none
 - **Checks:** `cargo test -p wirecatch-engine -p wirecatch-streams -p wirecatch-core`, `cargo clippy -p wirecatch-engine -p wirecatch-streams -p wirecatch-core`
-- **Status:** open
+- **Status:** merged
 
 ### PR-63 fix(desktop): make an AppImage restart reliable
 

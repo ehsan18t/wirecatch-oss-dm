@@ -112,8 +112,8 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 85  | Choosing the folder the guess already points at is not remembered                                 | `05-8`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 86  | A capture joining an unfinished download is answered Started too early                            | `07-2`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 87  | Skipped bytes are not counted against the speed limit                                             | `02-3`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
-| 88  | A stale resume file that could not be deleted makes zeros count as downloaded                     | `Xsecond-review-resume-5`                                                                          | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
-| 89  | A resume file is rewritten every second even when nothing changed                                 | `01-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | open   |
+| 88  | A stale resume file that could not be deleted makes zeros count as downloaded                     | `Xsecond-review-resume-5`                                                                          | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
+| 89  | A resume file is rewritten every second even when nothing changed                                 | `01-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 90  | A valid short partial answer is waited out as a failed connection                                 | `F-2`                                                                                              | P2       | small  | P2, 1 finding, small                                                                                             | `FT-sizes`                                    | fixed  |
 | 91  | CLI speed and ETA are wrong for half a minute after a resume                                      | `32-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
 | 92  | A command-line argument that is not valid Unicode aborts the app                                  | `22-4`                                                                                             | P2       | small  | P2, 1 finding, small                                                                                             | none                                          | fixed  |
@@ -182,7 +182,7 @@ This is the order of the fixes; `WORK-LIST.md` groups them into pull requests, a
 | 155 | The rebinding tests never reach the filtering resolver, and its refusal ends as a network failure | `09-5` `09-6`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 156 | Tests do not cover the stored forms of enums and old settings                                     | `03-6` `Xdatabase-migrations-5`                                                                    | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 157 | A held-open output loses a program's collected output, and its test cannot fail                   | `13-2` `13-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
-| 158 | A resume file's temporary file can stay for good                                                  | `01-8` `Xsecond-review-disk-writes-8`                                                              | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
+| 158 | A resume file's temporary file can stay for good                                                  | `01-8` `Xsecond-review-disk-writes-8`                                                              | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 159 | Add-on release files of skipped versions stay in the work folder                                  | `11-4` `Xsecurity-addon-unpacking-4`                                                               | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 160 | Tray ticks flip on a repeat click, and & in a name shows wrongly                                  | `26-2` `26-3`                                                                                      | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | fixed  |
 | 161 | Messages name the product with a literal                                                          | `26-9` `B17-1`                                                                                     | P3       | small  | P3, 2 findings, small                                                                                            | none                                          | open   |
@@ -1555,6 +1555,8 @@ P2, medium, open.
 - `Xsecond-review-resume-4`: confirmed, P2. A passing read error on a resume file or stream header deletes everything already downloaded. Full text in `cross/second-review-resume.md`, verdict in `verdicts/B03.md`.
 - `Xsecond-review-disk-writes-5`: confirmed, P2. One failed final rename fails a complete download, and a server without ranges then downloads it all again. Full text in `cross/second-review-disk-writes.md`, verdict in `verdicts/B03.md`.
 
+**Left to do:** Read errors no longer delete resume data. A failed final rename still refetches for in-folder runs without ranges, such as the command line.
+
 ### 72. The app quits before the Windows setup has asked for approval, so a refusal reaches no one
 
 P2, medium, fixed.
@@ -1824,7 +1826,7 @@ In `stream` and `Fetcher::attempt`, `data.is_empty()` continues before `pace`, a
 
 ### 88. A stale resume file that could not be deleted makes zeros count as downloaded
 
-P2, small, open.
+P2, small, fixed.
 
 `prepare` runs `discard(part)`, an unchecked `discard(state)`, then `create_part`, which gives a full-length file of zeros. If the first save also fails on its rename, the old resume file passes every check of the next run and its done ranges stay zeros. It takes two faults together.
 
@@ -1840,7 +1842,7 @@ P2, small, open.
 
 ### 89. A resume file is rewritten every second even when nothing changed
 
-P2, small, open.
+P2, small, fixed.
 
 `save` has no comparison with the last saved ranges, so a stalled download rewrites and flushes its resume file every second. D30.1 covers a flush per interval only for a download making progress.
 
@@ -2986,7 +2988,7 @@ P3, small, fixed.
 
 ### 158. A resume file's temporary file can stay for good
 
-P3, small, open.
+P3, small, fixed.
 
 The temporary name is a private detail of `save`, removed only there, so a kill can leave one small `.wcstate.tmp` for good. Nothing reads it.
 

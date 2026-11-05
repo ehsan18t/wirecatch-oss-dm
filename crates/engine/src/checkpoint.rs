@@ -10,6 +10,7 @@ use crate::abandon::Abandoned;
 use crate::download::Shared;
 use crate::error::{Chain, Error, IoAction, IoContext, Result};
 use crate::http::Validators;
+use crate::segment::ByteRange;
 use crate::state::ResumeState;
 use crate::storage;
 
@@ -63,6 +64,7 @@ impl ResumeSaver {
                 closed: false,
                 part: None,
                 failed_flush: None,
+                saved: None,
             }),
             abandoned,
         }
@@ -80,7 +82,7 @@ impl ResumeSaver {
         self.saving.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Saves the ranges still to download, unless the download has ended.
+    /// Saves the ranges still to download, unless the download has ended or they are what the resume file already says: a stalled download has no reason to flush every second.
     pub fn save(&self) -> Result<()> {
         let mut saving = self.saving();
         if saving.closed || saving.failed_flush.is_some() || self.abandoned.is_set() {
@@ -89,8 +91,14 @@ impl ResumeSaver {
         // Read before the flush: every range done by now was written before it.
         let remaining = self.shared.table.lock().remaining();
         let Saving {
-            part, failed_flush, ..
+            part,
+            failed_flush,
+            saved,
+            ..
         } = &mut *saving;
+        if saved.as_ref() == Some(&remaining) {
+            return Ok(());
+        }
         let part = match part {
             Some(part) => part,
             empty => {
@@ -106,7 +114,7 @@ impl ResumeSaver {
             }
             part.sync_data()
         };
-        let saved = flush_then(
+        let result = flush_then(
             flush,
             &shared.part_path,
             &self.abandoned,
@@ -117,15 +125,17 @@ impl ResumeSaver {
                     shared.request.total,
                     shared.request.ranged,
                     &self.validators,
-                    remaining,
+                    remaining.clone(),
                 )
-                .save(&self.path, &self.abandoned)
+                .save(&self.path, &self.abandoned)?;
+                *saved = Some(remaining);
+                Ok(())
             },
         );
         if failed_flush.is_some() {
             shared.request.cancel.cancel();
         }
-        saved
+        result
     }
 
     /// A save whose failed flush ends the download at once: the first one, before anything is fetched.
@@ -178,6 +188,8 @@ struct Saving {
     part: Option<File>,
     /// The first flush that failed; no save writes after it.
     failed_flush: Option<Error>,
+    /// The ranges the resume file holds, once this run has written it.
+    saved: Option<Vec<ByteRange>>,
 }
 
 /// The task that saves the resume file at every checkpoint while a download
@@ -351,6 +363,8 @@ mod tests {
         request.options.checkpoint_interval = Duration::from_millis(1);
         // A longer wait for the held half than `PATIENCE`, so only the flush can end the run.
         request.options.stall_timeout = 2 * PATIENCE;
+        // Small enough that the first half reaches the file, which is what a checkpoint saves.
+        request.options.buffer_size = 64 * KIB_USIZE;
         // The first save, before anything is fetched, passes; the first checkpoint's fails.
         request.file_work.fail_flush_after(1);
         let run = download(

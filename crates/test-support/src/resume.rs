@@ -7,6 +7,46 @@ use std::path::Path;
 use crate::TestResult;
 use crate::http::Seen;
 
+/// What an earlier run of a download saved in its resume file.
+#[derive(Debug, Clone, Copy)]
+pub struct SavedRun<'a> {
+    /// The link it was made for.
+    pub url: &'a str,
+    /// The file's size, if the server gave it.
+    pub total: Option<u64>,
+    /// Whether the server took byte ranges.
+    pub ranged: bool,
+    /// The `ETag` it saw.
+    pub etag: Option<&'a str>,
+    /// The `Last-Modified` it saw.
+    pub last_modified: Option<&'a str>,
+    /// The ranges still missing.
+    pub remaining: &'a [(u64, u64)],
+}
+
+/// Writes `run` to the resume file at `state`, in the engine's format.
+///
+/// # Errors
+///
+/// The file cannot be written.
+pub fn write_resume_file(state: &Path, run: &SavedRun<'_>) -> std::io::Result<()> {
+    let remaining: Vec<_> = run
+        .remaining
+        .iter()
+        .map(|&(start, end)| serde_json::json!({ "start": start, "end": end }))
+        .collect();
+    let saved = serde_json::json!({
+        "version": 1,
+        "url": run.url,
+        "total": run.total,
+        "ranged": run.ranged,
+        "etag": run.etag,
+        "last_modified": run.last_modified,
+        "remaining": remaining,
+    });
+    std::fs::write(state, saved.to_string())
+}
+
 /// The ranges `[start, end)` of a file of `len` bytes that the resume file at `state` says are on disk: everything but its `remaining`.
 ///
 /// # Errors

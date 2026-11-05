@@ -3,7 +3,7 @@
 use std::io;
 use std::path::Path;
 
-use wirecatch_engine::{Error as EngineError, IoAction, ProxySetting};
+use wirecatch_engine::{Error as EngineError, HELD_FILE_CODES, IoAction, ProxySetting};
 use wirecatch_protocol::app::{FixAction, UserError};
 use wirecatch_sites::local_network::ChosenBy;
 
@@ -14,12 +14,6 @@ const DISK_FULL_CODES: &[i32] = &[39, 112]; // ERROR_HANDLE_DISK_FULL, ERROR_DIS
 const DISK_FULL_CODES: &[i32] = &[28, 122]; // ENOSPC, EDQUOT
 #[cfg(not(any(windows, unix)))]
 const DISK_FULL_CODES: &[i32] = &[];
-
-/// Raw OS codes for a file another program holds open.
-#[cfg(windows)]
-const HELD_FILE_CODES: &[i32] = &[32, 33]; // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
-#[cfg(not(windows))]
-const HELD_FILE_CODES: &[i32] = &[];
 
 /// Whether the link delivered data before it failed, which turns a refusal into an expired link, and what the next run does with that data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -156,6 +150,8 @@ fn io_failure(action: IoAction, path: &Path, source: &io::Error, folder: &Path) 
                 | IoAction::Write
                 | IoAction::Resize
                 | IoAction::Flush
+                | IoAction::ReadResume
+                | IoAction::DeleteResume
                 | IoAction::Finish
         ))
     .then_some(path);

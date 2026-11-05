@@ -188,6 +188,13 @@ pub(crate) fn partial_files(path: &Path) -> [PathBuf; 2] {
     [part, state]
 }
 
+/// [`partial_files`] and the temporary file a kill during a save of the resume file leaves, which nothing else removes once no save comes.
+pub(crate) fn partial_files_and_temp(path: &Path) -> [PathBuf; 3] {
+    let [part, state] = partial_files(path);
+    let temp = naming::resume_temp_path(&state);
+    [part, state, temp]
+}
+
 /// The size of the file at `path` if it is a finished download: the file is there and its part file is not. A resume file alone does not count: the engine renames the part file first and deletes the resume file after. Touches the file system.
 pub(crate) fn finished_size(path: &Path) -> Option<u64> {
     let [part, _] = partial_files(path);
@@ -222,21 +229,27 @@ pub(crate) fn left_by(path: &Path, url: &str) -> bool {
         return false;
     }
     // A kill before its resume file was saved: nothing of it can continue, and the engine starts over.
-    !state.exists() || resumes_link(&state, url)
+    !state.exists() || resumes_link(&state, url).unwrap_or(false)
 }
 
 /// Deletes the part and resume files beside `path` unless they are a run of `url`. The engine continues whatever part file is at its exact path, so another link's would end up in this download's file. Touches the file system.
-pub(crate) fn discard_partials_of_other_links(path: &Path, url: &str) {
-    let [part, state] = partial_files(path);
-    if !resumes_link(&state, url) {
-        wirecatch_files::discard::file(&part);
-        wirecatch_files::discard::file(&state);
+///
+/// # Errors
+///
+/// The resume file could not be read, which says nothing about whose they are: all stay, and the run must not go on over them.
+pub(crate) fn discard_partials_of_other_links(path: &Path, url: &str) -> std::io::Result<()> {
+    let files = partial_files_and_temp(path);
+    if !resumes_link(&files[1], url)? {
+        for file in &files {
+            wirecatch_files::discard::file(file);
+        }
     }
+    Ok(())
 }
 
-fn resumes_link(state: &Path, url: &str) -> bool {
-    wirecatch_engine::resume_file_url(state)
-        .is_some_and(|saved| normalized_url(&saved) == normalized_url(url))
+fn resumes_link(state: &Path, url: &str) -> std::io::Result<bool> {
+    Ok(wirecatch_engine::resume_file_url(state)?
+        .is_some_and(|saved| normalized_url(&saved) == normalized_url(url)))
 }
 
 /// In the form a resume file saves. Not `without_credentials`: the user name tells two accounts' files apart.
@@ -405,6 +418,29 @@ mod tests {
             unique_path(dir.path(), ".bashrc", |p| claimed.contains(p)),
             dir.path().join(".bashrc")
         );
+    }
+
+    #[test]
+    fn another_links_partial_files_go_with_their_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.zip");
+        for file in partial_files_and_temp(&path) {
+            std::fs::write(file, b"x").unwrap();
+        }
+        discard_partials_of_other_links(&path, "https://example.com/a.zip").unwrap();
+        assert!(partial_files_and_temp(&path).iter().all(|f| !f.exists()));
+    }
+
+    /// A folder where the resume file should be: reading it fails the way a held file does.
+    #[test]
+    fn partial_files_whose_owner_cannot_be_read_are_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.zip");
+        let [part, state] = partial_files(&path);
+        std::fs::write(&part, b"x").unwrap();
+        std::fs::create_dir(&state).unwrap();
+        assert!(discard_partials_of_other_links(&path, "https://example.com/a.zip").is_err());
+        assert!(part.exists());
     }
 
     /// The engine saves a link without its password; the row keeps it.

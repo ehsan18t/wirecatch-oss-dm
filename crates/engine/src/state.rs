@@ -38,9 +38,17 @@ pub(crate) enum LoadError {
 }
 
 /// The link the resume file at `path` was made for (the one asked for, before redirects), when it is a resume file this version of the engine reads. Lets a caller tell whose partial download a part file belongs to without knowing the file's format.
-#[must_use]
-pub fn resume_file_url(path: &Path) -> Option<String> {
-    ResumeState::load(path).ok().map(|state| state.url)
+///
+/// # Errors
+///
+/// The file is there and could not be read, which says nothing about whose it is.
+pub fn resume_file_url(path: &Path) -> io::Result<Option<String>> {
+    match ResumeState::load(path) {
+        Ok(state) => Ok(Some(state.url)),
+        Err(LoadError::Read(e)) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(LoadError::Read(e)) => Err(e),
+        Err(_) => Ok(None),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,8 +107,7 @@ impl ResumeState {
     /// to fetch, never less. A download `abandoned` during that flush replaces
     /// nothing and removes its temporary file.
     pub fn save(&self, path: &Path, abandoned: &Abandoned) -> Result<()> {
-        let mut tmp = path.as_os_str().to_owned();
-        tmp.push(".tmp");
+        let tmp = crate::naming::resume_temp_path(path);
         let write = || -> io::Result<()> {
             let json = serde_json::to_vec(self).map_err(io::Error::other)?;
             {
@@ -146,16 +153,18 @@ impl ResumeState {
 
     /// Whether the server describes the same file this state was saved for.
     fn same_file(&self, ranged: bool, total: Option<u64>, current: &Validators) -> bool {
+        self.ranged && ranged && total.is_some() && self.describes(total, current)
+    }
+
+    /// Whether `total` and `current` are what this state was saved with.
+    pub fn describes(&self, total: Option<u64>, current: &Validators) -> bool {
         let same = |saved: &Option<String>, now: &Option<String>| match (saved, now) {
             (Some(a), Some(b)) => a == b,
             (None, None) => true,
             // A validator that appeared or vanished counts as a change.
             _ => false,
         };
-        self.ranged
-            && ranged
-            && total.is_some()
-            && self.total == total
+        self.total == total
             && same(&self.etag, &current.etag)
             && same(&self.last_modified, &current.last_modified)
     }
@@ -201,7 +210,7 @@ mod tests {
     fn a_resume_file_names_the_link_it_was_made_for() {
         let dir = wirecatch_test_support::private_dir("state-url").unwrap();
         let path = dir.path().join("f.bin.wcstate");
-        assert_eq!(resume_file_url(&path), None, "no file");
+        assert_eq!(resume_file_url(&path).unwrap(), None, "no file");
         ResumeState::new(
             "https://x/f",
             Some(100),
@@ -211,12 +220,21 @@ mod tests {
         )
         .save(&path, &Abandonment::new().flag())
         .unwrap();
-        assert_eq!(resume_file_url(&path).as_deref(), Some("https://x/f"));
+        assert_eq!(
+            resume_file_url(&path).unwrap().as_deref(),
+            Some("https://x/f")
+        );
         std::fs::write(&path, b"{\"url\": \"https://x/f\"}").unwrap();
         assert_eq!(
-            resume_file_url(&path),
+            resume_file_url(&path).unwrap(),
             None,
             "not a resume file of this version"
+        );
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(
+            resume_file_url(&path).is_err(),
+            "a file that cannot be read"
         );
         dir.remove().unwrap();
     }

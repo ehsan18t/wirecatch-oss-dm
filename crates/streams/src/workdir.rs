@@ -100,7 +100,12 @@ impl WorkDir {
     pub fn open(output: &Path, identity: u64, pieces: &[usize]) -> io::Result<Self> {
         let dir = path_for(output);
         let header = format!("{FORMAT_VERSION} {identity:016x}\n");
-        let reuse = fs::read_to_string(dir.join(HEADER)).is_ok_and(|h| h == header);
+        // A read that failed proves nothing about the folder, so it keeps everything in it.
+        let reuse = match fs::read(dir.join(HEADER)) {
+            Ok(written) => written == header.as_bytes(),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => false,
+            Err(e) => return Err(e),
+        };
         if !reuse {
             remove_dir(&dir)?;
         }
@@ -276,6 +281,20 @@ fn remove_dir(dir: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A folder where the header should be: reading it fails the way a held file does.
+    #[test]
+    fn a_header_that_cannot_be_read_keeps_the_folder() {
+        let dir = wirecatch_test_support::private_dir("workdir-held").unwrap();
+        let out = dir.path().join("video.mp4");
+        let work = path_for(&out);
+        fs::create_dir_all(work.join(HEADER)).unwrap();
+        let segment = work.join("kept.seg");
+        fs::write(&segment, b"data").unwrap();
+        assert!(WorkDir::open(&out, 1, &[1]).is_err());
+        assert_eq!(fs::read(&segment).unwrap(), b"data");
+        dir.remove().unwrap();
+    }
 
     #[test]
     fn finished_segments_survive_only_with_the_right_size() {

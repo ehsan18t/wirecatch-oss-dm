@@ -44,6 +44,16 @@ pub(crate) struct Described {
     pub validators: Validators,
 }
 
+impl Described {
+    pub fn of(opened: &Opened) -> Self {
+        Self {
+            ranged: opened.ranged,
+            total: opened.total,
+            validators: opened.validators.clone(),
+        }
+    }
+}
+
 /// The paths of one download.
 pub(crate) struct Target {
     /// The finished file.
@@ -124,12 +134,12 @@ impl Destination {
                     ExistingFile::Refuse => Finish::Refuse,
                     _ => Finish::Replace,
                 };
-                let (target, resume) = plan_exact(path, finish, file);
+                let (target, resume) = plan_exact(path, finish, file)?;
                 Plan::Planned(target, resume.map(Box::new))
             }
             Self::InFolder { dir, name } => {
                 std::fs::create_dir_all(&dir).context(IoAction::CreateFolder, &dir)?;
-                plan_in_folder(dir, name, saved_url, file)
+                plan_in_folder(dir, name, saved_url, file)?
             }
         };
         #[cfg(test)]
@@ -152,8 +162,8 @@ impl Destination {
                 });
             }
             Plan::Planned(mut target, None) => {
-                // Whatever is left there cannot continue: start over. The part file is emptied, not deleted: its lock would stop a new one from being made on Windows.
-                discard(&target.state);
+                // Whatever is left there cannot continue: start over. The part file is emptied, not deleted: its lock would stop a new one from being made on Windows. A resume file that stayed would count the new part file's zeros as downloaded.
+                remove_resume_file(&target.state)?;
                 storage::create_part(&target.part, file.total)
                     .context(IoAction::CreateFile, &target.part)?;
                 if !target.lock.is_held() {
@@ -216,11 +226,53 @@ fn target(file: PathBuf, finish: Finish) -> Target {
 }
 
 /// [`Destination::Exact`]: the URL is not compared, only what the server says about the file. The path is the caller's, who owns who runs there, so a held lock does not stop this run.
-fn plan_exact(path: PathBuf, finish: Finish, file: &Described) -> (Target, Option<ResumeState>) {
+fn plan_exact(
+    path: PathBuf,
+    finish: Finish,
+    file: &Described,
+) -> Result<(Target, Option<ResumeState>)> {
     let mut target = target(path, finish);
     target.lock = PartLock::open(&target.part).unwrap_or_default();
-    let resume = saved_state(&target.state).filter(|saved| continues(saved, &target, file));
-    (target, resume)
+    let resume = match saved_state(&target.state)? {
+        Some(saved) if continues(&saved, &target, file)? => Some(saved),
+        _ => None,
+    };
+    Ok((target, resume))
+}
+
+/// What a run of `url` left at `path` when it has all the data: the resume file lists nothing left and the part file has the saved size. Another link's is not this download's, so it goes the way of any resume. Blocks.
+pub(crate) fn complete_part(
+    path: &Path,
+    url: &str,
+    existing: ExistingFile,
+) -> Result<Option<CompletePart>> {
+    let (part, state) = naming::part_paths(path);
+    let Some(saved) = saved_state(&state)? else {
+        return Ok(None);
+    };
+    let Some(len) = part_len(&part)? else {
+        return Ok(None);
+    };
+    if !saved.remaining.is_empty()
+        || saved.total.is_some_and(|total| total != len)
+        || !same_download(&saved.url, url)
+    {
+        return Ok(None);
+    }
+    let finish = match existing {
+        ExistingFile::Refuse => Finish::Refuse,
+        _ => Finish::Replace,
+    };
+    let mut target = target(path.to_path_buf(), finish);
+    target.lock = PartLock::open(&target.part).unwrap_or_default();
+    Ok(Some(CompletePart { target, len, saved }))
+}
+
+/// See [`complete_part`].
+pub(crate) struct CompletePart {
+    pub target: Target,
+    pub len: u64,
+    pub saved: ResumeState,
 }
 
 /// What [`Destination::prepare`] does once the folder is there.
@@ -236,7 +288,7 @@ enum Plan {
 /// number of it, continued or started over; else what a run left that nothing
 /// can continue; else the first free name. A run still going is not an earlier
 /// one, and another link's partial file is that link's: both keep their files.
-fn plan_in_folder(dir: PathBuf, name: String, url: &str, file: &Described) -> Plan {
+fn plan_in_folder(dir: PathBuf, name: String, url: &str, file: &Described) -> Result<Plan> {
     let found = {
         let mut names = naming::candidates(&dir, &name);
         let mut free_in_a_row = 0;
@@ -245,7 +297,7 @@ fn plan_in_folder(dir: PathBuf, name: String, url: &str, file: &Described) -> Pl
                 dir: dir.clone(),
                 name: name.clone(),
             };
-            match look_at_name(target(names.next_name(), finish), url, file) {
+            match look_at_name(target(names.next_name(), finish), url, file)? {
                 Look::Take(plan) => break Some(plan),
                 Look::Free if free_in_a_row == FREE_NAMES_TO_LOOK_PAST => break None,
                 Look::Free => free_in_a_row += 1,
@@ -253,7 +305,7 @@ fn plan_in_folder(dir: PathBuf, name: String, url: &str, file: &Described) -> Pl
             }
         }
     };
-    found.unwrap_or(Plan::FreeName { dir, name })
+    Ok(found.unwrap_or(Plan::FreeName { dir, name }))
 }
 
 /// How many free names a look for an earlier run goes on past: the file that made an earlier run take a number may have been moved since. Bounded, so a run further along than this starts anew.
@@ -267,35 +319,40 @@ enum Look {
     Occupied,
 }
 
-fn look_at_name(mut candidate: Target, url: &str, file: &Described) -> Look {
+fn look_at_name(mut candidate: Target, url: &str, file: &Described) -> Result<Look> {
     let finished = candidate.file.exists();
-    let Some(saved) = saved_state(&candidate.state) else {
-        return look_past_lost_state(candidate, finished);
+    let Some(saved) = saved_state(&candidate.state)? else {
+        return Ok(look_past_lost_state(candidate, finished));
     };
     if finished || !same_download(&saved.url, url) {
-        return Look::Occupied;
+        return Ok(Look::Occupied);
     }
     let Some(lock) = PartLock::open(&candidate.part) else {
-        return Look::Occupied;
+        return Ok(Look::Occupied);
     };
     candidate.lock = lock;
-    if continues(&saved, &candidate, file) {
-        return Look::Take(Plan::Planned(candidate, Some(Box::new(saved))));
+    if continues(&saved, &candidate, file)? {
+        return Ok(Look::Take(Plan::Planned(candidate, Some(Box::new(saved)))));
     }
     // Same download, but it cannot continue (file changed, or no range support):
     // start over under the same name.
     info!("previous partial download cannot be resumed; starting over");
-    Look::Take(Plan::Planned(candidate, None))
+    Ok(Look::Take(Plan::Planned(candidate, None)))
 }
 
 /// A name whose resume file is missing or unreadable. A part file there that no
 /// run holds can never be continued, so it is taken over; without a real lock
 /// (a file system that has none) it may be a run's that has yet to save.
 fn look_past_lost_state(mut candidate: Target, finished: bool) -> Look {
-    let part_exists = std::fs::symlink_metadata(&candidate.part).is_ok();
     if finished {
         return Look::Occupied;
     }
+    let part_exists = match std::fs::symlink_metadata(&candidate.part) {
+        Ok(_) => true,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => false,
+        // Unknown, so not to be emptied.
+        Err(_) => return Look::Occupied,
+    };
     if !part_exists {
         return if std::fs::symlink_metadata(&candidate.state).is_ok() {
             Look::Take(Plan::Planned(candidate, None))
@@ -315,39 +372,43 @@ fn look_past_lost_state(mut candidate: Target, finished: bool) -> Look {
 
 /// Whether `saved` can continue as the download `file` describes, with its part
 /// file at `target` still the size of the whole file.
-fn continues(saved: &ResumeState, target: &Target, file: &Described) -> bool {
-    saved.can_resume(file.ranged, file.total, &file.validators)
-        && part_len(&target.part) == file.total
+fn continues(saved: &ResumeState, target: &Target, file: &Described) -> Result<bool> {
+    Ok(saved.can_resume(file.ranged, file.total, &file.validators)
+        && part_len(&target.part)? == file.total)
 }
 
-/// The resume file at `path`, if there is one that can be read. One that
-/// cannot is only logged: the download starts over and replaces it.
-fn saved_state(path: &Path) -> Option<ResumeState> {
+/// The resume file at `path`, if there is one this engine can use. A damaged one is proof its data cannot be trusted, so it is logged and the download starts over. A read that failed proves nothing about the file (a virus scanner may hold it), so it ends the run with the files as they are.
+fn saved_state(path: &Path) -> Result<Option<ResumeState>> {
     match ResumeState::load(path) {
-        Ok(state) => Some(state),
-        Err(LoadError::Read(e)) if e.kind() == io::ErrorKind::NotFound => None,
+        Ok(state) => Ok(Some(state)),
+        Err(LoadError::Read(e)) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(LoadError::Read(e)) => Err(e).context(IoAction::ReadResume, path),
         Err(e) => {
-            warn!(path = %path.display(), error = %Chain(&e), "the resume file cannot be read; starting over");
-            None
+            warn!(path = %path.display(), error = %Chain(&e), "the resume file cannot be used; starting over");
+            Ok(None)
         }
     }
 }
 
-/// The length of the part file at `path`, if it can be read.
-fn part_len(path: &Path) -> Option<u64> {
+/// The length of the part file at `path`, if there is one.
+fn part_len(path: &Path) -> Result<Option<u64>> {
     match std::fs::metadata(path) {
-        Ok(metadata) => Some(metadata.len()),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-        Err(e) => {
-            warn!(path = %path.display(), error = %Chain(&e), "the part file cannot be read; starting over");
-            None
-        }
+        Ok(metadata) => Ok(Some(metadata.len())),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).context(IoAction::OpenFile, path),
     }
 }
 
-/// Deletes a part or resume file that is of no more use, if there is one. A
-/// failure is only logged: a part file left behind is emptied when the
-/// download starts over, and a resume file is replaced or never matches again.
+fn remove_resume_file(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => {
+            Err(e).context(IoAction::DeleteResume, path)
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Deletes a part or resume file of a finished download or a given-back name, if there is one. A failure is only logged: the download's data is safe by then.
 pub(crate) fn discard(path: &Path) {
     match std::fs::remove_file(path) {
         Ok(()) => {}
@@ -583,23 +644,99 @@ mod tests {
         dir.remove().unwrap();
     }
 
-    /// A logged error carries the system's reason, not only what the engine was doing.
+    /// A folder where the resume file should be: reading it fails the way a held file does.
     #[test]
-    fn a_resume_file_that_cannot_be_read_is_logged_with_the_reason() {
+    fn a_resume_file_that_cannot_be_read_ends_the_run_and_keeps_the_data() {
         let dir = wirecatch_test_support::private_dir("unreadable-state").unwrap();
-        // A folder where the resume file should be: opening works, reading does not.
-        let state = dir.join("f.bin.wcstate");
+        let path = dir.join("f.bin");
+        let (part, state) = naming::part_paths(&path);
         std::fs::create_dir(&state).unwrap();
+        std::fs::write(&part, b"0123456789").unwrap();
+        let abandonment = Abandonment::new();
+        for destination in [
+            Destination::Exact(path.clone(), ExistingFile::Replace),
+            in_folder(&dir),
+        ] {
+            let error = destination
+                .prepare("https://x/f", &ten_bytes(), 1, &abandonment.flag())
+                .err()
+                .expect("a read that failed is not a fresh start");
+            assert!(
+                matches!(
+                    error,
+                    Error::Io {
+                        action: IoAction::ReadResume,
+                        ..
+                    }
+                ),
+                "{error:?}"
+            );
+            assert_eq!(std::fs::read(&part).unwrap(), b"0123456789");
+        }
+        dir.remove().unwrap();
+    }
+
+    #[test]
+    fn a_damaged_resume_file_is_logged_and_starts_over() {
+        let dir = wirecatch_test_support::private_dir("damaged-state").unwrap();
+        let state = dir.join("f.bin.wcstate");
+        std::fs::write(&state, b"not a resume file").unwrap();
         let (logs, _capturing) = wirecatch_test_support::logs::Logs::capture();
-        assert!(saved_state(&state).is_none());
-        // The reason this read got, not one from a second read: another process (an antivirus) can open a new folder in between and change it.
+        assert!(saved_state(&state).unwrap().is_none());
         let events = logs.events();
-        let error = events
-            .iter()
-            .find(|e| e.message == "the resume file cannot be read; starting over")
-            .and_then(|e| e.field("error"))
-            .unwrap_or_else(|| panic!("{}", logs.text()));
-        assert!(error.contains("(os error "), "{error}");
+        assert!(
+            events
+                .iter()
+                .any(|e| e.message == "the resume file cannot be used; starting over"),
+            "{}",
+            logs.text()
+        );
+        dir.remove().unwrap();
+    }
+
+    /// Readable but not deletable, while the part file has the wrong size: the new part file's zeros must never meet the old ranges.
+    #[cfg(windows)]
+    #[test]
+    fn a_stale_resume_file_that_cannot_be_deleted_stops_the_start_over() {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        const FILE_SHARE_READ: u32 = 1;
+
+        let dir = wirecatch_test_support::private_dir("stale-state").unwrap();
+        let path = dir.join("f.bin");
+        let (part, state) = naming::part_paths(&path);
+        let abandonment = Abandonment::new();
+        let file = ten_bytes();
+        ResumeState::new(
+            "https://x/f",
+            file.total,
+            file.ranged,
+            &file.validators,
+            Vec::new(),
+        )
+        .save(&state, &abandonment.flag())
+        .unwrap();
+        std::fs::write(&part, b"cut").unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(&state)
+            .unwrap();
+        let error = Destination::Exact(path.clone(), ExistingFile::Replace)
+            .prepare("https://x/f", &file, 1, &abandonment.flag())
+            .err()
+            .expect("the old resume file could not be deleted");
+        assert!(
+            matches!(
+                error,
+                Error::Io {
+                    action: IoAction::DeleteResume,
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+        assert_eq!(std::fs::read(&part).unwrap(), b"cut");
+        drop(held);
         dir.remove().unwrap();
     }
 }

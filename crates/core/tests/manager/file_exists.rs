@@ -72,6 +72,26 @@ fn answer(choice: FileExistsChoice, remember: bool) -> FileExistsAnswer {
     FileExistsAnswer { choice, remember }
 }
 
+/// A folder where the resume file should be: reading it fails the way a held file does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn partial_files_of_an_unknown_owner_stay_and_the_download_takes_a_free_name() -> TestResult {
+    let server = server().await;
+    let h = Harness::new().await?;
+    let dir = folder_with(&h, &same_size())?;
+    let part = dir.join(format!("{NAME}{}", wirecatch_engine::PART_EXT));
+    std::fs::write(&part, b"someone's")?;
+    std::fs::create_dir(dir.join(format!("{NAME}{}", wirecatch_engine::STATE_EXT)))?;
+
+    let row = add_into(&h, server.url("report").as_str(), &dir).await?;
+    let done = h.wait_status(row.id, DownloadStatus::Completed).await;
+
+    assert_eq!(Path::new(&done.path), dir.join("report (1).pdf"));
+    assert_eq!(std::fs::read(&done.path)?, server.data);
+    assert_eq!(std::fs::read(&part)?, b"someone's");
+    assert_eq!(h.manager.pending_file_exists(), vec![]);
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_duplicate_waits_for_an_answer_by_default() -> TestResult {
     let server = server().await;

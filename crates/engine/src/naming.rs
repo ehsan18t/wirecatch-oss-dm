@@ -274,6 +274,14 @@ pub fn part_paths(final_path: &Path) -> (PathBuf, PathBuf) {
     (PathBuf::from(part), PathBuf::from(state))
 }
 
+/// The temporary file a save of the resume file at `state` writes first. A kill during a save leaves it; a later save replaces it.
+#[must_use]
+pub fn resume_temp_path(state: &Path) -> PathBuf {
+    let mut temp = state.as_os_str().to_owned();
+    temp.push(".tmp");
+    PathBuf::from(temp)
+}
+
 /// Moves the finished file `from` onto the first free name of `name`,
 /// `name (1)`, `name (2)`... in `dir`, and returns where it went. Never
 /// replaces anything: the move itself refuses a name that is taken (see

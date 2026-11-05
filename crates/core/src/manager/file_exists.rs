@@ -128,8 +128,11 @@ impl Manager {
             (then, history, entry.row.url.clone())
         };
         let size = naming::file_size(path)?;
-        // No download holds this path, so what lies beside the file is left over.
-        naming::discard_partials_of_other_links(path, &url);
+        // No download holds this path, so what lies beside the file is left over. Partial files of an unknown owner stay, and the run takes a free name.
+        if let Err(e) = naming::discard_partials_of_other_links(path, &url) {
+            warn!(path = %path.display(), error = %e, "could not tell whose partial files are beside a file");
+            return None;
+        }
         let same_history = history
             .is_none_or(|(same_link, total)| same_link && total.is_none_or(|total| total == size));
         Some(Found {
