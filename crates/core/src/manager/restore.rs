@@ -122,6 +122,7 @@ pub(super) fn restore(snapshot: Snapshot, around: &Surroundings<'_>) -> Restored
         claimed: Claimed::default(),
         running: BTreeSet::default(),
         unfinished: BTreeSet::default(),
+        arriving: Vec::new(),
         system_proxy: None,
         computer_proxy: ComputerProxy::Read,
         pending: questions::captures(),
@@ -294,11 +295,10 @@ fn restore_queues(stored: Vec<Queue>) -> Vec<QueueSlot> {
 
 /// One stored download as it continues, and whether its stored row needed
 /// fixing: one whose queue is gone joins `default_queue`, one whose file
-/// finished is completed, and one that was running goes back in line first and
-/// its queue continues the run that was under way.
+/// finished is completed, and one that was running goes back in line first.
 fn restore_entry(
     stored: StoredDownload,
-    queues: &mut [QueueSlot],
+    queues: &[QueueSlot],
     default_queue: QueueId,
     around: &Surroundings<'_>,
 ) -> (Entry, bool) {
@@ -363,9 +363,6 @@ fn restore_entry(
     ) {
         entry.row.status = DownloadStatus::Queued;
         entry.resume_first = true;
-        if let Some(slot) = queues.iter_mut().find(|s| s.queue.id == entry.row.queue) {
-            slot.gate.resume_run();
-        }
     }
     (entry, fixed)
 }
